@@ -1,27 +1,18 @@
-# Dependencies
-node_modules/
-.pnpm-store/
+# Swift Package Manager
+.build/
+.swiftpm/
+*.o
+*.d
 
-# Build outputs
-dist/
-build/
-out/
+# Xcode
+*.xcodeproj
+*.xcworkspace
+*.dSYM/
 
-# IDE
-.idea/
+# Editors
 .vscode/
+.idea/
 *.swp
-*.swo
 
-# OS
+# macOS
 .DS_Store
-Thumbs.db
-
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Logs
-*.log
-npm-debug.log*
