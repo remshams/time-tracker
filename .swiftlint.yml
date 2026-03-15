@@ -28,3 +28,6 @@ identifier_name:
 
 disabled_rules:
   - todo
+
+trailing_comma:
+  mandatory_comma: true
