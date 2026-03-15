@@ -8,7 +8,7 @@ on:
 
 jobs:
   lint:
-    runs-on: macos-15
+    runs-on: macos-latest
 
     steps:
       - name: Check out repository
@@ -35,7 +35,7 @@ jobs:
         run: swiftlint lint --strict --config .swiftlint.yml
 
   test:
-    runs-on: macos-15
+    runs-on: macos-latest
 
     steps:
       - name: Check out repository
