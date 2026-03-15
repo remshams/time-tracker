@@ -1,5 +1,5 @@
-import Foundation
 // swift-tools-version: 6.0
+import Foundation
 import PackageDescription
 
 func shellOutput(_ executable: String, arguments: [String]) -> String? {
