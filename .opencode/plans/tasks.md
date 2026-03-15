@@ -86,8 +86,8 @@ Initial expectations:
 - [x] Create the `Tasks` feature folder structure.
 - [x] Write `Task` domain model tests.
 - [x] Implement the minimal `Task` struct.
-- [ ] Write repository behavior tests.
-- [ ] Implement `InMemoryTaskRepository`.
+- [x] Write repository behavior tests.
+- [x] Implement `InMemoryTaskRepository`.
 - [ ] Write `TaskListViewModel` tests.
 - [ ] Implement `TaskListViewModel`.
 - [ ] Add a minimal task list UI showing title and description.
