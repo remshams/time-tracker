@@ -1,40 +1,34 @@
-import Testing
+import XCTest
 
 @testable import App
 
-@Test func taskListViewModelLoadsTasksFromRepository() async {
-    let tasks = [
-        makeTask(title: "Write project plan", description: "Capture the current decisions."),
-        makeTask(title: "Review next step"),
-    ]
-    let viewModel = await MainActor.run {
-        TaskListViewModel(repository: TaskRepositoryStub(result: .success(tasks)))
+final class TaskListViewModelTests: XCTestCase {
+    @MainActor
+    func testTaskListViewModelLoadsTasksFromRepository() async throws {
+        let tasks = [
+            try makeTask(title: "Write project plan", description: "Capture the current decisions."),
+            try makeTask(title: "Review next step"),
+        ]
+        let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success(tasks)))
+
+        await viewModel.loadTasks()
+
+        XCTAssertEqual(viewModel.tasks, tasks)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertFalse(viewModel.isLoading)
     }
 
-    await viewModel.loadTasks()
-    let (loadedTasks, errorMessage, isLoading) = await MainActor.run {
-        (viewModel.tasks, viewModel.errorMessage, viewModel.isLoading)
-    }
-
-    #expect(loadedTasks == tasks)
-    #expect(errorMessage == nil)
-    #expect(isLoading == false)
-}
-
-@Test func taskListViewModelStoresAnErrorMessageWhenLoadingFails() async {
-    let viewModel = await MainActor.run {
-        TaskListViewModel(
+    @MainActor
+    func testTaskListViewModelStoresAnErrorMessageWhenLoadingFails() async {
+        let viewModel = TaskListViewModel(
             repository: TaskRepositoryStub(result: .failure(TaskRepositoryStubError.fetchFailed)))
-    }
 
-    await viewModel.loadTasks()
-    let (tasks, errorMessage, isLoading) = await MainActor.run {
-        (viewModel.tasks, viewModel.errorMessage, viewModel.isLoading)
-    }
+        await viewModel.loadTasks()
 
-    #expect(tasks.isEmpty)
-    #expect(errorMessage == "Failed to load tasks.")
-    #expect(isLoading == false)
+        XCTAssertTrue(viewModel.tasks.isEmpty)
+        XCTAssertEqual(viewModel.errorMessage, "Failed to load tasks.")
+        XCTAssertFalse(viewModel.isLoading)
+    }
 }
 
 private struct TaskRepositoryStub: TaskRepository, Sendable {
@@ -49,11 +43,6 @@ private enum TaskRepositoryStubError: Error, Sendable {
     case fetchFailed
 }
 
-private func makeTask(title: String, description: String = "") -> Task {
-    do {
-        return try Task(title: title, description: description)
-    } catch {
-        Issue.record("Failed to create test task: \(error)")
-        fatalError("Failed to create test task: \(error)")
-    }
+private func makeTask(title: String, description: String = "") throws -> Task {
+    try Task(title: title, description: description)
 }
