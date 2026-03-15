@@ -2,31 +2,39 @@ import Testing
 
 @testable import App
 
-@MainActor
-@Test func taskListViewModelLoadsTasksFromRepository() async throws {
+@Test func taskListViewModelLoadsTasksFromRepository() async {
     let tasks = [
-        try Task(title: "Write project plan", description: "Capture the current decisions."),
-        try Task(title: "Review next step"),
+        makeTask(title: "Write project plan", description: "Capture the current decisions."),
+        makeTask(title: "Review next step"),
     ]
-    let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success(tasks)))
+    let viewModel = await MainActor.run {
+        TaskListViewModel(repository: TaskRepositoryStub(result: .success(tasks)))
+    }
 
     await viewModel.loadTasks()
+    let (loadedTasks, errorMessage, isLoading) = await MainActor.run {
+        (viewModel.tasks, viewModel.errorMessage, viewModel.isLoading)
+    }
 
-    #expect(viewModel.tasks == tasks)
-    #expect(viewModel.errorMessage == nil)
-    #expect(viewModel.isLoading == false)
+    #expect(loadedTasks == tasks)
+    #expect(errorMessage == nil)
+    #expect(isLoading == false)
 }
 
-@MainActor
 @Test func taskListViewModelStoresAnErrorMessageWhenLoadingFails() async {
-    let viewModel = TaskListViewModel(
-        repository: TaskRepositoryStub(result: .failure(TaskRepositoryStubError.fetchFailed)))
+    let viewModel = await MainActor.run {
+        TaskListViewModel(
+            repository: TaskRepositoryStub(result: .failure(TaskRepositoryStubError.fetchFailed)))
+    }
 
     await viewModel.loadTasks()
+    let (tasks, errorMessage, isLoading) = await MainActor.run {
+        (viewModel.tasks, viewModel.errorMessage, viewModel.isLoading)
+    }
 
-    #expect(viewModel.tasks.isEmpty)
-    #expect(viewModel.errorMessage == "Failed to load tasks.")
-    #expect(viewModel.isLoading == false)
+    #expect(tasks.isEmpty)
+    #expect(errorMessage == "Failed to load tasks.")
+    #expect(isLoading == false)
 }
 
 private struct TaskRepositoryStub: TaskRepository, Sendable {
@@ -39,4 +47,8 @@ private struct TaskRepositoryStub: TaskRepository, Sendable {
 
 private enum TaskRepositoryStubError: Error, Sendable {
     case fetchFailed
+}
+
+private func makeTask(title: String, description: String = "") -> Task {
+    try! Task(title: title, description: description)
 }
