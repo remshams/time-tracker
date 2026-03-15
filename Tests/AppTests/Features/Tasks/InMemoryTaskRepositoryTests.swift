@@ -1,25 +1,23 @@
-import XCTest
+import Testing
 
 @testable import App
 
-final class InMemoryTaskRepositoryTests: XCTestCase {
-    func testInMemoryTaskRepositoryReturnsSeededTasks() async throws {
-        let tasks = [
-            try Task(title: "Write project plan", description: "Capture the current decisions."),
-            try Task(title: "Review next step"),
-        ]
-        let repository = InMemoryTaskRepository(tasks: tasks)
+@Test func inMemoryTaskRepositoryReturnsSeededTasks() async throws {
+    let tasks = [
+        try Task(title: "Write project plan", description: "Capture the current decisions."),
+        try Task(title: "Review next step"),
+    ]
+    let repository = InMemoryTaskRepository(tasks: tasks)
 
-        let fetchedTasks = try await repository.fetchTasks()
+    let fetchedTasks = try await repository.fetchTasks()
 
-        XCTAssertEqual(fetchedTasks, tasks)
-    }
+    #expect(fetchedTasks == tasks)
+}
 
-    func testInMemoryTaskRepositoryReturnsAnEmptyListByDefault() async throws {
-        let repository = InMemoryTaskRepository()
+@Test func inMemoryTaskRepositoryReturnsAnEmptyListByDefault() async throws {
+    let repository = InMemoryTaskRepository()
 
-        let fetchedTasks = try await repository.fetchTasks()
+    let fetchedTasks = try await repository.fetchTasks()
 
-        XCTAssertTrue(fetchedTasks.isEmpty)
-    }
+    #expect(fetchedTasks.isEmpty)
 }
