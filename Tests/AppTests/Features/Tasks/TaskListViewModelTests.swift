@@ -1,11 +1,12 @@
 import Testing
+
 @testable import App
 
 @MainActor
 @Test func taskListViewModelLoadsTasksFromRepository() async throws {
     let tasks = [
         try Task(title: "Write project plan", description: "Capture the current decisions."),
-        try Task(title: "Review next step")
+        try Task(title: "Review next step"),
     ]
     let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success(tasks)))
 
@@ -18,7 +19,8 @@ import Testing
 
 @MainActor
 @Test func taskListViewModelStoresAnErrorMessageWhenLoadingFails() async {
-    let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .failure(TaskRepositoryStubError.fetchFailed)))
+    let viewModel = TaskListViewModel(
+        repository: TaskRepositoryStub(result: .failure(TaskRepositoryStubError.fetchFailed)))
 
     await viewModel.loadTasks()
 
