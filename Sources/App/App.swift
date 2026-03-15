@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct QuickSailorApp: App {
+struct TimeTracker: App {
     private let repository = InMemoryTaskRepository(tasks: [
         makeTask(title: "Write project plan", description: "Capture the current decisions and next checkpoints."),
         makeTask(title: "Review task list"),
