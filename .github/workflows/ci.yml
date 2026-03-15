@@ -26,7 +26,7 @@ jobs:
         run: brew install swift-format
 
       - name: Run swift-format
-        run: swift format lint --recursive --strict --configuration .swift-format Package.swift Sources Tests
+        run: swift-format lint --recursive --strict --configuration .swift-format Package.swift Sources Tests
 
       - name: Install SwiftLint
         run: brew install swiftlint
