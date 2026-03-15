@@ -88,8 +88,8 @@ Initial expectations:
 - [x] Implement the minimal `Task` struct.
 - [x] Write repository behavior tests.
 - [x] Implement `InMemoryTaskRepository`.
-- [ ] Write `TaskListViewModel` tests.
-- [ ] Implement `TaskListViewModel`.
+- [x] Write `TaskListViewModel` tests.
+- [x] Implement `TaskListViewModel`.
 - [ ] Add a minimal task list UI showing title and description.
 
 ## Testing Strategy
