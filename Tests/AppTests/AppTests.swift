@@ -1,33 +1,36 @@
-import XCTest
+import Testing
 
 @testable import App
 
-final class AppTests: XCTestCase {
-    @MainActor
-    func testContentViewModuleLoads() throws {
-        let repository = InMemoryTaskRepository(tasks: [
-            try makeTask(title: "Write project plan", description: "Capture the current decisions."),
-            try makeTask(title: "Review next step"),
-        ])
+@MainActor
+@Test func contentViewModuleLoads() {
+    let repository = InMemoryTaskRepository(tasks: [
+        makeTask(title: "Write project plan", description: "Capture the current decisions."),
+        makeTask(title: "Review next step"),
+    ])
 
-        let view = ContentView(viewModel: TaskListViewModel(repository: repository))
+    let view = ContentView(viewModel: TaskListViewModel(repository: repository))
 
-        XCTAssertEqual(String(describing: type(of: view)), "ContentView")
-    }
-
-    @MainActor
-    func testTaskListViewModuleLoads() throws {
-        let repository = InMemoryTaskRepository(tasks: [
-            try makeTask(title: "Write project plan", description: "Capture the current decisions."),
-            try makeTask(title: "Review next step"),
-        ])
-
-        let view = TaskListView(viewModel: TaskListViewModel(repository: repository))
-
-        XCTAssertEqual(String(describing: type(of: view)), "TaskListView")
-    }
+    #expect(String(describing: type(of: view)) == "ContentView")
 }
 
-private func makeTask(title: String, description: String? = nil) throws -> Task {
-    try Task(title: title, description: description)
+@MainActor
+@Test func taskListViewModuleLoads() {
+    let repository = InMemoryTaskRepository(tasks: [
+        makeTask(title: "Write project plan", description: "Capture the current decisions."),
+        makeTask(title: "Review next step"),
+    ])
+
+    let view = TaskListView(viewModel: TaskListViewModel(repository: repository))
+
+    #expect(String(describing: type(of: view)) == "TaskListView")
+}
+
+private func makeTask(title: String, description: String? = nil) -> Task {
+    do {
+        return try Task(title: title, description: description)
+    } catch {
+        Issue.record("Failed to create test task: \(error)")
+        fatalError("Failed to create test task: \(error)")
+    }
 }

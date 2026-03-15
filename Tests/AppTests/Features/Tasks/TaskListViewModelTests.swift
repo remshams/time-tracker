@@ -1,34 +1,32 @@
-import XCTest
+import Testing
 
 @testable import App
 
-final class TaskListViewModelTests: XCTestCase {
-    @MainActor
-    func testTaskListViewModelLoadsTasksFromRepository() async throws {
-        let tasks = [
-            try makeTask(title: "Write project plan", description: "Capture the current decisions."),
-            try makeTask(title: "Review next step"),
-        ]
-        let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success(tasks)))
+@MainActor
+@Test func taskListViewModelLoadsTasksFromRepository() async {
+    let tasks = [
+        makeTask(title: "Write project plan", description: "Capture the current decisions."),
+        makeTask(title: "Review next step"),
+    ]
+    let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success(tasks)))
 
-        await viewModel.loadTasks()
+    await viewModel.loadTasks()
 
-        XCTAssertEqual(viewModel.tasks, tasks)
-        XCTAssertNil(viewModel.errorMessage)
-        XCTAssertFalse(viewModel.isLoading)
-    }
+    #expect(viewModel.tasks == tasks)
+    #expect(viewModel.errorMessage == nil)
+    #expect(viewModel.isLoading == false)
+}
 
-    @MainActor
-    func testTaskListViewModelStoresAnErrorMessageWhenLoadingFails() async {
-        let viewModel = TaskListViewModel(
-            repository: TaskRepositoryStub(result: .failure(TaskRepositoryStubError.fetchFailed)))
+@MainActor
+@Test func taskListViewModelStoresAnErrorMessageWhenLoadingFails() async {
+    let viewModel = TaskListViewModel(
+        repository: TaskRepositoryStub(result: .failure(TaskRepositoryStubError.fetchFailed)))
 
-        await viewModel.loadTasks()
+    await viewModel.loadTasks()
 
-        XCTAssertTrue(viewModel.tasks.isEmpty)
-        XCTAssertEqual(viewModel.errorMessage, "Failed to load tasks.")
-        XCTAssertFalse(viewModel.isLoading)
-    }
+    #expect(viewModel.tasks.isEmpty)
+    #expect(viewModel.errorMessage == "Failed to load tasks.")
+    #expect(viewModel.isLoading == false)
 }
 
 private struct TaskRepositoryStub: TaskRepository, Sendable {
@@ -43,6 +41,11 @@ private enum TaskRepositoryStubError: Error, Sendable {
     case fetchFailed
 }
 
-private func makeTask(title: String, description: String = "") throws -> Task {
-    try Task(title: title, description: description)
+private func makeTask(title: String, description: String = "") -> Task {
+    do {
+        return try Task(title: title, description: description)
+    } catch {
+        Issue.record("Failed to create test task: \(error)")
+        fatalError("Failed to create test task: \(error)")
+    }
 }
