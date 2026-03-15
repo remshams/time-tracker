@@ -90,7 +90,7 @@ Initial expectations:
 - [x] Implement `InMemoryTaskRepository`.
 - [x] Write `TaskListViewModel` tests.
 - [x] Implement `TaskListViewModel`.
-- [ ] Add a minimal task list UI showing title and description.
+- [x] Add a minimal task list UI showing title and description.
 
 ## Testing Strategy
 

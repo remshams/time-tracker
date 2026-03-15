@@ -1,7 +1,13 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var viewModel: TaskListViewModel
+
+    init(viewModel: TaskListViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
+
     var body: some View {
-        Text("Quick Sailor")
+        TaskListView(viewModel: viewModel)
     }
 }
