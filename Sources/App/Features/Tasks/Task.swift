@@ -1,6 +1,6 @@
 import Foundation
 
-struct Task: Identifiable, Equatable {
+struct Task: Identifiable, Equatable, Sendable {
     enum ValidationError: Error, Equatable {
         case emptyTitle
     }

@@ -1,4 +1,4 @@
-struct InMemoryTaskRepository: TaskRepository {
+struct InMemoryTaskRepository: TaskRepository, Sendable {
     private let tasks: [Task]
 
     init(tasks: [Task] = []) {
