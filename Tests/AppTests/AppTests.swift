@@ -1,38 +1,33 @@
-import Testing
+import XCTest
 
 @testable import App
 
-@Test func contentViewModuleLoads() async {
-    let view = await MainActor.run {
+final class AppTests: XCTestCase {
+    @MainActor
+    func testContentViewModuleLoads() throws {
         let repository = InMemoryTaskRepository(tasks: [
-            makeTask(title: "Write project plan", description: "Capture the current decisions."),
-            makeTask(title: "Review next step"),
+            try makeTask(title: "Write project plan", description: "Capture the current decisions."),
+            try makeTask(title: "Review next step"),
         ])
 
-        return ContentView(viewModel: TaskListViewModel(repository: repository))
+        let view = ContentView(viewModel: TaskListViewModel(repository: repository))
+
+        XCTAssertEqual(String(describing: type(of: view)), "ContentView")
     }
 
-    #expect(String(describing: type(of: view)) == "ContentView")
-}
-
-@Test func taskListViewModuleLoads() async {
-    let view = await MainActor.run {
+    @MainActor
+    func testTaskListViewModuleLoads() throws {
         let repository = InMemoryTaskRepository(tasks: [
-            makeTask(title: "Write project plan", description: "Capture the current decisions."),
-            makeTask(title: "Review next step"),
+            try makeTask(title: "Write project plan", description: "Capture the current decisions."),
+            try makeTask(title: "Review next step"),
         ])
 
-        return TaskListView(viewModel: TaskListViewModel(repository: repository))
-    }
+        let view = TaskListView(viewModel: TaskListViewModel(repository: repository))
 
-    #expect(String(describing: type(of: view)) == "TaskListView")
+        XCTAssertEqual(String(describing: type(of: view)), "TaskListView")
+    }
 }
 
-private func makeTask(title: String, description: String? = nil) -> Task {
-    do {
-        return try Task(title: title, description: description)
-    } catch {
-        Issue.record("Failed to create test task: \(error)")
-        fatalError("Failed to create test task: \(error)")
-    }
+private func makeTask(title: String, description: String? = nil) throws -> Task {
+    try Task(title: title, description: description)
 }
