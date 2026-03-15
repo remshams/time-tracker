@@ -11,7 +11,7 @@ import Testing
 
     let view = ContentView(viewModel: TaskListViewModel(repository: repository))
 
-    #expect(String(describing: type(of: view)) == "ContentView")
+    #expect(type(of: view) == ContentView.self)
 }
 
 @MainActor
@@ -23,7 +23,7 @@ import Testing
 
     let view = TaskListView(viewModel: TaskListViewModel(repository: repository))
 
-    #expect(String(describing: type(of: view)) == "TaskListView")
+    #expect(type(of: view) == TaskListView.self)
 }
 
 private func makeTask(title: String, description: String? = nil) -> Task {
