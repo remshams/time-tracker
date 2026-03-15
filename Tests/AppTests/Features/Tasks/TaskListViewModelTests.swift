@@ -50,5 +50,10 @@ private enum TaskRepositoryStubError: Error, Sendable {
 }
 
 private func makeTask(title: String, description: String = "") -> Task {
-    try! Task(title: title, description: description)
+    do {
+        return try Task(title: title, description: description)
+    } catch {
+        Issue.record("Failed to create test task: \(error)")
+        fatalError("Failed to create test task: \(error)")
+    }
 }
