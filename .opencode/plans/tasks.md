@@ -12,6 +12,7 @@ Build the first `Tasks` feature in small, test-first steps.
 - The `Tasks` feature owns its model, persistence boundary, and UI-related code.
 - The initial `Task` domain model is a plain Swift `struct`.
 - `title` is required.
+- Empty or whitespace-only titles are invalid.
 - `description` is optional.
 - The first UI shows both title and description in a simple list.
 - We start with an in-memory persistence implementation.
