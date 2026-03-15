@@ -82,9 +82,9 @@ Initial expectations:
 
 ## Checkpoints
 
-- [ ] Create the `Tasks` feature folder structure.
-- [ ] Write `Task` domain model tests.
-- [ ] Implement the minimal `Task` struct.
+- [x] Create the `Tasks` feature folder structure.
+- [x] Write `Task` domain model tests.
+- [x] Implement the minimal `Task` struct.
 - [ ] Write repository behavior tests.
 - [ ] Implement `InMemoryTaskRepository`.
 - [ ] Write `TaskListViewModel` tests.
