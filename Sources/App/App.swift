@@ -2,8 +2,8 @@ import SwiftUI
 
 @main
 struct TimeTracker: App {
-    private let taskRepository: InMemoryTaskRepository
-    private let workLogRepository: InMemoryWorkLogRepository
+    private let taskRepository: any TaskRepository
+    private let workLogRepository: any WorkLogRepository
 
     init() {
         let planTask = makeTask(
@@ -85,5 +85,5 @@ private func makeDate(hour: Int, minute: Int) -> Date {
     components.hour = hour
     components.minute = minute
     components.second = 0
-    return Calendar.current.date(from: components) ?? .now
+    return Calendar.current.date(from: components)!
 }
