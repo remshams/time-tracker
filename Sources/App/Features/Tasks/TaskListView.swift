@@ -19,37 +19,21 @@ struct TaskListView: View {
             .padding(.vertical, AppSpacing.tight)
             .tag(task.id)
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                Text(String(localized: "task-list.header.title", defaultValue: "Tasks"))
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, AppSpacing.compact)
-                    .padding(.vertical, AppSpacing.tight)
-                Divider()
-            }
-            .background(.bar)
+        .listHeader {
+            Text(String(localized: "task-list.header.title", defaultValue: "Tasks"))
+                .font(.headline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, AppSpacing.compact)
+                .padding(.vertical, AppSpacing.tight)
         }
-        .overlay {
-            if viewModel.isLoading {
-                ProgressView()
-            } else if let errorMessage = viewModel.errorMessage {
-                VStack(spacing: AppSpacing.compact) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.title2)
-                    Text(
-                        String(
-                            localized: "task-list.error.title",
-                            defaultValue: "Unable to Load Tasks")
-                    )
-                    .font(.headline)
-                    Text(errorMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
+        .listLoadingOverlay(
+            isLoading: viewModel.isLoading,
+            errorTitle: String(
+                localized: "task-list.error.title",
+                defaultValue: "Unable to Load Tasks"),
+            errorMessage: viewModel.errorMessage
+        )
         .task {
             await viewModel.loadTasks()
         }

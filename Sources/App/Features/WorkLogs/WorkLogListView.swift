@@ -8,43 +8,42 @@ struct WorkLogListView: View {
         List(viewModel.entries) { entry in
             WorkLogRowView(entry: entry)
         }
-        .overlay {
-            if viewModel.isLoading {
-                ProgressView()
-            } else if let errorMessage = viewModel.errorMessage {
-                VStack(spacing: AppSpacing.compact) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.title2)
-                    Text(
-                        String(
-                            localized: "work-log-list.error.title",
-                            defaultValue: "Unable to Load Work Logs")
-                    )
-                    .font(.headline)
-                    Text(errorMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+        .listHeader {
+            VStack(spacing: 0) {
+                HStack(alignment: .firstTextBaseline, spacing: AppSpacing.compact) {
+                    Text(String(localized: "work-log-list.header.time", defaultValue: "Time"))
+                        .frame(width: WorkLogColumnWidths.time, alignment: .leading)
+                    Text(String(localized: "work-log-list.header.duration", defaultValue: "Duration"))
+                        .frame(width: WorkLogColumnWidths.duration, alignment: .leading)
+                    Text(String(localized: "work-log-list.header.description", defaultValue: "Description"))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            } else if viewModel.entries.isEmpty {
-                VStack(spacing: AppSpacing.compact) {
-                    Image(systemName: "clock")
-                        .font(.title2)
-                    Text(
-                        String(
-                            localized: "work-log-list.empty.title",
-                            defaultValue: "No Work Logs")
-                    )
-                    .font(.headline)
-                    Text(
-                        String(
-                            localized: "work-log-list.empty.description",
-                            defaultValue: "No work logs have been recorded for this task yet.")
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, AppSpacing.compact)
+                .padding(.vertical, AppSpacing.tight)
+                Divider()
             }
         }
+        .listLoadingOverlay(
+            isLoading: viewModel.isLoading,
+            errorTitle: String(
+                localized: "work-log-list.error.title",
+                defaultValue: "Unable to Load Work Logs"),
+            errorMessage: viewModel.errorMessage,
+            emptyOverlay: AnyView(
+                PlaceholderView(
+                    systemImage: "clock",
+                    title: String(
+                        localized: "work-log-list.empty.title",
+                        defaultValue: "No Work Logs"),
+                    description: String(
+                        localized: "work-log-list.empty.description",
+                        defaultValue: "No work logs have been recorded for this task yet."
+                    )
+                )
+            )
+        )
         .task(id: taskID) {
             await viewModel.loadEntries(for: taskID)
         }

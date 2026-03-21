@@ -22,23 +22,14 @@ struct ContentView: View {
                 WorkLogListView(viewModel: workLogListViewModel, taskID: taskID)
                     .navigationTitle(selectedTask?.title ?? "")
             } else {
-                VStack(spacing: AppSpacing.compact) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.title2)
-                    Text(
-                        String(
-                            localized: "content-view.no-selection.title",
-                            defaultValue: "Select a Task")
-                    )
-                    .font(.headline)
-                    Text(
-                        String(
-                            localized: "content-view.no-selection.description",
-                            defaultValue: "Choose a task from the list to view its work logs.")
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                }
+                PlaceholderView(
+                    systemImage: "checkmark.circle",
+                    title: String(
+                        localized: "content-view.no-selection.title",
+                        defaultValue: "Select a Task"),
+                    description: String(
+                        localized: "content-view.no-selection.description",
+                        defaultValue: "Choose a task from the list to view its work logs."))
                 .navigationTitle("")
             }
         }
