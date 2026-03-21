@@ -17,10 +17,6 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             TaskListView(viewModel: taskListViewModel, selection: $selectedTaskID)
-                .overlay(alignment: .trailing) {
-                    CursorTrackingView(cursor: .resizeLeftRight)
-                        .frame(width: 8)
-                }
         } detail: {
             if let taskID = selectedTaskID {
                 WorkLogListView(viewModel: workLogListViewModel, taskID: taskID)
