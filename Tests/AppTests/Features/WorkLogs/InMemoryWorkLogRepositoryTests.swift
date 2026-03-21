@@ -31,9 +31,7 @@ import Testing
     let taskA = makeTask(title: "Write project plan")
     let taskB = makeTask(title: "Review next step")
     let entryA1 = makeWorkLogEntry(taskID: taskA.id, description: "Initial architecture and constraints")
-    let repository = InMemoryWorkLogRepository(entriesByTaskID: [
-        taskA.id: [entryA1],
-    ])
+    let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskA.id: [entryA1]])
 
     let fetchedEntries = try await repository.fetchEntries(for: taskB.id)
 
@@ -56,7 +54,7 @@ private func makeWorkLogEntry(
     startedAt: Date = Date(timeIntervalSince1970: 1_700_000_000),
     addedAt: Date = Date(timeIntervalSince1970: 1_700_000_060),
     endedAt: Date? = Date(timeIntervalSince1970: 1_700_000_360),
-    updatedAt: Date = Date(timeIntervalSince1970: 1_700_000_420),
+    updatedAt: Date = Date(timeIntervalSince1970: 1_700_000_420)
 ) -> WorkLogEntry {
     do {
         return try WorkLogEntry(
@@ -66,7 +64,7 @@ private func makeWorkLogEntry(
             startedAt: startedAt,
             addedAt: addedAt,
             endedAt: endedAt,
-            updatedAt: updatedAt,
+            updatedAt: updatedAt
         )
     } catch {
         Issue.record("Failed to create test work log entry: \(error)")
