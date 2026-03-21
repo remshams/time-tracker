@@ -18,12 +18,11 @@ Build the first `WorkLogs` slice in small, test-first steps.
 ## TDD Rules
 
 - We follow a strict test-first approach.
-- We write tests before production code.
-- We use a red-green-refactor cycle.
-- We do not change tests during implementation unless the requirement changes.
-- We aim for high test coverage.
+- Write failing tests first, then implement with a red-green-refactor cycle.
+- Keep tests stable during implementation unless requirements change.
+- Prioritize strong test coverage.
 - We prefer fast unit tests for domain logic.
-- Persistence-specific behavior is tested through the in-memory implementation.
+- Test persistence behavior via the in-memory implementation.
 
 ## Project Structure
 
