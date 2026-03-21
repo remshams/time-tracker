@@ -6,7 +6,7 @@ struct ContentView: View {
     @State private var selectedTaskID: Task.ID?
 
     private var selectedTask: Task? {
-        taskListViewModel.tasks.first { $0.id == selectedTaskID }
+        selectedTaskID.flatMap { taskListViewModel.task(for: $0) }
     }
 
     init(taskListViewModel: TaskListViewModel, workLogListViewModel: WorkLogListViewModel) {
@@ -29,7 +29,9 @@ struct ContentView: View {
                         defaultValue: "Select a Task"),
                     description: String(
                         localized: "content-view.no-selection.description",
-                        defaultValue: "Choose a task from the list to view its work logs."))
+                        defaultValue: "Choose a task from the list to view its work logs."
+                    )
+                )
                 .navigationTitle("")
             }
         }

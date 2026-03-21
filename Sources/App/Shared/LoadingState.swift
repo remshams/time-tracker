@@ -9,6 +9,11 @@ enum LoadingState {
         return false
     }
 
+    var isLoaded: Bool {
+        if case .loaded = self { return true }
+        return false
+    }
+
     var errorMessage: String? {
         if case .failed(let message) = self { return message }
         return nil

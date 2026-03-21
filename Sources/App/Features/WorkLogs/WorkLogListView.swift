@@ -28,18 +28,20 @@ struct WorkLogListView: View {
                 localized: "work-log-list.error.title",
                 defaultValue: "Unable to Load Work Logs"),
             errorMessage: viewModel.errorMessage,
-            emptyOverlay: AnyView(
-                PlaceholderView(
-                    systemImage: "clock",
-                    title: String(
-                        localized: "work-log-list.empty.title",
-                        defaultValue: "No Work Logs"),
-                    description: String(
-                        localized: "work-log-list.empty.description",
-                        defaultValue: "No work logs have been recorded for this task yet."
+            emptyOverlay: viewModel.isLoaded && viewModel.entries.isEmpty
+                ? AnyView(
+                    PlaceholderView(
+                        systemImage: "clock",
+                        title: String(
+                            localized: "work-log-list.empty.title",
+                            defaultValue: "No Work Logs"),
+                        description: String(
+                            localized: "work-log-list.empty.description",
+                            defaultValue: "No work logs have been recorded for this task yet."
+                        )
                     )
                 )
-            )
+                : nil
         )
         .task(id: taskID) {
             await viewModel.loadEntries(for: taskID)

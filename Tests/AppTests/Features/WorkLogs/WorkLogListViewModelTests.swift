@@ -57,6 +57,36 @@ import Testing
     #expect(viewModel.errorMessage == "Failed to load work logs.")
 }
 
+@MainActor
+@Test func workLogListViewModelIsNotLoadedBeforeFirstLoad() {
+    let viewModel = WorkLogListViewModel(
+        repository: WorkLogRepositoryStub(result: .success([])))
+
+    #expect(viewModel.isLoaded == false)
+}
+
+@MainActor
+@Test func workLogListViewModelIsLoadedAfterSuccessfulLoad() async {
+    let task = TestFactories.makeTask(title: "Write project plan")
+    let viewModel = WorkLogListViewModel(
+        repository: WorkLogRepositoryStub(result: .success([])))
+
+    await viewModel.loadEntries(for: task.id)
+
+    #expect(viewModel.isLoaded == true)
+}
+
+@MainActor
+@Test func workLogListViewModelIsNotLoadedAfterFailedLoad() async {
+    let task = TestFactories.makeTask(title: "Write project plan")
+    let viewModel = WorkLogListViewModel(
+        repository: WorkLogRepositoryStub(result: .failure(WorkLogRepositoryStubError.fetchFailed)))
+
+    await viewModel.loadEntries(for: task.id)
+
+    #expect(viewModel.isLoaded == false)
+}
+
 private struct WorkLogRepositoryStub: WorkLogRepository, Sendable {
     let result: Result<[WorkLogEntry], Error>
 
