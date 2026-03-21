@@ -19,6 +19,18 @@ struct TaskListView: View {
             .padding(.vertical, AppSpacing.tight)
             .tag(task.id)
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                Text(String(localized: "task-list.header.title", defaultValue: "Tasks"))
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, AppSpacing.compact)
+                    .padding(.vertical, AppSpacing.tight)
+                Divider()
+            }
+            .background(.bar)
+        }
         .overlay {
             if viewModel.isLoading {
                 ProgressView()
