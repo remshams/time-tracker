@@ -62,6 +62,15 @@ import Testing
     #expect(entry.duration == .seconds(900))
 }
 
+@Test func workLogEntryAllowsEndedAtEqualToStartedAt() {
+    let task = makeTask(title: "Write project plan")
+    let startedAt = Date(timeIntervalSince1970: 1_700_000_900)
+
+    let entry = makeWorkLogEntry(taskID: task.id, startedAt: startedAt, endedAt: startedAt)
+
+    #expect(entry.duration == .seconds(0))
+}
+
 @Test func workLogEntryRejectsEndedAtEarlierThanStartedAt() {
     let task = makeTask(title: "Write project plan")
     let startedAt = Date(timeIntervalSince1970: 1_700_000_900)
@@ -81,6 +90,17 @@ import Testing
     #expect(throws: WorkLogEntry.ValidationError.updatedBeforeAdded) {
         try WorkLogEntry(taskID: task.id, startedAt: startedAt, addedAt: addedAt, updatedAt: updatedAt)
     }
+}
+
+@Test func workLogEntryAllowsUpdatedAtEqualToAddedAt() {
+    let task = makeTask(title: "Write project plan")
+    let startedAt = Date(timeIntervalSince1970: 1_700_000_100)
+    let addedAt = Date(timeIntervalSince1970: 1_700_000_300)
+
+    let entry = makeWorkLogEntry(taskID: task.id, startedAt: startedAt, addedAt: addedAt, updatedAt: addedAt)
+
+    #expect(entry.addedAt == addedAt)
+    #expect(entry.updatedAt == addedAt)
 }
 
 @Test func workLogEntryUsesValueEquality() {
