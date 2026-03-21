@@ -4,8 +4,8 @@ import Testing
 
 @Test func inMemoryTaskRepositoryReturnsSeededTasks() async throws {
     let tasks = [
-        try Task(title: "Write project plan", description: "Capture the current decisions."),
-        try Task(title: "Review next step"),
+        TestFactories.makeTask(title: "Write project plan", description: "Capture the current decisions."),
+        TestFactories.makeTask(title: "Review next step"),
     ]
     let repository = InMemoryTaskRepository(tasks: tasks)
 
