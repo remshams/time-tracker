@@ -5,8 +5,8 @@ import Testing
 @MainActor
 @Test func taskListViewModelLoadsTasksFromRepository() async {
     let tasks = [
-        makeTask(title: "Write project plan", description: "Capture the current decisions."),
-        makeTask(title: "Review next step"),
+        TestFactories.makeTask(title: "Write project plan", description: "Capture the current decisions."),
+        TestFactories.makeTask(title: "Review next step"),
     ]
     let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success(tasks)))
 
@@ -39,13 +39,4 @@ private struct TaskRepositoryStub: TaskRepository, Sendable {
 
 private enum TaskRepositoryStubError: Error, Sendable {
     case fetchFailed
-}
-
-private func makeTask(title: String, description: String = "") -> Task {
-    do {
-        return try Task(title: title, description: description)
-    } catch {
-        Issue.record("Failed to create test task: \(error)")
-        fatalError("Failed to create test task: \(error)")
-    }
 }
