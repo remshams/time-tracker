@@ -13,29 +13,36 @@ struct TimeTracker: App {
 
         taskRepository = InMemoryTaskRepository(tasks: [planTask, reviewTask])
 
+        let planEntries: [WorkLogEntry] = [
+            makeWorkLogEntry(
+                taskID: planTask.id,
+                description: "Initial architecture and constraints",
+                startedAt: makeDate(hour: 9, minute: 0),
+                endedAt: makeDate(hour: 10, minute: 30)),
+            makeWorkLogEntry(
+                taskID: planTask.id,
+                description: "Draft implementation steps",
+                startedAt: makeDate(hour: 11, minute: 0),
+                endedAt: makeDate(hour: 11, minute: 45)),
+            makeWorkLogEntry(
+                taskID: planTask.id,
+                startedAt: makeDate(hour: 14, minute: 0)),
+        ]
+        let reviewEntries: [WorkLogEntry] = [
+            makeWorkLogEntry(
+                taskID: reviewTask.id,
+                description: "Review assumptions",
+                startedAt: makeDate(hour: 10, minute: 0),
+                endedAt: makeDate(hour: 10, minute: 20)),
+            makeWorkLogEntry(
+                taskID: reviewTask.id,
+                description: "Align on next steps",
+                startedAt: makeDate(hour: 14, minute: 30),
+                endedAt: makeDate(hour: 14, minute: 50)),
+        ]
         workLogRepository = InMemoryWorkLogRepository(entriesByTaskID: [
-            planTask.id: [
-                makeWorkLogEntry(
-                    taskID: planTask.id,
-                    description: "Initial architecture and constraints",
-                    startedAt: makeDate(hour: 9, minute: 0),
-                    endedAt: makeDate(hour: 10, minute: 30)),
-                makeWorkLogEntry(
-                    taskID: planTask.id,
-                    description: "Draft implementation steps",
-                    startedAt: makeDate(hour: 11, minute: 0),
-                    endedAt: makeDate(hour: 11, minute: 45)),
-                makeWorkLogEntry(
-                    taskID: planTask.id,
-                    startedAt: makeDate(hour: 14, minute: 0)),
-            ],
-            reviewTask.id: [
-                makeWorkLogEntry(
-                    taskID: reviewTask.id,
-                    description: "Review assumptions",
-                    startedAt: makeDate(hour: 10, minute: 0),
-                    endedAt: makeDate(hour: 10, minute: 20))
-            ],
+            planTask.id: planEntries,
+            reviewTask.id: reviewEntries,
         ])
     }
 

@@ -5,6 +5,10 @@ struct ContentView: View {
     @StateObject private var workLogListViewModel: WorkLogListViewModel
     @State private var selectedTaskID: Task.ID?
 
+    private var selectedTask: Task? {
+        taskListViewModel.tasks.first { $0.id == selectedTaskID }
+    }
+
     init(taskListViewModel: TaskListViewModel, workLogListViewModel: WorkLogListViewModel) {
         _taskListViewModel = StateObject(wrappedValue: taskListViewModel)
         _workLogListViewModel = StateObject(wrappedValue: workLogListViewModel)
@@ -16,6 +20,7 @@ struct ContentView: View {
         } detail: {
             if let taskID = selectedTaskID {
                 WorkLogListView(viewModel: workLogListViewModel, taskID: taskID)
+                    .navigationTitle(selectedTask?.title ?? "")
             } else {
                 VStack(spacing: AppSpacing.compact) {
                     Image(systemName: "checkmark.circle")
@@ -34,6 +39,7 @@ struct ContentView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 }
+                .navigationTitle("")
             }
         }
     }
