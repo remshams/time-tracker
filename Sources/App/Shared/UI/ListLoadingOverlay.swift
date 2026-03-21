@@ -1,11 +1,11 @@
 import SwiftUI
 
 extension View {
-    func listLoadingOverlay(
+    func listLoadingOverlay<Empty: View>(
         isLoading: Bool,
         errorTitle: String,
         errorMessage: String?,
-        emptyOverlay: AnyView? = nil
+        @ViewBuilder emptyOverlay: () -> Empty
     ) -> some View {
         overlay {
             if isLoading {
@@ -15,9 +15,22 @@ extension View {
                     systemImage: "exclamationmark.triangle",
                     title: errorTitle,
                     description: errorMessage)
-            } else if let emptyOverlay {
-                emptyOverlay
+            } else {
+                emptyOverlay()
             }
         }
+    }
+
+    func listLoadingOverlay(
+        isLoading: Bool,
+        errorTitle: String,
+        errorMessage: String?
+    ) -> some View {
+        listLoadingOverlay(
+            isLoading: isLoading,
+            errorTitle: errorTitle,
+            errorMessage: errorMessage,
+            emptyOverlay: { EmptyView() }
+        )
     }
 }
