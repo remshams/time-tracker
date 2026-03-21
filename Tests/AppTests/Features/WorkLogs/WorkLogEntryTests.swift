@@ -4,13 +4,13 @@ import Testing
 @testable import App
 
 @Test func workLogEntryStoresProvidedFields() {
-    let task = makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: "Write project plan")
     let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
     let addedAt = Date(timeIntervalSince1970: 1_700_000_060)
     let endedAt = Date(timeIntervalSince1970: 1_700_000_360)
     let updatedAt = Date(timeIntervalSince1970: 1_700_000_420)
 
-    let entry = makeWorkLogEntry(
+    let entry = TestFactories.makeWorkLogEntry(
         taskID: task.id,
         description: "Initial architecture and constraints",
         startedAt: startedAt,
@@ -27,52 +27,52 @@ import Testing
 }
 
 @Test func workLogEntryKeepsExplicitIdentifier() {
-    let task = makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: "Write project plan")
     let identifier = UUID()
 
-    let entry = makeWorkLogEntry(id: identifier, taskID: task.id)
+    let entry = TestFactories.makeWorkLogEntry(id: identifier, taskID: task.id)
 
     #expect(entry.id == identifier)
 }
 
 @Test func workLogEntryAllowsMissingDescription() {
-    let task = makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: "Write project plan")
 
-    let entry = makeWorkLogEntry(taskID: task.id)
+    let entry = TestFactories.makeWorkLogEntry(taskID: task.id)
 
     #expect(entry.description == nil)
 }
 
 @Test func workLogEntryAllowsMissingEndedAt() {
-    let task = makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: "Write project plan")
 
-    let entry = makeWorkLogEntry(taskID: task.id, endedAt: nil)
+    let entry = TestFactories.makeWorkLogEntry(taskID: task.id, endedAt: nil)
 
     #expect(entry.endedAt == nil)
     #expect(entry.duration == nil)
 }
 
 @Test func workLogEntryComputesDurationFromStartAndEnd() {
-    let task = makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: "Write project plan")
     let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
     let endedAt = Date(timeIntervalSince1970: 1_700_000_900)
 
-    let entry = makeWorkLogEntry(taskID: task.id, startedAt: startedAt, endedAt: endedAt)
+    let entry = TestFactories.makeWorkLogEntry(taskID: task.id, startedAt: startedAt, endedAt: endedAt)
 
     #expect(entry.duration == .seconds(900))
 }
 
 @Test func workLogEntryAllowsEndedAtEqualToStartedAt() {
-    let task = makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: "Write project plan")
     let startedAt = Date(timeIntervalSince1970: 1_700_000_900)
 
-    let entry = makeWorkLogEntry(taskID: task.id, startedAt: startedAt, endedAt: startedAt)
+    let entry = TestFactories.makeWorkLogEntry(taskID: task.id, startedAt: startedAt, endedAt: startedAt)
 
     #expect(entry.duration == .seconds(0))
 }
 
 @Test func workLogEntryRejectsEndedAtEarlierThanStartedAt() {
-    let task = makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: "Write project plan")
     let startedAt = Date(timeIntervalSince1970: 1_700_000_900)
     let endedAt = Date(timeIntervalSince1970: 1_700_000_100)
 
@@ -82,7 +82,7 @@ import Testing
 }
 
 @Test func workLogEntryRejectsUpdatedAtEarlierThanAddedAt() {
-    let task = makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: "Write project plan")
     let startedAt = Date(timeIntervalSince1970: 1_700_000_100)
     let addedAt = Date(timeIntervalSince1970: 1_700_000_300)
     let updatedAt = Date(timeIntervalSince1970: 1_700_000_200)
@@ -93,25 +93,29 @@ import Testing
 }
 
 @Test func workLogEntryAllowsUpdatedAtEqualToAddedAt() {
-    let task = makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: "Write project plan")
     let startedAt = Date(timeIntervalSince1970: 1_700_000_100)
     let addedAt = Date(timeIntervalSince1970: 1_700_000_300)
 
-    let entry = makeWorkLogEntry(taskID: task.id, startedAt: startedAt, addedAt: addedAt, updatedAt: addedAt)
+    let entry = TestFactories.makeWorkLogEntry(
+        taskID: task.id,
+        startedAt: startedAt,
+        addedAt: addedAt,
+        updatedAt: addedAt)
 
     #expect(entry.addedAt == addedAt)
     #expect(entry.updatedAt == addedAt)
 }
 
 @Test func workLogEntryUsesValueEquality() {
-    let task = makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: "Write project plan")
     let id = UUID()
     let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
     let addedAt = Date(timeIntervalSince1970: 1_700_000_060)
     let endedAt = Date(timeIntervalSince1970: 1_700_000_360)
     let updatedAt = Date(timeIntervalSince1970: 1_700_000_420)
 
-    let firstEntry = makeWorkLogEntry(
+    let firstEntry = TestFactories.makeWorkLogEntry(
         id: id,
         taskID: task.id,
         description: "Initial architecture and constraints",
@@ -119,7 +123,7 @@ import Testing
         addedAt: addedAt,
         endedAt: endedAt,
         updatedAt: updatedAt)
-    let secondEntry = makeWorkLogEntry(
+    let secondEntry = TestFactories.makeWorkLogEntry(
         id: id,
         taskID: task.id,
         description: "Initial architecture and constraints",
@@ -129,37 +133,4 @@ import Testing
         updatedAt: updatedAt)
 
     #expect(firstEntry == secondEntry)
-}
-
-private func makeTask(id: Task.ID = .init(), title: String, description: String? = nil) -> Task {
-    do {
-        return try Task(id: id, title: title, description: description)
-    } catch {
-        Issue.record("Failed to create test task: \(error)")
-        fatalError("Failed to create test task: \(error)")
-    }
-}
-
-private func makeWorkLogEntry(
-    id: UUID = .init(),
-    taskID: Task.ID,
-    description: String? = nil,
-    startedAt: Date = Date(timeIntervalSince1970: 1_700_000_000),
-    addedAt: Date = Date(timeIntervalSince1970: 1_700_000_060),
-    endedAt: Date? = Date(timeIntervalSince1970: 1_700_000_360),
-    updatedAt: Date = Date(timeIntervalSince1970: 1_700_000_420)
-) -> WorkLogEntry {
-    do {
-        return try WorkLogEntry(
-            id: id,
-            taskID: taskID,
-            description: description,
-            startedAt: startedAt,
-            addedAt: addedAt,
-            endedAt: endedAt,
-            updatedAt: updatedAt)
-    } catch {
-        Issue.record("Failed to create test work log entry: \(error)")
-        fatalError("Failed to create test work log entry: \(error)")
-    }
 }
