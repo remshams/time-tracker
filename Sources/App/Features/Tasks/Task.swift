@@ -10,7 +10,7 @@ struct Task: Identifiable, Equatable, Sendable {
     let description: String?
 
     init(id: UUID = UUID(), title: String, description: String? = nil) throws {
-        guard title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ValidationError.emptyTitle
         }
 
