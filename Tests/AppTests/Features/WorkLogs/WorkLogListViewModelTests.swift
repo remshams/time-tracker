@@ -44,21 +44,33 @@ import Testing
 @Test func workLogListViewModelClearsEntriesWhenSubsequentLoadFails() async {
     let task = TestFactories.makeTask(title: "Write project plan")
     let entries = [TestFactories.makeWorkLogEntry(taskID: task.id)]
+    let stub = MutableWorkLogRepositoryStub(result: .success(entries))
+    let viewModel = WorkLogListViewModel(repository: stub)
 
-    let successViewModel = WorkLogListViewModel(
-        repository: WorkLogRepositoryStub(result: .success(entries)))
-    await successViewModel.loadEntries(for: task.id)
-    #expect(successViewModel.entries == entries)
+    await viewModel.loadEntries(for: task.id)
+    #expect(viewModel.entries == entries)
 
-    let failViewModel = WorkLogListViewModel(
-        repository: WorkLogRepositoryStub(result: .failure(WorkLogRepositoryStubError.fetchFailed)))
-    await failViewModel.loadEntries(for: task.id)
+    stub.result = .failure(WorkLogRepositoryStubError.fetchFailed)
+    await viewModel.loadEntries(for: task.id)
 
-    #expect(failViewModel.entries.isEmpty)
+    #expect(viewModel.entries.isEmpty)
+    #expect(viewModel.errorMessage == "Failed to load work logs.")
 }
 
 private struct WorkLogRepositoryStub: WorkLogRepository, Sendable {
     let result: Result<[WorkLogEntry], Error>
+
+    func fetchEntries(for taskID: Task.ID) async throws -> [WorkLogEntry] {
+        try result.get()
+    }
+}
+
+private final class MutableWorkLogRepositoryStub: WorkLogRepository, @unchecked Sendable {
+    var result: Result<[WorkLogEntry], Error>
+
+    init(result: Result<[WorkLogEntry], Error>) {
+        self.result = result
+    }
 
     func fetchEntries(for taskID: Task.ID) async throws -> [WorkLogEntry] {
         try result.get()
