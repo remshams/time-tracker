@@ -74,11 +74,11 @@ Initial expectations:
 
 ## Checkpoints
 
-- [ ] Create `WorkLogs` feature folder structure.
-- [ ] Write `WorkLogEntry` domain model tests.
-- [ ] Implement the minimal `WorkLogEntry` struct.
-- [ ] Write repository behavior tests.
-- [ ] Implement `InMemoryWorkLogRepository`.
+- [x] Create `WorkLogs` feature folder structure.
+- [x] Write `WorkLogEntry` domain model tests.
+- [x] Implement the minimal `WorkLogEntry` struct.
+- [x] Write repository behavior tests.
+- [x] Implement `InMemoryWorkLogRepository`.
 
 ## Testing Strategy
 
