@@ -5,21 +5,25 @@ struct WorkLogListView: View {
     let taskID: Task.ID
 
     var body: some View {
-        Table(viewModel.entries) {
-            TableColumn(String(localized: "work-log-list.column.time", defaultValue: "Time")) { entry in
-                Text(entry.formattedTimeRange)
-                    .font(.body.monospacedDigit())
-            }
-            TableColumn(String(localized: "work-log-list.column.duration", defaultValue: "Duration")) { entry in
-                Text(entry.formattedDuration)
-                    .font(.body.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            TableColumn(String(localized: "work-log-list.column.description", defaultValue: "Description")) { entry in
-                Text(entry.description ?? "")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+        ZStack {
+            Table(viewModel.entries) {
+                TableColumn(String(localized: "work-log-list.column.time", defaultValue: "Time")) { entry in
+                    Text(entry.formattedTimeRange)
+                        .font(.body.monospacedDigit())
+                }
+                TableColumn(String(localized: "work-log-list.column.duration", defaultValue: "Duration")) { entry in
+                    Text(entry.formattedDuration)
+                        .font(.body.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                TableColumn(
+                    String(localized: "work-log-list.column.description", defaultValue: "Description")
+                ) { entry in
+                    Text(entry.description ?? "")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
         }
         .listLoadingOverlay(
