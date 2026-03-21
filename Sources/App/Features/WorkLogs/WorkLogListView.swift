@@ -18,8 +18,9 @@ struct WorkLogListView: View {
                     Text(
                         String(
                             localized: "work-log-list.error.title",
-                            defaultValue: "Unable to Load Work Logs"))
-                        .font(.headline)
+                            defaultValue: "Unable to Load Work Logs")
+                    )
+                    .font(.headline)
                     Text(errorMessage)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -31,14 +32,16 @@ struct WorkLogListView: View {
                     Text(
                         String(
                             localized: "work-log-list.empty.title",
-                            defaultValue: "No Work Logs"))
-                        .font(.headline)
+                            defaultValue: "No Work Logs")
+                    )
+                    .font(.headline)
                     Text(
                         String(
                             localized: "work-log-list.empty.description",
-                            defaultValue: "No work logs have been recorded for this task yet."))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                            defaultValue: "No work logs have been recorded for this task yet.")
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 }
             }
         }

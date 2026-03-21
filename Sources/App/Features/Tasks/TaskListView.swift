@@ -2,9 +2,10 @@ import SwiftUI
 
 struct TaskListView: View {
     @ObservedObject var viewModel: TaskListViewModel
+    @Binding var selection: Task.ID?
 
     var body: some View {
-        List(viewModel.tasks) { task in
+        List(viewModel.tasks, selection: $selection) { task in
             VStack(alignment: .leading, spacing: AppSpacing.tight) {
                 Text(task.title)
                     .font(.headline)
@@ -16,6 +17,7 @@ struct TaskListView: View {
                 }
             }
             .padding(.vertical, AppSpacing.tight)
+            .tag(task.id)
         }
         .overlay {
             if viewModel.isLoading {
@@ -24,8 +26,12 @@ struct TaskListView: View {
                 VStack(spacing: AppSpacing.compact) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.title2)
-                    Text("Unable to Load Tasks")
-                        .font(.headline)
+                    Text(
+                        String(
+                            localized: "task-list.error.title",
+                            defaultValue: "Unable to Load Tasks")
+                    )
+                    .font(.headline)
                     Text(errorMessage)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
