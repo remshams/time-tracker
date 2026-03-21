@@ -10,6 +10,7 @@ struct WorkLogListView: View {
                 TableColumn(String(localized: "work-log-list.column.time", defaultValue: "Time")) { entry in
                     Text(entry.formattedTimeRange)
                         .font(.body.monospacedDigit())
+                        .foregroundStyle(entry.endedAt == nil ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
                 }
                 TableColumn(String(localized: "work-log-list.column.duration", defaultValue: "Duration")) { entry in
                     Text(entry.formattedDuration)
