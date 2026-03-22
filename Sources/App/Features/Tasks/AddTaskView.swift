@@ -7,7 +7,7 @@ struct AddTaskView: View {
   let onSave: (String, String) -> Void
 
   private var isSaveEnabled: Bool {
-    !title.trimmingCharacters(in: .whitespaces).isEmpty
+    !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   var body: some View {
@@ -34,6 +34,6 @@ struct AddTaskView: View {
         .disabled(!isSaveEnabled)
       }
     }
-    .navigationTitle(String(localized: "add-task.title", defaultValue: "New Task"))
+    .navigationTitle(String(localized: "add-task.navigation-title", defaultValue: "New Task"))
   }
 }
