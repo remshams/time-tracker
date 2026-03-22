@@ -1,17 +1,12 @@
 import SwiftUI
 
 struct ContentView: View {
-  @StateObject private var taskListViewModel: TaskListViewModel
-  @StateObject private var workLogListViewModel: WorkLogListViewModel
+  var taskListViewModel: TaskListViewModel
+  var workLogListViewModel: WorkLogListViewModel
   @State private var selectedTaskID: Task.ID?
 
   private var selectedTask: Task? {
     selectedTaskID.flatMap { taskListViewModel.task(for: $0) }
-  }
-
-  init(taskListViewModel: TaskListViewModel, workLogListViewModel: WorkLogListViewModel) {
-    _taskListViewModel = StateObject(wrappedValue: taskListViewModel)
-    _workLogListViewModel = StateObject(wrappedValue: workLogListViewModel)
   }
 
   var body: some View {
