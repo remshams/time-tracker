@@ -4,6 +4,7 @@ import Foundation
 
 enum TestFactories {
     static let anyTaskID: Task.ID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    static let anyTaskTitle = "Any task"
 
     static func makeTask(id: Task.ID = .init(), title: String, description: String? = nil) -> Task {
         // swiftlint:disable:next force_try

@@ -50,7 +50,10 @@ struct WorkLogListView: View {
         }
     }
 
-    private func timeRangeForegroundStyle(for entry: WorkLogEntry) -> some ShapeStyle {
-        entry.endedAt == nil ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary)
+    private func timeRangeForegroundStyle(for entry: WorkLogEntry) -> any ShapeStyle {
+        if entry.endedAt == nil {
+            return TintShapeStyle()
+        }
+        return Color.primary
     }
 }
