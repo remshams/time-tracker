@@ -7,6 +7,7 @@
 
 ## Commits
 - Never create one giant commit for all changes. Break work into small, focused commits where each commit contains a single logical unit of change (e.g., one refactor, one feature, one fix).
+- Never leave empty commits in the JJ log history. Use `jj abandon <id>` to remove them.
 
 ## Code Size
 - If the same string is repeated more than once, extract it into a variable or property.
