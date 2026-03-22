@@ -7,7 +7,7 @@ import Testing
     let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
     let endedAt = Date(timeIntervalSince1970: 1_700_000_900)
     let entry = TestFactories.makeWorkLogEntry(
-        taskID: TestFactories.makeTask(title: "Task").id,
+        taskID: TestFactories.anyTaskID,
         startedAt: startedAt,
         endedAt: endedAt)
 
@@ -20,7 +20,7 @@ import Testing
 @Test func formattedTimeRangeShowsRunningWhenEndedAtIsNil() {
     let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
     let entry = TestFactories.makeWorkLogEntry(
-        taskID: TestFactories.makeTask(title: "Task").id,
+        taskID: TestFactories.anyTaskID,
         startedAt: startedAt,
         endedAt: nil)
 
@@ -33,7 +33,7 @@ import Testing
     let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
     let endedAt = Date(timeIntervalSince1970: 1_700_005_400)  // 1h 30m
     let entry = TestFactories.makeWorkLogEntry(
-        taskID: TestFactories.makeTask(title: "Task").id,
+        taskID: TestFactories.anyTaskID,
         startedAt: startedAt,
         endedAt: endedAt)
 
@@ -44,7 +44,7 @@ import Testing
     let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
     let endedAt = Date(timeIntervalSince1970: 1_700_002_700)  // 45m
     let entry = TestFactories.makeWorkLogEntry(
-        taskID: TestFactories.makeTask(title: "Task").id,
+        taskID: TestFactories.anyTaskID,
         startedAt: startedAt,
         endedAt: endedAt)
 
@@ -55,7 +55,7 @@ import Testing
     let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
     let endedAt = Date(timeIntervalSince1970: 1_700_000_045)  // 45s
     let entry = TestFactories.makeWorkLogEntry(
-        taskID: TestFactories.makeTask(title: "Task").id,
+        taskID: TestFactories.anyTaskID,
         startedAt: startedAt,
         endedAt: endedAt)
 
@@ -64,7 +64,7 @@ import Testing
 
 @Test func formattedDurationShowsDashWhenEndedAtIsNil() {
     let entry = TestFactories.makeWorkLogEntry(
-        taskID: TestFactories.makeTask(title: "Task").id,
+        taskID: TestFactories.anyTaskID,
         endedAt: nil)
 
     #expect(entry.formattedDuration == "–")
@@ -74,7 +74,7 @@ import Testing
     let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
     let endedAt = Date(timeIntervalSince1970: 1_700_007_200)  // exactly 2h
     let entry = TestFactories.makeWorkLogEntry(
-        taskID: TestFactories.makeTask(title: "Task").id,
+        taskID: TestFactories.anyTaskID,
         startedAt: startedAt,
         endedAt: endedAt)
 
