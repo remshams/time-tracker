@@ -148,7 +148,7 @@ Allow a new task to be created and persisted through the repository layer, follo
 1. Write failing tests for `addTask` in `InMemoryTaskRepositoryTests`.
 2. Extend `TaskRepository` protocol with `addTask(_ task: Task) async throws`.
 3. Convert `InMemoryTaskRepository` from `struct` to `actor` and implement `addTask`.
-4. Update `TaskRepositoryStub` in tests: add a configurable `addTaskResult`.
+4. Add a minimal `addTask` stub to `TaskRepositoryStub` to satisfy protocol conformance (configurable result added in ViewModel slice).
 5. Commit persistence layer changes as one focused commit.
 
 ## Checkpoints
@@ -156,7 +156,7 @@ Allow a new task to be created and persisted through the repository layer, follo
 - [x] Write `addTask` tests for `InMemoryTaskRepository`.
 - [x] Extend `TaskRepository` protocol with `addTask`.
 - [x] Convert `InMemoryTaskRepository` to `actor` and implement `addTask`.
-- [x] Update `TaskRepositoryStub` with configurable `addTask` result.
+- [x] Add minimal `addTask` stub to `TaskRepositoryStub` to satisfy protocol (configurable result deferred to ViewModel slice).
 - [ ] Write `addTask` tests for `TaskListViewModel`.
 - [ ] Implement `addTask` on `TaskListViewModel`.
 - [ ] Add task-creation UI (sheet with title + description fields).
