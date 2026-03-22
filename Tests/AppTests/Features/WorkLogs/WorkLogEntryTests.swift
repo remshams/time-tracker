@@ -27,78 +27,78 @@ import Testing
 }
 
 @Test func workLogEntryKeepsExplicitIdentifier() {
-    let task = TestFactories.makeTask(title: "Write project plan")
     let identifier = UUID()
 
-    let entry = TestFactories.makeWorkLogEntry(id: identifier, taskID: task.id)
+    let entry = TestFactories.makeWorkLogEntry(id: identifier, taskID: TestFactories.anyTaskID)
 
     #expect(entry.id == identifier)
 }
 
 @Test func workLogEntryAllowsMissingDescription() {
-    let task = TestFactories.makeTask(title: "Write project plan")
-
-    let entry = TestFactories.makeWorkLogEntry(taskID: task.id)
+    let entry = TestFactories.makeWorkLogEntry(taskID: TestFactories.anyTaskID)
 
     #expect(entry.description == nil)
 }
 
 @Test func workLogEntryAllowsMissingEndedAt() {
-    let task = TestFactories.makeTask(title: "Write project plan")
-
-    let entry = TestFactories.makeWorkLogEntry(taskID: task.id, endedAt: nil)
+    let entry = TestFactories.makeWorkLogEntry(taskID: TestFactories.anyTaskID, endedAt: nil)
 
     #expect(entry.endedAt == nil)
     #expect(entry.duration == nil)
 }
 
 @Test func workLogEntryComputesDurationFromStartAndEnd() {
-    let task = TestFactories.makeTask(title: "Write project plan")
     let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
     let endedAt = Date(timeIntervalSince1970: 1_700_000_900)
 
-    let entry = TestFactories.makeWorkLogEntry(taskID: task.id, startedAt: startedAt, endedAt: endedAt)
+    let entry = TestFactories.makeWorkLogEntry(
+        taskID: TestFactories.anyTaskID,
+        startedAt: startedAt,
+        endedAt: endedAt)
 
     #expect(entry.duration == .seconds(900))
 }
 
 @Test func workLogEntryAllowsEndedAtEqualToStartedAt() {
-    let task = TestFactories.makeTask(title: "Write project plan")
     let startedAt = Date(timeIntervalSince1970: 1_700_000_900)
 
-    let entry = TestFactories.makeWorkLogEntry(taskID: task.id, startedAt: startedAt, endedAt: startedAt)
+    let entry = TestFactories.makeWorkLogEntry(
+        taskID: TestFactories.anyTaskID,
+        startedAt: startedAt,
+        endedAt: startedAt)
 
     #expect(entry.duration == .seconds(0))
 }
 
 @Test func workLogEntryRejectsEndedAtEarlierThanStartedAt() {
-    let task = TestFactories.makeTask(title: "Write project plan")
     let startedAt = Date(timeIntervalSince1970: 1_700_000_900)
     let endedAt = Date(timeIntervalSince1970: 1_700_000_100)
 
     #expect(throws: WorkLogEntry.ValidationError.endedBeforeStarted) {
-        try WorkLogEntry(taskID: task.id, startedAt: startedAt, endedAt: endedAt)
+        try WorkLogEntry(taskID: TestFactories.anyTaskID, startedAt: startedAt, endedAt: endedAt)
     }
 }
 
 @Test func workLogEntryRejectsUpdatedAtEarlierThanAddedAt() {
-    let task = TestFactories.makeTask(title: "Write project plan")
     let startedAt = Date(timeIntervalSince1970: 1_700_000_100)
     let addedAt = Date(timeIntervalSince1970: 1_700_000_300)
     let updatedAt = Date(timeIntervalSince1970: 1_700_000_200)
 
     #expect(throws: WorkLogEntry.ValidationError.updatedBeforeAdded) {
-        try WorkLogEntry(taskID: task.id, startedAt: startedAt, addedAt: addedAt, updatedAt: updatedAt)
+        try WorkLogEntry(
+            taskID: TestFactories.anyTaskID,
+            startedAt: startedAt,
+            addedAt: addedAt,
+            updatedAt: updatedAt)
     }
 }
 
 @Test func workLogEntryAllowsUpdatedAtEqualToAddedAt() {
-    let task = TestFactories.makeTask(title: "Write project plan")
     let startedAt = Date(timeIntervalSince1970: 1_700_000_100)
     let addedAt = Date(timeIntervalSince1970: 1_700_000_300)
 
     let entry = TestFactories.makeWorkLogEntry(
-        taskID: task.id,
+        taskID: TestFactories.anyTaskID,
         startedAt: startedAt,
         addedAt: addedAt,
         updatedAt: addedAt)
@@ -108,7 +108,6 @@ import Testing
 }
 
 @Test func workLogEntryUsesValueEquality() {
-    let task = TestFactories.makeTask(title: "Write project plan")
     let id = UUID()
     let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
     let addedAt = Date(timeIntervalSince1970: 1_700_000_060)
@@ -117,7 +116,7 @@ import Testing
 
     let firstEntry = TestFactories.makeWorkLogEntry(
         id: id,
-        taskID: task.id,
+        taskID: TestFactories.anyTaskID,
         description: "Initial architecture and constraints",
         startedAt: startedAt,
         addedAt: addedAt,
@@ -125,7 +124,7 @@ import Testing
         updatedAt: updatedAt)
     let secondEntry = TestFactories.makeWorkLogEntry(
         id: id,
-        taskID: task.id,
+        taskID: TestFactories.anyTaskID,
         description: "Initial architecture and constraints",
         startedAt: startedAt,
         addedAt: addedAt,

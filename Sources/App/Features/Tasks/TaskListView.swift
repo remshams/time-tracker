@@ -2,9 +2,10 @@ import SwiftUI
 
 struct TaskListView: View {
     @ObservedObject var viewModel: TaskListViewModel
+    @Binding var selection: Task.ID?
 
     var body: some View {
-        List(viewModel.tasks) { task in
+        List(viewModel.tasks, selection: $selection) { task in
             VStack(alignment: .leading, spacing: AppSpacing.tight) {
                 Text(task.title)
                     .font(.headline)
@@ -16,20 +17,34 @@ struct TaskListView: View {
                 }
             }
             .padding(.vertical, AppSpacing.tight)
+            .tag(task.id)
         }
-        .overlay {
-            if viewModel.isLoading {
-                ProgressView()
-            } else if let errorMessage = viewModel.errorMessage {
-                VStack(spacing: AppSpacing.compact) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.title2)
-                    Text("Unable to Load Tasks")
-                        .font(.headline)
-                    Text(errorMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+        .listHeader {
+            Text(String(localized: "task-list.header.title", defaultValue: "Tasks"))
+                .font(.headline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, AppSpacing.compact)
+                .padding(.vertical, AppSpacing.tight)
+        }
+        .loadingOverlay(
+            isLoading: viewModel.isLoading,
+            errorTitle: String(
+                localized: "task-list.error.title",
+                defaultValue: "Unable to Load Tasks"),
+            errorMessage: viewModel.errorMessage
+        ) {
+            if viewModel.isLoaded && viewModel.tasks.isEmpty {
+                PlaceholderView(
+                    systemImage: "checkmark.circle",
+                    title: String(
+                        localized: "task-list.empty.title",
+                        defaultValue: "No Tasks"),
+                    description: String(
+                        localized: "task-list.empty.description",
+                        defaultValue: "No tasks have been created yet."
+                    )
+                )
             }
         }
         .task {
