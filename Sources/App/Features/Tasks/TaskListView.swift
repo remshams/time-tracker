@@ -3,6 +3,7 @@ import SwiftUI
 struct TaskListView: View {
   var viewModel: TaskListViewModel
   @Binding var selection: Task.ID?
+  @State private var isAddingTask = false
 
   var body: some View {
     List(viewModel.tasks, selection: $selection) { task in
@@ -45,6 +46,28 @@ struct TaskListView: View {
             defaultValue: "No tasks have been created yet."
           )
         )
+      }
+    }
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        Button {
+          isAddingTask = true
+        } label: {
+          Label(
+            String(localized: "task-list.add.button", defaultValue: "Add Task"),
+            systemImage: "plus")
+        }
+        .keyboardShortcut("n", modifiers: .command)
+      }
+    }
+    .sheet(isPresented: $isAddingTask) {
+      NavigationStack {
+        AddTaskView { title, description in
+          _Concurrency.Task {
+            await viewModel.createTask(title: title, description: description)
+          }
+          isAddingTask = false
+        }
       }
     }
     .task {
