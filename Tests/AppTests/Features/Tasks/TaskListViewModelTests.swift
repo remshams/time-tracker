@@ -57,8 +57,12 @@ import Testing
     #expect(viewModel.isLoaded == false)
 }
 
-private struct TaskRepositoryStub: TaskRepository, Sendable {
-    let result: Result<[Task], Error>
+private final class TaskRepositoryStub: TaskRepository, @unchecked Sendable {
+    var result: Result<[Task], Error>
+
+    init(result: Result<[Task], Error>) {
+        self.result = result
+    }
 
     func fetchTasks() async throws -> [Task] {
         try result.get()
