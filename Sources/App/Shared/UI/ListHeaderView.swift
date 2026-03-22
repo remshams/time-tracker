@@ -1,6 +1,6 @@
 import SwiftUI
 
-extension View {
+extension List {
     func listHeader(@ViewBuilder content: () -> some View) -> some View {
         safeAreaInset(edge: .top, spacing: 0) {
             content()
