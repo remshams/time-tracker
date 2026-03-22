@@ -5,26 +5,24 @@ struct WorkLogListView: View {
     let taskID: Task.ID
 
     var body: some View {
-        ZStack {
-            Table(viewModel.entries) {
-                TableColumn(String(localized: "work-log-list.column.time", defaultValue: "Time")) { entry in
-                    Text(entry.formattedTimeRange)
-                        .font(.body.monospacedDigit())
-                        .foregroundStyle(entry.endedAt == nil ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
-                }
-                TableColumn(String(localized: "work-log-list.column.duration", defaultValue: "Duration")) { entry in
-                    Text(entry.formattedDuration)
-                        .font(.body.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-                TableColumn(
-                    String(localized: "work-log-list.column.description", defaultValue: "Description")
-                ) { entry in
-                    Text(entry.description ?? "")
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
+        Table(viewModel.entries) {
+            TableColumn(String(localized: "work-log-list.column.time", defaultValue: "Time")) { entry in
+                Text(entry.formattedTimeRange)
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(entry.endedAt == nil ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+            }
+            TableColumn(String(localized: "work-log-list.column.duration", defaultValue: "Duration")) { entry in
+                Text(entry.formattedDuration)
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            TableColumn(
+                String(localized: "work-log-list.column.description", defaultValue: "Description")
+            ) { entry in
+                Text(entry.description ?? "")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
         }
         .loadingOverlay(
