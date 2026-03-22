@@ -182,3 +182,70 @@ Test `TaskListViewModel.addTask`:
 - `SwiftData`-backed `addTask` implementation
 - duplicate-title validation (not required yet)
 - task editing and deletion
+
+---
+
+# Add Task — UI Slice
+
+## Goal
+
+Surface task creation through a sheet triggered by a toolbar `+` button in the sidebar, following the agreed macOS/SwiftUI patterns.
+
+## Agreed Decisions
+
+- A `+` toolbar button is placed in `TaskListView` using `.toolbar { ToolbarItem(placement: .primaryAction) }`. This is the standard macOS pattern (used by Reminders, Notes, Xcode).
+- The button is also reachable via `⌘N` keyboard shortcut.
+- Tapping the button sets `@State private var isAddingTask = false` to `true`, which drives a `.sheet(isPresented:)`.
+- The sheet is implemented as a new `AddTaskView` — a thin form view with no repository knowledge.
+- `AddTaskView` holds only local `@State` fields: `title: String` and `description: String`. These are ephemeral — discarded on cancel, passed upward on save.
+- `AddTaskView` exposes an `onSave: (String, String) -> Void` closure callback. This is the standard Swift/SwiftUI pattern for directed child-to-parent communication (equivalent to `@Output EventEmitter` in Angular).
+- The Save button is disabled when `title` is empty or whitespace-only (client-side guard; repository also validates).
+- `TaskListView` is the thin bridge: it owns `isAddingTask`, presents the sheet, and in `onSave` calls `Task { await viewModel.createTask(title:description:) }` then sets `isAddingTask = false`.
+- `TaskListViewModel.createTask(title:description:)` is the orchestrator: it calls the repository and then reloads the task list. This keeps the view model as the single owner of repository access — consistent with the existing `loadTasks` pattern.
+- No dedicated `AddTaskViewModel` is introduced at this stage (YAGNI). The form state is simple enough to live in `@State`.
+
+## Project Structure Changes
+
+```text
+Sources/App/
+  Features/
+    Tasks/
+      AddTaskView.swift             ← new: sheet form view
+      TaskListView.swift            ← updated: toolbar button + sheet + ⌘N
+      TaskListViewModel.swift       ← updated: createTask(title:description:) method
+
+Tests/AppTests/
+  Features/
+    Tasks/
+      TaskListViewModelTests.swift  ← updated: createTask tests
+```
+
+## Planned Steps
+
+1. Write failing tests for `TaskListViewModel.createTask(title:description:)`.
+2. Implement `createTask(title:description:)` on `TaskListViewModel`.
+3. Add `AddTaskView` with `@State` form fields and `onSave` closure.
+4. Update `TaskListView` with toolbar `+` button, `⌘N` shortcut, and sheet presentation.
+
+## Checkpoints
+
+- [ ] Write `createTask` tests for `TaskListViewModel`.
+- [ ] Implement `createTask` on `TaskListViewModel`.
+- [ ] Add `AddTaskView`.
+- [ ] Update `TaskListView` with toolbar button, shortcut, and sheet.
+
+## Testing Strategy
+
+### Presentation
+
+Test `TaskListViewModel.createTask`:
+- calls `repository.addTask` with a `Task` constructed from the given title and description
+- reloads tasks after a successful add (published `tasks` reflects the new task)
+- sets an error state when the repository throws
+- does not update `tasks` when the repository throws
+
+## Deferred For Later
+
+- Inline error display inside the sheet if `createTask` fails (currently surfaces in the list error state)
+- Dedicated `AddTaskViewModel` if form complexity grows (e.g. async validation, multi-step forms)
+- Migration to `@Observable` macro (requires macOS 14+; current codebase targets macOS 13+)
