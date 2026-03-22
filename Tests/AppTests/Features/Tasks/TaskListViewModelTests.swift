@@ -5,8 +5,8 @@ import Testing
 @MainActor
 @Test func taskListViewModelLoadsTasksFromRepository() async {
     let tasks = [
-        TestFactories.makeTask(title: "Write project plan", description: "Capture the current decisions."),
-        TestFactories.makeTask(title: "Review next step"),
+        TestFactories.makeTask(title: TestFactories.anyTaskTitle, description: "Capture the current decisions."),
+        TestFactories.makeTask(title: TestFactories.anyTaskTitle),
     ]
     let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success(tasks)))
 
@@ -55,6 +55,27 @@ import Testing
     await viewModel.loadTasks()
 
     #expect(viewModel.isLoaded == false)
+}
+
+@MainActor
+@Test func taskListViewModelReturnsTaskForKnownID() async {
+    let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+    let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success([task])))
+
+    await viewModel.loadTasks()
+
+    #expect(viewModel.task(for: task.id) == task)
+}
+
+@MainActor
+@Test func taskListViewModelReturnsNilForUnknownID() async {
+    let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+    let unknownID = TestFactories.makeTask(title: TestFactories.anyTaskTitle).id
+    let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success([task])))
+
+    await viewModel.loadTasks()
+
+    #expect(viewModel.task(for: unknownID) == nil)
 }
 
 private final class TaskRepositoryStub: TaskRepository, @unchecked Sendable {

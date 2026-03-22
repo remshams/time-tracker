@@ -4,7 +4,7 @@ import Testing
 
 @MainActor
 @Test func workLogListViewModelLoadsEntriesFromRepository() async {
-    let task = TestFactories.makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
     let entries = [
         TestFactories.makeWorkLogEntry(taskID: task.id, description: "Initial architecture"),
         TestFactories.makeWorkLogEntry(taskID: task.id, description: "Draft implementation"),
@@ -29,7 +29,7 @@ import Testing
 
 @MainActor
 @Test func workLogListViewModelStoresAnErrorMessageWhenLoadingFails() async {
-    let task = TestFactories.makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
     let viewModel = WorkLogListViewModel(
         repository: WorkLogRepositoryStub(result: .failure(WorkLogRepositoryStubError.fetchFailed)))
 
@@ -42,7 +42,7 @@ import Testing
 
 @MainActor
 @Test func workLogListViewModelClearsEntriesWhenSubsequentLoadFails() async {
-    let task = TestFactories.makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
     let entries = [TestFactories.makeWorkLogEntry(taskID: task.id)]
     let stub = WorkLogRepositoryStub(result: .success(entries))
     let viewModel = WorkLogListViewModel(repository: stub)
@@ -67,7 +67,7 @@ import Testing
 
 @MainActor
 @Test func workLogListViewModelIsLoadedAfterSuccessfulLoad() async {
-    let task = TestFactories.makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
     let viewModel = WorkLogListViewModel(
         repository: WorkLogRepositoryStub(result: .success([])))
 
@@ -78,7 +78,7 @@ import Testing
 
 @MainActor
 @Test func workLogListViewModelIsNotLoadedAfterFailedLoad() async {
-    let task = TestFactories.makeTask(title: "Write project plan")
+    let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
     let viewModel = WorkLogListViewModel(
         repository: WorkLogRepositoryStub(result: .failure(WorkLogRepositoryStubError.fetchFailed)))
 

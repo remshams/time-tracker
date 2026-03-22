@@ -4,8 +4,8 @@ import Testing
 @testable import App
 
 @Test func inMemoryWorkLogRepositoryReturnsSeededEntriesForTaskID() async throws {
-    let taskA = TestFactories.makeTask(title: "Write project plan")
-    let taskB = TestFactories.makeTask(title: "Review next step")
+    let taskA = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+    let taskB = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
     let entryA1 = TestFactories.makeWorkLogEntry(taskID: taskA.id, description: "Initial architecture and constraints")
     let entryA2 = TestFactories.makeWorkLogEntry(taskID: taskA.id, description: "Draft implementation plan")
     let entryB1 = TestFactories.makeWorkLogEntry(taskID: taskB.id, description: "Review assumptions")
@@ -28,8 +28,8 @@ import Testing
 }
 
 @Test func inMemoryWorkLogRepositoryReturnsAnEmptyListForUnknownTaskID() async throws {
-    let taskA = TestFactories.makeTask(title: "Write project plan")
-    let taskB = TestFactories.makeTask(title: "Review next step")
+    let taskA = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+    let taskB = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
     let entryA1 = TestFactories.makeWorkLogEntry(taskID: taskA.id, description: "Initial architecture and constraints")
     let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskA.id: [entryA1]])
 
