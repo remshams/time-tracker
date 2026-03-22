@@ -16,13 +16,13 @@ final class TaskListViewModel: ObservableObject {
     }
 
     func loadTasks() async {
+        tasks = []
         loadingState = .loading
 
         do {
             tasks = try await repository.fetchTasks()
             loadingState = .loaded
         } catch {
-            tasks = []
             loadingState = .failed(
                 String(
                     localized: "task-list.error.message",

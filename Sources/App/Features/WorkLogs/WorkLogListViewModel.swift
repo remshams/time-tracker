@@ -23,7 +23,6 @@ final class WorkLogListViewModel: ObservableObject {
             entries = try await repository.fetchEntries(for: taskID)
             loadingState = .loaded
         } catch {
-            entries = []
             loadingState = .failed(
                 String(
                     localized: "work-log-list.error.message",
