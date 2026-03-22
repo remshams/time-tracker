@@ -33,7 +33,20 @@ struct TaskListView: View {
                 localized: "task-list.error.title",
                 defaultValue: "Unable to Load Tasks"),
             errorMessage: viewModel.errorMessage
-        )
+        ) {
+            if viewModel.isLoaded && viewModel.tasks.isEmpty {
+                PlaceholderView(
+                    systemImage: "checkmark.circle",
+                    title: String(
+                        localized: "task-list.empty.title",
+                        defaultValue: "No Tasks"),
+                    description: String(
+                        localized: "task-list.empty.description",
+                        defaultValue: "No tasks have been created yet."
+                    )
+                )
+            }
+        }
         .task {
             await viewModel.loadTasks()
         }
