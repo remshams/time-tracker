@@ -1,9 +1,11 @@
 import Foundation
+import Observation
 
+@Observable
 @MainActor
-final class TaskListViewModel: ObservableObject {
-  @Published private(set) var tasks: [Task] = []
-  @Published private(set) var loadingState: LoadingState = .idle
+final class TaskListViewModel {
+  private(set) var tasks: [Task] = []
+  private(set) var loadingState: LoadingState = .idle
 
   var isLoading: Bool { loadingState.isLoading }
   var isLoaded: Bool { loadingState.isLoaded }

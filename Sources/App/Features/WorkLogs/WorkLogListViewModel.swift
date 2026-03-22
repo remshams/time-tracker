@@ -1,9 +1,11 @@
 import Foundation
+import Observation
 
+@Observable
 @MainActor
-final class WorkLogListViewModel: ObservableObject {
-  @Published private(set) var entries: [WorkLogEntry] = []
-  @Published private(set) var loadingState: LoadingState = .idle
+final class WorkLogListViewModel {
+  private(set) var entries: [WorkLogEntry] = []
+  private(set) var loadingState: LoadingState = .idle
 
   var isLoading: Bool { loadingState.isLoading }
   var isLoaded: Bool { loadingState.isLoaded }
