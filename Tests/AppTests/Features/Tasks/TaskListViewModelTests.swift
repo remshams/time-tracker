@@ -29,6 +29,34 @@ import Testing
     #expect(viewModel.isLoading == false)
 }
 
+@MainActor
+@Test func taskListViewModelIsNotLoadedBeforeFirstLoad() {
+    let viewModel = TaskListViewModel(
+        repository: TaskRepositoryStub(result: .success([])))
+
+    #expect(viewModel.isLoaded == false)
+}
+
+@MainActor
+@Test func taskListViewModelIsLoadedAfterSuccessfulLoad() async {
+    let viewModel = TaskListViewModel(
+        repository: TaskRepositoryStub(result: .success([])))
+
+    await viewModel.loadTasks()
+
+    #expect(viewModel.isLoaded == true)
+}
+
+@MainActor
+@Test func taskListViewModelIsNotLoadedAfterFailedLoad() async {
+    let viewModel = TaskListViewModel(
+        repository: TaskRepositoryStub(result: .failure(TaskRepositoryStubError.fetchFailed)))
+
+    await viewModel.loadTasks()
+
+    #expect(viewModel.isLoaded == false)
+}
+
 private struct TaskRepositoryStub: TaskRepository, Sendable {
     let result: Result<[Task], Error>
 
