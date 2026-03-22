@@ -1,5 +1,5 @@
-struct InMemoryTaskRepository: TaskRepository, Sendable {
-  private let tasks: [Task]
+actor InMemoryTaskRepository: TaskRepository {
+  private var tasks: [Task]
 
   init(tasks: [Task] = []) {
     self.tasks = tasks
@@ -7,5 +7,9 @@ struct InMemoryTaskRepository: TaskRepository, Sendable {
 
   func fetchTasks() async throws -> [Task] {
     tasks
+  }
+
+  func addTask(_ task: Task) async throws {
+    tasks.append(task)
   }
 }
