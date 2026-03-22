@@ -132,15 +132,14 @@ private final class TaskRepositoryStub: TaskRepository, @unchecked Sendable {
   var resultAfterAdd: Result<[Task], Error>?
   var addTaskResult: Result<Void, Error> = .success(())
 
-  private var fetchCallCount = 0
+  private var addTaskCalled = false
 
   init(result: Result<[Task], Error>) {
     self.result = result
   }
 
   func fetchTasks() async throws -> [Task] {
-    defer { fetchCallCount += 1 }
-    if fetchCallCount > 0, let resultAfterAdd {
+    if addTaskCalled, let resultAfterAdd {
       return try resultAfterAdd.get()
     }
     return try result.get()
@@ -148,6 +147,7 @@ private final class TaskRepositoryStub: TaskRepository, @unchecked Sendable {
 
   func addTask(_ task: Task) async throws {
     try addTaskResult.get()
+    addTaskCalled = true
   }
 }
 

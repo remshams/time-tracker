@@ -34,4 +34,17 @@ final class TaskListViewModel {
   func task(for id: Task.ID) -> Task? {
     tasks.first { $0.id == id }
   }
+
+  func createTask(title: String, description: String) async {
+    do {
+      let task = try Task(title: title, description: description.isEmpty ? nil : description)
+      try await repository.addTask(task)
+      await loadTasks()
+    } catch {
+      loadingState = .failed(
+        String(
+          localized: "task-list.create-error.message",
+          defaultValue: "Failed to create task."))
+    }
+  }
 }
