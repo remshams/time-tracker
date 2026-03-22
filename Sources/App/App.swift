@@ -85,5 +85,8 @@ private func makeDate(hour: Int, minute: Int) -> Date {
     components.hour = hour
     components.minute = minute
     components.second = 0
-    return Calendar.current.date(from: components)!
+    guard let date = Calendar.current.date(from: components) else {
+        fatalError("Failed to construct seed date for \(hour):\(minute)")
+    }
+    return date
 }
