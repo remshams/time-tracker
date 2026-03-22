@@ -78,20 +78,80 @@ import Testing
   #expect(viewModel.task(for: unknownID) == nil)
 }
 
+@MainActor
+@Test func taskListViewModelCreateTaskAddsTaskToRepository() async {
+  let newTask = TestFactories.makeTask(title: "New task")
+  let stub = TaskRepositoryStub(result: .success([]))
+  stub.resultAfterAdd = .success([newTask])
+  let viewModel = TaskListViewModel(repository: stub)
+
+  await viewModel.createTask(title: newTask.title, description: newTask.description ?? "")
+
+  #expect(viewModel.tasks == [newTask])
+}
+
+@MainActor
+@Test func taskListViewModelCreateTaskReloadsTasksOnSuccess() async {
+  let newTask = TestFactories.makeTask(title: "New task")
+  let stub = TaskRepositoryStub(result: .success([]))
+  stub.resultAfterAdd = .success([newTask])
+  let viewModel = TaskListViewModel(repository: stub)
+
+  await viewModel.createTask(title: newTask.title, description: "")
+
+  #expect(viewModel.tasks == [newTask])
+  #expect(viewModel.isLoaded == true)
+}
+
+@MainActor
+@Test func taskListViewModelCreateTaskSetsErrorMessageWhenRepositoryThrows() async {
+  let stub = TaskRepositoryStub(result: .success([]))
+  stub.addTaskResult = .failure(TaskRepositoryStubError.addFailed)
+  let viewModel = TaskListViewModel(repository: stub)
+
+  await viewModel.createTask(title: "New task", description: "")
+
+  #expect(viewModel.errorMessage == "Failed to create task.")
+}
+
+@MainActor
+@Test func taskListViewModelCreateTaskDoesNotUpdateTasksWhenRepositoryThrows() async {
+  let existingTask = TestFactories.makeTask(title: "Existing task")
+  let stub = TaskRepositoryStub(result: .success([existingTask]))
+  stub.addTaskResult = .failure(TaskRepositoryStubError.addFailed)
+  let viewModel = TaskListViewModel(repository: stub)
+  await viewModel.loadTasks()
+
+  await viewModel.createTask(title: "New task", description: "")
+
+  #expect(viewModel.tasks == [existingTask])
+}
+
 private final class TaskRepositoryStub: TaskRepository, @unchecked Sendable {
   let result: Result<[Task], Error>
+  var resultAfterAdd: Result<[Task], Error>?
+  var addTaskResult: Result<Void, Error> = .success(())
+
+  private var fetchCallCount = 0
 
   init(result: Result<[Task], Error>) {
     self.result = result
   }
 
   func fetchTasks() async throws -> [Task] {
-    try result.get()
+    defer { fetchCallCount += 1 }
+    if fetchCallCount > 0, let resultAfterAdd {
+      return try resultAfterAdd.get()
+    }
+    return try result.get()
   }
 
-  func addTask(_ task: Task) async throws {}
+  func addTask(_ task: Task) async throws {
+    try addTaskResult.get()
+  }
 }
 
 private enum TaskRepositoryStubError: Error, Sendable {
   case fetchFailed
+  case addFailed
 }
