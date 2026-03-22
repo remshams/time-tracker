@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TaskListView: View {
-  @ObservedObject var viewModel: TaskListViewModel
+  var viewModel: TaskListViewModel
   @Binding var selection: Task.ID?
 
   var body: some View {

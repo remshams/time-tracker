@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct WorkLogListView: View {
-  @ObservedObject var viewModel: WorkLogListViewModel
+  var viewModel: WorkLogListViewModel
   let taskID: Task.ID
 
   var body: some View {
