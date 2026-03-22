@@ -63,6 +63,8 @@ struct TaskListView: View {
     .sheet(isPresented: $isAddingTask) {
       NavigationStack {
         AddTaskView { title, description in
+          // TODO: Replace _Concurrency.Task with Task once the domain model
+          // Task is renamed (e.g. to WorkTask) to stop shadowing Swift Concurrency's Task type.
           _Concurrency.Task {
             await viewModel.createTask(title: title, description: description)
           }

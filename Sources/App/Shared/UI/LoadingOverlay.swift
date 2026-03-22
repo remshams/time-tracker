@@ -1,11 +1,11 @@
 import SwiftUI
 
 extension View {
-  func loadingOverlay<Empty: View>(
+  func loadingOverlay(
     isLoading: Bool,
     errorTitle: String,
     errorMessage: String?,
-    @ViewBuilder emptyOverlay: () -> Empty
+    @ViewBuilder emptyOverlay: () -> some View
   ) -> some View {
     overlay {
       if isLoading {

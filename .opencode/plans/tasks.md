@@ -157,9 +157,9 @@ Allow a new task to be created and persisted through the repository layer, follo
 - [x] Extend `TaskRepository` protocol with `addTask`.
 - [x] Convert `InMemoryTaskRepository` to `actor` and implement `addTask`.
 - [x] Add minimal `addTask` stub to `TaskRepositoryStub` to satisfy protocol (configurable result deferred to ViewModel slice).
-- [ ] Write `addTask` tests for `TaskListViewModel`.
-- [ ] Implement `addTask` on `TaskListViewModel`.
-- [ ] Add task-creation UI (sheet with title + description fields).
+- [x] Write `addTask` tests for `TaskListViewModel`.
+- [x] Implement `addTask` on `TaskListViewModel`.
+- [x] Add task-creation UI (sheet with title + description fields).
 
 ## Testing Strategy
 
@@ -229,10 +229,10 @@ Tests/AppTests/
 
 ## Checkpoints
 
-- [ ] Write `createTask` tests for `TaskListViewModel`.
-- [ ] Implement `createTask` on `TaskListViewModel`.
-- [ ] Add `AddTaskView`.
-- [ ] Update `TaskListView` with toolbar button, shortcut, and sheet.
+- [x] Write `createTask` tests for `TaskListViewModel`.
+- [x] Implement `createTask` on `TaskListViewModel`.
+- [x] Add `AddTaskView`.
+- [x] Update `TaskListView` with toolbar button, shortcut, and sheet.
 
 ## Testing Strategy
 
@@ -248,4 +248,3 @@ Test `TaskListViewModel.createTask`:
 
 - Inline error display inside the sheet if `createTask` fails (currently surfaces in the list error state)
 - Dedicated `AddTaskViewModel` if form complexity grows (e.g. async validation, multi-step forms)
-- Migration to `@Observable` macro (requires macOS 14+; current codebase targets macOS 13+)
