@@ -27,7 +27,7 @@ struct WorkLogListView: View {
                 }
             }
         }
-        .listLoadingOverlay(
+        .loadingOverlay(
             isLoading: viewModel.isLoading,
             errorTitle: String(
                 localized: "work-log-list.error.title",

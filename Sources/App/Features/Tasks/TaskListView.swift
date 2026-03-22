@@ -27,7 +27,7 @@ struct TaskListView: View {
                 .padding(.horizontal, AppSpacing.compact)
                 .padding(.vertical, AppSpacing.tight)
         }
-        .listLoadingOverlay(
+        .loadingOverlay(
             isLoading: viewModel.isLoading,
             errorTitle: String(
                 localized: "task-list.error.title",
