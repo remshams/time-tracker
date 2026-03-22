@@ -44,7 +44,7 @@ import Testing
 @Test func workLogListViewModelClearsEntriesWhenSubsequentLoadFails() async {
     let task = TestFactories.makeTask(title: "Write project plan")
     let entries = [TestFactories.makeWorkLogEntry(taskID: task.id)]
-    let stub = MutableWorkLogRepositoryStub(result: .success(entries))
+    let stub = WorkLogRepositoryStub(result: .success(entries))
     let viewModel = WorkLogListViewModel(repository: stub)
 
     await viewModel.loadEntries(for: task.id)
@@ -87,15 +87,7 @@ import Testing
     #expect(viewModel.isLoaded == false)
 }
 
-private struct WorkLogRepositoryStub: WorkLogRepository, Sendable {
-    let result: Result<[WorkLogEntry], Error>
-
-    func fetchEntries(for taskID: Task.ID) async throws -> [WorkLogEntry] {
-        try result.get()
-    }
-}
-
-private final class MutableWorkLogRepositoryStub: WorkLogRepository, @unchecked Sendable {
+private final class WorkLogRepositoryStub: WorkLogRepository, @unchecked Sendable {
     var result: Result<[WorkLogEntry], Error>
 
     init(result: Result<[WorkLogEntry], Error>) {
