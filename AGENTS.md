@@ -11,3 +11,6 @@
 
 ## Code Size
 - If the same string is repeated more than once, extract it into a variable or property.
+
+## Pull Requests
+- When merging a PR on GitHub, always use "Rebase and merge" — never "Create a merge commit" or "Squash and merge". This keeps the history linear and avoids merge commits.
