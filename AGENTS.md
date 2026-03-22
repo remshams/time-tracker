@@ -14,3 +14,9 @@
 
 ## Pull Requests
 - When merging a PR on GitHub, always use "Rebase and merge" — never "Create a merge commit" or "Squash and merge". This keeps the history linear and avoids merge commits.
+
+## Code Review & Refactoring
+- When a code review or refactor-specialist agent returns recommendations that are out of scope for the current task (e.g. a behaviour change in a pure refactor PR, or a separate concern unrelated to the feature being built), do NOT silently drop them. Always include them explicitly in the final summary presented to the user under a clearly labelled section such as "Out-of-scope findings — deferred" so they are visible and can be tracked as follow-up work.
+
+## Sub-agent Recommendations
+- When any sub-agent returns a recommendation that is not implemented (for any reason — out of scope, deferred, consciously rejected), do NOT silently drop it. Always include it explicitly in the final summary presented to the user under a clearly labelled section such as "Deferred recommendations" so they are visible and can be tracked as follow-up work.
