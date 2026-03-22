@@ -88,6 +88,8 @@ private final class TaskRepositoryStub: TaskRepository, @unchecked Sendable {
   func fetchTasks() async throws -> [Task] {
     try result.get()
   }
+
+  func addTask(_ task: Task) async throws {}
 }
 
 private enum TaskRepositoryStubError: Error, Sendable {

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import App
@@ -53,4 +54,21 @@ import Testing
   let fetchedTasks = try await repository.fetchTasks()
 
   #expect(fetchedTasks == [seededTask, newTask])
+}
+
+@Test func inMemoryTaskRepositoryHandlesConcurrentAdds() async throws {
+  let repository = InMemoryTaskRepository()
+  let firstTask = TestFactories.makeTask(title: "First task")
+  let secondTask = TestFactories.makeTask(title: "Second task")
+
+  try await withThrowingTaskGroup(of: Void.self) { group in
+    group.addTask { try await repository.addTask(firstTask) }
+    group.addTask { try await repository.addTask(secondTask) }
+    try await group.waitForAll()
+  }
+
+  let fetched = try await repository.fetchTasks()
+  #expect(fetched.count == 2)
+  #expect(fetched.contains(firstTask))
+  #expect(fetched.contains(secondTask))
 }
