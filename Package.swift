@@ -42,7 +42,7 @@ let testingFrameworkPath = testingFrameworkPathCandidates.first {
 let package = Package(
     name: "App",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v15)
     ],
     products: [
         .executable(name: "App", targets: ["App"])

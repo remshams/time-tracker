@@ -57,6 +57,27 @@ import Testing
     #expect(viewModel.isLoaded == false)
 }
 
+@MainActor
+@Test func taskListViewModelReturnsTaskForKnownID() async {
+    let task = TestFactories.makeTask(title: "Write project plan")
+    let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success([task])))
+
+    await viewModel.loadTasks()
+
+    #expect(viewModel.task(for: task.id) == task)
+}
+
+@MainActor
+@Test func taskListViewModelReturnsNilForUnknownID() async {
+    let task = TestFactories.makeTask(title: "Write project plan")
+    let unknownID = TestFactories.makeTask(title: "Unknown task").id
+    let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success([task])))
+
+    await viewModel.loadTasks()
+
+    #expect(viewModel.task(for: unknownID) == nil)
+}
+
 private final class TaskRepositoryStub: TaskRepository, @unchecked Sendable {
     var result: Result<[Task], Error>
 
