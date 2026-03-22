@@ -79,7 +79,7 @@ import Testing
 }
 
 private final class TaskRepositoryStub: TaskRepository, @unchecked Sendable {
-  var result: Result<[Task], Error>
+  let result: Result<[Task], Error>
 
   init(result: Result<[Task], Error>) {
     self.result = result
