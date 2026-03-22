@@ -69,3 +69,14 @@ import Testing
 
     #expect(entry.formattedDuration == "–")
 }
+
+@Test func formattedDurationShowsZeroMinutesWhenDurationIsExactHours() {
+    let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+    let endedAt = Date(timeIntervalSince1970: 1_700_007_200)  // exactly 2h
+    let entry = TestFactories.makeWorkLogEntry(
+        taskID: TestFactories.makeTask(title: "Task").id,
+        startedAt: startedAt,
+        endedAt: endedAt)
+
+    #expect(entry.formattedDuration == "2h 0m")
+}
