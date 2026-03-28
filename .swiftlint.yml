@@ -1,9 +1,12 @@
 included:
-  - Sources
-  - Tests
+  - TimeTracker
+  - TimeTrackerTests
+  - TimeTrackerUITests
 
 excluded:
   - .build
+  - .swiftpm
+  - TimeTracker.xcodeproj
 
 reporter: github-actions-logging
 
