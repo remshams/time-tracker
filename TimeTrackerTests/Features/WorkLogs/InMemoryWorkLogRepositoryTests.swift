@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import App
+@testable import TimeTracker
 
 @Test func inMemoryWorkLogRepositoryReturnsSeededEntriesForTaskID() async throws {
   let taskA = TestFactories.makeTask(title: TestFactories.anyTaskTitle)

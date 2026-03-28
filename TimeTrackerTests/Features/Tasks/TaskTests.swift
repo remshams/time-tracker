@@ -1,6 +1,6 @@
 import Testing
 
-@testable import App
+@testable import TimeTracker
 
 @Test func taskStoresTitleAndDescription() {
   let task = TestFactories.makeTask(

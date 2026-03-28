@@ -1,6 +1,6 @@
 import Testing
 
-@testable import App
+@testable import TimeTracker
 
 @Suite struct InMemoryTaskRepositoryTests {
   @Suite struct FetchTasks {

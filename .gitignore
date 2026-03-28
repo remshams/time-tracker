@@ -4,10 +4,11 @@
 *.o
 *.d
 
-# Xcode
-*.xcodeproj
-*.xcworkspace
+# Xcode user data
+DerivedData/
 *.dSYM/
+*.xcuserstate
+xcuserdata/
 
 # Editors
 .vscode/
