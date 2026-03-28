@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import App
+@testable import TimeTracker
 
 @Test func formattedTimeRangeShowsStartAndEndTime() {
   let startedAt = Date(timeIntervalSince1970: 1_700_000_000)

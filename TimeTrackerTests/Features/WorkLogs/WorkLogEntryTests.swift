@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import App
+@testable import TimeTracker
 
 @Test func workLogEntryStoresProvidedFields() {
   let task = TestFactories.makeTask(title: "Write project plan")

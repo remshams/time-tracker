@@ -1,6 +1,6 @@
 import Testing
 
-@testable import App
+@testable import TimeTracker
 
 @Suite @MainActor struct TaskListViewModelTests {
   @Suite @MainActor struct LoadTasks {

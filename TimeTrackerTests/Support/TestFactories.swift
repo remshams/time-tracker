@@ -1,6 +1,6 @@
 import Foundation
 
-@testable import App
+@testable import TimeTracker
 
 enum TestFactories {
   static let anyTaskID: Task.ID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
