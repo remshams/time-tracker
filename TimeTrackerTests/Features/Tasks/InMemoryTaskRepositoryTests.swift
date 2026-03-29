@@ -9,7 +9,7 @@ import Testing
         TestFactories.makeTask(title: "Write project plan", description: "Capture the current decisions."),
         TestFactories.makeTask(title: "Review next step"),
       ]
-      let repository = InMemoryTaskRepository(tasks: tasks)
+      let repository = await InMemoryTaskRepository(tasks: tasks)
 
       let fetchedTasks = try await repository.fetchTasks()
 
@@ -17,7 +17,7 @@ import Testing
     }
 
     @Test func returnsAnEmptyListByDefault() async throws {
-      let repository = InMemoryTaskRepository()
+      let repository = await InMemoryTaskRepository()
 
       let fetchedTasks = try await repository.fetchTasks()
 
@@ -25,7 +25,7 @@ import Testing
     }
   }
 
-  @Suite struct AddTask {
+  @MainActor @Suite struct AddTask {
     private static let newTaskTitle = "New task"
     private static let seededTaskTitle = "Seeded task"
     private static let firstTaskTitle = "First task"
