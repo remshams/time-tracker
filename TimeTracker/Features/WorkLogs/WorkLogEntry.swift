@@ -6,15 +6,15 @@ struct WorkLogEntry: Identifiable, Equatable, Sendable {
     case updatedBeforeAdded
   }
 
-  nonisolated let id: UUID
-  nonisolated let taskID: Task.ID
-  nonisolated let description: String?
-  nonisolated let startedAt: Date
-  nonisolated let addedAt: Date
-  nonisolated let endedAt: Date?
-  nonisolated let updatedAt: Date
+  let id: UUID
+  let taskID: Task.ID
+  let description: String?
+  let startedAt: Date
+  let addedAt: Date
+  let endedAt: Date?
+  let updatedAt: Date
 
-  nonisolated var duration: Duration? {
+  var duration: Duration? {
     guard let endedAt else {
       return nil
     }
