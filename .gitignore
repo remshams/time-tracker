@@ -13,6 +13,7 @@ xcuserdata/
 # Editors
 .vscode/
 .idea/
+.zed/
 *.swp
 
 # macOS
