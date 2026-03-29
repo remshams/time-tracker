@@ -16,9 +16,6 @@ xcuserdata/
 .zed/
 *.swp
 
-# SourceKit-LSP
-.sourcekit-lsp/
-
 # macOS
 .DS_Store
 
