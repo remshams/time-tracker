@@ -2,14 +2,14 @@ import Testing
 
 @testable import TimeTracker
 
-@Suite struct InMemoryTaskRepositoryTests {
+@Suite struct InMemoryWorkTaskRepositoryTests {
   @Suite struct FetchTasks {
     @Test func returnsSeededTasks() async throws {
       let tasks = [
         TestFactories.makeTask(title: "Write project plan", description: "Capture the current decisions."),
         TestFactories.makeTask(title: "Review next step"),
       ]
-      let repository = await InMemoryTaskRepository(tasks: tasks)
+      let repository = await InMemoryWorkTaskRepository(tasks: tasks)
 
       let fetchedTasks = try await repository.fetchTasks()
 
@@ -17,7 +17,7 @@ import Testing
     }
 
     @Test func returnsAnEmptyListByDefault() async throws {
-      let repository = await InMemoryTaskRepository()
+      let repository = await InMemoryWorkTaskRepository()
 
       let fetchedTasks = try await repository.fetchTasks()
 
@@ -32,7 +32,7 @@ import Testing
     private static let secondTaskTitle = "Second task"
 
     @Test func addedTaskAppearsInFetchTasks() async throws {
-      let repository = await InMemoryTaskRepository()
+      let repository = await InMemoryWorkTaskRepository()
       let task = TestFactories.makeTask(title: Self.newTaskTitle)
 
       try await repository.addTask(task)
@@ -42,7 +42,7 @@ import Testing
     }
 
     @Test func multipleAddedTasksAllAppearInFetchTasks() async throws {
-      let repository = await InMemoryTaskRepository()
+      let repository = await InMemoryWorkTaskRepository()
       let firstTask = TestFactories.makeTask(title: Self.firstTaskTitle)
       let secondTask = TestFactories.makeTask(title: Self.secondTaskTitle)
 
@@ -55,7 +55,7 @@ import Testing
 
     @Test func seededTasksArePreservedAfterAdd() async throws {
       let seededTask = TestFactories.makeTask(title: Self.seededTaskTitle)
-      let seededRepository = await InMemoryTaskRepository(tasks: [seededTask])
+      let seededRepository = await InMemoryWorkTaskRepository(tasks: [seededTask])
       let newTask = TestFactories.makeTask(title: Self.newTaskTitle)
 
       try await seededRepository.addTask(newTask)
@@ -65,7 +65,7 @@ import Testing
     }
 
     @Test func handlesConcurrentAdds() async throws {
-      let repository = await InMemoryTaskRepository()
+      let repository = await InMemoryWorkTaskRepository()
       let firstTask = TestFactories.makeTask(title: Self.firstTaskTitle)
       let secondTask = TestFactories.makeTask(title: Self.secondTaskTitle)
 

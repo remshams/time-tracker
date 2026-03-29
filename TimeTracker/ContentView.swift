@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-  var taskListViewModel: TaskListViewModel
+  var taskListViewModel: WorkTaskListViewModel
   var workLogListViewModel: WorkLogListViewModel
   @State private var selectedTaskID: WorkTask.ID?
 
@@ -11,7 +11,7 @@ struct ContentView: View {
 
   var body: some View {
     NavigationSplitView {
-      TaskListView(viewModel: taskListViewModel, selection: $selectedTaskID)
+      WorkTaskListView(viewModel: taskListViewModel, selection: $selectedTaskID)
     } detail: {
       if let taskID = selectedTaskID {
         WorkLogListView(viewModel: workLogListViewModel, taskID: taskID)

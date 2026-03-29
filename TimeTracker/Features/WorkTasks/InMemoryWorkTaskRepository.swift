@@ -1,4 +1,4 @@
-actor InMemoryTaskRepository: TaskRepository {
+actor InMemoryWorkTaskRepository: WorkTaskRepository {
   private var tasks: [WorkTask]
 
   init(tasks: [WorkTask] = []) {

@@ -1,7 +1,7 @@
 import SwiftUI
 
-struct TaskListView: View {
-  var viewModel: TaskListViewModel
+struct WorkTaskListView: View {
+  var viewModel: WorkTaskListViewModel
   @Binding var selection: WorkTask.ID?
   @State private var isAddingTask = false
 
@@ -62,7 +62,7 @@ struct TaskListView: View {
     }
     .sheet(isPresented: $isAddingTask) {
       NavigationStack {
-        AddTaskView { title, description in
+        AddWorkTaskView { title, description in
           Task {
             await viewModel.createTask(title: title, description: description)
           }
