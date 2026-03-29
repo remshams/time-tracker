@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct TimeTracker: App {
-  private let taskRepository: any WorkTaskRepository
+  private let workTaskRepository: any WorkTaskRepository
   private let workLogRepository: any WorkLogRepository
 
   init() {
@@ -11,7 +11,7 @@ struct TimeTracker: App {
       description: "Capture the current decisions and next checkpoints.")
     let reviewTask = makeTask(title: "Review task list")
 
-    taskRepository = InMemoryWorkTaskRepository(tasks: [planTask, reviewTask])
+    workTaskRepository = InMemoryWorkTaskRepository(tasks: [planTask, reviewTask])
 
     let planEntries: [WorkLogEntry] = [
       makeWorkLogEntry(
@@ -49,7 +49,7 @@ struct TimeTracker: App {
   var body: some Scene {
     WindowGroup {
       ContentView(
-        taskListViewModel: WorkTaskListViewModel(repository: taskRepository),
+        workTaskListViewModel: WorkTaskListViewModel(repository: workTaskRepository),
         workLogListViewModel: WorkLogListViewModel(repository: workLogRepository))
     }
   }
