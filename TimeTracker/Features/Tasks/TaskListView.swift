@@ -2,7 +2,7 @@ import SwiftUI
 
 struct TaskListView: View {
   var viewModel: TaskListViewModel
-  @Binding var selection: Task.ID?
+  @Binding var selection: WorkTask.ID?
   @State private var isAddingTask = false
 
   var body: some View {
@@ -63,9 +63,7 @@ struct TaskListView: View {
     .sheet(isPresented: $isAddingTask) {
       NavigationStack {
         AddTaskView { title, description in
-          // TODO: Replace _Concurrency.Task with Task once the domain model
-          // Task is renamed (e.g. to WorkTask) to stop shadowing Swift Concurrency's Task type.
-          _Concurrency.Task {
+          Task {
             await viewModel.createTask(title: title, description: description)
           }
           isAddingTask = false

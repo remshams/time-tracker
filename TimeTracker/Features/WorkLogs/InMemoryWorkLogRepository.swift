@@ -1,11 +1,11 @@
 struct InMemoryWorkLogRepository: WorkLogRepository, Sendable {
-  private let entriesByTaskID: [Task.ID: [WorkLogEntry]]
+  private let entriesByTaskID: [WorkTask.ID: [WorkLogEntry]]
 
-  nonisolated init(entriesByTaskID: [Task.ID: [WorkLogEntry]] = [:]) {
+  init(entriesByTaskID: [WorkTask.ID: [WorkLogEntry]] = [:]) {
     self.entriesByTaskID = entriesByTaskID
   }
 
-  func fetchEntries(for taskID: Task.ID) async throws -> [WorkLogEntry] {
+  func fetchEntries(for taskID: WorkTask.ID) async throws -> [WorkLogEntry] {
     entriesByTaskID[taskID] ?? []
   }
 }

@@ -16,7 +16,7 @@ final class WorkLogListViewModel {
     self.repository = repository
   }
 
-  func loadEntries(for taskID: Task.ID) async {
+  func loadEntries(for taskID: WorkTask.ID) async {
     entries = []
     loadingState = .loading
 

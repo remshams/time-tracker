@@ -1,3 +1,3 @@
 protocol WorkLogRepository: Sendable {
-  func fetchEntries(for taskID: Task.ID) async throws -> [WorkLogEntry]
+  func fetchEntries(for taskID: WorkTask.ID) async throws -> [WorkLogEntry]
 }

@@ -152,24 +152,24 @@ import Testing
 // MARK: - Test doubles
 
 private final class TaskRepositoryStub: TaskRepository, @unchecked Sendable {
-  var result: Result<[Task], Error>
-  var resultAfterAdd: Result<[Task], Error>?
+  var result: Result<[WorkTask], Error>
+  var resultAfterAdd: Result<[WorkTask], Error>?
   var addTaskResult: Result<Void, Error> = .success(())
 
   private var addTaskCalled = false
 
-  init(result: Result<[Task], Error>) {
+  init(result: Result<[WorkTask], Error>) {
     self.result = result
   }
 
-  func fetchTasks() async throws -> [Task] {
+  func fetchTasks() async throws -> [WorkTask] {
     if addTaskCalled, let resultAfterAdd {
       return try resultAfterAdd.get()
     }
     return try result.get()
   }
 
-  func addTask(_ task: Task) async throws {
+  func addTask(_ task: WorkTask) async throws {
     try addTaskResult.get()
     addTaskCalled = true
   }

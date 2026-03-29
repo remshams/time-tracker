@@ -3,13 +3,10 @@ import Testing
 
 @testable import TimeTracker
 
-// Disambiguate from Swift.Task
-private typealias AppTask = Task
-
 @Suite struct InMemoryWorkLogRepositoryTests {
   @Test func returnsSeededEntriesForTaskID() async throws {
-    let taskA: AppTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-    let taskB: AppTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+    let taskA: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+    let taskB: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
     let entryA1 = TestFactories.makeWorkLogEntry(taskID: taskA.id, description: "Initial architecture and constraints")
     let entryA2 = TestFactories.makeWorkLogEntry(taskID: taskA.id, description: "Draft implementation plan")
     let entryB1 = TestFactories.makeWorkLogEntry(taskID: taskB.id, description: "Review assumptions")
@@ -32,8 +29,8 @@ private typealias AppTask = Task
   }
 
   @Test func returnsAnEmptyListForUnknownTaskID() async throws {
-    let taskA: AppTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-    let taskB: AppTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+    let taskA: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+    let taskB: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
     let entryA1 = TestFactories.makeWorkLogEntry(taskID: taskA.id, description: "Initial architecture and constraints")
     let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskA.id: [entryA1]])
 

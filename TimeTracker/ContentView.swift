@@ -3,9 +3,9 @@ import SwiftUI
 struct ContentView: View {
   var taskListViewModel: TaskListViewModel
   var workLogListViewModel: WorkLogListViewModel
-  @State private var selectedTaskID: Task.ID?
+  @State private var selectedTaskID: WorkTask.ID?
 
-  private var selectedTask: Task? {
+  private var selectedTask: WorkTask? {
     selectedTaskID.flatMap { taskListViewModel.task(for: $0) }
   }
 
