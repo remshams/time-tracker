@@ -1,7 +1,7 @@
 struct InMemoryWorkLogRepository: WorkLogRepository, Sendable {
   private let entriesByTaskID: [WorkTask.ID: [WorkLogEntry]]
 
-  init(entriesByTaskID: [WorkTask.ID: [WorkLogEntry]] = [:]) {
+  nonisolated init(entriesByTaskID: [WorkTask.ID: [WorkLogEntry]] = [:]) {
     self.entriesByTaskID = entriesByTaskID
   }
 

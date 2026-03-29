@@ -47,4 +47,14 @@ struct WorkLogEntry: Identifiable, Equatable, Sendable {
     self.endedAt = endedAt
     self.updatedAt = updatedAt
   }
+
+  nonisolated static func == (lhs: WorkLogEntry, rhs: WorkLogEntry) -> Bool {
+    lhs.id == rhs.id
+      && lhs.taskID == rhs.taskID
+      && lhs.description == rhs.description
+      && lhs.startedAt == rhs.startedAt
+      && lhs.addedAt == rhs.addedAt
+      && lhs.endedAt == rhs.endedAt
+      && lhs.updatedAt == rhs.updatedAt
+  }
 }
