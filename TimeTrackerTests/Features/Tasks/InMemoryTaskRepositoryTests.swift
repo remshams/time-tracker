@@ -25,15 +25,14 @@ import Testing
     }
   }
 
-  @MainActor @Suite struct AddTask {
+  @Suite struct AddTask {
     private static let newTaskTitle = "New task"
     private static let seededTaskTitle = "Seeded task"
     private static let firstTaskTitle = "First task"
     private static let secondTaskTitle = "Second task"
 
-    private let repository = InMemoryTaskRepository()
-
     @Test func addedTaskAppearsInFetchTasks() async throws {
+      let repository = await InMemoryTaskRepository()
       let task = TestFactories.makeTask(title: Self.newTaskTitle)
 
       try await repository.addTask(task)
@@ -43,6 +42,7 @@ import Testing
     }
 
     @Test func multipleAddedTasksAllAppearInFetchTasks() async throws {
+      let repository = await InMemoryTaskRepository()
       let firstTask = TestFactories.makeTask(title: Self.firstTaskTitle)
       let secondTask = TestFactories.makeTask(title: Self.secondTaskTitle)
 
@@ -55,7 +55,7 @@ import Testing
 
     @Test func seededTasksArePreservedAfterAdd() async throws {
       let seededTask = TestFactories.makeTask(title: Self.seededTaskTitle)
-      let seededRepository = InMemoryTaskRepository(tasks: [seededTask])
+      let seededRepository = await InMemoryTaskRepository(tasks: [seededTask])
       let newTask = TestFactories.makeTask(title: Self.newTaskTitle)
 
       try await seededRepository.addTask(newTask)
@@ -65,6 +65,7 @@ import Testing
     }
 
     @Test func handlesConcurrentAdds() async throws {
+      let repository = await InMemoryTaskRepository()
       let firstTask = TestFactories.makeTask(title: Self.firstTaskTitle)
       let secondTask = TestFactories.makeTask(title: Self.secondTaskTitle)
 

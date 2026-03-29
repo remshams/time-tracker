@@ -6,8 +6,8 @@ struct Task: Identifiable, Equatable, Sendable {
   }
 
   nonisolated let id: UUID
-  nonisolated let title: String
-  nonisolated let description: String?
+  let title: String
+  let description: String?
 
   nonisolated init(id: UUID = UUID(), title: String, description: String? = nil) throws {
     guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
