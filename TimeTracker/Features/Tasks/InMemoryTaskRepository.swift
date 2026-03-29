@@ -1,15 +1,15 @@
 actor InMemoryTaskRepository: TaskRepository {
-  private var tasks: [Task]
+  private var tasks: [WorkTask]
 
-  init(tasks: [Task] = []) {
+  init(tasks: [WorkTask] = []) {
     self.tasks = tasks
   }
 
-  func fetchTasks() async throws -> [Task] {
+  func fetchTasks() async throws -> [WorkTask] {
     tasks
   }
 
-  func addTask(_ task: Task) async throws {
+  func addTask(_ task: WorkTask) async throws {
     tasks.append(task)
   }
 }

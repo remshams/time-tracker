@@ -2,7 +2,7 @@ import SwiftUI
 
 struct WorkLogListView: View {
   var viewModel: WorkLogListViewModel
-  let taskID: Task.ID
+  let taskID: WorkTask.ID
 
   var body: some View {
     Table(viewModel.entries) {

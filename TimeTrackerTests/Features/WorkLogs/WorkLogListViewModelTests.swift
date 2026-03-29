@@ -93,7 +93,7 @@ private final class WorkLogRepositoryStub: WorkLogRepository, @unchecked Sendabl
     self.result = result
   }
 
-  func fetchEntries(for taskID: Task.ID) async throws -> [WorkLogEntry] {
+  func fetchEntries(for taskID: WorkTask.ID) async throws -> [WorkLogEntry] {
     try result.get()
   }
 }

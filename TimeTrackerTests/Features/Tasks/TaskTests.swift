@@ -40,13 +40,13 @@ import Testing
 }
 
 @Test func taskRejectsAnEmptyTitle() {
-  #expect(throws: Task.ValidationError.emptyTitle) {
-    try Task(title: "")
+  #expect(throws: WorkTask.ValidationError.emptyTitle) {
+    try WorkTask(title: "")
   }
 }
 
 @Test func taskRejectsAWhitespaceOnlyTitle() {
-  #expect(throws: Task.ValidationError.emptyTitle) {
-    try Task(title: "  \n  ")
+  #expect(throws: WorkTask.ValidationError.emptyTitle) {
+    try WorkTask(title: "  \n  ")
   }
 }

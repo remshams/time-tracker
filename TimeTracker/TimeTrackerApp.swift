@@ -55,16 +55,16 @@ struct TimeTracker: App {
   }
 }
 
-private func makeTask(title: String, description: String? = nil) -> Task {
+private func makeTask(title: String, description: String? = nil) -> WorkTask {
   do {
-    return try Task(title: title, description: description)
+    return try WorkTask(title: title, description: description)
   } catch {
     fatalError("Failed to create seeded task: \(error)")
   }
 }
 
 private func makeWorkLogEntry(
-  taskID: Task.ID,
+  taskID: WorkTask.ID,
   description: String? = nil,
   startedAt: Date,
   endedAt: Date? = nil
