@@ -6,15 +6,15 @@ struct WorkLogEntry: Identifiable, Equatable, Sendable {
     case updatedBeforeAdded
   }
 
-  let id: UUID
-  let taskID: Task.ID
-  let description: String?
-  let startedAt: Date
-  let addedAt: Date
-  let endedAt: Date?
-  let updatedAt: Date
+  nonisolated let id: UUID
+  nonisolated let taskID: Task.ID
+  nonisolated let description: String?
+  nonisolated let startedAt: Date
+  nonisolated let addedAt: Date
+  nonisolated let endedAt: Date?
+  nonisolated let updatedAt: Date
 
-  var duration: Duration? {
+  nonisolated var duration: Duration? {
     guard let endedAt else {
       return nil
     }
@@ -22,7 +22,7 @@ struct WorkLogEntry: Identifiable, Equatable, Sendable {
     return .seconds(endedAt.timeIntervalSince(startedAt))
   }
 
-  init(
+  nonisolated init(
     id: UUID = UUID(),
     taskID: Task.ID,
     description: String? = nil,
@@ -46,5 +46,15 @@ struct WorkLogEntry: Identifiable, Equatable, Sendable {
     self.addedAt = addedAt
     self.endedAt = endedAt
     self.updatedAt = updatedAt
+  }
+
+  nonisolated static func == (lhs: WorkLogEntry, rhs: WorkLogEntry) -> Bool {
+    lhs.id == rhs.id
+      && lhs.taskID == rhs.taskID
+      && lhs.description == rhs.description
+      && lhs.startedAt == rhs.startedAt
+      && lhs.addedAt == rhs.addedAt
+      && lhs.endedAt == rhs.endedAt
+      && lhs.updatedAt == rhs.updatedAt
   }
 }
