@@ -1,4 +1,4 @@
-protocol TaskRepository: Sendable {
+protocol WorkTaskRepository: Sendable {
   func fetchTasks() async throws -> [WorkTask]
   func addTask(_ task: WorkTask) async throws
 }

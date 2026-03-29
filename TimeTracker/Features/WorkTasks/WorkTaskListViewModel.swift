@@ -2,7 +2,7 @@ import Foundation
 
 @Observable
 @MainActor
-final class TaskListViewModel {
+final class WorkTaskListViewModel {
   private(set) var tasks: [WorkTask] = []
   private(set) var loadingState: LoadingState = .idle
 
@@ -10,9 +10,9 @@ final class TaskListViewModel {
   var isLoaded: Bool { loadingState.isLoaded }
   var errorMessage: String? { loadingState.errorMessage }
 
-  private let repository: any TaskRepository
+  private let repository: any WorkTaskRepository
 
-  init(repository: any TaskRepository) {
+  init(repository: any WorkTaskRepository) {
     self.repository = repository
   }
 

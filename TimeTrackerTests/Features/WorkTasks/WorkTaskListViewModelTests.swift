@@ -2,14 +2,14 @@ import Testing
 
 @testable import TimeTracker
 
-@Suite @MainActor struct TaskListViewModelTests {
+@Suite @MainActor struct WorkTaskListViewModelTests {
   @Suite @MainActor struct LoadTasks {
     @Test func loadsTasksFromRepository() async {
       let tasks = [
         TestFactories.makeTask(title: TestFactories.anyTaskTitle, description: "Capture the current decisions."),
         TestFactories.makeTask(title: TestFactories.anyTaskTitle),
       ]
-      let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success(tasks)))
+      let viewModel = WorkTaskListViewModel(repository: WorkTaskRepositoryStub(result: .success(tasks)))
 
       await viewModel.loadTasks()
 
@@ -19,8 +19,8 @@ import Testing
     }
 
     @Test func setsErrorMessageWhenLoadingFails() async {
-      let viewModel = TaskListViewModel(
-        repository: TaskRepositoryStub(result: .failure(TaskRepositoryStubError.fetchFailed)))
+      let viewModel = WorkTaskListViewModel(
+        repository: WorkTaskRepositoryStub(result: .failure(WorkTaskRepositoryStubError.fetchFailed)))
 
       await viewModel.loadTasks()
 
@@ -30,15 +30,15 @@ import Testing
     }
 
     @Test func isNotLoadedBeforeFirstLoad() {
-      let viewModel = TaskListViewModel(
-        repository: TaskRepositoryStub(result: .success([])))
+      let viewModel = WorkTaskListViewModel(
+        repository: WorkTaskRepositoryStub(result: .success([])))
 
       #expect(viewModel.isLoaded == false)
     }
 
     @Test func isLoadedAfterSuccessfulLoad() async {
-      let viewModel = TaskListViewModel(
-        repository: TaskRepositoryStub(result: .success([])))
+      let viewModel = WorkTaskListViewModel(
+        repository: WorkTaskRepositoryStub(result: .success([])))
 
       await viewModel.loadTasks()
 
@@ -46,8 +46,8 @@ import Testing
     }
 
     @Test func isNotLoadedAfterFailedLoad() async {
-      let viewModel = TaskListViewModel(
-        repository: TaskRepositoryStub(result: .failure(TaskRepositoryStubError.fetchFailed)))
+      let viewModel = WorkTaskListViewModel(
+        repository: WorkTaskRepositoryStub(result: .failure(WorkTaskRepositoryStubError.fetchFailed)))
 
       await viewModel.loadTasks()
 
@@ -58,7 +58,7 @@ import Testing
   @Suite @MainActor struct TaskLookup {
     @Test func returnsTaskForKnownID() async {
       let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-      let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success([task])))
+      let viewModel = WorkTaskListViewModel(repository: WorkTaskRepositoryStub(result: .success([task])))
 
       await viewModel.loadTasks()
 
@@ -68,7 +68,7 @@ import Testing
     @Test func returnsNilForUnknownID() async {
       let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
       let unknownID = TestFactories.makeTask(title: TestFactories.anyTaskTitle).id
-      let viewModel = TaskListViewModel(repository: TaskRepositoryStub(result: .success([task])))
+      let viewModel = WorkTaskListViewModel(repository: WorkTaskRepositoryStub(result: .success([task])))
 
       await viewModel.loadTasks()
 
@@ -79,9 +79,9 @@ import Testing
   @Suite @MainActor struct CreateTask {
     @Test func addsTaskToRepository() async {
       let newTask = TestFactories.makeTask(title: "New task")
-      let stub = TaskRepositoryStub(result: .success([]))
+      let stub = WorkTaskRepositoryStub(result: .success([]))
       stub.resultAfterAdd = .success([newTask])
-      let viewModel = TaskListViewModel(repository: stub)
+      let viewModel = WorkTaskListViewModel(repository: stub)
 
       await viewModel.createTask(title: newTask.title, description: newTask.description ?? "")
 
@@ -90,9 +90,9 @@ import Testing
 
     @Test func reloadsTasksOnSuccess() async {
       let newTask = TestFactories.makeTask(title: "New task")
-      let stub = TaskRepositoryStub(result: .success([]))
+      let stub = WorkTaskRepositoryStub(result: .success([]))
       stub.resultAfterAdd = .success([newTask])
-      let viewModel = TaskListViewModel(repository: stub)
+      let viewModel = WorkTaskListViewModel(repository: stub)
 
       await viewModel.createTask(title: newTask.title, description: "")
 
@@ -101,9 +101,9 @@ import Testing
     }
 
     @Test func setsErrorMessageWhenRepositoryThrows() async {
-      let stub = TaskRepositoryStub(result: .success([]))
-      stub.addTaskResult = .failure(TaskRepositoryStubError.addFailed)
-      let viewModel = TaskListViewModel(repository: stub)
+      let stub = WorkTaskRepositoryStub(result: .success([]))
+      stub.addTaskResult = .failure(WorkTaskRepositoryStubError.addFailed)
+      let viewModel = WorkTaskListViewModel(repository: stub)
 
       await viewModel.createTask(title: "New task", description: "")
 
@@ -112,9 +112,9 @@ import Testing
 
     @Test func doesNotUpdateTasksWhenRepositoryThrows() async {
       let existingTask = TestFactories.makeTask(title: "Existing task")
-      let stub = TaskRepositoryStub(result: .success([existingTask]))
-      stub.addTaskResult = .failure(TaskRepositoryStubError.addFailed)
-      let viewModel = TaskListViewModel(repository: stub)
+      let stub = WorkTaskRepositoryStub(result: .success([existingTask]))
+      stub.addTaskResult = .failure(WorkTaskRepositoryStubError.addFailed)
+      let viewModel = WorkTaskListViewModel(repository: stub)
       await viewModel.loadTasks()
 
       await viewModel.createTask(title: "New task", description: "")
@@ -123,8 +123,8 @@ import Testing
     }
 
     @Test func setsErrorWhenTitleIsWhitespaceOnly() async {
-      let stub = TaskRepositoryStub(result: .success([]))
-      let viewModel = TaskListViewModel(repository: stub)
+      let stub = WorkTaskRepositoryStub(result: .success([]))
+      let viewModel = WorkTaskListViewModel(repository: stub)
 
       await viewModel.createTask(title: "   ", description: "")
 
@@ -134,8 +134,8 @@ import Testing
 
     @Test func clearsErrorStateAfterSuccessfulCreate() async {
       let newTask = TestFactories.makeTask(title: "New task")
-      let stub = TaskRepositoryStub(result: .failure(TaskRepositoryStubError.fetchFailed))
-      let viewModel = TaskListViewModel(repository: stub)
+      let stub = WorkTaskRepositoryStub(result: .failure(WorkTaskRepositoryStubError.fetchFailed))
+      let viewModel = WorkTaskListViewModel(repository: stub)
       await viewModel.loadTasks()
       #expect(viewModel.errorMessage != nil)
 
@@ -151,7 +151,7 @@ import Testing
 
 // MARK: - Test doubles
 
-private final class TaskRepositoryStub: TaskRepository, @unchecked Sendable {
+private final class WorkTaskRepositoryStub: WorkTaskRepository, @unchecked Sendable {
   var result: Result<[WorkTask], Error>
   var resultAfterAdd: Result<[WorkTask], Error>?
   var addTaskResult: Result<Void, Error> = .success(())
@@ -175,7 +175,7 @@ private final class TaskRepositoryStub: TaskRepository, @unchecked Sendable {
   }
 }
 
-private enum TaskRepositoryStubError: Error, Sendable {
+private enum WorkTaskRepositoryStubError: Error, Sendable {
   case fetchFailed
   case addFailed
 }
