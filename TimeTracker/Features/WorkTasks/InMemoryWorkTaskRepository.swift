@@ -1,7 +1,7 @@
 actor InMemoryWorkTaskRepository: WorkTaskRepository {
   private var tasks: [WorkTask]
 
-  init(tasks: [WorkTask] = []) {
+  nonisolated init(tasks: [WorkTask] = []) {
     self.tasks = tasks
   }
 
