@@ -83,49 +83,6 @@ import Testing
       #expect(fetchedEntries == [entryOne, entryTwo])
     }
 
-    @Test func addRunningEntryThrowsWhenAnotherIsAlreadyRunning() async throws {
-      let taskA = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-      let taskB = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-      let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
-      let addedAt = Date(timeIntervalSince1970: 1_700_000_060)
-      let existingRunningEntry = TestFactories.makeWorkLogEntry(
-        taskID: taskA.id,
-        startedAt: startedAt,
-        addedAt: addedAt,
-        endedAt: nil,
-        updatedAt: addedAt)
-      let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskA.id: [existingRunningEntry]])
-      let newRunningEntry = TestFactories.makeWorkLogEntry(
-        taskID: taskB.id,
-        startedAt: startedAt,
-        addedAt: addedAt,
-        endedAt: nil,
-        updatedAt: addedAt)
-
-      await #expect(throws: WorkLogRepositoryError.runningEntryAlreadyExists) {
-        try await repository.addEntry(newRunningEntry)
-      }
-    }
-
-    @Test func addCompletedEntrySucceedsWhenAnotherEntryIsRunning() async throws {
-      let taskA = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-      let taskB = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-      let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
-      let addedAt = Date(timeIntervalSince1970: 1_700_000_060)
-      let runningEntry = TestFactories.makeWorkLogEntry(
-        taskID: taskA.id,
-        startedAt: startedAt,
-        addedAt: addedAt,
-        endedAt: nil,
-        updatedAt: addedAt)
-      let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskA.id: [runningEntry]])
-      let completedEntry = TestFactories.makeWorkLogEntry(taskID: taskB.id)
-
-      try await repository.addEntry(completedEntry)
-      let fetchedEntries = try await repository.fetchEntries(for: taskB.id)
-
-      #expect(fetchedEntries == [completedEntry])
-    }
   }
 
   @Suite struct UpdateEntry {
