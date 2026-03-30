@@ -133,3 +133,17 @@ import Testing
 
   #expect(firstEntry == secondEntry)
 }
+
+@Test func workLogEntryIsRunningWhenEndedAtIsNil() {
+  let entry = TestFactories.makeWorkLogEntry(taskID: TestFactories.anyTaskID, endedAt: nil)
+
+  #expect(entry.isRunning == true)
+}
+
+@Test func workLogEntryIsNotRunningWhenEndedAtIsSet() {
+  let endedAt = Date(timeIntervalSince1970: 1_700_000_360)
+
+  let entry = TestFactories.makeWorkLogEntry(taskID: TestFactories.anyTaskID, endedAt: endedAt)
+
+  #expect(entry.isRunning == false)
+}
