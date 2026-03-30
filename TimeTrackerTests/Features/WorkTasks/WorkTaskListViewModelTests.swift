@@ -15,7 +15,7 @@ import Testing
 
       #expect(viewModel.tasks == tasks)
       #expect(viewModel.errorMessage == nil)
-      #expect(viewModel.isLoading == false)
+      #expect(!viewModel.isLoading)
     }
 
     @Test func setsErrorMessageWhenLoadingFails() async {
@@ -26,14 +26,14 @@ import Testing
 
       #expect(viewModel.tasks.isEmpty)
       #expect(viewModel.errorMessage == "Failed to load tasks.")
-      #expect(viewModel.isLoading == false)
+      #expect(!viewModel.isLoading)
     }
 
     @Test func isNotLoadedBeforeFirstLoad() {
       let viewModel = WorkTaskListViewModel(
         repository: WorkTaskRepositoryStub(result: .success([])))
 
-      #expect(viewModel.isLoaded == false)
+      #expect(!viewModel.isLoaded)
     }
 
     @Test func isLoadedAfterSuccessfulLoad() async {
@@ -42,7 +42,7 @@ import Testing
 
       await viewModel.loadTasks()
 
-      #expect(viewModel.isLoaded == true)
+      #expect(viewModel.isLoaded)
     }
 
     @Test func isNotLoadedAfterFailedLoad() async {
@@ -51,7 +51,7 @@ import Testing
 
       await viewModel.loadTasks()
 
-      #expect(viewModel.isLoaded == false)
+      #expect(!viewModel.isLoaded)
     }
   }
 
@@ -97,7 +97,7 @@ import Testing
       await viewModel.createTask(title: newTask.title, description: "")
 
       #expect(viewModel.tasks == [newTask])
-      #expect(viewModel.isLoaded == true)
+      #expect(viewModel.isLoaded)
     }
 
     @Test func setsErrorMessageWhenRepositoryThrows() async {
@@ -144,7 +144,7 @@ import Testing
       await viewModel.createTask(title: newTask.title, description: "")
 
       #expect(viewModel.errorMessage == nil)
-      #expect(viewModel.isLoaded == true)
+      #expect(viewModel.isLoaded)
     }
   }
 }

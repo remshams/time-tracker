@@ -17,7 +17,7 @@ import Testing
 
       #expect(viewModel.entries == entries)
       #expect(viewModel.errorMessage == nil)
-      #expect(viewModel.isLoading == false)
+      #expect(!viewModel.isLoading)
     }
 
     @Test func exposesEmptyEntriesBeforeLoad() {
@@ -37,7 +37,7 @@ import Testing
 
       #expect(viewModel.entries.isEmpty)
       #expect(viewModel.errorMessage == "Failed to load work logs.")
-      #expect(viewModel.isLoading == false)
+      #expect(!viewModel.isLoading)
     }
 
     @Test func clearsEntriesWhenSubsequentLoadFails() async {
@@ -60,7 +60,7 @@ import Testing
       let viewModel = WorkLogListViewModel(
         repository: WorkLogRepositoryStub(fetchEntriesResult: .success([])))
 
-      #expect(viewModel.isLoaded == false)
+      #expect(!viewModel.isLoaded)
     }
 
     @Test func isLoadedAfterSuccessfulLoad() async {
@@ -70,7 +70,7 @@ import Testing
 
       await viewModel.loadEntries(for: task.id)
 
-      #expect(viewModel.isLoaded == true)
+      #expect(viewModel.isLoaded)
     }
 
     @Test func isNotLoadedAfterFailedLoad() async {
@@ -81,7 +81,7 @@ import Testing
 
       await viewModel.loadEntries(for: task.id)
 
-      #expect(viewModel.isLoaded == false)
+      #expect(!viewModel.isLoaded)
     }
   }
 }
@@ -117,5 +117,4 @@ final class WorkLogRepositoryStub: WorkLogRepository, @unchecked Sendable {
 
 enum WorkLogRepositoryStubError: Error, Sendable {
   case fetchFailed
-  case writeFailed
 }
