@@ -31,4 +31,24 @@ enum TestFactories {
       endedAt: endedAt,
       updatedAt: updatedAt)
   }
+
+  /// Returns a work log entry with no end time (i.e. currently running).
+  /// All timestamps are internally consistent; callers need not supply any dates.
+  static func makeRunningWorkLogEntry(
+    id: UUID = .init(),
+    taskID: WorkTask.ID,
+    description: String? = nil
+  ) -> WorkLogEntry {
+    let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+    let addedAt = Date(timeIntervalSince1970: 1_700_000_060)
+    // swiftlint:disable:next force_try
+    return try! WorkLogEntry(
+      id: id,
+      taskID: taskID,
+      description: description,
+      startedAt: startedAt,
+      addedAt: addedAt,
+      endedAt: nil,
+      updatedAt: addedAt)
+  }
 }
