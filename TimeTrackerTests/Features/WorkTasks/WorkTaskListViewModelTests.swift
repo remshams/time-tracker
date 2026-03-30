@@ -6,8 +6,8 @@ import Testing
   @Suite @MainActor struct LoadTasks {
     @Test func loadsTasksFromRepository() async {
       let tasks = [
-        TestFactories.makeTask(title: TestFactories.anyTaskTitle, description: "Capture the current decisions."),
-        TestFactories.makeTask(title: TestFactories.anyTaskTitle),
+        TestFactories.makeTask(description: "Capture the current decisions."),
+        TestFactories.makeTask(),
       ]
       let viewModel = WorkTaskListViewModel(repository: WorkTaskRepositoryStub(result: .success(tasks)))
 
@@ -57,7 +57,7 @@ import Testing
 
   @Suite @MainActor struct TaskLookup {
     @Test func returnsTaskForKnownID() async {
-      let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let task = TestFactories.makeTask()
       let viewModel = WorkTaskListViewModel(repository: WorkTaskRepositoryStub(result: .success([task])))
 
       await viewModel.loadTasks()
@@ -66,8 +66,8 @@ import Testing
     }
 
     @Test func returnsNilForUnknownID() async {
-      let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-      let unknownID = TestFactories.makeTask(title: TestFactories.anyTaskTitle).id
+      let task = TestFactories.makeTask()
+      let unknownID = TestFactories.makeTask().id
       let viewModel = WorkTaskListViewModel(repository: WorkTaskRepositoryStub(result: .success([task])))
 
       await viewModel.loadTasks()

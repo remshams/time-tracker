@@ -6,7 +6,11 @@ enum TestFactories {
   static let anyTaskID: WorkTask.ID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
   static let anyTaskTitle = "Any task"
 
-  static func makeTask(id: WorkTask.ID = .init(), title: String, description: String? = nil) -> WorkTask {
+  static func makeTask(
+    id: WorkTask.ID = .init(),
+    title: String = anyTaskTitle,
+    description: String? = nil
+  ) -> WorkTask {
     // swiftlint:disable:next force_try
     try! WorkTask(id: id, title: title, description: description)
   }
