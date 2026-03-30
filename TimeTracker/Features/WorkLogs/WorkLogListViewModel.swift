@@ -16,7 +16,10 @@ final class WorkLogListViewModel {
   private let repository: any WorkLogRepository
   private let trackingService: WorkLogTrackingService
 
-  init(repository: any WorkLogRepository, trackingService: WorkLogTrackingService = WorkLogTrackingService()) {
+  init(
+    repository: any WorkLogRepository,
+    trackingService: WorkLogTrackingService = WorkLogTrackingService()
+  ) {
     self.repository = repository
     self.trackingService = trackingService
   }
@@ -37,21 +40,16 @@ final class WorkLogListViewModel {
   }
 
   func startTracking(for taskID: WorkTask.ID) async {
-    if let runningEntry = trackingService.runningEntry {
-      let now = Date.now
-      guard
-        let updatedEntry = try? WorkLogEntry(
-          id: runningEntry.id,
-          taskID: runningEntry.taskID,
-          description: runningEntry.description,
-          startedAt: runningEntry.startedAt,
-          addedAt: runningEntry.addedAt,
-          endedAt: now,
-          updatedAt: now)
-      else { return }
+    // Stop any currently-running entry before starting a new one. Both the
+    // repository write and the in-memory service update are deferred until
+    // after the new entry's addEntry succeeds, so a failure on either write
+    // leaves the service state unchanged.
+    let previousEntry = trackingService.runningEntry
 
+    if let runningEntry = previousEntry {
+      let updatedEntry: WorkLogEntry
       do {
-        try await repository.updateEntry(updatedEntry)
+        updatedEntry = try runningEntry.ended()
       } catch {
         trackingError = String(
           localized: "work-log-list.tracking.start-error",
@@ -59,16 +57,22 @@ final class WorkLogListViewModel {
         return
       }
 
-      trackingService.stop()
+      do {
+        try await repository.updateEntry(updatedEntry)
+      } catch {
+        // Intentionally leave trackingService running — the repository update
+        // failed, so the running entry is still active. The user can retry.
+        trackingError = String(
+          localized: "work-log-list.tracking.start-error",
+          defaultValue: "Failed to start tracking.")
+        return
+      }
     }
 
     let now = Date.now
-    guard let newEntry = try? WorkLogEntry(taskID: taskID, startedAt: now, addedAt: now, updatedAt: now) else {
-      return
-    }
-
+    let newEntry: WorkLogEntry
     do {
-      try await repository.addEntry(newEntry)
+      newEntry = try WorkLogEntry(taskID: taskID, startedAt: now, addedAt: now, updatedAt: now)
     } catch {
       trackingError = String(
         localized: "work-log-list.tracking.start-error",
@@ -76,24 +80,41 @@ final class WorkLogListViewModel {
       return
     }
 
+    do {
+      try await repository.addEntry(newEntry)
+    } catch {
+      // addEntry failed: roll back the in-memory stop so the service still
+      // reflects the old running entry (the repository update already succeeded,
+      // but the service has not been mutated yet at this point).
+      trackingError = String(
+        localized: "work-log-list.tracking.start-error",
+        defaultValue: "Failed to start tracking.")
+      return
+    }
+
+    // Both writes succeeded — now update in-memory state atomically.
+    if previousEntry != nil {
+      trackingService.stop()
+    }
     trackingService.start(newEntry)
+    // NOTE: Only the newly-started task's entry list is reloaded here.
+    // If the auto-stopped entry belonged to a different task, that task's
+    // list view will remain stale until it is next focused.
     await loadEntries(for: taskID)
   }
 
   func stopTracking() async {
     guard let runningEntry = trackingService.runningEntry else { return }
 
-    let now = Date.now
-    guard
-      let updatedEntry = try? WorkLogEntry(
-        id: runningEntry.id,
-        taskID: runningEntry.taskID,
-        description: runningEntry.description,
-        startedAt: runningEntry.startedAt,
-        addedAt: runningEntry.addedAt,
-        endedAt: now,
-        updatedAt: now)
-    else { return }
+    let updatedEntry: WorkLogEntry
+    do {
+      updatedEntry = try runningEntry.ended()
+    } catch {
+      trackingError = String(
+        localized: "work-log-list.tracking.stop-error",
+        defaultValue: "Failed to stop tracking.")
+      return
+    }
 
     do {
       try await repository.updateEntry(updatedEntry)
