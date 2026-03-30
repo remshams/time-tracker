@@ -21,6 +21,20 @@
                ReferencedContainer = "container:TimeTracker.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "4BF288BC2F78586D00BEEF55"
+               BuildableName = "TimeTrackerUITests.xctest"
+               BlueprintName = "TimeTrackerUITests"
+               ReferencedContainer = "container:TimeTracker.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -38,6 +52,17 @@
                BlueprintIdentifier = "4BF288B22F78586D00BEEF55"
                BuildableName = "TimeTrackerTests.xctest"
                BlueprintName = "TimeTrackerTests"
+               ReferencedContainer = "container:TimeTracker.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "4BF288BC2F78586D00BEEF55"
+               BuildableName = "TimeTrackerUITests.xctest"
+               BlueprintName = "TimeTrackerUITests"
                ReferencedContainer = "container:TimeTracker.xcodeproj">
             </BuildableReference>
          </TestableReference>
