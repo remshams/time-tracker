@@ -40,6 +40,7 @@ final class WorkLogListViewModel {
   }
 
   func startTracking(for taskID: WorkTask.ID) async {
+    trackingError = nil
     // Stop any currently-running entry before starting a new one. Both the
     // repository write and the in-memory service update are deferred until
     // after the new entry's addEntry succeeds, so a failure on either write
@@ -104,6 +105,7 @@ final class WorkLogListViewModel {
   }
 
   func stopTracking() async {
+    trackingError = nil
     guard let runningEntry = trackingService.runningEntry else { return }
 
     let updatedEntry: WorkLogEntry

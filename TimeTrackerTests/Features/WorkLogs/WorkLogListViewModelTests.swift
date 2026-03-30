@@ -257,6 +257,30 @@ import Testing
 
       #expect(stub.lastUpdatedEntry == nil)
     }
+
+    @Test func startTrackingClearsStaleTrackingError() async {
+      let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
+      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub)
+      viewModel.trackingError = "stale error"
+
+      await viewModel.startTracking(for: TestFactories.anyTaskID)
+
+      #expect(viewModel.trackingError == nil)
+    }
+
+    @Test func stopTrackingClearsStaleTrackingError() async {
+      let taskID = TestFactories.anyTaskID
+      let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskID)
+      let trackingService = WorkLogListViewModelTests.makeTrackingService(tracking: runningEntry)
+      let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
+      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub, trackingService: trackingService)
+      viewModel.trackingError = "stale error"
+
+      await viewModel.stopTracking()
+
+      #expect(viewModel.trackingError == nil)
+    }
+
   }
 }
 
