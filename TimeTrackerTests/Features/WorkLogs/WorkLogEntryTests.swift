@@ -137,7 +137,7 @@ import Testing
 @Test func workLogEntryIsRunningWhenEndedAtIsNil() {
   let entry = TestFactories.makeWorkLogEntry(taskID: TestFactories.anyTaskID, endedAt: nil)
 
-  #expect(entry.isRunning == true)
+  #expect(entry.isRunning)
 }
 
 @Test func workLogEntryIsNotRunningWhenEndedAtIsSet() {
@@ -145,5 +145,5 @@ import Testing
 
   let entry = TestFactories.makeWorkLogEntry(taskID: TestFactories.anyTaskID, endedAt: endedAt)
 
-  #expect(entry.isRunning == false)
+  #expect(!entry.isRunning)
 }
