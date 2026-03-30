@@ -4,6 +4,7 @@ import SwiftUI
 struct TimeTracker: App {
   private let workTaskRepository: any WorkTaskRepository
   private let workLogRepository: any WorkLogRepository
+  private let trackingService: WorkLogTrackingService
 
   init() {
     let planTask = makeTask(
@@ -44,13 +45,23 @@ struct TimeTracker: App {
       planTask.id: planEntries,
       reviewTask.id: reviewEntries,
     ])
+    trackingService = WorkLogTrackingService()
+    let service = trackingService
+    let logRepository = workLogRepository
+    Task {
+      if let running = try? await logRepository.fetchRunningEntry() {
+        service.start(running)
+      }
+    }
   }
 
   var body: some Scene {
     WindowGroup {
       ContentView(
         workTaskListViewModel: WorkTaskListViewModel(repository: workTaskRepository),
-        workLogListViewModel: WorkLogListViewModel(repository: workLogRepository))
+        workLogListViewModel: WorkLogListViewModel(repository: workLogRepository)
+      )
+      .environment(trackingService)
     }
   }
 }
