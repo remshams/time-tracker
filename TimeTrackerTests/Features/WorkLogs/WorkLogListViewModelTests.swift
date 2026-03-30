@@ -168,6 +168,7 @@ import Testing
       await viewModel.startTracking(for: taskID)
 
       #expect(viewModel.entries == entries)
+      #expect(stub.lastFetchedTaskID == taskID)
     }
 
     @Test func startTrackingSetsTrackingErrorOnAddFailure() async {
@@ -193,6 +194,25 @@ import Testing
       await viewModel.startTracking(for: TestFactories.anyTaskID)
 
       #expect(stub.lastAddedEntry == nil)
+      #expect(viewModel.trackingError != nil)
+      #expect(trackingService.runningEntry?.id == existingEntry.id)
+    }
+
+    @Test func startTrackingDoesNotStartTrackingServiceWhenAddEntryFails() async {
+      let existingEntry = TestFactories.makeRunningWorkLogEntry(taskID: UUID())
+      let trackingService = WorkLogTrackingService()
+      trackingService.start(existingEntry)
+      let newTaskID = UUID()
+      let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
+      // updateEntry (auto-stop) succeeds, addEntry (new entry) fails
+      stub.addEntryResult = .failure(WorkLogRepositoryStubError.writeFailed)
+      let viewModel = WorkLogListViewModel(repository: stub, trackingService: trackingService)
+
+      await viewModel.startTracking(for: newTaskID)
+
+      #expect(stub.lastUpdatedEntry?.id == existingEntry.id)
+      #expect(stub.lastUpdatedEntry?.endedAt != nil)
+      #expect(stub.lastAddedEntry?.taskID == newTaskID)
       #expect(viewModel.trackingError != nil)
       #expect(trackingService.runningEntry?.id == existingEntry.id)
     }
@@ -233,6 +253,7 @@ import Testing
       await viewModel.stopTracking()
 
       #expect(viewModel.entries == entries)
+      #expect(stub.lastFetchedTaskID == taskID)
     }
 
     @Test func stopTrackingSetsTrackingErrorOnUpdateFailure() async {
@@ -247,6 +268,8 @@ import Testing
 
       #expect(viewModel.trackingError != nil)
       #expect(viewModel.errorMessage == nil)
+      #expect(trackingService.isTracking)
+      #expect(trackingService.runningEntry?.id == runningEntry.id)
     }
 
     @Test func stopTrackingIsNoOpWhenNotTracking() async {
@@ -319,13 +342,15 @@ final class WorkLogRepositoryStub: WorkLogRepository {
   var updateEntryResult: Result<Void, Error> = .success(())
   var lastAddedEntry: WorkLogEntry?
   var lastUpdatedEntry: WorkLogEntry?
+  var lastFetchedTaskID: WorkTask.ID?
 
   init(fetchEntriesResult: Result<[WorkLogEntry], Error>) {
     self.fetchEntriesResult = fetchEntriesResult
   }
 
   func fetchEntries(for taskID: WorkTask.ID) async throws -> [WorkLogEntry] {
-    try fetchEntriesResult.get()
+    lastFetchedTaskID = taskID
+    return try fetchEntriesResult.get()
   }
 
   func fetchRunningEntry() async throws -> WorkLogEntry? {
