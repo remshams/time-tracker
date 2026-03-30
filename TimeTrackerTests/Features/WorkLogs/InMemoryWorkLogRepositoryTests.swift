@@ -4,7 +4,7 @@ import Testing
 @testable import TimeTracker
 
 @Suite struct InMemoryWorkLogRepositoryTests {
-  @Suite struct FetchEntries {
+  @Suite @MainActor struct FetchEntries {
     @Test func returnsSeededEntriesForTaskID() async throws {
       let taskA: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
       let taskB: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
@@ -45,7 +45,7 @@ import Testing
     }
   }
 
-  @Suite struct AddEntry {
+  @Suite @MainActor struct AddEntry {
     @Test func addedEntryAppearsInSubsequentFetch() async throws {
       let taskID = TestFactories.anyTaskID
       let entry = TestFactories.makeWorkLogEntry(taskID: taskID)
@@ -85,24 +85,17 @@ import Testing
 
   }
 
-  @Suite struct UpdateEntry {
+  @Suite @MainActor struct UpdateEntry {
     @Test func updatedEntryReplacesOriginalInStore() async throws {
       let taskID = TestFactories.anyTaskID
-      let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
-      let addedAt = Date(timeIntervalSince1970: 1_700_000_060)
-      let original = TestFactories.makeWorkLogEntry(
-        taskID: taskID,
-        startedAt: startedAt,
-        addedAt: addedAt,
-        endedAt: nil,
-        updatedAt: addedAt)
+      let original = TestFactories.makeRunningWorkLogEntry(taskID: taskID)
       let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskID: [original]])
       let endedAt = Date(timeIntervalSince1970: 1_700_000_900)
       let updated = TestFactories.makeWorkLogEntry(
         id: original.id,
         taskID: taskID,
-        startedAt: startedAt,
-        addedAt: addedAt,
+        startedAt: original.startedAt,
+        addedAt: original.addedAt,
         endedAt: endedAt,
         updatedAt: endedAt)
 
@@ -122,19 +115,12 @@ import Testing
     }
   }
 
-  @Suite struct FetchRunningEntry {
+  @Suite @MainActor struct FetchRunningEntry {
     @Test func returnsRunningEntryAcrossAllTasks() async throws {
       let taskA = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
       let taskB = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
       let completedEntry = TestFactories.makeWorkLogEntry(taskID: taskA.id)
-      let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
-      let addedAt = Date(timeIntervalSince1970: 1_700_000_060)
-      let runningEntry = TestFactories.makeWorkLogEntry(
-        taskID: taskB.id,
-        startedAt: startedAt,
-        addedAt: addedAt,
-        endedAt: nil,
-        updatedAt: addedAt)
+      let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskB.id)
       let repository = InMemoryWorkLogRepository(entriesByTaskID: [
         taskA.id: [completedEntry],
         taskB.id: [runningEntry],
