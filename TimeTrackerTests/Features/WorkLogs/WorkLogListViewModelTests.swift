@@ -2,7 +2,7 @@ import Testing
 
 @testable import TimeTracker
 
-@Suite @MainActor struct WorkLogListViewModelTests {
+@Suite struct WorkLogListViewModelTests {
   @Suite @MainActor struct LoadEntries {
     @Test func loadsEntriesFromRepository() async {
       let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
