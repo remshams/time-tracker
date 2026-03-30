@@ -29,12 +29,11 @@ import Testing
     }
 
     @Test func setsErrorMessageWhenLoadingFails() async {
-      let task = TestFactories.makeTask()
       let viewModel = WorkLogListViewModel(
         repository: WorkLogRepositoryStub(
           fetchEntriesResult: .failure(WorkLogRepositoryStubError.fetchFailed)))
 
-      await viewModel.loadEntries(for: task.id)
+      await viewModel.loadEntries(for: TestFactories.anyTaskID)
 
       #expect(viewModel.entries.isEmpty)
       #expect(viewModel.errorMessage == "Failed to load work logs.")
@@ -65,22 +64,20 @@ import Testing
     }
 
     @Test func isLoadedAfterSuccessfulLoad() async {
-      let task = TestFactories.makeTask()
       let viewModel = WorkLogListViewModel(
         repository: WorkLogRepositoryStub(fetchEntriesResult: .success([])))
 
-      await viewModel.loadEntries(for: task.id)
+      await viewModel.loadEntries(for: TestFactories.anyTaskID)
 
       #expect(viewModel.isLoaded)
     }
 
     @Test func isNotLoadedAfterFailedLoad() async {
-      let task = TestFactories.makeTask()
       let viewModel = WorkLogListViewModel(
         repository: WorkLogRepositoryStub(
           fetchEntriesResult: .failure(WorkLogRepositoryStubError.fetchFailed)))
 
-      await viewModel.loadEntries(for: task.id)
+      await viewModel.loadEntries(for: TestFactories.anyTaskID)
 
       #expect(!viewModel.isLoaded)
     }
@@ -99,8 +96,7 @@ import Testing
     }
 
     @Test func isShowingTrackingErrorIsTrueWhenTrackingErrorIsSet() {
-      let viewModel = WorkLogListViewModel(
-        repository: WorkLogRepositoryStub(fetchEntriesResult: .success([])))
+      let viewModel = WorkLogListViewModelTests.makeViewModel()
 
       viewModel.trackingError = "some error"
 
@@ -108,8 +104,7 @@ import Testing
     }
 
     @Test func isShowingTrackingErrorIsFalseWhenTrackingErrorIsNil() {
-      let viewModel = WorkLogListViewModel(
-        repository: WorkLogRepositoryStub(fetchEntriesResult: .success([])))
+      let viewModel = WorkLogListViewModelTests.makeViewModel()
 
       #expect(!viewModel.isShowingTrackingError)
     }
@@ -138,12 +133,11 @@ import Testing
 
     @Test func startTrackingStopsRunningEntryBeforeStartingNewOne() async {
       let existingTaskID = UUID()
-      let newTaskID = TestFactories.anyTaskID
+      let newTaskID = UUID()
       let existingEntry = TestFactories.makeRunningWorkLogEntry(taskID: existingTaskID)
-      let trackingService = WorkLogTrackingService()
-      trackingService.start(existingEntry)
+      let trackingService = WorkLogListViewModelTests.makeTrackingService(tracking: existingEntry)
       let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
-      let viewModel = WorkLogListViewModel(repository: stub, trackingService: trackingService)
+      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub, trackingService: trackingService)
 
       await viewModel.startTracking(for: newTaskID)
 
@@ -154,12 +148,11 @@ import Testing
 
     @Test func startTrackingStopsTrackingServiceBeforeStartingNew() async {
       let existingTaskID = UUID()
-      let newTaskID = TestFactories.anyTaskID
+      let newTaskID = UUID()
       let existingEntry = TestFactories.makeRunningWorkLogEntry(taskID: existingTaskID)
-      let trackingService = WorkLogTrackingService()
-      trackingService.start(existingEntry)
+      let trackingService = WorkLogListViewModelTests.makeTrackingService(tracking: existingEntry)
       let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
-      let viewModel = WorkLogListViewModel(repository: stub, trackingService: trackingService)
+      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub, trackingService: trackingService)
 
       await viewModel.startTracking(for: newTaskID)
 
@@ -189,13 +182,27 @@ import Testing
       #expect(viewModel.errorMessage == nil)
     }
 
+    @Test func startTrackingDoesNotAddNewEntryWhenAutoStopFails() async {
+      let existingEntry = TestFactories.makeRunningWorkLogEntry(taskID: UUID())
+      let trackingService = WorkLogTrackingService()
+      trackingService.start(existingEntry)
+      let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
+      stub.updateEntryResult = .failure(WorkLogRepositoryStubError.writeFailed)
+      let viewModel = WorkLogListViewModel(repository: stub, trackingService: trackingService)
+
+      await viewModel.startTracking(for: TestFactories.anyTaskID)
+
+      #expect(stub.lastAddedEntry == nil)
+      #expect(viewModel.trackingError != nil)
+      #expect(trackingService.runningEntry?.id == existingEntry.id)
+    }
+
     @Test func stopTrackingUpdatesRunningEntryWithEndedAt() async {
       let taskID = TestFactories.anyTaskID
       let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskID)
-      let trackingService = WorkLogTrackingService()
-      trackingService.start(runningEntry)
+      let trackingService = WorkLogListViewModelTests.makeTrackingService(tracking: runningEntry)
       let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
-      let viewModel = WorkLogListViewModel(repository: stub, trackingService: trackingService)
+      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub, trackingService: trackingService)
 
       await viewModel.stopTracking()
 
@@ -206,10 +213,9 @@ import Testing
     @Test func stopTrackingStopsTrackingService() async {
       let taskID = TestFactories.anyTaskID
       let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskID)
-      let trackingService = WorkLogTrackingService()
-      trackingService.start(runningEntry)
+      let trackingService = WorkLogListViewModelTests.makeTrackingService(tracking: runningEntry)
       let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
-      let viewModel = WorkLogListViewModel(repository: stub, trackingService: trackingService)
+      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub, trackingService: trackingService)
 
       await viewModel.stopTracking()
 
@@ -220,24 +226,22 @@ import Testing
       let taskID = TestFactories.anyTaskID
       let entries = [TestFactories.makeWorkLogEntry(taskID: taskID)]
       let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskID)
-      let trackingService = WorkLogTrackingService()
-      trackingService.start(runningEntry)
+      let trackingService = WorkLogListViewModelTests.makeTrackingService(tracking: runningEntry)
       let stub = WorkLogRepositoryStub(fetchEntriesResult: .success(entries))
-      let viewModel = WorkLogListViewModel(repository: stub, trackingService: trackingService)
+      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub, trackingService: trackingService)
 
       await viewModel.stopTracking()
 
-      #expect(!viewModel.entries.isEmpty)
+      #expect(viewModel.entries == entries)
     }
 
     @Test func stopTrackingSetsTrackingErrorOnUpdateFailure() async {
       let taskID = TestFactories.anyTaskID
       let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskID)
-      let trackingService = WorkLogTrackingService()
-      trackingService.start(runningEntry)
+      let trackingService = WorkLogListViewModelTests.makeTrackingService(tracking: runningEntry)
       let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
       stub.updateEntryResult = .failure(WorkLogRepositoryStubError.writeFailed)
-      let viewModel = WorkLogListViewModel(repository: stub, trackingService: trackingService)
+      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub, trackingService: trackingService)
 
       await viewModel.stopTracking()
 
@@ -247,7 +251,7 @@ import Testing
 
     @Test func stopTrackingIsNoOpWhenNotTracking() async {
       let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
-      let viewModel = WorkLogListViewModel(repository: stub)
+      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub)
 
       await viewModel.stopTracking()
 
@@ -256,9 +260,35 @@ import Testing
   }
 }
 
+// MARK: - Helpers
+
+extension WorkLogListViewModelTests {
+  @MainActor
+  private static func makeViewModel(
+    stub: WorkLogRepositoryStub,
+    trackingService: WorkLogTrackingService = WorkLogTrackingService()
+  ) -> WorkLogListViewModel {
+    WorkLogListViewModel(repository: stub, trackingService: trackingService)
+  }
+
+  @MainActor
+  private static func makeViewModel() -> WorkLogListViewModel {
+    WorkLogListViewModel(
+      repository: WorkLogRepositoryStub(fetchEntriesResult: .success([])))
+  }
+
+  @MainActor
+  private static func makeTrackingService(tracking entry: WorkLogEntry) -> WorkLogTrackingService {
+    let service = WorkLogTrackingService()
+    service.start(entry)
+    return service
+  }
+}
+
 // MARK: - Test doubles
 
-final class WorkLogRepositoryStub: WorkLogRepository, @unchecked Sendable {
+@MainActor
+final class WorkLogRepositoryStub: WorkLogRepository {
   var fetchEntriesResult: Result<[WorkLogEntry], Error>
   var fetchRunningEntryResult: Result<WorkLogEntry?, Error> = .success(nil)
   var addEntryResult: Result<Void, Error> = .success(())
