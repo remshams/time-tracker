@@ -50,19 +50,7 @@ struct WorkLogEntry: Identifiable, Equatable, Sendable {
     self.updatedAt = updatedAt
   }
 
-  nonisolated static func == (lhs: WorkLogEntry, rhs: WorkLogEntry) -> Bool {
-    lhs.id == rhs.id
-      && lhs.taskID == rhs.taskID
-      && lhs.description == rhs.description
-      && lhs.startedAt == rhs.startedAt
-      && lhs.addedAt == rhs.addedAt
-      && lhs.endedAt == rhs.endedAt
-      && lhs.updatedAt == rhs.updatedAt
-  }
-}
-
-extension WorkLogEntry {
-  /// Returns a copy of this entry with `endedAt` and `updatedAt` both set to `at`.
+  /// Returns a copy of this entry with `endedAt` and `updatedAt` both set to `date`.
   func ended(at date: Date = .now) throws -> WorkLogEntry {
     try WorkLogEntry(
       id: id,
@@ -72,5 +60,15 @@ extension WorkLogEntry {
       addedAt: addedAt,
       endedAt: date,
       updatedAt: date)
+  }
+
+  nonisolated static func == (lhs: WorkLogEntry, rhs: WorkLogEntry) -> Bool {
+    lhs.id == rhs.id
+      && lhs.taskID == rhs.taskID
+      && lhs.description == rhs.description
+      && lhs.startedAt == rhs.startedAt
+      && lhs.addedAt == rhs.addedAt
+      && lhs.endedAt == rhs.endedAt
+      && lhs.updatedAt == rhs.updatedAt
   }
 }
