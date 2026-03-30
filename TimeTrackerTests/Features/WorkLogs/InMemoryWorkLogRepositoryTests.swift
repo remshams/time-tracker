@@ -4,38 +4,206 @@ import Testing
 @testable import TimeTracker
 
 @Suite struct InMemoryWorkLogRepositoryTests {
-  @Test func returnsSeededEntriesForTaskID() async throws {
-    let taskA: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-    let taskB: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-    let entryA1 = TestFactories.makeWorkLogEntry(taskID: taskA.id, description: "Initial architecture and constraints")
-    let entryA2 = TestFactories.makeWorkLogEntry(taskID: taskA.id, description: "Draft implementation plan")
-    let entryB1 = TestFactories.makeWorkLogEntry(taskID: taskB.id, description: "Review assumptions")
-    let repository = InMemoryWorkLogRepository(entriesByTaskID: [
-      taskA.id: [entryA1, entryA2],
-      taskB.id: [entryB1],
-    ])
+  @Suite struct FetchEntries {
+    @Test func returnsSeededEntriesForTaskID() async throws {
+      let taskA: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let taskB: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let entryA1 = TestFactories.makeWorkLogEntry(
+        taskID: taskA.id,
+        description: "Initial architecture and constraints")
+      let entryA2 = TestFactories.makeWorkLogEntry(taskID: taskA.id, description: "Draft implementation plan")
+      let entryB1 = TestFactories.makeWorkLogEntry(taskID: taskB.id, description: "Review assumptions")
+      let repository = InMemoryWorkLogRepository(entriesByTaskID: [
+        taskA.id: [entryA1, entryA2],
+        taskB.id: [entryB1],
+      ])
 
-    let fetchedEntries = try await repository.fetchEntries(for: taskA.id)
+      let fetchedEntries = try await repository.fetchEntries(for: taskA.id)
 
-    #expect(fetchedEntries == [entryA1, entryA2])
+      #expect(fetchedEntries == [entryA1, entryA2])
+    }
+
+    @Test func returnsAnEmptyListByDefault() async throws {
+      let repository = InMemoryWorkLogRepository()
+
+      let fetchedEntries = try await repository.fetchEntries(for: UUID())
+
+      #expect(fetchedEntries.isEmpty)
+    }
+
+    @Test func returnsAnEmptyListForUnknownTaskID() async throws {
+      let taskA: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let taskB: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let entryA1 = TestFactories.makeWorkLogEntry(
+        taskID: taskA.id,
+        description: "Initial architecture and constraints")
+      let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskA.id: [entryA1]])
+
+      let fetchedEntries = try await repository.fetchEntries(for: taskB.id)
+
+      #expect(fetchedEntries.isEmpty)
+    }
   }
 
-  @Test func returnsAnEmptyListByDefault() async throws {
-    let repository = InMemoryWorkLogRepository()
+  @Suite struct AddEntry {
+    @Test func addedEntryAppearsInSubsequentFetch() async throws {
+      let taskID = TestFactories.anyTaskID
+      let entry = TestFactories.makeWorkLogEntry(taskID: taskID)
+      let repository = InMemoryWorkLogRepository()
 
-    let fetchedEntries = try await repository.fetchEntries(for: UUID())
+      try await repository.addEntry(entry)
+      let fetchedEntries = try await repository.fetchEntries(for: taskID)
 
-    #expect(fetchedEntries.isEmpty)
+      #expect(fetchedEntries == [entry])
+    }
+
+    @Test func addEntryDoesNotAffectOtherTaskIDs() async throws {
+      let taskA = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let taskB = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let existingEntry = TestFactories.makeWorkLogEntry(taskID: taskA.id)
+      let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskA.id: [existingEntry]])
+      let newEntry = TestFactories.makeWorkLogEntry(taskID: taskB.id)
+
+      try await repository.addEntry(newEntry)
+      let taskAEntries = try await repository.fetchEntries(for: taskA.id)
+
+      #expect(taskAEntries == [existingEntry])
+    }
+
+    @Test func addMultipleEntriesForSameTaskID() async throws {
+      let taskID = TestFactories.anyTaskID
+      let entryOne = TestFactories.makeWorkLogEntry(taskID: taskID, description: "First")
+      let entryTwo = TestFactories.makeWorkLogEntry(taskID: taskID, description: "Second")
+      let repository = InMemoryWorkLogRepository()
+
+      try await repository.addEntry(entryOne)
+      try await repository.addEntry(entryTwo)
+      let fetchedEntries = try await repository.fetchEntries(for: taskID)
+
+      #expect(fetchedEntries == [entryOne, entryTwo])
+    }
+
+    @Test func addRunningEntryThrowsWhenAnotherIsAlreadyRunning() async throws {
+      let taskA = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let taskB = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+      let addedAt = Date(timeIntervalSince1970: 1_700_000_060)
+      let existingRunningEntry = TestFactories.makeWorkLogEntry(
+        taskID: taskA.id,
+        startedAt: startedAt,
+        addedAt: addedAt,
+        endedAt: nil,
+        updatedAt: addedAt)
+      let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskA.id: [existingRunningEntry]])
+      let newRunningEntry = TestFactories.makeWorkLogEntry(
+        taskID: taskB.id,
+        startedAt: startedAt,
+        addedAt: addedAt,
+        endedAt: nil,
+        updatedAt: addedAt)
+
+      await #expect(throws: WorkLogRepositoryError.runningEntryAlreadyExists) {
+        try await repository.addEntry(newRunningEntry)
+      }
+    }
+
+    @Test func addCompletedEntrySucceedsWhenAnotherEntryIsRunning() async throws {
+      let taskA = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let taskB = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+      let addedAt = Date(timeIntervalSince1970: 1_700_000_060)
+      let runningEntry = TestFactories.makeWorkLogEntry(
+        taskID: taskA.id,
+        startedAt: startedAt,
+        addedAt: addedAt,
+        endedAt: nil,
+        updatedAt: addedAt)
+      let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskA.id: [runningEntry]])
+      let completedEntry = TestFactories.makeWorkLogEntry(taskID: taskB.id)
+
+      try await repository.addEntry(completedEntry)
+      let fetchedEntries = try await repository.fetchEntries(for: taskB.id)
+
+      #expect(fetchedEntries == [completedEntry])
+    }
   }
 
-  @Test func returnsAnEmptyListForUnknownTaskID() async throws {
-    let taskA: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-    let taskB: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-    let entryA1 = TestFactories.makeWorkLogEntry(taskID: taskA.id, description: "Initial architecture and constraints")
-    let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskA.id: [entryA1]])
+  @Suite struct UpdateEntry {
+    @Test func updatedEntryReplacesOriginalInStore() async throws {
+      let taskID = TestFactories.anyTaskID
+      let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+      let addedAt = Date(timeIntervalSince1970: 1_700_000_060)
+      let original = TestFactories.makeWorkLogEntry(
+        taskID: taskID,
+        startedAt: startedAt,
+        addedAt: addedAt,
+        endedAt: nil,
+        updatedAt: addedAt)
+      let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskID: [original]])
+      let endedAt = Date(timeIntervalSince1970: 1_700_000_900)
+      let updated = TestFactories.makeWorkLogEntry(
+        id: original.id,
+        taskID: taskID,
+        startedAt: startedAt,
+        addedAt: addedAt,
+        endedAt: endedAt,
+        updatedAt: endedAt)
 
-    let fetchedEntries = try await repository.fetchEntries(for: taskB.id)
+      try await repository.updateEntry(updated)
+      let fetchedEntries = try await repository.fetchEntries(for: taskID)
 
-    #expect(fetchedEntries.isEmpty)
+      #expect(fetchedEntries == [updated])
+    }
+
+    @Test func updateEntryThrowsWhenEntryNotFound() async throws {
+      let repository = InMemoryWorkLogRepository()
+      let unknownEntry = TestFactories.makeWorkLogEntry(taskID: TestFactories.anyTaskID)
+
+      await #expect(throws: WorkLogRepositoryError.entryNotFound) {
+        try await repository.updateEntry(unknownEntry)
+      }
+    }
+  }
+
+  @Suite struct FetchRunningEntry {
+    @Test func returnsRunningEntryAcrossAllTasks() async throws {
+      let taskA = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let taskB = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let completedEntry = TestFactories.makeWorkLogEntry(taskID: taskA.id)
+      let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+      let addedAt = Date(timeIntervalSince1970: 1_700_000_060)
+      let runningEntry = TestFactories.makeWorkLogEntry(
+        taskID: taskB.id,
+        startedAt: startedAt,
+        addedAt: addedAt,
+        endedAt: nil,
+        updatedAt: addedAt)
+      let repository = InMemoryWorkLogRepository(entriesByTaskID: [
+        taskA.id: [completedEntry],
+        taskB.id: [runningEntry],
+      ])
+
+      let result = try await repository.fetchRunningEntry()
+
+      #expect(result == runningEntry)
+    }
+
+    @Test func returnsNilWhenNoRunningEntryExists() async throws {
+      let taskID = TestFactories.anyTaskID
+      let completedEntry = TestFactories.makeWorkLogEntry(taskID: taskID)
+      let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskID: [completedEntry]])
+
+      let result = try await repository.fetchRunningEntry()
+
+      #expect(result == nil)
+    }
+
+    @Test func returnsNilForEmptyRepository() async throws {
+      let repository = InMemoryWorkLogRepository()
+
+      let result = try await repository.fetchRunningEntry()
+
+      #expect(result == nil)
+    }
   }
 }
