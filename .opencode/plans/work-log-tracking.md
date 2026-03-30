@@ -43,7 +43,8 @@ can be built and tested end-to-end before a SwiftData persistence layer is intro
   context ever needs both, a call-site composition (e.g. a `RunningEntryContext` struct)
   is the right approach at that time.
 - `WorkLogRepository` gains three new methods:
-  - `addEntry(_ entry: WorkLogEntry) async throws` — persists a newly started entry.
+  - `addEntry(_ entry: WorkLogEntry) async throws` — persists a new entry without any
+    business-rule checks. It is a plain data operation.
   - `updateEntry(_ entry: WorkLogEntry) async throws` — persists the stopped (completed)
     entry with `endedAt` and `updatedAt` set.
   - `fetchRunningEntry() async throws -> WorkLogEntry?` — returns the single running
@@ -52,8 +53,9 @@ can be built and tested end-to-end before a SwiftData persistence layer is intro
     not the repository. A future SwiftData implementation satisfies this with a single
     cheap `FetchDescriptor` predicate on `endedAt == nil`.
 - **Cross-task auto-stop is a hard requirement, not an optional enhancement.** Allowing
-  two simultaneously running entries is a data integrity violation. `startTracking`
-  therefore checks `trackingService.runningEntry` first; if one is found it is stopped
+  two simultaneously running entries is a data integrity violation. The invariant is
+  enforced in `WorkLogTrackingService.startTracking`, not in the repository. `startTracking`
+  checks `trackingService.runningEntry` first; if one is found it is stopped
   (both `endedAt` and `updatedAt` set to `.now` via `updateEntry` and
   `trackingService.stop()`) before the new entry is created.
 - `InMemoryWorkLogRepository` is converted from a `struct` to an `actor` (matching the
@@ -146,9 +148,9 @@ TimeTrackerTests/
    - `addEntry` creates the task bucket if none existed for that `taskID`.
    - `addEntry` does not affect entries for other `taskID`s.
    - `updateEntry` replaces the matching entry (by `id`) in the correct task bucket.
-   - `updateEntry` throws `.entryNotFound` when the ID does not exist.
-   - `fetchRunningEntry` returns the entry with `isRunning == true` across all tasks.
-   - `fetchRunningEntry` returns `nil` when no running entry exists.
+    - `updateEntry` throws `.entryNotFound` when the ID does not exist.
+    - `fetchRunningEntry` returns the running entry across all tasks.
+    - `fetchRunningEntry` returns `nil` when no running entry exists.
 4. Extend `WorkLogRepository` protocol with `addEntry`, `updateEntry`, and
    `fetchRunningEntry`.
 5. Convert `InMemoryWorkLogRepository` from `struct` to `actor` and implement all three
@@ -206,14 +208,14 @@ TimeTrackerTests/
 ## Checkpoints
 
 ### Slice 1 — Domain: `isRunning`
-- [ ] Write `isRunning` tests for `WorkLogEntry`.
-- [ ] Add `isRunning` computed property to `WorkLogEntry`.
+- [x] Write `isRunning` tests for `WorkLogEntry`.
+- [x] Add `isRunning` computed property to `WorkLogEntry`.
 
 ### Slice 2 — Repository write operations
-- [ ] Write `addEntry`, `updateEntry`, and `fetchRunningEntry` tests.
-- [ ] Extend `WorkLogRepository` protocol.
-- [ ] Convert `InMemoryWorkLogRepository` to `actor` and implement all new methods.
-- [ ] Update `WorkLogRepositoryStub`.
+- [x] Write `addEntry`, `updateEntry`, and `fetchRunningEntry` tests.
+- [x] Extend `WorkLogRepository` protocol.
+- [x] Convert `InMemoryWorkLogRepository` to `actor` and implement all new methods.
+- [x] Update `WorkLogRepositoryStub`.
 
 ### Slice 3 — `WorkLogTrackingService`
 - [ ] Create `WorkLogTrackingService`.
