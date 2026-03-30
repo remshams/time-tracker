@@ -5,7 +5,7 @@ import Testing
 @Suite struct WorkLogListViewModelTests {
   @Suite @MainActor struct LoadEntries {
     @Test func loadsEntriesFromRepository() async {
-      let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let task = TestFactories.makeTask()
       let entries = [
         TestFactories.makeWorkLogEntry(taskID: task.id, description: "Initial architecture"),
         TestFactories.makeWorkLogEntry(taskID: task.id, description: "Draft implementation"),
@@ -28,7 +28,7 @@ import Testing
     }
 
     @Test func setsErrorMessageWhenLoadingFails() async {
-      let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let task = TestFactories.makeTask()
       let viewModel = WorkLogListViewModel(
         repository: WorkLogRepositoryStub(
           fetchEntriesResult: .failure(WorkLogRepositoryStubError.fetchFailed)))
@@ -41,7 +41,7 @@ import Testing
     }
 
     @Test func clearsEntriesWhenSubsequentLoadFails() async {
-      let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let task = TestFactories.makeTask()
       let entries = [TestFactories.makeWorkLogEntry(taskID: task.id)]
       let stub = WorkLogRepositoryStub(fetchEntriesResult: .success(entries))
       let viewModel = WorkLogListViewModel(repository: stub)
@@ -64,7 +64,7 @@ import Testing
     }
 
     @Test func isLoadedAfterSuccessfulLoad() async {
-      let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let task = TestFactories.makeTask()
       let viewModel = WorkLogListViewModel(
         repository: WorkLogRepositoryStub(fetchEntriesResult: .success([])))
 
@@ -74,7 +74,7 @@ import Testing
     }
 
     @Test func isNotLoadedAfterFailedLoad() async {
-      let task = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let task = TestFactories.makeTask()
       let viewModel = WorkLogListViewModel(
         repository: WorkLogRepositoryStub(
           fetchEntriesResult: .failure(WorkLogRepositoryStubError.fetchFailed)))

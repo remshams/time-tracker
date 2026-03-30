@@ -6,8 +6,8 @@ import Testing
 @Suite struct InMemoryWorkLogRepositoryTests {
   @Suite @MainActor struct FetchEntries {
     @Test func returnsSeededEntriesForTaskID() async throws {
-      let taskA: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-      let taskB: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let taskA = TestFactories.makeTask()
+      let taskB = TestFactories.makeTask()
       let entryA1 = TestFactories.makeWorkLogEntry(
         taskID: taskA.id,
         description: "Initial architecture and constraints")
@@ -32,8 +32,8 @@ import Testing
     }
 
     @Test func returnsAnEmptyListForUnknownTaskID() async throws {
-      let taskA: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-      let taskB: WorkTask = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let taskA = TestFactories.makeTask()
+      let taskB = TestFactories.makeTask()
       let entryA1 = TestFactories.makeWorkLogEntry(
         taskID: taskA.id,
         description: "Initial architecture and constraints")
@@ -58,8 +58,8 @@ import Testing
     }
 
     @Test func addEntryDoesNotAffectOtherTaskIDs() async throws {
-      let taskA = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-      let taskB = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let taskA = TestFactories.makeTask()
+      let taskB = TestFactories.makeTask()
       let existingEntry = TestFactories.makeWorkLogEntry(taskID: taskA.id)
       let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskA.id: [existingEntry]])
       let newEntry = TestFactories.makeWorkLogEntry(taskID: taskB.id)
@@ -117,8 +117,8 @@ import Testing
 
   @Suite @MainActor struct FetchRunningEntry {
     @Test func returnsRunningEntryAcrossAllTasks() async throws {
-      let taskA = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
-      let taskB = TestFactories.makeTask(title: TestFactories.anyTaskTitle)
+      let taskA = TestFactories.makeTask()
+      let taskB = TestFactories.makeTask()
       let completedEntry = TestFactories.makeWorkLogEntry(taskID: taskA.id)
       let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskB.id)
       let repository = InMemoryWorkLogRepository(entriesByTaskID: [
