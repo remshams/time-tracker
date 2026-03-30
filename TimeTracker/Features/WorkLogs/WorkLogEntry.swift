@@ -60,3 +60,17 @@ struct WorkLogEntry: Identifiable, Equatable, Sendable {
       && lhs.updatedAt == rhs.updatedAt
   }
 }
+
+extension WorkLogEntry {
+  /// Returns a copy of this entry with `endedAt` and `updatedAt` both set to `at`.
+  func ended(at date: Date = .now) throws -> WorkLogEntry {
+    try WorkLogEntry(
+      id: id,
+      taskID: taskID,
+      description: description,
+      startedAt: startedAt,
+      addedAt: addedAt,
+      endedAt: date,
+      updatedAt: date)
+  }
+}
