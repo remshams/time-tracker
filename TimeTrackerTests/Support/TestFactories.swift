@@ -5,6 +5,7 @@ import Foundation
 enum TestFactories {
   static let anyTaskID: WorkTask.ID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
   static let anyTaskTitle = "Any task"
+  static let anyWorkLogDescription = "Initial architecture and constraints"
 
   static func makeTask(
     id: WorkTask.ID = .init(),
@@ -17,7 +18,7 @@ enum TestFactories {
 
   static func makeWorkLogEntry(
     id: UUID = .init(),
-    taskID: WorkTask.ID,
+    taskID: WorkTask.ID = anyTaskID,
     description: String? = nil,
     startedAt: Date = Date(timeIntervalSince1970: 1_700_000_000),
     addedAt: Date = Date(timeIntervalSince1970: 1_700_000_060),

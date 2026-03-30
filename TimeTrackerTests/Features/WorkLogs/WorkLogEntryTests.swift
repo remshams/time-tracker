@@ -12,14 +12,14 @@ import Testing
 
   let entry = TestFactories.makeWorkLogEntry(
     taskID: task.id,
-    description: "Initial architecture and constraints",
+    description: TestFactories.anyWorkLogDescription,
     startedAt: startedAt,
     addedAt: addedAt,
     endedAt: endedAt,
     updatedAt: updatedAt)
 
   #expect(entry.taskID == task.id)
-  #expect(entry.description == "Initial architecture and constraints")
+  #expect(entry.description == TestFactories.anyWorkLogDescription)
   #expect(entry.startedAt == startedAt)
   #expect(entry.addedAt == addedAt)
   #expect(entry.endedAt == endedAt)
@@ -29,19 +29,19 @@ import Testing
 @Test func workLogEntryKeepsExplicitIdentifier() {
   let identifier = UUID()
 
-  let entry = TestFactories.makeWorkLogEntry(id: identifier, taskID: TestFactories.anyTaskID)
+  let entry = TestFactories.makeWorkLogEntry(id: identifier)
 
   #expect(entry.id == identifier)
 }
 
 @Test func workLogEntryAllowsMissingDescription() {
-  let entry = TestFactories.makeWorkLogEntry(taskID: TestFactories.anyTaskID)
+  let entry = TestFactories.makeWorkLogEntry()
 
   #expect(entry.description == nil)
 }
 
 @Test func workLogEntryAllowsMissingEndedAt() {
-  let entry = TestFactories.makeWorkLogEntry(taskID: TestFactories.anyTaskID, endedAt: nil)
+  let entry = TestFactories.makeWorkLogEntry(endedAt: nil)
 
   #expect(entry.endedAt == nil)
   #expect(entry.duration == nil)
@@ -52,7 +52,6 @@ import Testing
   let endedAt = Date(timeIntervalSince1970: 1_700_000_900)
 
   let entry = TestFactories.makeWorkLogEntry(
-    taskID: TestFactories.anyTaskID,
     startedAt: startedAt,
     endedAt: endedAt)
 
@@ -63,7 +62,6 @@ import Testing
   let startedAt = Date(timeIntervalSince1970: 1_700_000_900)
 
   let entry = TestFactories.makeWorkLogEntry(
-    taskID: TestFactories.anyTaskID,
     startedAt: startedAt,
     endedAt: startedAt)
 
@@ -98,7 +96,6 @@ import Testing
   let addedAt = Date(timeIntervalSince1970: 1_700_000_300)
 
   let entry = TestFactories.makeWorkLogEntry(
-    taskID: TestFactories.anyTaskID,
     startedAt: startedAt,
     addedAt: addedAt,
     updatedAt: addedAt)
@@ -116,16 +113,14 @@ import Testing
 
   let firstEntry = TestFactories.makeWorkLogEntry(
     id: id,
-    taskID: TestFactories.anyTaskID,
-    description: "Initial architecture and constraints",
+    description: TestFactories.anyWorkLogDescription,
     startedAt: startedAt,
     addedAt: addedAt,
     endedAt: endedAt,
     updatedAt: updatedAt)
   let secondEntry = TestFactories.makeWorkLogEntry(
     id: id,
-    taskID: TestFactories.anyTaskID,
-    description: "Initial architecture and constraints",
+    description: TestFactories.anyWorkLogDescription,
     startedAt: startedAt,
     addedAt: addedAt,
     endedAt: endedAt,
@@ -135,7 +130,7 @@ import Testing
 }
 
 @Test func workLogEntryIsRunningWhenEndedAtIsNil() {
-  let entry = TestFactories.makeWorkLogEntry(taskID: TestFactories.anyTaskID, endedAt: nil)
+  let entry = TestFactories.makeWorkLogEntry(endedAt: nil)
 
   #expect(entry.isRunning)
 }
@@ -143,7 +138,7 @@ import Testing
 @Test func workLogEntryIsNotRunningWhenEndedAtIsSet() {
   let endedAt = Date(timeIntervalSince1970: 1_700_000_360)
 
-  let entry = TestFactories.makeWorkLogEntry(taskID: TestFactories.anyTaskID, endedAt: endedAt)
+  let entry = TestFactories.makeWorkLogEntry(endedAt: endedAt)
 
   #expect(!entry.isRunning)
 }
