@@ -46,22 +46,22 @@ struct TimeTracker: App {
       reviewTask.id: reviewEntries,
     ])
     trackingService = WorkLogTrackingService()
-    let service = trackingService
-    let logRepository = workLogRepository
-    Task {
-      if let running = try? await logRepository.fetchRunningEntry() {
-        service.start(running)
-      }
-    }
   }
 
   var body: some Scene {
     WindowGroup {
       ContentView(
         workTaskListViewModel: WorkTaskListViewModel(repository: workTaskRepository),
-        workLogListViewModel: WorkLogListViewModel(repository: workLogRepository)
+        workLogListViewModel: WorkLogListViewModel(
+          repository: workLogRepository,
+          trackingService: trackingService)
       )
       .environment(trackingService)
+      .task {
+        if let running = try? await workLogRepository.fetchRunningEntry() {
+          trackingService.start(running)
+        }
+      }
     }
   }
 }
