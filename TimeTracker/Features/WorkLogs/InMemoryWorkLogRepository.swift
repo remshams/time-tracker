@@ -10,13 +10,10 @@ actor InMemoryWorkLogRepository: WorkLogRepository {
   }
 
   func fetchRunningEntry() async throws -> WorkLogEntry? {
-    entriesByTaskID.values.joined().first(where: \.isRunning)
+    entriesByTaskID.values.joined().first(where: { $0.endedAt == nil })
   }
 
   func addEntry(_ entry: WorkLogEntry) async throws {
-    if entry.isRunning, entriesByTaskID.values.joined().contains(where: \.isRunning) {
-      throw WorkLogRepositoryError.runningEntryAlreadyExists
-    }
     entriesByTaskID[entry.taskID, default: []].append(entry)
   }
 
