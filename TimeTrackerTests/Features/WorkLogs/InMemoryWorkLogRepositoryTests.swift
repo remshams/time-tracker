@@ -83,6 +83,16 @@ import Testing
       #expect(fetchedEntries == [entryOne, entryTwo])
     }
 
+    @Test func addRunningEntrySucceedsWhenNoOtherRunningEntryExists() async throws {
+      let taskID = TestFactories.anyTaskID
+      let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskID)
+      let repository = InMemoryWorkLogRepository()
+
+      try await repository.addEntry(runningEntry)
+      let fetchedEntries = try await repository.fetchEntries(for: taskID)
+
+      #expect(fetchedEntries == [runningEntry])
+    }
   }
 
   @Suite @MainActor struct UpdateEntry {
@@ -119,7 +129,9 @@ import Testing
     @Test func returnsRunningEntryAcrossAllTasks() async throws {
       let taskA = TestFactories.makeTask()
       let taskB = TestFactories.makeTask()
-      let completedEntry = TestFactories.makeWorkLogEntry(taskID: taskA.id)
+      let completedEntry = TestFactories.makeWorkLogEntry(
+        taskID: taskA.id,
+        endedAt: Date(timeIntervalSince1970: 1_700_000_360))
       let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskB.id)
       let repository = InMemoryWorkLogRepository(entriesByTaskID: [
         taskA.id: [completedEntry],
@@ -133,7 +145,9 @@ import Testing
 
     @Test func returnsNilWhenNoRunningEntryExists() async throws {
       let taskID = TestFactories.anyTaskID
-      let completedEntry = TestFactories.makeWorkLogEntry(taskID: taskID)
+      let completedEntry = TestFactories.makeWorkLogEntry(
+        taskID: taskID,
+        endedAt: Date(timeIntervalSince1970: 1_700_000_360))
       let repository = InMemoryWorkLogRepository(entriesByTaskID: [taskID: [completedEntry]])
 
       let result = try await repository.fetchRunningEntry()
