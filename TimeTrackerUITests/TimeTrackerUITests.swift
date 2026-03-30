@@ -41,16 +41,20 @@ final class WorkTaskUITests: XCTestCase {
 
   // MARK: - Helpers
 
-  /// Pastes text into an element via the macOS pasteboard.
-  /// Using typeText() directly can drop characters on macOS due to timing.
+  /// Inputs text into an element in a platform-appropriate way.
+  ///
+  /// On macOS, `typeText()` can drop characters due to key-event timing, so
+  /// we write directly to `NSPasteboard` and paste with Cmd+V instead.
+  /// On iOS/iPadOS, `typeText()` is reliable and no pasteboard workaround is needed.
   private func pasteInto(_ element: XCUIElement, text: String) {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/bin/sh")
-    process.arguments = ["-c", "printf '%s' '\(text)' | pbcopy"]
-    try? process.run()
-    process.waitUntilExit()
     element.tap()
+#if os(macOS)
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
     element.typeKey("a", modifierFlags: [.command])
     element.typeKey("v", modifierFlags: [.command])
+#else
+    element.typeText(text)
+#endif
   }
 }
