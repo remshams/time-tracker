@@ -1,44 +1,56 @@
-//
-//  TimeTrackerUITests.swift
-//  TimeTrackerUITests
-//
-//  Created by Mathias Remshardt on 28.03.26.
-//
-
 import XCTest
 
-final class TimeTrackerUITests: XCTestCase {
+final class WorkTaskUITests: XCTestCase {
+  var app: XCUIApplication!
 
   override func setUpWithError() throws {
-    // Put setup code here. This method is called before the invocation of each test method in the class.
-
-    // In UI tests it is usually best to stop immediately when a failure occurs.
     continueAfterFailure = false
-
-    // In UI tests it’s important to set the initial state required before tests run,
-    // such as interface orientation.
+    app = XCUIApplication()
+    app.launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
+    app.launch()
+    // On macOS, a sandboxed WindowGroup app does not auto-open a window when
+    // launched headlessly by XCUITest. Cmd+N triggers File > New Window.
+    app.typeKey("n", modifierFlags: [.command])
   }
 
   override func tearDownWithError() throws {
-    // Put teardown code here. This method is called after the invocation of each test method in the class.
+    app = nil
   }
 
   @MainActor
-  func testExample() throws {
-    // UI tests must launch the application that they test.
-    let app = XCUIApplication()
-    app.launch()
+  func test_addTask_isVisibleInListAndHasNoWorkLogs() throws {
+    app.buttons["Add Task"].tap()
 
-    // Use XCTAssert and related functions to verify your tests produce the correct results.
-    // XCUIAutomation Documentation
-    // https://developer.apple.com/documentation/xcuiautomation
+    // On macOS, Form TextFields have no accessibility label of their own —
+    // the label "Title" is a separate StaticText. Query by position instead.
+    let sheet = app.sheets.firstMatch
+    XCTAssertTrue(sheet.waitForExistence(timeout: 3))
+
+    let titleField = sheet.textFields.firstMatch
+    XCTAssertTrue(titleField.waitForExistence(timeout: 3))
+    pasteInto(titleField, text: "Buy groceries")
+
+    sheet.buttons["Save"].tap()
+
+    XCTAssertTrue(app.staticTexts["Buy groceries"].waitForExistence(timeout: 3))
+
+    app.staticTexts["Buy groceries"].tap()
+
+    XCTAssertTrue(app.staticTexts["No Work Logs"].waitForExistence(timeout: 3))
   }
 
-  @MainActor
-  func testLaunchPerformance() throws {
-    // This measures how long it takes to launch your application.
-    measure(metrics: [XCTApplicationLaunchMetric()]) {
-      XCUIApplication().launch()
-    }
+  // MARK: - Helpers
+
+  /// Pastes text into an element via the macOS pasteboard.
+  /// Using typeText() directly can drop characters on macOS due to timing.
+  private func pasteInto(_ element: XCUIElement, text: String) {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/sh")
+    process.arguments = ["-c", "printf '%s' '\(text)' | pbcopy"]
+    try? process.run()
+    process.waitUntilExit()
+    element.tap()
+    element.typeKey("a", modifierFlags: [.command])
+    element.typeKey("v", modifierFlags: [.command])
   }
 }
