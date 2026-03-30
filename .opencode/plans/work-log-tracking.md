@@ -79,7 +79,7 @@ can be built and tested end-to-end before a SwiftData persistence layer is intro
   together when stopping an entry, satisfying the `updatedAt >= addedAt` validation rule.
 - **Write error surfacing** via a SwiftUI `.alert` driven by `isShowingTrackingError`:
   - Chosen over toast/banner: built-in SwiftUI, appropriate for an explicit user action
-    that failed, consistent with macOS system app conventions.
+    that failed, consistent with macOS app conventions.
   - The full-screen `loadingState` overlay is not reused — a write failure must not
     hide an already-loaded entry list.
   - **No Retry button.** The Play/Stop button remains tappable after a write failure
@@ -148,9 +148,9 @@ TimeTrackerTests/
    - `addEntry` creates the task bucket if none existed for that `taskID`.
    - `addEntry` does not affect entries for other `taskID`s.
    - `updateEntry` replaces the matching entry (by `id`) in the correct task bucket.
-    - `updateEntry` throws `.entryNotFound` when the ID does not exist.
-    - `fetchRunningEntry` returns the running entry across all tasks.
-    - `fetchRunningEntry` returns `nil` when no running entry exists.
+   - `updateEntry` throws `.entryNotFound` when the ID does not exist.
+   - `fetchRunningEntry` returns the running entry across all tasks.
+   - `fetchRunningEntry` returns `nil` when no running entry exists.
 4. Extend `WorkLogRepository` protocol with `addEntry`, `updateEntry`, and
    `fetchRunningEntry`.
 5. Convert `InMemoryWorkLogRepository` from `struct` to `actor` and implement all three
@@ -196,7 +196,7 @@ TimeTrackerTests/
     - `play.fill` when `!viewModel.isTracking`, `stop.fill` when `viewModel.isTracking`.
     - Calls `startTracking` or `stopTracking` via `Task { await … }`.
     - Disabled while `viewModel.isLoading`.
-    - Localised accessibility labels: `"work-log-list.toolbar.start"` / `"Start
+    - Localized accessibility labels: `"work-log-list.toolbar.start"` / `"Start
       Tracking"` and `"work-log-list.toolbar.stop"` / `"Stop Tracking"`.
 13. Add a `.alert` to `WorkLogListView`:
     - Title: `"work-log-list.tracking-error.title"` / `"Tracking Error"`.
