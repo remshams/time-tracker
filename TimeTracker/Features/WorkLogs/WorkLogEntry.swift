@@ -14,6 +14,8 @@ struct WorkLogEntry: Identifiable, Equatable, Sendable {
   let endedAt: Date?
   let updatedAt: Date
 
+  var isRunning: Bool { endedAt == nil }
+
   var duration: Duration? {
     guard let endedAt else {
       return nil
