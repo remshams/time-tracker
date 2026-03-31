@@ -203,6 +203,14 @@ TimeTrackerTests/
     - Message: `viewModel.trackingError ?? ""`.
     - Single OK button that sets `viewModel.trackingError = nil`.
 
+#### Slice 5 execution notes
+
+- Prefer a small private toolbar button builder (or computed view) in `WorkLogListView` if it improves readability, but avoid introducing a second ViewModel or new service.
+- Keep the button action logic in the view layer only: `Task { await viewModel.startTracking(for: taskID) }` and `Task { await viewModel.stopTracking() }`.
+- The alert dismiss action should clear `viewModel.trackingError` by setting it to `nil`; no retry button is added in this slice.
+- Because there are currently no dedicated SwiftUI view tests in the project, Slice 5 should use TDD by first adding focused tests around any extracted presentation helpers/state that make the UI behavior explicit, then implement the SwiftUI wiring and verify with build/tests.
+- Do not broaden scope into elapsed timers, task-specific tracking restrictions, or persistence/reactivity changes.
+
 ---
 
 ## Checkpoints
