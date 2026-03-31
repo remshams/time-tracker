@@ -27,6 +27,7 @@ struct WorkTaskListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, AppSpacing.tight)
+        .accessibilityIdentifier("task-list-ready")
     }
     .loadingOverlay(
       isLoading: viewModel.isLoading,
