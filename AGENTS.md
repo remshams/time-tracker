@@ -8,11 +8,13 @@
 ## Commits
 - Never create one giant commit for all changes. Break work into small, focused commits where each commit contains a single logical unit of change (e.g., one refactor, one feature, one fix).
 - Never leave empty commits in the JJ log history. Use `jj abandon <id>` to remove them.
+- After finishing a chunk of work, always leave the repository in a fresh empty JJ changeset on top of the completed work.
 
 ## Code Size
 - If the same string is repeated more than once, extract it into a variable or property.
 
 ## Pull Requests
+- Always use the GitHub CLI (`gh`) for pull request creation and related GitHub operations. Do not try to create PRs by pushing ad-hoc branches or by relying on the default shell flow instead of `gh`.
 - When merging a PR on GitHub, always use "Rebase and merge" — never "Create a merge commit" or "Squash and merge". This keeps the history linear and avoids merge commits.
 
 ## Code Review & Refactoring
