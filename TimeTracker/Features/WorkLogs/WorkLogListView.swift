@@ -69,7 +69,7 @@ struct WorkLogListView: View {
 
   private var trackingToolbarButton: some View {
     Button {
-      if viewModel.isTracking {
+      if isTrackingSelectedTask {
         Task { await viewModel.stopTracking() }
       } else {
         Task { await viewModel.startTracking(for: taskID) }
@@ -81,7 +81,7 @@ struct WorkLogListView: View {
   }
 
   private var trackingToolbarTitle: String {
-    if viewModel.isTracking {
+    if isTrackingSelectedTask {
       return String(localized: "work-log-list.toolbar.stop", defaultValue: "Stop Tracking")
     }
 
@@ -89,7 +89,11 @@ struct WorkLogListView: View {
   }
 
   private var trackingToolbarSystemImage: String {
-    viewModel.isTracking ? "stop.fill" : "play.fill"
+    isTrackingSelectedTask ? "stop.fill" : "play.fill"
+  }
+
+  private var isTrackingSelectedTask: Bool {
+    viewModel.isTrackingTask(taskID)
   }
 
   private var trackingErrorAlertIsPresented: Binding<Bool> {

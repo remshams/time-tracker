@@ -305,7 +305,6 @@ import Testing
 
       #expect(viewModel.trackingError == nil)
     }
-
   }
 }
 
