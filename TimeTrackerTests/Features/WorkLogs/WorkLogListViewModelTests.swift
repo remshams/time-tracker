@@ -142,8 +142,10 @@ import Testing
       await viewModel.startTracking(for: newTaskID)
 
       #expect(stub.lastUpdatedEntry?.id == existingEntry.id)
+      #expect(stub.lastUpdatedEntry?.taskID == existingTaskID)
       #expect(stub.lastUpdatedEntry?.endedAt != nil)
-      #expect(stub.lastUpdatedEntry?.updatedAt != nil)
+      #expect(stub.lastUpdatedEntry?.updatedAt == stub.lastUpdatedEntry?.endedAt)
+      #expect(stub.lastAddedEntry?.taskID == newTaskID)
     }
 
     @Test func startTrackingStopsTrackingServiceBeforeStartingNew() async {
