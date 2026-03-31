@@ -5,6 +5,7 @@ import Foundation
 final class WorkLogListViewModel {
   private(set) var entries: [WorkLogEntry] = []
   private(set) var loadingState: LoadingState = .idle
+  private(set) var isTrackingActionInFlight = false
   var trackingError: String?
 
   var isLoading: Bool { loadingState.isLoading }
@@ -44,6 +45,10 @@ final class WorkLogListViewModel {
   }
 
   func startTracking(for taskID: WorkTask.ID) async {
+    if isTrackingActionInFlight { return }
+    isTrackingActionInFlight = true
+    defer { isTrackingActionInFlight = false }
+
     trackingError = nil
     let startTrackingErrorMessage = String(
       localized: "work-log-list.tracking.start-error",
@@ -83,6 +88,10 @@ final class WorkLogListViewModel {
   }
 
   func stopTracking() async {
+    if isTrackingActionInFlight { return }
+    isTrackingActionInFlight = true
+    defer { isTrackingActionInFlight = false }
+
     trackingError = nil
     let stopTrackingErrorMessage = String(
       localized: "work-log-list.tracking.stop-error",

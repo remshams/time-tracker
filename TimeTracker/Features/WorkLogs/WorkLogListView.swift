@@ -89,7 +89,7 @@ struct WorkLogListView: View {
         systemImage: isTrackingSelectedTask ? "stop.fill" : "play.fill"
       )
     }
-    .disabled(viewModel.isLoading)
+    .disabled(viewModel.isLoading || viewModel.isTrackingActionInFlight)
   }
 
   private var isTrackingSelectedTask: Bool {
