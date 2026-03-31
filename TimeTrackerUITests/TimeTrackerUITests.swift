@@ -27,9 +27,7 @@ final class WorkTaskUITests: XCTestCase {
 
   @MainActor
   func test_addTask_isVisibleInListAndHasNoWorkLogs() throws {
-    let addTaskButton = app.buttons[Constants.addTaskButtonIdentifier]
-    XCTAssertTrue(addTaskButton.waitForExistence(timeout: Constants.uiTimeout))
-    addTaskButton.tap()
+    openAddTaskSheet()
 
     // On macOS, Form TextFields have no accessibility label of their own —
     // the label "Title" is a separate StaticText. Query by position instead.
@@ -65,6 +63,20 @@ final class WorkTaskUITests: XCTestCase {
 
       app.typeKey("n", modifierFlags: [.command])
       XCTAssertTrue(readyMarker.waitForExistence(timeout: Constants.uiTimeout))
+    #endif
+  }
+
+  /// Opens the add-task sheet in a platform-appropriate way.
+  ///
+  /// On macOS, we intentionally exercise the keyboard shortcut path because the
+  /// SwiftUI toolbar item is not reliably exposed to XCUITest on GitHub Actions.
+  private func openAddTaskSheet() {
+    #if os(macOS)
+      app.typeKey("n", modifierFlags: [.command])
+    #else
+      let addTaskButton = app.buttons[Constants.addTaskButtonIdentifier]
+      XCTAssertTrue(addTaskButton.waitForExistence(timeout: Constants.uiTimeout))
+      addTaskButton.tap()
     #endif
   }
 
