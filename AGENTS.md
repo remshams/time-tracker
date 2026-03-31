@@ -15,6 +15,7 @@
 
 ## Pull Requests
 - Always use the GitHub CLI (`gh`) for pull request creation and related GitHub operations. Do not try to create PRs by pushing ad-hoc branches or by relying on the default shell flow instead of `gh`.
+- Before merging a PR, run the refactor-specialist sub-agent to check for code smells. If the user did not explicitly ask for this earlier, prompt the user first to ask whether they want that refactoring review run.
 - When merging a PR on GitHub, always use "Rebase and merge" — never "Create a merge commit" or "Squash and merge". This keeps the history linear and avoids merge commits.
 
 ## Code Review & Refactoring
