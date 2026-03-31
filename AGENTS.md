@@ -2,7 +2,7 @@
 
 ## Coding
 - We use JJ for version control workflows.
-- We usually work in a linked worktree instead of the primary checkout. Default to JJ workflows here, because repository metadata does not always resolve reliably from the current directory in this setup. Only rely on git when you have confirmed the worktree supports it correctly.
+- We usually work in a linked worktree instead of the primary checkout. In linked worktrees, prefer git workflows because the worktree is backed by git and JJ metadata does not always resolve reliably there. In the primary project checkout, prefer JJ workflows.
 - Always run linters and keep code lint-free before finishing changes.
 - Always review the code you created for issues before finalizing.
 
