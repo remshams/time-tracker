@@ -45,9 +45,62 @@ struct WorkLogListView: View {
         )
       }
     }
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        trackingToolbarButton
+      }
+    }
+    .alert(
+      String(
+        localized: "work-log-list.tracking-error.title",
+        defaultValue: "Tracking Error"),
+      isPresented: trackingErrorAlertIsPresented
+    ) {
+      Button(String(localized: "OK", defaultValue: "OK")) {
+        viewModel.trackingError = nil
+      }
+    } message: {
+      Text(viewModel.trackingError ?? "")
+    }
     .task(id: taskID) {
       await viewModel.loadEntries(for: taskID)
     }
+  }
+
+  private var trackingToolbarButton: some View {
+    Button {
+      if viewModel.isTracking {
+        Task { await viewModel.stopTracking() }
+      } else {
+        Task { await viewModel.startTracking(for: taskID) }
+      }
+    } label: {
+      Label(trackingToolbarTitle, systemImage: trackingToolbarSystemImage)
+    }
+    .disabled(viewModel.isLoading)
+  }
+
+  private var trackingToolbarTitle: String {
+    if viewModel.isTracking {
+      return String(localized: "work-log-list.toolbar.stop", defaultValue: "Stop Tracking")
+    }
+
+    return String(localized: "work-log-list.toolbar.start", defaultValue: "Start Tracking")
+  }
+
+  private var trackingToolbarSystemImage: String {
+    viewModel.isTracking ? "stop.fill" : "play.fill"
+  }
+
+  private var trackingErrorAlertIsPresented: Binding<Bool> {
+    Binding(
+      get: { viewModel.isShowingTrackingError },
+      set: { isPresented in
+        if !isPresented {
+          viewModel.trackingError = nil
+        }
+      }
+    )
   }
 
   private func timeRangeForegroundStyle(for entry: WorkLogEntry) -> any ShapeStyle {
