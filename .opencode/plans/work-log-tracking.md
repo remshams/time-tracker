@@ -211,6 +211,7 @@ TimeTrackerTests/
 - Because there are currently no dedicated SwiftUI view tests in the project, Slice 5 should use TDD by first adding focused tests around any extracted presentation helpers/state that make the UI behavior explicit, then implement the SwiftUI wiring and verify with build/tests.
 - The toolbar button state is task-specific: it shows Stop only when `trackingService.runningEntry?.taskID == taskID` for the currently selected work-log view; otherwise it shows Play, even if another task is being tracked globally.
 - Do not broaden scope into elapsed timers, persistence/reactivity changes, or task-selection state promotion beyond this local toolbar behavior.
+- Shared `WorkLogListViewModel` test support (for example `WorkLogRepositoryStub`) may be moved into a dedicated support file when reused across multiple test files, and unused test-double state should be removed when confirmed unnecessary.
 
 ---
 
