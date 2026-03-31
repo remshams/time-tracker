@@ -3,6 +3,8 @@ import Testing
 
 @testable import TimeTracker
 
+// swiftlint:disable file_length type_body_length
+
 @Suite struct WorkLogListViewModelTests {
   @Suite @MainActor struct LoadEntries {
     @Test func loadsEntriesFromRepository() async {
@@ -84,6 +86,8 @@ import Testing
   }
 
   @Suite @MainActor struct DerivedState {
+    private static let staleTrackingError = "stale error"
+
     @Test func isTrackingDelegatesToTrackingService() {
       let trackingService = WorkLogTrackingService()
       let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: TestFactories.anyTaskID)
@@ -112,7 +116,7 @@ import Testing
     @Test func startTrackingClearsStaleTrackingError() async {
       let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
       let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub)
-      viewModel.trackingError = "stale error"
+      viewModel.trackingError = Self.staleTrackingError
 
       await viewModel.startTracking(for: TestFactories.anyTaskID)
 
@@ -125,11 +129,41 @@ import Testing
       let trackingService = WorkLogListViewModelTests.makeTrackingService(tracking: runningEntry)
       let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
       let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub, trackingService: trackingService)
-      viewModel.trackingError = "stale error"
+      viewModel.trackingError = Self.staleTrackingError
 
       await viewModel.stopTracking()
 
       #expect(viewModel.trackingError == nil)
+    }
+  }
+
+  @Suite @MainActor struct TrackingTaskState {
+    @Test func isTrackingTaskIsTrueWhenRunningEntryMatchesTask() {
+      let taskID = TestFactories.anyTaskID
+      let trackingService = WorkLogTrackingService()
+      trackingService.start(TestFactories.makeRunningWorkLogEntry(taskID: taskID))
+      let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
+      let viewModel = WorkLogListViewModel(repository: stub, trackingService: trackingService)
+
+      #expect(viewModel.isTrackingTask(taskID))
+    }
+
+    @Test func isTrackingTaskIsFalseWhenAnotherTaskIsRunning() {
+      let runningTaskID = UUID()
+      let selectedTaskID = UUID()
+      let trackingService = WorkLogTrackingService()
+      trackingService.start(TestFactories.makeRunningWorkLogEntry(taskID: runningTaskID))
+      let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
+      let viewModel = WorkLogListViewModel(repository: stub, trackingService: trackingService)
+
+      #expect(!viewModel.isTrackingTask(selectedTaskID))
+    }
+
+    @Test func isTrackingTaskIsFalseWhenNothingIsRunning() {
+      let viewModel = WorkLogListViewModel(
+        repository: WorkLogRepositoryStub(fetchEntriesResult: .success([])))
+
+      #expect(!viewModel.isTrackingTask(TestFactories.anyTaskID))
     }
   }
 
@@ -241,7 +275,82 @@ import Testing
       #expect(stub.lastUpdatedEntry?.endedAt != nil)
       #expect(stub.lastAddedEntry?.taskID == newTaskID)
       #expect(viewModel.trackingError != nil)
-      #expect(trackingService.runningEntry?.id == existingEntry.id)
+      #expect(!trackingService.isTracking)
+      #expect(trackingService.runningEntry == nil)
+    }
+  }
+
+  @Suite @MainActor struct TrackingActionInFlight {
+    @Test func startTrackingResetsInFlightFlagAfterSuccess() async {
+      let viewModel = WorkLogListViewModelTests.makeViewModel(
+        stub: WorkLogRepositoryStub(fetchEntriesResult: .success([])))
+
+      await viewModel.startTracking(for: TestFactories.anyTaskID)
+
+      #expect(!viewModel.isTrackingActionInFlight)
+    }
+
+    @Test func startTrackingResetsInFlightFlagAfterFailure() async {
+      let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
+      stub.addEntryResult = .failure(WorkLogRepositoryStubError.writeFailed)
+      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub)
+
+      await viewModel.startTracking(for: TestFactories.anyTaskID)
+
+      #expect(!viewModel.isTrackingActionInFlight)
+    }
+
+    @Test func stopTrackingResetsInFlightFlagAfterSuccess() async {
+      let taskID = TestFactories.anyTaskID
+      let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskID)
+      let trackingService = WorkLogListViewModelTests.makeTrackingService(tracking: runningEntry)
+      let viewModel = WorkLogListViewModelTests.makeViewModel(
+        stub: WorkLogRepositoryStub(fetchEntriesResult: .success([])),
+        trackingService: trackingService)
+
+      await viewModel.stopTracking()
+
+      #expect(!viewModel.isTrackingActionInFlight)
+    }
+
+    @Test func stopTrackingResetsInFlightFlagAfterFailure() async {
+      let taskID = TestFactories.anyTaskID
+      let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskID)
+      let trackingService = WorkLogListViewModelTests.makeTrackingService(tracking: runningEntry)
+      let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
+      stub.updateEntryResult = .failure(WorkLogRepositoryStubError.writeFailed)
+      let viewModel = WorkLogListViewModelTests.makeViewModel(
+        stub: stub,
+        trackingService: trackingService)
+
+      await viewModel.stopTracking()
+
+      #expect(!viewModel.isTrackingActionInFlight)
+    }
+
+    @Test func startTrackingIsNoOpWhenCalledReentrantly() async {
+      let taskID = TestFactories.anyTaskID
+      let repository = WorkLogListBlockingTrackingActionRepository()
+      let viewModel = WorkLogListViewModel(repository: repository)
+
+      let firstCall = Task {
+        await viewModel.startTracking(for: taskID)
+      }
+
+      await repository.waitForAddEntryToStart()
+      #expect(viewModel.isTrackingActionInFlight)
+
+      await viewModel.startTracking(for: taskID)
+
+      #expect(await repository.addEntryCallCount == 1)
+      #expect(await repository.fetchEntriesCallCount == 0)
+
+      await repository.resumeAddEntry()
+      await firstCall.value
+
+      #expect(await repository.addEntryCallCount == 1)
+      #expect(await repository.fetchEntriesCallCount == 1)
+      #expect(!viewModel.isTrackingActionInFlight)
     }
   }
 
@@ -315,6 +424,48 @@ import Testing
 
 // MARK: - Helpers
 
+private actor WorkLogListBlockingTrackingActionRepository: WorkLogRepository {
+  private(set) var addEntryCallCount = 0
+  private(set) var fetchEntriesCallCount = 0
+
+  private var addEntryStartedContinuation: CheckedContinuation<Void, Never>?
+  private var addEntryResumeContinuation: CheckedContinuation<Void, Never>?
+
+  func fetchEntries(for taskID: WorkTask.ID) async throws -> [WorkLogEntry] {
+    fetchEntriesCallCount += 1
+    return []
+  }
+
+  func fetchRunningEntry() async throws -> WorkLogEntry? {
+    nil
+  }
+
+  func addEntry(_ entry: WorkLogEntry) async throws {
+    addEntryCallCount += 1
+    addEntryStartedContinuation?.resume()
+    addEntryStartedContinuation = nil
+
+    await withCheckedContinuation { continuation in
+      addEntryResumeContinuation = continuation
+    }
+  }
+
+  func updateEntry(_ entry: WorkLogEntry) async throws {}
+
+  func waitForAddEntryToStart() async {
+    if addEntryCallCount > 0 { return }
+
+    await withCheckedContinuation { continuation in
+      addEntryStartedContinuation = continuation
+    }
+  }
+
+  func resumeAddEntry() async {
+    addEntryResumeContinuation?.resume()
+    addEntryResumeContinuation = nil
+  }
+}
+
 extension WorkLogListViewModelTests {
   @MainActor
   private static func makeViewModel(
@@ -337,3 +488,5 @@ extension WorkLogListViewModelTests {
     return service
   }
 }
+
+// swiftlint:enable file_length type_body_length
