@@ -54,7 +54,7 @@ can be built and tested end-to-end before a SwiftData persistence layer is intro
     cheap `FetchDescriptor` predicate on `endedAt == nil`.
 - **Cross-task auto-stop is a hard requirement, not an optional enhancement.** Allowing
   two simultaneously running entries is a data integrity violation. The invariant is
-  enforced in `WorkLogTrackingService.startTracking`, not in the repository. `startTracking`
+  enforced in `WorkLogListViewModel.startTracking`, not in the repository. `startTracking`
   checks `trackingService.runningEntry` first; if one is found it is stopped
   (both `endedAt` and `updatedAt` set to `.now` via `updateEntry` and
   `trackingService.stop()`) before the new entry is created.
@@ -218,12 +218,12 @@ TimeTrackerTests/
 - [x] Update `WorkLogRepositoryStub`.
 
 ### Slice 3 — `WorkLogTrackingService`
-- [ ] Create `WorkLogTrackingService`.
-- [ ] Bootstrap and inject in `TimeTrackerApp`.
+- [x] Create `WorkLogTrackingService`.
+- [x] Bootstrap and inject in `TimeTrackerApp`.
 
 ### Slice 4 — ViewModel tracking logic
-- [ ] Write tracking tests for `WorkLogListViewModel`.
-- [ ] Update `WorkLogListViewModel` with `trackingService` dependency and tracking methods.
+- [x] Write tracking tests for `WorkLogListViewModel`.
+- [x] Update `WorkLogListViewModel` with `trackingService` dependency and tracking methods.
 
 ### Slice 5 — UI
 - [ ] Add Play / Stop toolbar button to `WorkLogListView`.
