@@ -83,7 +83,7 @@ import Testing
     }
   }
 
-  @Suite @MainActor struct Tracking {
+  @Suite @MainActor struct DerivedState {
     @Test func isTrackingDelegatesToTrackingService() {
       let trackingService = WorkLogTrackingService()
       let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: TestFactories.anyTaskID)
@@ -109,6 +109,31 @@ import Testing
       #expect(!viewModel.isShowingTrackingError)
     }
 
+    @Test func startTrackingClearsStaleTrackingError() async {
+      let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
+      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub)
+      viewModel.trackingError = "stale error"
+
+      await viewModel.startTracking(for: TestFactories.anyTaskID)
+
+      #expect(viewModel.trackingError == nil)
+    }
+
+    @Test func stopTrackingClearsStaleTrackingError() async {
+      let taskID = TestFactories.anyTaskID
+      let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskID)
+      let trackingService = WorkLogListViewModelTests.makeTrackingService(tracking: runningEntry)
+      let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
+      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub, trackingService: trackingService)
+      viewModel.trackingError = "stale error"
+
+      await viewModel.stopTracking()
+
+      #expect(viewModel.trackingError == nil)
+    }
+  }
+
+  @Suite @MainActor struct StartTracking {
     @Test func startTrackingAddsNewRunningEntry() async {
       let taskID = TestFactories.anyTaskID
       let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
@@ -218,7 +243,9 @@ import Testing
       #expect(viewModel.trackingError != nil)
       #expect(trackingService.runningEntry?.id == existingEntry.id)
     }
+  }
 
+  @Suite @MainActor struct StopTracking {
     @Test func stopTrackingUpdatesRunningEntryWithEndedAt() async {
       let taskID = TestFactories.anyTaskID
       let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskID)
@@ -282,30 +309,8 @@ import Testing
 
       #expect(stub.lastUpdatedEntry == nil)
     }
-
-    @Test func startTrackingClearsStaleTrackingError() async {
-      let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
-      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub)
-      viewModel.trackingError = "stale error"
-
-      await viewModel.startTracking(for: TestFactories.anyTaskID)
-
-      #expect(viewModel.trackingError == nil)
-    }
-
-    @Test func stopTrackingClearsStaleTrackingError() async {
-      let taskID = TestFactories.anyTaskID
-      let runningEntry = TestFactories.makeRunningWorkLogEntry(taskID: taskID)
-      let trackingService = WorkLogListViewModelTests.makeTrackingService(tracking: runningEntry)
-      let stub = WorkLogRepositoryStub(fetchEntriesResult: .success([]))
-      let viewModel = WorkLogListViewModelTests.makeViewModel(stub: stub, trackingService: trackingService)
-      viewModel.trackingError = "stale error"
-
-      await viewModel.stopTracking()
-
-      #expect(viewModel.trackingError == nil)
-    }
   }
+
 }
 
 // MARK: - Helpers
