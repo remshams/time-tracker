@@ -49,5 +49,23 @@ jobs:
       - name: Print toolchain versions
         run: swift --version && xcodebuild -version
 
-      - name: Run tests
+      - name: Run unit tests
         run: xcodebuild test -project TimeTracker.xcodeproj -scheme TimeTracker -destination 'platform=macOS' -only-testing:TimeTrackerTests
+
+  ui-test:
+    runs-on: macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26.3
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26.3"
+
+      - name: Print toolchain versions
+        run: swift --version && xcodebuild -version
+
+      - name: Run UI tests
+        run: xcodebuild test -project TimeTracker.xcodeproj -scheme TimeTracker -destination 'platform=macOS' -only-testing:TimeTrackerUITests/WorkTaskUITests
