@@ -40,7 +40,7 @@ enum TestFactories {
   /// Returns a work log entry with no end time (i.e. currently running).
   static func makeRunningWorkLogEntry(
     id: UUID = .init(),
-    taskID: WorkTask.ID,
+    taskID: WorkTask.ID = anyTaskID,
     description: String? = nil
   ) -> WorkLogEntry {
     makeWorkLogEntry(id: id, taskID: taskID, description: description, endedAt: nil)
