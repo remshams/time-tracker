@@ -10,6 +10,16 @@ excluded:
 
 reporter: github-actions-logging
 
+# Keep production length thresholds explicit here.
+# Test targets can override these in nested .swiftlint.yml files.
+file_length:
+  warning: 400
+  error: 1000
+
+type_body_length:
+  warning: 250
+  error: 350
+
 line_length:
   warning: 120
   error: 160

@@ -216,6 +216,10 @@ TimeTrackerTests/
 - Prevent tracking-action reentrancy in the `WorkLogListViewModel` itself with a dedicated in-flight flag (separate from `isLoading`), and disable the toolbar button while either loading entries or a tracking mutation is in flight.
 - If auto-stopping the previously running entry succeeds but creating the new entry fails, update `trackingService` to reflect the persisted stopped state so repository and in-memory tracking state remain consistent.
 
+## Follow-up maintenance
+
+- SwiftLint should be configured so test files do not require inline `file_length` / `type_body_length` disable comments for normal large test suites; prefer a central config override for `TimeTrackerTests/**` over per-file suppression comments.
+
 ---
 
 ## Checkpoints

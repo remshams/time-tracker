@@ -3,8 +3,6 @@ import Testing
 
 @testable import TimeTracker
 
-// swiftlint:disable file_length type_body_length
-
 @Suite struct WorkLogListViewModelTests {
   @Suite @MainActor struct LoadEntries {
     @Test func loadsEntriesFromRepository() async {
@@ -488,5 +486,3 @@ extension WorkLogListViewModelTests {
     return service
   }
 }
-
-// swiftlint:enable file_length type_body_length
