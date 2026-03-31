@@ -212,6 +212,8 @@ TimeTrackerTests/
 - The toolbar button state is task-specific: it shows Stop only when `trackingService.runningEntry?.taskID == taskID` for the currently selected work-log view; otherwise it shows Play, even if another task is being tracked globally.
 - Do not broaden scope into elapsed timers, persistence/reactivity changes, or task-selection state promotion beyond this local toolbar behavior.
 - Shared `WorkLogListViewModel` test support (for example `WorkLogRepositoryStub`) may be moved into a dedicated support file when reused across multiple test files, and unused test-double state should be removed when confirmed unnecessary.
+- Small single-use view helpers in `WorkLogListView` may be inlined when that improves readability, and `WorkLogListViewModel` tests may be regrouped into smaller suites such as `DerivedState`, `StartTracking`, and `StopTracking` when helpful.
+- Prevent tracking-action reentrancy in the `WorkLogListViewModel` itself with a dedicated in-flight flag (separate from `isLoading`), and disable the toolbar button while either loading entries or a tracking mutation is in flight.
 
 ---
 

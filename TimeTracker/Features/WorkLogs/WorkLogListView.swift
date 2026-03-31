@@ -54,7 +54,14 @@ struct WorkLogListView: View {
       String(
         localized: "work-log-list.tracking-error.title",
         defaultValue: "Tracking Error"),
-      isPresented: trackingErrorAlertIsPresented
+      isPresented: Binding(
+        get: { viewModel.isShowingTrackingError },
+        set: { isPresented in
+          if !isPresented {
+            viewModel.trackingError = nil
+          }
+        }
+      )
     ) {
       Button(String(localized: "OK", defaultValue: "OK")) {
         viewModel.trackingError = nil
@@ -75,36 +82,18 @@ struct WorkLogListView: View {
         Task { await viewModel.startTracking(for: taskID) }
       }
     } label: {
-      Label(trackingToolbarTitle, systemImage: trackingToolbarSystemImage)
+      Label(
+        isTrackingSelectedTask
+          ? String(localized: "work-log-list.toolbar.stop", defaultValue: "Stop Tracking")
+          : String(localized: "work-log-list.toolbar.start", defaultValue: "Start Tracking"),
+        systemImage: isTrackingSelectedTask ? "stop.fill" : "play.fill"
+      )
     }
     .disabled(viewModel.isLoading)
   }
 
-  private var trackingToolbarTitle: String {
-    if isTrackingSelectedTask {
-      return String(localized: "work-log-list.toolbar.stop", defaultValue: "Stop Tracking")
-    }
-
-    return String(localized: "work-log-list.toolbar.start", defaultValue: "Start Tracking")
-  }
-
-  private var trackingToolbarSystemImage: String {
-    isTrackingSelectedTask ? "stop.fill" : "play.fill"
-  }
-
   private var isTrackingSelectedTask: Bool {
     viewModel.isTrackingTask(taskID)
-  }
-
-  private var trackingErrorAlertIsPresented: Binding<Bool> {
-    Binding(
-      get: { viewModel.isShowingTrackingError },
-      set: { isPresented in
-        if !isPresented {
-          viewModel.trackingError = nil
-        }
-      }
-    )
   }
 
   private func timeRangeForegroundStyle(for entry: WorkLogEntry) -> any ShapeStyle {
