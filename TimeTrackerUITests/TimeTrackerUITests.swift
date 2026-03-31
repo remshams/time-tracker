@@ -48,13 +48,13 @@ final class WorkTaskUITests: XCTestCase {
   /// On iOS/iPadOS, `typeText()` is reliable and no pasteboard workaround is needed.
   private func pasteInto(_ element: XCUIElement, text: String) {
     element.tap()
-#if os(macOS)
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(text, forType: .string)
-    element.typeKey("a", modifierFlags: [.command])
-    element.typeKey("v", modifierFlags: [.command])
-#else
-    element.typeText(text)
-#endif
+    #if os(macOS)
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(text, forType: .string)
+      element.typeKey("a", modifierFlags: [.command])
+      element.typeKey("v", modifierFlags: [.command])
+    #else
+      element.typeText(text)
+    #endif
   }
 }
