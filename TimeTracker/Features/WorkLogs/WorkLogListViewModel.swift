@@ -24,6 +24,10 @@ final class WorkLogListViewModel {
     self.trackingService = trackingService
   }
 
+  func isTrackingTask(_ taskID: WorkTask.ID) -> Bool {
+    trackingService.runningEntry?.taskID == taskID
+  }
+
   func loadEntries(for taskID: WorkTask.ID) async {
     entries = []
     loadingState = .loading

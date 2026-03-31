@@ -209,7 +209,8 @@ TimeTrackerTests/
 - Keep the button action logic in the view layer only: `Task { await viewModel.startTracking(for: taskID) }` and `Task { await viewModel.stopTracking() }`.
 - The alert dismiss action should clear `viewModel.trackingError` by setting it to `nil`; no retry button is added in this slice.
 - Because there are currently no dedicated SwiftUI view tests in the project, Slice 5 should use TDD by first adding focused tests around any extracted presentation helpers/state that make the UI behavior explicit, then implement the SwiftUI wiring and verify with build/tests.
-- Do not broaden scope into elapsed timers, task-specific tracking restrictions, or persistence/reactivity changes.
+- The toolbar button state is task-specific: it shows Stop only when `trackingService.runningEntry?.taskID == taskID` for the currently selected work-log view; otherwise it shows Play, even if another task is being tracked globally.
+- Do not broaden scope into elapsed timers, persistence/reactivity changes, or task-selection state promotion beyond this local toolbar behavior.
 
 ---
 
