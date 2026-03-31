@@ -16,7 +16,7 @@
 
 ## Pull Requests
 - Always use the GitHub CLI (`gh`) for pull request creation and related GitHub operations. Do not try to create PRs by pushing ad-hoc branches or by relying on the default shell flow instead of `gh`.
-- Before creating a PR, or immediately after updating one, make sure the local gitignored build server file (`buildServer.json`) is present and up to date for your machine. If it is missing or stale after project or scheme changes, regenerate it with `xcode-build-server config -scheme "TimeTracker"`.
+- Before creating a PR, or immediately after updating one, make sure the local gitignored build server file (`buildServer.json`) is present and up to date for your machine. If it is missing or stale after project or scheme changes, regenerate it with `xcode-build-server config -project "TimeTracker.xcodeproj" -scheme "TimeTracker"`.
 - Run the heavier PR review sub-agents (`code-reviewer`, `refactor-specialist`, and `security-reviewer` when the PR touches security-sensitive areas) as part of the initial PR creation workflow and again immediately before merging, not on every incremental PR update.
 - Before merging a PR, if the user did not explicitly ask for the refactor-specialist review earlier, prompt the user first to ask whether they want that refactoring review run.
 - When merging a PR on GitHub, always use "Rebase and merge" — never "Create a merge commit" or "Squash and merge". This keeps the history linear and avoids merge commits.
