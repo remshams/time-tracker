@@ -19,7 +19,9 @@ final class WorkTaskUITests: XCTestCase {
 
   @MainActor
   func test_addTask_isVisibleInListAndHasNoWorkLogs() throws {
-    app.buttons["Add Task"].tap()
+    let addTaskButton = app.buttons["add-task-button"]
+    XCTAssertTrue(addTaskButton.waitForExistence(timeout: 5))
+    addTaskButton.tap()
 
     // On macOS, Form TextFields have no accessibility label of their own —
     // the label "Title" is a separate StaticText. Query by position instead.

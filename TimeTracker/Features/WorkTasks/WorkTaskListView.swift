@@ -58,6 +58,7 @@ struct WorkTaskListView: View {
             systemImage: "plus")
         }
         .keyboardShortcut("n", modifiers: .command)
+        .accessibilityIdentifier("add-task-button")
       }
     }
     .sheet(isPresented: $isAddingTask) {
