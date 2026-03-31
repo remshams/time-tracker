@@ -76,6 +76,9 @@ final class WorkLogListViewModel {
     do {
       try await repository.addEntry(newEntry)
     } catch {
+      if previousEntry != nil {
+        trackingService.stop()
+      }
       trackingError = startTrackingErrorMessage
       return
     }
