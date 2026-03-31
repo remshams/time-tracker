@@ -218,7 +218,7 @@ TimeTrackerTests/
 
 ## Follow-up maintenance
 
-- SwiftLint should be configured so test files do not require inline `file_length` / `type_body_length` disable comments for normal large test suites; prefer a central config override for `TimeTrackerTests/**` over per-file suppression comments.
+- SwiftLint should be configured so test files do not require inline `file_length` / `type_body_length` disable comments for normal large test suites; prefer one shared project config over per-file suppression comments or extra nested config files when the same thresholds are acceptable for production and tests.
 
 ---
 
