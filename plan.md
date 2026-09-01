@@ -208,15 +208,15 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 
 - [x] Model reusable tasks with many time entries.
 - [x] Define idle and running tracking states and commands in `tracker-core`.
-- [ ] Persist tasks, entries, and the active timer in SQLite through a repository trait.
-- [ ] Store the database in the platform application-data directory on Linux and macOS.
+- [x] Persist tasks, entries, and the active timer in SQLite through a repository trait.
+- [x] Store the database in the platform application-data directory on Linux and macOS.
 - [ ] Add `a` to create a task, `e` to rename it, and `d` to archive it after confirmation.
 - [ ] Use Space to start or stop the selected task.
-- [ ] When another task is active, switch tasks by stopping and starting entries in one transaction.
+- [x] When another task is active, switch tasks by stopping and starting entries in one transaction.
 - [ ] Keep an active timer running when the TUI exits and recover it when the application restarts.
 - [x] Treat each restart of a stopped task as a new time entry.
-- [ ] Defer manual time-entry editing.
-- [ ] Add schema migrations and tests around transactions, restart recovery, and clock changes.
+- [x] Defer manual time-entry editing.
+- [x] Add schema migrations and tests around transactions, restart recovery, and clock changes.
 
 ### Milestone 3: server sync
 

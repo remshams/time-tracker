@@ -1,0 +1,17 @@
+[package]
+name = "tracker-storage"
+description = "SQLite persistence for the time tracker"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+dirs = { workspace = true }
+rusqlite = { workspace = true }
+thiserror = { workspace = true }
+tracker-core = { path = "../tracker-core" }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
