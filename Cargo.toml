@@ -6,3 +6,8 @@ members = ["crates/tracker-core", "apps/tui"]
 version = "0.1.0"
 edition = "2024"
 publish = false
+
+[workspace.dependencies]
+chrono = "0.4.45"
+thiserror = "2.0.20"
+uuid = { version = "1.26.0", features = ["v7"] }

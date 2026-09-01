@@ -4,3 +4,8 @@ description = "Domain model for the time tracker"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
