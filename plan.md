@@ -2,9 +2,9 @@
 
 ## Status
 
-This repository contains planning and agent guidance. Milestones 1 and 2 are implemented: the `tt` TUI renders the task list, tracks time locally in SQLite, and recovers the active timer across restarts. Server sync and additional clients are not started.
+Milestones 0, 1, and 2 are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. Server sync and additional clients are not started.
 
-Milestones 1 and 2 are approved, together with the bootstrap work they require. Implementation uses the approved subagents below.
+The implementation and review findings are committed and pushed to Forgejo. Final validation found 205 passing tests, 302 caught mutants, no missed or timed-out mutants, and no CRAP score above 30. Linux PTY tests pass. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
 ## Settled decisions
 
@@ -30,8 +30,9 @@ The owner should eventually be able to start tracking on one computer, switch co
 ### TUI MVP
 
 - Stable Rust with edition 2024.
-- A Cargo workspace with two packages:
+- A Cargo workspace with three packages:
   - `crates/tracker-core`, a library for task and tracking types.
+  - `crates/tracker-storage`, the SQLite repository implementation.
   - `apps/tui`, the terminal binary.
 - `ratatui` for widgets and test rendering.
 - `crossterm` for terminal input, alternate-screen handling, and raw mode.
@@ -245,7 +246,7 @@ The current session does not use GitHub Copilot, so no GitHub Copilot model may 
 | Bootstrap the workspace, hooks, and quality configuration | `hf:zai-org/GLM-5.3-Flash` | Z.ai | `synthetic` | medium | Eligible. GLM 5.3 is the latest available Z.ai series. | Focused setup work. |
 | Implement the task, tracking, and SQLite layers | `hf:zai-org/GLM-5.3-Flash` | Z.ai | `synthetic` | high | Eligible. GLM 5.3 is the latest available Z.ai series. | The user selected this model for implementation. Tests must cover state and transaction invariants. |
 | Implement the TUI, keybindings, and terminal lifecycle | `hf:zai-org/GLM-5.3-Flash` | Z.ai | `synthetic` | high | Eligible. GLM 5.3 is the latest available Z.ai series. | The user selected this model for implementation. |
-| Review correctness and lifecycle behavior | `gpt-5.6-sol` | OpenAI | `openai-codex` | high | Eligible. GPT-5.6 is the latest available OpenAI series. | Independent review of timer, transaction, recovery, and terminal failure paths. |
+| Review correctness and lifecycle behavior | `gpt-5.6-terra` | OpenAI | `openai-codex` | high | Eligible. GPT-5.6 is the latest available OpenAI series. | Escalated from GPT-5.6 Sol after that reviewer exceeded its time limit. The replacement reviewed timer, transaction, recovery, and terminal failure paths. |
 | Review security and privacy | `gpt-5.6-luna` | OpenAI | `openai-codex` | medium | Eligible. GPT-5.6 is the latest available OpenAI series. | Independent review of local storage and data exposure. |
 
 Each reviewer must return one complete report with severity, affected files, rationale, and recommended fixes. Address review findings, rerun validation, and commit the reviewed checkpoint before further work.
