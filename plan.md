@@ -4,7 +4,7 @@
 
 Milestones 0, 1, and 2 are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. Server sync and additional clients are not started.
 
-The implementation and review findings are committed and pushed to Forgejo. Final validation found 205 passing tests, 302 caught mutants, no missed or timed-out mutants, and no CRAP score above 30. Linux PTY tests pass. A real macOS run remains necessary because this Linux host has no Apple SDK.
+The implementation and review findings are committed and pushed to Forgejo. Final validation found 208 passing tests, 302 caught mutants, no missed or timed-out mutants, and no CRAP score above 30. Linux PTY tests pass. The TUI uses the terminal's default palette and keeps readable contrast across all 22 bundled Omarchy themes. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
 ## Settled decisions
 
@@ -218,6 +218,16 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 - [x] Treat each restart of a stopped task as a new time entry.
 - [x] Defer manual time-entry editing.
 - [x] Add schema migrations and tests around transactions, restart recovery, and clock changes.
+
+### Interim checkpoint: terminal palette compatibility
+
+- [x] Keep TUI styling independent of Omarchy-specific files and fixed RGB colors.
+- [x] Centralize non-default visual roles in the TUI styles module.
+- [x] Use reversed terminal foreground and background colors for selected rows.
+- [x] Use default terminal colors for status text, hints, and the input cursor.
+- [x] Mark errors with a textual prefix and bold styling instead of color alone.
+- [x] Verify normal, selected, error, hint, and cursor contrast against all 17 dark and 5 light bundled Omarchy themes.
+- [x] Retain Linux PTY coverage and the full quality checks.
 
 ### Milestone 3: server sync
 
