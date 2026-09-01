@@ -182,7 +182,22 @@ fn tt_runs_in_a_pty_seeds_the_database_and_quits_on_q() {
         );
     }
     assert!(output.contains("Time Tracker"), "title missing:\n{output}");
-    assert!(output.contains("a add"), "footer missing:\n{output}");
+    // Default-styled spaces may be emitted as cursor movements, so check the
+    // footer's meaningful fragments rather than one contiguous byte string.
+    for hint in [
+        "j/k",
+        "start/stop",
+        "add",
+        "rename",
+        "archive",
+        "q/esc/ctrl+c",
+        "quit",
+    ] {
+        assert!(
+            output.contains(hint),
+            "footer fragment {hint:?} missing:\n{output}"
+        );
+    }
     // Setup entered the alternate screen, and the guard left it and showed
     // the cursor again before exiting.
     assert!(
