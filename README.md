@@ -8,6 +8,8 @@ The TUI works end to end. It stores tasks and time entries in SQLite, seeds a ne
 
 While a timer runs, the visible elapsed time comes from a monotonic clock anchored to the entry's UTC start, so system clock adjustments do not make the timer jump.
 
+Task names are trimmed, non-empty, at most 256 characters long, and free of control characters. The same rules guard names read back from the database.
+
 ## Prerequisites
 
 - Linux or macOS
