@@ -16,7 +16,9 @@ ratatui = { workspace = true }
 thiserror = { workspace = true }
 tracker-core = { path = "../../crates/tracker-core" }
 tracker-storage = { path = "../../crates/tracker-storage" }
+unicode-width = { workspace = true }
 
 [dev-dependencies]
 libc = { workspace = true }
 tempfile = { workspace = true }
+uuid = { workspace = true }

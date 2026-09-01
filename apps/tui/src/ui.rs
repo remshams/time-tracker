@@ -5,6 +5,8 @@
 
 use std::time::Duration;
 
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
 use crate::app::{App, InputPurpose, Mode, Status};
 use crate::keymap;
 use ratatui::Frame;
@@ -12,6 +14,52 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
+
+/// The display width of one character in terminal cells.
+fn char_width(character: char) -> usize {
+    character.width().unwrap_or(0)
+}
+
+/// The longest prefix of `text` that fits in `max_width` display cells.
+///
+/// Cutting always lands between whole characters, so wide characters and
+/// combining marks are never split.
+fn fit_prefix(text: &str, max_width: usize) -> &str {
+    let mut end = 0;
+    let mut width = 0;
+    for (index, character) in text.char_indices() {
+        let character_width = char_width(character);
+        if width + character_width > max_width {
+            break;
+        }
+        width += character_width;
+        end = index + character.len_utf8();
+    }
+    &text[..end]
+}
+
+/// The longest suffix of `text` that fits in `max_width` display cells.
+///
+/// Cutting always lands before a whole base character, so a combining mark
+/// is never separated from the base it follows.
+fn fit_suffix(text: &str, max_width: usize) -> &str {
+    let mut committed = text.len();
+    let mut width = 0;
+    for (index, character) in text.char_indices().rev() {
+        let character_width = char_width(character);
+        if character_width == 0 {
+            // A combining mark travels with the base that follows in this
+            // reverse pass; it joins the window only if that base fits.
+            continue;
+        }
+        if width + character_width > max_width {
+            break;
+        }
+        width += character_width;
+        committed = index;
+    }
+    &text[committed..]
+}
 
 /// The background and foreground used for the selected row.
 fn selected_style() -> Style {
@@ -75,6 +123,8 @@ fn render_tasks(frame: &mut Frame, area: Rect, app: &App) {
         );
         return;
     }
+    // Two border cells and the two-cell marker leave this much for a name.
+    let name_budget = (area.width as usize).saturating_sub(4);
     let active_task_id = app.active_task_id();
     let items: Vec<ListItem> = app
         .tasks()
@@ -85,7 +135,8 @@ fn render_tasks(frame: &mut Frame, area: Rect, app: &App) {
             } else {
                 "  "
             };
-            ListItem::new(Line::from(format!("{marker}{}", task.name)))
+            let name = fit_prefix(task.name.as_str(), name_budget);
+            ListItem::new(Line::from(format!("{marker}{name}")))
         })
         .collect();
     let list = List::new(items)
@@ -122,6 +173,10 @@ fn render_modal(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Renders the one-line text input with a visible cursor.
+///
+/// The modal is fixed-width, so a long text scrolls horizontally: the tail
+/// of the buffer stays visible next to the cursor while the head moves out
+/// of view. Wide characters are never cut in half.
 fn render_input_modal(frame: &mut Frame, area: Rect, purpose: InputPurpose, buffer: &str) {
     let modal = centered(56, 3, area);
     frame.render_widget(Clear, modal);
@@ -129,10 +184,17 @@ fn render_input_modal(frame: &mut Frame, area: Rect, purpose: InputPurpose, buff
         InputPurpose::Add => "New task name:",
         InputPurpose::Rename { .. } => "Rename task:",
     };
+    // The border cells, the separating space, and the cursor block leave
+    // this much display width for the visible part of the buffer.
+    let budget = (modal.width as usize)
+        .saturating_sub(2)
+        .saturating_sub(prompt.width())
+        .saturating_sub(2);
+    let visible = fit_suffix(buffer, budget);
     let line = Line::from(vec![
         Span::raw(prompt),
         Span::raw(" "),
-        Span::raw(buffer),
+        Span::raw(visible),
         Span::styled("▏", cursor_style()),
     ]);
     frame.render_widget(Paragraph::new(line).block(Block::bordered()), modal);
@@ -336,6 +398,82 @@ mod tests {
             .position(|(_, character)| character == '▏')
             .unwrap() as u16;
         assert_eq!(cell(&terminal, cursor_x, modal_row).fg, Some(Color::Cyan));
+    }
+
+    #[test]
+    fn a_long_input_scrolls_so_the_tail_and_cursor_stay_visible() {
+        let mut app = app_with(&["alpha"]);
+        app.handle(Command::OpenAdd);
+        // Longer than the visible budget: the head scrolls out of view.
+        for character in "a".repeat(80).chars() {
+            app.handle(Command::Insert(character));
+        }
+        let terminal = draw(&app);
+        let row_text = row(&terminal, 11);
+        // The modal shows the last 38 columns of the buffer plus the cursor.
+        assert!(row_text.contains(&"a".repeat(38)), "got {row_text:?}");
+        assert!(!row_text.contains(&"a".repeat(39)), "got {row_text:?}");
+        assert!(row_text.contains('▏'), "the cursor must stay visible");
+    }
+
+    #[test]
+    fn wide_characters_scroll_on_whole_characters() {
+        let mut app = app_with(&["alpha"]);
+        app.handle(Command::OpenAdd);
+        // 30 wide characters are 60 columns, wider than the budget of 38.
+        for character in "宽".repeat(30).chars() {
+            app.handle(Command::Insert(character));
+        }
+        let terminal = draw(&app);
+        let row_text = row(&terminal, 11);
+        // 19 wide characters fill the 38-column budget exactly; the wide
+        // glyphs occupy their own cells, so count them.
+        assert_eq!(row_text.matches('宽').count(), 19, "got {row_text:?}");
+        assert!(row_text.contains('▏'), "the cursor must stay visible");
+    }
+
+    #[test]
+    fn prefix_and_suffix_windows_cut_on_whole_characters() {
+        assert_eq!(fit_prefix("hello", 3), "hel");
+        assert_eq!(fit_prefix("hello", 0), "");
+        assert_eq!(fit_prefix("hello", 99), "hello");
+        assert_eq!(fit_prefix("宽宽宽", 3), "宽");
+        assert_eq!(fit_suffix("hello", 3), "llo");
+        assert_eq!(fit_suffix("hello", 0), "");
+        assert_eq!(fit_suffix("宽宽宽", 3), "宽");
+        // Combining marks travel with their base character.
+        let acute = "e\u{301}";
+        let text: String = acute.repeat(3);
+        assert_eq!(fit_prefix(&text, 2), "e\u{301}e\u{301}");
+        assert_eq!(fit_suffix(&text, 1), "e\u{301}");
+    }
+
+    #[test]
+    fn a_very_long_task_name_renders_single_line_and_truncated() {
+        // 256 characters is the longest storable name, and far wider than
+        // the 80-column test terminal.
+        let long = "x".repeat(256);
+        let app = app_with(&[&long, "beta"]);
+        let terminal = draw(&app);
+        let rows = rows(&terminal);
+        // Row 2 holds the long name and row 3 the next task: nothing wrapped.
+        assert!(rows[2].contains("xxx"), "got {:?}", rows[2]);
+        assert!(rows[3].contains("beta"), "got {:?}", rows[3]);
+        // The right border survived the truncation.
+        assert!(rows[2].ends_with('│'), "got {:?}", rows[2]);
+        assert!(rows[3].ends_with('│'), "got {:?}", rows[3]);
+    }
+
+    #[test]
+    fn a_wide_character_task_name_truncates_without_splitting_a_character() {
+        // 128 wide characters are 256 scalar values and 256 columns.
+        let wide = "宽".repeat(128);
+        let app = app_with(&[&wide]);
+        let terminal = draw(&app);
+        let row_text = row(&terminal, 2);
+        // The 76-cell budget fits 38 wide characters.
+        assert_eq!(row_text.matches('宽').count(), 38, "got {row_text:?}");
+        assert!(row_text.ends_with('│'), "got {row_text:?}");
     }
 
     #[test]

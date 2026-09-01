@@ -8,7 +8,7 @@ The TUI works end to end. It stores tasks and time entries in SQLite, seeds a ne
 
 The database enforces the tracking rules itself, so a second `tt` process sees the same bounds: an archived task cannot receive entries, a task with an active entry cannot be archived, at most one entry is active, and duplicate entry identifiers are reported as such. Seeding and switching happen inside single transactions, so simultaneous starts of two `tt` processes neither double-seed a new database nor lose a switch.
 
-While a timer runs, the visible elapsed time comes from a monotonic clock anchored to the entry's UTC start, so system clock adjustments do not make the timer jump.
+While a timer runs, the visible elapsed time comes from a monotonic clock anchored to the entry's UTC start, so system clock adjustments do not make the timer jump. Stopping or switching derives its UTC instant from the same clock, so the persisted duration always matches the displayed one.
 
 Task names are trimmed, non-empty, at most 256 characters long, and free of control characters. The same rules guard names read back from the database.
 
@@ -42,15 +42,16 @@ Navigation is keyboard-first. The footer always lists the keys available in the 
 
 Task list:
 
-- `j` / `k` or Down / Up: move the selection, with safe bounds at both ends. `h` and `l` are reserved for future navigation and do nothing.
-- Space: start the selected task, stop the active task, or switch from the active task to the selected one in a single transaction.
-- `a`: add a task. `e`: rename the selected task (the input starts pre-filled). `d`: archive the selected task after confirmation. The active task cannot be archived.
+- `j` / `k` or Down / Up: move the selection, with safe bounds at both ends. `h` and `l` are reserved for future navigation and do nothing. Only unmodified keys act in the task list and confirmation modes; modifier chords other than Ctrl+C are ignored.
+- Space: start the selected task, stop the active task, or switch from the active task to the selected one in a single transaction. Stop and switch instants come from the monotonic elapsed clock, so the stored duration always matches what was displayed, even across system clock adjustments. If another `tt` process won a conflict first, the screen reloads tasks, the active timer, and the elapsed clock from the database before the concise error is shown.
+- `a`: add a task. `e`: rename the selected task (the input starts pre-filled). `d`: archive the selected task after confirmation. The active task cannot be archived. After a successful add, rename, or archive, the list is updated in place from the stored result.
 - `q` or Escape: quit. An active timer keeps running and is recovered on the next start.
 
 Text input (`a` and `e`):
 
-- Printable characters and Backspace edit the text; Space is ordinary input.
-- Enter confirms, Escape cancels. An empty name shows an error and keeps the input open.
+- Printable characters and Backspace edit the text; Space is ordinary input. Input stops growing at 256 characters, the task-name limit.
+- Enter confirms, Escape cancels. An invalid name (empty, control characters, or too long) shows an error and keeps the input open.
+- The modal scrolls horizontally: with a long text the tail of the buffer and the cursor stay visible, cutting only on whole characters.
 
 Archive confirmation:
 
@@ -66,7 +67,9 @@ The workspace has three packages:
 - `crates/tracker-storage`: SQLite persistence. Implements `TrackerRepository`, owns the schema migrations and the platform paths.
 - `apps/tui`: the `tt` binary. `app.rs` holds the state and applies semantic commands, `keymap.rs` maps raw keys to commands, `ui.rs` renders, `terminal.rs` owns setup and cleanup, and `main.rs` wires it together.
 
-The event loop is synchronous. Commands apply to a cloned candidate first, so a storage error can never desynchronize memory and SQLite.
+The event loop is synchronous. Commands apply to a cloned candidate first, so a storage error can never desynchronize memory and SQLite. Successful add, rename, and archive writes update the visible list from the stored result; a tracking write that loses a cross-process conflict reloads the interface state from the database instead.
+
+Terminal setup and teardown are staged: raw mode, the alternate screen, and cursor visibility are tracked in one restoration state shared by the guard and the panic hook, so exactly the completed stages are restored exactly once, and a raw-mode failure writes no escape sequence at all.
 
 ## Validation
 

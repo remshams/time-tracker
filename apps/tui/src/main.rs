@@ -16,11 +16,11 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use crossterm::event::Event;
-use tracker_core::{Task, TaskId, TaskName, TrackerRepository};
+use tracker_core::TaskName;
 use tracker_storage::{SqliteRepository, StorageError, default_database_path, ensure_app_data_dir};
 
 use crate::app::App;
-use crate::terminal::TerminalGuard;
+use crate::terminal::{Restoration, TerminalGuard};
 
 /// The tasks a brand-new database is seeded with, in order.
 const SEED_TASK_NAMES: [&str; 3] = [
@@ -49,12 +49,18 @@ fn report(result: Result<(), Box<dyn Error>>) -> ExitCode {
 }
 
 fn run_app() -> Result<(), Box<dyn Error>> {
-    terminal::install_panic_hook(terminal::force_restore);
+    // The guard and the panic hook share one restoration state, so a panic
+    // cleanup and the guard's drop never both write to the terminal.
+    let restoration = Restoration::new();
+    terminal::install_panic_hook({
+        let restoration = restoration.clone();
+        move || restoration.restore()
+    });
     ensure_app_data_dir()?;
     let repository = SqliteRepository::open(default_database_path()?)?;
-    seed_if_empty(&repository)?;
+    seed_default_tasks(&repository)?;
     let mut app = App::load(repository)?;
-    let mut guard = TerminalGuard::new()?;
+    let mut guard = TerminalGuard::new(restoration)?;
     run(&mut guard, &mut app).map_err(Into::into)
 }
 
@@ -77,22 +83,23 @@ fn run(guard: &mut TerminalGuard, app: &mut App) -> io::Result<()> {
 
 /// Seeds a brand-new empty database with the default task list, once.
 ///
-/// A database that already has tasks, archived or not, is left untouched.
-fn seed_if_empty(repository: &SqliteRepository) -> Result<(), StorageError> {
-    if !repository.list_tasks()?.is_empty() {
-        return Ok(());
-    }
-    for name in SEED_TASK_NAMES {
-        let task_name =
-            TaskName::new(name).map_err(|_| StorageError::CorruptData("seed task name"))?;
-        repository.create_task(Task::new(TaskId::generate(), task_name))?;
-    }
+/// The repository checks emptiness and inserts inside one immediate
+/// transaction, so a database that already has tasks, archived or not, is
+/// left untouched, concurrent starts cannot seed twice, and a failure leaves
+/// no partial seed.
+fn seed_default_tasks(repository: &SqliteRepository) -> Result<(), StorageError> {
+    let names: Vec<TaskName> = SEED_TASK_NAMES
+        .iter()
+        .map(|name| TaskName::new(name).expect("seed task names are valid"))
+        .collect();
+    repository.seed_default_tasks(&names)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracker_core::{Task, TaskId, TrackerRepository};
 
     fn repository() -> SqliteRepository {
         SqliteRepository::open_in_memory().unwrap()
@@ -101,7 +108,7 @@ mod tests {
     #[test]
     fn a_new_database_is_seeded_with_exactly_the_default_tasks() {
         let repository = repository();
-        seed_if_empty(&repository).unwrap();
+        seed_default_tasks(&repository).unwrap();
         let names: Vec<String> = repository
             .list_tasks()
             .unwrap()
@@ -118,7 +125,7 @@ mod tests {
         );
 
         // Seeding again adds nothing: it happens exactly once.
-        seed_if_empty(&repository).unwrap();
+        seed_default_tasks(&repository).unwrap();
         assert_eq!(repository.list_tasks().unwrap().len(), 3);
     }
 
@@ -127,7 +134,7 @@ mod tests {
         let repository = repository();
         let task = Task::new(TaskId::generate(), TaskName::new("mine").unwrap());
         repository.create_task(task).unwrap();
-        seed_if_empty(&repository).unwrap();
+        seed_default_tasks(&repository).unwrap();
         let names: Vec<String> = repository
             .list_tasks()
             .unwrap()
@@ -143,7 +150,7 @@ mod tests {
         let mut task = Task::new(TaskId::generate(), TaskName::new("mine").unwrap());
         task.archived = true;
         repository.create_task(task).unwrap();
-        seed_if_empty(&repository).unwrap();
+        seed_default_tasks(&repository).unwrap();
         assert_eq!(repository.list_tasks().unwrap().len(), 1);
     }
 

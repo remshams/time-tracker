@@ -16,7 +16,8 @@ const QUIT_KEY: KeyCode = KeyCode::Char('c');
 /// Maps a key event to a command for the given mode.
 ///
 /// Returns `None` for keys the mode does not handle. Ctrl+C quits in every
-/// mode, including while typing.
+/// mode, including while typing. In normal and confirmation modes only
+/// unmodified keys act; in input mode Shift still produces capital letters.
 pub fn map(mode: &Mode, key: KeyEvent) -> Option<Command> {
     if key.kind != KeyEventKind::Press {
         return None;
@@ -32,7 +33,13 @@ pub fn map(mode: &Mode, key: KeyEvent) -> Option<Command> {
 }
 
 /// Keys for the task list.
+///
+/// Every action needs an unmodified key; chords were either handled as the
+/// quit shortcut above or do nothing here.
 fn map_normal(key: KeyEvent) -> Option<Command> {
+    if key.modifiers != KeyModifiers::NONE {
+        return None;
+    }
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => Some(Command::MoveDown),
         KeyCode::Char('k') | KeyCode::Up => Some(Command::MoveUp),
@@ -62,12 +69,21 @@ fn map_input(key: KeyEvent) -> Option<Command> {
 }
 
 /// Whether the key carries a command modifier rather than plain text.
+///
+/// Shift is not a command modifier: capitals are ordinary input. Every other
+/// modifier, including Ctrl, Alt, Super, Hyper, and Meta, makes the key a
+/// chord that the input does not type.
 fn is_chord(key: KeyEvent) -> bool {
-    key.modifiers.intersects(KeyModifiers::CONTROL) || key.modifiers.intersects(KeyModifiers::ALT)
+    key.modifiers - KeyModifiers::SHIFT != KeyModifiers::NONE
 }
 
 /// Keys for the archive confirmation.
+///
+/// Every action needs an unmodified key.
 fn map_confirm(key: KeyEvent) -> Option<Command> {
+    if key.modifiers != KeyModifiers::NONE {
+        return None;
+    }
     match key.code {
         KeyCode::Enter | KeyCode::Char('y') => Some(Command::Confirm),
         KeyCode::Esc | KeyCode::Char('n') => Some(Command::Cancel),
@@ -101,6 +117,10 @@ mod tests {
 
     fn ctrl(character: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(character), KeyModifiers::CONTROL)
+    }
+
+    fn with_modifier(character: char, modifier: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(character), modifier)
     }
 
     fn normal() -> Mode {
@@ -186,6 +206,51 @@ mod tests {
     }
 
     #[test]
+    fn modified_action_keys_do_nothing_in_normal_mode() {
+        for key in [
+            ctrl('a'),
+            ctrl('d'),
+            ctrl('y'),
+            ctrl('j'),
+            ctrl('q'),
+            with_modifier('j', KeyModifiers::ALT),
+            with_modifier('j', KeyModifiers::SUPER),
+            with_modifier('j', KeyModifiers::META),
+            with_modifier('j', KeyModifiers::HYPER),
+            with_modifier('j', KeyModifiers::SHIFT),
+            with_modifier('d', KeyModifiers::CONTROL | KeyModifiers::ALT),
+        ] {
+            assert_eq!(map(&normal(), key), None, "modified {key:?} must not act");
+        }
+    }
+
+    #[test]
+    fn modified_keys_do_nothing_in_confirmation_mode() {
+        for key in [
+            ctrl('y'),
+            ctrl('n'),
+            with_modifier('y', KeyModifiers::ALT),
+            with_modifier('y', KeyModifiers::SUPER),
+            with_modifier('y', KeyModifiers::META),
+            with_modifier('n', KeyModifiers::SHIFT),
+        ] {
+            assert_eq!(map(&confirm(), key), None, "modified {key:?} must not act");
+        }
+    }
+
+    #[test]
+    fn a_modified_release_does_nothing_even_for_ctrl_c() {
+        let release = KeyEvent::new_with_kind(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL,
+            KeyEventKind::Release,
+        );
+        for mode in [normal(), input(), confirm()] {
+            assert_eq!(map(&mode, release), None);
+        }
+    }
+
+    #[test]
     fn ctrl_c_quits_in_every_mode() {
         for mode in [normal(), input(), confirm()] {
             assert_eq!(map(&mode, ctrl('c')), Some(Command::Quit));
@@ -216,8 +281,16 @@ mod tests {
         assert_eq!(map(&input(), ctrl('a')), None);
         let alt = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::ALT);
         assert_eq!(map(&input(), alt), None);
+        let hyper = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::HYPER);
+        assert_eq!(map(&input(), hyper), None);
         assert_eq!(map(&input(), key(KeyCode::Up)), None);
         assert_eq!(map(&input(), key(KeyCode::Tab)), None);
+    }
+
+    #[test]
+    fn shift_is_not_a_chord_so_capitals_are_typed() {
+        let capital = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT);
+        assert_eq!(map(&input(), capital), Some(Command::Insert('A')));
     }
 
     #[test]

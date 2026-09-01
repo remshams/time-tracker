@@ -1,14 +1,14 @@
 //! End-to-end smoke tests that drive the real `tt` binary through a
 //! pseudo-terminal.
 //!
-//! The tests run on Linux only: the platform data directory is overridden
-//! with `XDG_DATA_HOME`, so they always operate on a temporary database and
-//! never touch the user's real one.
+//! The tests run on Linux and macOS. The child gets a temporary `HOME`, so
+//! `tt` always operates on a temporary database and never touches the user's
+//! real data on either platform.
 
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 
-use std::ffi::CString;
-use std::path::Path;
+use std::ffi::{CString, c_char};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use tracker_core::TrackerRepository;
@@ -17,14 +17,49 @@ use tracker_storage::SqliteRepository;
 /// How long a `tt` run may take before the test kills it.
 const RUN_LIMIT: Duration = Duration::from_secs(15);
 
-/// Runs `tt` in a child pty, feeds `input` to it, and returns the raw wait
-/// status plus everything the program printed.
+/// The database path inside a temporary home directory.
 ///
-/// The child owns the pty as its controlling terminal, so crossterm's raw
-/// mode and alternate screen behave exactly as in an interactive session.
-fn run_in_pty(data_dir: &Path, input: &[u8]) -> (libc::c_int, String) {
+/// On Linux the platform data directory is `$HOME/.local/share`; on macOS it
+/// is `$HOME/Library/Application Support`.
+fn database_in(home: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        home.join("Library")
+            .join("Application Support")
+            .join("Time Tracker")
+            .join("tt.db")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        home.join(".local")
+            .join("share")
+            .join("Time Tracker")
+            .join("tt.db")
+    }
+}
+
+/// Runs `tt` in a child pty with the given temporary `HOME`, feeds `input` to
+/// it, and returns the raw wait status, everything the program printed, and
+/// whether the terminal was left in cooked mode (echo on) after the child
+/// exited.
+///
+/// `argv` and `envp` are built before the fork. After the fork the child
+/// performs only async-signal-safe calls: `execve`, and `_exit` if the exec
+/// fails. It never touches the Rust runtime of the parent process.
+fn run_in_pty(home: &Path, input: &[u8]) -> (libc::c_int, String, bool) {
     let binary = CString::new(env!("CARGO_BIN_EXE_tt")).expect("binary path has no NUL");
-    let data_dir = data_dir.to_path_buf();
+    // Every environment entry is one NAME=VALUE string. The child gets only
+    // a temporary HOME and a minimal PATH, so tt operates on the temporary
+    // data directory and nothing else.
+    let home_entry =
+        CString::new(format!("HOME={}", home.display())).expect("temporary home has no NUL");
+    let path_entry = CString::new("PATH=/usr/bin:/bin").unwrap();
+    let argv = [binary.as_ptr(), c"tt".as_ptr(), std::ptr::null::<c_char>()];
+    let envp = [
+        home_entry.as_ptr(),
+        path_entry.as_ptr(),
+        std::ptr::null::<c_char>(),
+    ];
 
     unsafe {
         let mut master: libc::c_int = -1;
@@ -36,14 +71,9 @@ fn run_in_pty(data_dir: &Path, input: &[u8]) -> (libc::c_int, String) {
         );
         assert_ne!(pid, -1, "forkpty failed");
         if pid == 0 {
-            // Child: point the data directory at the temporary location and
-            // exec tt. This branch never returns to the test harness.
-            std::env::set_var("XDG_DATA_HOME", &data_dir);
-            libc::execl(
-                binary.as_ptr(),
-                c"tt".as_ptr(),
-                std::ptr::null::<libc::c_char>(),
-            );
+            // Child: exec tt with the temporary HOME. This branch never
+            // returns to the test harness.
+            libc::execve(binary.as_ptr(), argv.as_ptr(), envp.as_ptr());
             libc::_exit(127);
         }
 
@@ -60,10 +90,20 @@ fn run_in_pty(data_dir: &Path, input: &[u8]) -> (libc::c_int, String) {
         }
 
         let output = read_until_eof(master, pid);
-        libc::close(master);
         let mut status: libc::c_int = 0;
         libc::waitpid(pid, &mut status, 0);
-        (status, String::from_utf8_lossy(&output).into_owned())
+        // After tt restored the terminal and exited, the pty line discipline
+        // is back in cooked mode: echo is on again. A skipped raw-mode
+        // restore would leave the pty in raw mode here.
+        let mut termios: libc::termios = std::mem::zeroed();
+        let cooked =
+            libc::tcgetattr(master, &mut termios) == 0 && termios.c_lflag & libc::ECHO != 0;
+        libc::close(master);
+        (
+            status,
+            String::from_utf8_lossy(&output).into_owned(),
+            cooked,
+        )
     }
 }
 
@@ -110,9 +150,9 @@ fn exit_code(status: libc::c_int) -> Option<i32> {
 #[test]
 fn tt_runs_in_a_pty_seeds_the_database_and_quits_on_q() {
     let temp = tempfile::tempdir().unwrap();
-    let data_dir = temp.path().join("data");
+    let home = temp.path().join("home");
 
-    let (status, output) = run_in_pty(&data_dir, b"q");
+    let (status, output, cooked) = run_in_pty(&home, b"q");
 
     assert_eq!(
         exit_code(status),
@@ -131,13 +171,24 @@ fn tt_runs_in_a_pty_seeds_the_database_and_quits_on_q() {
     }
     assert!(output.contains("Time Tracker"), "title missing:\n{output}");
     assert!(output.contains("a add"), "footer missing:\n{output}");
-    // The guard restored raw mode and the alternate screen before exiting.
+    // Setup entered the alternate screen, and the guard left it and showed
+    // the cursor again before exiting.
+    assert!(
+        output.contains("\x1b[?1049h"),
+        "the alternate screen was not entered:\n{output:?}"
+    );
     assert!(
         output.contains("\x1b[?1049l"),
         "the alternate screen was not left:\n{output:?}"
     );
+    assert!(
+        output.contains("\x1b[?25h"),
+        "the cursor was not shown again:\n{output:?}"
+    );
+    // Raw mode was restored: the terminal is left usable for the shell.
+    assert!(cooked, "the pty must be left in cooked mode");
 
-    let database = data_dir.join("Time Tracker").join("tt.db");
+    let database = database_in(&home);
     let repository = SqliteRepository::open(&database).unwrap();
     let names: Vec<String> = repository
         .list_tasks()
@@ -163,16 +214,22 @@ fn tt_runs_in_a_pty_seeds_the_database_and_quits_on_q() {
 #[test]
 fn tt_reports_a_startup_failure_and_exits_nonzero() {
     let temp = tempfile::tempdir().unwrap();
-    // XDG_DATA_HOME points at a plain file, so creating the application data
-    // directory must fail before any terminal setup happens.
-    let blocker = temp.path().join("data");
+    // HOME points at a plain file, so the platform data directory below it
+    // cannot be created and startup must fail before any terminal setup
+    // happens.
+    let blocker = temp.path().join("home");
     std::fs::write(&blocker, b"not a directory").unwrap();
 
-    let (status, output) = run_in_pty(&blocker, b"");
+    let (status, output, _cooked) = run_in_pty(&blocker, b"");
 
     assert_eq!(exit_code(status), Some(1), "output:\n{output}");
     assert!(
         output.contains("tt: "),
         "startup failures print one concise line:\n{output}"
+    );
+    // Nothing entered the alternate screen: no terminal setup ran.
+    assert!(
+        !output.contains("\x1b[?1049h"),
+        "setup must not touch the terminal on a startup failure:\n{output:?}"
     );
 }

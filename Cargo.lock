@@ -1675,6 +1675,8 @@ dependencies = [
  "thiserror 2.0.20",
  "tracker-core",
  "tracker-storage",
+ "unicode-width",
+ "uuid",
 ]
 
 [[package]]

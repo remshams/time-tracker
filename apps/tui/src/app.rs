@@ -8,9 +8,10 @@
 
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use tracker_core::{
-    Task, TaskId, TaskName, Tracker, TrackerRepository, TrackingError, TrackingOutcome,
+    Task, TaskId, TaskName, TaskNameError, Tracker, TrackerRepository, TrackingError,
+    TrackingOutcome,
 };
 use tracker_storage::{SqliteRepository, StorageError};
 
@@ -120,6 +121,32 @@ impl ElapsedClock {
     }
 }
 
+/// Converts a monotonic elapsed duration into the UTC instant it represents
+/// for an entry that started at `start`.
+///
+/// This is how stop and switch timestamps are derived: `start + elapsed`,
+/// never a fresh wall-clock reading, so the persisted duration always equals
+/// the duration that was displayed. Overflow saturates instead of panicking.
+fn tracking_timestamp(start: DateTime<Utc>, elapsed: Duration) -> DateTime<Utc> {
+    // Every Duration fits inside a TimeDelta, so this cannot fail.
+    let delta = TimeDelta::from_std(elapsed).unwrap_or(TimeDelta::MAX);
+    start
+        .checked_add_signed(delta)
+        .unwrap_or(DateTime::<Utc>::MAX_UTC)
+}
+
+/// Short status text for a rejected task name.
+fn task_name_error_text(error: TaskNameError) -> String {
+    match error {
+        TaskNameError::Empty => "The task name must not be empty".to_owned(),
+        TaskNameError::Control => "The task name must not contain control characters".to_owned(),
+        TaskNameError::TooLong => format!(
+            "The task name must be at most {} characters",
+            TaskName::MAX_LEN
+        ),
+    }
+}
+
 /// The task-list interface state.
 pub struct App {
     repository: SqliteRepository,
@@ -180,7 +207,9 @@ impl App {
             Command::Confirm => self.confirm(),
             Command::Cancel => self.mode = Mode::Normal,
             Command::Insert(character) => {
-                if let Mode::Input { buffer, .. } = &mut self.mode {
+                if let Mode::Input { buffer, .. } = &mut self.mode
+                    && buffer.chars().count() < TaskName::MAX_LEN
+                {
                     buffer.push(character);
                 }
             }
@@ -275,15 +304,31 @@ impl App {
 
     /// Starts, stops, or switches tracking for the selected task.
     ///
+    /// Starting while idle uses the wall clock. A stop or switch derives its
+    /// instant from the active entry's start plus the monotonic elapsed
+    /// clock, so a wall-clock jump between start and stop can never make the
+    /// persisted duration differ from the duration that was displayed.
+    ///
     /// The command applies to a cloned tracker first. The clone becomes the
-    /// in-memory state only after the repository write succeeds; on failure
-    /// the status line reports the error and nothing changes.
+    /// in-memory state only after the repository write succeeds. When the
+    /// write loses a conflict to another process, the interface reloads its
+    /// world from storage before returning to the event loop.
     fn toggle_tracking(&mut self) {
         let Some(task) = self.selected_task().cloned() else {
             return;
         };
         let mut candidate = self.tracker.clone();
-        let outcome = match candidate.toggle(&task, Utc::now()) {
+        let at = match candidate.active() {
+            None => Utc::now(),
+            Some(active) => {
+                let elapsed = self
+                    .clock
+                    .as_ref()
+                    .map_or(Duration::ZERO, |clock| clock.elapsed());
+                tracking_timestamp(active.start, elapsed)
+            }
+        };
+        let outcome = match candidate.toggle(&task, at) {
             Ok(outcome) => outcome,
             Err(error) => {
                 self.status = Status::Error(error.to_string());
@@ -291,14 +336,16 @@ impl App {
             }
         };
         if let Err(error) = self.persist_outcome(&outcome) {
-            self.status = Status::Error(format!("Storage error: {error}"));
+            self.recover_after_tracking_conflict(error);
             return;
         }
         self.tracker = candidate;
+        // A fresh entry starts now in monotonic terms, whatever the wall
+        // clock reads.
         self.clock = self
             .tracker
             .active()
-            .map(|active| ElapsedClock::since(active.start));
+            .map(|_| ElapsedClock::anchored(Duration::ZERO));
         self.status = match outcome {
             TrackingOutcome::Started { .. } => Status::Info(format!("Started \"{}\"", task.name)),
             TrackingOutcome::Stopped { .. } => Status::Info(format!("Stopped \"{}\"", task.name)),
@@ -306,6 +353,42 @@ impl App {
                 Status::Info(format!("Switched to \"{}\"", task.name))
             }
         };
+    }
+
+    /// Reloads tasks, the active entry, the tracker, and the elapsed clock
+    /// after a tracking write lost a conflict.
+    ///
+    /// The concise conflict message is kept when the reload succeeds; a
+    /// reload failure replaces it, because the interface cannot trust its
+    /// state after one.
+    fn recover_after_tracking_conflict(&mut self, conflict: StorageError) {
+        let conflict_message = format!("Storage error: {conflict}");
+        if let Err(error) = self.reload_world() {
+            self.status = Status::Error(format!("Storage error: {error}"));
+            return;
+        }
+        self.status = Status::Error(conflict_message);
+    }
+
+    /// Rebuilds every piece of state that mirrors storage.
+    fn reload_world(&mut self) -> Result<(), LoadError> {
+        self.reload_tracking()?;
+        self.reload_tasks(None)?;
+        Ok(())
+    }
+
+    /// Rebuilds the tracker and its clock from the stored active entry.
+    fn reload_tracking(&mut self) -> Result<(), LoadError> {
+        let (tracker, clock) = match self.repository.active_entry()? {
+            Some(entry) => {
+                let clock = ElapsedClock::since(entry.start);
+                (Tracker::resume(entry)?, Some(clock))
+            }
+            None => (Tracker::idle(), None),
+        };
+        self.tracker = tracker;
+        self.clock = clock;
+        Ok(())
     }
 
     /// Writes one tracking outcome to the repository.
@@ -367,17 +450,17 @@ impl App {
 
     /// Confirms the open text input.
     ///
-    /// An empty or whitespace-only name is rejected with a short error and
-    /// keeps the input open. A storage failure reports the error and also
-    /// keeps the input open, so the typed text is never lost.
+    /// A name that breaks the task-name rules is rejected with a short error
+    /// and keeps the input open. A storage failure reports the error and
+    /// also keeps the input open, so the typed text is never lost.
     fn confirm_input(&mut self) {
         let Mode::Input { purpose, buffer } = self.mode.clone() else {
             return;
         };
         let name = match TaskName::new(&buffer) {
             Ok(name) => name,
-            Err(_) => {
-                self.status = Status::Error("The task name must not be empty".to_owned());
+            Err(error) => {
+                self.status = Status::Error(task_name_error_text(error));
                 return;
             }
         };
@@ -408,37 +491,68 @@ impl App {
             return;
         }
         match self.repository.archive_task(task_id) {
-            Ok(_) => {
+            Ok(archived) => {
                 self.mode = Mode::Normal;
                 self.status = Status::Info(format!("Archived \"{name}\""));
-                if let Err(error) = self.reload(None) {
-                    self.status = Status::Error(format!("Storage error: {error}"));
-                }
+                self.remove_visible(archived.id);
             }
             Err(error) => self.status = Status::Error(format!("Storage error: {error}")),
         }
     }
 
-    /// Creates the task and selects it once the write is visible.
+    /// Creates the task, then updates the visible list from the stored
+    /// result instead of reloading everything.
     fn add_task(&mut self, name: TaskName) -> Result<Status, StorageError> {
         let task = Task::new(TaskId::generate(), name);
         self.repository.create_task(task.clone())?;
-        self.reload(Some(task.id))?;
+        self.insert_visible(task.clone());
         Ok(Status::Info(format!("Added \"{}\"", task.name)))
     }
 
-    /// Renames the task and keeps it selected.
+    /// Renames the task and updates the visible row from the stored result.
     fn rename_task(&mut self, task_id: TaskId, name: TaskName) -> Result<Status, StorageError> {
-        self.repository.rename_task(task_id, name.clone())?;
-        self.reload(Some(task_id))?;
+        let renamed = self.repository.rename_task(task_id, name.clone())?;
+        if let Some(index) = self.tasks.iter().position(|task| task.id == task_id) {
+            self.tasks[index] = renamed;
+        }
         Ok(Status::Info(format!("Renamed to \"{}\"", name)))
+    }
+
+    /// Inserts a newly created task into the visible list in identifier
+    /// order and selects it.
+    ///
+    /// A new UUIDv7 almost always sorts last, but clock skew can place it
+    /// mid-list, so the list is re-sorted instead of assuming append.
+    fn insert_visible(&mut self, task: Task) {
+        self.tasks.push(task.clone());
+        self.tasks.sort_by_key(|existing| existing.id);
+        let position = self
+            .tasks
+            .iter()
+            .position(|existing| existing.id == task.id)
+            .expect("the inserted task is in the list");
+        self.selected = Some(position);
+    }
+
+    /// Removes an archived task from the visible list, keeping the selection
+    /// on the row that follows it and clamped to the new bounds.
+    fn remove_visible(&mut self, task_id: TaskId) {
+        let Some(index) = self.tasks.iter().position(|task| task.id == task_id) else {
+            return;
+        };
+        self.tasks.remove(index);
+        self.selected = if self.tasks.is_empty() {
+            None
+        } else {
+            Some(index.min(self.tasks.len() - 1))
+        };
     }
 
     /// Refreshes the visible task list from the repository.
     ///
     /// The selection keeps the preferred task while it exists, then falls
     /// back to the previous index clamped into bounds, then to nothing.
-    fn reload(&mut self, preferred: Option<TaskId>) -> Result<(), StorageError> {
+    fn reload_tasks(&mut self, preferred: Option<TaskId>) -> Result<(), StorageError> {
         let keep = preferred.or_else(|| {
             self.selected
                 .and_then(|index| self.tasks.get(index))
@@ -492,6 +606,36 @@ mod tests {
         Task::new(TaskId::generate(), TaskName::new(name).unwrap())
     }
 
+    fn task_with_id(tag: u128, name: &str) -> Task {
+        Task::new(
+            TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
+            TaskName::new(name).unwrap(),
+        )
+    }
+
+    #[test]
+    fn insert_visible_orders_by_id_and_selects_the_new_task() {
+        let mut app = App::load(repository()).unwrap();
+        app.tasks = vec![task_with_id(1, "first"), task_with_id(3, "third")];
+        app.selected = Some(0);
+        // Clock skew can hand out an identifier that sorts mid-list.
+        app.insert_visible(task_with_id(2, "middle"));
+        let names: Vec<&str> = app.tasks().iter().map(|task| task.name.as_str()).collect();
+        assert_eq!(names, ["first", "middle", "third"]);
+        assert_eq!(app.selected(), Some(1));
+    }
+
+    #[test]
+    fn archiving_the_last_visible_row_clamps_the_selection() {
+        let mut app = app_with(&["alpha", "beta", "gamma"]);
+        app.selected = Some(2);
+        let gamma = app.tasks()[2].id;
+        app.remove_visible(gamma);
+        let names: Vec<&str> = app.tasks().iter().map(|task| task.name.as_str()).collect();
+        assert_eq!(names, ["alpha", "beta"]);
+        assert_eq!(app.selected(), Some(1), "clamped to the new last row");
+    }
+
     fn app_with(names: &[&str]) -> App {
         let repository = repository();
         for name in names {
@@ -538,7 +682,7 @@ mod tests {
         let mut app = app_with(&["alpha", "beta"]);
         let beta = app.tasks()[1].id;
         app.repository.archive_task(beta).unwrap();
-        app.reload(None).unwrap();
+        app.reload_tasks(None).unwrap();
         let names: Vec<&str> = app.tasks().iter().map(|task| task.name.as_str()).collect();
         assert_eq!(names, ["alpha"]);
     }
@@ -712,10 +856,9 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_switch_leaves_memory_and_storage_consistent() {
+    fn a_failed_switch_reloads_state_from_storage() {
         let mut app = app_with(&["alpha", "beta"]);
         app.handle(Command::ToggleTracking);
-        let entry_id = app.tracker.active().unwrap().id;
 
         // Tamper with the database so the switch's stop half matches no
         // active row: the repository write fails as a whole.
@@ -724,7 +867,10 @@ mod tests {
         let connection = app.repository.connection();
         connection
             .execute(
-                &format!("UPDATE time_entries SET end_us = {now_us} WHERE id = '{entry_id}'"),
+                &format!(
+                    "UPDATE time_entries SET end_us = {now_us} WHERE id = '{}'",
+                    app.tracker.active().unwrap().id
+                ),
                 [],
             )
             .unwrap();
@@ -742,15 +888,23 @@ mod tests {
         app.handle(Command::ToggleTracking);
 
         assert_error_status(&app);
-        // The candidate was discarded: memory still shows the original entry.
-        assert_eq!(app.tracker.active().unwrap().id, entry_id);
-        assert!(app.is_running());
-        // The database is untouched by the failed switch.
-        let active = app.repository.active_entry().unwrap().unwrap();
+        // The reload replaced memory with storage's view, so both agree on
+        // the entry the tampering activated.
         assert_eq!(
-            active.id.to_string(),
+            app.tracker.active().unwrap().id.to_string(),
             "00000000-0000-7000-8000-000000000009"
         );
+        assert_eq!(
+            app.repository
+                .active_entry()
+                .unwrap()
+                .unwrap()
+                .id
+                .to_string(),
+            "00000000-0000-7000-8000-000000000009"
+        );
+        assert!(app.clock_active());
+        assert!(app.is_running());
     }
 
     #[test]
@@ -1009,25 +1163,25 @@ mod tests {
     fn reloading_clamps_an_out_of_bounds_selection() {
         let mut app = app_with(&["alpha", "beta"]);
         app.selected = Some(5);
-        app.reload(None).unwrap();
+        app.reload_tasks(None).unwrap();
         assert_eq!(app.selected(), Some(1), "clamped to the last row");
         app.selected = None;
-        app.reload(None).unwrap();
+        app.reload_tasks(None).unwrap();
         assert_eq!(app.selected(), None);
     }
 
     #[test]
-    fn reload_keeps_the_preferred_task_selected() {
+    fn reload_tasks_keeps_the_preferred_task_selected() {
         let mut app = app_with(&["alpha", "beta", "gamma"]);
         let gamma = app.tasks()[2].id;
-        app.reload(Some(gamma)).unwrap();
+        app.reload_tasks(Some(gamma)).unwrap();
         assert_eq!(app.selected(), Some(2));
         // A preferred task that no longer exists falls back to the current
         // index.
         let archived = named_task("gone");
         app.repository.create_task(archived.clone()).unwrap();
         app.repository.archive_task(archived.id).unwrap();
-        app.reload(Some(archived.id)).unwrap();
+        app.reload_tasks(Some(archived.id)).unwrap();
         assert_eq!(app.selected(), Some(2));
     }
 
@@ -1036,6 +1190,48 @@ mod tests {
         let clock = ElapsedClock::anchored(Duration::from_secs(100));
         assert_eq!(clock.at(Duration::from_secs(5)), Duration::from_secs(105));
         assert_eq!(clock.at(Duration::ZERO), Duration::from_secs(100));
+    }
+
+    #[test]
+    fn tracking_timestamps_add_elapsed_to_the_start_exactly() {
+        let start = DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(tracking_timestamp(start, Duration::ZERO), start);
+        assert_eq!(
+            tracking_timestamp(start, Duration::from_secs(5)),
+            start + TimeDelta::seconds(5)
+        );
+    }
+
+    #[test]
+    fn an_absurd_elapsed_saturates_instead_of_panicking() {
+        let late = DateTime::parse_from_rfc3339("9999-12-31T23:59:59Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(
+            tracking_timestamp(late, Duration::MAX),
+            DateTime::<Utc>::MAX_UTC
+        );
+    }
+
+    #[test]
+    fn task_name_errors_map_to_short_status_text() {
+        assert_eq!(
+            task_name_error_text(TaskNameError::Empty),
+            "The task name must not be empty"
+        );
+        assert_eq!(
+            task_name_error_text(TaskNameError::Control),
+            "The task name must not contain control characters"
+        );
+        assert_eq!(
+            task_name_error_text(TaskNameError::TooLong),
+            format!(
+                "The task name must be at most {} characters",
+                TaskName::MAX_LEN
+            )
+        );
     }
 
     #[test]
@@ -1090,6 +1286,290 @@ mod tests {
             // active timer.
         }
         assert_database_recovers_running(&path, entry_id);
+    }
+
+    #[test]
+    fn a_backward_wall_clock_jump_cannot_stop_before_the_start() {
+        // An entry that starts an hour in the wall-clock future is what a
+        // backward clock jump looks like to this process.
+        let repository = repository();
+        let task = named_task("alpha");
+        repository.create_task(task.clone()).unwrap();
+        let future_start = Utc::now() + TimeDelta::hours(1);
+        let entry = TimeEntry::begin(
+            EntryId::from_uuid(TaskId::generate().as_uuid()),
+            task.id,
+            future_start,
+        );
+        repository.insert_entry(&entry).unwrap();
+        let mut app = App::load(repository).unwrap();
+
+        app.handle(Command::ToggleTracking);
+
+        assert_eq!(app.tracker.active(), None, "the stop succeeded");
+        let stored = app.repository.list_entries(task.id).unwrap().remove(0);
+        assert!(stored.end.unwrap() >= future_start);
+        // The persisted duration is the displayed monotonic one, not the
+        // wall-clock difference (which would be negative).
+        let persisted = (stored.end.unwrap() - stored.start).to_std().unwrap();
+        assert!(persisted < Duration::from_secs(60), "got {persisted:?}");
+    }
+
+    #[test]
+    fn a_forward_wall_clock_jump_persists_the_displayed_duration() {
+        // The entry started two hours ago by the wall clock, as if the clock
+        // jumped forward after the start, but the monotonic display shows
+        // five seconds.
+        let repository = repository();
+        let task = named_task("alpha");
+        repository.create_task(task.clone()).unwrap();
+        let old_start = Utc::now() - TimeDelta::hours(2);
+        let entry = TimeEntry::begin(
+            EntryId::from_uuid(TaskId::generate().as_uuid()),
+            task.id,
+            old_start,
+        );
+        repository.insert_entry(&entry).unwrap();
+        let mut app = App::load(repository).unwrap();
+        app.freeze_elapsed_for_tests(Duration::from_secs(5));
+        let shown = app.elapsed().unwrap();
+
+        app.handle(Command::ToggleTracking);
+
+        assert_eq!(app.tracker.active(), None);
+        let stored = app.repository.list_entries(task.id).unwrap().remove(0);
+        let persisted = (stored.end.unwrap() - stored.start).to_std().unwrap();
+        assert!(
+            persisted >= shown,
+            "persisted {persisted:?} < shown {shown:?}"
+        );
+        assert!(
+            persisted - shown < Duration::from_secs(2),
+            "persisted {persisted:?} must match shown {shown:?}"
+        );
+        assert!(
+            persisted < Duration::from_secs(60),
+            "the wall-clock gap of two hours must not leak into the entry, got {persisted:?}"
+        );
+    }
+
+    #[test]
+    fn a_switch_derives_both_of_its_instants_from_the_monotonic_clock() {
+        let repository = repository();
+        let alpha = named_task("alpha");
+        let beta = named_task("beta");
+        repository.create_task(alpha.clone()).unwrap();
+        repository.create_task(beta.clone()).unwrap();
+        let future_start = Utc::now() + TimeDelta::hours(1);
+        let entry = TimeEntry::begin(
+            EntryId::from_uuid(TaskId::generate().as_uuid()),
+            alpha.id,
+            future_start,
+        );
+        repository.insert_entry(&entry).unwrap();
+        let mut app = App::load(repository).unwrap();
+        app.handle(Command::MoveDown);
+
+        app.handle(Command::ToggleTracking);
+
+        assert_eq!(
+            app.status(),
+            &Status::Info("Switched to \"beta\"".to_owned())
+        );
+        let active = app.tracker.active().expect("the switch succeeded");
+        assert_eq!(active.task_id, beta.id);
+        let old = app.repository.list_entries(alpha.id).unwrap().remove(0);
+        let stored_active = app.repository.active_entry().unwrap().unwrap();
+        // The new entry starts where the old one stopped, at a derived
+        // instant at or after the old start. Storage keeps microseconds, so
+        // the two stored halves agree exactly.
+        assert_eq!(stored_active.start, old.end.unwrap());
+        assert!(old.end.unwrap() >= future_start);
+    }
+
+    #[test]
+    fn a_lost_start_conflict_reloads_the_world_from_storage() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("tracker.db");
+        {
+            let setup = SqliteRepository::open(&path).unwrap();
+            setup.create_task(named_task("alpha")).unwrap();
+            setup.create_task(named_task("beta")).unwrap();
+        }
+        let repo_a = SqliteRepository::open(&path).unwrap();
+        let repo_b = SqliteRepository::open(&path).unwrap();
+        let mut app = App::load(repo_a).unwrap();
+
+        // Another process starts tracking beta while this process still
+        // believes the tracker is idle.
+        let beta_id = app.tasks()[1].id;
+        let foreign = TimeEntry::begin(
+            EntryId::from_uuid(TaskId::generate().as_uuid()),
+            beta_id,
+            Utc::now(),
+        );
+        repo_b.insert_entry(&foreign).unwrap();
+
+        app.handle(Command::ToggleTracking);
+
+        // The concise conflict status is kept after the reload succeeded.
+        assert_eq!(
+            app.status(),
+            &Status::Error("Storage error: another time entry is already active".to_owned())
+        );
+        // Tasks, active entry, tracker, and clock all come from storage.
+        assert_eq!(
+            app.tracker.active().map(|active| active.task_id),
+            Some(beta_id)
+        );
+        assert_eq!(
+            app.tracker.active().map(|active| active.id),
+            Some(foreign.id)
+        );
+        assert!(app.clock_active());
+        assert_eq!(app.tasks().len(), 2);
+        assert_eq!(app.selected(), Some(0));
+    }
+
+    #[test]
+    fn a_stale_stop_conflict_reloads_to_idle() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("tracker.db");
+        {
+            let setup = SqliteRepository::open(&path).unwrap();
+            setup.create_task(named_task("alpha")).unwrap();
+        }
+        let repo_a = SqliteRepository::open(&path).unwrap();
+        let repo_b = SqliteRepository::open(&path).unwrap();
+        let mut app = App::load(repo_a).unwrap();
+        app.handle(Command::ToggleTracking);
+        let entry_id = app.tracker.active().unwrap().id;
+
+        // The other process stops the entry behind this process's back.
+        repo_b.stop_entry(entry_id, Utc::now()).unwrap();
+
+        app.handle(Command::ToggleTracking);
+
+        assert_error_status(&app);
+        let message = match app.status() {
+            Status::Error(text) => text,
+            other => panic!("expected an error, got {other:?}"),
+        };
+        assert!(message.contains("is already stopped"), "got {message:?}");
+        assert_eq!(app.tracker.active(), None, "reloaded to idle");
+        assert!(!app.clock_active());
+        assert_eq!(app.tasks().len(), 1);
+    }
+
+    #[test]
+    fn a_reload_failure_after_a_write_failure_is_reported() {
+        let mut app = app_with(&["alpha"]);
+        app.handle(Command::ToggleTracking);
+        // Breaking the schema fails both the stop write and the reload.
+        app.repository
+            .connection()
+            .execute_batch("DROP TABLE time_entries; DROP TABLE tasks;")
+            .unwrap();
+        app.handle(Command::ToggleTracking);
+
+        assert_error_status(&app);
+        let message = match app.status() {
+            Status::Error(text) => text,
+            other => panic!("expected an error, got {other:?}"),
+        };
+        assert!(message.starts_with("Storage error: "), "got {message:?}");
+    }
+
+    #[test]
+    fn an_add_updates_the_list_locally_without_a_full_reload() {
+        let mut app = app_with(&["one"]);
+        app.handle(Command::OpenAdd);
+        for character in "new task".chars() {
+            app.handle(Command::Insert(character));
+        }
+        // A corrupt stored row would fail a full reload, but adding must not
+        // need one.
+        app.repository
+            .connection()
+            .execute(
+                "INSERT INTO tasks (id, name, archived) VALUES ('not-a-uuid', 'corrupt', 0)",
+                [],
+            )
+            .unwrap();
+        app.handle(Command::Confirm);
+
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(app.status(), &Status::Info("Added \"new task\"".to_owned()));
+        let names: Vec<&str> = app.tasks().iter().map(|task| task.name.as_str()).collect();
+        assert_eq!(names, ["one", "new task"]);
+        assert_eq!(app.selected(), Some(1), "the added task is selected");
+    }
+
+    #[test]
+    fn a_rename_updates_the_row_locally_without_a_full_reload() {
+        let mut app = app_with(&["first", "second"]);
+        app.handle(Command::MoveDown);
+        app.handle(Command::OpenRename);
+        for _ in 0..6 {
+            app.handle(Command::Backspace);
+        }
+        for character in "renamed".chars() {
+            app.handle(Command::Insert(character));
+        }
+        app.repository
+            .connection()
+            .execute(
+                "INSERT INTO tasks (id, name, archived) VALUES ('not-a-uuid', 'corrupt', 0)",
+                [],
+            )
+            .unwrap();
+        app.handle(Command::Confirm);
+
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(
+            app.status(),
+            &Status::Info("Renamed to \"renamed\"".to_owned())
+        );
+        let names: Vec<&str> = app.tasks().iter().map(|task| task.name.as_str()).collect();
+        assert_eq!(names, ["first", "renamed"], "position preserved");
+        assert_eq!(app.selected(), Some(1));
+    }
+
+    #[test]
+    fn an_archive_updates_the_list_locally_without_a_full_reload() {
+        let mut app = app_with(&["alpha", "beta", "gamma"]);
+        app.handle(Command::MoveDown);
+        app.handle(Command::OpenArchiveConfirm);
+        app.repository
+            .connection()
+            .execute(
+                "INSERT INTO tasks (id, name, archived) VALUES ('not-a-uuid', 'corrupt', 0)",
+                [],
+            )
+            .unwrap();
+        app.handle(Command::Confirm);
+
+        assert_eq!(app.status(), &Status::Info("Archived \"beta\"".to_owned()));
+        let names: Vec<&str> = app.tasks().iter().map(|task| task.name.as_str()).collect();
+        assert_eq!(names, ["alpha", "gamma"]);
+        assert_eq!(app.selected(), Some(1), "selection lands on the next task");
+    }
+
+    #[test]
+    fn typing_stops_growing_the_buffer_at_the_task_name_limit() {
+        let mut app = app_with(&["one"]);
+        app.handle(Command::OpenAdd);
+        for character in "a".repeat(TaskName::MAX_LEN + 50).chars() {
+            app.handle(Command::Insert(character));
+        }
+        // The bounded name is still valid, so confirming succeeds.
+        app.handle(Command::Confirm);
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(app.tasks().len(), 2);
+        assert_eq!(
+            app.tasks()[1].name.as_str().chars().count(),
+            TaskName::MAX_LEN
+        );
     }
 
     fn assert_database_recovers_running(path: &Path, entry_id: tracker_core::EntryId) {
