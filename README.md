@@ -1,10 +1,12 @@
 # Time Tracker
 
-A keyboard-first time tracker written in Rust. It starts as a terminal application, `tt`, on Linux and macOS, and may later gain a web client and integrations. `plan.md` is the source of truth for product scope and milestones.
+A keyboard-first time tracker written in Rust. `tt` is a terminal application for Linux and macOS; a sync server and more clients are planned. `plan.md` is the source of truth for scope and milestones.
 
-## Current scope
+## Current state
 
-The repository is bootstrapped: a Cargo workspace with the `tracker-core` library and the `tracker-tui` application. Both compile, but no feature work has landed. The task list UI and key handling arrive in milestone 1; persistence and sync come later.
+The TUI works end to end. It stores tasks and time entries in SQLite, seeds a new database with three example tasks, and keeps one timer running across restarts: quitting never stops the active entry, and the next start resumes it. Tasks are reusable, so starting a task again records a new time entry instead of resuming an old one. Archived tasks stay in the database but are hidden from the list.
+
+While a timer runs, the visible elapsed time comes from a monotonic clock anchored to the entry's UTC start, so system clock adjustments do not make the timer jump.
 
 ## Prerequisites
 
@@ -19,9 +21,46 @@ cargo run -p tracker-tui        # run in development
 cargo install --path apps/tui   # install the binary as `tt`
 ```
 
+## Data and database location
+
+The database lives in the platform application-data directory, created with owner-only permissions on first start:
+
+- Linux: `$XDG_DATA_HOME/Time Tracker/tt.db`, or `~/.local/share/Time Tracker/tt.db` when `XDG_DATA_HOME` is unset
+- macOS: `~/Library/Application Support/Time Tracker/tt.db`
+
+A brand-new empty database is seeded once with three tasks: Write release notes, Fix the coffee machine, and Plan Friday's demo. A database that already has tasks is left untouched.
+
 ## Keybindings
 
-The TUI follows one pattern across screens: `h`, `j`, `k`, and `l` navigate, mnemonic keys such as `a` invoke actions, and the footer shows the keys available on the current screen. The first screen moves the task selection with `j` and `k` (up and down arrows work as aliases) and quits with `q` or Escape. These keys are wired up in milestone 1; the current binary is a stub.
+Navigation is keyboard-first. The footer always lists the keys available in the current mode.
+
+Task list:
+
+- `j` / `k` or Down / Up: move the selection, with safe bounds at both ends. `h` and `l` are reserved for future navigation and do nothing.
+- Space: start the selected task, stop the active task, or switch from the active task to the selected one in a single transaction.
+- `a`: add a task. `e`: rename the selected task (the input starts pre-filled). `d`: archive the selected task after confirmation. The active task cannot be archived.
+- `q` or Escape: quit. An active timer keeps running and is recovered on the next start.
+
+Text input (`a` and `e`):
+
+- Printable characters and Backspace edit the text; Space is ordinary input.
+- Enter confirms, Escape cancels. An empty name shows an error and keeps the input open.
+
+Archive confirmation:
+
+- `y` or Enter confirms, `n` or Escape cancels.
+
+Ctrl+C quits from every mode.
+
+## Architecture
+
+The workspace has three packages:
+
+- `crates/tracker-core`: the domain model. Tasks, time entries, the tracker and its commands, and the `TrackerRepository` trait. No terminal, database, or network code.
+- `crates/tracker-storage`: SQLite persistence. Implements `TrackerRepository`, owns the schema migrations and the platform paths.
+- `apps/tui`: the `tt` binary. `app.rs` holds the state and applies semantic commands, `keymap.rs` maps raw keys to commands, `ui.rs` renders, `terminal.rs` owns setup and cleanup, and `main.rs` wires it together.
+
+The event loop is synchronous. Commands apply to a cloned candidate first, so a storage error can never desynchronize memory and SQLite.
 
 ## Validation
 

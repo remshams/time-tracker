@@ -8,3 +8,15 @@ publish.workspace = true
 [[bin]]
 name = "tt"
 path = "src/main.rs"
+
+[dependencies]
+chrono = { workspace = true }
+crossterm = { workspace = true }
+ratatui = { workspace = true }
+thiserror = { workspace = true }
+tracker-core = { path = "../../crates/tracker-core" }
+tracker-storage = { path = "../../crates/tracker-storage" }
+
+[dev-dependencies]
+libc = { workspace = true }
+tempfile = { workspace = true }

@@ -2,7 +2,7 @@
 
 ## Status
 
-This repository contains planning and agent guidance. Application implementation has not started.
+This repository contains planning and agent guidance. Milestones 1 and 2 are implemented: the `tt` TUI renders the task list, tracks time locally in SQLite, and recovers the active timer across restarts. Server sync and additional clients are not started.
 
 Milestones 1 and 2 are approved, together with the bootstrap work they require. Implementation uses the approved subagents below.
 
@@ -178,7 +178,7 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 
 ### Milestone 0: settle names and bootstrap the repository
 
-- [ ] Answer the remaining blocking questions below.
+- [x] Answer the remaining blocking questions below.
 - [x] Initialize Git on `main`.
 - [x] Create the Cargo workspace and the two packages.
 - [x] Copy and adapt the Jira adapter's `AGENTS.md`, retaining its general and validation rules.
@@ -191,16 +191,16 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 
 ### Milestone 1: render the hard-coded task list
 
-- [ ] Define the small `Task` type in `tracker-core`.
-- [ ] Add TUI state with arbitrary hard-coded tasks and bounded selection movement.
-- [ ] Render a title, task list, selected row, and one-line key help.
-- [ ] Add a central command map and keyboard handling for `j`, `k`, arrow-key aliases, and exit.
-- [ ] Reserve `h` and `l` for horizontal or parent/child navigation when a screen has that concept. Do not give them a fake action in the one-list MVP.
-- [ ] Add terminal setup and reliable cleanup.
-- [ ] Test empty, initial, moved, first-row, and last-row rendering or state behavior.
-- [ ] Run formatting, Clippy, tests, mutation tests, coverage, and CRAP checks.
-- [ ] Perform a manual terminal smoke test.
-- [ ] Commit core and TUI changes separately if both contain meaningful logic:
+- [x] Define the small `Task` type in `tracker-core`.
+- [x] Add TUI state with arbitrary hard-coded tasks and bounded selection movement.
+- [x] Render a title, task list, selected row, and one-line key help.
+- [x] Add a central command map and keyboard handling for `j`, `k`, arrow-key aliases, and exit.
+- [x] Reserve `h` and `l` for horizontal or parent/child navigation when a screen has that concept. Do not give them a fake action in the one-list MVP.
+- [x] Add terminal setup and reliable cleanup.
+- [x] Test empty, initial, moved, first-row, and last-row rendering or state behavior.
+- [x] Run formatting, Clippy, tests, mutation tests, coverage, and CRAP checks.
+- [x] Perform a manual terminal smoke test.
+- [x] Commit core and TUI changes separately if both contain meaningful logic:
   - `feat(TrackerCore): add task model`
   - `feat(Tui): render selectable task list`
 
@@ -210,10 +210,10 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 - [x] Define idle and running tracking states and commands in `tracker-core`.
 - [x] Persist tasks, entries, and the active timer in SQLite through a repository trait.
 - [x] Store the database in the platform application-data directory on Linux and macOS.
-- [ ] Add `a` to create a task, `e` to rename it, and `d` to archive it after confirmation.
-- [ ] Use Space to start or stop the selected task.
+- [x] Add `a` to create a task, `e` to rename it, and `d` to archive it after confirmation.
+- [x] Use Space to start or stop the selected task.
 - [x] When another task is active, switch tasks by stopping and starting entries in one transaction.
-- [ ] Keep an active timer running when the TUI exits and recover it when the application restarts.
+- [x] Keep an active timer running when the TUI exits and recover it when the application restarts.
 - [x] Treat each restart of a stopped task as a new time entry.
 - [x] Defer manual time-entry editing.
 - [x] Add schema migrations and tests around transactions, restart recovery, and clock changes.
