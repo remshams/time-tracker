@@ -65,23 +65,37 @@ The workspace has three packages:
 
 - `crates/tracker-core`: the domain model. Tasks, time entries, the tracker and its commands, and the `TrackerRepository` trait. No terminal, database, or network code.
 - `crates/tracker-storage`: SQLite persistence. Implements `TrackerRepository`, owns the schema migrations and the platform paths.
-- `apps/tui`: the `tt` binary. `app.rs` holds the state and applies semantic commands, `keymap.rs` maps raw keys to commands, `ui.rs` renders, `terminal.rs` owns setup and cleanup, and `main.rs` wires it together.
+- `apps/tui`: the `tt` binary. `app.rs` holds the state and applies semantic commands, `keymap.rs` maps raw keys to commands, `ui.rs` renders, `styles.rs` defines the terminal styles, `terminal.rs` owns setup and cleanup, and `main.rs` wires it together.
 
 The event loop is synchronous. Commands apply to a cloned candidate first, so a storage error can never desynchronize memory and SQLite. Successful add, rename, and archive writes update the visible list from the stored result; a tracking write that loses a cross-process conflict reloads the interface state from the database instead.
 
 Terminal setup and teardown are staged: raw mode, the alternate screen, and cursor visibility are tracked in one restoration state shared by the guard and the panic hook, so exactly the completed stages are restored exactly once, and a raw-mode failure writes no escape sequence at all.
+
+## Terminal theming
+
+The TUI uses named ANSI colors, terminal defaults, and reverse video rather than fixed RGB values. The terminal emulator supplies the palette, so the same binary works with local themes and over SSH. It has no Omarchy runtime dependency.
+
+Theme-related source files are `apps/tui/src/styles.rs` and `scripts/audit-omarchy-themes.py`. The audit role mappings mirror `styles.rs`; change both files together. Run the audit against an Omarchy themes checkout:
+
+```sh
+python3 scripts/audit-omarchy-themes.py /path/to/omarchy/themes
+python3 scripts/audit-omarchy-themes.py --strict /path/to/omarchy/themes
+```
+
+The audit discovers theme directory names and requires the current inventory of exactly 17 dark and 5 light themes. The default audit reports contrast misses without failing. `--strict` fails on misses. A few themes may remain known exceptions until their upstream palettes change.
 
 ## Validation
 
 Run these before every handoff:
 
 ```sh
+python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 cargo mutants --workspace
 cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
-cargo crap --lcov lcov.info
+cargo crap --workspace --lcov lcov.info
 ```
 
 Missed and timed-out mutants fail the check, as do CRAP scores above 30. The pinned tool versions and full rules live in `AGENTS.md`.
