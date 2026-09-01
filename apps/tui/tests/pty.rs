@@ -46,20 +46,33 @@ fn database_in(home: &Path) -> PathBuf {
 /// `argv` and `envp` are built before the fork. After the fork the child
 /// performs only async-signal-safe calls: `execve`, and `_exit` if the exec
 /// fails. It never touches the Rust runtime of the parent process.
-fn run_in_pty(home: &Path, input: &[u8]) -> (libc::c_int, String, bool) {
-    let binary = CString::new(env!("CARGO_BIN_EXE_tt")).expect("binary path has no NUL");
-    // Every environment entry is one NAME=VALUE string. The child gets only
-    // a temporary HOME and a minimal PATH, so tt operates on the temporary
-    // data directory and nothing else.
+/// The environment for the child `tt` process: a temporary `HOME` and a
+/// minimal `PATH`, so tt operates on the temporary data directory and
+/// nothing else. The coverage profile file, when the test runs under
+/// cargo-llvm-cov, is passed through so the child's execution counts toward
+/// the measured coverage.
+fn child_env(home: &Path) -> Vec<CString> {
     let home_entry =
         CString::new(format!("HOME={}", home.display())).expect("temporary home has no NUL");
     let path_entry = CString::new("PATH=/usr/bin:/bin").unwrap();
+    let mut entries = vec![home_entry, path_entry];
+    if let Ok(profile) = std::env::var("LLVM_PROFILE_FILE")
+        && let Ok(entry) = CString::new(format!("LLVM_PROFILE_FILE={profile}"))
+    {
+        entries.push(entry);
+    }
+    entries
+}
+
+fn run_in_pty(home: &Path, input: &[u8]) -> (libc::c_int, String, bool) {
+    let binary = CString::new(env!("CARGO_BIN_EXE_tt")).expect("binary path has no NUL");
     let argv = [binary.as_ptr(), c"tt".as_ptr(), std::ptr::null::<c_char>()];
-    let envp = [
-        home_entry.as_ptr(),
-        path_entry.as_ptr(),
-        std::ptr::null::<c_char>(),
-    ];
+    let env_entries = child_env(home);
+    let envp: Vec<*const c_char> = env_entries
+        .iter()
+        .map(|entry| entry.as_ptr())
+        .chain(std::iter::once(std::ptr::null()))
+        .collect();
 
     unsafe {
         let mut master: libc::c_int = -1;
@@ -85,9 +98,8 @@ fn run_in_pty(home: &Path, input: &[u8]) -> (libc::c_int, String, bool) {
             ws_ypixel: 0,
         };
         libc::ioctl(master, libc::TIOCSWINSZ, &size);
-        if !input.is_empty() {
-            libc::write(master, input.as_ptr().cast(), input.len());
-        }
+        // A zero-length write is harmless, so the input is written as is.
+        libc::write(master, input.as_ptr().cast(), input.len());
 
         let output = read_until_eof(master, pid);
         let mut status: libc::c_int = 0;
