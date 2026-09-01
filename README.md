@@ -15,7 +15,7 @@ Task names are trimmed, non-empty, at most 256 characters long, and free of cont
 ## Prerequisites
 
 - Linux or macOS
-- Rust 1.85 or newer, installed with [rustup](https://rustup.rs). The workspace uses edition 2024.
+- Rust 1.88 or newer, installed with [rustup](https://rustup.rs). The workspace uses edition 2024, and Ratatui requires Rust 1.88.
 - For coverage: `rustup component add llvm-tools-preview`
 
 ## Build and run
