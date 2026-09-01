@@ -82,7 +82,9 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     let mut spans = vec![Span::styled("Time Tracker", styles::title())];
     if let Some(name) = app.active_task_name() {
         let elapsed = app.elapsed().map(format_elapsed).unwrap_or_default();
-        spans.push(Span::raw("  ▶ "));
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled("▶", styles::active_marker()));
+        spans.push(Span::raw(" "));
         spans.push(Span::raw(name));
         spans.push(Span::raw(format!("  {elapsed}")));
     }
@@ -91,7 +93,9 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 
 /// Renders the task list, its selection, and the active-task marker.
 fn render_tasks(frame: &mut Frame, area: Rect, app: &App) {
-    let block = Block::bordered().title("Tasks");
+    let block = Block::bordered()
+        .title("Tasks")
+        .border_style(styles::focused_border());
     if app.tasks().is_empty() {
         frame.render_widget(
             Paragraph::new("No tasks. Press a to add one.").block(block),
@@ -106,13 +110,14 @@ fn render_tasks(frame: &mut Frame, area: Rect, app: &App) {
         .tasks()
         .iter()
         .map(|task| {
-            let marker = if active_task_id == Some(task.id) {
-                "▶ "
+            let active = active_task_id == Some(task.id);
+            let marker = if active {
+                Span::styled("▶ ", styles::active_marker())
             } else {
-                "  "
+                Span::raw("  ")
             };
             let name = fit_prefix(task.name.as_str(), name_budget);
-            ListItem::new(Line::from(format!("{marker}{name}")))
+            ListItem::new(Line::from(vec![marker, Span::raw(name)]))
         })
         .collect();
     let list = List::new(items)
@@ -126,7 +131,10 @@ fn render_tasks(frame: &mut Frame, area: Rect, app: &App) {
 fn render_status(frame: &mut Frame, area: Rect, app: &App) {
     let paragraph = match app.status() {
         Status::Info(text) => Paragraph::new(text.as_str()),
-        Status::Error(text) => Paragraph::new(format!("Error: {text}")).style(styles::error()),
+        Status::Error(text) => Paragraph::new(Line::from(vec![
+            Span::styled("Error: ", styles::error_label()),
+            Span::raw(text),
+        ])),
     };
     frame.render_widget(paragraph, area);
 }
@@ -170,7 +178,10 @@ fn render_input_modal(frame: &mut Frame, area: Rect, purpose: InputPurpose, buff
         Span::raw(visible),
         Span::styled("▏", styles::input_cursor()),
     ]);
-    frame.render_widget(Paragraph::new(line).block(Block::bordered()), modal);
+    frame.render_widget(
+        Paragraph::new(line).block(Block::bordered().border_style(styles::focused_border())),
+        modal,
+    );
 }
 
 /// Renders the archive confirmation.
@@ -178,8 +189,11 @@ fn render_confirm_modal(frame: &mut Frame, area: Rect, name: &str) {
     let modal = centered(56, 3, area);
     frame.render_widget(Clear, modal);
     frame.render_widget(
-        Paragraph::new(format!("Archive \"{name}\"?"))
-            .block(Block::bordered().title("Confirm archive")),
+        Paragraph::new(format!("Archive \"{name}\"?")).block(
+            Block::bordered()
+                .title("Confirm archive")
+                .border_style(styles::focused_border()),
+        ),
         modal,
     );
 }
@@ -270,17 +284,18 @@ mod tests {
         assert!(rows[22].contains("Ready"));
         assert!(rows[23].contains("a add"));
         assert!(rows[23].contains("ctrl+c quit"));
+        assert_eq!(cell(&terminal, 0, 0).fg, Some(Color::Blue));
+        assert_eq!(cell(&terminal, 0, 1).fg, Some(Color::Blue));
     }
 
     #[test]
     fn the_selected_row_is_reversed_and_follows_the_selection() {
         let mut app = app_with(&["alpha", "beta", "gamma"]);
         let terminal = draw(&app);
-        assert!(
-            cell(&terminal, 1, 2)
-                .add_modifier
-                .contains(Modifier::REVERSED)
-        );
+        let selected = cell(&terminal, 1, 2);
+        assert_eq!(selected.fg, Some(Color::Reset));
+        assert_eq!(selected.bg, Some(Color::Reset));
+        assert!(selected.add_modifier.contains(Modifier::REVERSED));
         assert!(cell(&terminal, 1, 3).add_modifier.is_empty());
 
         app.handle(crate::command::Command::MoveDown);
@@ -298,6 +313,7 @@ mod tests {
         let mut app = app_with(&["alpha", "beta"]);
         app.handle(Command::ToggleTracking);
         app.freeze_elapsed_for_tests(Duration::from_secs(125));
+        app.handle(Command::MoveDown);
         let terminal = draw(&app);
         let rows = rows(&terminal);
 
@@ -306,6 +322,9 @@ mod tests {
         assert!(!rows[3].contains("▶"), "only the active task is marked");
         assert!(rows[0].contains("alpha"));
         assert!(rows[0].contains("00:02:05"), "got {:?}", rows[0]);
+        assert_eq!(cell(&terminal, 14, 0).fg, Some(Color::Green));
+        assert_eq!(cell(&terminal, 1, 2).fg, Some(Color::Green));
+        assert_eq!(cell(&terminal, 3, 2).fg, Some(Color::Reset));
     }
 
     #[test]
@@ -324,9 +343,12 @@ mod tests {
         app.handle(Command::Confirm);
         let terminal = draw(&app);
         assert!(row(&terminal, 22).contains("Error: The task name must not be empty"));
-        let style = cell(&terminal, 0, 22);
-        assert_eq!(style.fg, Some(Color::Reset));
-        assert!(style.add_modifier.contains(Modifier::BOLD));
+        let label = cell(&terminal, 0, 22);
+        assert_eq!(label.fg, Some(Color::Red));
+        assert!(label.add_modifier.contains(Modifier::BOLD));
+        let message = cell(&terminal, 7, 22);
+        assert_eq!(message.fg, Some(Color::Reset));
+        assert!(message.add_modifier.is_empty());
     }
 
     #[test]
