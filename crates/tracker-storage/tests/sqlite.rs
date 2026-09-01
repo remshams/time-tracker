@@ -2,7 +2,9 @@
 //!
 //! These tests exercise the schema, the database-level invariants, and the
 //! interplay between the domain tracker and persistence, including failure
-//! states and rollback behavior.
+//! states, rollback behavior, and concurrent connections.
+
+use std::thread;
 
 use chrono::{DateTime, Utc};
 use tempfile::TempDir;
@@ -21,6 +23,10 @@ fn task_id(tag: u32) -> TaskId {
     TaskId::from_uuid(uuid::Uuid::from_u128(u128::from(tag)))
 }
 
+fn entry_id(tag: u32) -> EntryId {
+    EntryId::from_uuid(uuid::Uuid::from_u128(u128::from(tag)))
+}
+
 fn named_task(tag: u32, name: &str) -> Task {
     Task::new(task_id(tag), TaskName::new(name).unwrap())
 }
@@ -33,8 +39,15 @@ fn file_repo(dir: &TempDir) -> SqliteRepository {
     SqliteRepository::open(dir.path().join("tracker.db")).unwrap()
 }
 
+fn user_version(repository: &SqliteRepository) -> i64 {
+    repository
+        .connection()
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap()
+}
+
 #[test]
-fn migrations_create_the_schema_and_are_idempotent() {
+fn migrations_create_the_schema_triggers_and_are_idempotent() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("nested").join("tracker.db");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -45,23 +58,114 @@ fn migrations_create_the_schema_and_are_idempotent() {
     }
     // Reopening applies no migration again and keeps the data.
     let reopened = SqliteRepository::open(&path).unwrap();
-    let conn = reopened.connection();
-    let version: i64 = conn
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 1);
+    assert_eq!(user_version(&reopened), 2);
     let tasks = reopened.list_tasks().unwrap();
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0].name.as_str(), "first");
-    let tables: Vec<String> = conn
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+    let objects: Vec<(String, String)> = reopened
+        .connection()
+        .prepare(
+            "SELECT name, type FROM sqlite_master WHERE name LIKE 'time_entries%' ORDER BY name",
+        )
         .unwrap()
-        .query_map([], |row| row.get(0))
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
         .unwrap()
         .filter_map(Result::ok)
         .collect();
-    assert!(tables.contains(&"tasks".to_owned()));
-    assert!(tables.contains(&"time_entries".to_owned()));
+    assert!(objects.contains(&("time_entries".to_owned(), "table".to_owned())));
+    assert!(objects.contains(&("time_entries_task_start".to_owned(), "index".to_owned())));
+    assert!(objects.contains(&(
+        "time_entries_reject_archived_task".to_owned(),
+        "trigger".to_owned()
+    )));
+}
+
+#[test]
+fn a_database_from_a_newer_version_is_rejected_without_changes() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    SqliteRepository::open(&path).unwrap();
+    {
+        let repository = SqliteRepository::open(&path).unwrap();
+        repository
+            .connection()
+            .pragma_update(None, "user_version", 99)
+            .unwrap();
+    }
+    let error = SqliteRepository::open(&path).expect_err("a future schema must be rejected");
+    match error {
+        StorageError::DatabaseTooNew { found, latest } => {
+            assert_eq!(found, 99);
+            assert_eq!(latest, 2);
+            assert!(error.to_string().contains("newer"));
+        }
+        other => panic!("expected DatabaseTooNew, got {other:?}"),
+    }
+    // The file is untouched: the version is still the future one.
+    let raw = rusqlite::Connection::open(&path).unwrap();
+    let version: i64 = raw
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 99);
+}
+
+#[test]
+fn a_failed_migration_rolls_back_and_leaves_the_version() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    {
+        let repository = SqliteRepository::open(&path).unwrap();
+        repository.create_task(named_task(1, "kept")).unwrap();
+        // Recreate the state migration 2 has to upgrade from, but occupy one
+        // trigger name so the migration script fails midway.
+        repository
+            .connection()
+            .execute_batch(
+                "DROP TRIGGER time_entries_reject_archived_task;
+                 DROP TRIGGER tasks_reject_archive_while_active;
+                 CREATE TRIGGER time_entries_reject_archived_task
+                 BEFORE INSERT ON time_entries
+                 BEGIN SELECT RAISE(ABORT, 'occupied'); END;
+                 PRAGMA user_version = 1;",
+            )
+            .unwrap();
+    }
+    let error = SqliteRepository::open(&path).expect_err("the occupied trigger name must fail");
+    assert!(matches!(error, StorageError::Sql(_)));
+
+    // The failed migration left the version and the data untouched.
+    let raw = rusqlite::Connection::open(&path).unwrap();
+    let version: i64 = raw
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 1);
+    let tasks: i64 = raw
+        .query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(tasks, 1);
+}
+
+#[test]
+fn simultaneous_first_opens_of_one_database_all_complete() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let handles: Vec<_> = (0..8)
+        .map(|_| {
+            let path = path.clone();
+            thread::spawn(move || -> Result<(), StorageError> {
+                let repository = SqliteRepository::open(&path)?;
+                let name = TaskName::new("racer").expect("seed names are valid");
+                repository.create_task(Task::new(TaskId::generate(), name))?;
+                Ok(())
+            })
+        })
+        .collect();
+    for handle in handles {
+        handle.join().unwrap().expect("every first open completes");
+    }
+    let repository = SqliteRepository::open(&path).unwrap();
+    assert_eq!(user_version(&repository), 2, "migrations ran exactly once");
+    assert_eq!(repository.list_tasks().unwrap().len(), 8);
 }
 
 #[test]
@@ -133,7 +237,7 @@ fn start_and_stop_persist_and_report_failures() {
     assert_eq!(repository.list_entries(task_id(1)).unwrap(), vec![stored]);
 
     // Stopping a missing entry reports which one.
-    let missing = EntryId::from_uuid(uuid::Uuid::from_u128(77));
+    let missing = entry_id(77);
     assert!(matches!(
         repository.stop_entry(missing, at(200)),
         Err(StorageError::EntryNotFound { id }) if id == missing
@@ -163,11 +267,7 @@ fn inserting_a_second_active_entry_is_rejected_by_the_database() {
     let first = tracker.start(&task, at(100)).unwrap();
     repository.insert_entry(&first).unwrap();
 
-    let second = TimeEntry::begin(
-        EntryId::from_uuid(uuid::Uuid::from_u128(42)),
-        task.id,
-        at(200),
-    );
+    let second = TimeEntry::begin(entry_id(42), task.id, at(200));
     let error = repository
         .insert_entry(&second)
         .expect_err("second active entry must fail");
@@ -180,15 +280,139 @@ fn inserting_a_second_active_entry_is_rejected_by_the_database() {
     // foreign-key failure.
     tracker.stop(at(200)).unwrap();
     repository.stop_entry(first.id, at(200)).unwrap();
-    let orphan = TimeEntry::begin(
-        EntryId::from_uuid(uuid::Uuid::from_u128(43)),
-        task_id(99),
-        at(300),
-    );
+    let orphan = TimeEntry::begin(entry_id(43), task_id(99), at(300));
     assert!(matches!(
         repository.insert_entry(&orphan),
         Err(StorageError::TaskNotFound { id }) if id == task_id(99)
     ));
+}
+
+#[test]
+fn a_duplicate_entry_id_is_distinct_from_the_active_entry_conflict() {
+    let repository = repo();
+    let task = named_task(1, "work");
+    repository.create_task(task.clone()).unwrap();
+    let mut tracker = Tracker::idle();
+    let first = tracker.start(&task, at(100)).unwrap();
+    repository.insert_entry(&first).unwrap();
+
+    // A stopped entry reusing a stored id hits the primary key, not the
+    // single-active rule.
+    let duplicate = TimeEntry::new(first.id, task.id, at(500), Some(at(600))).unwrap();
+    let error = repository
+        .insert_entry(&duplicate)
+        .expect_err("a stored id must not be inserted twice");
+    assert!(matches!(
+        error,
+        StorageError::EntryAlreadyExists { id } if id == first.id
+    ));
+
+    // A fresh id while another entry is active hits the single-active rule.
+    let second_active = TimeEntry::begin(entry_id(42), task.id, at(200));
+    let error = repository
+        .insert_entry(&second_active)
+        .expect_err("two active entries cannot coexist");
+    assert!(matches!(error, StorageError::ActiveEntryExists));
+    assert_eq!(repository.active_entry().unwrap(), Some(first.clone()));
+    assert_eq!(repository.list_entries(task.id).unwrap().len(), 1);
+}
+
+#[test]
+fn an_archived_task_rejects_entries_at_the_database_level() {
+    let repository = repo();
+    let task = named_task(1, "done");
+    repository.create_task(task.clone()).unwrap();
+    repository.archive_task(task.id).unwrap();
+
+    // A stopped entry is also refused: archived tasks receive nothing.
+    let stopped = TimeEntry::new(entry_id(42), task.id, at(100), Some(at(150))).unwrap();
+    let error = repository
+        .insert_entry(&stopped)
+        .expect_err("archived tasks cannot receive entries");
+    assert!(matches!(
+        error,
+        StorageError::TaskArchived { id } if id == task.id
+    ));
+
+    let active = TimeEntry::begin(entry_id(43), task.id, at(200));
+    let error = repository
+        .insert_entry(&active)
+        .expect_err("archived tasks cannot become active");
+    assert!(matches!(
+        error,
+        StorageError::TaskArchived { id } if id == task.id
+    ));
+
+    // Error state: nothing was written.
+    assert!(repository.list_entries(task.id).unwrap().is_empty());
+    assert_eq!(repository.active_entry().unwrap(), None);
+}
+
+#[test]
+fn a_task_with_an_active_entry_cannot_be_archived() {
+    let repository = repo();
+    let task = named_task(1, "running");
+    repository.create_task(task.clone()).unwrap();
+    let mut tracker = Tracker::idle();
+    let started = tracker.start(&task, at(100)).unwrap();
+    repository.insert_entry(&started).unwrap();
+
+    let error = repository
+        .archive_task(task.id)
+        .expect_err("the active task must not archive");
+    assert!(matches!(
+        error,
+        StorageError::TaskIsActive { id } if id == task.id
+    ));
+
+    // Error state: the task is still usable and the timer still runs.
+    assert!(!repository.find_task(task.id).unwrap().unwrap().archived);
+    assert_eq!(repository.active_entry().unwrap(), Some(started.clone()));
+
+    // After the entry is stopped, the same call archives the task.
+    tracker.stop(at(150)).unwrap();
+    repository.stop_entry(started.id, at(150)).unwrap();
+    let archived = repository.archive_task(task.id).unwrap();
+    assert!(archived.archived);
+}
+
+#[test]
+fn concurrent_connections_enforce_the_archive_rules() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let process_a = SqliteRepository::open(&path).unwrap();
+    let process_b = SqliteRepository::open(&path).unwrap();
+
+    let task = named_task(1, "shared");
+    process_a.create_task(task.clone()).unwrap();
+
+    // The other process archives the task; this process's stale view still
+    // believes the task is active, but the database refuses the entry.
+    process_b.archive_task(task.id).unwrap();
+    let stale = TimeEntry::begin(entry_id(42), task.id, at(100));
+    let error = process_a
+        .insert_entry(&stale)
+        .expect_err("the archived task must refuse the entry");
+    assert!(matches!(
+        error,
+        StorageError::TaskArchived { id } if id == task.id
+    ));
+
+    // The reverse: this process tracks a second task, so the other process
+    // cannot archive it.
+    let other = named_task(2, "other");
+    process_a.create_task(other.clone()).unwrap();
+    let started = TimeEntry::begin(entry_id(43), other.id, at(100));
+    process_a.insert_entry(&started).unwrap();
+    let error = process_b
+        .archive_task(other.id)
+        .expect_err("the active task must not archive");
+    assert!(matches!(
+        error,
+        StorageError::TaskIsActive { id } if id == other.id
+    ));
+    assert_eq!(process_a.active_entry().unwrap().unwrap().id, started.id);
+    assert!(!process_b.find_task(other.id).unwrap().unwrap().archived);
 }
 
 #[test]
@@ -304,11 +528,7 @@ fn switch_rolls_back_on_a_backwards_stop_timestamp() {
     repository.insert_entry(&started).unwrap();
 
     // Stop before the active entry's start violates the CHECK constraint.
-    let next = TimeEntry::begin(
-        EntryId::from_uuid(uuid::Uuid::from_u128(42)),
-        rest.id,
-        at(160),
-    );
+    let next = TimeEntry::begin(entry_id(42), rest.id, at(160));
     let error = repository
         .switch_entry(started.id, at(99), &next)
         .expect_err("backwards stop must fail");
@@ -332,11 +552,7 @@ fn switch_rolls_back_when_the_target_task_is_missing() {
     let started = tracker.start(&work, at(100)).unwrap();
     repository.insert_entry(&started).unwrap();
 
-    let next = TimeEntry::begin(
-        EntryId::from_uuid(uuid::Uuid::from_u128(42)),
-        task_id(99),
-        at(160),
-    );
+    let next = TimeEntry::begin(entry_id(42), task_id(99), at(160));
     assert!(matches!(
         repository.switch_entry(started.id, at(150), &next),
         Err(StorageError::TaskNotFound { id }) if id == task_id(99)
@@ -362,12 +578,8 @@ fn switch_reports_a_missing_entry_and_changes_nothing() {
     let started = tracker.start(&work, at(100)).unwrap();
     repository.insert_entry(&started).unwrap();
 
-    let missing = EntryId::from_uuid(uuid::Uuid::from_u128(77));
-    let next = TimeEntry::begin(
-        EntryId::from_uuid(uuid::Uuid::from_u128(42)),
-        rest.id,
-        at(160),
-    );
+    let missing = entry_id(77);
+    let next = TimeEntry::begin(entry_id(42), rest.id, at(160));
     assert!(matches!(
         repository.switch_entry(missing, at(150), &next),
         Err(StorageError::EntryNotFound { id }) if id == missing
@@ -390,17 +602,77 @@ fn switch_rejects_an_already_stopped_entry() {
     repository.insert_entry(&started).unwrap();
     repository.stop_entry(started.id, at(150)).unwrap();
 
-    let next = TimeEntry::begin(
-        EntryId::from_uuid(uuid::Uuid::from_u128(42)),
-        rest.id,
-        at(160),
-    );
+    let next = TimeEntry::begin(entry_id(42), rest.id, at(160));
     assert!(matches!(
         repository.switch_entry(started.id, at(150), &next),
         Err(StorageError::EntryAlreadyStopped { id }) if id == started.id
     ));
     assert_eq!(repository.active_entry().unwrap(), None);
     assert_eq!(repository.list_entries(task_id(2)).unwrap(), Vec::new());
+}
+
+#[test]
+fn switch_into_an_archived_task_is_rejected_and_rolls_back() {
+    let repository = repo();
+    let work = named_task(1, "work");
+    let rest = named_task(2, "rest");
+    repository.create_task(work.clone()).unwrap();
+    repository.create_task(rest.clone()).unwrap();
+    let mut tracker = Tracker::idle();
+
+    let started = tracker.start(&work, at(100)).unwrap();
+    repository.insert_entry(&started).unwrap();
+    // The target is archived after the caller looked at it, which the
+    // tracker's in-memory copy cannot see.
+    repository.archive_task(rest.id).unwrap();
+
+    let next = TimeEntry::begin(entry_id(42), rest.id, at(160));
+    let error = repository
+        .switch_entry(started.id, at(150), &next)
+        .expect_err("the archived target must refuse the switch");
+    assert!(matches!(
+        error,
+        StorageError::TaskArchived { id } if id == rest.id
+    ));
+
+    // Rollback: the old entry is still active, the archived task received
+    // nothing.
+    assert_eq!(repository.active_entry().unwrap().unwrap().id, started.id);
+    assert_eq!(repository.list_entries(rest.id).unwrap(), Vec::new());
+    let old = repository.list_entries(work.id).unwrap();
+    assert_eq!(old.len(), 1);
+    assert_eq!(old[0].end, None);
+}
+
+#[test]
+fn a_switch_with_an_existing_new_entry_id_rolls_back_and_reports_it() {
+    let repository = repo();
+    let work = named_task(1, "work");
+    let rest = named_task(2, "rest");
+    repository.create_task(work.clone()).unwrap();
+    repository.create_task(rest.clone()).unwrap();
+    let mut tracker = Tracker::idle();
+
+    let started = tracker.start(&work, at(100)).unwrap();
+    repository.insert_entry(&started).unwrap();
+    let old_rest = TimeEntry::new(entry_id(42), rest.id, at(10), Some(at(20))).unwrap();
+    repository.insert_entry(&old_rest).unwrap();
+
+    // The new entry reuses the stored id of the old rest entry.
+    let next = TimeEntry::begin(entry_id(42), rest.id, at(160));
+    let error = repository
+        .switch_entry(started.id, at(150), &next)
+        .expect_err("the duplicate id must fail the switch");
+    assert!(matches!(
+        error,
+        StorageError::EntryAlreadyExists { id } if id == entry_id(42)
+    ));
+
+    // Rollback: the stop half is undone, so work is still active.
+    assert_eq!(repository.active_entry().unwrap().unwrap().id, started.id);
+    let rest_entries = repository.list_entries(rest.id).unwrap();
+    assert_eq!(rest_entries.len(), 1);
+    assert_eq!(rest_entries[0].end, Some(at(20)));
 }
 
 #[test]
@@ -581,7 +853,7 @@ fn open_fails_for_an_unusable_path() {
         .join("dir")
         .join("db.sqlite");
     let error = SqliteRepository::open(missing).expect_err("missing parent must fail");
-    assert!(matches!(error, StorageError::Sql(_)));
+    assert!(matches!(error, StorageError::Io(_)));
 }
 
 #[test]

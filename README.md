@@ -6,6 +6,8 @@ A keyboard-first time tracker written in Rust. `tt` is a terminal application fo
 
 The TUI works end to end. It stores tasks and time entries in SQLite, seeds a new database with three example tasks, and keeps one timer running across restarts: quitting never stops the active entry, and the next start resumes it. Tasks are reusable, so starting a task again records a new time entry instead of resuming an old one. Archived tasks stay in the database but are hidden from the list.
 
+The database enforces the tracking rules itself, so a second `tt` process sees the same bounds: an archived task cannot receive entries, a task with an active entry cannot be archived, at most one entry is active, and duplicate entry identifiers are reported as such. Seeding and switching happen inside single transactions, so simultaneous starts of two `tt` processes neither double-seed a new database nor lose a switch.
+
 While a timer runs, the visible elapsed time comes from a monotonic clock anchored to the entry's UTC start, so system clock adjustments do not make the timer jump.
 
 Task names are trimmed, non-empty, at most 256 characters long, and free of control characters. The same rules guard names read back from the database.
@@ -25,12 +27,14 @@ cargo install --path apps/tui   # install the binary as `tt`
 
 ## Data and database location
 
-The database lives in the platform application-data directory, created with owner-only permissions on first start:
+The database lives in the platform application-data directory:
 
 - Linux: `$XDG_DATA_HOME/Time Tracker/tt.db`, or `~/.local/share/Time Tracker/tt.db` when `XDG_DATA_HOME` is unset
 - macOS: `~/Library/Application Support/Time Tracker/tt.db`
 
-A brand-new empty database is seeded once with three tasks: Write release notes, Fix the coffee machine, and Plan Friday's demo. A database that already has tasks is left untouched.
+On first start the directory is created with mode 0700 and the database file with mode 0600. On every start the final directory and the database file are checked: a symbolic link or an object owned by another user is refused, and permissions of owner-owned objects are repaired to 0700 and 0600. The database itself is opened with `SQLITE_OPEN_NOFOLLOW`.
+
+A brand-new empty database is seeded once with three tasks: Write release notes, Fix the coffee machine, and Plan Friday's demo. The emptiness check and the inserts run in one immediate transaction, so a failure leaves no partial seed and concurrent starts cannot seed twice. A database that already has tasks is left untouched. Migrations are concurrency-safe and a database written by a newer version of Time Tracker is refused with a clear error.
 
 ## Keybindings
 

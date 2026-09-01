@@ -3,9 +3,10 @@
 //! [`SqliteRepository`] implements [`TrackerRepository`] from `tracker-core`
 //! with a bundled SQLite database. The schema is created and upgraded by
 //! migrations, and database-level rules back the domain invariants: at most
-//! one active time entry, and no stopped entry whose end precedes its start.
-//! This crate depends on `tracker-core` and on SQLite, never the other way
-//! around.
+//! one active time entry, no stopped entry whose end precedes its start, no
+//! entries on archived tasks, and no archiving of a task with an active
+//! entry. This crate depends on `tracker-core` and on SQLite, never the
+//! other way around.
 
 mod error;
 mod migrate;
@@ -13,13 +14,22 @@ mod paths;
 
 use std::path::Path;
 use std::str::FromStr;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior};
 use tracker_core::{EntryId, Task, TaskId, TaskName, TimeEntry, TimeEntryError, TrackerRepository};
 
 pub use error::StorageError;
 pub use paths::{app_data_dir, default_database_path, ensure_app_data_dir};
+
+/// How long a connection waits for a database locked by another process
+/// before giving up.
+///
+/// The bound keeps a stuck peer from hanging the application forever while
+/// still letting simultaneous first opens and ordinary cross-process writes
+/// complete.
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Converts a UTC timestamp to stored microseconds.
 fn timestamp_to_us(time: DateTime<Utc>) -> i64 {
@@ -92,10 +102,20 @@ pub struct SqliteRepository {
 
 impl SqliteRepository {
     /// Opens the database at the given path, creating the file and running
-    /// pending migrations. Parent directories must already exist; use
-    /// [`ensure_app_data_dir`] for the standard database location.
+    /// pending migrations.
+    ///
+    /// A missing file is created with owner-only permissions. An existing
+    /// file must be a regular file owned by the current user; a symbolic
+    /// link is rejected, and permissions of an owned file are repaired to
+    /// owner-only. The file itself is opened with `SQLITE_OPEN_NOFOLLOW`,
+    /// so a link swapped in later cannot be followed. Parent directories
+    /// must already exist; use [`ensure_app_data_dir`] for the standard
+    /// database location.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
-        let conn = Connection::open(path)?;
+        let path = path.as_ref();
+        paths::prepare_database_file(path)?;
+        let flags = OpenFlags::SQLITE_OPEN_READ_WRITE.union(OpenFlags::SQLITE_OPEN_NOFOLLOW);
+        let conn = Connection::open_with_flags(path, flags)?;
         Self::prepare(conn)
     }
 
@@ -106,6 +126,7 @@ impl SqliteRepository {
     }
 
     fn prepare(conn: Connection) -> Result<Self, StorageError> {
+        conn.busy_timeout(BUSY_TIMEOUT)?;
         conn.pragma_update(None, "foreign_keys", true)?;
         migrate::migrate(&conn)?;
         Ok(Self { conn })
@@ -131,6 +152,46 @@ impl SqliteRepository {
             .optional()?
             .map(|(id, task_id, start_us, end_us)| entry_from_stored(id, task_id, start_us, end_us))
             .transpose()
+    }
+
+    /// Seeds the given default tasks when the database has no tasks at all.
+    ///
+    /// The emptiness check and the inserts run inside one immediate
+    /// transaction: two processes calling this at the same time serialize on
+    /// the write lock, the second one rechecks and finds the database no
+    /// longer empty, and a failure anywhere rolls the whole seed back.
+    ///
+    /// Returns whether this call seeded the database.
+    pub fn seed_default_tasks(&self, names: &[TaskName]) -> Result<bool, StorageError> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let seeded = Self::seed_within(&transaction, names)?;
+        transaction.commit()?;
+        Ok(seeded)
+    }
+
+    /// The emptiness check and inserts, inside the caller's transaction.
+    fn seed_within(
+        transaction: &Transaction<'_>,
+        names: &[TaskName],
+    ) -> Result<bool, StorageError> {
+        let empty: bool =
+            transaction.query_row("SELECT NOT EXISTS (SELECT 1 FROM tasks)", [], |row| {
+                row.get(0)
+            })?;
+        if !empty {
+            return Ok(false);
+        }
+        for name in names {
+            let task = Task::new(TaskId::generate(), name.clone());
+            transaction
+                .execute(
+                    "INSERT INTO tasks (id, name, archived) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![task.id.to_string(), task.name.as_str(), task.archived],
+                )
+                .map(|_| ())
+                .map_err(|error| error::create_task_error(error, task.id))?;
+        }
+        Ok(true)
     }
 
     /// Gives direct access to the SQLite connection for diagnostics and
@@ -191,12 +252,11 @@ impl TrackerRepository for SqliteRepository {
             "UPDATE tasks SET archived = TRUE WHERE id = ?1
              RETURNING id, name, archived",
         )?;
-        statement
-            .query_row([id.to_string()], raw_task)
-            .optional()?
-            .map(|(id, name, archived)| task_from_stored(id, name, archived))
-            .transpose()?
-            .ok_or(StorageError::TaskNotFound { id })
+        match statement.query_row([id.to_string()], raw_task).optional() {
+            Ok(Some(raw)) => task_from_stored(raw.0, raw.1, raw.2),
+            Ok(None) => Err(StorageError::TaskNotFound { id }),
+            Err(error) => Err(error::archive_task_error(error, id)),
+        }
     }
 
     fn insert_entry(&self, entry: &TimeEntry) -> Result<(), Self::Error> {
@@ -212,7 +272,7 @@ impl TrackerRepository for SqliteRepository {
                 ],
             )
             .map(|_| ())
-            .map_err(|error| error::insert_entry_error(error, entry.task_id))
+            .map_err(|error| error::insert_entry_error(error, entry))
     }
 
     fn stop_entry(&self, id: EntryId, end: DateTime<Utc>) -> Result<TimeEntry, Self::Error> {
@@ -296,7 +356,7 @@ impl TrackerRepository for SqliteRepository {
                 end_us,
             ],
         ) {
-            return Err(error::insert_entry_error(error, next.task_id));
+            return Err(error::insert_entry_error(error, next));
         }
         transaction.commit()?;
         Ok(())
@@ -343,6 +403,25 @@ mod tests {
     }
 
     #[test]
+    fn stored_task_values_reject_control_and_oversized_names() {
+        let error = task_from_stored(
+            TaskId::generate().to_string(),
+            "bad \u{1b} name".to_owned(),
+            false,
+        )
+        .expect_err("control characters make a name corrupt");
+        assert!(matches!(error, StorageError::CorruptData("task name")));
+
+        let error = task_from_stored(
+            TaskId::generate().to_string(),
+            "a".repeat(TaskName::MAX_LEN + 1),
+            false,
+        )
+        .expect_err("an oversized name is corrupt");
+        assert!(matches!(error, StorageError::CorruptData("task name")));
+    }
+
+    #[test]
     fn stored_entry_values_reject_a_backwards_interval() {
         let error = entry_from_stored(
             EntryId::generate().to_string(),
@@ -352,5 +431,130 @@ mod tests {
         )
         .expect_err("end before start is corrupt");
         assert!(matches!(error, StorageError::CorruptData("entry interval")));
+    }
+
+    #[test]
+    fn seeding_an_empty_database_inserts_every_name() {
+        let repository = SqliteRepository::open_in_memory().unwrap();
+        let names: Vec<TaskName> = ["one", "two"]
+            .iter()
+            .map(|name| TaskName::new(name).unwrap())
+            .collect();
+        assert!(repository.seed_default_tasks(&names).unwrap());
+        let stored: Vec<String> = repository
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .map(|task| task.name.to_string())
+            .collect();
+        assert_eq!(stored, ["one".to_owned(), "two".to_owned()]);
+
+        // A second call sees a non-empty database and changes nothing.
+        assert!(!repository.seed_default_tasks(&names).unwrap());
+        assert_eq!(repository.list_tasks().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn seeding_skips_a_database_that_has_only_archived_tasks() {
+        let repository = SqliteRepository::open_in_memory().unwrap();
+        let mut task = Task::new(TaskId::generate(), TaskName::new("mine").unwrap());
+        task.archived = true;
+        repository.create_task(task).unwrap();
+        let names = vec![TaskName::new("default").unwrap()];
+        assert!(!repository.seed_default_tasks(&names).unwrap());
+        assert_eq!(repository.list_tasks().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_failed_seed_leaves_no_partial_tasks() {
+        let repository = SqliteRepository::open_in_memory().unwrap();
+        // A trigger aborts the insert of the middle name.
+        repository
+            .connection()
+            .execute_batch(
+                "CREATE TRIGGER reject_boom BEFORE INSERT ON tasks
+                 WHEN NEW.name = 'boom'
+                 BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+            )
+            .unwrap();
+        let names: Vec<TaskName> = ["first", "boom", "third"]
+            .iter()
+            .map(|name| TaskName::new(name).unwrap())
+            .collect();
+        let error = repository
+            .seed_default_tasks(&names)
+            .expect_err("the aborted insert fails the seed");
+        assert!(matches!(error, StorageError::Sql(_)));
+        assert!(
+            repository.list_tasks().unwrap().is_empty(),
+            "no partial seed may remain"
+        );
+        // The connection is usable afterwards: the transaction was rolled
+        // back, not left open.
+        let fresh = vec![TaskName::new("works").unwrap()];
+        assert!(repository.seed_default_tasks(&fresh).unwrap());
+        assert_eq!(repository.list_tasks().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn seeding_serializes_between_two_connections() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("tracker.db");
+        let names: Vec<TaskName> = ["alpha", "beta"]
+            .iter()
+            .map(|name| TaskName::new(name).unwrap())
+            .collect();
+        let first = std::thread::spawn({
+            let path = path.clone();
+            let names = names.clone();
+            move || -> Result<bool, StorageError> {
+                SqliteRepository::open(&path)?.seed_default_tasks(&names)
+            }
+        });
+        let second = {
+            let path = path.clone();
+            let names = names.clone();
+            std::thread::spawn(move || -> Result<bool, StorageError> {
+                SqliteRepository::open(&path)?.seed_default_tasks(&names)
+            })
+        };
+        let first = first.join().unwrap().unwrap();
+        let second = second.join().unwrap().unwrap();
+        assert!(
+            first ^ second,
+            "exactly one of two concurrent seeds must seed, got {first} and {second}"
+        );
+        let repository = SqliteRepository::open(&path).unwrap();
+        let stored: Vec<String> = repository
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .map(|task| task.name.to_string())
+            .collect();
+        assert_eq!(stored, ["alpha".to_owned(), "beta".to_owned()]);
+    }
+
+    #[test]
+    fn connections_wait_for_each_other_within_the_busy_timeout() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("tracker.db");
+        let writer = SqliteRepository::open(&path).unwrap();
+        writer
+            .create_task(Task::new(
+                TaskId::generate(),
+                TaskName::new("held").unwrap(),
+            ))
+            .unwrap();
+        // A second connection on the same file can read and write while the
+        // first is open; SQLite serializes through the busy timeout.
+        let reader = SqliteRepository::open(&path).unwrap();
+        assert_eq!(reader.list_tasks().unwrap().len(), 1);
+        reader
+            .create_task(Task::new(
+                TaskId::generate(),
+                TaskName::new("next").unwrap(),
+            ))
+            .unwrap();
+        assert_eq!(writer.list_tasks().unwrap().len(), 2);
     }
 }

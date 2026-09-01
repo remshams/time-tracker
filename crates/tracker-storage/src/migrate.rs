@@ -1,12 +1,26 @@
 //! Schema migrations.
 //!
-//! Migrations run in order, each in its own transaction, and the applied
-//! version is tracked in the `user_version` pragma. Reopening a migrated
-//! database applies nothing.
+//! All pending migrations run inside one `BEGIN IMMEDIATE` transaction that
+//! is taken before the applied version is read and held until the commit.
+//! Two processes opening the same new database therefore serialize: the
+//! second one waits on the write lock, then sees the first one's
+//! `user_version` and applies nothing. A failed migration rolls back
+//! completely, leaving the version and the schema untouched.
+//!
+//! A database whose `user_version` is newer than the newest migration here
+//! was written by a newer Time Tracker; it is rejected instead of being
+//! opened with a half-understood schema.
 
-use rusqlite::Connection;
+use rusqlite::{Connection, Transaction, TransactionBehavior};
 
 use crate::error::StorageError;
+
+/// The message the archived-task trigger aborts with. Kept in one place so
+/// the trigger text and the error mapping cannot drift apart.
+pub(crate) const TRIGGER_TASK_ARCHIVED: &str = "task is archived";
+
+/// The message the active-task archive trigger aborts with.
+pub(crate) const TRIGGER_TASK_ACTIVE: &str = "task is active";
 
 /// The schema migration scripts, in order. Version 1 is the first script.
 const MIGRATIONS: &[&str] = &[
@@ -32,20 +46,67 @@ const MIGRATIONS: &[&str] = &[
     CREATE INDEX time_entries_task_start ON time_entries (task_id, start_us);
     CREATE UNIQUE INDEX time_entries_single_active
         ON time_entries (1) WHERE end_us IS NULL;",
+    // Version 2: enforce the archive invariants at the database level, so
+    // every process and every direct repository call sees the same rules.
+    //
+    // An archived task cannot receive entries, and a task with an active
+    // entry cannot be archived. The triggers abort with fixed messages that
+    // the error mapping turns into explicit storage errors.
+    "CREATE TRIGGER time_entries_reject_archived_task
+    BEFORE INSERT ON time_entries
+    WHEN NEW.task_id IN (SELECT id FROM tasks WHERE archived = 1)
+    BEGIN
+        SELECT RAISE(ABORT, 'task is archived');
+    END;
+    CREATE TRIGGER tasks_reject_archive_while_active
+    BEFORE UPDATE OF archived ON tasks
+    WHEN NEW.archived = 1
+        AND EXISTS (SELECT 1 FROM time_entries
+                    WHERE task_id = NEW.id AND end_us IS NULL)
+    BEGIN
+        SELECT RAISE(ABORT, 'task is active');
+    END;",
 ];
 
-/// Applies all pending migrations.
+/// The newest schema version this build understands.
+pub(crate) const LATEST_VERSION: i64 = MIGRATIONS.len() as i64;
+
+/// Applies all pending migrations inside one immediate transaction.
 pub(crate) fn migrate(conn: &Connection) -> Result<(), StorageError> {
-    let current: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    // IMMEDIATE takes the write lock before the version is read, so two
+    // simultaneous first opens cannot both try to create the schema.
+    let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    let current: i64 = transaction.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if current > LATEST_VERSION {
+        return Err(StorageError::DatabaseTooNew {
+            found: current,
+            latest: LATEST_VERSION,
+        });
+    }
     for (index, script) in MIGRATIONS.iter().enumerate() {
         let version = index as i64 + 1;
         if version <= current {
             continue;
         }
-        let transaction = conn.unchecked_transaction()?;
         transaction.execute_batch(script)?;
         transaction.pragma_update(None, "user_version", version)?;
-        transaction.commit()?;
     }
+    transaction.commit()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn latest_version_counts_the_scripts() {
+        assert_eq!(LATEST_VERSION, 2);
+    }
+
+    #[test]
+    fn trigger_messages_are_the_ones_the_error_mapping_expects() {
+        assert!(MIGRATIONS[1].contains(&format!("'{TRIGGER_TASK_ARCHIVED}'")));
+        assert!(MIGRATIONS[1].contains(&format!("'{TRIGGER_TASK_ACTIVE}'")));
+    }
 }
