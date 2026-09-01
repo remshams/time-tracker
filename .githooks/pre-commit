@@ -1,0 +1,3 @@
+#!/bin/sh
+# Fail the commit if any Rust file is not formatted.
+cargo fmt --all --check

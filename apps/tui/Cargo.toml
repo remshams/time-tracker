@@ -1,0 +1,10 @@
+[package]
+name = "tracker-tui"
+description = "Terminal front end for the Time Tracker"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "tt"
+path = "src/main.rs"
