@@ -11,6 +11,7 @@ use crate::app::{App, InputPurpose, Mode, Status};
 use crate::{keymap, styles};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
 
@@ -95,7 +96,11 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 fn render_tasks(frame: &mut Frame, area: Rect, app: &App) {
     let block = Block::bordered()
         .title("Tasks")
-        .border_style(styles::focused_border());
+        .border_style(if app.mode() == &Mode::Normal {
+            styles::focused_border()
+        } else {
+            Style::default()
+        });
     if app.tasks().is_empty() {
         frame.render_widget(
             Paragraph::new("No tasks. Press a to add one.").block(block),
@@ -325,6 +330,37 @@ mod tests {
         assert_eq!(cell(&terminal, 14, 0).fg, Some(Color::Green));
         assert_eq!(cell(&terminal, 1, 2).fg, Some(Color::Green));
         assert_eq!(cell(&terminal, 3, 2).fg, Some(Color::Reset));
+    }
+
+    #[test]
+    fn a_selected_running_task_keeps_selection_colors_over_its_marker() {
+        let mut app = app_with(&["alpha"]);
+        app.handle(Command::ToggleTracking);
+        let terminal = draw(&app);
+
+        let marker = cell(&terminal, 1, 2);
+        assert_eq!(marker.fg, Some(Color::Reset));
+        assert_eq!(marker.bg, Some(Color::Reset));
+        assert!(marker.add_modifier.contains(Modifier::REVERSED));
+        assert_eq!(cell(&terminal, 14, 0).fg, Some(Color::Green));
+    }
+
+    #[test]
+    fn only_normal_mode_focuses_the_task_list_border() {
+        let mut app = app_with(&["alpha"]);
+        let terminal = draw(&app);
+        assert_eq!(cell(&terminal, 0, 1).fg, Some(Color::Blue));
+
+        app.handle(Command::OpenAdd);
+        let terminal = draw(&app);
+        assert_eq!(cell(&terminal, 0, 1).fg, Some(Color::Reset));
+        assert_eq!(cell(&terminal, 12, 10).fg, Some(Color::Blue));
+
+        app.handle(Command::Cancel);
+        app.handle(Command::OpenArchiveConfirm);
+        let terminal = draw(&app);
+        assert_eq!(cell(&terminal, 0, 1).fg, Some(Color::Reset));
+        assert_eq!(cell(&terminal, 12, 10).fg, Some(Color::Blue));
     }
 
     #[test]
