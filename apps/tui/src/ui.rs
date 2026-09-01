@@ -8,10 +8,9 @@ use std::time::Duration;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, InputPurpose, Mode, Status};
-use crate::keymap;
+use crate::{keymap, styles};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
 
@@ -61,26 +60,6 @@ fn fit_suffix(text: &str, max_width: usize) -> &str {
     &text[committed..]
 }
 
-/// The background and foreground used for the selected row.
-fn selected_style() -> Style {
-    Style::default().bg(Color::Blue).fg(Color::White)
-}
-
-/// The style of the status line for errors.
-fn error_style() -> Style {
-    Style::default().fg(Color::Red)
-}
-
-/// The style of dimmed helper text, such as the footer.
-fn dim_style() -> Style {
-    Style::default().fg(Color::DarkGray)
-}
-
-/// The style of the text-input cursor block.
-fn cursor_style() -> Style {
-    Style::default().fg(Color::Cyan)
-}
-
 /// Renders one frame of the interface.
 pub fn render(frame: &mut Frame, app: &App) {
     let [header, body, status_area, footer] = Layout::vertical([
@@ -100,10 +79,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
 /// Renders the title line, with the live timer while tracking runs.
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
-    let mut spans = vec![Span::styled(
-        "Time Tracker",
-        Style::default().add_modifier(Modifier::BOLD),
-    )];
+    let mut spans = vec![Span::styled("Time Tracker", styles::title())];
     if let Some(name) = app.active_task_name() {
         let elapsed = app.elapsed().map(format_elapsed).unwrap_or_default();
         spans.push(Span::raw("  ▶ "));
@@ -141,26 +117,23 @@ fn render_tasks(frame: &mut Frame, area: Rect, app: &App) {
         .collect();
     let list = List::new(items)
         .block(block)
-        .highlight_style(selected_style());
+        .highlight_style(styles::selected());
     let mut state = ListState::default().with_selected(app.selected());
     frame.render_stateful_widget(list, area, &mut state);
 }
 
 /// Renders the status or error line.
 fn render_status(frame: &mut Frame, area: Rect, app: &App) {
-    let (text, style) = match app.status() {
-        Status::Info(text) => (text.as_str(), dim_style()),
-        Status::Error(text) => (text.as_str(), error_style()),
+    let paragraph = match app.status() {
+        Status::Info(text) => Paragraph::new(text.as_str()),
+        Status::Error(text) => Paragraph::new(format!("Error: {text}")).style(styles::error()),
     };
-    frame.render_widget(Paragraph::new(text).style(style), area);
+    frame.render_widget(paragraph, area);
 }
 
 /// Renders the context-sensitive key help for the current mode.
 fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
-    frame.render_widget(
-        Paragraph::new(keymap::footer_hints(app.mode())).style(dim_style()),
-        area,
-    );
+    frame.render_widget(Paragraph::new(keymap::footer_hints(app.mode())), area);
 }
 
 /// Renders the modal dialog of the current mode, if any.
@@ -195,7 +168,7 @@ fn render_input_modal(frame: &mut Frame, area: Rect, purpose: InputPurpose, buff
         Span::raw(prompt),
         Span::raw(" "),
         Span::raw(visible),
-        Span::styled("▏", cursor_style()),
+        Span::styled("▏", styles::input_cursor()),
     ]);
     frame.render_widget(Paragraph::new(line).block(Block::bordered()), modal);
 }
@@ -238,6 +211,7 @@ fn format_elapsed(total: Duration) -> String {
 
 #[cfg(test)]
 mod tests {
+    use ratatui::style::{Color, Modifier, Style};
     use ratatui::{Terminal, backend::TestBackend};
     use tracker_core::{Task, TaskId, TaskName, TrackerRepository};
     use tracker_storage::SqliteRepository;
@@ -299,16 +273,24 @@ mod tests {
     }
 
     #[test]
-    fn the_selected_row_is_highlighted_and_follows_the_selection() {
+    fn the_selected_row_is_reversed_and_follows_the_selection() {
         let mut app = app_with(&["alpha", "beta", "gamma"]);
         let terminal = draw(&app);
-        assert_eq!(cell(&terminal, 1, 2).bg, Some(Color::Blue));
-        assert_eq!(cell(&terminal, 1, 3).bg, Some(Color::Reset));
+        assert!(
+            cell(&terminal, 1, 2)
+                .add_modifier
+                .contains(Modifier::REVERSED)
+        );
+        assert!(cell(&terminal, 1, 3).add_modifier.is_empty());
 
         app.handle(crate::command::Command::MoveDown);
         let terminal = draw(&app);
-        assert_eq!(cell(&terminal, 1, 3).bg, Some(Color::Blue));
-        assert_eq!(cell(&terminal, 1, 2).bg, Some(Color::Reset));
+        assert!(
+            cell(&terminal, 1, 3)
+                .add_modifier
+                .contains(Modifier::REVERSED)
+        );
+        assert!(cell(&terminal, 1, 2).add_modifier.is_empty());
     }
 
     #[test]
@@ -336,20 +318,24 @@ mod tests {
     }
 
     #[test]
-    fn the_status_line_shows_errors_in_the_error_color() {
+    fn the_status_line_labels_errors_and_uses_default_colors() {
         let mut app = app_with(&["alpha"]);
         app.handle(Command::OpenAdd);
         app.handle(Command::Confirm);
         let terminal = draw(&app);
-        assert!(row(&terminal, 22).contains("must not be empty"));
-        assert_eq!(cell(&terminal, 0, 22).fg, Some(Color::Red));
+        assert!(row(&terminal, 22).contains("Error: The task name must not be empty"));
+        let style = cell(&terminal, 0, 22);
+        assert_eq!(style.fg, Some(Color::Reset));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
-    fn the_status_line_shows_info_dimmed() {
+    fn the_status_line_shows_info_in_the_terminal_foreground() {
         let app = app_with(&["alpha"]);
         let terminal = draw(&app);
-        assert_eq!(cell(&terminal, 0, 22).fg, Some(Color::DarkGray));
+        let style = cell(&terminal, 0, 22);
+        assert_eq!(style.fg, Some(Color::Reset));
+        assert!(style.add_modifier.is_empty());
     }
 
     #[test]
@@ -392,12 +378,14 @@ mod tests {
             .expect("the add prompt is visible");
         let modal_row = modal_row as u16;
         assert!(rows[modal_row as usize].contains("ab▏"));
-        // The cursor block is styled distinctly from the typed text.
+        // The cursor remains prominent without assuming a palette color.
         let cursor_x = rows[modal_row as usize]
             .char_indices()
             .position(|(_, character)| character == '▏')
             .unwrap() as u16;
-        assert_eq!(cell(&terminal, cursor_x, modal_row).fg, Some(Color::Cyan));
+        let style = cell(&terminal, cursor_x, modal_row);
+        assert_eq!(style.fg, Some(Color::Reset));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]

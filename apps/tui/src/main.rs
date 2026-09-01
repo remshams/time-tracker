@@ -7,6 +7,7 @@
 mod app;
 mod command;
 mod keymap;
+mod styles;
 mod terminal;
 mod ui;
 
