@@ -2,9 +2,9 @@
 
 ## Status
 
-Milestones 0, 1, and 2 are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. Server sync and additional clients are not started.
+Milestones 0, 1, and 2 and the terminal-palette checkpoint are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. Extracting shared application orchestration is next, before server sync and additional clients.
 
-The implementation and review findings are committed and pushed to Forgejo. Final validation found 209 passing tests, 304 caught mutants, no missed or timed-out mutants, and no CRAP score above 30. Linux PTY tests pass. The TUI uses terminal defaults for important text and named ANSI accents for decoration, keeping readable contrast while following all 22 bundled Omarchy themes. A real macOS run remains necessary because this Linux host has no Apple SDK.
+Forgejo contains the implementation through `fdf22de`; later terminal-palette commits remain local because the configured SSH agent is unavailable. Current local validation found 213 passing Rust tests and 10 passing palette-audit tests, 305 caught mutants, no missed or timed-out mutants, and no CRAP score above 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
 ## Settled decisions
 
@@ -228,7 +228,19 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 - [x] Use named ANSI accents for titles, focused borders, active markers, and the redundant error label.
 - [x] Mark errors with a textual prefix so color is never the only indicator.
 - [x] Verify important-text contrast and decorative-accent visibility against all 17 dark and 5 light bundled Omarchy themes.
+- [x] Keep the palette audit reproducible with a repository script that reads an Omarchy themes checkout.
+- [x] Show the accent border only around the widget that owns focus.
+- [x] Cover emitted ANSI roles and terminal restoration in a real-binary PTY test.
 - [x] Retain Linux PTY coverage and the full quality checks.
+
+### Interim checkpoint: shared application orchestration
+
+- [ ] Add `tracker-application` as a library crate that depends on `tracker-core`, not on the TUI or SQLite.
+- [ ] Move repository-backed task and tracking workflows out of `apps/tui/src/app.rs` behind typed operations and outcomes.
+- [ ] Keep selection, modes, input buffers, key handling, status presentation, and rendering in `tracker-tui`.
+- [ ] Inject a `TrackerRepository` implementation so the TUI can use SQLite while later clients reuse the same orchestration.
+- [ ] Preserve monotonic elapsed timing, restart recovery, atomic switching, and cross-process conflict recovery.
+- [ ] Prove the extracted crate has no Ratatui, Crossterm, or rusqlite dependency and retain the full quality checks.
 
 ### Milestone 3: server sync
 
