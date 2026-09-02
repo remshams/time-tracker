@@ -2,9 +2,9 @@
 
 ## Status
 
-Milestones 0, 1, and 2 and the terminal-palette checkpoint are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. Extracting shared application orchestration is next, before server sync and additional clients.
+Milestones 0, 1, and 2 and the terminal-palette checkpoint are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. Extracting shared application orchestration is next, before remote storage and additional clients.
 
-Forgejo contains the implementation through `fdf22de`; later terminal-palette commits remain local because the configured SSH agent is unavailable. Current local validation found 213 passing Rust tests and 10 passing palette-audit tests, 305 caught mutants, no missed or timed-out mutants, and no CRAP score above 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
+All completed checkpoints are pushed to Forgejo. Current local validation found 213 passing Rust tests and 10 passing palette-audit tests, 305 caught mutants, no missed or timed-out mutants, and no CRAP score above 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
 ## Settled decisions
 
@@ -18,12 +18,16 @@ Forgejo contains the implementation through `fdf22de`; later terminal-palette co
 | Repository host | Forgejo at `ssh://git@forgejo/remshams/time-tracker`, using push-to-create. Use repository hooks and local validation; do not add hosted CI yet. |
 | Quality setup | Use the Jira adapter's `AGENTS.md` validation rules and pinned tool versions, adapted only to describe Time Tracker. Configure the rest of this project's tooling independently. |
 | Tenancy | One tracker and one timeline. There is no account or user-management system. |
+| Storage selection | With no endpoint configured, `tt` uses local SQLite. With an endpoint configured, it uses that remote store exclusively and never falls back to local writes. |
+| Initial remote deployment | The same `tt` binary provides TUI and server modes. Client and server may initially assume the same version and communicate inside a trusted Tailscale network. The server uses SQLite first. |
 
 ## Product direction
 
 Build a Rust time tracker that starts as a terminal application on Linux and macOS. It can later support a web client, Omarchy integrations, and other plugins.
 
-The owner should eventually be able to start tracking on one computer, switch computers, and continue without losing elapsed time. The first sync version may assume that only one client writes at a time. We should still model revisions and idempotent commands so an accidental retry does not duplicate or corrupt an entry.
+The owner should eventually be able to run the TUI on one computer while the authoritative data store runs on another. Each TUI process selects exactly one store: local SQLite when no endpoint is configured, or the remote HTTP service when an endpoint is configured. Remote mode is online-only at first and never falls back to local writes. Switching between local and remote modes does not merge their databases automatically.
+
+The same `tt` binary will provide the TUI and server process modes, while shared application workflows remain independent of either entry point. The first deployment may assume that client and server run the same version inside a trusted Tailscale network. The API should still use a `/v1` prefix and idempotent state-setting operations where retries could otherwise duplicate or reverse a change.
 
 ## Recommended technology
 
@@ -42,20 +46,23 @@ The owner should eventually be able to start tracking on one computer, switch co
 
 The small core crate is worthwhile even for a hard-coded list. It gives future clients a shared domain model without tying them to terminal code. A larger clean-architecture split would be premature.
 
-### Storage and sync direction after the MVP
+### Storage and remote-access direction after the MVP
 
-This is a recommendation, not part of the first milestone.
+- Keep persistence behind a repository trait owned by the core/application layer.
+- Put a backend-neutral application service between every UI and its selected store.
+- In local mode, the application service uses `SqliteRepository` directly.
+- In remote mode, an HTTP client calls resource-oriented REST endpoints. It does not expose raw repository or SQL operations over the network.
+- Let the same `tt` binary run as a TUI or as an HTTP server through separate composition paths.
+- Start the server with SQLite. PostgreSQL remains an option only if measured server load warrants it.
+- Use a snapshot query to load tasks, the active timer, and relevant worklogs when a remote TUI connects.
+- Represent tracking as desired state: setting an active task starts or switches atomically, and clearing the active task stops it. Retrying the same request must not toggle the state back.
+- Let the server assign accepted tracking timestamps in remote mode. The client anchors the returned active entry to its monotonic display clock.
+- Keep stable UUIDv7 record identifiers and UTC timestamps.
+- Never switch a configured remote client to local writes after a connection failure.
+- Do not merge an existing local database into a remote tracker automatically. Any future import must be an explicit operation.
+- Add pushed updates only after polling or refresh-on-focus proves insufficient.
 
-- Put local persistence behind a repository trait owned by the core/application layer.
-- Use SQLite for local state and a durable outbox of unsynced commands.
-- Use a server-authoritative HTTP API. Add Server-Sent Events or WebSockets only when pushed updates are useful. Periodic HTTP sync is enough for the first cross-machine version.
-- Give records stable UUIDv7 identifiers. Give each aggregate a monotonically increasing revision.
-- Make start, stop, and edit commands idempotent by assigning each command a stable identifier.
-- Store timestamps in UTC. While a timer runs in one process, derive its display from a monotonic clock so wall-clock adjustments do not make the visible timer jump.
-- Enforce one active timer for the single tracker on the server. Under the initial single-writer rule, reject stale revisions instead of trying to merge concurrent active timers.
-- Use PostgreSQL on the server only when the server is introduced. SQLite remains the local client database.
-
-A central server is simpler than peer-to-peer sync and gives future web clients one API. We should not share a SQLite file through cloud storage because file-level sync can corrupt the database and cannot enforce the active-timer rule.
+A central HTTP service is simpler than file sharing or synchronization for the first remote release. It gives future clients one API while preserving the one-active-timer rule. Offline synchronization remains a separate, later feature.
 
 ## MVP scope
 
@@ -128,20 +135,18 @@ A panic hook may restore the terminal before delegating to the previous hook. Cl
 
 - The single tracker has at most one active entry across all connected clients.
 - A stopped entry has an end time that is not earlier than its start time.
-- A command retry has the same effect as the first successful command.
-- Revisions increase after each accepted write. A client cannot silently overwrite a newer revision.
-- Sync acknowledges an outbox command only after the server has durably accepted it.
-- Canceling or losing a sync request leaves the command pending for retry.
+- Retrying a remote request has the same effect as its first successful execution.
+- A configured remote client never writes to local SQLite as a fallback.
+- The server validates every command and enforces one active timer regardless of client state.
 - The client never invents elapsed time from a negative wall-clock difference.
-- A switch between computers is represented as a durable stop or handoff followed by a start or resume. Closing a TUI must not implicitly discard an active timer.
+- Setting a different active task is one atomic server operation that stops the old entry and starts the new one.
+- Closing a local or remote TUI must not implicitly discard an active timer.
 
 ### Security and privacy for later phases
 
-Task names and time entries may expose customer names, work habits, and project details. Local databases and credentials should use owner-only permissions where the platform supports them. Remote sync should use TLS when it leaves a trusted machine, avoid writing secrets or task contents to logs, and provide a documented way to export and delete all tracker data.
+Task names and time entries may expose customer names, work habits, and project details. Local databases and credentials should use owner-only permissions where the platform supports them. The initial server may trust a restricted Tailscale network and must bind only to an explicitly selected localhost or Tailscale address. If the API later leaves that trusted network, add TLS and a shared token before exposing it. Never write credentials or task contents to logs, and provide a documented way to export and delete tracker data.
 
-No user-management system is planned. A remote deployment is a single-tenant tracker. If it is reachable over a network, clients can use one shared sync token. That token protects the tracker without introducing users, roles, sessions, or account records.
-
-The initial single-writer promise simplifies conflict handling but is not a security control. The server must eventually enforce revisions and the one-active-entry rule even if two clients write by mistake.
+No user-management system is planned. A remote deployment is a single-tenant tracker. Network placement is not a substitute for database invariants: the server must enforce the one-active-entry rule even when two clients write concurrently.
 
 ## Repository quality setup
 
@@ -235,12 +240,16 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 
 ### Interim checkpoint: shared application orchestration
 
-- [ ] Add `tracker-application` as a library crate that depends on `tracker-core`, not on the TUI or SQLite.
-- [ ] Move repository-backed task and tracking workflows out of `apps/tui/src/app.rs` behind typed operations and outcomes.
-- [ ] Keep selection, modes, input buffers, key handling, status presentation, and rendering in `tracker-tui`.
-- [ ] Inject a `TrackerRepository` implementation so the TUI can use SQLite while later clients reuse the same orchestration.
+- [ ] Add `tracker-application` as a library crate that depends on `tracker-core`, not on the TUI, SQLite, or HTTP.
+- [ ] Move repository-backed task and tracking workflows out of `apps/tui/src/app.rs` behind backend-neutral operations, snapshots, outcomes, and errors.
+- [ ] Define the application-service boundary that the TUI uses in both local and future remote modes. Do not make the TUI depend directly on `TrackerRepository` or `StorageError`.
+- [ ] Implement the local service with an injected `TrackerRepository`; the future remote service will implement the same front-end boundary through HTTP.
+- [ ] Move accepted-time decisions behind an injected clock so local mode can use the local clock and remote mode can use the server clock without changing TUI logic.
+- [ ] Keep selection, modes, input buffers, key handling, pending-request presentation, status presentation, and rendering in `tracker-tui`.
+- [ ] Express tracking operations as desired state rather than a transport-level toggle: set the active task or clear the active task.
+- [ ] Keep `apps/tui/src/main.rs` as a thin composition entry point so later `tt`, `tt --endpoint`, and `tt serve` modes can wire different adapters without changing application workflows.
 - [ ] Preserve monotonic elapsed timing, restart recovery, atomic switching, and cross-process conflict recovery.
-- [ ] Prove the extracted crate has no Ratatui, Crossterm, or rusqlite dependency and retain the full quality checks.
+- [ ] Prove the extracted crate has no Ratatui, Crossterm, rusqlite, or HTTP dependency and retain the full quality checks.
 
 ### Interim checkpoint: task browsing and ordering
 
@@ -252,14 +261,29 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 - [ ] Migrate existing tasks without losing their archive state or time entries.
 - [ ] Cover active and archived views, each ordering, migration behavior, and empty states in tests.
 
-### Milestone 3: server sync
+### Milestone 3: exclusive local or remote storage
 
-- [ ] Write a protocol decision record covering authentication, idempotency, revisions, and handoff behavior.
-- [ ] Add a server package with an HTTP API and PostgreSQL storage.
-- [ ] Add a local outbox and retry policy.
-- [ ] Implement an explicit stop-sync-start flow for changing computers.
-- [ ] Detect stale revisions and show a useful conflict instead of overwriting data.
-- [ ] Measure switch latency before adding a pushed event channel.
+- [ ] Add explicit process modes to the same binary: local TUI, remote TUI with a configured endpoint, and `tt serve`.
+- [ ] Add a versioned resource-oriented REST API, starting with `/v1/snapshot`, tasks, worklogs, and the singleton active-tracking state.
+- [ ] Keep raw repository methods and storage commands out of the public HTTP contract.
+- [ ] Run the same `tracker-application` workflows behind local and server adapters.
+- [ ] Use SQLite as the initial server store and serialize or pool access safely for concurrent requests.
+- [ ] Bind the initial server only through an explicitly selected localhost or Tailscale address. Client and server may assume the same application version.
+- [ ] Let the server assign accepted tracking timestamps and enforce atomic start, stop, and switch behavior.
+- [ ] Make state-setting and record-creation requests safe to retry without reversing state or duplicating records.
+- [ ] Load a remote snapshot on connection and refresh after stale or conflicting commands.
+- [ ] Keep remote network work off the TUI rendering and input thread, with visible loading, saving, and unavailable states.
+- [ ] Fail remote operations when the endpoint is unavailable; never fall back to a local database.
+- [ ] Keep local and remote databases separate. Defer explicit import unless a concrete migration need is approved.
+- [ ] Measure polling and refresh behavior before adding Server-Sent Events or WebSockets.
+
+### Deferred checkpoint: offline synchronization
+
+- [ ] Revisit synchronization only when offline operation against a remote tracker is required.
+- [ ] Prefer immutable completed worklogs merged by stable identifier rather than last-write-wins updates.
+- [ ] Define logical ordering, tombstones, and deterministic conflict handling before synchronizing mutable tasks or worklogs.
+- [ ] Define an explicit conflict outcome for two offline active timers; record-level timestamp comparison alone is insufficient.
+- [ ] Add an outbox and incremental pull protocol only after those rules are approved.
 
 ### Milestone 4: more clients
 
@@ -286,16 +310,16 @@ Each reviewer must return one complete report with severity, affected files, rat
 
 ## Open questions
 
-### Needed before server sync
+### Needed before remote storage
 
-1. When changing computers, should the owner explicitly stop on one and resume on the other, or should starting on the second computer automatically stop the first timer?
-2. Is offline tracking required once sync exists? If yes, what should happen when two offline computers both record time despite the single-writer rule?
-3. What does near-time mean for this product: roughly one second, ten seconds, or only when a user starts and stops tracking?
-4. Where will the single-tenant sync server run, and will it be reachable outside a trusted local network? This determines whether the first sync version needs TLS and a shared token.
-5. Should users edit past entries and add time manually in the first synced release?
+1. Should configuring an endpoint leave existing local data untouched, or should the first remote release include an explicit one-time import?
+2. May several remote clients issue task and tracking commands concurrently, beyond the server already enforcing one active timer?
+3. How often should a connected TUI refresh remote state: on focus, on a fixed polling interval, or only after its own commands?
+4. Should completed worklogs remain immutable through the first remote release?
+5. Should users edit past entries and add time manually in the first remote release?
 6. Do tasks need projects, tags, issue links, or free-form notes? Which one is required first?
 7. For Omarchy, what integration is expected first: a launcher command, a status-bar indicator, desktop notifications, or a plugin API?
 
 ## Approval gate
 
-Milestones 1 and 2, their bootstrap prerequisite, the functional defaults recorded above, and the listed subagents are approved. Server sync and additional clients still require a later planning and approval round.
+Milestones 1 and 2, their bootstrap prerequisite, the functional defaults recorded above, and the listed subagents are approved. The exclusive local-or-remote direction, same-binary server mode, initial same-version and Tailscale assumptions, server-authoritative tracking, resource-oriented REST API, and deferred offline synchronization are approved architectural direction. Milestone 3 implementation and additional clients still require a later planning and approval round.
