@@ -406,6 +406,65 @@ mod tests {
     }
 
     #[test]
+    fn storage_errors_map_to_backend_neutral_repository_errors() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog_id = WorklogId::from_uuid(uuid::Uuid::from_u128(2));
+        assert_eq!(
+            RepositoryError::from(StorageError::TaskNotFound { id: task_id }),
+            RepositoryError::TaskNotFound { id: task_id }
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::WorklogNotFound { id: worklog_id }),
+            RepositoryError::WorklogNotFound { id: worklog_id }
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::WorklogAlreadyStopped { id: worklog_id }),
+            RepositoryError::WorklogAlreadyStopped { id: worklog_id }
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::WorklogAlreadyExists { id: worklog_id }),
+            RepositoryError::WorklogAlreadyExists { id: worklog_id }
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::TaskAlreadyExists { id: task_id }),
+            RepositoryError::TaskAlreadyExists { id: task_id }
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::ActiveWorklogExists),
+            RepositoryError::ActiveWorklogExists
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::TaskArchived { id: task_id }),
+            RepositoryError::TaskArchived { id: task_id }
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::TaskIsActive { id: task_id }),
+            RepositoryError::TaskIsActive { id: task_id }
+        );
+
+        let constraint = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT_CHECK),
+            Some("check failed".to_owned()),
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::Constraint(constraint)),
+            RepositoryError::Constraint {
+                message: "database constraint rejected the write: check failed".to_owned()
+            }
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::CorruptData("worklog")),
+            RepositoryError::CorruptData { field: "worklog" }
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::NoDataDir),
+            RepositoryError::Backend {
+                message: "cannot determine the application data directory".to_owned()
+            }
+        );
+    }
+
+    #[test]
     fn new_error_variants_display_concise_text() {
         let worklog_id = WorklogId::from_uuid(uuid::Uuid::from_u128(5));
         let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(6));
