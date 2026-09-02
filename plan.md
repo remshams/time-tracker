@@ -4,7 +4,7 @@
 
 Milestones 0, 1, and 2, the terminal-palette checkpoint, and the domain/application separation are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. Task browsing and ordering are next; remote storage follows.
 
-The completed domain/application checkpoint is committed locally; publishing is pending because the SSH agent currently refuses signing. Current validation found 205 passing Rust tests and 10 passing palette-audit tests, 323 caught mutants, no missed or timed-out mutants, 91 unviable mutants, and no CRAP score above 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
+The completed domain/application checkpoint is committed and pushed to Forgejo. Current validation found 205 passing Rust tests and 10 passing palette-audit tests, 323 caught mutants, no missed or timed-out mutants, 91 unviable mutants, and no CRAP score above 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
 ## Settled decisions
 
