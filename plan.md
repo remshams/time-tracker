@@ -11,7 +11,7 @@ All completed checkpoints are pushed to Forgejo. Current local validation found 
 | Decision | Outcome |
 |---|---|
 | Product and binary names | Product `Time Tracker`, binary `tt` |
-| Rust packages | `tracker-core` library and `tracker-tui` application |
+| Rust packages after the next refactor | `tracker-domain`, `tracker-application`, `tracker-storage`, and the `tracker-tui` application |
 | Initial platforms | Linux and macOS |
 | Navigation | Keyboard-first. Vim-style keys are primary, with arrow-key aliases where they make sense. |
 | MVP data | Any small hard-coded task list is acceptable. |
@@ -20,6 +20,8 @@ All completed checkpoints are pushed to Forgejo. Current local validation found 
 | Tenancy | One tracker and one timeline. There is no account or user-management system. |
 | Storage selection | With no endpoint configured, `tt` uses local SQLite. With an endpoint configured, it uses that remote store exclusively and never falls back to local writes. |
 | Initial remote deployment | The same `tt` binary provides TUI and server modes. Client and server may initially assume the same version and communicate inside a trusted Tailscale network. The server uses SQLite first. |
+| Domain terminology | A persisted tracking record is a `Worklog`. It is active while its end time is absent and completed once its end time is set. |
+| Layering direction | Rename `tracker-core` to `tracker-domain`, extract repository-backed use cases into `tracker-application`, and keep local SQLite and future HTTP implementations as adapters. |
 
 ## Product direction
 
@@ -34,10 +36,11 @@ The same `tt` binary will provide the TUI and server process modes, while shared
 ### TUI MVP
 
 - Stable Rust with edition 2024.
-- A Cargo workspace with three packages:
-  - `crates/tracker-core`, a library for task and tracking types.
-  - `crates/tracker-storage`, the SQLite repository implementation.
-  - `apps/tui`, the terminal binary.
+- A Cargo workspace moving to four packages:
+  - `crates/tracker-domain`, a library for tasks, worklogs, tracking state, and domain rules.
+  - `crates/tracker-application`, a library for use cases and repository and clock ports.
+  - `crates/tracker-storage`, the SQLite adapter.
+  - `apps/tui`, the terminal application and current composition entry point.
 - `ratatui` for widgets and test rendering.
 - `crossterm` for terminal input, alternate-screen handling, and raw mode.
 - A synchronous event loop for the hard-coded MVP. Do not add Tokio, storage, or networking before they are needed.
@@ -54,7 +57,7 @@ The small core crate is worthwhile even for a hard-coded list. It gives future c
 - In remote mode, an HTTP client calls resource-oriented REST endpoints. It does not expose raw repository or SQL operations over the network.
 - Let the same `tt` binary run as a TUI or as an HTTP server through separate composition paths.
 - Start the server with SQLite. PostgreSQL remains an option only if measured server load warrants it.
-- Use a snapshot query to load tasks, the active timer, and relevant worklogs when a remote TUI connects.
+- Let clients query tasks, current tracking state, and worklogs through resource-oriented endpoints. Any batching optimization remains internal to the HTTP adapter and is not a TUI concept.
 - Represent tracking as desired state: setting an active task starts or switches atomically, and clearing the active task stops it. Retrying the same request must not toggle the state back.
 - Let the server assign accepted tracking timestamps in remote mode. The client anchors the returned active entry to its monotonic display clock.
 - Keep stable UUIDv7 record identifiers and UTC timestamps.
@@ -100,8 +103,9 @@ time-tracker/
 │   └── pre-commit
 ├── .cargo-crap.toml
 ├── crates/
-│   └── tracker-core/
-│       └── src/lib.rs
+│   ├── tracker-domain/
+│   ├── tracker-application/
+│   └── tracker-storage/
 └── apps/
     └── tui/
         ├── src/app.rs
@@ -112,11 +116,13 @@ time-tracker/
 
 Responsibilities:
 
-- `tracker-core` defines `Task` now and tracking commands, entries, and invariants later. It must not depend on Ratatui, Crossterm, a database, or HTTP.
-- `app.rs` owns TUI state and converts input events into state transitions.
-- `ui.rs` renders state and contains no terminal lifecycle code.
+- `tracker-domain` defines tasks, worklogs, tracking state, identifiers, and domain invariants. It depends on no application, presentation, database, or HTTP package.
+- `tracker-application` defines use cases and repository and clock ports. It depends only on `tracker-domain`.
+- `tracker-storage` implements the application repository ports with SQLite.
+- `app.rs` owns TUI presentation state and converts semantic input into application operations.
+- `ui.rs` renders TUI state and contains no terminal lifecycle or persistence code.
 - `terminal.rs` enters and restores raw mode and the alternate screen.
-- `main.rs` wires these parts together and reports failures.
+- `main.rs` wires the selected adapters together and reports failures.
 
 ## Threat and invariant review
 
@@ -238,18 +244,22 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 - [x] Cover emitted ANSI roles and terminal restoration in a real-binary PTY test.
 - [x] Retain Linux PTY coverage and the full quality checks.
 
-### Interim checkpoint: shared application orchestration
+### Interim checkpoint: domain and application separation
 
-- [ ] Add `tracker-application` as a library crate that depends on `tracker-core`, not on the TUI, SQLite, or HTTP.
-- [ ] Move repository-backed task and tracking workflows out of `apps/tui/src/app.rs` behind backend-neutral operations, snapshots, outcomes, and errors.
-- [ ] Define the application-service boundary that the TUI uses in both local and future remote modes. Do not make the TUI depend directly on `TrackerRepository` or `StorageError`.
-- [ ] Implement the local service with an injected `TrackerRepository`; the future remote service will implement the same front-end boundary through HTTP.
-- [ ] Move accepted-time decisions behind an injected clock so local mode can use the local clock and remote mode can use the server clock without changing TUI logic.
-- [ ] Keep selection, modes, input buffers, key handling, pending-request presentation, status presentation, and rendering in `tracker-tui`.
+- [ ] Rename `tracker-core` to `tracker-domain`; keep tasks, worklogs, tracking state, identifiers, value objects, and domain errors there.
+- [ ] Rename the persisted `TimeEntry` concept to `Worklog`, active while its end time is absent and completed once its end time is set. Use that term consistently in code, tests, and documentation.
+- [ ] Add `tracker-application` as a library crate that depends on `tracker-domain`, not on the TUI, SQLite, or HTTP.
+- [ ] Move repository ports out of the domain crate and into `tracker-application`; keep atomic switch requirements in their contracts and database implementation.
+- [ ] Move repository-backed task and tracking workflows out of `apps/tui/src/app.rs` behind backend-neutral task operations, tracking operations, worklog queries, outcomes, and errors.
+- [ ] Define the application-service boundary that the TUI uses in both local and future remote modes. Do not make the TUI depend directly on repository ports or `StorageError`.
+- [ ] Implement the local service with injected repository and clock ports; the future remote service will implement the same front-end boundary through HTTP.
+- [ ] Move accepted-time decisions behind the clock port so local mode can use the local clock and remote mode can use the server clock without changing TUI logic.
+- [ ] Keep task lists, selection, modes, input buffers, key handling, status presentation, and rendering in `tracker-tui`. Preserve the current feature set and do not add worklog browsing or remote-request states during this refactor.
 - [ ] Express tracking operations as desired state rather than a transport-level toggle: set the active task or clear the active task.
 - [ ] Keep `apps/tui/src/main.rs` as a thin composition entry point so later `tt`, `tt --endpoint`, and `tt serve` modes can wire different adapters without changing application workflows.
-- [ ] Preserve monotonic elapsed timing, restart recovery, atomic switching, and cross-process conflict recovery.
-- [ ] Prove the extracted crate has no Ratatui, Crossterm, rusqlite, or HTTP dependency and retain the full quality checks.
+- [ ] Preserve all current behavior and stored SQLite data, including monotonic elapsed timing, restart recovery, atomic switching, and cross-process conflict recovery.
+- [ ] Do not add HTTP, asynchronous execution, server modes, or synchronization metadata during this refactor.
+- [ ] Prove `tracker-domain` and `tracker-application` have no Ratatui, Crossterm, rusqlite, or HTTP dependency and retain the full quality checks.
 
 ### Interim checkpoint: task browsing and ordering
 
@@ -264,14 +274,14 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 ### Milestone 3: exclusive local or remote storage
 
 - [ ] Add explicit process modes to the same binary: local TUI, remote TUI with a configured endpoint, and `tt serve`.
-- [ ] Add a versioned resource-oriented REST API, starting with `/v1/snapshot`, tasks, worklogs, and the singleton active-tracking state.
+- [ ] Add a versioned resource-oriented REST API for tasks, worklogs, and the singleton active-tracking state under `/v1`.
 - [ ] Keep raw repository methods and storage commands out of the public HTTP contract.
 - [ ] Run the same `tracker-application` workflows behind local and server adapters.
 - [ ] Use SQLite as the initial server store and serialize or pool access safely for concurrent requests.
 - [ ] Bind the initial server only through an explicitly selected localhost or Tailscale address. Client and server may assume the same application version.
 - [ ] Let the server assign accepted tracking timestamps and enforce atomic start, stop, and switch behavior.
 - [ ] Make state-setting and record-creation requests safe to retry without reversing state or duplicating records.
-- [ ] Load a remote snapshot on connection and refresh after stale or conflicting commands.
+- [ ] Load the required task and current-tracking queries on connection and refresh affected resources after stale or conflicting commands.
 - [ ] Keep remote network work off the TUI rendering and input thread, with visible loading, saving, and unavailable states.
 - [ ] Fail remote operations when the endpoint is unavailable; never fall back to a local database.
 - [ ] Keep local and remote databases separate. Defer explicit import unless a concrete migration need is approved.
@@ -322,4 +332,4 @@ Each reviewer must return one complete report with severity, affected files, rat
 
 ## Approval gate
 
-Milestones 1 and 2, their bootstrap prerequisite, the functional defaults recorded above, and the listed subagents are approved. The exclusive local-or-remote direction, same-binary server mode, initial same-version and Tailscale assumptions, server-authoritative tracking, resource-oriented REST API, and deferred offline synchronization are approved architectural direction. Milestone 3 implementation and additional clients still require a later planning and approval round.
+Milestones 1 and 2, their bootstrap prerequisite, the functional defaults recorded above, and the listed subagents are approved. The `Worklog` terminology, domain/application separation, exclusive local-or-remote direction, same-binary server mode, initial same-version and Tailscale assumptions, server-authoritative tracking, resource-oriented REST API, and deferred offline synchronization are approved architectural direction. The domain/application refactor still requires an implementation plan and subagent approval before work begins. Milestone 3 implementation and additional clients require a later planning and approval round.
