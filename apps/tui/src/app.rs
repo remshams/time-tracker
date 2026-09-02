@@ -1286,6 +1286,26 @@ mod tests {
     }
 
     #[test]
+    fn a_same_view_switch_does_not_select_for_a_view_without_a_memory() {
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "alpha"),
+            task(2, "beta"),
+            archived_task(3, "gone"),
+        ]));
+        // No remembered selection: the view's own command is a no-op and
+        // must not invent one from the first row.
+        app.active_selection = None;
+        app.handle(Command::ShowActiveTasks);
+        assert_eq!(app.selected(), None);
+
+        app.handle(Command::ShowArchivedTasks);
+        assert_eq!(app.selected(), Some(0), "a fresh view starts on row one");
+        app.archived_selection = None;
+        app.handle(Command::ShowArchivedTasks);
+        assert_eq!(app.selected(), None);
+    }
+
+    #[test]
     fn each_view_remembers_its_selection_across_switches() {
         let mut app = App::load(TestService::with_tasks(vec![
             task(1, "alpha"),
@@ -1364,6 +1384,40 @@ mod tests {
     }
 
     #[test]
+    fn the_active_view_refuses_unarchiving() {
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "alpha"),
+            archived_task(3, "gone"),
+        ]));
+        app.handle(Command::UnarchiveSelected);
+
+        assert_eq!(app.view(), TaskView::Active);
+        assert_eq!(app.status(), &Status::Info("Ready".to_owned()));
+        assert_eq!(app.tasks().len(), 1, "nothing was unarchived");
+    }
+
+    #[test]
+    fn a_modal_in_the_archived_view_refuses_unarchiving() {
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "alpha"),
+            archived_task(3, "gone"),
+        ]));
+        app.handle(Command::ShowArchivedTasks);
+        // No command path reaches a modal on the archived view; the guard
+        // must still refuse one for whenever the key map changes.
+        app.mode = Mode::Input {
+            purpose: InputPurpose::Add,
+            buffer: String::new(),
+        };
+        app.handle(Command::UnarchiveSelected);
+
+        assert!(matches!(app.mode(), Mode::Input { .. }));
+        assert_eq!(app.view(), TaskView::Archived);
+        assert_eq!(app.tasks().len(), 1, "nothing was unarchived");
+        assert_eq!(app.status(), &Status::Info("Ready".to_owned()));
+    }
+
+    #[test]
     fn modals_block_view_switching_and_unarchiving() {
         let mut app = App::load(TestService::with_tasks(vec![
             task(1, "alpha"),
@@ -1372,10 +1426,15 @@ mod tests {
         app.handle(Command::OpenAdd);
         app.handle(Command::Insert('x'));
 
+        // Each switch is asserted immediately, so a guard that only blocks
+        // one of the two commands cannot cancel the other out.
         app.handle(Command::ShowArchivedTasks);
-        app.handle(Command::ShowActiveTasks);
-        app.handle(Command::UnarchiveSelected);
+        assert_eq!(app.view(), TaskView::Active, "the modal blocks the switch");
 
+        app.handle(Command::ShowActiveTasks);
+        assert_eq!(app.view(), TaskView::Active);
+
+        app.handle(Command::UnarchiveSelected);
         assert!(matches!(app.mode(), Mode::Input { .. }));
         assert_eq!(app.view(), TaskView::Active);
         assert!(matches!(app.mode(), Mode::Input { buffer, .. } if buffer == "x"));

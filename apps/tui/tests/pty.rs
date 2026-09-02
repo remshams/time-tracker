@@ -14,8 +14,19 @@ use std::time::{Duration, Instant};
 
 use tracker_storage::SqliteRepository;
 
-/// How long a `tt` run may take before the test kills it.
+/// How long `tt` may take to start up and render its first frame before the
+/// test kills it.
 const RUN_LIMIT: Duration = Duration::from_secs(15);
+
+/// How long `tt` may take to answer one key press after the first frame, and
+/// to exit once quit was sent.
+///
+/// A healthy prebuilt binary responds in milliseconds, so this stays far
+/// below the mutation-test timeout: a program that never receives input —
+/// for example when raw mode was not enabled and the tty buffers the keys —
+/// produces ordinary failed tests instead of a full run-limit wait in every
+/// staged test.
+const RESPONSE_LIMIT: Duration = Duration::from_secs(3);
 
 /// The database path inside a temporary home directory.
 ///
@@ -266,12 +277,27 @@ fn finish_pty(
 }
 
 fn run_in_pty(home: &Path, input: &[u8]) -> (libc::c_int, String, bool) {
-    let deadline = Instant::now() + RUN_LIMIT;
     let pty = spawn_pty(home);
     configure_pty(pty.master());
     write_all_pty(pty.master(), input);
-    let output = read_until_eof(pty.master(), deadline);
-    finish_pty(pty, output, deadline)
+    // Startup keeps the generous run limit; after the first output arrives
+    // the program has rendered, so the quit response and the exit fall
+    // under the short response allowance.
+    let mut output = Vec::new();
+    read_from_pty(
+        pty.master(),
+        Instant::now() + RUN_LIMIT,
+        "the first output",
+        &mut output,
+    );
+    let response_deadline = Instant::now() + RESPONSE_LIMIT;
+    while read_from_pty(
+        pty.master(),
+        response_deadline,
+        "end of output",
+        &mut output,
+    ) {}
+    finish_pty(pty, output, response_deadline)
 }
 
 struct PtyStages {
@@ -285,37 +311,45 @@ struct PtyStages {
 }
 
 fn run_stages_in_pty(home: &Path) -> PtyStages {
-    let deadline = Instant::now() + RUN_LIMIT;
     let pty = spawn_pty(home);
     configure_pty(pty.master());
+    // Every wait after the first frame is a response to one key press and
+    // gets a fresh short allowance.
+    let respond = || Instant::now() + RESPONSE_LIMIT;
 
-    let initial = read_until_expected(pty.master(), deadline, "initial frame", |output| {
-        contains_bytes(output, b"Time Tracker")
-            && contains_bytes(output, b"quit")
-            && contains_sgr_parameters(output, &[38, 5, 4])
-            && contains_sgr_parameters(output, &[7])
-    });
+    let initial = read_until_expected(
+        pty.master(),
+        Instant::now() + RUN_LIMIT,
+        "initial frame",
+        |output| {
+            contains_bytes(output, b"Time Tracker")
+                && contains_bytes(output, b"quit")
+                && contains_sgr_parameters(output, &[38, 5, 4])
+                && contains_sgr_parameters(output, &[7])
+        },
+    );
 
     write_all_pty(pty.master(), b" ");
-    let active = read_until_expected(pty.master(), deadline, "active marker", |output| {
+    let active = read_until_expected(pty.master(), respond(), "active marker", |output| {
         contains_sgr_parameters(output, &[38, 5, 2]) && contains_bytes(output, "▶".as_bytes())
     });
 
     write_all_pty(pty.master(), b"a");
-    let modal = read_until_expected(pty.master(), deadline, "input modal", |output| {
+    let modal = read_until_expected(pty.master(), respond(), "input modal", |output| {
         [b"New".as_slice(), b"task", b"name:"]
             .into_iter()
             .all(|fragment| contains_bytes(output, fragment))
     });
 
     write_all_pty(pty.master(), b"\r");
-    let error = read_until_expected(pty.master(), deadline, "error label", |output| {
+    let error = read_until_expected(pty.master(), respond(), "error label", |output| {
         contains_sgr_parameters(output, &[38, 5, 1]) && contains_bytes(output, b"Error:")
     });
 
     write_all_pty(pty.master(), b"\x03");
-    let exit = read_until_eof(pty.master(), deadline);
-    let (status, exit, cooked) = finish_pty(pty, exit, deadline);
+    let exit_deadline = respond();
+    let exit = read_until_eof(pty.master(), exit_deadline);
+    let (status, exit, cooked) = finish_pty(pty, exit, exit_deadline);
     PtyStages {
         status,
         initial: String::from_utf8_lossy(&initial).into_owned(),
@@ -389,7 +423,7 @@ fn read_until_expected(
     output
 }
 
-/// Reads from the pty until it closes, using the run's shared deadline.
+/// Reads from the pty until it closes or the deadline passes.
 fn read_until_eof(master: libc::c_int, deadline: Instant) -> Vec<u8> {
     let mut output = Vec::new();
     while read_from_pty(master, deadline, "end of output", &mut output) {}
@@ -464,22 +498,32 @@ fn exit_code(status: libc::c_int) -> Option<i32> {
 /// each expected frame before continuing.
 struct StagedRun {
     pty: PtyChild,
-    deadline: Instant,
+    /// The startup allowance, consumed by the first wait.
+    startup: Option<Instant>,
 }
 
 impl StagedRun {
     fn start(home: &Path) -> Self {
-        let deadline = Instant::now() + RUN_LIMIT;
         let pty = spawn_pty(home);
         configure_pty(pty.master());
-        Self { pty, deadline }
+        Self {
+            pty,
+            startup: Some(Instant::now() + RUN_LIMIT),
+        }
     }
 
     fn press(&mut self, input: &[u8], expected: &str, predicate: impl Fn(&[u8]) -> bool) -> String {
         write_all_pty(self.pty.master(), input);
+        // The first wait covers startup and keeps the generous run limit;
+        // every later wait is a response to one key press with a fresh
+        // short allowance.
+        let deadline = self
+            .startup
+            .take()
+            .unwrap_or_else(|| Instant::now() + RESPONSE_LIMIT);
         String::from_utf8_lossy(&read_until_expected(
             self.pty.master(),
-            self.deadline,
+            deadline,
             expected,
             predicate,
         ))
@@ -487,9 +531,10 @@ impl StagedRun {
     }
 
     fn quit(self) -> (libc::c_int, String, bool) {
+        let deadline = Instant::now() + RESPONSE_LIMIT;
         write_all_pty(self.pty.master(), b"\x03");
-        let output = read_until_eof(self.pty.master(), self.deadline);
-        finish_pty(self.pty, output, self.deadline)
+        let output = read_until_eof(self.pty.master(), deadline);
+        finish_pty(self.pty, output, deadline)
     }
 }
 
