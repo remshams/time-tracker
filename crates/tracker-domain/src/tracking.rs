@@ -1,6 +1,6 @@
 //! Tracking state and commands.
 //!
-//! The tracker is either idle or running one active entry. Every command
+//! The tracker is either idle or running one active worklog. Every command
 //! takes its timestamps as parameters, so callers control the clock and
 //! tests never depend on the wall clock. Commands either fully apply or
 //! leave the state unchanged; timestamps are validated before the state
@@ -8,18 +8,18 @@
 
 use chrono::{DateTime, Utc};
 
-use crate::entry::{ActiveEntry, TimeEntry};
-use crate::ids::{EntryId, TaskId};
+use crate::ids::{TaskId, WorklogId};
 use crate::task::Task;
+use crate::worklog::{ActiveWorklog, Worklog};
 
 /// Why a tracking command was rejected.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TrackingError {
-    /// A start or switch command ran while another entry is already active.
-    #[error("another time entry is already active")]
-    AlreadyRunning { active: ActiveEntry },
-    /// A stop or switch command ran while no entry is active.
-    #[error("no time entry is running")]
+    /// A start or switch command ran while another worklog is already active.
+    #[error("another worklog is already active")]
+    AlreadyRunning { active: ActiveWorklog },
+    /// A stop or switch command ran while no worklog is active.
+    #[error("no worklog is running")]
     NotRunning,
     /// The target task is archived and cannot start tracking.
     #[error("task {id} is archived")]
@@ -27,14 +27,14 @@ pub enum TrackingError {
     /// The task to archive is the one that is currently running.
     #[error("task {id} is active and cannot be archived")]
     TaskIsActive { id: TaskId },
-    /// The stop time precedes the entry's start time.
-    #[error("entry {entry_id} cannot stop at {stop_at} before starting at {start}")]
+    /// The stop time precedes the worklog's start time.
+    #[error("worklog {worklog_id} cannot stop at {stop_at} before starting at {start}")]
     StopBeforeStart {
-        entry_id: EntryId,
+        worklog_id: WorklogId,
         start: DateTime<Utc>,
         stop_at: DateTime<Utc>,
     },
-    /// A switch would start the new entry before it stops the old one.
+    /// A switch would start the new worklog before it stops the old one.
     #[error("switch start {start_at} must not precede its stop {stop_at}")]
     StartBeforeStop {
         stop_at: DateTime<Utc>,
@@ -43,47 +43,44 @@ pub enum TrackingError {
     /// A switch targeted the task that is already active.
     #[error("task {id} is already the active task")]
     TaskAlreadyActive { id: TaskId },
-    /// A recovered entry was already stopped, so it cannot resume.
-    #[error("time entry {id} is stopped and cannot resume")]
-    EntryNotActive { id: EntryId },
+    /// A recovered worklog was already stopped, so it cannot resume.
+    #[error("worklog {id} is stopped and cannot resume")]
+    WorklogNotActive { id: WorklogId },
 }
 
 /// The result of a successful switch.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SwitchedEntries {
-    /// The entry that was stopped, with its end time set.
-    pub stopped: TimeEntry,
-    /// The new active entry, with no end time.
-    pub started: TimeEntry,
+pub struct SwitchedWorklogs {
+    /// The worklog that was stopped, with its end time set.
+    pub stopped: Worklog,
+    /// The new active worklog, with no end time.
+    pub started: Worklog,
 }
 
 /// What a successful toggle did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrackingOutcome {
     /// Tracking started on the given task.
-    Started { entry: TimeEntry },
-    /// The active entry, which belonged to the given task, was stopped.
-    Stopped { entry: TimeEntry },
-    /// One task's entry was stopped and another task's entry started.
-    Switched {
-        stopped: TimeEntry,
-        started: TimeEntry,
-    },
+    Started { worklog: Worklog },
+    /// The active worklog, which belonged to the given task, was stopped.
+    Stopped { worklog: Worklog },
+    /// One task's worklog was stopped and another task's worklog started.
+    Switched { stopped: Worklog, started: Worklog },
 }
 
-/// Whether the tracker is idle or running an entry.
+/// Whether the tracker is idle or running a worklog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrackingState {
-    /// No entry is active.
+    /// No worklog is active.
     Idle,
-    /// One entry is active.
-    Running { entry: ActiveEntry },
+    /// One worklog is active.
+    Running { worklog: ActiveWorklog },
 }
 
 /// The single tracker's state plus the commands that change it.
 ///
-/// The tracker holds at most one active entry. Restarting a stopped task
-/// creates a new entry; stopped entries are never resumed.
+/// The tracker holds at most one active worklog. Restarting a stopped task
+/// creates a new worklog; stopped worklogs are never resumed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tracker {
     state: TrackingState,
@@ -97,20 +94,20 @@ impl Tracker {
         }
     }
 
-    /// Rebuilds a tracker from an entry recovered after a process restart.
+    /// Rebuilds a tracker from a worklog recovered after a process restart.
     ///
-    /// Fails when the entry is already stopped, because a stopped entry is
+    /// Fails when the worklog is already stopped, because a stopped worklog is
     /// never resumed.
-    pub fn resume(entry: TimeEntry) -> Result<Self, TrackingError> {
-        if entry.end.is_some() {
-            return Err(TrackingError::EntryNotActive { id: entry.id });
+    pub fn resume(worklog: Worklog) -> Result<Self, TrackingError> {
+        if worklog.end.is_some() {
+            return Err(TrackingError::WorklogNotActive { id: worklog.id });
         }
         Ok(Self {
             state: TrackingState::Running {
-                entry: ActiveEntry {
-                    id: entry.id,
-                    task_id: entry.task_id,
-                    start: entry.start,
+                worklog: ActiveWorklog {
+                    id: worklog.id,
+                    task_id: worklog.task_id,
+                    start: worklog.start,
                 },
             },
         })
@@ -121,53 +118,53 @@ impl Tracker {
         &self.state
     }
 
-    /// Returns the active entry, if any.
-    pub fn active(&self) -> Option<&ActiveEntry> {
+    /// Returns the active worklog, if any.
+    pub fn active(&self) -> Option<&ActiveWorklog> {
         match &self.state {
             TrackingState::Idle => None,
-            TrackingState::Running { entry } => Some(entry),
+            TrackingState::Running { worklog } => Some(worklog),
         }
     }
 
-    /// Starts a new entry for the given task at the given instant.
+    /// Starts a new worklog for the given task at the given instant.
     ///
-    /// Fails when another entry is active or the task is archived. Restarting
-    /// a task that has stopped entries still creates a new entry.
-    pub fn start(&mut self, task: &Task, at: DateTime<Utc>) -> Result<TimeEntry, TrackingError> {
-        if let TrackingState::Running { entry } = &self.state {
+    /// Fails when another worklog is active or the task is archived. Restarting
+    /// a task that has stopped worklogs still creates a new worklog.
+    pub fn start(&mut self, task: &Task, at: DateTime<Utc>) -> Result<Worklog, TrackingError> {
+        if let TrackingState::Running { worklog } = &self.state {
             return Err(TrackingError::AlreadyRunning {
-                active: entry.clone(),
+                active: worklog.clone(),
             });
         }
         if task.archived {
             return Err(TrackingError::TaskArchived { id: task.id });
         }
-        let active = ActiveEntry::begin(EntryId::generate(), task.id, at);
-        let entry = active.to_time_entry();
-        self.state = TrackingState::Running { entry: active };
-        Ok(entry)
+        let active = ActiveWorklog::begin(WorklogId::generate(), task.id, at);
+        let worklog = active.to_worklog();
+        self.state = TrackingState::Running { worklog: active };
+        Ok(worklog)
     }
 
-    /// Stops the active entry at the given instant.
+    /// Stops the active worklog at the given instant.
     ///
-    /// Fails when nothing is running or when `at` precedes the entry's start.
-    /// On failure the entry stays active.
-    pub fn stop(&mut self, at: DateTime<Utc>) -> Result<TimeEntry, TrackingError> {
+    /// Fails when nothing is running or when `at` precedes the worklog's start.
+    /// On failure the worklog stays active.
+    pub fn stop(&mut self, at: DateTime<Utc>) -> Result<Worklog, TrackingError> {
         let active = match &self.state {
             TrackingState::Idle => return Err(TrackingError::NotRunning),
-            TrackingState::Running { entry } => entry.clone(),
+            TrackingState::Running { worklog } => worklog.clone(),
         };
         let stopped = active.stop(at)?;
         self.state = TrackingState::Idle;
         Ok(stopped)
     }
 
-    /// Stops the active entry at `stop_at` and starts a new entry for the
+    /// Stops the active worklog at `stop_at` and starts a new worklog for the
     /// given task at `start_at`.
     ///
-    /// Fails, leaving the current entry active, when nothing is running, when
+    /// Fails, leaving the current worklog active, when nothing is running, when
     /// the target is the active task, when the target is archived, when
-    /// `stop_at` precedes the active entry's start, or when `start_at`
+    /// `stop_at` precedes the active worklog's start, or when `start_at`
     /// precedes `stop_at`. Callers persist both halves of the switch in one
     /// transaction.
     pub fn switch(
@@ -175,10 +172,10 @@ impl Tracker {
         task: &Task,
         stop_at: DateTime<Utc>,
         start_at: DateTime<Utc>,
-    ) -> Result<SwitchedEntries, TrackingError> {
+    ) -> Result<SwitchedWorklogs, TrackingError> {
         let active = match &self.state {
             TrackingState::Idle => return Err(TrackingError::NotRunning),
-            TrackingState::Running { entry } => entry.clone(),
+            TrackingState::Running { worklog } => worklog.clone(),
         };
         if task.id == active.task_id {
             return Err(TrackingError::TaskAlreadyActive { id: task.id });
@@ -190,20 +187,20 @@ impl Tracker {
         if start_at < stop_at {
             return Err(TrackingError::StartBeforeStop { stop_at, start_at });
         }
-        let started = ActiveEntry::begin(EntryId::generate(), task.id, start_at);
+        let started = ActiveWorklog::begin(WorklogId::generate(), task.id, start_at);
         self.state = TrackingState::Running {
-            entry: started.clone(),
+            worklog: started.clone(),
         };
-        Ok(SwitchedEntries {
+        Ok(SwitchedWorklogs {
             stopped,
-            started: started.to_time_entry(),
+            started: started.to_worklog(),
         })
     }
 
     /// Starts or stops tracking for the given task.
     ///
     /// Toggling the active task stops it. Toggling another task while an
-    /// entry runs switches to it, stopping the old entry and starting the new
+    /// worklog runs switches to it, stopping the old worklog and starting the new
     /// one at the same instant. Toggling while idle starts the task.
     pub fn toggle(
         &mut self,
@@ -214,14 +211,14 @@ impl Tracker {
             TrackingState::Idle => {
                 return self
                     .start(task, at)
-                    .map(|entry| TrackingOutcome::Started { entry });
+                    .map(|worklog| TrackingOutcome::Started { worklog });
             }
-            TrackingState::Running { entry } => entry.clone(),
+            TrackingState::Running { worklog } => worklog.clone(),
         };
         if active.task_id == task.id {
             return self
                 .stop(at)
-                .map(|entry| TrackingOutcome::Stopped { entry });
+                .map(|worklog| TrackingOutcome::Stopped { worklog });
         }
         self.switch(task, at, at)
             .map(|switched| TrackingOutcome::Switched {
@@ -237,7 +234,7 @@ impl Tracker {
     pub fn ensure_archivable(&self, task_id: TaskId) -> Result<(), TrackingError> {
         match &self.state {
             TrackingState::Idle => Ok(()),
-            TrackingState::Running { entry } if entry.task_id == task_id => {
+            TrackingState::Running { worklog } if worklog.task_id == task_id => {
                 Err(TrackingError::TaskIsActive { id: task_id })
             }
             TrackingState::Running { .. } => Ok(()),
@@ -254,8 +251,8 @@ mod tests {
         TaskId::from_uuid(uuid::Uuid::from_u128(tag as u128))
     }
 
-    fn entry_id(tag: u32) -> EntryId {
-        EntryId::from_uuid(uuid::Uuid::from_u128(tag as u128))
+    fn worklog_id(tag: u32) -> WorklogId {
+        WorklogId::from_uuid(uuid::Uuid::from_u128(tag as u128))
     }
 
     fn task(tag: u32) -> Task {
@@ -274,25 +271,25 @@ mod tests {
     }
 
     #[test]
-    fn idle_tracker_has_no_active_entry() {
+    fn idle_tracker_has_no_active_worklog() {
         let tracker = Tracker::idle();
         assert_eq!(tracker.state(), &TrackingState::Idle);
         assert!(tracker.active().is_none());
     }
 
     #[test]
-    fn start_creates_one_active_entry_for_the_task() {
+    fn start_creates_one_active_worklog_for_the_task() {
         let mut tracker = Tracker::idle();
-        let entry = tracker.start(&task(1), at(100)).unwrap();
-        assert_eq!(entry.task_id, task_id(1));
-        assert_eq!(entry.start, at(100));
-        assert_eq!(entry.end, None);
-        assert_eq!(tracker.active().map(|e| e.id), Some(entry.id));
+        let worklog = tracker.start(&task(1), at(100)).unwrap();
+        assert_eq!(worklog.task_id, task_id(1));
+        assert_eq!(worklog.start, at(100));
+        assert_eq!(worklog.end, None);
+        assert_eq!(tracker.active().map(|e| e.id), Some(worklog.id));
         assert_eq!(
             tracker.state(),
             &TrackingState::Running {
-                entry: ActiveEntry {
-                    id: entry.id,
+                worklog: ActiveWorklog {
+                    id: worklog.id,
                     task_id: task_id(1),
                     start: at(100),
                 }
@@ -301,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn start_while_running_is_rejected_with_the_active_entry() {
+    fn start_while_running_is_rejected_with_the_active_worklog() {
         let mut tracker = Tracker::idle();
         let first = tracker.start(&task(1), at(100)).unwrap();
         let error = tracker
@@ -310,7 +307,7 @@ mod tests {
         assert_eq!(
             error,
             TrackingError::AlreadyRunning {
-                active: ActiveEntry {
+                active: ActiveWorklog {
                     id: first.id,
                     task_id: task_id(1),
                     start: at(100),
@@ -356,14 +353,14 @@ mod tests {
     }
 
     #[test]
-    fn stop_before_start_is_rejected_and_the_entry_stays_active() {
+    fn stop_before_start_is_rejected_and_the_worklog_stays_active() {
         let mut tracker = Tracker::idle();
         let started = tracker.start(&task(1), at(100)).unwrap();
         let error = tracker.stop(at(99)).expect_err("backwards stop must fail");
         assert_eq!(
             error,
             TrackingError::StopBeforeStart {
-                entry_id: started.id,
+                worklog_id: started.id,
                 start: at(100),
                 stop_at: at(99),
             }
@@ -372,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn restarting_a_stopped_task_creates_a_new_entry() {
+    fn restarting_a_stopped_task_creates_a_new_worklog() {
         let mut tracker = Tracker::idle();
         let first = tracker.start(&task(1), at(100)).unwrap();
         let first_stopped = tracker.stop(at(150)).unwrap();
@@ -417,7 +414,7 @@ mod tests {
     }
 
     #[test]
-    fn switch_stops_the_old_entry_and_starts_the_new_one() {
+    fn switch_stops_the_old_worklog_and_starts_the_new_one() {
         let mut tracker = Tracker::idle();
         let first = tracker.start(&task(1), at(100)).unwrap();
         let switched = tracker.switch(&task(2), at(150), at(160)).unwrap();
@@ -451,7 +448,7 @@ mod tests {
         assert_eq!(
             error,
             TrackingError::StopBeforeStart {
-                entry_id: started.id,
+                worklog_id: started.id,
                 start: at(100),
                 stop_at: at(99),
             }
@@ -482,10 +479,10 @@ mod tests {
         let mut tracker = Tracker::idle();
         let outcome = tracker.toggle(&task(1), at(100)).unwrap();
         match outcome {
-            TrackingOutcome::Started { entry } => {
-                assert_eq!(entry.task_id, task_id(1));
-                assert_eq!(entry.start, at(100));
-                assert_eq!(entry.end, None);
+            TrackingOutcome::Started { worklog } => {
+                assert_eq!(worklog.task_id, task_id(1));
+                assert_eq!(worklog.start, at(100));
+                assert_eq!(worklog.end, None);
             }
             other => panic!("expected Started, got {other:?}"),
         }
@@ -498,9 +495,9 @@ mod tests {
         let started = tracker.start(&task(1), at(100)).unwrap();
         let outcome = tracker.toggle(&task(1), at(150)).unwrap();
         match outcome {
-            TrackingOutcome::Stopped { entry } => {
-                assert_eq!(entry.id, started.id);
-                assert_eq!(entry.end, Some(at(150)));
+            TrackingOutcome::Stopped { worklog } => {
+                assert_eq!(worklog.id, started.id);
+                assert_eq!(worklog.end, Some(at(150)));
             }
             other => panic!("expected Stopped, got {other:?}"),
         }
@@ -546,14 +543,14 @@ mod tests {
     }
 
     #[test]
-    fn resume_accepts_an_active_entry() {
-        let entry = TimeEntry::begin(entry_id(1), task_id(2), at(100));
-        let tracker = Tracker::resume(entry).unwrap();
+    fn resume_accepts_an_active_worklog() {
+        let worklog = Worklog::begin(worklog_id(1), task_id(2), at(100));
+        let tracker = Tracker::resume(worklog).unwrap();
         assert_eq!(
             tracker.state(),
             &TrackingState::Running {
-                entry: ActiveEntry {
-                    id: entry_id(1),
+                worklog: ActiveWorklog {
+                    id: worklog_id(1),
                     task_id: task_id(2),
                     start: at(100),
                 }
@@ -562,9 +559,9 @@ mod tests {
     }
 
     #[test]
-    fn resume_rejects_a_stopped_entry() {
-        let entry = TimeEntry::new(entry_id(1), task_id(2), at(100), Some(at(150))).unwrap();
-        let error = Tracker::resume(entry).expect_err("stopped entries do not resume");
-        assert_eq!(error, TrackingError::EntryNotActive { id: entry_id(1) });
+    fn resume_rejects_a_stopped_worklog() {
+        let worklog = Worklog::new(worklog_id(1), task_id(2), at(100), Some(at(150))).unwrap();
+        let error = Tracker::resume(worklog).expect_err("stopped worklogs do not resume");
+        assert_eq!(error, TrackingError::WorklogNotActive { id: worklog_id(1) });
     }
 }

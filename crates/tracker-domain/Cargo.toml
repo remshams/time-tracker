@@ -1,5 +1,5 @@
 [package]
-name = "tracker-core"
+name = "tracker-domain"
 description = "Domain model for the time tracker"
 version.workspace = true
 edition.workspace = true

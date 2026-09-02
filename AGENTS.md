@@ -13,4 +13,4 @@ Time Tracker is a Rust time-tracking application. It starts with a TUI and may l
 - Use cargo-llvm-cov 0.9.0 and cargo-crap 0.4.3. Install them with `rustup component add llvm-tools-preview`, `cargo +stable install --locked --version 0.9.0 cargo-llvm-cov`, and `cargo +stable install --locked --version 0.4.3 cargo-crap` if they are unavailable.
 - Treat missed and timed-out mutants, and CRAP scores above the configured threshold, as failures. Report any that cannot be resolved.
 - `.cargo/mutants.toml` excludes one named glue mutant: `RealEffects::show_cursor` in `apps/tui/src/terminal.rs`. Ratatui's `Terminal::drop` re-shows the cursor after our restore, so removing that crossterm call is not observable by any test; the same bytes reach the terminal either way.
-- `cargo-crap` cannot match the macro-generated functions in `crates/tracker-core/src/ids.rs`. Direct tests for those functions remain required; do not refactor the ID types to satisfy the report.
+- `cargo-crap` cannot match the macro-generated functions in `crates/tracker-domain/src/ids.rs`. Direct tests for those functions remain required; do not refactor the ID types to satisfy the report.

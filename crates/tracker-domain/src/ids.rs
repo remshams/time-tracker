@@ -1,4 +1,4 @@
-//! Stable identifiers for tasks and time entries.
+//! Stable identifiers for tasks and worklogs.
 //!
 //! New identifiers are UUIDv7, so sorting by identifier approximates creation
 //! order. Parsing accepts any UUID text form; the domain only ever generates
@@ -54,8 +54,8 @@ id_type!(
 );
 
 id_type!(
-    /// The identifier of a time entry.
-    EntryId
+    /// The identifier of a worklog.
+    WorklogId
 );
 
 #[cfg(test)]
@@ -72,9 +72,9 @@ mod tests {
     }
 
     #[test]
-    fn generated_entry_ids_are_v7_and_unique() {
-        let first = EntryId::generate();
-        let second = EntryId::generate();
+    fn generated_worklog_ids_are_v7_and_unique() {
+        let first = WorklogId::generate();
+        let second = WorklogId::generate();
         assert_eq!(first.as_uuid().get_version_num(), 7);
         assert_ne!(first, second);
     }
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn from_uuid_wraps_the_given_uuid() {
         let uuid = Uuid::now_v7();
-        let id = EntryId::from_uuid(uuid);
+        let id = WorklogId::from_uuid(uuid);
         assert_eq!(id.as_uuid(), uuid);
     }
 

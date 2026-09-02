@@ -65,9 +65,9 @@ impl fmt::Display for TaskName {
     }
 }
 
-/// A reusable task that time entries can be recorded against.
+/// A reusable task that worklogs can be recorded against.
 ///
-/// Tasks are archived instead of deleted so past entries keep their context.
+/// Tasks are archived instead of deleted so past worklogs keep their context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
     /// The stable UUIDv7 identifier.
