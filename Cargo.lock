@@ -1641,7 +1641,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
 
 [[package]]
-name = "tracker-core"
+name = "tracker-application"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "thiserror 2.0.20",
+ "tracker-domain",
+ "uuid",
+]
+
+[[package]]
+name = "tracker-domain"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -1659,7 +1669,8 @@ dependencies = [
  "rusqlite",
  "tempfile",
  "thiserror 2.0.20",
- "tracker-core",
+ "tracker-application",
+ "tracker-domain",
  "uuid",
 ]
 
@@ -1672,11 +1683,10 @@ dependencies = [
  "libc",
  "ratatui",
  "tempfile",
- "thiserror 2.0.20",
- "tracker-core",
+ "tracker-application",
+ "tracker-domain",
  "tracker-storage",
  "unicode-width",
- "uuid",
 ]
 
 [[package]]

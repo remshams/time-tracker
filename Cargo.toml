@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/tracker-domain", "apps/tui", "crates/tracker-storage"]
+members = ["crates/tracker-domain", "crates/tracker-application", "apps/tui", "crates/tracker-storage"]
 
 [workspace.package]
 version = "0.1.0"
