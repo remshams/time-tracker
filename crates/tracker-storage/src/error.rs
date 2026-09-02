@@ -424,10 +424,10 @@ mod tests {
         assert_eq!(
             StorageError::DatabaseTooNew {
                 found: 9,
-                latest: 2
+                latest: 1
             }
             .to_string(),
-            "database schema version 9 is newer than this version of Time Tracker supports (latest known: 2)"
+            "database schema version 9 is newer than this version of Time Tracker supports (latest known: 1)"
                 .to_owned()
         );
         assert_eq!(

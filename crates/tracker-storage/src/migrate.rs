@@ -22,37 +22,24 @@ pub(crate) const TRIGGER_TASK_ARCHIVED: &str = "task is archived";
 /// The message the active-task archive trigger aborts with.
 pub(crate) const TRIGGER_TASK_ACTIVE: &str = "task is active";
 
-/// The schema migration scripts, in order. Version 1 is the first script.
-const MIGRATIONS: &[&str] = &[
-    // Version 1: tasks and worklogs.
-    //
-    // Identifiers are UUIDv7 text; ordering by task id approximates creation
-    // order. Timestamps are microseconds since the Unix epoch in UTC. A
-    // partial unique index allows at most one active worklog (end_us IS NULL)
-    // across the whole tracker, and a CHECK constraint rejects stopped
-    // worklogs whose end precedes their start.
-    "CREATE TABLE tasks (
-        id TEXT PRIMARY KEY,
+/// The baseline schema. There is no production schema to migrate, so tasks,
+/// worklogs, indexes, and archive triggers share version 1.
+const MIGRATIONS: &[&str] = &["CREATE TABLE tasks (
+        id TEXT PRIMARY KEY NOT NULL,
         name TEXT NOT NULL,
         archived INTEGER NOT NULL CHECK (archived IN (0, 1))
-    );
+    ) STRICT;
     CREATE TABLE worklogs (
-        id TEXT PRIMARY KEY,
+        id TEXT PRIMARY KEY NOT NULL,
         task_id TEXT NOT NULL REFERENCES tasks (id),
         start_us INTEGER NOT NULL,
         end_us INTEGER,
         CHECK (end_us IS NULL OR end_us >= start_us)
-    );
+    ) STRICT;
     CREATE INDEX worklogs_task_start ON worklogs (task_id, start_us);
     CREATE UNIQUE INDEX worklogs_single_active
-        ON worklogs (1) WHERE end_us IS NULL;",
-    // Version 2: enforce the archive invariants at the database level, so
-    // every process and every direct repository call sees the same rules.
-    //
-    // An archived task cannot receive worklogs, and a task with an active
-    // worklog cannot be archived. The triggers abort with fixed messages that
-    // the error mapping turns into explicit storage errors.
-    "CREATE TRIGGER worklogs_reject_archived_task
+        ON worklogs (1) WHERE end_us IS NULL;
+    CREATE TRIGGER worklogs_reject_archived_task
     BEFORE INSERT ON worklogs
     WHEN NEW.task_id IN (SELECT id FROM tasks WHERE archived = 1)
     BEGIN
@@ -65,8 +52,7 @@ const MIGRATIONS: &[&str] = &[
                     WHERE task_id = NEW.id AND end_us IS NULL)
     BEGIN
         SELECT RAISE(ABORT, 'task is active');
-    END;",
-];
+    END;"];
 
 /// The newest schema version this build understands.
 pub(crate) const LATEST_VERSION: i64 = MIGRATIONS.len() as i64;
@@ -101,12 +87,43 @@ mod tests {
 
     #[test]
     fn latest_version_counts_the_scripts() {
-        assert_eq!(LATEST_VERSION, 2);
+        assert_eq!(LATEST_VERSION, 1);
     }
 
     #[test]
     fn trigger_messages_are_the_ones_the_error_mapping_expects() {
-        assert!(MIGRATIONS[1].contains(&format!("'{TRIGGER_TASK_ARCHIVED}'")));
-        assert!(MIGRATIONS[1].contains(&format!("'{TRIGGER_TASK_ACTIVE}'")));
+        assert!(MIGRATIONS[0].contains(&format!("'{TRIGGER_TASK_ARCHIVED}'")));
+        assert!(MIGRATIONS[0].contains(&format!("'{TRIGGER_TASK_ACTIVE}'")));
+    }
+
+    #[test]
+    fn a_failed_baseline_migration_rolls_back_the_partial_schema() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch("CREATE TABLE worklogs (id TEXT)")
+            .unwrap();
+
+        let error = migrate(&connection).expect_err("the occupied table name must fail");
+        assert!(matches!(error, StorageError::Sql(_)));
+        let version: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 0);
+        let tasks_exists: bool = connection
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tasks')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let worklogs_exists: bool = connection
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'worklogs')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!tasks_exists);
+        assert!(worklogs_exists, "the pre-existing table remains untouched");
     }
 }

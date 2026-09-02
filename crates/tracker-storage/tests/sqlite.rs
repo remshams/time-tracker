@@ -4,12 +4,19 @@
 //! interplay between the domain tracker and persistence, including failure
 //! states, rollback behavior, and concurrent connections.
 
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+    mpsc::{Receiver, SyncSender, sync_channel},
+};
 use std::thread;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use tempfile::TempDir;
 use tracker_application::{
-    ClearActiveTaskOutcome, SetActiveTaskOutcome, TrackerApplication, TrackingOperations,
+    ApplicationError, ClearActiveTaskOutcome, RepositoryError, SetActiveTaskOutcome, TaskQueries,
+    TaskRepository, TrackerApplication, TrackingOperations, TrackingRepository, WorklogRepository,
 };
 use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingError, TrackingOutcome, TrackingState,
@@ -42,6 +49,86 @@ fn file_repo(dir: &TempDir) -> SqliteRepository {
     SqliteRepository::open(dir.path().join("tracker.db")).unwrap()
 }
 
+struct SynchronizingRepository {
+    repository: SqliteRepository,
+    ready: SyncSender<()>,
+    started: Receiver<()>,
+    synchronize_active_read: Arc<AtomicBool>,
+    fail_next_active_read: Arc<AtomicBool>,
+}
+
+impl TaskRepository for SynchronizingRepository {
+    fn create_task(&self, task: Task) -> Result<(), RepositoryError> {
+        self.repository.create_task(task).map_err(Into::into)
+    }
+
+    fn find_task(&self, id: TaskId) -> Result<Option<Task>, RepositoryError> {
+        self.repository.find_task(id).map_err(Into::into)
+    }
+
+    fn list_tasks(&self) -> Result<Vec<Task>, RepositoryError> {
+        self.repository.list_tasks().map_err(Into::into)
+    }
+
+    fn rename_task(&self, id: TaskId, name: TaskName) -> Result<Task, RepositoryError> {
+        self.repository.rename_task(id, name).map_err(Into::into)
+    }
+
+    fn archive_task(&self, id: TaskId) -> Result<Task, RepositoryError> {
+        self.repository.archive_task(id).map_err(Into::into)
+    }
+}
+
+impl WorklogRepository for SynchronizingRepository {
+    fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, RepositoryError> {
+        self.repository.list_worklogs(task_id).map_err(Into::into)
+    }
+}
+
+impl TrackingRepository for SynchronizingRepository {
+    fn insert_worklog(&self, worklog: &Worklog) -> Result<(), RepositoryError> {
+        self.repository.insert_worklog(worklog).map_err(Into::into)
+    }
+
+    fn stop_worklog(&self, id: WorklogId, end: DateTime<Utc>) -> Result<Worklog, RepositoryError> {
+        self.repository.stop_worklog(id, end).map_err(Into::into)
+    }
+
+    fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError> {
+        if self.fail_next_active_read.swap(false, Ordering::SeqCst) {
+            return Err(RepositoryError::Backend {
+                message: "recovery read failed".to_owned(),
+            });
+        }
+        let active = self
+            .repository
+            .active_worklog()
+            .map_err(RepositoryError::from)?;
+        if self.synchronize_active_read.swap(false, Ordering::SeqCst) {
+            self.ready.send(()).map_err(|_| RepositoryError::Backend {
+                message: "the competing client stopped before synchronization".to_owned(),
+            })?;
+            self.started
+                .recv_timeout(Duration::from_secs(5))
+                .map_err(|_| RepositoryError::Backend {
+                    message: "the competing client did not start within five seconds".to_owned(),
+                })?;
+        }
+        Ok(active)
+    }
+
+    fn switch_worklog(
+        &self,
+        id: WorklogId,
+        stop_at: DateTime<Utc>,
+        next: &Worklog,
+    ) -> Result<(), RepositoryError> {
+        self.repository
+            .switch_worklog(id, stop_at, next)
+            .map_err(Into::into)
+    }
+}
+
 fn user_version(repository: &SqliteRepository) -> i64 {
     repository
         .connection()
@@ -61,7 +148,7 @@ fn migrations_create_the_schema_triggers_and_are_idempotent() {
     }
     // Reopening applies no migration again and keeps the data.
     let reopened = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&reopened), 2);
+    assert_eq!(user_version(&reopened), 1);
     let tasks = reopened.list_tasks().unwrap();
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0].name.as_str(), "first");
@@ -82,6 +169,41 @@ fn migrations_create_the_schema_triggers_and_are_idempotent() {
 }
 
 #[test]
+fn strict_tables_reject_null_ids_and_non_integer_timestamps() {
+    let repository = repo();
+    let conn = repository.connection();
+    assert!(
+        conn.execute(
+            "INSERT INTO tasks (id, name, archived) VALUES (NULL, 'name', 0)",
+            []
+        )
+        .is_err()
+    );
+    conn.execute(
+        "INSERT INTO tasks (id, name, archived) VALUES ('00000000-0000-7000-8000-000000000001', 'name', 0)",
+        [],
+    )
+    .unwrap();
+    assert!(
+        conn.execute(
+            "INSERT INTO worklogs (id, task_id, start_us, end_us)
+             VALUES (NULL, '00000000-0000-7000-8000-000000000001', 1, NULL)",
+            [],
+        )
+        .is_err()
+    );
+    assert!(
+        conn.execute(
+            "INSERT INTO worklogs (id, task_id, start_us, end_us)
+             VALUES ('00000000-0000-7000-8000-000000000002',
+                     '00000000-0000-7000-8000-000000000001', 'not an integer', NULL)",
+            [],
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn a_database_from_a_newer_version_is_rejected_without_changes() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tracker.db");
@@ -97,7 +219,7 @@ fn a_database_from_a_newer_version_is_rejected_without_changes() {
     match error {
         StorageError::DatabaseTooNew { found, latest } => {
             assert_eq!(found, 99);
-            assert_eq!(latest, 2);
+            assert_eq!(latest, 1);
             assert!(error.to_string().contains("newer"));
         }
         other => panic!("expected DatabaseTooNew, got {other:?}"),
@@ -108,42 +230,6 @@ fn a_database_from_a_newer_version_is_rejected_without_changes() {
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
     assert_eq!(version, 99);
-}
-
-#[test]
-fn a_failed_migration_rolls_back_and_leaves_the_version() {
-    let temp = tempfile::tempdir().unwrap();
-    let path = temp.path().join("tracker.db");
-    {
-        let repository = SqliteRepository::open(&path).unwrap();
-        repository.create_task(named_task(1, "kept")).unwrap();
-        // Recreate the state migration 2 has to upgrade from, but occupy one
-        // trigger name so the migration script fails midway.
-        repository
-            .connection()
-            .execute_batch(
-                "DROP TRIGGER worklogs_reject_archived_task;
-                 DROP TRIGGER tasks_reject_archive_while_active;
-                 CREATE TRIGGER worklogs_reject_archived_task
-                 BEFORE INSERT ON worklogs
-                 BEGIN SELECT RAISE(ABORT, 'occupied'); END;
-                 PRAGMA user_version = 1;",
-            )
-            .unwrap();
-    }
-    let error = SqliteRepository::open(&path).expect_err("the occupied trigger name must fail");
-    assert!(matches!(error, StorageError::Sql(_)));
-
-    // The failed migration left the version and the data untouched.
-    let raw = rusqlite::Connection::open(&path).unwrap();
-    let version: i64 = raw
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 1);
-    let tasks: i64 = raw
-        .query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(tasks, 1);
 }
 
 #[test]
@@ -165,7 +251,7 @@ fn simultaneous_first_opens_of_one_database_all_complete() {
         handle.join().unwrap().expect("every first open completes");
     }
     let repository = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&repository), 2, "migrations ran exactly once");
+    assert_eq!(user_version(&repository), 1, "migrations ran exactly once");
     assert_eq!(repository.list_tasks().unwrap().len(), 8);
 }
 
@@ -195,12 +281,16 @@ fn application_tracking_operations_use_the_sqlite_ports() {
         SetActiveTaskOutcome::Switched { stopped, started }
             if stopped.end == Some(at(150)) && started.start == at(150)
     ));
+    let TrackingState::Running { worklog: active } = application.current_tracking() else {
+        panic!("the worklog must be active");
+    };
+    let active = active.id;
     assert!(matches!(
-        application.clear_active_task(at(200)).unwrap(),
+        application.clear_active_task(active, at(200)).unwrap(),
         ClearActiveTaskOutcome::Stopped { worklog } if worklog.end == Some(at(200))
     ));
     assert_eq!(
-        application.clear_active_task(at(250)).unwrap(),
+        application.clear_active_task(active, at(250)).unwrap(),
         ClearActiveTaskOutcome::AlreadyIdle
     );
 
@@ -208,6 +298,161 @@ fn application_tracking_operations_use_the_sqlite_ports() {
     assert_eq!(stored.active_worklog().unwrap(), None);
     assert_eq!(stored.list_worklogs(alpha.id).unwrap().len(), 1);
     assert_eq!(stored.list_worklogs(beta.id).unwrap().len(), 1);
+}
+
+#[test]
+fn two_clients_recover_lost_start_switch_and_stale_clear_without_stopping_the_other_timer() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let alpha = named_task(1, "alpha");
+    let beta = named_task(2, "beta");
+    let setup = SqliteRepository::open(&path).unwrap();
+    setup.create_task(alpha.clone()).unwrap();
+    setup.create_task(beta.clone()).unwrap();
+    drop(setup);
+
+    let (ready_send, ready) = sync_channel(1);
+    let (started, started_receive) = sync_channel(1);
+    let synchronize_active_read = Arc::new(AtomicBool::new(false));
+    let repository = SynchronizingRepository {
+        repository: SqliteRepository::open(&path).unwrap(),
+        ready: ready_send,
+        started: started_receive,
+        synchronize_active_read: synchronize_active_read.clone(),
+        fail_next_active_read: Arc::new(AtomicBool::new(false)),
+    };
+    let first = TrackerApplication::load(repository).unwrap();
+    synchronize_active_read.store(true, Ordering::SeqCst);
+    let second = thread::spawn({
+        let path = path.clone();
+        move || {
+            ready
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the first client must finish its authoritative read");
+            let mut second =
+                TrackerApplication::load(SqliteRepository::open(path).unwrap()).unwrap();
+            second.set_active_task(beta.id, at(100)).unwrap();
+            started
+                .send(())
+                .expect("the first client must still await the competing start");
+            second
+        }
+    });
+    let first = thread::spawn(move || {
+        let mut first = first;
+        let outcome = first.set_active_task(alpha.id, at(110));
+        (first, outcome)
+    });
+    let (mut first, lost_start) = first.join().unwrap();
+    let mut second = second.join().unwrap();
+    assert!(matches!(
+        lost_start,
+        Err(ApplicationError::TrackingWrite(
+            RepositoryError::ActiveWorklogExists
+        ))
+    ));
+    assert!(matches!(
+        first.current_tracking(),
+        TrackingState::Running { worklog } if worklog.task_id == beta.id
+    ));
+
+    assert!(matches!(
+        first.set_active_task(alpha.id, at(120)),
+        Ok(SetActiveTaskOutcome::Switched { stopped, started })
+            if stopped.task_id == beta.id
+                && stopped.end == Some(at(120))
+                && started.task_id == alpha.id
+                && started.start == at(120)
+    ));
+    let stale_beta = match second.current_tracking() {
+        TrackingState::Running { worklog } => worklog.id,
+        TrackingState::Idle => panic!("beta must be active in the stale client"),
+    };
+    assert_eq!(
+        second.clear_active_task(stale_beta, at(130)),
+        Err(ApplicationError::TrackingStateChanged)
+    );
+    assert!(matches!(
+        second.current_tracking(),
+        TrackingState::Running { worklog } if worklog.task_id == alpha.id
+    ));
+
+    let other = SqliteRepository::open(&path).unwrap();
+    other.archive_task(beta.id).unwrap();
+    assert!(matches!(
+        first.set_active_task(beta.id, at(140)),
+        Err(ApplicationError::TrackingWrite(
+            tracker_application::RepositoryError::TaskArchived { id }
+        )) if id == beta.id
+    ));
+    assert!(matches!(
+        first.current_tracking(),
+        TrackingState::Running { worklog } if worklog.task_id == alpha.id
+    ));
+    assert!(first.task(beta.id).unwrap().archived);
+}
+
+#[test]
+fn a_real_sqlite_write_conflict_reports_a_failed_recovery_separately() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let alpha = named_task(1, "alpha");
+    let beta = named_task(2, "beta");
+    let setup = SqliteRepository::open(&path).unwrap();
+    setup.create_task(alpha.clone()).unwrap();
+    setup.create_task(beta.clone()).unwrap();
+    drop(setup);
+
+    let (ready_send, ready) = sync_channel(1);
+    let (started, started_receive) = sync_channel(1);
+    let synchronize_active_read = Arc::new(AtomicBool::new(false));
+    let fail_next_active_read = Arc::new(AtomicBool::new(false));
+    let repository = SynchronizingRepository {
+        repository: SqliteRepository::open(&path).unwrap(),
+        ready: ready_send,
+        started: started_receive,
+        synchronize_active_read: synchronize_active_read.clone(),
+        fail_next_active_read: fail_next_active_read.clone(),
+    };
+    let application = TrackerApplication::load(repository).unwrap();
+    synchronize_active_read.store(true, Ordering::SeqCst);
+    let competing = thread::spawn({
+        let path = path.clone();
+        move || {
+            ready
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the first client must finish its authoritative read");
+            let mut competing =
+                TrackerApplication::load(SqliteRepository::open(path).unwrap()).unwrap();
+            competing.set_active_task(beta.id, at(100)).unwrap();
+            fail_next_active_read.store(true, Ordering::SeqCst);
+            started
+                .send(())
+                .expect("the first client must still await the competing start");
+        }
+    });
+    let (application, error) = thread::spawn(move || {
+        let mut application = application;
+        let error = application
+            .set_active_task(alpha.id, at(110))
+            .expect_err("the competing active worklog must reject this start");
+        (application, error)
+    })
+    .join()
+    .unwrap();
+    competing.join().unwrap();
+
+    assert_eq!(
+        error,
+        ApplicationError::TrackingRecovery(RepositoryError::Backend {
+            message: "recovery read failed".to_owned(),
+        })
+    );
+    assert_eq!(application.current_tracking(), &TrackingState::Idle);
+    assert!(matches!(
+        SqliteRepository::open(&path).unwrap().active_worklog(),
+        Ok(Some(worklog)) if worklog.task_id == beta.id
+    ));
 }
 
 #[test]
