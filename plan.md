@@ -242,6 +242,16 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 - [ ] Preserve monotonic elapsed timing, restart recovery, atomic switching, and cross-process conflict recovery.
 - [ ] Prove the extracted crate has no Ratatui, Crossterm, or rusqlite dependency and retain the full quality checks.
 
+### Interim checkpoint: task browsing and ordering
+
+- [ ] Add a TUI view for archived tasks while keeping them out of the default active-task list.
+- [ ] Decide which actions, if any, are available from the archived-task view before implementing them.
+- [ ] Add explicit task creation and update timestamps. Define which events count as an update before changing the schema.
+- [ ] Add stable task ordering by creation time and last update time, with deterministic tie-breakers.
+- [ ] Add TUI controls for choosing the ordering and decide whether that choice lasts only for the current run or persists locally.
+- [ ] Migrate existing tasks without losing their archive state or time entries.
+- [ ] Cover active and archived views, each ordering, migration behavior, and empty states in tests.
+
 ### Milestone 3: server sync
 
 - [ ] Write a protocol decision record covering authentication, idempotency, revisions, and handoff behavior.
