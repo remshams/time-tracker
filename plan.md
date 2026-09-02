@@ -2,9 +2,9 @@
 
 ## Status
 
-Milestones 0, 1, and 2 and the terminal-palette checkpoint are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. The domain/application separation is implemented locally and awaits review and full validation before remote storage work begins.
+Milestones 0, 1, and 2, the terminal-palette checkpoint, and the domain/application separation are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. Task browsing and ordering are next; remote storage follows.
 
-All completed checkpoints are pushed to Forgejo. Current local validation found 213 passing Rust tests and 10 passing palette-audit tests, 305 caught mutants, no missed or timed-out mutants, and no CRAP score above 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
+The completed implementation is committed locally and ready to push. Current validation found 205 passing Rust tests and 10 passing palette-audit tests, 323 caught mutants, no missed or timed-out mutants, 91 unviable mutants, and no CRAP score above 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
 ## Settled decisions
 
@@ -115,7 +115,7 @@ time-tracker/
 Responsibilities:
 
 - `tracker-domain` defines tasks, worklogs, tracking state, identifiers, and domain invariants. It depends on no application, presentation, database, or HTTP package.
-- `tracker-application` defines use cases, repository ports, and client-side time handling. It depends only on `tracker-domain`.
+- `tracker-application` defines use cases, repository ports, backend-neutral errors, and operations that accept explicit client-created timestamps. It depends only on `tracker-domain`.
 - `tracker-storage` implements the application repository ports with SQLite.
 - `app.rs` owns TUI presentation state and converts semantic input into application operations.
 - `ui.rs` renders TUI state and contains no terminal lifecycle or persistence code.
@@ -252,7 +252,7 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 6. [x] Adapt `tracker-tui` to application operations and errors. Keep the monotonic client clock, task list, selection, modes, input buffers, key handling, status text, and rendering in the TUI; remove direct dependencies on repository ports, `SqliteRepository`, and `StorageError` from TUI state.
 7. [x] Reduce `apps/tui/src/main.rs` to composition: create the SQLite adapter, application service, and TUI. Preserve the path, seeding, terminal, and startup-error behavior.
 8. [x] Remove transitional aliases and the old domain repository port. Verify the final dependency direction and prove `tracker-domain` and `tracker-application` have no Ratatui, Crossterm, rusqlite, or HTTP dependency.
-9. [ ] Run the full Rust, Python, mutation, coverage, CRAP, theme-audit, and real-binary PTY checks. Recreate the local test database and confirm all user-visible behavior remains unchanged.
+9. [x] Run the full Rust, Python, mutation, coverage, CRAP, theme-audit, and real-binary PTY checks. Recreate the local test database and confirm all user-visible behavior remains unchanged.
 
 This checkpoint does not add worklog browsing, HTTP, asynchronous execution, server modes, remote-request states, revisions, or synchronization metadata.
 

@@ -1,6 +1,6 @@
 # Time Tracker
 
-A keyboard-first time tracker written in Rust. `tt` is a terminal application for Linux and macOS; a sync server and more clients are planned. `plan.md` is the source of truth for scope and milestones.
+A keyboard-first time tracker written in Rust. `tt` is a terminal application for Linux and macOS; optional remote storage and more clients are planned. `plan.md` is the source of truth for scope and milestones.
 
 ## Current state
 
@@ -68,7 +68,7 @@ The workspace has four packages:
 - `crates/tracker-storage`: SQLite persistence. It implements the application repository ports and owns schema migrations and platform paths.
 - `apps/tui`: the `tt` binary. `app.rs` holds presentation state and converts semantic commands into application operations. `keymap.rs` maps raw keys to commands, `ui.rs` renders, `styles.rs` defines terminal styles, and `terminal.rs` owns setup and cleanup. `main.rs` creates SQLite storage and the application service, then starts the TUI.
 
-The event loop stays synchronous. `tracker-application` validates a tracking candidate before writing it, uses one atomic repository call for switches, and reloads authoritative task and tracking state after a cross-process tracking write conflict. The TUI owns the monotonic elapsed clock and supplies explicit UTC timestamps to `set_active_task` and `clear_active_task`; it does not sequence persistence or handle SQLite errors.
+The event loop stays synchronous. `tracker-application` validates a tracking candidate before writing it, uses one atomic repository call for switches, and reloads authoritative task and tracking state after a cross-process tracking write conflict. Clearing tracking includes the worklog the TUI expects to stop, so stale state cannot stop another process's timer. The TUI owns the monotonic elapsed clock and supplies explicit UTC timestamps to `set_active_task` and `clear_active_task`; it does not sequence persistence or handle SQLite errors.
 
 Terminal setup and teardown are staged: raw mode, the alternate screen, and cursor visibility are tracked in one restoration state shared by the guard and the panic hook, so exactly the completed stages are restored exactly once, and a raw-mode failure writes no escape sequence at all.
 
