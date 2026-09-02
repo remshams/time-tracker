@@ -17,7 +17,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use crossterm::event::Event;
-use tracker_application::TrackerApplication;
+use tracker_application::{TrackerApplication, TrackerApplicationService};
 use tracker_domain::TaskName;
 use tracker_storage::{SqliteRepository, StorageError, default_database_path, ensure_app_data_dir};
 
@@ -71,7 +71,10 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 ///
 /// The guard restores the terminal on drop, for normal quits and for errors
 /// alike.
-fn run(guard: &mut TerminalGuard, app: &mut App<SqliteRepository>) -> io::Result<()> {
+fn run<S: TrackerApplicationService>(
+    guard: &mut TerminalGuard,
+    app: &mut App<S>,
+) -> io::Result<()> {
     while app.is_running() {
         guard.draw(|frame| ui::render(frame, app))?;
         if crossterm::event::poll(TICK)?

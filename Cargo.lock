@@ -1687,6 +1687,7 @@ dependencies = [
  "tracker-domain",
  "tracker-storage",
  "unicode-width",
+ "uuid",
 ]
 
 [[package]]

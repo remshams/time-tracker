@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, TimeDelta, Utc};
 use tracker_application::{
-    ApplicationError, ClearActiveTaskOutcome, SetActiveTaskOutcome, TaskOperations, TaskOutcome,
-    TaskQueries, TrackerApplication, TrackerRepository, TrackingOperations,
+    ApplicationError, ClearActiveTaskOutcome, SetActiveTaskOutcome, TaskOutcome,
+    TrackerApplicationService,
 };
 use tracker_domain::{Task, TaskId, TaskName, TaskNameError, TrackingError, TrackingState};
 
@@ -104,12 +104,15 @@ fn application_error_text(error: &ApplicationError) -> String {
             format!("Storage error: {error}")
         }
         ApplicationError::TrackingRecovery(error) => format!("Storage error: {error}"),
+        ApplicationError::TrackingStateChanged => {
+            "Tracking state changed in another client. Refreshed state.".to_owned()
+        }
     }
 }
 
 /// Task-list presentation state.
-pub struct App<R: TrackerRepository> {
-    application: TrackerApplication<R>,
+pub struct App<S: TrackerApplicationService> {
+    application: S,
     tasks: Vec<Task>,
     tracking: TrackingState,
     selected: Option<usize>,
@@ -119,9 +122,9 @@ pub struct App<R: TrackerRepository> {
     lifecycle: Lifecycle,
 }
 
-impl<R: TrackerRepository> App<R> {
+impl<S: TrackerApplicationService> App<S> {
     /// Builds presentation state from an already loaded application service.
-    pub fn load(application: TrackerApplication<R>) -> Self {
+    pub fn load(application: S) -> Self {
         let tasks = application
             .tasks()
             .iter()
@@ -220,10 +223,10 @@ impl<R: TrackerRepository> App<R> {
         self.clock.as_ref().map(ElapsedClock::elapsed)
     }
 
-    fn active_start(&self) -> Option<DateTime<Utc>> {
+    fn active_worklog(&self) -> Option<&tracker_domain::ActiveWorklog> {
         match &self.tracking {
             TrackingState::Idle => None,
-            TrackingState::Running { worklog } => Some(worklog.start),
+            TrackingState::Running { worklog } => Some(worklog),
         }
     }
 
@@ -257,8 +260,10 @@ impl<R: TrackerRepository> App<R> {
         let Some(task) = self.selected_task().cloned() else {
             return;
         };
-        let was_active = self.active_task_id();
-        let occurred_at = self.active_start().map_or_else(Utc::now, |start| {
+        let active = self.active_worklog().cloned();
+        let was_active = active.as_ref().map(|worklog| worklog.task_id);
+        let occurred_at = active.as_ref().map_or_else(Utc::now, |worklog| {
+            let start = worklog.start;
             let elapsed = self
                 .clock
                 .as_ref()
@@ -268,7 +273,7 @@ impl<R: TrackerRepository> App<R> {
 
         let result = if was_active == Some(task.id) {
             self.application
-                .clear_active_task(occurred_at)
+                .clear_active_task(active.expect("active task has a worklog").id, occurred_at)
                 .map(|outcome| match outcome {
                     ClearActiveTaskOutcome::Stopped { .. }
                     | ClearActiveTaskOutcome::AlreadyIdle => ("stopped", false),
@@ -430,13 +435,16 @@ impl<R: TrackerRepository> App<R> {
 #[cfg(test)]
 mod tests {
     use chrono::TimeDelta;
-    use tracker_application::{TrackerApplication, WorklogQueries};
-    use tracker_domain::{Task, TaskId, TaskName};
+    use tracker_application::{
+        RepositoryError, TaskOperations, TaskOutcome, TaskQueries, TrackerApplication,
+        TrackingOperations, WorklogQueries,
+    };
+    use tracker_domain::{ActiveWorklog, Task, TaskId, TaskName, Worklog, WorklogId};
     use tracker_storage::SqliteRepository;
 
     use super::*;
 
-    fn app_with(names: &[&str]) -> App<SqliteRepository> {
+    fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
         let repository = SqliteRepository::open_in_memory().unwrap();
         for name in names {
             repository
@@ -450,6 +458,146 @@ mod tests {
         match status {
             Status::Info(text) | Status::Error(text) => text,
         }
+    }
+
+    struct TestService {
+        tasks: Vec<Task>,
+        tracking: TrackingState,
+        fail_create: bool,
+        fail_rename: bool,
+        fail_archive: bool,
+    }
+
+    impl TestService {
+        fn with_tasks(tasks: Vec<Task>) -> Self {
+            Self {
+                tasks,
+                tracking: TrackingState::Idle,
+                fail_create: false,
+                fail_rename: false,
+                fail_archive: false,
+            }
+        }
+
+        fn failure() -> ApplicationError {
+            ApplicationError::Repository(RepositoryError::Backend {
+                message: "write failed".to_owned(),
+            })
+        }
+    }
+
+    impl TaskQueries for TestService {
+        fn tasks(&self) -> &[Task] {
+            &self.tasks
+        }
+
+        fn task(&self, id: TaskId) -> Option<&Task> {
+            self.tasks.iter().find(|task| task.id == id)
+        }
+    }
+
+    impl TaskOperations for TestService {
+        fn create_task(&mut self, name: TaskName) -> Result<TaskOutcome, ApplicationError> {
+            if self.fail_create {
+                return Err(Self::failure());
+            }
+            let task = Task::new(TaskId::from_uuid(uuid::Uuid::from_u128(2)), name);
+            self.tasks.push(task.clone());
+            self.tasks.sort_by_key(|task| task.id);
+            Ok(TaskOutcome::Created(task))
+        }
+
+        fn rename_task(
+            &mut self,
+            id: TaskId,
+            name: TaskName,
+        ) -> Result<TaskOutcome, ApplicationError> {
+            if self.fail_rename {
+                return Err(Self::failure());
+            }
+            let task = self
+                .tasks
+                .iter_mut()
+                .find(|task| task.id == id)
+                .expect("test task exists");
+            task.name = name;
+            Ok(TaskOutcome::Renamed(task.clone()))
+        }
+
+        fn archive_task(&mut self, id: TaskId) -> Result<TaskOutcome, ApplicationError> {
+            if self.fail_archive {
+                return Err(Self::failure());
+            }
+            let task = self
+                .tasks
+                .iter_mut()
+                .find(|task| task.id == id)
+                .expect("test task exists");
+            task.archived = true;
+            Ok(TaskOutcome::Archived(task.clone()))
+        }
+    }
+
+    impl TrackingOperations for TestService {
+        fn current_tracking(&self) -> &TrackingState {
+            &self.tracking
+        }
+
+        fn set_active_task(
+            &mut self,
+            task_id: TaskId,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+            let worklog = Worklog::begin(
+                WorklogId::from_uuid(uuid::Uuid::from_u128(99)),
+                task_id,
+                occurred_at,
+            );
+            self.tracking = TrackingState::Running {
+                worklog: ActiveWorklog::begin(worklog.id, task_id, occurred_at),
+            };
+            Ok(SetActiveTaskOutcome::Started { worklog })
+        }
+
+        fn clear_active_task(
+            &mut self,
+            _expected_active: WorklogId,
+            _occurred_at: DateTime<Utc>,
+        ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
+            self.tracking = TrackingState::Idle;
+            Ok(ClearActiveTaskOutcome::AlreadyIdle)
+        }
+    }
+
+    impl WorklogQueries for TestService {
+        fn worklogs_for_task(&self, _task_id: TaskId) -> Result<Vec<Worklog>, ApplicationError> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[test]
+    fn application_and_tui_recover_tracking_after_a_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("tracker.db");
+        let task = Task::new(TaskId::generate(), TaskName::new("alpha").unwrap());
+        {
+            let repository = SqliteRepository::open(&path).unwrap();
+            repository.create_task(task.clone()).unwrap();
+            repository
+                .insert_worklog(&Worklog::begin(
+                    WorklogId::generate(),
+                    task.id,
+                    DateTime::from_timestamp(100, 0).unwrap(),
+                ))
+                .unwrap();
+        }
+        let app =
+            App::load(TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap());
+        assert_eq!(app.active_task_id(), Some(task.id));
+        assert_eq!(
+            app.status(),
+            &Status::Info("Recovered the previous active timer".to_owned())
+        );
     }
 
     #[test]
@@ -489,6 +637,75 @@ mod tests {
         assert_eq!(app.tasks()[1].name.as_str(), "new task");
         assert_eq!(app.selected(), Some(1));
         assert_eq!(app.status(), &Status::Info("Added \"new task\"".to_owned()));
+    }
+
+    #[test]
+    fn adding_in_the_middle_selects_the_new_task() {
+        let task = |tag, name| {
+            Task::new(
+                TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
+                TaskName::new(name).unwrap(),
+            )
+        };
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "one"),
+            task(3, "three"),
+        ]));
+        app.handle(Command::MoveDown);
+        app.handle(Command::OpenAdd);
+        app.handle(Command::Insert('t'));
+        app.handle(Command::Confirm);
+        assert_eq!(
+            app.tasks().iter().map(|task| task.id).collect::<Vec<_>>(),
+            vec![
+                TaskId::from_uuid(uuid::Uuid::from_u128(1)),
+                TaskId::from_uuid(uuid::Uuid::from_u128(2)),
+                TaskId::from_uuid(uuid::Uuid::from_u128(3)),
+            ]
+        );
+        assert_eq!(app.selected(), Some(1));
+    }
+
+    #[test]
+    fn failed_writes_keep_the_active_modal_and_input_buffer() {
+        let task = Task::new(
+            TaskId::from_uuid(uuid::Uuid::from_u128(1)),
+            TaskName::new("one").unwrap(),
+        );
+        let mut service = TestService::with_tasks(vec![task]);
+        service.fail_create = true;
+        service.fail_rename = true;
+        service.fail_archive = true;
+        let mut app = App::load(service);
+
+        app.handle(Command::OpenAdd);
+        for character in "blocked".chars() {
+            app.handle(Command::Insert(character));
+        }
+        app.handle(Command::Confirm);
+        assert!(matches!(
+            app.mode(),
+            Mode::Input {
+                purpose: InputPurpose::Add,
+                buffer,
+            } if buffer == "blocked"
+        ));
+        app.handle(Command::Cancel);
+
+        app.handle(Command::OpenRename);
+        app.handle(Command::Confirm);
+        assert!(matches!(
+            app.mode(),
+            Mode::Input {
+                purpose: InputPurpose::Rename { .. },
+                buffer,
+            } if buffer == "one"
+        ));
+        app.handle(Command::Cancel);
+
+        app.handle(Command::OpenArchiveConfirm);
+        app.handle(Command::Confirm);
+        assert!(matches!(app.mode(), Mode::ConfirmArchive { .. }));
     }
 
     #[test]
@@ -577,6 +794,92 @@ mod tests {
     }
 
     #[test]
+    fn switching_uses_one_monotonic_timestamp_for_both_worklogs() {
+        let mut app = app_with(&["alpha", "beta"]);
+        let alpha = app.tasks()[0].id;
+        let beta = app.tasks()[1].id;
+        app.handle(Command::ToggleTracking);
+        app.freeze_elapsed_for_tests(Duration::from_secs(125));
+        app.handle(Command::MoveDown);
+        app.handle(Command::ToggleTracking);
+        let alpha_worklog = app
+            .application
+            .worklogs_for_task(alpha)
+            .unwrap()
+            .pop()
+            .unwrap();
+        let beta_worklog = app
+            .application
+            .worklogs_for_task(beta)
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(alpha_worklog.end, Some(beta_worklog.start));
+    }
+
+    #[test]
+    fn a_backward_wall_clock_jump_persists_a_nonnegative_duration() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("tracker.db");
+        let task = Task::new(TaskId::generate(), TaskName::new("alpha").unwrap());
+        let start = Utc::now() + TimeDelta::hours(1);
+        let repository = SqliteRepository::open(&path).unwrap();
+        repository.create_task(task.clone()).unwrap();
+        repository
+            .insert_worklog(&Worklog::begin(WorklogId::generate(), task.id, start))
+            .unwrap();
+        let mut app = App::load(TrackerApplication::load(repository).unwrap());
+
+        app.handle(Command::ToggleTracking);
+
+        let stored = app
+            .application
+            .worklogs_for_task(task.id)
+            .unwrap()
+            .remove(0);
+        let duration = (stored.end.unwrap() - stored.start).to_std().unwrap();
+        assert!(duration < Duration::from_secs(60), "got {duration:?}");
+        assert!(stored.end.unwrap() >= start);
+    }
+
+    #[test]
+    fn a_forward_wall_clock_jump_persists_the_displayed_duration() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("tracker.db");
+        let task = Task::new(TaskId::generate(), TaskName::new("alpha").unwrap());
+        let start = Utc::now() - TimeDelta::hours(2);
+        let repository = SqliteRepository::open(&path).unwrap();
+        repository.create_task(task.clone()).unwrap();
+        repository
+            .insert_worklog(&Worklog::begin(WorklogId::generate(), task.id, start))
+            .unwrap();
+        let mut app = App::load(TrackerApplication::load(repository).unwrap());
+        app.freeze_elapsed_for_tests(Duration::from_secs(5));
+        let shown = app.elapsed().unwrap();
+
+        app.handle(Command::ToggleTracking);
+
+        let stored = app
+            .application
+            .worklogs_for_task(task.id)
+            .unwrap()
+            .remove(0);
+        let duration = (stored.end.unwrap() - stored.start).to_std().unwrap();
+        assert!(
+            duration >= shown,
+            "persisted {duration:?} < shown {shown:?}"
+        );
+        assert!(
+            duration - shown < Duration::from_secs(2),
+            "persisted {duration:?} must match shown {shown:?}"
+        );
+        assert!(
+            duration < Duration::from_secs(60),
+            "the two-hour wall-clock gap leaked into the worklog: {duration:?}"
+        );
+    }
+
+    #[test]
     fn quitting_in_a_dialog_does_not_stop_tracking() {
         let mut app = app_with(&["alpha"]);
         app.handle(Command::ToggleTracking);
@@ -584,6 +887,36 @@ mod tests {
         app.handle(Command::Quit);
         assert!(!app.is_running());
         assert!(app.active_task_id().is_some());
+    }
+
+    #[test]
+    fn quitting_from_every_mode_leaves_tracking_active() {
+        for command in [
+            None,
+            Some(Command::OpenAdd),
+            Some(Command::OpenRename),
+            Some(Command::OpenArchiveConfirm),
+        ] {
+            let task = Task::new(
+                TaskId::from_uuid(uuid::Uuid::from_u128(1)),
+                TaskName::new("one").unwrap(),
+            );
+            let mut service = TestService::with_tasks(vec![task.clone()]);
+            service.tracking = TrackingState::Running {
+                worklog: ActiveWorklog::begin(
+                    WorklogId::from_uuid(uuid::Uuid::from_u128(10)),
+                    task.id,
+                    DateTime::from_timestamp(100, 0).unwrap(),
+                ),
+            };
+            let mut app = App::load(service);
+            if let Some(command) = command {
+                app.handle(command);
+            }
+            app.handle(Command::Quit);
+            assert!(!app.is_running());
+            assert_eq!(app.active_task_id(), Some(task.id));
+        }
     }
 
     #[test]
