@@ -4,7 +4,7 @@ A keyboard-first time tracker written in Rust. `tt` is a terminal application fo
 
 ## Current state
 
-The TUI works end to end. It stores tasks and worklogs in SQLite, seeds a new database with three example tasks, and keeps one timer running across restarts: quitting never stops the active worklog, and the next start resumes it. Tasks are reusable, so starting a task again records a new worklog instead of resuming an old one. Archived tasks stay in the database but are hidden from the list.
+The TUI works end to end. It stores tasks and worklogs in SQLite, seeds a new database with three example tasks, and keeps one timer running across restarts: quitting never stops the active worklog, and the next start resumes it. Tasks are reusable, so starting a task again records a new worklog instead of resuming an old one. Archived tasks can be browsed in their own view and restored from there; restoring preserves the task's identifier, name, and worklogs, so no schema change was needed to support it.
 
 The database enforces the tracking rules itself, so a second `tt` process sees the same bounds: an archived task cannot receive worklogs, a task with an active worklog cannot be archived, at most one worklog is active, and duplicate worklog identifiers are reported as such. Seeding and switching happen inside single transactions, so simultaneous starts of two `tt` processes neither double-seed a new database nor lose a switch.
 
@@ -40,12 +40,25 @@ A brand-new empty database is seeded once with three tasks: Write release notes,
 
 Navigation is keyboard-first. The footer always lists the keys available in the current mode.
 
-Task list:
+Two task views share the same list screen. The Active view is the default at startup. Both views support selection movement and quitting, remember their own selection, and show their own text when they have no tasks ("No active tasks." versus "No archived tasks."). The timer header keeps showing the running task's name and elapsed time in the Archived view too.
 
-- `j` / `k` or Down / Up: move the selection, with safe bounds at both ends. `h` and `l` are reserved for future navigation and do nothing. Only unmodified keys act in the task list and confirmation modes; modifier chords other than Ctrl+C are ignored.
+Shared:
+
+- `h`: switch to the Active view. `l`: switch to the Archived view. Switching to the view already shown does nothing.
+- `j` / `k` or Down / Up: move the selection, with safe bounds at both ends.
+- `q` or Escape: quit. An active timer keeps running and is recovered on the next start.
+- Only unmodified keys act in the task list and confirmation modes; modifier chords other than Ctrl+C are ignored.
+
+Active view only:
+
 - Space: start the selected task, stop the active task, or switch from the active task to the selected one in a single transaction. Stop and switch instants come from the monotonic elapsed clock, so the stored duration always matches what was displayed, even across system clock adjustments. If another `tt` process won a conflict first, the screen reloads tasks, the active timer, and the elapsed clock from the database before the concise error is shown.
 - `a`: add a task. `e`: rename the selected task (the input starts pre-filled). `d`: archive the selected task after confirmation. The active task cannot be archived. After a successful add, rename, or archive, the list is updated in place from the stored result.
-- `q` or Escape: quit. An active timer keeps running and is recovered on the next start.
+
+Archiving stays in the Active view and remembers the archived task's identifier, so the Archived view selects that task the next time it is opened.
+
+Archived view only:
+
+- `u`: restore the selected task to the Active view without confirmation. The restore stays in the Archived view and removes the row there, and the Active view remembers the restored task for selection. The task keeps its identifier, name, and worklogs. Both the restore success and a failure resynchronize from the database, so if another `tt` process started a timer for the task while this one had stale state, the timer header shows that existing timer.
 
 Text input (`a` and `e`):
 
@@ -66,7 +79,7 @@ The workspace has four packages:
 - `crates/tracker-domain`: tasks, worklogs, tracking state, identifiers, and domain invariants. It has no application, terminal, database, or network code.
 - `crates/tracker-application`: backend-neutral repository ports and synchronous use cases for task commands, current tracking, desired-state tracking commands, and worklog queries. It depends only on `tracker-domain` among workspace packages.
 - `crates/tracker-storage`: SQLite persistence. It implements the application repository ports and owns schema migrations and platform paths.
-- `apps/tui`: the `tt` binary. `app.rs` holds presentation state and converts semantic commands into application operations. `keymap.rs` maps raw keys to commands, `ui.rs` renders, `styles.rs` defines terminal styles, and `terminal.rs` owns setup and cleanup. `main.rs` creates SQLite storage and the application service, then starts the TUI.
+- `apps/tui`: the `tt` binary. `app.rs` holds presentation state and converts semantic commands into application operations. It keeps the active and archived views with their separate selections and maps archiving and restoration between them. `keymap.rs` maps raw keys to commands, `ui.rs` renders, `styles.rs` defines terminal styles, and `terminal.rs` owns setup and cleanup. `main.rs` creates SQLite storage and the application service, then starts the TUI.
 
 The event loop stays synchronous. `tracker-application` validates a tracking candidate before writing it, uses one atomic repository call for switches, and reloads authoritative task and tracking state after a cross-process tracking write conflict. Clearing tracking includes the worklog the TUI expects to stop, so stale state cannot stop another process's timer. The TUI owns the monotonic elapsed clock and supplies explicit UTC timestamps to `set_active_task` and `clear_active_task`; it does not sequence persistence or handle SQLite errors.
 

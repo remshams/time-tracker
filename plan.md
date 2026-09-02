@@ -2,7 +2,7 @@
 
 ## Status
 
-Milestones 0, 1, and 2, the terminal-palette checkpoint, and the domain/application separation are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. Task browsing and ordering are next; remote storage follows.
+Milestones 0, 1, and 2, the terminal-palette checkpoint, and the domain/application separation are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. The archived-task part of the task-browsing checkpoint is complete: the TUI browses archived tasks in their own view and restores them with `u`. Task creation and update timestamps with stable ordering remain; remote storage follows.
 
 The completed domain/application checkpoint is committed and pushed to Forgejo. Current validation found 205 passing Rust tests and 10 passing palette-audit tests, 323 caught mutants, no missed or timed-out mutants, 91 unviable mutants, and no CRAP score above 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
@@ -205,7 +205,7 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 - [x] Add TUI state with arbitrary hard-coded tasks and bounded selection movement.
 - [x] Render a title, task list, selected row, and one-line key help.
 - [x] Add a central command map and keyboard handling for `j`, `k`, arrow-key aliases, and exit.
-- [x] Reserve `h` and `l` for horizontal or parent/child navigation when a screen has that concept. Do not give them a fake action in the one-list MVP.
+- [x] Reserve `h` and `l` for horizontal or parent/child navigation when a screen has that concept. Do not give them a fake action in the one-list MVP. (True at this milestone; the reservation ended when archived-task navigation later gave them the view-switching role.)
 - [x] Add terminal setup and reliable cleanup.
 - [x] Test empty, initial, moved, first-row, and last-row rendering or state behavior.
 - [x] Run formatting, Clippy, tests, mutation tests, coverage, and CRAP checks.
@@ -258,8 +258,8 @@ This checkpoint does not add worklog browsing, HTTP, asynchronous execution, ser
 
 ### Interim checkpoint: task browsing and ordering
 
-- [ ] Add a TUI view for archived tasks while keeping them out of the default active-task list.
-- [ ] Decide which actions, if any, are available from the archived-task view before implementing them.
+- [x] Add a TUI view for archived tasks while keeping them out of the default active-task list.
+- [x] Decide which actions, if any, are available from the archived-task view before implementing them.
 - [ ] Add explicit task creation and update timestamps. Define which events count as an update before changing the schema.
 - [ ] Add stable task ordering by creation time and last update time, with deterministic tie-breakers.
 - [ ] Add TUI controls for choosing the ordering and decide whether that choice lasts only for the current run or persists locally.
