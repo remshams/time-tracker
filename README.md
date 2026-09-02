@@ -4,11 +4,11 @@ A keyboard-first time tracker written in Rust. `tt` is a terminal application fo
 
 ## Current state
 
-The TUI works end to end. It stores tasks and time entries in SQLite, seeds a new database with three example tasks, and keeps one timer running across restarts: quitting never stops the active entry, and the next start resumes it. Tasks are reusable, so starting a task again records a new time entry instead of resuming an old one. Archived tasks stay in the database but are hidden from the list.
+The TUI works end to end. It stores tasks and worklogs in SQLite, seeds a new database with three example tasks, and keeps one timer running across restarts: quitting never stops the active worklog, and the next start resumes it. Tasks are reusable, so starting a task again records a new worklog instead of resuming an old one. Archived tasks stay in the database but are hidden from the list.
 
-The database enforces the tracking rules itself, so a second `tt` process sees the same bounds: an archived task cannot receive entries, a task with an active entry cannot be archived, at most one entry is active, and duplicate entry identifiers are reported as such. Seeding and switching happen inside single transactions, so simultaneous starts of two `tt` processes neither double-seed a new database nor lose a switch.
+The database enforces the tracking rules itself, so a second `tt` process sees the same bounds: an archived task cannot receive worklogs, a task with an active worklog cannot be archived, at most one worklog is active, and duplicate worklog identifiers are reported as such. Seeding and switching happen inside single transactions, so simultaneous starts of two `tt` processes neither double-seed a new database nor lose a switch.
 
-While a timer runs, the visible elapsed time comes from a monotonic clock anchored to the entry's UTC start, so system clock adjustments do not make the timer jump. Stopping or switching derives its UTC instant from the same clock, so the persisted duration always matches the displayed one.
+While a timer runs, the visible elapsed time comes from a monotonic clock anchored to the worklog's UTC start, so system clock adjustments do not make the timer jump. Stopping or switching derives its UTC instant from the same clock, so the persisted duration always matches the displayed one.
 
 Task names are trimmed, non-empty, at most 256 characters long, and free of control characters. The same rules guard names read back from the database.
 
@@ -61,13 +61,14 @@ Ctrl+C quits from every mode.
 
 ## Architecture
 
-The workspace has three packages:
+The workspace has four packages:
 
-- `crates/tracker-core`: the domain model. Tasks, time entries, the tracker and its commands, and the `TrackerRepository` trait. No terminal, database, or network code.
-- `crates/tracker-storage`: SQLite persistence. Implements `TrackerRepository`, owns the schema migrations and the platform paths.
-- `apps/tui`: the `tt` binary. `app.rs` holds the state and applies semantic commands, `keymap.rs` maps raw keys to commands, `ui.rs` renders, `styles.rs` defines the terminal styles, `terminal.rs` owns setup and cleanup, and `main.rs` wires it together.
+- `crates/tracker-domain`: tasks, worklogs, tracking state, identifiers, and domain invariants. It has no application, terminal, database, or network code.
+- `crates/tracker-application`: backend-neutral repository ports and synchronous use cases for task commands, current tracking, desired-state tracking commands, and worklog queries. It depends only on `tracker-domain` among workspace packages.
+- `crates/tracker-storage`: SQLite persistence. It implements the application repository ports and owns schema migrations and platform paths.
+- `apps/tui`: the `tt` binary. `app.rs` holds presentation state and converts semantic commands into application operations. `keymap.rs` maps raw keys to commands, `ui.rs` renders, `styles.rs` defines terminal styles, and `terminal.rs` owns setup and cleanup. `main.rs` creates SQLite storage and the application service, then starts the TUI.
 
-The event loop is synchronous. Commands apply to a cloned candidate first, so a storage error can never desynchronize memory and SQLite. Successful add, rename, and archive writes update the visible list from the stored result; a tracking write that loses a cross-process conflict reloads the interface state from the database instead.
+The event loop stays synchronous. `tracker-application` validates a tracking candidate before writing it, uses one atomic repository call for switches, and reloads authoritative task and tracking state after a cross-process tracking write conflict. The TUI owns the monotonic elapsed clock and supplies explicit UTC timestamps to `set_active_task` and `clear_active_task`; it does not sequence persistence or handle SQLite errors.
 
 Terminal setup and teardown are staged: raw mode, the alternate screen, and cursor visibility are tracked in one restoration state shared by the guard and the panic hook, so exactly the completed stages are restored exactly once, and a raw-mode failure writes no escape sequence at all.
 

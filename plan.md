@@ -2,7 +2,7 @@
 
 ## Status
 
-Milestones 0, 1, and 2 and the terminal-palette checkpoint are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. Extracting shared application orchestration is next, before remote storage and additional clients.
+Milestones 0, 1, and 2 and the terminal-palette checkpoint are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. The domain/application separation is implemented locally and awaits review and full validation before remote storage work begins.
 
 All completed checkpoints are pushed to Forgejo. Current local validation found 213 passing Rust tests and 10 passing palette-audit tests, 305 caught mutants, no missed or timed-out mutants, and no CRAP score above 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
@@ -21,7 +21,7 @@ All completed checkpoints are pushed to Forgejo. Current local validation found 
 | Storage selection | With no endpoint configured, `tt` uses local SQLite. With an endpoint configured, it uses that remote store exclusively and never falls back to local writes. |
 | Initial remote deployment | The same `tt` binary provides TUI and server modes. Client and server may initially assume the same version and communicate inside a trusted Tailscale network. The server uses SQLite first. |
 | Domain terminology | A persisted tracking record is a `Worklog`. It is active while its end time is absent and completed once its end time is set. |
-| Layering direction | Rename `tracker-core` to `tracker-domain`, extract repository-backed use cases into `tracker-application`, and keep local SQLite and future HTTP implementations as adapters. |
+| Layering direction | Use `tracker-domain` for the domain model, put repository-backed use cases in `tracker-application`, and keep local SQLite and future HTTP implementations as adapters. |
 | Timestamp authority | The client creates task and tracking timestamps in local and remote modes. The initial remote design assumes client and server clocks are sufficiently synchronized; the server enforces ordinary domain checks such as end not preceding start but adds no clock-skew protocol. |
 | Pre-release schema compatibility | There is no production database to preserve yet. During the domain/application refactor, update the baseline schema and recreate test or development databases instead of adding a compatibility migration. |
 
@@ -143,7 +143,7 @@ A panic hook may restore the terminal before delegating to the previous hook. Cl
 - A configured remote client never writes to local SQLite as a fallback.
 - The server validates every command and enforces one active timer regardless of client state.
 - The client never invents elapsed time from a negative wall-clock difference.
-- Setting a different active task is one atomic server operation that stops the old entry and starts the new one.
+- Setting a different active task is one atomic server operation that stops the old worklog and starts the new one.
 - Closing a local or remote TUI must not implicitly discard an active timer.
 
 ### Security and privacy for later phases
@@ -201,7 +201,7 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 
 ### Milestone 1: render the hard-coded task list
 
-- [x] Define the small `Task` type in `tracker-core`.
+- [x] Define the small `Task` type in `tracker-domain`.
 - [x] Add TUI state with arbitrary hard-coded tasks and bounded selection movement.
 - [x] Render a title, task list, selected row, and one-line key help.
 - [x] Add a central command map and keyboard handling for `j`, `k`, arrow-key aliases, and exit.
@@ -211,21 +211,21 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 - [x] Run formatting, Clippy, tests, mutation tests, coverage, and CRAP checks.
 - [x] Perform a manual terminal smoke test.
 - [x] Commit core and TUI changes separately if both contain meaningful logic:
-  - `feat(TrackerCore): add task model`
+  - `feat(TrackerDomain): add task model`
   - `feat(Tui): render selectable task list`
 
 ### Milestone 2: local tracking
 
-- [x] Model reusable tasks with many time entries.
-- [x] Define idle and running tracking states and commands in `tracker-core`.
-- [x] Persist tasks, entries, and the active timer in SQLite through a repository trait.
+- [x] Model reusable tasks with many worklogs.
+- [x] Define idle and running tracking states and commands in `tracker-domain`.
+- [x] Persist tasks, worklogs, and the active timer in SQLite through a repository trait.
 - [x] Store the database in the platform application-data directory on Linux and macOS.
 - [x] Add `a` to create a task, `e` to rename it, and `d` to archive it after confirmation.
 - [x] Use Space to start or stop the selected task.
-- [x] When another task is active, switch tasks by stopping and starting entries in one transaction.
+- [x] When another task is active, switch tasks by stopping and starting worklogs in one transaction.
 - [x] Keep an active timer running when the TUI exits and recover it when the application restarts.
-- [x] Treat each restart of a stopped task as a new time entry.
-- [x] Defer manual time-entry editing.
+- [x] Treat each restart of a stopped task as a new worklog.
+- [x] Defer manual worklog editing.
 - [x] Add schema migrations and tests around transactions, restart recovery, and clock changes.
 
 ### Interim checkpoint: terminal palette compatibility
@@ -244,14 +244,14 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 
 ### Interim checkpoint: domain and application separation
 
-1. [ ] Capture the passing baseline and map every `TimeEntry`, `EntryId`, repository, clock, and storage dependency before moving code.
-2. [ ] Rename `tracker-core` to `tracker-domain` and adopt `Worklog`, `ActiveWorklog`, and `WorklogId` throughout the domain. Keep temporary compatibility aliases only while they are needed to keep component-scoped commits buildable.
-3. [ ] Add `tracker-application`, depending only on `tracker-domain`. Define backend-neutral task operations, tracking operations, worklog queries, outcomes, repository errors, and repository ports there.
-4. [ ] Move repository-backed workflows from `apps/tui/src/app.rs` into application use cases. Accept explicit client-created timestamps, expose `set_active_task` and `clear_active_task`, and keep atomic switching and conflict recovery out of presentation code.
-5. [ ] Adapt `tracker-storage` to the application repository ports and rename schema, query, index, and trigger terminology to worklogs. Update the baseline schema directly and recreate test or development databases; do not add a compatibility migration before the first production release.
-6. [ ] Adapt `tracker-tui` to application operations and errors. Keep the monotonic client clock, task list, selection, modes, input buffers, key handling, status text, and rendering in the TUI; remove direct dependencies on repository ports, `SqliteRepository`, and `StorageError` from TUI state.
-7. [ ] Reduce `apps/tui/src/main.rs` to composition: create the SQLite adapter, application service, and TUI. Preserve the path, seeding, terminal, and startup-error behavior.
-8. [ ] Remove transitional aliases and the old domain repository port. Verify the final dependency direction and prove `tracker-domain` and `tracker-application` have no Ratatui, Crossterm, rusqlite, or HTTP dependency.
+1. [x] Capture the passing baseline and map every old worklog type, repository, clock, and storage dependency before moving code.
+2. [x] Rename the domain package to `tracker-domain` and adopt `Worklog`, `ActiveWorklog`, and `WorklogId` throughout the domain.
+3. [x] Add `tracker-application`, depending only on `tracker-domain`. Define backend-neutral task operations, tracking operations, worklog queries, outcomes, repository errors, and repository ports there.
+4. [x] Move repository-backed workflows from `apps/tui/src/app.rs` into application use cases. Accept explicit client-created timestamps, expose `set_active_task` and `clear_active_task`, and keep atomic switching and conflict recovery out of presentation code.
+5. [x] Adapt `tracker-storage` to the application repository ports and rename schema, query, index, and trigger terminology to worklogs. Update the baseline schema directly and recreate test or development databases; do not add a compatibility migration before the first production release.
+6. [x] Adapt `tracker-tui` to application operations and errors. Keep the monotonic client clock, task list, selection, modes, input buffers, key handling, status text, and rendering in the TUI; remove direct dependencies on repository ports, `SqliteRepository`, and `StorageError` from TUI state.
+7. [x] Reduce `apps/tui/src/main.rs` to composition: create the SQLite adapter, application service, and TUI. Preserve the path, seeding, terminal, and startup-error behavior.
+8. [x] Remove transitional aliases and the old domain repository port. Verify the final dependency direction and prove `tracker-domain` and `tracker-application` have no Ratatui, Crossterm, rusqlite, or HTTP dependency.
 9. [ ] Run the full Rust, Python, mutation, coverage, CRAP, theme-audit, and real-binary PTY checks. Recreate the local test database and confirm all user-visible behavior remains unchanged.
 
 This checkpoint does not add worklog browsing, HTTP, asynchronous execution, server modes, remote-request states, revisions, or synchronization metadata.
@@ -322,10 +322,10 @@ Each reviewer must return one complete report with severity, affected files, rat
 2. May several remote clients issue task and tracking commands concurrently, beyond the server already enforcing one active timer?
 3. How often should a connected TUI refresh remote state: on focus, on a fixed polling interval, or only after its own commands?
 4. Should completed worklogs remain immutable through the first remote release?
-5. Should users edit past entries and add time manually in the first remote release?
+5. Should users edit past worklogs and add time manually in the first remote release?
 6. Do tasks need projects, tags, issue links, or free-form notes? Which one is required first?
 7. For Omarchy, what integration is expected first: a launcher command, a status-bar indicator, desktop notifications, or a plugin API?
 
 ## Approval gate
 
-Milestones 1 and 2, their bootstrap prerequisite, the functional defaults recorded above, and the listed subagents are approved. The `Worklog` terminology, domain/application separation, exclusive local-or-remote direction, same-binary server mode, initial same-version, synchronized-clock and Tailscale assumptions, client-created timestamps, resource-oriented REST API, and deferred offline synchronization are approved architectural direction. The domain/application refactor still requires an implementation plan and subagent approval before work begins. Milestone 3 implementation and additional clients require a later planning and approval round.
+Milestones 1 and 2, their bootstrap prerequisite, the functional defaults recorded above, and the listed subagents are approved. The `Worklog` terminology, domain/application separation, exclusive local-or-remote direction, same-binary server mode, initial same-version, synchronized-clock and Tailscale assumptions, client-created timestamps, resource-oriented REST API, and deferred offline synchronization are approved architectural direction. The domain/application refactor has an approved implementation and review workflow. Milestone 3 implementation and additional clients require a later planning and approval round.
