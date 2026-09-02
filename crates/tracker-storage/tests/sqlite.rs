@@ -301,6 +301,24 @@ fn application_tracking_operations_use_the_sqlite_ports() {
 }
 
 #[test]
+fn sqlite_application_ports_delegate_task_and_worklog_queries() {
+    let repository = repo();
+    let task = named_task(1, "alpha");
+    TaskRepository::create_task(&repository, task.clone()).unwrap();
+    assert_eq!(
+        TaskRepository::find_task(&repository, task.id).unwrap(),
+        Some(task.clone())
+    );
+
+    let worklog = Worklog::begin(worklog_id(1), task.id, at(100));
+    TrackingRepository::insert_worklog(&repository, &worklog).unwrap();
+    assert_eq!(
+        WorklogRepository::list_worklogs(&repository, task.id).unwrap(),
+        vec![worklog]
+    );
+}
+
+#[test]
 fn two_clients_recover_lost_start_switch_and_stale_clear_without_stopping_the_other_timer() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tracker.db");
