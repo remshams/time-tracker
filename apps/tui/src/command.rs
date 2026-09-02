@@ -10,6 +10,12 @@ pub enum Command {
     MoveUp,
     /// Move the task selection down one row.
     MoveDown,
+    /// Show the list of active tasks.
+    ShowActiveTasks,
+    /// Show the list of archived tasks.
+    ShowArchivedTasks,
+    /// Restore the selected archived task to the active list.
+    UnarchiveSelected,
     /// Start, stop, or switch tracking for the selected task.
     ToggleTracking,
     /// Open the text input to add a task.
@@ -28,9 +34,4 @@ pub enum Command {
     Backspace,
     /// Leave the application.
     Quit,
-    /// A key that is deliberately unmapped on this screen.
-    ///
-    /// `h` and `l` stay reserved for horizontal or parent/child navigation
-    /// once a screen has that concept; they perform no fake action here.
-    Reserved,
 }

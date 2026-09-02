@@ -8,7 +8,7 @@ use std::time::Duration;
 use tracker_application::TrackerApplicationService;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{App, InputPurpose, Mode, Status};
+use crate::app::{App, InputPurpose, Mode, Status, TaskView};
 use crate::{keymap, styles};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -95,18 +95,19 @@ fn render_header<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, ap
 
 /// Renders the task list, its selection, and the active-task marker.
 fn render_tasks<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app: &App<S>) {
+    let (title, empty_text) = match app.view() {
+        TaskView::Active => ("Active tasks", "No active tasks. Press a to add one."),
+        TaskView::Archived => ("Archived tasks", "No archived tasks."),
+    };
     let block = Block::bordered()
-        .title("Tasks")
+        .title(title)
         .border_style(if app.mode() == &Mode::Normal {
             styles::focused_border()
         } else {
             Style::default()
         });
     if app.tasks().is_empty() {
-        frame.render_widget(
-            Paragraph::new("No tasks. Press a to add one.").block(block),
-            area,
-        );
+        frame.render_widget(Paragraph::new(empty_text).block(block), area);
         return;
     }
     // Two border cells and the two-cell marker leave this much for a name.
@@ -147,7 +148,10 @@ fn render_status<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, ap
 
 /// Renders the context-sensitive key help for the current mode.
 fn render_footer<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app: &App<S>) {
-    frame.render_widget(Paragraph::new(keymap::footer_hints(app.mode())), area);
+    frame.render_widget(
+        Paragraph::new(keymap::footer_hints(app.mode(), app.view())),
+        area,
+    );
 }
 
 /// Renders the modal dialog of the current mode, if any.
@@ -285,7 +289,7 @@ mod tests {
         let rows = rows(&terminal);
 
         assert!(rows[0].contains("Time Tracker"));
-        assert!(rows[1].contains("Tasks"));
+        assert!(rows[1].contains("Active tasks"));
         assert!(rows[2].contains("alpha"));
         assert!(rows[3].contains("beta"));
         assert!(rows[22].contains("Ready"));
@@ -402,7 +406,8 @@ mod tests {
     fn the_footer_matches_each_mode() {
         let mut app = app_with(&["alpha"]);
         let terminal = draw(&app);
-        assert!(row(&terminal, 23).contains("space start/stop"));
+        assert!(row(&terminal, 23).contains("h/l view"));
+        assert!(row(&terminal, 23).contains("space track"));
 
         app.handle(Command::OpenAdd);
         let terminal = draw(&app);
@@ -415,13 +420,67 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_list_renders_a_hint_and_stays_selectable() {
+    fn an_empty_active_list_renders_a_hint_and_stays_selectable() {
         let app = App::load(
             TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap(),
         );
         let terminal = draw(&app);
-        assert!(row(&terminal, 2).contains("No tasks. Press a to add one."));
-        assert!(row(&terminal, 1).contains("Tasks"));
+        assert!(row(&terminal, 2).contains("No active tasks. Press a to add one."));
+        assert!(row(&terminal, 1).contains("Active tasks"));
+    }
+
+    #[test]
+    fn the_archived_view_renders_its_title_rows_and_footer() {
+        let mut app = app_with(&["alpha", "beta"]);
+        app.handle(Command::OpenArchiveConfirm);
+        app.handle(Command::Confirm);
+        app.handle(Command::ShowArchivedTasks);
+        let terminal = draw(&app);
+        let rows = rows(&terminal);
+
+        assert!(rows[1].contains("Archived tasks"), "got {:?}", rows[1]);
+        assert!(rows[2].contains("alpha"), "got {:?}", rows[2]);
+        assert!(!rows[3].contains("beta"), "beta is still active");
+        assert!(rows[23].contains("u unarchive"), "got {:?}", rows[23]);
+        assert!(rows[23].contains("h/l view"));
+        assert!(
+            !rows[23].contains("a add"),
+            "archived view must not hint add"
+        );
+    }
+
+    #[test]
+    fn an_empty_archived_view_renders_its_own_empty_text() {
+        let mut app = app_with(&["alpha"]);
+        app.handle(Command::ShowArchivedTasks);
+        let terminal = draw(&app);
+        assert!(row(&terminal, 2).contains("No archived tasks."));
+        assert!(row(&terminal, 1).contains("Archived tasks"));
+    }
+
+    #[test]
+    fn the_archived_view_keeps_the_timer_header_and_selection() {
+        let mut app = app_with(&["alpha", "beta"]);
+        app.handle(Command::ToggleTracking);
+        app.handle(Command::MoveDown);
+        app.handle(Command::OpenArchiveConfirm);
+        app.handle(Command::Confirm);
+        app.handle(Command::ShowArchivedTasks);
+        app.freeze_elapsed_for_tests(Duration::from_secs(61));
+        let terminal = draw(&app);
+        let rows = rows(&terminal);
+
+        // The active timer outlives the view switch.
+        assert!(rows[0].contains("▶ alpha"), "got {:?}", rows[0]);
+        assert!(rows[0].contains("00:01:01"), "got {:?}", rows[0]);
+        assert!(rows[1].contains("Archived tasks"));
+        assert!(rows[2].contains("beta"), "got {:?}", rows[2]);
+        // The archived row carries the selection highlight.
+        assert!(
+            cell(&terminal, 1, 2)
+                .add_modifier
+                .contains(Modifier::REVERSED)
+        );
     }
 
     #[test]

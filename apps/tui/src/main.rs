@@ -79,7 +79,7 @@ fn run<S: TrackerApplicationService>(
         guard.draw(|frame| ui::render(frame, app))?;
         if crossterm::event::poll(TICK)?
             && let Event::Key(key) = crossterm::event::read()?
-            && let Some(command) = keymap::map(app.mode(), key)
+            && let Some(command) = keymap::map(app.mode(), app.view(), key)
         {
             app.handle(command);
         }

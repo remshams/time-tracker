@@ -39,6 +39,13 @@ pub enum Status {
     Error(String),
 }
 
+/// Which task list the interface currently shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskView {
+    Active,
+    Archived,
+}
+
 /// The event loop's two lifecycle states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lifecycle {
@@ -111,11 +118,18 @@ fn application_error_text(error: &ApplicationError) -> String {
 }
 
 /// Task-list presentation state.
+///
+/// The two views each remember their selected task by id across view
+/// switches and refreshes, so archiving and unarchiving can restore the
+/// selection to the row the user was on.
 pub struct App<S: TrackerApplicationService> {
     application: S,
     tasks: Vec<Task>,
+    archived_tasks: Vec<Task>,
+    view: TaskView,
+    active_selection: Option<TaskId>,
+    archived_selection: Option<TaskId>,
     tracking: TrackingState,
-    selected: Option<usize>,
     mode: Mode,
     status: Status,
     clock: Option<ElapsedClock>,
@@ -125,12 +139,8 @@ pub struct App<S: TrackerApplicationService> {
 impl<S: TrackerApplicationService> App<S> {
     /// Builds presentation state from an already loaded application service.
     pub fn load(application: S) -> Self {
-        let tasks = application
-            .tasks()
-            .iter()
-            .filter(|task| !task.archived)
-            .cloned()
-            .collect::<Vec<_>>();
+        let tasks = active_tasks(&application);
+        let archived_tasks = archived_tasks(&application);
         let tracking = application.current_tracking().clone();
         let clock = match &tracking {
             TrackingState::Idle => None,
@@ -141,12 +151,15 @@ impl<S: TrackerApplicationService> App<S> {
         } else {
             Status::Info("Ready".to_owned())
         };
-        let selected = (!tasks.is_empty()).then_some(0);
+        let active_selection = tasks.first().map(|task| task.id);
         Self {
             application,
             tasks,
+            archived_tasks,
+            view: TaskView::Active,
+            active_selection,
+            archived_selection: None,
             tracking,
-            selected,
             mode: Mode::Normal,
             status,
             clock,
@@ -158,6 +171,9 @@ impl<S: TrackerApplicationService> App<S> {
         match command {
             Command::MoveUp => self.move_up(),
             Command::MoveDown => self.move_down(),
+            Command::ShowActiveTasks => self.show_tasks(TaskView::Active),
+            Command::ShowArchivedTasks => self.show_tasks(TaskView::Archived),
+            Command::UnarchiveSelected => self.unarchive_selected(),
             Command::ToggleTracking => self.toggle_tracking(),
             Command::OpenAdd => self.open_add(),
             Command::OpenRename => self.open_rename(),
@@ -177,7 +193,6 @@ impl<S: TrackerApplicationService> App<S> {
                 }
             }
             Command::Quit => self.lifecycle = Lifecycle::Quitting,
-            Command::Reserved => {}
         }
     }
 
@@ -185,12 +200,24 @@ impl<S: TrackerApplicationService> App<S> {
         self.lifecycle == Lifecycle::Running
     }
 
+    /// The tasks of the view that is currently shown.
     pub fn tasks(&self) -> &[Task] {
-        &self.tasks
+        self.tasks_in(self.view)
     }
 
+    pub fn view(&self) -> TaskView {
+        self.view
+    }
+
+    /// The selected row of the currently shown view.
+    ///
+    /// The selection is remembered by task id, so it follows the task across
+    /// refreshes; a task that is no longer in this view selects nothing.
     pub fn selected(&self) -> Option<usize> {
-        self.selected
+        let id = self.selection_id()?;
+        self.tasks_in(self.view)
+            .iter()
+            .position(|task| task.id == id)
     }
 
     pub fn mode(&self) -> &Mode {
@@ -210,13 +237,9 @@ impl<S: TrackerApplicationService> App<S> {
 
     pub fn active_task_name(&self) -> Option<&str> {
         let task_id = self.active_task_id()?;
-        Some(
-            self.tasks
-                .iter()
-                .find(|task| task.id == task_id)?
-                .name
-                .as_str(),
-        )
+        // Query the application service, not the visible list: the timer
+        // header must keep naming the active task in the archived view too.
+        Some(self.application.task(task_id)?.name.as_str())
     }
 
     pub fn elapsed(&self) -> Option<Duration> {
@@ -230,33 +253,82 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
+    fn tasks_in(&self, view: TaskView) -> &[Task] {
+        match view {
+            TaskView::Active => &self.tasks,
+            TaskView::Archived => &self.archived_tasks,
+        }
+    }
+
+    fn selection_id(&self) -> Option<TaskId> {
+        match self.view {
+            TaskView::Active => self.active_selection,
+            TaskView::Archived => self.archived_selection,
+        }
+    }
+
+    fn set_selection_id(&mut self, id: Option<TaskId>) {
+        match self.view {
+            TaskView::Active => self.active_selection = id,
+            TaskView::Archived => self.archived_selection = id,
+        }
+    }
+
     fn selected_task(&self) -> Option<&Task> {
-        self.tasks.get(self.selected?)
+        self.tasks_in(self.view).get(self.selected()?)
     }
 
     fn move_up(&mut self) {
-        self.selected = match self.selected {
-            None => self.tasks.len().checked_sub(1),
+        let tasks = self.tasks_in(self.view);
+        let index = match self.selected() {
+            None => tasks.len().checked_sub(1),
             Some(0) => Some(0),
             Some(index) => Some(index - 1),
         };
+        let id = index.and_then(|index| tasks.get(index)).map(|task| task.id);
+        self.set_selection_id(id);
     }
 
     fn move_down(&mut self) {
-        if self.tasks.is_empty() {
-            self.selected = None;
+        let tasks = self.tasks_in(self.view);
+        if tasks.is_empty() {
+            self.set_selection_id(None);
             return;
         }
-        let last = self.tasks.len() - 1;
-        self.selected = Some(match self.selected {
+        let last = tasks.len() - 1;
+        let index = match self.selected() {
             None => 0,
             Some(index) => index.saturating_add(1).min(last),
-        });
+        };
+        self.set_selection_id(Some(tasks[index].id));
+    }
+
+    /// Switches to the requested task list.
+    ///
+    /// Only normal mode switches views, and switching to the shown view does
+    /// nothing. A view visited with no remembered selection starts on its
+    /// first row.
+    fn show_tasks(&mut self, target: TaskView) {
+        if self.mode != Mode::Normal || self.view == target {
+            return;
+        }
+        self.view = target;
+        if self.selection_id().is_none()
+            && let Some(first) = self.tasks_in(target).first()
+        {
+            self.set_selection_id(Some(first.id));
+        }
     }
 
     /// Translates Space into desired tracking state with an explicit client
     /// timestamp. The application service owns persistence and recovery.
+    ///
+    /// Tracking is an active-view, normal-mode action; the guard keeps a
+    /// stray command from acting in the archived view or a modal.
     fn toggle_tracking(&mut self) {
+        if self.mode != Mode::Normal || self.view != TaskView::Active {
+            return;
+        }
         let Some(task) = self.selected_task().cloned() else {
             return;
         };
@@ -321,25 +393,31 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn sync_tasks_from_application(&mut self) {
-        let previous_index = self.selected;
-        let preferred = self.selected_task().map(|task| task.id);
-        self.tasks = self
-            .application
-            .tasks()
-            .iter()
-            .filter(|task| !task.archived)
-            .cloned()
-            .collect();
-        self.selected = preferred
-            .and_then(|id| self.tasks.iter().position(|task| task.id == id))
+        let previous_index = self.selected();
+        let preferred = self.selection_id();
+        self.tasks = active_tasks(&self.application);
+        self.archived_tasks = archived_tasks(&self.application);
+        // Prefer the remembered task, then clamp the previous row to the
+        // nearest row that remains, so archiving and unarchiving keep the
+        // selection on a sensible neighbor.
+        let visible = self.tasks_in(self.view);
+        let resolved = preferred
+            .and_then(|id| visible.iter().position(|task| task.id == id))
             .or_else(|| {
                 previous_index
-                    .filter(|_| !self.tasks.is_empty())
-                    .map(|index| index.min(self.tasks.len() - 1))
+                    .filter(|_| !visible.is_empty())
+                    .map(|index| index.min(visible.len() - 1))
             });
+        let id = resolved
+            .and_then(|index| visible.get(index))
+            .map(|task| task.id);
+        self.set_selection_id(id);
     }
 
     fn open_add(&mut self) {
+        if !self.accepts_active_actions() {
+            return;
+        }
         self.mode = Mode::Input {
             purpose: InputPurpose::Add,
             buffer: String::new(),
@@ -347,6 +425,9 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn open_rename(&mut self) {
+        if !self.accepts_active_actions() {
+            return;
+        }
         let Some(task) = self.selected_task() else {
             return;
         };
@@ -357,6 +438,9 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn open_archive_confirm(&mut self) {
+        if !self.accepts_active_actions() {
+            return;
+        }
         let Some(task) = self.selected_task() else {
             return;
         };
@@ -364,6 +448,41 @@ impl<S: TrackerApplicationService> App<S> {
             task_id: task.id,
             name: task.name.to_string(),
         };
+    }
+
+    /// Whether add, rename, archive, and tracking may act right now.
+    ///
+    /// These actions belong to the active view's normal mode only. The key
+    /// map already refuses to emit them elsewhere; this guard is the second
+    /// line of defense in command handling.
+    fn accepts_active_actions(&self) -> bool {
+        self.mode == Mode::Normal && self.view == TaskView::Active
+    }
+
+    /// Restores the selected archived task to the active list.
+    ///
+    /// Only the archived view's normal mode unarchives. Success stays in the
+    /// archived view, selects the restored task in the active view, and
+    /// clamps the archived selection; failure changes nothing but the status
+    /// line.
+    fn unarchive_selected(&mut self) {
+        if self.mode != Mode::Normal || self.view != TaskView::Archived {
+            return;
+        }
+        let Some(task) = self.selected_task().cloned() else {
+            return;
+        };
+        match self.application.unarchive_task(task.id) {
+            Ok(TaskOutcome::Unarchived(restored)) => {
+                self.active_selection = Some(restored.id);
+                self.sync_tasks_from_application();
+                self.status = Status::Info(format!("Restored \"{}\"", restored.name));
+            }
+            Ok(TaskOutcome::Created(_) | TaskOutcome::Renamed(_) | TaskOutcome::Archived(_)) => {
+                unreachable!("unarchive returned another task outcome")
+            }
+            Err(error) => self.status = Status::Error(application_error_text(&error)),
+        }
     }
 
     fn confirm(&mut self) {
@@ -392,7 +511,7 @@ impl<S: TrackerApplicationService> App<S> {
         match result {
             Ok(TaskOutcome::Created(task)) => {
                 self.sync_tasks_from_application();
-                self.selected = self.tasks.iter().position(|item| item.id == task.id);
+                self.set_selection_id(Some(task.id));
                 self.mode = Mode::Normal;
                 self.status = Status::Info(format!("Added \"{}\"", task.name));
             }
@@ -402,19 +521,22 @@ impl<S: TrackerApplicationService> App<S> {
                 self.status = Status::Info(format!("Renamed to \"{}\"", task.name));
             }
             Ok(TaskOutcome::Archived(_)) => unreachable!("input cannot archive a task"),
+            Ok(TaskOutcome::Unarchived(_)) => unreachable!("input cannot unarchive a task"),
             Err(error) => self.status = Status::Error(application_error_text(&error)),
         }
     }
 
     fn confirm_archive(&mut self) {
-        let Mode::ConfirmArchive { task_id, name } = self.mode.clone() else {
+        let Mode::ConfirmArchive { task_id, .. } = self.mode.clone() else {
             return;
         };
         match self.application.archive_task(task_id) {
-            Ok(TaskOutcome::Archived(_)) => {
+            Ok(TaskOutcome::Archived(task)) => {
                 self.sync_tasks_from_application();
+                // The archived view opens on the task just archived.
+                self.archived_selection = Some(task.id);
                 self.mode = Mode::Normal;
-                self.status = Status::Info(format!("Archived \"{name}\""));
+                self.status = Status::Info(format!("Archived \"{}\"", task.name));
             }
             Err(ApplicationError::Domain(TrackingError::TaskIsActive { .. })) => {
                 self.sync_from_application(false);
@@ -422,7 +544,9 @@ impl<S: TrackerApplicationService> App<S> {
                 self.status = Status::Error("The active task cannot be archived".to_owned());
             }
             Err(error) => self.status = Status::Error(application_error_text(&error)),
-            Ok(_) => unreachable!("archive returned another task outcome"),
+            Ok(TaskOutcome::Created(_) | TaskOutcome::Renamed(_) | TaskOutcome::Unarchived(_)) => {
+                unreachable!("archive returned another task outcome")
+            }
         }
     }
 
@@ -430,6 +554,26 @@ impl<S: TrackerApplicationService> App<S> {
     pub(crate) fn freeze_elapsed_for_tests(&mut self, base: Duration) {
         self.clock = Some(ElapsedClock::anchored(base));
     }
+}
+
+/// The active task list from the application service's backend-neutral query.
+fn active_tasks<S: TrackerApplicationService>(application: &S) -> Vec<Task> {
+    application
+        .tasks()
+        .iter()
+        .filter(|task| !task.archived)
+        .cloned()
+        .collect()
+}
+
+/// The archived task list from the application service's backend-neutral query.
+fn archived_tasks<S: TrackerApplicationService>(application: &S) -> Vec<Task> {
+    application
+        .tasks()
+        .iter()
+        .filter(|task| task.archived)
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]
@@ -466,6 +610,7 @@ mod tests {
         fail_create: bool,
         fail_rename: bool,
         fail_archive: bool,
+        fail_unarchive: bool,
         set_returns_already_active: bool,
         set_timestamp: Option<DateTime<Utc>>,
     }
@@ -478,6 +623,7 @@ mod tests {
                 fail_create: false,
                 fail_rename: false,
                 fail_archive: false,
+                fail_unarchive: false,
                 set_returns_already_active: false,
                 set_timestamp: None,
             }
@@ -539,6 +685,19 @@ mod tests {
                 .expect("test task exists");
             task.archived = true;
             Ok(TaskOutcome::Archived(task.clone()))
+        }
+
+        fn unarchive_task(&mut self, id: TaskId) -> Result<TaskOutcome, ApplicationError> {
+            if self.fail_unarchive {
+                return Err(Self::failure());
+            }
+            let task = self
+                .tasks
+                .iter_mut()
+                .find(|task| task.id == id)
+                .expect("test task exists");
+            task.archived = false;
+            Ok(TaskOutcome::Unarchived(task.clone()))
         }
     }
 
@@ -632,7 +791,7 @@ mod tests {
         assert_eq!(app.selected(), Some(2));
         app.handle(Command::MoveUp);
         assert_eq!(app.selected(), Some(1));
-        app.selected = None;
+        app.active_selection = None;
         app.handle(Command::MoveUp);
         assert_eq!(app.selected(), Some(2));
     }
@@ -1060,14 +1219,275 @@ mod tests {
     }
 
     #[test]
-    fn reserved_and_cancel_commands_preserve_expected_state() {
+    fn cancel_commands_preserve_expected_state() {
         let mut app = app_with(&["one"]);
-        app.handle(Command::Reserved);
-        assert_eq!(app.selected(), Some(0));
         app.handle(Command::OpenAdd);
         app.handle(Command::Insert('x'));
         app.handle(Command::Cancel);
         assert_eq!(app.mode(), &Mode::Normal);
         assert_eq!(app.tasks().len(), 1);
+    }
+
+    fn task(tag: u128, name: &str) -> Task {
+        Task::new(
+            TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
+            TaskName::new(name).unwrap(),
+        )
+    }
+
+    fn archived_task(tag: u128, name: &str) -> Task {
+        let mut task = task(tag, name);
+        task.archived = true;
+        task
+    }
+
+    #[test]
+    fn the_app_starts_in_the_active_view_and_switches_directionally() {
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "alpha"),
+            archived_task(3, "gone"),
+        ]));
+        assert_eq!(app.view(), TaskView::Active);
+        assert_eq!(app.tasks().len(), 1, "the archived task is not visible");
+
+        app.handle(Command::ShowArchivedTasks);
+        assert_eq!(app.view(), TaskView::Archived);
+        assert_eq!(app.tasks().len(), 1);
+
+        // l on the archived view is idempotent.
+        app.handle(Command::ShowArchivedTasks);
+        assert_eq!(app.view(), TaskView::Archived);
+
+        app.handle(Command::ShowActiveTasks);
+        assert_eq!(app.view(), TaskView::Active);
+
+        // h on the active view is idempotent.
+        app.handle(Command::ShowActiveTasks);
+        assert_eq!(app.view(), TaskView::Active);
+    }
+
+    #[test]
+    fn each_view_remembers_its_selection_across_switches() {
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "alpha"),
+            task(2, "beta"),
+            archived_task(3, "gone"),
+        ]));
+        app.handle(Command::MoveDown);
+        app.handle(Command::ShowArchivedTasks);
+        assert_eq!(
+            app.selected(),
+            Some(0),
+            "a fresh view starts on its first row"
+        );
+
+        app.handle(Command::ShowActiveTasks);
+        assert_eq!(app.selected(), Some(1), "the active selection came back");
+        assert_eq!(
+            app.tasks()[1].id,
+            TaskId::from_uuid(uuid::Uuid::from_u128(2))
+        );
+
+        app.handle(Command::ShowArchivedTasks);
+        assert_eq!(app.selected(), Some(0), "the archived selection came back");
+    }
+
+    #[test]
+    fn archived_movement_stays_inside_the_archived_list() {
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "alpha"),
+            archived_task(3, "gone"),
+            archived_task(4, "also gone"),
+        ]));
+        app.handle(Command::ShowArchivedTasks);
+        assert_eq!(app.selected(), Some(0));
+        app.handle(Command::MoveDown);
+        assert_eq!(app.selected(), Some(1));
+        app.handle(Command::MoveDown);
+        assert_eq!(app.selected(), Some(1));
+        app.handle(Command::MoveUp);
+        assert_eq!(app.selected(), Some(0));
+    }
+
+    #[test]
+    fn an_empty_view_has_no_selection() {
+        let mut app = App::load(TestService::with_tasks(vec![task(1, "alpha")]));
+        app.handle(Command::ShowArchivedTasks);
+        assert_eq!(app.selected(), None);
+        app.handle(Command::MoveDown);
+        app.handle(Command::MoveUp);
+        assert_eq!(app.selected(), None);
+    }
+
+    #[test]
+    fn the_archived_view_refuses_active_actions_in_command_handling() {
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "alpha"),
+            archived_task(3, "gone"),
+        ]));
+        app.handle(Command::ShowArchivedTasks);
+
+        app.handle(Command::ToggleTracking);
+        app.handle(Command::OpenAdd);
+        app.handle(Command::OpenRename);
+        app.handle(Command::OpenArchiveConfirm);
+
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(app.view(), TaskView::Archived);
+        assert_eq!(app.active_task_id(), None, "no tracking was started");
+
+        // Movement still works after the refused actions.
+        app.handle(Command::ShowActiveTasks);
+        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::MoveDown);
+        app.handle(Command::MoveUp);
+        assert_eq!(app.selected(), Some(0));
+    }
+
+    #[test]
+    fn modals_block_view_switching_and_unarchiving() {
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "alpha"),
+            archived_task(3, "gone"),
+        ]));
+        app.handle(Command::OpenAdd);
+        app.handle(Command::Insert('x'));
+
+        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::ShowActiveTasks);
+        app.handle(Command::UnarchiveSelected);
+
+        assert!(matches!(app.mode(), Mode::Input { .. }));
+        assert_eq!(app.view(), TaskView::Active);
+        assert!(matches!(app.mode(), Mode::Input { buffer, .. } if buffer == "x"));
+
+        app.handle(Command::Cancel);
+        app.handle(Command::OpenArchiveConfirm);
+        app.handle(Command::UnarchiveSelected);
+        assert!(matches!(app.mode(), Mode::ConfirmArchive { .. }));
+        assert_eq!(app.view(), TaskView::Active);
+    }
+
+    #[test]
+    fn archiving_remembers_the_task_in_the_archived_view_and_clamps() {
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "alpha"),
+            task(2, "beta"),
+            task(3, "gamma"),
+        ]));
+        app.handle(Command::MoveDown);
+        app.handle(Command::OpenArchiveConfirm);
+        app.handle(Command::Confirm);
+
+        assert_eq!(app.view(), TaskView::Active);
+        assert_eq!(app.selected(), Some(1), "the selection clamped to gamma");
+
+        app.handle(Command::ShowArchivedTasks);
+        assert_eq!(app.selected(), Some(0));
+        assert_eq!(
+            app.tasks()[0].id,
+            TaskId::from_uuid(uuid::Uuid::from_u128(2))
+        );
+    }
+
+    #[test]
+    fn archiving_the_last_row_clamps_to_the_previous_row() {
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "alpha"),
+            task(2, "beta"),
+        ]));
+        app.handle(Command::MoveDown);
+        app.handle(Command::OpenArchiveConfirm);
+        app.handle(Command::Confirm);
+        assert_eq!(app.tasks().len(), 1);
+        assert_eq!(app.selected(), Some(0));
+        assert_eq!(
+            app.tasks()[0].id,
+            TaskId::from_uuid(uuid::Uuid::from_u128(1))
+        );
+    }
+
+    #[test]
+    fn unarchiving_stays_in_the_archived_view_and_reports_restored() {
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "alpha"),
+            task(2, "beta"),
+            archived_task(3, "gone"),
+        ]));
+        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::UnarchiveSelected);
+
+        assert_eq!(app.view(), TaskView::Archived);
+        assert_eq!(app.status(), &Status::Info("Restored \"gone\"".to_owned()));
+        assert_eq!(app.tasks().len(), 0, "the restored task left the list");
+        assert_eq!(app.selected(), None, "the archived list is empty now");
+
+        app.handle(Command::ShowActiveTasks);
+        assert_eq!(app.tasks().len(), 3);
+        assert_eq!(app.selected(), Some(2), "the restored task is selected");
+        assert_eq!(
+            app.tasks()[2].id,
+            TaskId::from_uuid(uuid::Uuid::from_u128(3))
+        );
+    }
+
+    #[test]
+    fn unarchiving_clamps_the_archived_selection_to_the_nearest_row() {
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "alpha"),
+            archived_task(3, "gone"),
+            archived_task(4, "also gone"),
+        ]));
+        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::MoveDown);
+        app.handle(Command::UnarchiveSelected);
+
+        assert_eq!(app.view(), TaskView::Archived);
+        assert_eq!(app.tasks().len(), 1);
+        assert_eq!(app.selected(), Some(0));
+        assert_eq!(
+            app.tasks()[0].id,
+            TaskId::from_uuid(uuid::Uuid::from_u128(3))
+        );
+    }
+
+    #[test]
+    fn a_failed_unarchive_keeps_the_view_selection_and_reports_the_error() {
+        let mut service = TestService::with_tasks(vec![task(1, "alpha"), archived_task(3, "gone")]);
+        service.fail_unarchive = true;
+        let mut app = App::load(service);
+        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::UnarchiveSelected);
+
+        assert_eq!(app.view(), TaskView::Archived);
+        assert_eq!(app.selected(), Some(0));
+        assert_eq!(
+            app.tasks()[0].id,
+            TaskId::from_uuid(uuid::Uuid::from_u128(3))
+        );
+        assert_eq!(app.active_task_id(), None);
+        assert_eq!(
+            app.status(),
+            &Status::Error("Storage error: write failed".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_timer_header_resolves_the_active_task_outside_the_visible_list() {
+        let mut app = App::load(TestService::with_tasks(vec![archived_task(3, "gone")]));
+        let alpha = task(1, "alpha");
+        app.application.tasks.push(alpha.clone());
+        app.tracking = TrackingState::Running {
+            worklog: ActiveWorklog::begin(
+                WorklogId::from_uuid(uuid::Uuid::from_u128(10)),
+                alpha.id,
+                DateTime::from_timestamp(100, 0).unwrap(),
+            ),
+        };
+        app.handle(Command::ShowArchivedTasks);
+
+        assert_eq!(app.view(), TaskView::Archived);
+        assert_eq!(app.tasks().len(), 1, "only archived tasks are listed");
+        assert_eq!(app.active_task_name(), Some("alpha"));
     }
 }

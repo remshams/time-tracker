@@ -460,6 +460,162 @@ fn exit_code(status: libc::c_int) -> Option<i32> {
     }
 }
 
+/// Drives one `tt` run through staged key presses, waiting for a marker of
+/// each expected frame before continuing.
+struct StagedRun {
+    pty: PtyChild,
+    deadline: Instant,
+}
+
+impl StagedRun {
+    fn start(home: &Path) -> Self {
+        let deadline = Instant::now() + RUN_LIMIT;
+        let pty = spawn_pty(home);
+        configure_pty(pty.master());
+        Self { pty, deadline }
+    }
+
+    fn press(&mut self, input: &[u8], expected: &str, predicate: impl Fn(&[u8]) -> bool) -> String {
+        write_all_pty(self.pty.master(), input);
+        String::from_utf8_lossy(&read_until_expected(
+            self.pty.master(),
+            self.deadline,
+            expected,
+            predicate,
+        ))
+        .into_owned()
+    }
+
+    fn quit(self) -> (libc::c_int, String, bool) {
+        write_all_pty(self.pty.master(), b"\x03");
+        let output = read_until_eof(self.pty.master(), self.deadline);
+        finish_pty(self.pty, output, self.deadline)
+    }
+}
+
+#[test]
+fn tt_browses_the_archived_view_restores_a_task_and_persists_the_round_trip() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let mut run = StagedRun::start(&home);
+
+    run.press(b"", "initial frame", |output| {
+        contains_bytes(output, b"Time Tracker") && contains_bytes(output, b"quit")
+    });
+
+    // Archive the selected task through its confirmation dialog. Ratatui
+    // skips unchanged cells, so match whole words, never phrases with
+    // spaces that the diff may elide.
+    run.press(b"d", "archive confirmation", |output| {
+        contains_bytes(output, b"Confirm archive")
+    });
+    run.press(b"y", "archived status", |output| {
+        contains_bytes(output, b"Archived")
+    });
+
+    // Switch to the archived view and restore the task.
+    let archived = run.press(b"l", "archived view", |output| {
+        contains_bytes(output, b"u unarchive")
+    });
+    assert!(archived.contains("unarchive"), "got {archived:?}");
+    // Unarchiving empties the archived list and reports the restoration.
+    // The status suffix matches the archived text, so the diff skips those
+    // cells; the emptied list is the reliable frame marker.
+    let restored = run.press(b"u", "restored status", |output| {
+        contains_bytes(output, b"No archived tasks")
+    });
+    assert!(restored.contains("Restor"), "got {restored:?}");
+
+    let (status, exit, cooked) = run.quit();
+    assert_eq!(
+        exit_code(status),
+        Some(0),
+        "tt exited abnormally; output:\n{exit}"
+    );
+    assert!(
+        exit.contains("\x1b[?1049l"),
+        "alternate screen was not left"
+    );
+    assert!(exit.contains("\x1b[?25h"), "cursor was not shown again");
+    assert!(cooked, "the pty must be left in cooked mode");
+
+    // The archive and the unarchive both went through the real SQLite
+    // adapter and ended where they started.
+    let repository = SqliteRepository::open(database_in(&home)).unwrap();
+    let tasks = repository.list_tasks().unwrap();
+    assert_eq!(tasks.len(), 3);
+    assert!(tasks.iter().all(|task| !task.archived));
+    assert_eq!(repository.active_worklog().unwrap(), None);
+}
+
+#[test]
+fn tt_persists_an_archive_across_a_quit() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let mut run = StagedRun::start(&home);
+
+    run.press(b"", "initial frame", |output| {
+        contains_bytes(output, b"Time Tracker") && contains_bytes(output, b"quit")
+    });
+    run.press(b"d", "archive confirmation", |output| {
+        contains_bytes(output, b"Confirm archive")
+    });
+    run.press(b"y", "archived status", |output| {
+        contains_bytes(output, b"Archived")
+    });
+
+    let (status, exit, cooked) = run.quit();
+    assert_eq!(exit_code(status), Some(0), "output:\n{exit}");
+    assert!(cooked, "the pty must be left in cooked mode");
+
+    let repository = SqliteRepository::open(database_in(&home)).unwrap();
+    let mut tasks = repository.list_tasks().unwrap();
+    tasks.sort_by_key(|task| task.name.to_string());
+    assert_eq!(tasks.len(), 3);
+    assert_eq!(tasks[2].name.as_str(), "Write release notes");
+    assert!(tasks[2].archived, "the archived task stayed archived");
+    assert!(!tasks[0].archived && !tasks[1].archived);
+}
+
+#[test]
+fn tt_ignores_active_view_keys_in_the_archived_view() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let mut run = StagedRun::start(&home);
+
+    run.press(b"", "initial frame", |output| {
+        contains_bytes(output, b"Time Tracker") && contains_bytes(output, b"quit")
+    });
+    let archived = run.press(b"l", "archived view", |output| {
+        contains_bytes(output, b"No archived tasks")
+    });
+    assert!(archived.contains("u unarchive"), "got {archived:?}");
+
+    // Every active-view action key is dead in the archived view.
+    write_all_pty(run.pty.master(), b"a ed \"");
+    let (status, exit, cooked) = run.quit();
+
+    assert_eq!(exit_code(status), Some(0), "output:\n{exit}");
+    for fragment in ["New task name:", "Rename task:", "Archive \"", "Started"] {
+        assert!(
+            !exit.contains(fragment),
+            "archived view must not open {fragment:?}:\n{exit}"
+        );
+    }
+    assert!(
+        exit.contains("\x1b[?1049l"),
+        "alternate screen was not left"
+    );
+    assert!(exit.contains("\x1b[?25h"), "cursor was not shown again");
+    assert!(cooked, "the pty must be left in cooked mode");
+
+    let repository = SqliteRepository::open(database_in(&home)).unwrap();
+    let tasks = repository.list_tasks().unwrap();
+    assert_eq!(tasks.len(), 3);
+    assert!(tasks.iter().all(|task| !task.archived));
+    assert_eq!(repository.active_worklog().unwrap(), None);
+}
+
 #[test]
 fn sgr_matching_uses_complete_numeric_parameters() {
     assert!(contains_sgr_parameters(b"\x1b[38;5;4;49m", &[38, 5, 4]));
@@ -495,7 +651,8 @@ fn tt_runs_in_a_pty_seeds_the_database_and_quits_on_q() {
     // footer's meaningful fragments rather than one contiguous byte string.
     for hint in [
         "j/k",
-        "start/stop",
+        "h/l",
+        "track",
         "add",
         "rename",
         "archive",

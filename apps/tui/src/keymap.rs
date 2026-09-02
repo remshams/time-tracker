@@ -6,19 +6,19 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use crate::app::Mode;
+use crate::app::{Mode, TaskView};
 use crate::command::Command;
 
 /// The quit chord, accepted in every mode.
 const QUIT_MODIFIER: KeyModifiers = KeyModifiers::CONTROL;
 const QUIT_KEY: KeyCode = KeyCode::Char('c');
 
-/// Maps a key event to a command for the given mode.
+/// Maps a key event to a command for the given mode and task view.
 ///
 /// Returns `None` for keys the mode does not handle. Ctrl+C quits in every
 /// mode, including while typing. In normal and confirmation modes only
 /// unmodified keys act; in input mode Shift still produces capital letters.
-pub fn map(mode: &Mode, key: KeyEvent) -> Option<Command> {
+pub fn map(mode: &Mode, view: TaskView, key: KeyEvent) -> Option<Command> {
     if key.kind != KeyEventKind::Press {
         return None;
     }
@@ -26,30 +26,33 @@ pub fn map(mode: &Mode, key: KeyEvent) -> Option<Command> {
         return Some(Command::Quit);
     }
     match mode {
-        Mode::Normal => map_normal(key),
+        Mode::Normal => map_normal(view, key),
         Mode::Input { .. } => map_input(key),
         Mode::ConfirmArchive { .. } => map_confirm(key),
     }
 }
 
-/// Keys for the task list.
+/// Keys for the task list of one view.
 ///
 /// Every action needs an unmodified key; chords were either handled as the
-/// quit shortcut above or do nothing here.
-fn map_normal(key: KeyEvent) -> Option<Command> {
+/// quit shortcut above or do nothing here. `h` and `l` switch between the
+/// active and archived views in both directions; each is a no-op when the
+/// target view is already shown.
+fn map_normal(view: TaskView, key: KeyEvent) -> Option<Command> {
     if key.modifiers != KeyModifiers::NONE {
         return None;
     }
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => Some(Command::MoveDown),
         KeyCode::Char('k') | KeyCode::Up => Some(Command::MoveUp),
-        KeyCode::Char(' ') => Some(Command::ToggleTracking),
-        KeyCode::Char('a') => Some(Command::OpenAdd),
-        KeyCode::Char('e') => Some(Command::OpenRename),
-        KeyCode::Char('d') => Some(Command::OpenArchiveConfirm),
+        KeyCode::Char('h') => Some(Command::ShowActiveTasks),
+        KeyCode::Char('l') => Some(Command::ShowArchivedTasks),
+        KeyCode::Char(' ') if view == TaskView::Active => Some(Command::ToggleTracking),
+        KeyCode::Char('a') if view == TaskView::Active => Some(Command::OpenAdd),
+        KeyCode::Char('e') if view == TaskView::Active => Some(Command::OpenRename),
+        KeyCode::Char('d') if view == TaskView::Active => Some(Command::OpenArchiveConfirm),
+        KeyCode::Char('u') if view == TaskView::Archived => Some(Command::UnarchiveSelected),
         KeyCode::Char('q') | KeyCode::Esc => Some(Command::Quit),
-        // `h` and `l` are deliberately unmapped here; see `Command::Reserved`.
-        KeyCode::Char('h') | KeyCode::Char('l') => Some(Command::Reserved),
         _ => None,
     }
 }
@@ -91,14 +94,17 @@ fn map_confirm(key: KeyEvent) -> Option<Command> {
     }
 }
 
-/// One-line key help for the given mode.
+/// One-line key help for the given mode and task view.
 ///
 /// Every key the mode accepts appears here.
-pub fn footer_hints(mode: &Mode) -> &'static str {
+pub fn footer_hints(mode: &Mode, view: TaskView) -> &'static str {
     match mode {
-        Mode::Normal => {
-            "j/k move · space start/stop · a add · e rename · d archive · q/esc/ctrl+c quit"
-        }
+        Mode::Normal => match view {
+            TaskView::Active => {
+                "j/k · h/l view · space track · a add · e rename · d archive · q/esc/ctrl+c quit"
+            }
+            TaskView::Archived => "j/k move · h/l view · u unarchive · q/esc/ctrl+c quit",
+        },
         Mode::Input { .. } => "type · backspace delete · enter save · esc cancel · ctrl+c quit",
         Mode::ConfirmArchive { .. } => "y/enter confirm · n/esc cancel · ctrl+c quit",
     }
@@ -123,10 +129,6 @@ mod tests {
         KeyEvent::new(KeyCode::Char(character), modifier)
     }
 
-    fn normal() -> Mode {
-        Mode::Normal
-    }
-
     fn input() -> Mode {
         Mode::Input {
             purpose: InputPurpose::Add,
@@ -141,6 +143,13 @@ mod tests {
         }
     }
 
+    fn normal_modes() -> [(TaskView, Mode); 2] {
+        [
+            (TaskView::Active, Mode::Normal),
+            (TaskView::Archived, Mode::Normal),
+        ]
+    }
+
     #[test]
     fn key_releases_produce_no_command() {
         let release = KeyEvent::new_with_kind(
@@ -148,79 +157,167 @@ mod tests {
             KeyModifiers::NONE,
             KeyEventKind::Release,
         );
-        for mode in [normal(), input(), confirm()] {
-            assert_eq!(map(&mode, release), None);
+        for (view, mode) in normal_modes() {
+            assert_eq!(map(&mode, view, release), None);
+        }
+        for mode in [input(), confirm()] {
+            assert_eq!(map(&mode, TaskView::Active, release), None);
         }
     }
 
     #[test]
-    fn normal_mode_maps_movement_and_actions() {
+    fn active_mode_maps_movement_actions_and_view_switching() {
+        let view = TaskView::Active;
         assert_eq!(
-            map(&normal(), key(KeyCode::Char('j'))),
+            map(&Mode::Normal, view, key(KeyCode::Char('j'))),
             Some(Command::MoveDown)
         );
-        assert_eq!(map(&normal(), key(KeyCode::Down)), Some(Command::MoveDown));
         assert_eq!(
-            map(&normal(), key(KeyCode::Char('k'))),
+            map(&Mode::Normal, view, key(KeyCode::Down)),
+            Some(Command::MoveDown)
+        );
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Char('k'))),
             Some(Command::MoveUp)
         );
-        assert_eq!(map(&normal(), key(KeyCode::Up)), Some(Command::MoveUp));
         assert_eq!(
-            map(&normal(), key(KeyCode::Char(' '))),
+            map(&Mode::Normal, view, key(KeyCode::Up)),
+            Some(Command::MoveUp)
+        );
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Char('h'))),
+            Some(Command::ShowActiveTasks)
+        );
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Char('l'))),
+            Some(Command::ShowArchivedTasks)
+        );
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Char(' '))),
             Some(Command::ToggleTracking)
         );
         assert_eq!(
-            map(&normal(), key(KeyCode::Char('a'))),
+            map(&Mode::Normal, view, key(KeyCode::Char('a'))),
             Some(Command::OpenAdd)
         );
         assert_eq!(
-            map(&normal(), key(KeyCode::Char('e'))),
+            map(&Mode::Normal, view, key(KeyCode::Char('e'))),
             Some(Command::OpenRename)
         );
         assert_eq!(
-            map(&normal(), key(KeyCode::Char('d'))),
+            map(&Mode::Normal, view, key(KeyCode::Char('d'))),
             Some(Command::OpenArchiveConfirm)
         );
-        assert_eq!(map(&normal(), key(KeyCode::Char('q'))), Some(Command::Quit));
-        assert_eq!(map(&normal(), key(KeyCode::Esc)), Some(Command::Quit));
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Char('q'))),
+            Some(Command::Quit)
+        );
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Esc)),
+            Some(Command::Quit)
+        );
     }
 
     #[test]
-    fn normal_mode_reserves_h_and_l() {
+    fn archived_mode_maps_movement_unarchive_and_view_switching() {
+        let view = TaskView::Archived;
         assert_eq!(
-            map(&normal(), key(KeyCode::Char('h'))),
-            Some(Command::Reserved)
+            map(&Mode::Normal, view, key(KeyCode::Char('j'))),
+            Some(Command::MoveDown)
         );
         assert_eq!(
-            map(&normal(), key(KeyCode::Char('l'))),
-            Some(Command::Reserved)
+            map(&Mode::Normal, view, key(KeyCode::Down)),
+            Some(Command::MoveDown)
         );
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Char('k'))),
+            Some(Command::MoveUp)
+        );
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Up)),
+            Some(Command::MoveUp)
+        );
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Char('h'))),
+            Some(Command::ShowActiveTasks)
+        );
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Char('l'))),
+            Some(Command::ShowArchivedTasks)
+        );
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Char('u'))),
+            Some(Command::UnarchiveSelected)
+        );
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Char('q'))),
+            Some(Command::Quit)
+        );
+        assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Esc)),
+            Some(Command::Quit)
+        );
+    }
+
+    #[test]
+    fn archived_mode_never_maps_active_view_actions() {
+        let view = TaskView::Archived;
+        for code in [
+            KeyCode::Char(' '),
+            KeyCode::Char('a'),
+            KeyCode::Char('e'),
+            KeyCode::Char('d'),
+            KeyCode::Char('x'),
+            KeyCode::Enter,
+            KeyCode::Backspace,
+        ] {
+            assert_eq!(
+                map(&Mode::Normal, view, key(code)),
+                None,
+                "archived mode must not map {code:?}"
+            );
+        }
     }
 
     #[test]
     fn normal_mode_ignores_unmapped_keys() {
-        assert_eq!(map(&normal(), key(KeyCode::Char('x'))), None);
-        assert_eq!(map(&normal(), key(KeyCode::Enter)), None);
-        assert_eq!(map(&normal(), key(KeyCode::Backspace)), None);
-        assert_eq!(map(&normal(), key(KeyCode::Left)), None);
+        for view in [TaskView::Active, TaskView::Archived] {
+            assert_eq!(map(&Mode::Normal, view, key(KeyCode::Char('x'))), None);
+            assert_eq!(map(&Mode::Normal, view, key(KeyCode::Left)), None);
+        }
+        assert_eq!(
+            map(&Mode::Normal, TaskView::Archived, key(KeyCode::Backspace)),
+            None
+        );
+        assert_eq!(
+            map(&Mode::Normal, TaskView::Active, key(KeyCode::Char('u'))),
+            None
+        );
     }
 
     #[test]
     fn modified_action_keys_do_nothing_in_normal_mode() {
-        for key in [
-            ctrl('a'),
-            ctrl('d'),
-            ctrl('y'),
-            ctrl('j'),
-            ctrl('q'),
-            with_modifier('j', KeyModifiers::ALT),
-            with_modifier('j', KeyModifiers::SUPER),
-            with_modifier('j', KeyModifiers::META),
-            with_modifier('j', KeyModifiers::HYPER),
-            with_modifier('j', KeyModifiers::SHIFT),
-            with_modifier('d', KeyModifiers::CONTROL | KeyModifiers::ALT),
-        ] {
-            assert_eq!(map(&normal(), key), None, "modified {key:?} must not act");
+        for (view, _) in normal_modes() {
+            for key in [
+                ctrl('a'),
+                ctrl('d'),
+                ctrl('u'),
+                ctrl('y'),
+                ctrl('j'),
+                ctrl('q'),
+                with_modifier('j', KeyModifiers::ALT),
+                with_modifier('j', KeyModifiers::SUPER),
+                with_modifier('j', KeyModifiers::META),
+                with_modifier('j', KeyModifiers::HYPER),
+                with_modifier('j', KeyModifiers::SHIFT),
+                with_modifier('d', KeyModifiers::CONTROL | KeyModifiers::ALT),
+            ] {
+                assert_eq!(
+                    map(&Mode::Normal, view, key),
+                    None,
+                    "modified {key:?} must not act"
+                );
+            }
         }
     }
 
@@ -234,7 +331,11 @@ mod tests {
             with_modifier('y', KeyModifiers::META),
             with_modifier('n', KeyModifiers::SHIFT),
         ] {
-            assert_eq!(map(&confirm(), key), None, "modified {key:?} must not act");
+            assert_eq!(
+                map(&confirm(), TaskView::Active, key),
+                None,
+                "modified {key:?} must not act"
+            );
         }
     }
 
@@ -245,82 +346,110 @@ mod tests {
             KeyModifiers::CONTROL,
             KeyEventKind::Release,
         );
-        for mode in [normal(), input(), confirm()] {
-            assert_eq!(map(&mode, release), None);
+        for (view, mode) in normal_modes() {
+            assert_eq!(map(&mode, view, release), None);
+        }
+        for mode in [input(), confirm()] {
+            assert_eq!(map(&mode, TaskView::Active, release), None);
         }
     }
 
     #[test]
-    fn ctrl_c_quits_in_every_mode() {
-        for mode in [normal(), input(), confirm()] {
-            assert_eq!(map(&mode, ctrl('c')), Some(Command::Quit));
+    fn ctrl_c_quits_in_every_mode_and_view() {
+        for (view, mode) in normal_modes() {
+            assert_eq!(map(&mode, view, ctrl('c')), Some(Command::Quit));
+        }
+        for mode in [input(), confirm()] {
+            assert_eq!(map(&mode, TaskView::Active, ctrl('c')), Some(Command::Quit));
         }
     }
 
     #[test]
     fn input_mode_edits_confirms_and_cancels() {
+        let view = TaskView::Active;
         assert_eq!(
-            map(&input(), key(KeyCode::Char('x'))),
+            map(&input(), view, key(KeyCode::Char('x'))),
             Some(Command::Insert('x'))
         );
         // Space is ordinary input while typing.
         assert_eq!(
-            map(&input(), key(KeyCode::Char(' '))),
+            map(&input(), view, key(KeyCode::Char(' '))),
             Some(Command::Insert(' '))
         );
         assert_eq!(
-            map(&input(), key(KeyCode::Backspace)),
+            map(&input(), view, key(KeyCode::Backspace)),
             Some(Command::Backspace)
         );
-        assert_eq!(map(&input(), key(KeyCode::Enter)), Some(Command::Confirm));
-        assert_eq!(map(&input(), key(KeyCode::Esc)), Some(Command::Cancel));
+        assert_eq!(
+            map(&input(), view, key(KeyCode::Enter)),
+            Some(Command::Confirm)
+        );
+        assert_eq!(
+            map(&input(), view, key(KeyCode::Esc)),
+            Some(Command::Cancel)
+        );
     }
 
     #[test]
     fn input_mode_ignores_modifier_chords_and_other_keys() {
-        assert_eq!(map(&input(), ctrl('a')), None);
+        assert_eq!(map(&input(), TaskView::Active, ctrl('a')), None);
         let alt = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::ALT);
-        assert_eq!(map(&input(), alt), None);
+        assert_eq!(map(&input(), TaskView::Active, alt), None);
         let hyper = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::HYPER);
-        assert_eq!(map(&input(), hyper), None);
-        assert_eq!(map(&input(), key(KeyCode::Up)), None);
-        assert_eq!(map(&input(), key(KeyCode::Tab)), None);
+        assert_eq!(map(&input(), TaskView::Active, hyper), None);
+        assert_eq!(map(&input(), TaskView::Active, key(KeyCode::Up)), None);
+        assert_eq!(map(&input(), TaskView::Active, key(KeyCode::Tab)), None);
     }
 
     #[test]
     fn shift_is_not_a_chord_so_capitals_are_typed() {
         let capital = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT);
-        assert_eq!(map(&input(), capital), Some(Command::Insert('A')));
+        assert_eq!(
+            map(&input(), TaskView::Active, capital),
+            Some(Command::Insert('A'))
+        );
     }
 
     #[test]
     fn confirm_mode_accepts_and_cancels() {
-        assert_eq!(map(&confirm(), key(KeyCode::Enter)), Some(Command::Confirm));
+        let view = TaskView::Active;
         assert_eq!(
-            map(&confirm(), key(KeyCode::Char('y'))),
+            map(&confirm(), view, key(KeyCode::Enter)),
             Some(Command::Confirm)
         );
         assert_eq!(
-            map(&confirm(), key(KeyCode::Char('n'))),
+            map(&confirm(), view, key(KeyCode::Char('y'))),
+            Some(Command::Confirm)
+        );
+        assert_eq!(
+            map(&confirm(), view, key(KeyCode::Char('n'))),
             Some(Command::Cancel)
         );
-        assert_eq!(map(&confirm(), key(KeyCode::Esc)), Some(Command::Cancel));
-        assert_eq!(map(&confirm(), key(KeyCode::Char('x'))), None);
+        assert_eq!(
+            map(&confirm(), view, key(KeyCode::Esc)),
+            Some(Command::Cancel)
+        );
+        assert_eq!(map(&confirm(), view, key(KeyCode::Char('x'))), None);
     }
 
     #[test]
     fn every_accepted_key_is_listed_in_the_footer() {
-        let normal_keys = footer_hints(&normal());
-        for hint in ["j/k", "space", "a ", "e ", "d ", "q/esc", "ctrl+c"] {
-            assert!(normal_keys.contains(hint), "normal footer misses {hint:?}");
+        let active_keys = footer_hints(&Mode::Normal, TaskView::Active);
+        for hint in ["j/k", "h/l", "space", "a ", "e ", "d ", "q/esc", "ctrl+c"] {
+            assert!(active_keys.contains(hint), "active footer misses {hint:?}");
         }
-        // Reserved keys are not listed: they perform no action.
-        assert!(!normal_keys.contains("h/l"));
-        let input_keys = footer_hints(&input());
+        let archived_keys = footer_hints(&Mode::Normal, TaskView::Archived);
+        for hint in ["j/k", "h/l", "u ", "q/esc", "ctrl+c"] {
+            assert!(
+                archived_keys.contains(hint),
+                "archived footer misses {hint:?}"
+            );
+        }
+        let input_keys = footer_hints(&input(), TaskView::Active);
         for hint in ["type", "backspace", "enter", "esc", "ctrl+c"] {
             assert!(input_keys.contains(hint), "input footer misses {hint:?}");
         }
-        let confirm_keys = footer_hints(&confirm());
+        let confirm_keys = footer_hints(&confirm(), TaskView::Active);
         for hint in ["y/enter", "n/esc", "ctrl+c"] {
             assert!(
                 confirm_keys.contains(hint),
@@ -328,11 +457,7 @@ mod tests {
             );
         }
         // Every footer fits a standard 80-column terminal.
-        for footer in [
-            footer_hints(&normal()),
-            footer_hints(&input()),
-            footer_hints(&confirm()),
-        ] {
+        for footer in [active_keys, archived_keys, input_keys, confirm_keys] {
             assert!(footer.chars().count() <= 80, "footer too wide: {footer:?}");
         }
     }
