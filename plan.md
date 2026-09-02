@@ -23,6 +23,7 @@ All completed checkpoints are pushed to Forgejo. Current local validation found 
 | Domain terminology | A persisted tracking record is a `Worklog`. It is active while its end time is absent and completed once its end time is set. |
 | Layering direction | Rename `tracker-core` to `tracker-domain`, extract repository-backed use cases into `tracker-application`, and keep local SQLite and future HTTP implementations as adapters. |
 | Timestamp authority | The client creates task and tracking timestamps in local and remote modes. The initial remote design assumes client and server clocks are sufficiently synchronized; the server enforces ordinary domain checks such as end not preceding start but adds no clock-skew protocol. |
+| Pre-release schema compatibility | There is no production database to preserve yet. During the domain/application refactor, update the baseline schema and recreate test or development databases instead of adding a compatibility migration. |
 
 ## Product direction
 
@@ -247,11 +248,11 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 2. [ ] Rename `tracker-core` to `tracker-domain` and adopt `Worklog`, `ActiveWorklog`, and `WorklogId` throughout the domain. Keep temporary compatibility aliases only while they are needed to keep component-scoped commits buildable.
 3. [ ] Add `tracker-application`, depending only on `tracker-domain`. Define backend-neutral task operations, tracking operations, worklog queries, outcomes, repository errors, and repository ports there.
 4. [ ] Move repository-backed workflows from `apps/tui/src/app.rs` into application use cases. Accept explicit client-created timestamps, expose `set_active_task` and `clear_active_task`, and keep atomic switching and conflict recovery out of presentation code.
-5. [ ] Adapt `tracker-storage` to the application repository ports. Rename storage terminology to worklogs and add a transactional migration if persisted table, index, or trigger names change; preserve every existing task and worklog.
+5. [ ] Adapt `tracker-storage` to the application repository ports and rename schema, query, index, and trigger terminology to worklogs. Update the baseline schema directly and recreate test or development databases; do not add a compatibility migration before the first production release.
 6. [ ] Adapt `tracker-tui` to application operations and errors. Keep the monotonic client clock, task list, selection, modes, input buffers, key handling, status text, and rendering in the TUI; remove direct dependencies on repository ports, `SqliteRepository`, and `StorageError` from TUI state.
 7. [ ] Reduce `apps/tui/src/main.rs` to composition: create the SQLite adapter, application service, and TUI. Preserve the path, seeding, terminal, and startup-error behavior.
 8. [ ] Remove transitional aliases and the old domain repository port. Verify the final dependency direction and prove `tracker-domain` and `tracker-application` have no Ratatui, Crossterm, rusqlite, or HTTP dependency.
-9. [ ] Run the full Rust, Python, mutation, coverage, CRAP, theme-audit, and real-binary PTY checks. Confirm existing SQLite data opens without loss and all user-visible behavior remains unchanged.
+9. [ ] Run the full Rust, Python, mutation, coverage, CRAP, theme-audit, and real-binary PTY checks. Recreate the local test database and confirm all user-visible behavior remains unchanged.
 
 This checkpoint does not add worklog browsing, HTTP, asynchronous execution, server modes, remote-request states, revisions, or synchronization metadata.
 
