@@ -208,6 +208,11 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
     }
 
     fn unarchive_task(&mut self, id: TaskId) -> Result<TaskOutcome, ApplicationError> {
+        // Another client may have restored this task and started tracking it
+        // since our last load. Refresh before the write so a read failure
+        // prevents the unarchive and Idle is never reported over an active
+        // worklog that survived the call.
+        self.refresh_tracking()?;
         let task = self.repository.unarchive_task(id)?;
         self.replace_task(task.clone());
         Ok(TaskOutcome::Unarchived(task))
@@ -662,6 +667,56 @@ mod tests {
                 RepositoryError::TaskNotFound { id: missing }
             ))
         );
+    }
+
+    #[test]
+    fn unarchive_loads_a_worklog_that_another_client_started_first() {
+        let alpha = task(1, "alpha");
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        application.archive_task(alpha.id).unwrap();
+
+        // A second client restores the archived task and starts tracking it
+        // before the stale client issues its unarchive.
+        repository.unarchive_task(alpha.id).unwrap();
+        repository
+            .insert_worklog(&worklog(10, alpha.id, 150))
+            .unwrap();
+
+        let unarchived = application.unarchive_task(alpha.id).unwrap();
+        assert!(matches!(unarchived, TaskOutcome::Unarchived(task) if !task.archived));
+        assert_eq!(
+            application.current_tracking(),
+            &TrackingState::Running {
+                worklog: ActiveWorklog::begin(
+                    WorklogId::from_uuid(uuid::Uuid::from_u128(10)),
+                    alpha.id,
+                    at(150)
+                )
+            }
+        );
+        assert!(matches!(
+            repository.active_worklog(),
+            Ok(Some(worklog)) if worklog.task_id == alpha.id
+        ));
+    }
+
+    #[test]
+    fn a_failing_tracking_refresh_prevents_the_unarchive_write() {
+        let alpha = task(1, "alpha");
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        application.archive_task(alpha.id).unwrap();
+        repository.0.borrow_mut().fail_reads = true;
+
+        assert_eq!(
+            application.unarchive_task(alpha.id),
+            Err(ApplicationError::Repository(RepositoryError::Backend {
+                message: "read failed".to_owned()
+            }))
+        );
+        assert!(repository.0.borrow().tasks[0].archived);
+        assert_eq!(application.current_tracking(), &TrackingState::Idle);
     }
 
     #[test]
