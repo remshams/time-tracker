@@ -32,27 +32,22 @@ The owner should eventually be able to run the TUI on one computer while the aut
 
 The same `tt` binary will provide the TUI and server process modes, while shared application workflows remain independent of either entry point. The first deployment may assume that client and server run the same version inside a trusted Tailscale network. The API should still use a `/v1` prefix and idempotent state-setting operations where retries could otherwise duplicate or reverse a change.
 
-## Recommended technology
+## Technology and target architecture
 
-### TUI MVP
+### TUI and workspace
 
-- Stable Rust with edition 2024.
-- A Cargo workspace moving to four packages:
-  - `crates/tracker-domain`, a library for tasks, worklogs, tracking state, and domain rules.
-  - `crates/tracker-application`, a library for use cases, repository ports, and client-side time handling.
-  - `crates/tracker-storage`, the SQLite adapter.
-  - `apps/tui`, the terminal application and current composition entry point.
-- `ratatui` for widgets and test rendering.
-- `crossterm` for terminal input, alternate-screen handling, and raw mode.
-- A synchronous event loop for the hard-coded MVP. Do not add Tokio, storage, or networking before they are needed.
-- `ratatui::backend::TestBackend` for deterministic rendering tests. Prefer direct buffer assertions at first. Snapshot tests can be added if the layout becomes costly to assert by hand.
-- A central command map for keybindings. Widgets should handle commands such as `MoveDown` or `AddTask`, not raw key events. This keeps Vim keys, arrow aliases, help text, and tests consistent as the TUI grows.
+- Use stable Rust with edition 2024.
+- Move to four packages in the next refactor: `tracker-domain`, `tracker-application`, `tracker-storage`, and the `tracker-tui` application.
+- Use `ratatui` for widgets and deterministic test rendering.
+- Use `crossterm` for terminal input, alternate-screen handling, and raw mode.
+- Keep the current synchronous event loop during the domain/application refactor. Do not add Tokio or networking in that checkpoint.
+- Keep the central semantic command map so keybindings, footer help, and tests remain consistent.
 
-The small core crate is worthwhile even for a hard-coded list. It gives future clients a shared domain model without tying them to terminal code. A larger clean-architecture split would be premature.
+The domain/application split gives the future server and clients reusable use cases without moving presentation or infrastructure into the domain. Keep one time-tracking bounded context; separate crates for individual entities would add no useful boundary.
 
 ### Storage and remote-access direction after the MVP
 
-- Keep persistence behind a repository trait owned by the core/application layer.
+- Keep persistence behind repository ports owned by the application layer.
 - Put a backend-neutral application service between every UI and its selected store.
 - In local mode, the application service uses `SqliteRepository` directly.
 - In remote mode, an HTTP client calls resource-oriented REST endpoints. It does not expose raw repository or SQL operations over the network.
@@ -69,9 +64,9 @@ The small core crate is worthwhile even for a hard-coded list. It gives future c
 
 A central HTTP service is simpler than file sharing or synchronization for the first remote release. It gives future clients one API while preserving the one-active-timer rule. Offline synchronization remains a separate, later feature.
 
-## MVP scope
+## Completed MVP scope
 
-The first executable milestone does only this:
+The first executable milestone did only this:
 
 - Open a full-screen terminal UI.
 - Render a fixed list of tasks from Rust data.
@@ -82,7 +77,7 @@ The first executable milestone does only this:
 - Restore the terminal after normal exit and after errors.
 - Test the rendered list and selection movement without requiring an interactive terminal.
 
-The MVP does not track time, persist data, call a server, authenticate users, or run background sync.
+That milestone did not track time, persist data, call a server, authenticate users, or run background sync. Milestone 2 subsequently added local tracking and persistence.
 
 A suggested initial list is:
 
@@ -92,7 +87,7 @@ A suggested initial list is:
 
 The exact text is easy to replace once the intended demo is clear.
 
-## Architecture
+## Target architecture after the next refactor
 
 ```text
 time-tracker/
@@ -141,8 +136,8 @@ A panic hook may restore the terminal before delegating to the previous hook. Cl
 
 ### Future tracking invariants
 
-- The single tracker has at most one active entry across all connected clients.
-- A stopped entry has an end time that is not earlier than its start time.
+- The single tracker has at most one active worklog across all connected clients.
+- A completed worklog has an end time that is not earlier than its start time.
 - Retrying a remote request has the same effect as its first successful execution.
 - A configured remote client never writes to local SQLite as a fallback.
 - The server validates every command and enforces one active timer regardless of client state.
@@ -152,9 +147,9 @@ A panic hook may restore the terminal before delegating to the previous hook. Cl
 
 ### Security and privacy for later phases
 
-Task names and time entries may expose customer names, work habits, and project details. Local databases and credentials should use owner-only permissions where the platform supports them. The initial server may trust a restricted Tailscale network and must bind only to an explicitly selected localhost or Tailscale address. If the API later leaves that trusted network, add TLS and a shared token before exposing it. Never write credentials or task contents to logs, and provide a documented way to export and delete tracker data.
+Task names and worklogs may expose customer names, work habits, and project details. Local databases and credentials should use owner-only permissions where the platform supports them. The initial server may trust a restricted Tailscale network and must bind only to an explicitly selected localhost or Tailscale address. If the API later leaves that trusted network, add TLS and a shared token before exposing it. Never write credentials or task contents to logs, and provide a documented way to export and delete tracker data.
 
-No user-management system is planned. A remote deployment is a single-tenant tracker. Network placement is not a substitute for database invariants: the server must enforce the one-active-entry rule even when two clients write concurrently.
+No user-management system is planned. A remote deployment is a single-tenant tracker. Network placement is not a substitute for database invariants: the server must enforce the one-active-worklog rule even when two clients write concurrently.
 
 ## Repository quality setup
 
@@ -183,7 +178,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 cargo mutants --workspace
 cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
-cargo crap --lcov lcov.info
+cargo crap --workspace --lcov lcov.info
 ```
 
 Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check. If Ratatui or Crossterm glue produces meaningless mutants, exclude only named functions and explain each exclusion in `AGENTS.md`.
@@ -248,20 +243,17 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 
 ### Interim checkpoint: domain and application separation
 
-- [ ] Rename `tracker-core` to `tracker-domain`; keep tasks, worklogs, tracking state, identifiers, value objects, and domain errors there.
-- [ ] Rename the persisted `TimeEntry` concept to `Worklog`, active while its end time is absent and completed once its end time is set. Use that term consistently in code, tests, and documentation.
-- [ ] Add `tracker-application` as a library crate that depends on `tracker-domain`, not on the TUI, SQLite, or HTTP.
-- [ ] Move repository ports out of the domain crate and into `tracker-application`; keep atomic switch requirements in their contracts and database implementation.
-- [ ] Move repository-backed task and tracking workflows out of `apps/tui/src/app.rs` behind backend-neutral task operations, tracking operations, worklog queries, outcomes, and errors.
-- [ ] Define the application-service boundary that the TUI uses in both local and future remote modes. Do not make the TUI depend directly on repository ports or `StorageError`.
-- [ ] Implement the local service with injected repository and client-clock ports; the future remote service will implement the same front-end boundary through HTTP.
-- [ ] Make application tracking operations accept explicit client-created timestamps. Keep monotonic elapsed-time calculation on the client and preserve the timestamp when a remote request is retried.
-- [ ] Keep task lists, selection, modes, input buffers, key handling, status presentation, and rendering in `tracker-tui`. Preserve the current feature set and do not add worklog browsing or remote-request states during this refactor.
-- [ ] Express tracking operations as desired state rather than a transport-level toggle: set the active task or clear the active task.
-- [ ] Keep `apps/tui/src/main.rs` as a thin composition entry point so later `tt`, `tt --endpoint`, and `tt serve` modes can wire different adapters without changing application workflows.
-- [ ] Preserve all current behavior and stored SQLite data, including monotonic elapsed timing, restart recovery, atomic switching, and cross-process conflict recovery.
-- [ ] Do not add HTTP, asynchronous execution, server modes, or synchronization metadata during this refactor.
-- [ ] Prove `tracker-domain` and `tracker-application` have no Ratatui, Crossterm, rusqlite, or HTTP dependency and retain the full quality checks.
+1. [ ] Capture the passing baseline and map every `TimeEntry`, `EntryId`, repository, clock, and storage dependency before moving code.
+2. [ ] Rename `tracker-core` to `tracker-domain` and adopt `Worklog`, `ActiveWorklog`, and `WorklogId` throughout the domain. Keep temporary compatibility aliases only while they are needed to keep component-scoped commits buildable.
+3. [ ] Add `tracker-application`, depending only on `tracker-domain`. Define backend-neutral task operations, tracking operations, worklog queries, outcomes, repository errors, and repository ports there.
+4. [ ] Move repository-backed workflows from `apps/tui/src/app.rs` into application use cases. Accept explicit client-created timestamps, expose `set_active_task` and `clear_active_task`, and keep atomic switching and conflict recovery out of presentation code.
+5. [ ] Adapt `tracker-storage` to the application repository ports. Rename storage terminology to worklogs and add a transactional migration if persisted table, index, or trigger names change; preserve every existing task and worklog.
+6. [ ] Adapt `tracker-tui` to application operations and errors. Keep the monotonic client clock, task list, selection, modes, input buffers, key handling, status text, and rendering in the TUI; remove direct dependencies on repository ports, `SqliteRepository`, and `StorageError` from TUI state.
+7. [ ] Reduce `apps/tui/src/main.rs` to composition: create the SQLite adapter, application service, and TUI. Preserve the path, seeding, terminal, and startup-error behavior.
+8. [ ] Remove transitional aliases and the old domain repository port. Verify the final dependency direction and prove `tracker-domain` and `tracker-application` have no Ratatui, Crossterm, rusqlite, or HTTP dependency.
+9. [ ] Run the full Rust, Python, mutation, coverage, CRAP, theme-audit, and real-binary PTY checks. Confirm existing SQLite data opens without loss and all user-visible behavior remains unchanged.
+
+This checkpoint does not add worklog browsing, HTTP, asynchronous execution, server modes, remote-request states, revisions, or synchronization metadata.
 
 ### Interim checkpoint: task browsing and ordering
 
@@ -270,7 +262,7 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 - [ ] Add explicit task creation and update timestamps. Define which events count as an update before changing the schema.
 - [ ] Add stable task ordering by creation time and last update time, with deterministic tie-breakers.
 - [ ] Add TUI controls for choosing the ordering and decide whether that choice lasts only for the current run or persists locally.
-- [ ] Migrate existing tasks without losing their archive state or time entries.
+- [ ] Migrate existing tasks without losing their archive state or worklogs.
 - [ ] Cover active and archived views, each ordering, migration behavior, and empty states in tests.
 
 ### Milestone 3: exclusive local or remote storage
