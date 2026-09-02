@@ -11,7 +11,8 @@ dirs = { workspace = true }
 libc = { workspace = true }
 rusqlite = { workspace = true }
 thiserror = { workspace = true }
-tracker-core = { path = "../tracker-core" }
+tracker-application = { path = "../tracker-application" }
+tracker-domain = { path = "../tracker-domain" }
 uuid = { workspace = true }
 
 [dev-dependencies]

@@ -1,6 +1,7 @@
 //! Errors reported by SQLite persistence.
 
-use tracker_core::{EntryId, TaskId};
+use tracker_application::RepositoryError;
+use tracker_domain::{TaskId, WorklogId};
 
 /// Why a storage operation failed.
 #[derive(Debug, thiserror::Error)]
@@ -8,26 +9,26 @@ pub enum StorageError {
     /// No task exists with this identifier.
     #[error("task {id} not found")]
     TaskNotFound { id: TaskId },
-    /// No time entry exists with this identifier.
-    #[error("time entry {id} not found")]
-    EntryNotFound { id: EntryId },
-    /// The entry already has an end time and cannot be stopped again.
-    #[error("time entry {id} is already stopped")]
-    EntryAlreadyStopped { id: EntryId },
-    /// An entry with this identifier is already stored.
-    #[error("time entry {id} already exists")]
-    EntryAlreadyExists { id: EntryId },
+    /// No worklog exists with this identifier.
+    #[error("worklog {id} not found")]
+    WorklogNotFound { id: WorklogId },
+    /// The worklog already has an end time and cannot be stopped again.
+    #[error("worklog {id} is already stopped")]
+    WorklogAlreadyStopped { id: WorklogId },
+    /// A worklog with this identifier is already stored.
+    #[error("worklog {id} already exists")]
+    WorklogAlreadyExists { id: WorklogId },
     /// A task with this identifier already exists.
     #[error("task {id} already exists")]
     TaskAlreadyExists { id: TaskId },
-    /// Another entry is already active; the database permits only one.
-    #[error("another time entry is already active")]
-    ActiveEntryExists,
-    /// The task is archived, so it cannot receive entries.
-    #[error("task {id} is archived and cannot receive entries")]
+    /// Another worklog is already active; the database permits only one.
+    #[error("another worklog is already active")]
+    ActiveWorklogExists,
+    /// The task is archived, so it cannot receive worklogs.
+    #[error("task {id} is archived and cannot receive worklogs")]
     TaskArchived { id: TaskId },
-    /// The task has an active entry, so it cannot be archived.
-    #[error("task {id} has an active entry and cannot be archived")]
+    /// The task has an active worklog, so it cannot be archived.
+    #[error("task {id} has an active worklog and cannot be archived")]
     TaskIsActive { id: TaskId },
     /// A database constraint rejected the write, such as an end time that
     /// precedes the start time.
@@ -69,6 +70,28 @@ pub enum StorageError {
     /// A filesystem error, such as creating the application data directory.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+}
+
+impl From<StorageError> for RepositoryError {
+    fn from(error: StorageError) -> Self {
+        match error {
+            StorageError::TaskNotFound { id } => Self::TaskNotFound { id },
+            StorageError::WorklogNotFound { id } => Self::WorklogNotFound { id },
+            StorageError::WorklogAlreadyStopped { id } => Self::WorklogAlreadyStopped { id },
+            StorageError::WorklogAlreadyExists { id } => Self::WorklogAlreadyExists { id },
+            StorageError::TaskAlreadyExists { id } => Self::TaskAlreadyExists { id },
+            StorageError::ActiveWorklogExists => Self::ActiveWorklogExists,
+            StorageError::TaskArchived { id } => Self::TaskArchived { id },
+            StorageError::TaskIsActive { id } => Self::TaskIsActive { id },
+            error @ StorageError::Constraint(_) => Self::Constraint {
+                message: error.to_string(),
+            },
+            StorageError::CorruptData(field) => Self::CorruptData { field },
+            other => Self::Backend {
+                message: other.to_string(),
+            },
+        }
+    }
 }
 
 /// Returns the SQLite extended result code when the error is an SQLite
@@ -130,29 +153,33 @@ pub(crate) fn create_task_error(error: rusqlite::Error, id: TaskId) -> StorageEr
     }
 }
 
-/// Maps an `insert_entry` error.
+/// Maps an `insert_worklog` error.
 ///
-/// Duplicate entry keys, the single-active-entry rule, the task foreign key,
+/// Duplicate worklog keys, the single-active-worklog rule, the task foreign key,
 /// and the archived-task trigger each produce their own violations;
 /// everything else stays generic.
-pub(crate) fn insert_entry_error(
+pub(crate) fn insert_worklog_error(
     error: rusqlite::Error,
-    entry: &tracker_core::TimeEntry,
+    worklog: &tracker_domain::Worklog,
 ) -> StorageError {
     if is_trigger_violation(&error)
         && failure_message(&error) == Some(crate::migrate::TRIGGER_TASK_ARCHIVED)
     {
-        return StorageError::TaskArchived { id: entry.task_id };
+        return StorageError::TaskArchived {
+            id: worklog.task_id,
+        };
     }
     if is_foreign_key_violation(&error) {
-        return StorageError::TaskNotFound { id: entry.task_id };
+        return StorageError::TaskNotFound {
+            id: worklog.task_id,
+        };
     }
     if is_unique_violation(&error) {
         return match failure_message(&error) {
-            Some(message) if message.contains("time_entries.id") => {
-                StorageError::EntryAlreadyExists { id: entry.id }
+            Some(message) if message.contains("worklogs.id") => {
+                StorageError::WorklogAlreadyExists { id: worklog.id }
             }
-            _ => StorageError::ActiveEntryExists,
+            _ => StorageError::ActiveWorklogExists,
         };
     }
     classify_write_error(error)
@@ -173,7 +200,7 @@ pub(crate) fn archive_task_error(error: rusqlite::Error, id: TaskId) -> StorageE
 mod tests {
     use super::*;
     use std::error::Error as _;
-    use tracker_core::TimeEntry;
+    use tracker_domain::Worklog;
 
     #[test]
     fn constraint_error_keeps_its_source_and_displays_plain_text() {
@@ -244,9 +271,9 @@ mod tests {
         rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), message.map(str::to_owned))
     }
 
-    fn entry(entry_tag: u32, task_tag: u32) -> TimeEntry {
-        TimeEntry::begin(
-            EntryId::from_uuid(uuid::Uuid::from_u128(u128::from(entry_tag))),
+    fn worklog(worklog_tag: u32, task_tag: u32) -> Worklog {
+        Worklog::begin(
+            WorklogId::from_uuid(uuid::Uuid::from_u128(u128::from(worklog_tag))),
             TaskId::from_uuid(uuid::Uuid::from_u128(u128::from(task_tag))),
             chrono::DateTime::from_timestamp(0, 0).unwrap(),
         )
@@ -274,72 +301,72 @@ mod tests {
     }
 
     #[test]
-    fn insert_entry_errors_map_each_expected_violation() {
-        let entry = entry(10, 2);
+    fn insert_worklog_errors_map_each_expected_violation() {
+        let worklog = worklog(10, 2);
         assert!(matches!(
-            insert_entry_error(
+            insert_worklog_error(
                 failure(
                     rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER,
                     Some(crate::migrate::TRIGGER_TASK_ARCHIVED)
                 ),
-                &entry
+                &worklog
             ),
-            StorageError::TaskArchived { id } if id == entry.task_id
+            StorageError::TaskArchived { id } if id == worklog.task_id
         ));
         assert!(matches!(
-            insert_entry_error(
+            insert_worklog_error(
                 failure(
                     rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER,
                     Some("something else")
                 ),
-                &entry
+                &worklog
             ),
             StorageError::Sql(_)
         ));
         assert!(matches!(
-            insert_entry_error(
+            insert_worklog_error(
                 failure(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY, None),
-                &entry
+                &worklog
             ),
-            StorageError::TaskNotFound { id } if id == entry.task_id
+            StorageError::TaskNotFound { id } if id == worklog.task_id
         ));
         assert!(matches!(
-            insert_entry_error(
+            insert_worklog_error(
                 failure(
                     rusqlite::ffi::SQLITE_CONSTRAINT_PRIMARYKEY,
-                    Some("UNIQUE constraint failed: time_entries.id")
+                    Some("UNIQUE constraint failed: worklogs.id")
                 ),
-                &entry
+                &worklog
             ),
-            StorageError::EntryAlreadyExists { id } if id == entry.id
+            StorageError::WorklogAlreadyExists { id } if id == worklog.id
         ));
         assert!(matches!(
-            insert_entry_error(
+            insert_worklog_error(
                 failure(
                     rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE,
-                    Some("UNIQUE constraint failed: index 'time_entries_single_active'")
+                    Some("UNIQUE constraint failed: index 'worklogs_single_active'")
                 ),
-                &entry
+                &worklog
             ),
-            StorageError::ActiveEntryExists
+            StorageError::ActiveWorklogExists
         ));
         // A unique violation without a parseable message keeps the
-        // single-active-entry meaning the insert path always had.
+        // single-active-worklog meaning the insert path always had.
         assert!(matches!(
-            insert_entry_error(
+            insert_worklog_error(
                 failure(rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE, None),
-                &entry
+                &worklog
             ),
-            StorageError::ActiveEntryExists
+            StorageError::ActiveWorklogExists
         ));
         assert!(matches!(
-            insert_entry_error(rusqlite::Error::InvalidQuery, &entry),
+            insert_worklog_error(rusqlite::Error::InvalidQuery, &worklog),
             StorageError::Sql(_)
         ));
         assert!(matches!(
-            insert_entry_error(
+            insert_worklog_error(
                 failure(rusqlite::ffi::SQLITE_CONSTRAINT_CHECK, None),
-                &entry
+                &worklog
             ),
             StorageError::Constraint(_)
         ));
@@ -380,19 +407,19 @@ mod tests {
 
     #[test]
     fn new_error_variants_display_concise_text() {
-        let entry_id = EntryId::from_uuid(uuid::Uuid::from_u128(5));
+        let worklog_id = WorklogId::from_uuid(uuid::Uuid::from_u128(5));
         let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(6));
         assert_eq!(
-            StorageError::EntryAlreadyExists { id: entry_id }.to_string(),
-            format!("time entry {entry_id} already exists")
+            StorageError::WorklogAlreadyExists { id: worklog_id }.to_string(),
+            format!("worklog {worklog_id} already exists")
         );
         assert_eq!(
             StorageError::TaskArchived { id: task_id }.to_string(),
-            format!("task {task_id} is archived and cannot receive entries")
+            format!("task {task_id} is archived and cannot receive worklogs")
         );
         assert_eq!(
             StorageError::TaskIsActive { id: task_id }.to_string(),
-            format!("task {task_id} has an active entry and cannot be archived")
+            format!("task {task_id} has an active worklog and cannot be archived")
         );
         assert_eq!(
             StorageError::DatabaseTooNew {

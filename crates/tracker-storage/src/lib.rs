@@ -1,12 +1,12 @@
 //! SQLite persistence for the Time Tracker.
 //!
-//! [`SqliteRepository`] implements [`TrackerRepository`] from `tracker-core`
-//! with a bundled SQLite database. The schema is created and upgraded by
+//! [`SqliteRepository`] implements the repository ports from
+//! `tracker-application` with a bundled SQLite database. The schema is created and upgraded by
 //! migrations, and database-level rules back the domain invariants: at most
-//! one active time entry, no stopped entry whose end precedes its start, no
-//! entries on archived tasks, and no archiving of a task with an active
-//! entry. This crate depends on `tracker-core` and on SQLite, never the
-//! other way around.
+//! one active worklog, no stopped worklog whose end precedes its start, no
+//! worklogs on archived tasks, and no archiving of a task with an active
+//! worklog. This crate depends on the application and domain crates, never
+//! the other way around.
 
 mod error;
 mod migrate;
@@ -18,7 +18,8 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior};
-use tracker_core::{EntryId, Task, TaskId, TaskName, TimeEntry, TimeEntryError, TrackerRepository};
+use tracker_application::{RepositoryError, TaskRepository, TrackingRepository, WorklogRepository};
+use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogError, WorklogId};
 
 pub use error::StorageError;
 pub use paths::{app_data_dir, default_database_path, ensure_app_data_dir};
@@ -45,8 +46,8 @@ fn task_id_from_stored(value: &str) -> Result<TaskId, StorageError> {
     TaskId::from_str(value).map_err(StorageError::InvalidId)
 }
 
-fn entry_id_from_stored(value: &str) -> Result<EntryId, StorageError> {
-    EntryId::from_str(value).map_err(StorageError::InvalidId)
+fn worklog_id_from_stored(value: &str) -> Result<WorklogId, StorageError> {
+    WorklogId::from_str(value).map_err(StorageError::InvalidId)
 }
 
 /// Builds a task from stored columns, rejecting values that break domain
@@ -59,23 +60,23 @@ fn task_from_stored(id: String, name: String, archived: bool) -> Result<Task, St
     })
 }
 
-/// Builds a time entry from stored columns, rejecting values that break
+/// Builds a worklog from stored columns, rejecting values that break
 /// domain rules.
-fn entry_from_stored(
+fn worklog_from_stored(
     id: String,
     task_id: String,
     start_us: i64,
     end_us: Option<i64>,
-) -> Result<TimeEntry, StorageError> {
+) -> Result<Worklog, StorageError> {
     let end = end_us.map(us_to_timestamp).transpose()?;
-    TimeEntry::new(
-        entry_id_from_stored(&id)?,
+    Worklog::new(
+        worklog_id_from_stored(&id)?,
         task_id_from_stored(&task_id)?,
         us_to_timestamp(start_us)?,
         end,
     )
     .map_err(|error| match error {
-        TimeEntryError::EndBeforeStart => StorageError::CorruptData("entry interval"),
+        WorklogError::EndBeforeStart => StorageError::CorruptData("worklog interval"),
     })
 }
 
@@ -84,8 +85,8 @@ fn raw_task(row: &Row<'_>) -> rusqlite::Result<(String, String, bool)> {
     Ok((row.get("id")?, row.get("name")?, row.get("archived")?))
 }
 
-/// Extracts the raw time entry columns from a row.
-fn raw_entry(row: &Row<'_>) -> rusqlite::Result<(String, String, i64, Option<i64>)> {
+/// Extracts the raw worklog columns from a row.
+fn raw_worklog(row: &Row<'_>) -> rusqlite::Result<(String, String, i64, Option<i64>)> {
     Ok((
         row.get("id")?,
         row.get("task_id")?,
@@ -143,14 +144,16 @@ impl SqliteRepository {
             .transpose()
     }
 
-    fn entry_by_id(&self, id: EntryId) -> Result<Option<TimeEntry>, StorageError> {
+    fn worklog_by_id(&self, id: WorklogId) -> Result<Option<Worklog>, StorageError> {
         let mut statement = self
             .conn
-            .prepare("SELECT id, task_id, start_us, end_us FROM time_entries WHERE id = ?1")?;
+            .prepare("SELECT id, task_id, start_us, end_us FROM worklogs WHERE id = ?1")?;
         statement
-            .query_row([id.to_string()], raw_entry)
+            .query_row([id.to_string()], raw_worklog)
             .optional()?
-            .map(|(id, task_id, start_us, end_us)| entry_from_stored(id, task_id, start_us, end_us))
+            .map(|(id, task_id, start_us, end_us)| {
+                worklog_from_stored(id, task_id, start_us, end_us)
+            })
             .transpose()
     }
 
@@ -197,17 +200,15 @@ impl SqliteRepository {
     /// Gives direct access to the SQLite connection for diagnostics and
     /// schema-level tests.
     ///
-    /// This is not part of the [`TrackerRepository`] contract. Callers that
-    /// only read or write through the trait methods never need it.
+    /// This is not part of the application repository ports. Callers that
+    /// only use those ports never need it.
     pub fn connection(&self) -> &Connection {
         &self.conn
     }
 }
 
-impl TrackerRepository for SqliteRepository {
-    type Error = StorageError;
-
-    fn create_task(&self, task: Task) -> Result<(), Self::Error> {
+impl SqliteRepository {
+    pub fn create_task(&self, task: Task) -> Result<(), StorageError> {
         self.conn
             .execute(
                 "INSERT INTO tasks (id, name, archived) VALUES (?1, ?2, ?3)",
@@ -217,11 +218,11 @@ impl TrackerRepository for SqliteRepository {
             .map_err(|error| error::create_task_error(error, task.id))
     }
 
-    fn find_task(&self, id: TaskId) -> Result<Option<Task>, Self::Error> {
+    pub fn find_task(&self, id: TaskId) -> Result<Option<Task>, StorageError> {
         self.task_by_id(id)
     }
 
-    fn list_tasks(&self) -> Result<Vec<Task>, Self::Error> {
+    pub fn list_tasks(&self) -> Result<Vec<Task>, StorageError> {
         let mut statement = self
             .conn
             .prepare("SELECT id, name, archived FROM tasks ORDER BY id")?;
@@ -234,7 +235,7 @@ impl TrackerRepository for SqliteRepository {
         Ok(tasks)
     }
 
-    fn rename_task(&self, id: TaskId, name: TaskName) -> Result<Task, Self::Error> {
+    pub fn rename_task(&self, id: TaskId, name: TaskName) -> Result<Task, StorageError> {
         let mut statement = self.conn.prepare(
             "UPDATE tasks SET name = ?1 WHERE id = ?2
              RETURNING id, name, archived",
@@ -247,7 +248,7 @@ impl TrackerRepository for SqliteRepository {
             .ok_or(StorageError::TaskNotFound { id })
     }
 
-    fn archive_task(&self, id: TaskId) -> Result<Task, Self::Error> {
+    pub fn archive_task(&self, id: TaskId) -> Result<Task, StorageError> {
         let mut statement = self.conn.prepare(
             "UPDATE tasks SET archived = TRUE WHERE id = ?1
              RETURNING id, name, archived",
@@ -259,96 +260,98 @@ impl TrackerRepository for SqliteRepository {
         }
     }
 
-    fn insert_entry(&self, entry: &TimeEntry) -> Result<(), Self::Error> {
-        let end_us = entry.end.map(timestamp_to_us);
+    pub fn insert_worklog(&self, worklog: &Worklog) -> Result<(), StorageError> {
+        let end_us = worklog.end.map(timestamp_to_us);
         self.conn
             .execute(
-                "INSERT INTO time_entries (id, task_id, start_us, end_us) VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![
-                    entry.id.to_string(),
-                    entry.task_id.to_string(),
-                    timestamp_to_us(entry.start),
+                    worklog.id.to_string(),
+                    worklog.task_id.to_string(),
+                    timestamp_to_us(worklog.start),
                     end_us,
                 ],
             )
             .map(|_| ())
-            .map_err(|error| error::insert_entry_error(error, entry))
+            .map_err(|error| error::insert_worklog_error(error, worklog))
     }
 
-    fn stop_entry(&self, id: EntryId, end: DateTime<Utc>) -> Result<TimeEntry, Self::Error> {
+    pub fn stop_worklog(&self, id: WorklogId, end: DateTime<Utc>) -> Result<Worklog, StorageError> {
         let mut statement = self.conn.prepare(
-            "UPDATE time_entries SET end_us = ?1 WHERE id = ?2 AND end_us IS NULL
+            "UPDATE worklogs SET end_us = ?1 WHERE id = ?2 AND end_us IS NULL
              RETURNING id, task_id, start_us, end_us",
         )?;
         match statement
             .query_row(
                 rusqlite::params![timestamp_to_us(end), id.to_string()],
-                raw_entry,
+                raw_worklog,
             )
             .optional()
         {
-            Ok(Some(raw)) => Ok(entry_from_stored(raw.0, raw.1, raw.2, raw.3)?),
+            Ok(Some(raw)) => Ok(worklog_from_stored(raw.0, raw.1, raw.2, raw.3)?),
             Ok(None) => {
-                if self.entry_by_id(id)?.is_some() {
-                    Err(StorageError::EntryAlreadyStopped { id })
+                if self.worklog_by_id(id)?.is_some() {
+                    Err(StorageError::WorklogAlreadyStopped { id })
                 } else {
-                    Err(StorageError::EntryNotFound { id })
+                    Err(StorageError::WorklogNotFound { id })
                 }
             }
             Err(error) => Err(error::classify_write_error(error)),
         }
     }
 
-    fn active_entry(&self) -> Result<Option<TimeEntry>, Self::Error> {
-        let mut statement = self.conn.prepare(
-            "SELECT id, task_id, start_us, end_us FROM time_entries WHERE end_us IS NULL",
-        )?;
+    pub fn active_worklog(&self) -> Result<Option<Worklog>, StorageError> {
+        let mut statement = self
+            .conn
+            .prepare("SELECT id, task_id, start_us, end_us FROM worklogs WHERE end_us IS NULL")?;
         statement
-            .query_row([], raw_entry)
+            .query_row([], raw_worklog)
             .optional()?
-            .map(|(id, task_id, start_us, end_us)| entry_from_stored(id, task_id, start_us, end_us))
+            .map(|(id, task_id, start_us, end_us)| {
+                worklog_from_stored(id, task_id, start_us, end_us)
+            })
             .transpose()
     }
 
-    fn list_entries(&self, task_id: TaskId) -> Result<Vec<TimeEntry>, Self::Error> {
+    pub fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, StorageError> {
         let mut statement = self.conn.prepare(
-            "SELECT id, task_id, start_us, end_us FROM time_entries
+            "SELECT id, task_id, start_us, end_us FROM worklogs
              WHERE task_id = ?1
              ORDER BY start_us, id",
         )?;
         let mut rows = statement.query([task_id.to_string()])?;
-        let mut entries = Vec::new();
+        let mut worklogs = Vec::new();
         while let Some(row) = rows.next()? {
-            let (id, task_id, start_us, end_us) = raw_entry(row)?;
-            entries.push(entry_from_stored(id, task_id, start_us, end_us)?);
+            let (id, task_id, start_us, end_us) = raw_worklog(row)?;
+            worklogs.push(worklog_from_stored(id, task_id, start_us, end_us)?);
         }
-        Ok(entries)
+        Ok(worklogs)
     }
 
-    fn switch_entry(
+    pub fn switch_worklog(
         &self,
-        id: EntryId,
+        id: WorklogId,
         stop_at: DateTime<Utc>,
-        next: &TimeEntry,
-    ) -> Result<(), Self::Error> {
+        next: &Worklog,
+    ) -> Result<(), StorageError> {
         let transaction = self.conn.unchecked_transaction()?;
         let stopped = transaction.execute(
-            "UPDATE time_entries SET end_us = ?1 WHERE id = ?2 AND end_us IS NULL",
+            "UPDATE worklogs SET end_us = ?1 WHERE id = ?2 AND end_us IS NULL",
             rusqlite::params![timestamp_to_us(stop_at), id.to_string()],
         );
         match stopped {
             Ok(1) => {}
             Ok(_) => {
-                if self.entry_by_id(id)?.is_some() {
-                    return Err(StorageError::EntryAlreadyStopped { id });
+                if self.worklog_by_id(id)?.is_some() {
+                    return Err(StorageError::WorklogAlreadyStopped { id });
                 }
-                return Err(StorageError::EntryNotFound { id });
+                return Err(StorageError::WorklogNotFound { id });
             }
             Err(error) => return Err(error::classify_write_error(error)),
         }
         let end_us = next.end.map(timestamp_to_us);
         if let Err(error) = transaction.execute(
-            "INSERT INTO time_entries (id, task_id, start_us, end_us) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![
                 next.id.to_string(),
                 next.task_id.to_string(),
@@ -356,10 +359,61 @@ impl TrackerRepository for SqliteRepository {
                 end_us,
             ],
         ) {
-            return Err(error::insert_entry_error(error, next));
+            return Err(error::insert_worklog_error(error, next));
         }
         transaction.commit()?;
         Ok(())
+    }
+}
+
+impl TaskRepository for SqliteRepository {
+    fn create_task(&self, task: Task) -> Result<(), RepositoryError> {
+        SqliteRepository::create_task(self, task).map_err(Into::into)
+    }
+
+    fn find_task(&self, id: TaskId) -> Result<Option<Task>, RepositoryError> {
+        SqliteRepository::find_task(self, id).map_err(Into::into)
+    }
+
+    fn list_tasks(&self) -> Result<Vec<Task>, RepositoryError> {
+        SqliteRepository::list_tasks(self).map_err(Into::into)
+    }
+
+    fn rename_task(&self, id: TaskId, name: TaskName) -> Result<Task, RepositoryError> {
+        SqliteRepository::rename_task(self, id, name).map_err(Into::into)
+    }
+
+    fn archive_task(&self, id: TaskId) -> Result<Task, RepositoryError> {
+        SqliteRepository::archive_task(self, id).map_err(Into::into)
+    }
+}
+
+impl TrackingRepository for SqliteRepository {
+    fn insert_worklog(&self, worklog: &Worklog) -> Result<(), RepositoryError> {
+        SqliteRepository::insert_worklog(self, worklog).map_err(Into::into)
+    }
+
+    fn stop_worklog(&self, id: WorklogId, end: DateTime<Utc>) -> Result<Worklog, RepositoryError> {
+        SqliteRepository::stop_worklog(self, id, end).map_err(Into::into)
+    }
+
+    fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError> {
+        SqliteRepository::active_worklog(self).map_err(Into::into)
+    }
+
+    fn switch_worklog(
+        &self,
+        id: WorklogId,
+        stop_at: DateTime<Utc>,
+        next: &Worklog,
+    ) -> Result<(), RepositoryError> {
+        SqliteRepository::switch_worklog(self, id, stop_at, next).map_err(Into::into)
+    }
+}
+
+impl WorklogRepository for SqliteRepository {
+    fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, RepositoryError> {
+        SqliteRepository::list_worklogs(self, task_id).map_err(Into::into)
     }
 }
 
@@ -386,9 +440,9 @@ mod tests {
         let task_id = TaskId::generate();
         let restored = task_id_from_stored(&task_id.to_string()).unwrap();
         assert_eq!(restored, task_id);
-        let entry_id = EntryId::generate();
-        let restored = entry_id_from_stored(&entry_id.to_string()).unwrap();
-        assert_eq!(restored, entry_id);
+        let worklog_id = WorklogId::generate();
+        let restored = worklog_id_from_stored(&worklog_id.to_string()).unwrap();
+        assert_eq!(restored, worklog_id);
         assert!(matches!(
             task_id_from_stored("not-a-uuid"),
             Err(StorageError::InvalidId(_))
@@ -422,15 +476,18 @@ mod tests {
     }
 
     #[test]
-    fn stored_entry_values_reject_a_backwards_interval() {
-        let error = entry_from_stored(
-            EntryId::generate().to_string(),
+    fn stored_worklog_values_reject_a_backwards_interval() {
+        let error = worklog_from_stored(
+            WorklogId::generate().to_string(),
             TaskId::generate().to_string(),
             200,
             Some(100),
         )
         .expect_err("end before start is corrupt");
-        assert!(matches!(error, StorageError::CorruptData("entry interval")));
+        assert!(matches!(
+            error,
+            StorageError::CorruptData("worklog interval")
+        ));
     }
 
     #[test]

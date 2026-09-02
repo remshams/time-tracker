@@ -8,9 +8,12 @@ use std::thread;
 
 use chrono::{DateTime, Utc};
 use tempfile::TempDir;
-use tracker_core::{
-    ActiveEntry, EntryId, Task, TaskId, TaskName, TimeEntry, Tracker, TrackerRepository,
-    TrackingError, TrackingOutcome, TrackingState,
+use tracker_application::{
+    ClearActiveTaskOutcome, SetActiveTaskOutcome, TrackerApplication, TrackingOperations,
+};
+use tracker_domain::{
+    ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingError, TrackingOutcome, TrackingState,
+    Worklog, WorklogId,
 };
 use tracker_storage::{SqliteRepository, StorageError};
 
@@ -23,8 +26,8 @@ fn task_id(tag: u32) -> TaskId {
     TaskId::from_uuid(uuid::Uuid::from_u128(u128::from(tag)))
 }
 
-fn entry_id(tag: u32) -> EntryId {
-    EntryId::from_uuid(uuid::Uuid::from_u128(u128::from(tag)))
+fn worklog_id(tag: u32) -> WorklogId {
+    WorklogId::from_uuid(uuid::Uuid::from_u128(u128::from(tag)))
 }
 
 fn named_task(tag: u32, name: &str) -> Task {
@@ -64,18 +67,16 @@ fn migrations_create_the_schema_triggers_and_are_idempotent() {
     assert_eq!(tasks[0].name.as_str(), "first");
     let objects: Vec<(String, String)> = reopened
         .connection()
-        .prepare(
-            "SELECT name, type FROM sqlite_master WHERE name LIKE 'time_entries%' ORDER BY name",
-        )
+        .prepare("SELECT name, type FROM sqlite_master WHERE name LIKE 'worklogs%' ORDER BY name")
         .unwrap()
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
         .unwrap()
         .filter_map(Result::ok)
         .collect();
-    assert!(objects.contains(&("time_entries".to_owned(), "table".to_owned())));
-    assert!(objects.contains(&("time_entries_task_start".to_owned(), "index".to_owned())));
+    assert!(objects.contains(&("worklogs".to_owned(), "table".to_owned())));
+    assert!(objects.contains(&("worklogs_task_start".to_owned(), "index".to_owned())));
     assert!(objects.contains(&(
-        "time_entries_reject_archived_task".to_owned(),
+        "worklogs_reject_archived_task".to_owned(),
         "trigger".to_owned()
     )));
 }
@@ -121,10 +122,10 @@ fn a_failed_migration_rolls_back_and_leaves_the_version() {
         repository
             .connection()
             .execute_batch(
-                "DROP TRIGGER time_entries_reject_archived_task;
+                "DROP TRIGGER worklogs_reject_archived_task;
                  DROP TRIGGER tasks_reject_archive_while_active;
-                 CREATE TRIGGER time_entries_reject_archived_task
-                 BEFORE INSERT ON time_entries
+                 CREATE TRIGGER worklogs_reject_archived_task
+                 BEFORE INSERT ON worklogs
                  BEGIN SELECT RAISE(ABORT, 'occupied'); END;
                  PRAGMA user_version = 1;",
             )
@@ -166,6 +167,47 @@ fn simultaneous_first_opens_of_one_database_all_complete() {
     let repository = SqliteRepository::open(&path).unwrap();
     assert_eq!(user_version(&repository), 2, "migrations ran exactly once");
     assert_eq!(repository.list_tasks().unwrap().len(), 8);
+}
+
+#[test]
+fn application_tracking_operations_use_the_sqlite_ports() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let alpha = named_task(1, "alpha");
+    let beta = named_task(2, "beta");
+    let setup = SqliteRepository::open(&path).unwrap();
+    setup.create_task(alpha.clone()).unwrap();
+    setup.create_task(beta.clone()).unwrap();
+    drop(setup);
+
+    let repository = SqliteRepository::open(&path).unwrap();
+    let mut application = TrackerApplication::load(repository).unwrap();
+    assert!(matches!(
+        application.set_active_task(alpha.id, at(100)).unwrap(),
+        SetActiveTaskOutcome::Started { worklog } if worklog.start == at(100)
+    ));
+    assert!(matches!(
+        application.set_active_task(alpha.id, at(110)).unwrap(),
+        SetActiveTaskOutcome::AlreadyActive { .. }
+    ));
+    assert!(matches!(
+        application.set_active_task(beta.id, at(150)).unwrap(),
+        SetActiveTaskOutcome::Switched { stopped, started }
+            if stopped.end == Some(at(150)) && started.start == at(150)
+    ));
+    assert!(matches!(
+        application.clear_active_task(at(200)).unwrap(),
+        ClearActiveTaskOutcome::Stopped { worklog } if worklog.end == Some(at(200))
+    ));
+    assert_eq!(
+        application.clear_active_task(at(250)).unwrap(),
+        ClearActiveTaskOutcome::AlreadyIdle
+    );
+
+    let stored = SqliteRepository::open(&path).unwrap();
+    assert_eq!(stored.active_worklog().unwrap(), None);
+    assert_eq!(stored.list_worklogs(alpha.id).unwrap().len(), 1);
+    assert_eq!(stored.list_worklogs(beta.id).unwrap().len(), 1);
 }
 
 #[test]
@@ -225,118 +267,118 @@ fn start_and_stop_persist_and_report_failures() {
     repository.create_task(task.clone()).unwrap();
 
     let started = tracker.start(&task, at(100)).unwrap();
-    repository.insert_entry(&started).unwrap();
-    assert_eq!(repository.active_entry().unwrap(), Some(started.clone()));
+    repository.insert_worklog(&started).unwrap();
+    assert_eq!(repository.active_worklog().unwrap(), Some(started.clone()));
 
     let stopped = tracker.stop(at(150)).unwrap();
-    let stored = repository.stop_entry(stopped.id, at(150)).unwrap();
+    let stored = repository.stop_worklog(stopped.id, at(150)).unwrap();
     assert_eq!(stored.id, started.id);
     assert_eq!(stored.start, at(100));
     assert_eq!(stored.end, Some(at(150)));
-    assert_eq!(repository.active_entry().unwrap(), None);
-    assert_eq!(repository.list_entries(task_id(1)).unwrap(), vec![stored]);
+    assert_eq!(repository.active_worklog().unwrap(), None);
+    assert_eq!(repository.list_worklogs(task_id(1)).unwrap(), vec![stored]);
 
-    // Stopping a missing entry reports which one.
-    let missing = entry_id(77);
+    // Stopping a missing worklog reports which one.
+    let missing = worklog_id(77);
     assert!(matches!(
-        repository.stop_entry(missing, at(200)),
-        Err(StorageError::EntryNotFound { id }) if id == missing
+        repository.stop_worklog(missing, at(200)),
+        Err(StorageError::WorklogNotFound { id }) if id == missing
     ));
-    // Stopping a stopped entry reports the conflict.
+    // Stopping a stopped worklog reports the conflict.
     assert!(matches!(
-        repository.stop_entry(started.id, at(200)),
-        Err(StorageError::EntryAlreadyStopped { id }) if id == started.id
+        repository.stop_worklog(started.id, at(200)),
+        Err(StorageError::WorklogAlreadyStopped { id }) if id == started.id
     ));
     // A backwards end time is rejected by the database.
     let mut tracker = Tracker::idle();
-    let entry = tracker.start(&task, at(300)).unwrap();
-    repository.insert_entry(&entry).unwrap();
+    let worklog = tracker.start(&task, at(300)).unwrap();
+    repository.insert_worklog(&worklog).unwrap();
     let error = repository
-        .stop_entry(entry.id, at(299))
+        .stop_worklog(worklog.id, at(299))
         .expect_err("end before start must fail");
     assert!(matches!(error, StorageError::Constraint(_)));
-    assert_eq!(repository.active_entry().unwrap().unwrap().id, entry.id);
+    assert_eq!(repository.active_worklog().unwrap().unwrap().id, worklog.id);
 }
 
 #[test]
-fn inserting_a_second_active_entry_is_rejected_by_the_database() {
+fn inserting_a_second_active_worklog_is_rejected_by_the_database() {
     let repository = repo();
     let task = named_task(1, "work");
     repository.create_task(task.clone()).unwrap();
     let mut tracker = Tracker::idle();
     let first = tracker.start(&task, at(100)).unwrap();
-    repository.insert_entry(&first).unwrap();
+    repository.insert_worklog(&first).unwrap();
 
-    let second = TimeEntry::begin(entry_id(42), task.id, at(200));
+    let second = Worklog::begin(worklog_id(42), task.id, at(200));
     let error = repository
-        .insert_entry(&second)
-        .expect_err("second active entry must fail");
-    assert!(matches!(error, StorageError::ActiveEntryExists));
-    // The first entry is still the only active one.
-    assert_eq!(repository.active_entry().unwrap(), Some(first.clone()));
+        .insert_worklog(&second)
+        .expect_err("second active worklog must fail");
+    assert!(matches!(error, StorageError::ActiveWorklogExists));
+    // The first worklog is still the only active one.
+    assert_eq!(repository.active_worklog().unwrap(), Some(first.clone()));
 
-    // An entry for a missing task is rejected as a missing task. The first
-    // entry is stopped first so the active-entry rule cannot mask the
+    // An worklog for a missing task is rejected as a missing task. The first
+    // worklog is stopped first so the active-worklog rule cannot mask the
     // foreign-key failure.
     tracker.stop(at(200)).unwrap();
-    repository.stop_entry(first.id, at(200)).unwrap();
-    let orphan = TimeEntry::begin(entry_id(43), task_id(99), at(300));
+    repository.stop_worklog(first.id, at(200)).unwrap();
+    let orphan = Worklog::begin(worklog_id(43), task_id(99), at(300));
     assert!(matches!(
-        repository.insert_entry(&orphan),
+        repository.insert_worklog(&orphan),
         Err(StorageError::TaskNotFound { id }) if id == task_id(99)
     ));
 }
 
 #[test]
-fn a_duplicate_entry_id_is_distinct_from_the_active_entry_conflict() {
+fn a_duplicate_worklog_id_is_distinct_from_the_active_worklog_conflict() {
     let repository = repo();
     let task = named_task(1, "work");
     repository.create_task(task.clone()).unwrap();
     let mut tracker = Tracker::idle();
     let first = tracker.start(&task, at(100)).unwrap();
-    repository.insert_entry(&first).unwrap();
+    repository.insert_worklog(&first).unwrap();
 
-    // A stopped entry reusing a stored id hits the primary key, not the
+    // A stopped worklog reusing a stored id hits the primary key, not the
     // single-active rule.
-    let duplicate = TimeEntry::new(first.id, task.id, at(500), Some(at(600))).unwrap();
+    let duplicate = Worklog::new(first.id, task.id, at(500), Some(at(600))).unwrap();
     let error = repository
-        .insert_entry(&duplicate)
+        .insert_worklog(&duplicate)
         .expect_err("a stored id must not be inserted twice");
     assert!(matches!(
         error,
-        StorageError::EntryAlreadyExists { id } if id == first.id
+        StorageError::WorklogAlreadyExists { id } if id == first.id
     ));
 
-    // A fresh id while another entry is active hits the single-active rule.
-    let second_active = TimeEntry::begin(entry_id(42), task.id, at(200));
+    // A fresh id while another worklog is active hits the single-active rule.
+    let second_active = Worklog::begin(worklog_id(42), task.id, at(200));
     let error = repository
-        .insert_entry(&second_active)
-        .expect_err("two active entries cannot coexist");
-    assert!(matches!(error, StorageError::ActiveEntryExists));
-    assert_eq!(repository.active_entry().unwrap(), Some(first.clone()));
-    assert_eq!(repository.list_entries(task.id).unwrap().len(), 1);
+        .insert_worklog(&second_active)
+        .expect_err("two active worklogs cannot coexist");
+    assert!(matches!(error, StorageError::ActiveWorklogExists));
+    assert_eq!(repository.active_worklog().unwrap(), Some(first.clone()));
+    assert_eq!(repository.list_worklogs(task.id).unwrap().len(), 1);
 }
 
 #[test]
-fn an_archived_task_rejects_entries_at_the_database_level() {
+fn an_archived_task_rejects_worklogs_at_the_database_level() {
     let repository = repo();
     let task = named_task(1, "done");
     repository.create_task(task.clone()).unwrap();
     repository.archive_task(task.id).unwrap();
 
-    // A stopped entry is also refused: archived tasks receive nothing.
-    let stopped = TimeEntry::new(entry_id(42), task.id, at(100), Some(at(150))).unwrap();
+    // A stopped worklog is also refused: archived tasks receive nothing.
+    let stopped = Worklog::new(worklog_id(42), task.id, at(100), Some(at(150))).unwrap();
     let error = repository
-        .insert_entry(&stopped)
-        .expect_err("archived tasks cannot receive entries");
+        .insert_worklog(&stopped)
+        .expect_err("archived tasks cannot receive worklogs");
     assert!(matches!(
         error,
         StorageError::TaskArchived { id } if id == task.id
     ));
 
-    let active = TimeEntry::begin(entry_id(43), task.id, at(200));
+    let active = Worklog::begin(worklog_id(43), task.id, at(200));
     let error = repository
-        .insert_entry(&active)
+        .insert_worklog(&active)
         .expect_err("archived tasks cannot become active");
     assert!(matches!(
         error,
@@ -344,18 +386,18 @@ fn an_archived_task_rejects_entries_at_the_database_level() {
     ));
 
     // Error state: nothing was written.
-    assert!(repository.list_entries(task.id).unwrap().is_empty());
-    assert_eq!(repository.active_entry().unwrap(), None);
+    assert!(repository.list_worklogs(task.id).unwrap().is_empty());
+    assert_eq!(repository.active_worklog().unwrap(), None);
 }
 
 #[test]
-fn a_task_with_an_active_entry_cannot_be_archived() {
+fn a_task_with_an_active_worklog_cannot_be_archived() {
     let repository = repo();
     let task = named_task(1, "running");
     repository.create_task(task.clone()).unwrap();
     let mut tracker = Tracker::idle();
     let started = tracker.start(&task, at(100)).unwrap();
-    repository.insert_entry(&started).unwrap();
+    repository.insert_worklog(&started).unwrap();
 
     let error = repository
         .archive_task(task.id)
@@ -367,11 +409,11 @@ fn a_task_with_an_active_entry_cannot_be_archived() {
 
     // Error state: the task is still usable and the timer still runs.
     assert!(!repository.find_task(task.id).unwrap().unwrap().archived);
-    assert_eq!(repository.active_entry().unwrap(), Some(started.clone()));
+    assert_eq!(repository.active_worklog().unwrap(), Some(started.clone()));
 
-    // After the entry is stopped, the same call archives the task.
+    // After the worklog is stopped, the same call archives the task.
     tracker.stop(at(150)).unwrap();
-    repository.stop_entry(started.id, at(150)).unwrap();
+    repository.stop_worklog(started.id, at(150)).unwrap();
     let archived = repository.archive_task(task.id).unwrap();
     assert!(archived.archived);
 }
@@ -387,12 +429,12 @@ fn concurrent_connections_enforce_the_archive_rules() {
     process_a.create_task(task.clone()).unwrap();
 
     // The other process archives the task; this process's stale view still
-    // believes the task is active, but the database refuses the entry.
+    // believes the task is active, but the database refuses the worklog.
     process_b.archive_task(task.id).unwrap();
-    let stale = TimeEntry::begin(entry_id(42), task.id, at(100));
+    let stale = Worklog::begin(worklog_id(42), task.id, at(100));
     let error = process_a
-        .insert_entry(&stale)
-        .expect_err("the archived task must refuse the entry");
+        .insert_worklog(&stale)
+        .expect_err("the archived task must refuse the worklog");
     assert!(matches!(
         error,
         StorageError::TaskArchived { id } if id == task.id
@@ -402,8 +444,8 @@ fn concurrent_connections_enforce_the_archive_rules() {
     // cannot archive it.
     let other = named_task(2, "other");
     process_a.create_task(other.clone()).unwrap();
-    let started = TimeEntry::begin(entry_id(43), other.id, at(100));
-    process_a.insert_entry(&started).unwrap();
+    let started = Worklog::begin(worklog_id(43), other.id, at(100));
+    process_a.insert_worklog(&started).unwrap();
     let error = process_b
         .archive_task(other.id)
         .expect_err("the active task must not archive");
@@ -411,7 +453,7 @@ fn concurrent_connections_enforce_the_archive_rules() {
         error,
         StorageError::TaskIsActive { id } if id == other.id
     ));
-    assert_eq!(process_a.active_entry().unwrap().unwrap().id, started.id);
+    assert_eq!(process_a.active_worklog().unwrap().unwrap().id, started.id);
     assert!(!process_b.find_task(other.id).unwrap().unwrap().archived);
 }
 
@@ -423,66 +465,69 @@ fn same_task_toggle_stops_and_later_restarts() {
     let mut tracker = Tracker::idle();
 
     let outcome = tracker.toggle(&task, at(100)).unwrap();
-    let entry = match outcome {
-        TrackingOutcome::Started { entry } => entry,
+    let worklog = match outcome {
+        TrackingOutcome::Started { worklog } => worklog,
         other => panic!("expected Started, got {other:?}"),
     };
-    repository.insert_entry(&entry).unwrap();
-    assert_eq!(repository.active_entry().unwrap().unwrap().id, entry.id);
+    repository.insert_worklog(&worklog).unwrap();
+    assert_eq!(repository.active_worklog().unwrap().unwrap().id, worklog.id);
 
     let outcome = tracker.toggle(&task, at(150)).unwrap();
     let stopped = match outcome {
-        TrackingOutcome::Stopped { entry } => entry,
+        TrackingOutcome::Stopped { worklog } => worklog,
         other => panic!("expected Stopped, got {other:?}"),
     };
-    repository.stop_entry(stopped.id, at(150)).unwrap();
-    assert_eq!(repository.active_entry().unwrap(), None);
+    repository.stop_worklog(stopped.id, at(150)).unwrap();
+    assert_eq!(repository.active_worklog().unwrap(), None);
 
-    // Toggling again starts a fresh entry, not a resume.
+    // Toggling again starts a fresh worklog, not a resume.
     let outcome = tracker.toggle(&task, at(200)).unwrap();
     let restarted = match outcome {
-        TrackingOutcome::Started { entry } => entry,
+        TrackingOutcome::Started { worklog } => worklog,
         other => panic!("expected Started, got {other:?}"),
     };
-    repository.insert_entry(&restarted).unwrap();
-    assert_ne!(restarted.id, entry.id);
-    assert_eq!(repository.active_entry().unwrap().unwrap().id, restarted.id);
-    let entries = repository.list_entries(task_id(1)).unwrap();
-    assert_eq!(entries.len(), 2);
-    assert_eq!(entries[0].end, Some(at(150)));
-    assert_eq!(entries[1].start, at(200));
-    assert_eq!(entries[1].end, None);
+    repository.insert_worklog(&restarted).unwrap();
+    assert_ne!(restarted.id, worklog.id);
+    assert_eq!(
+        repository.active_worklog().unwrap().unwrap().id,
+        restarted.id
+    );
+    let worklogs = repository.list_worklogs(task_id(1)).unwrap();
+    assert_eq!(worklogs.len(), 2);
+    assert_eq!(worklogs[0].end, Some(at(150)));
+    assert_eq!(worklogs[1].start, at(200));
+    assert_eq!(worklogs[1].end, None);
 }
 
 #[test]
-fn restarts_record_separate_entries() {
+fn restarts_record_separate_worklogs() {
     let repository = repo();
     let task = named_task(1, "work");
     repository.create_task(task.clone()).unwrap();
     let mut tracker = Tracker::idle();
 
     let first = tracker.start(&task, at(100)).unwrap();
-    repository.insert_entry(&first).unwrap();
+    repository.insert_worklog(&first).unwrap();
     let first_stopped = tracker.stop(at(150)).unwrap();
-    repository.stop_entry(first.id, at(150)).unwrap();
+    repository.stop_worklog(first.id, at(150)).unwrap();
     assert_eq!(first_stopped.id, first.id);
 
     let second = tracker.start(&task, at(300)).unwrap();
-    repository.insert_entry(&second).unwrap();
+    repository.insert_worklog(&second).unwrap();
     tracker.stop(at(400)).unwrap();
-    repository.stop_entry(second.id, at(400)).unwrap();
+    repository.stop_worklog(second.id, at(400)).unwrap();
 
-    let entries = repository.list_entries(task_id(1)).unwrap();
-    assert_eq!(entries.len(), 2);
-    assert_ne!(entries[0].id, entries[1].id);
-    assert_eq!(entries[0].start, at(100));
-    assert_eq!(entries[0].end, Some(at(150)));
-    assert_eq!(entries[1].start, at(300));
-    assert_eq!(entries[1].end, Some(at(400)));
+    let worklogs = repository.list_worklogs(task_id(1)).unwrap();
+    assert_eq!(worklogs.len(), 2);
+    assert_ne!(worklogs[0].id, worklogs[1].id);
+    assert_eq!(worklogs[0].start, at(100));
+    assert_eq!(worklogs[0].end, Some(at(150)));
+    assert_eq!(worklogs[1].start, at(300));
+    assert_eq!(worklogs[1].end, Some(at(400)));
 }
 
 #[test]
-fn switch_stops_the_old_entry_and_starts_the_new_one_atomically() {
+fn switch_stops_the_old_worklog_and_starts_the_new_one_atomically() {
     let repository = repo();
     let work = named_task(1, "work");
     let rest = named_task(2, "rest");
@@ -491,28 +536,28 @@ fn switch_stops_the_old_entry_and_starts_the_new_one_atomically() {
     let mut tracker = Tracker::idle();
 
     let started = tracker.start(&work, at(100)).unwrap();
-    repository.insert_entry(&started).unwrap();
+    repository.insert_worklog(&started).unwrap();
 
     let switched = tracker.switch(&rest, at(150), at(160)).unwrap();
     repository
-        .switch_entry(switched.stopped.id, at(150), &switched.started)
+        .switch_worklog(switched.stopped.id, at(150), &switched.started)
         .unwrap();
 
-    // Exactly one active entry, belonging to the new task.
-    let active = repository.active_entry().unwrap().unwrap();
+    // Exactly one active worklog, belonging to the new task.
+    let active = repository.active_worklog().unwrap().unwrap();
     assert_eq!(active.id, switched.started.id);
     assert_eq!(active.task_id, task_id(2));
     assert_eq!(active.start, at(160));
     assert_eq!(active.end, None);
-    // The old entry is stopped at the switch instant.
-    let old = repository.list_entries(task_id(1)).unwrap();
+    // The old worklog is stopped at the switch instant.
+    let old = repository.list_worklogs(task_id(1)).unwrap();
     assert_eq!(old.len(), 1);
     assert_eq!(old[0].id, started.id);
     assert_eq!(old[0].end, Some(at(150)));
-    // The new task has one active entry.
-    let new_entries = repository.list_entries(task_id(2)).unwrap();
-    assert_eq!(new_entries.len(), 1);
-    assert_eq!(new_entries[0].id, switched.started.id);
+    // The new task has one active worklog.
+    let new_worklogs = repository.list_worklogs(task_id(2)).unwrap();
+    assert_eq!(new_worklogs.len(), 1);
+    assert_eq!(new_worklogs[0].id, switched.started.id);
 }
 
 #[test]
@@ -525,21 +570,21 @@ fn switch_rolls_back_on_a_backwards_stop_timestamp() {
     let mut tracker = Tracker::idle();
 
     let started = tracker.start(&work, at(100)).unwrap();
-    repository.insert_entry(&started).unwrap();
+    repository.insert_worklog(&started).unwrap();
 
-    // Stop before the active entry's start violates the CHECK constraint.
-    let next = TimeEntry::begin(entry_id(42), rest.id, at(160));
+    // Stop before the active worklog's start violates the CHECK constraint.
+    let next = Worklog::begin(worklog_id(42), rest.id, at(160));
     let error = repository
-        .switch_entry(started.id, at(99), &next)
+        .switch_worklog(started.id, at(99), &next)
         .expect_err("backwards stop must fail");
     assert!(matches!(error, StorageError::Constraint(_)));
 
-    // Rollback: the old entry is still active and untouched, no new entry.
-    let active = repository.active_entry().unwrap().unwrap();
+    // Rollback: the old worklog is still active and untouched, no new worklog.
+    let active = repository.active_worklog().unwrap().unwrap();
     assert_eq!(active.id, started.id);
     assert_eq!(active.end, None);
-    assert_eq!(repository.list_entries(task_id(1)).unwrap().len(), 1);
-    assert_eq!(repository.list_entries(task_id(2)).unwrap(), Vec::new());
+    assert_eq!(repository.list_worklogs(task_id(1)).unwrap().len(), 1);
+    assert_eq!(repository.list_worklogs(task_id(2)).unwrap(), Vec::new());
 }
 
 #[test]
@@ -550,24 +595,24 @@ fn switch_rolls_back_when_the_target_task_is_missing() {
     let mut tracker = Tracker::idle();
 
     let started = tracker.start(&work, at(100)).unwrap();
-    repository.insert_entry(&started).unwrap();
+    repository.insert_worklog(&started).unwrap();
 
-    let next = TimeEntry::begin(entry_id(42), task_id(99), at(160));
+    let next = Worklog::begin(worklog_id(42), task_id(99), at(160));
     assert!(matches!(
-        repository.switch_entry(started.id, at(150), &next),
+        repository.switch_worklog(started.id, at(150), &next),
         Err(StorageError::TaskNotFound { id }) if id == task_id(99)
     ));
 
-    // Rollback: the old entry is still active, no new entry was inserted.
-    let active = repository.active_entry().unwrap().unwrap();
+    // Rollback: the old worklog is still active, no new worklog was inserted.
+    let active = repository.active_worklog().unwrap().unwrap();
     assert_eq!(active.id, started.id);
     assert_eq!(active.end, None);
-    assert_eq!(repository.list_entries(task_id(1)).unwrap().len(), 1);
-    assert_eq!(repository.list_entries(task_id(99)).unwrap(), Vec::new());
+    assert_eq!(repository.list_worklogs(task_id(1)).unwrap().len(), 1);
+    assert_eq!(repository.list_worklogs(task_id(99)).unwrap(), Vec::new());
 }
 
 #[test]
-fn switch_reports_a_missing_entry_and_changes_nothing() {
+fn switch_reports_a_missing_worklog_and_changes_nothing() {
     let repository = repo();
     let work = named_task(1, "work");
     let rest = named_task(2, "rest");
@@ -576,21 +621,21 @@ fn switch_reports_a_missing_entry_and_changes_nothing() {
     let mut tracker = Tracker::idle();
 
     let started = tracker.start(&work, at(100)).unwrap();
-    repository.insert_entry(&started).unwrap();
+    repository.insert_worklog(&started).unwrap();
 
-    let missing = entry_id(77);
-    let next = TimeEntry::begin(entry_id(42), rest.id, at(160));
+    let missing = worklog_id(77);
+    let next = Worklog::begin(worklog_id(42), rest.id, at(160));
     assert!(matches!(
-        repository.switch_entry(missing, at(150), &next),
-        Err(StorageError::EntryNotFound { id }) if id == missing
+        repository.switch_worklog(missing, at(150), &next),
+        Err(StorageError::WorklogNotFound { id }) if id == missing
     ));
-    assert_eq!(repository.active_entry().unwrap(), Some(started.clone()));
-    assert_eq!(repository.list_entries(task_id(1)).unwrap().len(), 1);
-    assert_eq!(repository.list_entries(task_id(2)).unwrap(), Vec::new());
+    assert_eq!(repository.active_worklog().unwrap(), Some(started.clone()));
+    assert_eq!(repository.list_worklogs(task_id(1)).unwrap().len(), 1);
+    assert_eq!(repository.list_worklogs(task_id(2)).unwrap(), Vec::new());
 }
 
 #[test]
-fn switch_rejects_an_already_stopped_entry() {
+fn switch_rejects_an_already_stopped_worklog() {
     let repository = repo();
     let work = named_task(1, "work");
     let rest = named_task(2, "rest");
@@ -599,16 +644,16 @@ fn switch_rejects_an_already_stopped_entry() {
     let mut tracker = Tracker::idle();
 
     let started = tracker.start(&work, at(100)).unwrap();
-    repository.insert_entry(&started).unwrap();
-    repository.stop_entry(started.id, at(150)).unwrap();
+    repository.insert_worklog(&started).unwrap();
+    repository.stop_worklog(started.id, at(150)).unwrap();
 
-    let next = TimeEntry::begin(entry_id(42), rest.id, at(160));
+    let next = Worklog::begin(worklog_id(42), rest.id, at(160));
     assert!(matches!(
-        repository.switch_entry(started.id, at(150), &next),
-        Err(StorageError::EntryAlreadyStopped { id }) if id == started.id
+        repository.switch_worklog(started.id, at(150), &next),
+        Err(StorageError::WorklogAlreadyStopped { id }) if id == started.id
     ));
-    assert_eq!(repository.active_entry().unwrap(), None);
-    assert_eq!(repository.list_entries(task_id(2)).unwrap(), Vec::new());
+    assert_eq!(repository.active_worklog().unwrap(), None);
+    assert_eq!(repository.list_worklogs(task_id(2)).unwrap(), Vec::new());
 }
 
 #[test]
@@ -621,31 +666,31 @@ fn switch_into_an_archived_task_is_rejected_and_rolls_back() {
     let mut tracker = Tracker::idle();
 
     let started = tracker.start(&work, at(100)).unwrap();
-    repository.insert_entry(&started).unwrap();
+    repository.insert_worklog(&started).unwrap();
     // The target is archived after the caller looked at it, which the
     // tracker's in-memory copy cannot see.
     repository.archive_task(rest.id).unwrap();
 
-    let next = TimeEntry::begin(entry_id(42), rest.id, at(160));
+    let next = Worklog::begin(worklog_id(42), rest.id, at(160));
     let error = repository
-        .switch_entry(started.id, at(150), &next)
+        .switch_worklog(started.id, at(150), &next)
         .expect_err("the archived target must refuse the switch");
     assert!(matches!(
         error,
         StorageError::TaskArchived { id } if id == rest.id
     ));
 
-    // Rollback: the old entry is still active, the archived task received
+    // Rollback: the old worklog is still active, the archived task received
     // nothing.
-    assert_eq!(repository.active_entry().unwrap().unwrap().id, started.id);
-    assert_eq!(repository.list_entries(rest.id).unwrap(), Vec::new());
-    let old = repository.list_entries(work.id).unwrap();
+    assert_eq!(repository.active_worklog().unwrap().unwrap().id, started.id);
+    assert_eq!(repository.list_worklogs(rest.id).unwrap(), Vec::new());
+    let old = repository.list_worklogs(work.id).unwrap();
     assert_eq!(old.len(), 1);
     assert_eq!(old[0].end, None);
 }
 
 #[test]
-fn a_switch_with_an_existing_new_entry_id_rolls_back_and_reports_it() {
+fn a_switch_with_an_existing_new_worklog_id_rolls_back_and_reports_it() {
     let repository = repo();
     let work = named_task(1, "work");
     let rest = named_task(2, "rest");
@@ -654,25 +699,25 @@ fn a_switch_with_an_existing_new_entry_id_rolls_back_and_reports_it() {
     let mut tracker = Tracker::idle();
 
     let started = tracker.start(&work, at(100)).unwrap();
-    repository.insert_entry(&started).unwrap();
-    let old_rest = TimeEntry::new(entry_id(42), rest.id, at(10), Some(at(20))).unwrap();
-    repository.insert_entry(&old_rest).unwrap();
+    repository.insert_worklog(&started).unwrap();
+    let old_rest = Worklog::new(worklog_id(42), rest.id, at(10), Some(at(20))).unwrap();
+    repository.insert_worklog(&old_rest).unwrap();
 
-    // The new entry reuses the stored id of the old rest entry.
-    let next = TimeEntry::begin(entry_id(42), rest.id, at(160));
+    // The new worklog reuses the stored id of the old rest worklog.
+    let next = Worklog::begin(worklog_id(42), rest.id, at(160));
     let error = repository
-        .switch_entry(started.id, at(150), &next)
+        .switch_worklog(started.id, at(150), &next)
         .expect_err("the duplicate id must fail the switch");
     assert!(matches!(
         error,
-        StorageError::EntryAlreadyExists { id } if id == entry_id(42)
+        StorageError::WorklogAlreadyExists { id } if id == worklog_id(42)
     ));
 
     // Rollback: the stop half is undone, so work is still active.
-    assert_eq!(repository.active_entry().unwrap().unwrap().id, started.id);
-    let rest_entries = repository.list_entries(rest.id).unwrap();
-    assert_eq!(rest_entries.len(), 1);
-    assert_eq!(rest_entries[0].end, Some(at(20)));
+    assert_eq!(repository.active_worklog().unwrap().unwrap().id, started.id);
+    let rest_worklogs = repository.list_worklogs(rest.id).unwrap();
+    assert_eq!(rest_worklogs.len(), 1);
+    assert_eq!(rest_worklogs[0].end, Some(at(20)));
 }
 
 #[test]
@@ -685,7 +730,7 @@ fn archiving_the_active_task_is_rejected() {
     let mut tracker = Tracker::idle();
 
     let started = tracker.start(&work, at(100)).unwrap();
-    repository.insert_entry(&started).unwrap();
+    repository.insert_worklog(&started).unwrap();
 
     assert_eq!(
         tracker.ensure_archivable(work.id),
@@ -693,16 +738,16 @@ fn archiving_the_active_task_is_rejected() {
     );
     // The task stays usable and unarchived after the rejection.
     assert!(!repository.find_task(work.id).unwrap().unwrap().archived);
-    assert_eq!(repository.active_entry().unwrap(), Some(started.clone()));
+    assert_eq!(repository.active_worklog().unwrap(), Some(started.clone()));
 
     // A different task archives fine while tracking runs.
     tracker.ensure_archivable(other.id).unwrap();
     repository.archive_task(other.id).unwrap();
     assert!(repository.find_task(other.id).unwrap().unwrap().archived);
 
-    // Once the entry is stopped, the task can be archived.
+    // Once the worklog is stopped, the task can be archived.
     tracker.stop(at(150)).unwrap();
-    repository.stop_entry(started.id, at(150)).unwrap();
+    repository.stop_worklog(started.id, at(150)).unwrap();
     tracker.ensure_archivable(work.id).unwrap();
     repository.archive_task(work.id).unwrap();
     assert!(repository.find_task(work.id).unwrap().unwrap().archived);
@@ -723,56 +768,59 @@ fn archived_tasks_cannot_start_or_become_active() {
         Err(TrackingError::TaskArchived { id: archived.id })
     );
     assert_eq!(tracker.state(), &TrackingState::Idle);
-    assert_eq!(repository.active_entry().unwrap(), None);
+    assert_eq!(repository.active_worklog().unwrap(), None);
 }
 
 #[test]
-fn active_entry_survives_closing_and_reopening_the_database() {
+fn active_worklog_survives_closing_and_reopening_the_database() {
     let temp = tempfile::tempdir().unwrap();
     let task = named_task(1, "long running");
-    let entry_id;
+    let worklog_id;
 
     {
         let repository = file_repo(&temp);
         repository.create_task(task.clone()).unwrap();
         let mut tracker = Tracker::idle();
         let started = tracker.start(&task, at(100)).unwrap();
-        entry_id = started.id;
+        worklog_id = started.id;
         // Deliberately no stop: exiting must not implicitly stop tracking.
-        repository.insert_entry(&started).unwrap();
+        repository.insert_worklog(&started).unwrap();
     }
 
     {
         let repository = SqliteRepository::open(temp.path().join("tracker.db")).unwrap();
-        let recovered = repository.active_entry().unwrap().expect("entry recovered");
-        assert_eq!(recovered.id, entry_id);
+        let recovered = repository
+            .active_worklog()
+            .unwrap()
+            .expect("worklog recovered");
+        assert_eq!(recovered.id, worklog_id);
         assert_eq!(recovered.task_id, task.id);
         assert_eq!(recovered.start, at(100));
         assert_eq!(recovered.end, None);
 
-        // The recovered entry resumes tracking and stops cleanly.
+        // The recovered worklog resumes tracking and stops cleanly.
         let mut tracker = Tracker::resume(recovered).unwrap();
         assert_eq!(
             tracker.state(),
             &TrackingState::Running {
-                entry: ActiveEntry {
-                    id: entry_id,
+                worklog: ActiveWorklog {
+                    id: worklog_id,
                     task_id: task.id,
                     start: at(100),
                 }
             }
         );
         let stopped = tracker.stop(at(250)).unwrap();
-        repository.stop_entry(stopped.id, at(250)).unwrap();
+        repository.stop_worklog(stopped.id, at(250)).unwrap();
     }
 
-    // A third open sees a stopped entry and no active one.
+    // A third open sees a stopped worklog and no active one.
     let repository = SqliteRepository::open(temp.path().join("tracker.db")).unwrap();
-    assert_eq!(repository.active_entry().unwrap(), None);
-    let entries = repository.list_entries(task.id).unwrap();
-    assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].start, at(100));
-    assert_eq!(entries[0].end, Some(at(250)));
+    assert_eq!(repository.active_worklog().unwrap(), None);
+    let worklogs = repository.list_worklogs(task.id).unwrap();
+    assert_eq!(worklogs.len(), 1);
+    assert_eq!(worklogs[0].start, at(100));
+    assert_eq!(worklogs[0].end, Some(at(250)));
 }
 
 #[test]
@@ -799,7 +847,7 @@ fn corrupt_task_rows_are_reported_as_corrupt_data() {
 }
 
 #[test]
-fn corrupt_entry_rows_are_reported_as_corrupt_data() {
+fn corrupt_worklog_rows_are_reported_as_corrupt_data() {
     // An out-of-range timestamp cannot be represented in the domain.
     let repository = repo();
     let conn = repository.connection();
@@ -809,14 +857,14 @@ fn corrupt_entry_rows_are_reported_as_corrupt_data() {
     )
     .unwrap();
     conn.execute(
-        "INSERT INTO time_entries (id, task_id, start_us, end_us)
+        "INSERT INTO worklogs (id, task_id, start_us, end_us)
          VALUES ('00000000-0000-7000-8000-000000000010',
                  '00000000-0000-0000-0000-000000000001', 9223372036854775807, NULL)",
         [],
     )
     .unwrap();
     let error = repository
-        .list_entries(task_id(1))
+        .list_worklogs(task_id(1))
         .expect_err("huge timestamp is corrupt");
     assert!(matches!(error, StorageError::CorruptData("timestamp")));
 
@@ -831,16 +879,19 @@ fn corrupt_entry_rows_are_reported_as_corrupt_data() {
     .unwrap();
     conn.execute_batch(
         "PRAGMA ignore_check_constraints = ON;
-         INSERT INTO time_entries (id, task_id, start_us, end_us)
+         INSERT INTO worklogs (id, task_id, start_us, end_us)
          VALUES ('00000000-0000-7000-8000-000000000010',
                  '00000000-0000-0000-0000-000000000001', 200, 100);
          PRAGMA ignore_check_constraints = OFF;",
     )
     .unwrap();
     let error = repository
-        .list_entries(task_id(1))
+        .list_worklogs(task_id(1))
         .expect_err("backwards interval is corrupt");
-    assert!(matches!(error, StorageError::CorruptData("entry interval")));
+    assert!(matches!(
+        error,
+        StorageError::CorruptData("worklog interval")
+    ));
 }
 
 #[test]

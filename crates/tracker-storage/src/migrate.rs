@@ -24,36 +24,36 @@ pub(crate) const TRIGGER_TASK_ACTIVE: &str = "task is active";
 
 /// The schema migration scripts, in order. Version 1 is the first script.
 const MIGRATIONS: &[&str] = &[
-    // Version 1: tasks and time entries.
+    // Version 1: tasks and worklogs.
     //
     // Identifiers are UUIDv7 text; ordering by task id approximates creation
     // order. Timestamps are microseconds since the Unix epoch in UTC. A
-    // partial unique index allows at most one active entry (end_us IS NULL)
+    // partial unique index allows at most one active worklog (end_us IS NULL)
     // across the whole tracker, and a CHECK constraint rejects stopped
-    // entries whose end precedes their start.
+    // worklogs whose end precedes their start.
     "CREATE TABLE tasks (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         archived INTEGER NOT NULL CHECK (archived IN (0, 1))
     );
-    CREATE TABLE time_entries (
+    CREATE TABLE worklogs (
         id TEXT PRIMARY KEY,
         task_id TEXT NOT NULL REFERENCES tasks (id),
         start_us INTEGER NOT NULL,
         end_us INTEGER,
         CHECK (end_us IS NULL OR end_us >= start_us)
     );
-    CREATE INDEX time_entries_task_start ON time_entries (task_id, start_us);
-    CREATE UNIQUE INDEX time_entries_single_active
-        ON time_entries (1) WHERE end_us IS NULL;",
+    CREATE INDEX worklogs_task_start ON worklogs (task_id, start_us);
+    CREATE UNIQUE INDEX worklogs_single_active
+        ON worklogs (1) WHERE end_us IS NULL;",
     // Version 2: enforce the archive invariants at the database level, so
     // every process and every direct repository call sees the same rules.
     //
-    // An archived task cannot receive entries, and a task with an active
-    // entry cannot be archived. The triggers abort with fixed messages that
+    // An archived task cannot receive worklogs, and a task with an active
+    // worklog cannot be archived. The triggers abort with fixed messages that
     // the error mapping turns into explicit storage errors.
-    "CREATE TRIGGER time_entries_reject_archived_task
-    BEFORE INSERT ON time_entries
+    "CREATE TRIGGER worklogs_reject_archived_task
+    BEFORE INSERT ON worklogs
     WHEN NEW.task_id IN (SELECT id FROM tasks WHERE archived = 1)
     BEGIN
         SELECT RAISE(ABORT, 'task is archived');
@@ -61,7 +61,7 @@ const MIGRATIONS: &[&str] = &[
     CREATE TRIGGER tasks_reject_archive_while_active
     BEFORE UPDATE OF archived ON tasks
     WHEN NEW.archived = 1
-        AND EXISTS (SELECT 1 FROM time_entries
+        AND EXISTS (SELECT 1 FROM worklogs
                     WHERE task_id = NEW.id AND end_us IS NULL)
     BEGIN
         SELECT RAISE(ABORT, 'task is active');
