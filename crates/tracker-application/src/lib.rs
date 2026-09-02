@@ -564,6 +564,11 @@ mod tests {
             .push(worklog(10, alpha.id, 100));
         let application = TrackerApplication::load(repository).unwrap();
         assert_eq!(application.tasks(), std::slice::from_ref(&alpha));
+        assert_eq!(application.task(alpha.id), Some(&alpha));
+        assert_eq!(
+            application.task(TaskId::from_uuid(uuid::Uuid::from_u128(99))),
+            None
+        );
         assert_eq!(
             application.current_tracking(),
             &TrackingState::Running {
