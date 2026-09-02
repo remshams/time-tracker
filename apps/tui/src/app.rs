@@ -304,13 +304,7 @@ impl<R: TrackerRepository> App<R> {
 
     /// Copies backend-neutral query state after an application operation.
     fn sync_from_application(&mut self, fresh_active: bool) {
-        self.tasks = self
-            .application
-            .tasks()
-            .iter()
-            .filter(|task| !task.archived)
-            .cloned()
-            .collect();
+        self.sync_tasks_from_application();
         self.tracking = self.application.current_tracking().clone();
         self.clock = match &self.tracking {
             TrackingState::Idle => None,
@@ -319,14 +313,11 @@ impl<R: TrackerRepository> App<R> {
             }
             TrackingState::Running { worklog } => Some(ElapsedClock::since(worklog.start)),
         };
-        if self.tasks.is_empty() {
-            self.selected = None;
-        } else if let Some(index) = self.selected {
-            self.selected = Some(index.min(self.tasks.len() - 1));
-        }
     }
 
     fn sync_tasks_from_application(&mut self) {
+        let previous_index = self.selected;
+        let preferred = self.selected_task().map(|task| task.id);
         self.tasks = self
             .application
             .tasks()
@@ -334,11 +325,13 @@ impl<R: TrackerRepository> App<R> {
             .filter(|task| !task.archived)
             .cloned()
             .collect();
-        if self.tasks.is_empty() {
-            self.selected = None;
-        } else if let Some(index) = self.selected {
-            self.selected = Some(index.min(self.tasks.len() - 1));
-        }
+        self.selected = preferred
+            .and_then(|id| self.tasks.iter().position(|task| task.id == id))
+            .or_else(|| {
+                previous_index
+                    .filter(|_| !self.tasks.is_empty())
+                    .map(|index| index.min(self.tasks.len() - 1))
+            });
     }
 
     fn open_add(&mut self) {
