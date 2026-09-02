@@ -3,8 +3,9 @@
 //! Implementations order tasks by identifier and a task's worklogs by start
 //! time, then identifier. They enforce one active worklog, reject an end
 //! before its start, reject worklogs on archived tasks, and reject archiving
-//! the active task. A switch must stop the old worklog and start the new one
-//! atomically.
+//! the active task. Unarchiving a task is non-destructive and must not
+//! discard its worklogs. A switch must stop the old worklog and start the
+//! new one atomically.
 
 use chrono::{DateTime, Utc};
 use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId};
@@ -44,6 +45,10 @@ pub trait TaskRepository {
     fn list_tasks(&self) -> Result<Vec<Task>, RepositoryError>;
     fn rename_task(&self, id: TaskId, name: TaskName) -> Result<Task, RepositoryError>;
     fn archive_task(&self, id: TaskId) -> Result<Task, RepositoryError>;
+
+    /// Restores an archived task. Must keep the task's worklogs intact and
+    /// succeed when the task is already unarchived.
+    fn unarchive_task(&self, id: TaskId) -> Result<Task, RepositoryError>;
 }
 
 /// Persistence needed to read worklog history.

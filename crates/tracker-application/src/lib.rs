@@ -27,12 +27,13 @@ pub enum ApplicationError {
     TrackingStateChanged,
 }
 
-/// The result of creating, renaming, or archiving a task.
+/// The result of creating, renaming, archiving, or unarchiving a task.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskOutcome {
     Created(Task),
     Renamed(Task),
     Archived(Task),
+    Unarchived(Task),
 }
 
 /// The result of making one task active.
@@ -61,6 +62,7 @@ pub trait TaskOperations {
     fn create_task(&mut self, name: TaskName) -> Result<TaskOutcome, ApplicationError>;
     fn rename_task(&mut self, id: TaskId, name: TaskName) -> Result<TaskOutcome, ApplicationError>;
     fn archive_task(&mut self, id: TaskId) -> Result<TaskOutcome, ApplicationError>;
+    fn unarchive_task(&mut self, id: TaskId) -> Result<TaskOutcome, ApplicationError>;
 }
 
 /// Current tracking state and desired-state tracking commands.
@@ -203,6 +205,12 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
         let task = self.repository.archive_task(id)?;
         self.replace_task(task.clone());
         Ok(TaskOutcome::Archived(task))
+    }
+
+    fn unarchive_task(&mut self, id: TaskId) -> Result<TaskOutcome, ApplicationError> {
+        let task = self.repository.unarchive_task(id)?;
+        self.replace_task(task.clone());
+        Ok(TaskOutcome::Unarchived(task))
     }
 }
 
@@ -412,6 +420,20 @@ mod tests {
             task.archived = true;
             Ok(task.clone())
         }
+
+        fn unarchive_task(&self, id: TaskId) -> Result<Task, RepositoryError> {
+            if let Some(error) = self.take_write_failure() {
+                return Err(error);
+            }
+            let mut data = self.0.borrow_mut();
+            let task = data
+                .tasks
+                .iter_mut()
+                .find(|task| task.id == id)
+                .ok_or(RepositoryError::TaskNotFound { id })?;
+            task.archived = false;
+            Ok(task.clone())
+        }
     }
 
     impl WorklogRepository for MemoryRepository {
@@ -600,6 +622,61 @@ mod tests {
         let archived = application.archive_task(created.id).unwrap();
         assert!(matches!(archived, TaskOutcome::Archived(task) if task.archived));
         assert!(application.tasks()[0].archived);
+    }
+
+    #[test]
+    fn unarchive_task_restores_the_task_and_keeps_its_worklogs() {
+        let alpha = task(1, "alpha");
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        repository.0.borrow_mut().worklogs.push(
+            Worklog::new(
+                worklog(10, alpha.id, 100).id,
+                alpha.id,
+                at(100),
+                Some(at(150)),
+            )
+            .unwrap(),
+        );
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        application.archive_task(alpha.id).unwrap();
+
+        let unarchived = application.unarchive_task(alpha.id).unwrap();
+        assert!(matches!(unarchived, TaskOutcome::Unarchived(task) if !task.archived));
+        assert!(!application.tasks()[0].archived);
+        assert_eq!(
+            application.task(alpha.id),
+            Some(&Task::new(alpha.id, alpha.name.clone()))
+        );
+        assert_eq!(application.worklogs_for_task(alpha.id).unwrap().len(), 1);
+        assert!(!repository.0.borrow().tasks[0].archived);
+    }
+
+    #[test]
+    fn unarchiving_a_missing_task_reports_task_not_found() {
+        let repository = MemoryRepository::default();
+        let mut application = TrackerApplication::load(repository).unwrap();
+        let missing = TaskId::from_uuid(uuid::Uuid::from_u128(99));
+        assert_eq!(
+            application.unarchive_task(missing),
+            Err(ApplicationError::Repository(
+                RepositoryError::TaskNotFound { id: missing }
+            ))
+        );
+    }
+
+    #[test]
+    fn unarchiving_an_unarchived_task_is_a_harmless_noop() {
+        let alpha = task(1, "alpha");
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        let first = application.unarchive_task(alpha.id).unwrap();
+        assert!(matches!(first, TaskOutcome::Unarchived(task) if !task.archived));
+        assert!(!application.tasks()[0].archived);
+        assert_eq!(
+            application.unarchive_task(alpha.id).unwrap(),
+            TaskOutcome::Unarchived(Task::new(alpha.id, alpha.name.clone()))
+        );
+        assert_eq!(repository.0.borrow().tasks.len(), 1);
     }
 
     #[test]
