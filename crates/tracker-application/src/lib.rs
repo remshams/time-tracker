@@ -5,7 +5,7 @@ mod repository;
 use chrono::{DateTime, Utc};
 use tracker_domain::{
     ActiveWorklog, SwitchedWorklogs, Task, TaskId, TaskName, Tracker, TrackingError, TrackingState,
-    Worklog,
+    Worklog, WorklogId,
 };
 
 pub use repository::{
@@ -20,9 +20,11 @@ pub enum ApplicationError {
     #[error(transparent)]
     Repository(#[from] RepositoryError),
     #[error("tracking write failed: {0}")]
-    TrackingWrite(RepositoryError),
+    TrackingWrite(#[source] RepositoryError),
     #[error("tracking state could not be recovered: {0}")]
-    TrackingRecovery(RepositoryError),
+    TrackingRecovery(#[source] RepositoryError),
+    #[error("tracking state changed in another client")]
+    TrackingStateChanged,
 }
 
 /// The result of creating, renaming, or archiving a task.
@@ -71,6 +73,7 @@ pub trait TrackingOperations {
     ) -> Result<SetActiveTaskOutcome, ApplicationError>;
     fn clear_active_task(
         &mut self,
+        expected_active: WorklogId,
         occurred_at: DateTime<Utc>,
     ) -> Result<ClearActiveTaskOutcome, ApplicationError>;
 }
@@ -79,6 +82,19 @@ pub trait TrackingOperations {
 /// built; each call reads the selected backend.
 pub trait WorklogQueries {
     fn worklogs_for_task(&self, task_id: TaskId) -> Result<Vec<Worklog>, ApplicationError>;
+}
+
+/// The application service required by presentation and transport clients.
+///
+/// This keeps repository ports behind the application boundary.
+pub trait TrackerApplicationService:
+    TaskQueries + TaskOperations + TrackingOperations + WorklogQueries
+{
+}
+
+impl<T> TrackerApplicationService for T where
+    T: TaskQueries + TaskOperations + TrackingOperations + WorklogQueries
+{
 }
 
 /// Stateful application service backed by one repository.
@@ -135,6 +151,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             | Err(ApplicationError::TrackingRecovery(error)) => {
                 ApplicationError::TrackingRecovery(error)
             }
+            Err(ApplicationError::TrackingStateChanged) => ApplicationError::TrackingStateChanged,
         }
     }
 
@@ -236,11 +253,15 @@ impl<R: TrackerRepository> TrackingOperations for TrackerApplication<R> {
 
     fn clear_active_task(
         &mut self,
+        expected_active: WorklogId,
         occurred_at: DateTime<Utc>,
     ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
         self.refresh_tracking()?;
-        if self.tracker.active().is_none() {
+        let Some(active) = self.tracker.active() else {
             return Ok(ClearActiveTaskOutcome::AlreadyIdle);
+        };
+        if active.id != expected_active {
+            return Err(ApplicationError::TrackingStateChanged);
         }
 
         let mut candidate = self.tracker.clone();
@@ -284,7 +305,8 @@ mod tests {
     struct MemoryRepository(Rc<RefCell<Data>>);
 
     impl MemoryRepository {
-        fn with_tasks(tasks: Vec<Task>) -> Self {
+        fn with_tasks(mut tasks: Vec<Task>) -> Self {
+            tasks.sort_by_key(|task| task.id);
             Self(Rc::new(RefCell::new(Data {
                 tasks,
                 ..Data::default()
@@ -395,14 +417,16 @@ mod tests {
     impl WorklogRepository for MemoryRepository {
         fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, RepositoryError> {
             self.read_guard()?;
-            Ok(self
+            let mut worklogs = self
                 .0
                 .borrow()
                 .worklogs
                 .iter()
                 .filter(|worklog| worklog.task_id == task_id)
                 .cloned()
-                .collect())
+                .collect::<Vec<_>>();
+            worklogs.sort_by_key(|worklog| (worklog.start, worklog.id));
+            Ok(worklogs)
         }
     }
 
@@ -412,6 +436,18 @@ mod tests {
                 return Err(error);
             }
             let mut data = self.0.borrow_mut();
+            let task = data
+                .tasks
+                .iter()
+                .find(|task| task.id == worklog.task_id)
+                .ok_or(RepositoryError::TaskNotFound {
+                    id: worklog.task_id,
+                })?;
+            if task.archived {
+                return Err(RepositoryError::TaskArchived {
+                    id: worklog.task_id,
+                });
+            }
             if data.worklogs.iter().any(|stored| stored.id == worklog.id) {
                 return Err(RepositoryError::WorklogAlreadyExists { id: worklog.id });
             }
@@ -439,6 +475,11 @@ mod tests {
             if worklog.end.is_some() {
                 return Err(RepositoryError::WorklogAlreadyStopped { id });
             }
+            if end < worklog.start {
+                return Err(RepositoryError::Constraint {
+                    message: "end precedes start".to_owned(),
+                });
+            }
             worklog.end = Some(end);
             Ok(worklog.clone())
         }
@@ -464,13 +505,26 @@ mod tests {
                 return Err(error);
             }
             let mut data = self.0.borrow_mut();
-            let Some(index) = data
-                .worklogs
-                .iter()
-                .position(|worklog| worklog.id == id && worklog.end.is_none())
-            else {
+            let Some(index) = data.worklogs.iter().position(|worklog| worklog.id == id) else {
                 return Err(RepositoryError::WorklogNotFound { id });
             };
+            if data.worklogs[index].end.is_some() {
+                return Err(RepositoryError::WorklogAlreadyStopped { id });
+            };
+            let active = &data.worklogs[index];
+            if stop_at < active.start {
+                return Err(RepositoryError::Constraint {
+                    message: "end precedes start".to_owned(),
+                });
+            }
+            let task = data
+                .tasks
+                .iter()
+                .find(|task| task.id == next.task_id)
+                .ok_or(RepositoryError::TaskNotFound { id: next.task_id })?;
+            if task.archived {
+                return Err(RepositoryError::TaskArchived { id: next.task_id });
+            }
             if data.worklogs.iter().any(|worklog| worklog.id == next.id) {
                 return Err(RepositoryError::WorklogAlreadyExists { id: next.id });
             }
@@ -609,16 +663,106 @@ mod tests {
         let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
         let mut application = TrackerApplication::load(repository.clone()).unwrap();
         application.set_active_task(alpha.id, at(100)).unwrap();
-        let outcome = application.clear_active_task(at(150)).unwrap();
+        let TrackingState::Running { worklog: active } = application.current_tracking() else {
+            panic!("the worklog must be active");
+        };
+        let active = active.id;
+        let outcome = application.clear_active_task(active, at(150)).unwrap();
         assert!(matches!(
             outcome,
             ClearActiveTaskOutcome::Stopped { worklog } if worklog.end == Some(at(150))
         ));
         assert_eq!(
-            application.clear_active_task(at(200)).unwrap(),
+            application.clear_active_task(active, at(200)).unwrap(),
             ClearActiveTaskOutcome::AlreadyIdle
         );
         assert_eq!(repository.0.borrow().worklogs.len(), 1);
+    }
+
+    #[test]
+    fn stale_clear_refreshes_state_without_stopping_another_clients_worklog() {
+        let alpha = task(1, "alpha");
+        let beta = task(2, "beta");
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+        let mut first = TrackerApplication::load(repository.clone()).unwrap();
+        first.set_active_task(alpha.id, at(100)).unwrap();
+        let expected = match first.current_tracking() {
+            TrackingState::Running { worklog } => worklog.id,
+            TrackingState::Idle => panic!("alpha must be active"),
+        };
+        let mut second = TrackerApplication::load(repository.clone()).unwrap();
+        second.set_active_task(beta.id, at(150)).unwrap();
+
+        assert_eq!(
+            first.clear_active_task(expected, at(200)),
+            Err(ApplicationError::TrackingStateChanged)
+        );
+        assert!(matches!(
+            first.current_tracking(),
+            TrackingState::Running { worklog } if worklog.task_id == beta.id
+        ));
+        assert!(matches!(
+            repository.active_worklog(),
+            Ok(Some(worklog)) if worklog.task_id == beta.id
+        ));
+    }
+
+    #[test]
+    fn tracking_write_errors_keep_the_repository_error_as_their_source() {
+        use std::error::Error as _;
+
+        let error = ApplicationError::TrackingWrite(RepositoryError::Backend {
+            message: "write failed".to_owned(),
+        });
+        assert!(error.source().is_some());
+        let error = ApplicationError::TrackingRecovery(RepositoryError::Backend {
+            message: "reload failed".to_owned(),
+        });
+        assert!(error.source().is_some());
+    }
+
+    #[test]
+    fn memory_repository_honors_worklog_ordering_and_write_contracts() {
+        let alpha = task(1, "alpha");
+        let archived = Task {
+            archived: true,
+            ..task(2, "archived")
+        };
+        let repository = MemoryRepository::with_tasks(vec![archived.clone(), alpha.clone()]);
+        let later =
+            Worklog::new(worklog(2, alpha.id, 20).id, alpha.id, at(20), Some(at(30))).unwrap();
+        let earlier =
+            Worklog::new(worklog(1, alpha.id, 10).id, alpha.id, at(10), Some(at(15))).unwrap();
+        repository.insert_worklog(&later).unwrap();
+        repository.insert_worklog(&earlier).unwrap();
+        assert_eq!(
+            repository
+                .list_worklogs(alpha.id)
+                .unwrap()
+                .into_iter()
+                .map(|worklog| worklog.id)
+                .collect::<Vec<_>>(),
+            vec![earlier.id, later.id]
+        );
+        assert!(matches!(
+            repository.insert_worklog(&worklog(3, archived.id, 40)),
+            Err(RepositoryError::TaskArchived { id }) if id == archived.id
+        ));
+        let active = worklog(4, alpha.id, 50);
+        repository.insert_worklog(&active).unwrap();
+        assert!(matches!(
+            repository.stop_worklog(active.id, at(49)),
+            Err(RepositoryError::Constraint { .. })
+        ));
+        let next = worklog(5, archived.id, 60);
+        assert!(matches!(
+            repository.switch_worklog(active.id, at(55), &next),
+            Err(RepositoryError::TaskArchived { id }) if id == archived.id
+        ));
+        assert!(matches!(
+            repository.active_worklog(),
+            Ok(Some(worklog)) if worklog.id == active.id
+        ));
     }
 
     #[test]
