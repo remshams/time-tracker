@@ -101,9 +101,9 @@ pub fn footer_hints(mode: &Mode, view: TaskView) -> &'static str {
     match mode {
         Mode::Normal => match view {
             TaskView::Active => {
-                "j/k · h/l view · space track · a add · e rename · d archive · q/esc/ctrl+c quit"
+                "j/k/↑/↓ · h/l view · space track · a/e/d add/rename/archive · q/esc/ctrl+c quit"
             }
-            TaskView::Archived => "j/k move · h/l view · u unarchive · q/esc/ctrl+c quit",
+            TaskView::Archived => "j/k/↑/↓ move · h/l view · u unarchive · q/esc/ctrl+c quit",
         },
         Mode::Input { .. } => "type · backspace delete · enter save · esc cancel · ctrl+c quit",
         Mode::ConfirmArchive { .. } => "y/enter confirm · n/esc cancel · ctrl+c quit",
@@ -435,11 +435,19 @@ mod tests {
     #[test]
     fn every_accepted_key_is_listed_in_the_footer() {
         let active_keys = footer_hints(&Mode::Normal, TaskView::Active);
-        for hint in ["j/k", "h/l", "space", "a ", "e ", "d ", "q/esc", "ctrl+c"] {
+        for hint in [
+            "j/k/↑/↓",
+            "h/l",
+            "space",
+            "a/e/d",
+            "add/rename/archive",
+            "q/esc",
+            "ctrl+c",
+        ] {
             assert!(active_keys.contains(hint), "active footer misses {hint:?}");
         }
         let archived_keys = footer_hints(&Mode::Normal, TaskView::Archived);
-        for hint in ["j/k", "h/l", "u ", "q/esc", "ctrl+c"] {
+        for hint in ["j/k/↑/↓", "h/l", "u ", "q/esc", "ctrl+c"] {
             assert!(
                 archived_keys.contains(hint),
                 "archived footer misses {hint:?}"

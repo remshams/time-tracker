@@ -293,7 +293,7 @@ mod tests {
         assert!(rows[2].contains("alpha"));
         assert!(rows[3].contains("beta"));
         assert!(rows[22].contains("Ready"));
-        assert!(rows[23].contains("a add"));
+        assert!(rows[23].contains("a/e/d add"));
         assert!(rows[23].contains("ctrl+c quit"));
         assert_eq!(cell(&terminal, 0, 0).fg, Some(Color::Blue));
         assert_eq!(cell(&terminal, 0, 1).fg, Some(Color::Blue));

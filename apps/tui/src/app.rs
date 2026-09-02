@@ -463,8 +463,10 @@ impl<S: TrackerApplicationService> App<S> {
     ///
     /// Only the archived view's normal mode unarchives. Success stays in the
     /// archived view, selects the restored task in the active view, and
-    /// clamps the archived selection; failure changes nothing but the status
-    /// line.
+    /// clamps the archived selection. Both outcomes resynchronize from the
+    /// application, so a worklog another client started shows up in the
+    /// timer header and a failed write leaves no stale tracking state
+    /// behind the status line.
     fn unarchive_selected(&mut self) {
         if self.mode != Mode::Normal || self.view != TaskView::Archived {
             return;
@@ -475,13 +477,16 @@ impl<S: TrackerApplicationService> App<S> {
         match self.application.unarchive_task(task.id) {
             Ok(TaskOutcome::Unarchived(restored)) => {
                 self.active_selection = Some(restored.id);
-                self.sync_tasks_from_application();
+                self.sync_from_application(false);
                 self.status = Status::Info(format!("Restored \"{}\"", restored.name));
             }
             Ok(TaskOutcome::Created(_) | TaskOutcome::Renamed(_) | TaskOutcome::Archived(_)) => {
                 unreachable!("unarchive returned another task outcome")
             }
-            Err(error) => self.status = Status::Error(application_error_text(&error)),
+            Err(error) => {
+                self.sync_from_application(false);
+                self.status = Status::Error(application_error_text(&error));
+            }
         }
     }
 
@@ -533,7 +538,8 @@ impl<S: TrackerApplicationService> App<S> {
         match self.application.archive_task(task_id) {
             Ok(TaskOutcome::Archived(task)) => {
                 self.sync_tasks_from_application();
-                // The archived view opens on the task just archived.
+                // The archived view will select the newly archived task when
+                // opened.
                 self.archived_selection = Some(task.id);
                 self.mode = Mode::Normal;
                 self.status = Status::Info(format!("Archived \"{}\"", task.name));
@@ -611,6 +617,7 @@ mod tests {
         fail_rename: bool,
         fail_archive: bool,
         fail_unarchive: bool,
+        unarchive_activates: Option<DateTime<Utc>>,
         set_returns_already_active: bool,
         set_timestamp: Option<DateTime<Utc>>,
     }
@@ -624,6 +631,7 @@ mod tests {
                 fail_rename: false,
                 fail_archive: false,
                 fail_unarchive: false,
+                unarchive_activates: None,
                 set_returns_already_active: false,
                 set_timestamp: None,
             }
@@ -697,6 +705,17 @@ mod tests {
                 .find(|task| task.id == id)
                 .expect("test task exists");
             task.archived = false;
+            // Stands in for a second client that restored the task and
+            // started tracking it before this unarchive ran.
+            if let Some(start) = self.unarchive_activates {
+                self.tracking = TrackingState::Running {
+                    worklog: ActiveWorklog::begin(
+                        WorklogId::from_uuid(uuid::Uuid::from_u128(20)),
+                        task.id,
+                        start,
+                    ),
+                };
+            }
             Ok(TaskOutcome::Unarchived(task.clone()))
         }
     }
@@ -1456,6 +1475,15 @@ mod tests {
         let mut service = TestService::with_tasks(vec![task(1, "alpha"), archived_task(3, "gone")]);
         service.fail_unarchive = true;
         let mut app = App::load(service);
+        // Another client's activity reaches the service after the app loaded;
+        // the failed write must still resynchronize the TUI's tracking state.
+        app.application.tracking = TrackingState::Running {
+            worklog: ActiveWorklog::begin(
+                WorklogId::from_uuid(uuid::Uuid::from_u128(20)),
+                TaskId::from_uuid(uuid::Uuid::from_u128(3)),
+                DateTime::from_timestamp(100, 0).unwrap(),
+            ),
+        };
         app.handle(Command::ShowArchivedTasks);
         app.handle(Command::UnarchiveSelected);
 
@@ -1465,10 +1493,44 @@ mod tests {
             app.tasks()[0].id,
             TaskId::from_uuid(uuid::Uuid::from_u128(3))
         );
-        assert_eq!(app.active_task_id(), None);
+        assert_eq!(
+            app.active_task_id(),
+            Some(TaskId::from_uuid(uuid::Uuid::from_u128(3))),
+            "the failed unarchive still refreshes tracking state"
+        );
         assert_eq!(
             app.status(),
             &Status::Error("Storage error: write failed".to_owned())
+        );
+    }
+
+    #[test]
+    fn unarchiving_refreshes_a_timer_another_client_started() {
+        let mut service = TestService::with_tasks(vec![task(1, "alpha"), archived_task(3, "gone")]);
+        service.unarchive_activates = Some(DateTime::from_timestamp(100, 0).unwrap());
+        let mut app = App::load(service);
+        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::UnarchiveSelected);
+
+        assert_eq!(app.view(), TaskView::Archived);
+        assert_eq!(
+            app.active_task_id(),
+            Some(TaskId::from_uuid(uuid::Uuid::from_u128(3))),
+            "the concurrent worklog reached the TUI's tracking state"
+        );
+        assert_eq!(app.active_task_name(), Some("gone"));
+        assert!(
+            app.elapsed().unwrap() > Duration::from_secs(60),
+            "the clock anchored to the concurrent worklog's start"
+        );
+        assert_eq!(app.status(), &Status::Info("Restored \"gone\"".to_owned()));
+
+        assert_eq!(app.tasks().len(), 0, "the restored task left the list");
+        app.handle(Command::ShowActiveTasks);
+        assert_eq!(app.selected(), Some(1), "the restored task is selected");
+        assert_eq!(
+            app.tasks()[1].id,
+            TaskId::from_uuid(uuid::Uuid::from_u128(3))
         );
     }
 
