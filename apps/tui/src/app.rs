@@ -466,6 +466,8 @@ mod tests {
         fail_create: bool,
         fail_rename: bool,
         fail_archive: bool,
+        set_returns_already_active: bool,
+        set_timestamp: Option<DateTime<Utc>>,
     }
 
     impl TestService {
@@ -476,6 +478,8 @@ mod tests {
                 fail_create: false,
                 fail_rename: false,
                 fail_archive: false,
+                set_returns_already_active: false,
+                set_timestamp: None,
             }
         }
 
@@ -548,15 +552,21 @@ mod tests {
             task_id: TaskId,
             occurred_at: DateTime<Utc>,
         ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+            let started_at = self.set_timestamp.unwrap_or(occurred_at);
             let worklog = Worklog::begin(
                 WorklogId::from_uuid(uuid::Uuid::from_u128(99)),
                 task_id,
-                occurred_at,
+                started_at,
             );
+            let active = ActiveWorklog::begin(worklog.id, task_id, started_at);
             self.tracking = TrackingState::Running {
-                worklog: ActiveWorklog::begin(worklog.id, task_id, occurred_at),
+                worklog: active.clone(),
             };
-            Ok(SetActiveTaskOutcome::Started { worklog })
+            if self.set_returns_already_active {
+                Ok(SetActiveTaskOutcome::AlreadyActive { worklog: active })
+            } else {
+                Ok(SetActiveTaskOutcome::Started { worklog })
+            }
         }
 
         fn clear_active_task(
@@ -620,6 +630,8 @@ mod tests {
             app.handle(Command::MoveDown);
         }
         assert_eq!(app.selected(), Some(2));
+        app.handle(Command::MoveUp);
+        assert_eq!(app.selected(), Some(1));
         app.selected = None;
         app.handle(Command::MoveUp);
         assert_eq!(app.selected(), Some(2));
@@ -667,6 +679,26 @@ mod tests {
     }
 
     #[test]
+    fn refreshing_tasks_preserves_the_selected_task_after_reordering() {
+        let task = |tag, name| {
+            Task::new(
+                TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
+                TaskName::new(name).unwrap(),
+            )
+        };
+        let selected = task(3, "three");
+        let mut app = App::load(TestService::with_tasks(vec![
+            task(1, "one"),
+            selected.clone(),
+        ]));
+        app.handle(Command::MoveDown);
+        app.application.tasks.insert(1, task(2, "two"));
+        app.sync_tasks_from_application();
+        assert_eq!(app.selected(), Some(2));
+        assert_eq!(app.tasks()[2].id, selected.id);
+    }
+
+    #[test]
     fn failed_writes_keep_the_active_modal_and_input_buffer() {
         let task = Task::new(
             TaskId::from_uuid(uuid::Uuid::from_u128(1)),
@@ -690,6 +722,10 @@ mod tests {
                 buffer,
             } if buffer == "blocked"
         ));
+        assert_eq!(
+            app.status(),
+            &Status::Error("Storage error: write failed".to_owned())
+        );
         app.handle(Command::Cancel);
 
         app.handle(Command::OpenRename);
@@ -701,11 +737,19 @@ mod tests {
                 buffer,
             } if buffer == "one"
         ));
+        assert_eq!(
+            app.status(),
+            &Status::Error("Storage error: write failed".to_owned())
+        );
         app.handle(Command::Cancel);
 
         app.handle(Command::OpenArchiveConfirm);
         app.handle(Command::Confirm);
         assert!(matches!(app.mode(), Mode::ConfirmArchive { .. }));
+        assert_eq!(
+            app.status(),
+            &Status::Error("Storage error: write failed".to_owned())
+        );
     }
 
     #[test]
@@ -789,6 +833,58 @@ mod tests {
         assert_eq!(app.active_task_id(), Some(beta));
         assert_eq!(
             app.status(),
+            &Status::Info("Switched to \"beta\"".to_owned())
+        );
+    }
+
+    #[test]
+    fn tracking_outcomes_choose_the_right_status_and_clock_anchor() {
+        let task = |tag, name| {
+            Task::new(
+                TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
+                TaskName::new(name).unwrap(),
+            )
+        };
+        let old = DateTime::from_timestamp(100, 0).unwrap();
+
+        let mut started_service = TestService::with_tasks(vec![task(1, "alpha")]);
+        started_service.set_timestamp = Some(old);
+        let mut started = App::load(started_service);
+        started.handle(Command::ToggleTracking);
+        assert_eq!(
+            started.status(),
+            &Status::Info("Started \"alpha\"".to_owned())
+        );
+        assert!(started.elapsed().unwrap() < Duration::from_secs(1));
+
+        let mut existing_service = TestService::with_tasks(vec![task(1, "alpha")]);
+        existing_service.set_returns_already_active = true;
+        existing_service.set_timestamp = Some(old);
+        let mut existing = App::load(existing_service);
+        existing.handle(Command::ToggleTracking);
+        assert_eq!(
+            existing.status(),
+            &Status::Info("Started \"alpha\"".to_owned())
+        );
+        assert!(existing.elapsed().unwrap() > Duration::from_secs(60));
+
+        let alpha = task(1, "alpha");
+        let beta = task(2, "beta");
+        let mut switched_service = TestService::with_tasks(vec![alpha.clone(), beta.clone()]);
+        switched_service.tracking = TrackingState::Running {
+            worklog: ActiveWorklog::begin(
+                WorklogId::from_uuid(uuid::Uuid::from_u128(10)),
+                alpha.id,
+                old,
+            ),
+        };
+        switched_service.set_returns_already_active = true;
+        switched_service.set_timestamp = Some(old);
+        let mut switched = App::load(switched_service);
+        switched.handle(Command::MoveDown);
+        switched.handle(Command::ToggleTracking);
+        assert_eq!(
+            switched.status(),
             &Status::Info("Switched to \"beta\"".to_owned())
         );
     }
@@ -952,6 +1048,10 @@ mod tests {
         assert_eq!(
             ElapsedClock::base_since(now + TimeDelta::seconds(1), now),
             Duration::ZERO
+        );
+        assert_eq!(
+            ElapsedClock::base_since(now - TimeDelta::seconds(5), now),
+            Duration::from_secs(5)
         );
         assert_eq!(
             tracking_timestamp(DateTime::<Utc>::MAX_UTC, Duration::MAX),
