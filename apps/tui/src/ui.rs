@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use tracker_application::TrackerRepository;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, InputPurpose, Mode, Status};
@@ -62,7 +63,7 @@ fn fit_suffix(text: &str, max_width: usize) -> &str {
 }
 
 /// Renders one frame of the interface.
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render<R: TrackerRepository>(frame: &mut Frame, app: &App<R>) {
     let [header, body, status_area, footer] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(0),
@@ -79,7 +80,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 }
 
 /// Renders the title line, with the live timer while tracking runs.
-fn render_header(frame: &mut Frame, area: Rect, app: &App) {
+fn render_header<R: TrackerRepository>(frame: &mut Frame, area: Rect, app: &App<R>) {
     let mut spans = vec![Span::styled("Time Tracker", styles::title())];
     if let Some(name) = app.active_task_name() {
         let elapsed = app.elapsed().map(format_elapsed).unwrap_or_default();
@@ -93,7 +94,7 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Renders the task list, its selection, and the active-task marker.
-fn render_tasks(frame: &mut Frame, area: Rect, app: &App) {
+fn render_tasks<R: TrackerRepository>(frame: &mut Frame, area: Rect, app: &App<R>) {
     let block = Block::bordered()
         .title("Tasks")
         .border_style(if app.mode() == &Mode::Normal {
@@ -133,7 +134,7 @@ fn render_tasks(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Renders the status or error line.
-fn render_status(frame: &mut Frame, area: Rect, app: &App) {
+fn render_status<R: TrackerRepository>(frame: &mut Frame, area: Rect, app: &App<R>) {
     let paragraph = match app.status() {
         Status::Info(text) => Paragraph::new(text.as_str()),
         Status::Error(text) => Paragraph::new(Line::from(vec![
@@ -145,12 +146,12 @@ fn render_status(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Renders the context-sensitive key help for the current mode.
-fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
+fn render_footer<R: TrackerRepository>(frame: &mut Frame, area: Rect, app: &App<R>) {
     frame.render_widget(Paragraph::new(keymap::footer_hints(app.mode())), area);
 }
 
 /// Renders the modal dialog of the current mode, if any.
-fn render_modal(frame: &mut Frame, area: Rect, app: &App) {
+fn render_modal<R: TrackerRepository>(frame: &mut Frame, area: Rect, app: &App<R>) {
     match app.mode() {
         Mode::Input { purpose, buffer } => render_input_modal(frame, area, *purpose, buffer),
         Mode::ConfirmArchive { name, .. } => render_confirm_modal(frame, area, name),
@@ -232,7 +233,8 @@ fn format_elapsed(total: Duration) -> String {
 mod tests {
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::{Terminal, backend::TestBackend};
-    use tracker_core::{Task, TaskId, TaskName, TrackerRepository};
+    use tracker_application::TrackerApplication;
+    use tracker_domain::{Task, TaskId, TaskName};
     use tracker_storage::SqliteRepository;
 
     use super::*;
@@ -241,16 +243,16 @@ mod tests {
     const WIDTH: u16 = 80;
     const HEIGHT: u16 = 24;
 
-    fn app_with(names: &[&str]) -> App {
+    fn app_with(names: &[&str]) -> App<SqliteRepository> {
         let repository = SqliteRepository::open_in_memory().unwrap();
         for name in names {
             let task = Task::new(TaskId::generate(), TaskName::new(name).unwrap());
             repository.create_task(task).unwrap();
         }
-        App::load(repository).unwrap()
+        App::load(TrackerApplication::load(repository).unwrap())
     }
 
-    fn draw(app: &App) -> Terminal<TestBackend> {
+    fn draw(app: &App<SqliteRepository>) -> Terminal<TestBackend> {
         let mut terminal = Terminal::new(TestBackend::new(WIDTH, HEIGHT)).unwrap();
         terminal.draw(|frame| render(frame, app)).unwrap();
         terminal
@@ -414,7 +416,9 @@ mod tests {
 
     #[test]
     fn an_empty_list_renders_a_hint_and_stays_selectable() {
-        let app = App::load(SqliteRepository::open_in_memory().unwrap()).unwrap();
+        let app = App::load(
+            TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap(),
+        );
         let terminal = draw(&app);
         assert!(row(&terminal, 2).contains("No tasks. Press a to add one."));
         assert!(row(&terminal, 1).contains("Tasks"));

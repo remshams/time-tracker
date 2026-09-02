@@ -136,7 +136,7 @@ mod tests {
 
     fn confirm() -> Mode {
         Mode::ConfirmArchive {
-            task_id: tracker_core::TaskId::generate(),
+            task_id: tracker_domain::TaskId::generate(),
             name: "task".to_owned(),
         }
     }

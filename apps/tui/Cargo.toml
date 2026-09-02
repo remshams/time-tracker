@@ -13,12 +13,11 @@ path = "src/main.rs"
 chrono = { workspace = true }
 crossterm = { workspace = true }
 ratatui = { workspace = true }
-thiserror = { workspace = true }
-tracker-core = { path = "../../crates/tracker-core" }
+tracker-application = { path = "../../crates/tracker-application" }
+tracker-domain = { path = "../../crates/tracker-domain" }
 tracker-storage = { path = "../../crates/tracker-storage" }
 unicode-width = { workspace = true }
 
 [dev-dependencies]
 libc = { workspace = true }
 tempfile = { workspace = true }
-uuid = { workspace = true }

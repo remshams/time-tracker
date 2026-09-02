@@ -17,7 +17,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use crossterm::event::Event;
-use tracker_core::TaskName;
+use tracker_application::TrackerApplication;
+use tracker_domain::TaskName;
 use tracker_storage::{SqliteRepository, StorageError, default_database_path, ensure_app_data_dir};
 
 use crate::app::App;
@@ -60,7 +61,8 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     ensure_app_data_dir()?;
     let repository = SqliteRepository::open(default_database_path()?)?;
     seed_default_tasks(&repository)?;
-    let mut app = App::load(repository)?;
+    let application = TrackerApplication::load(repository)?;
+    let mut app = App::load(application);
     let mut guard = TerminalGuard::new(restoration)?;
     run(&mut guard, &mut app).map_err(Into::into)
 }
@@ -69,7 +71,7 @@ fn run_app() -> Result<(), Box<dyn Error>> {
 ///
 /// The guard restores the terminal on drop, for normal quits and for errors
 /// alike.
-fn run(guard: &mut TerminalGuard, app: &mut App) -> io::Result<()> {
+fn run(guard: &mut TerminalGuard, app: &mut App<SqliteRepository>) -> io::Result<()> {
     while app.is_running() {
         guard.draw(|frame| ui::render(frame, app))?;
         if crossterm::event::poll(TICK)?
@@ -100,7 +102,7 @@ fn seed_default_tasks(repository: &SqliteRepository) -> Result<(), StorageError>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tracker_core::{Task, TaskId, TrackerRepository};
+    use tracker_domain::{Task, TaskId};
 
     fn repository() -> SqliteRepository {
         SqliteRepository::open_in_memory().unwrap()

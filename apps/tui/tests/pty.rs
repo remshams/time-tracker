@@ -12,7 +12,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use tracker_core::TrackerRepository;
 use tracker_storage::SqliteRepository;
 
 /// How long a `tt` run may take before the test kills it.
@@ -542,7 +541,7 @@ fn tt_runs_in_a_pty_seeds_the_database_and_quits_on_q() {
         ]
     );
     assert_eq!(
-        repository.active_entry().unwrap(),
+        repository.active_worklog().unwrap(),
         None,
         "quitting must not start or stop a timer"
     );
