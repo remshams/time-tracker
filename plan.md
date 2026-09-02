@@ -22,6 +22,7 @@ All completed checkpoints are pushed to Forgejo. Current local validation found 
 | Initial remote deployment | The same `tt` binary provides TUI and server modes. Client and server may initially assume the same version and communicate inside a trusted Tailscale network. The server uses SQLite first. |
 | Domain terminology | A persisted tracking record is a `Worklog`. It is active while its end time is absent and completed once its end time is set. |
 | Layering direction | Rename `tracker-core` to `tracker-domain`, extract repository-backed use cases into `tracker-application`, and keep local SQLite and future HTTP implementations as adapters. |
+| Timestamp authority | The client creates task and tracking timestamps in local and remote modes. The initial remote design assumes client and server clocks are sufficiently synchronized; the server enforces ordinary domain checks such as end not preceding start but adds no clock-skew protocol. |
 
 ## Product direction
 
@@ -38,7 +39,7 @@ The same `tt` binary will provide the TUI and server process modes, while shared
 - Stable Rust with edition 2024.
 - A Cargo workspace moving to four packages:
   - `crates/tracker-domain`, a library for tasks, worklogs, tracking state, and domain rules.
-  - `crates/tracker-application`, a library for use cases and repository and clock ports.
+  - `crates/tracker-application`, a library for use cases, repository ports, and client-side time handling.
   - `crates/tracker-storage`, the SQLite adapter.
   - `apps/tui`, the terminal application and current composition entry point.
 - `ratatui` for widgets and test rendering.
@@ -59,7 +60,8 @@ The small core crate is worthwhile even for a hard-coded list. It gives future c
 - Start the server with SQLite. PostgreSQL remains an option only if measured server load warrants it.
 - Let clients query tasks, current tracking state, and worklogs through resource-oriented endpoints. Any batching optimization remains internal to the HTTP adapter and is not a TUI concept.
 - Represent tracking as desired state: setting an active task starts or switches atomically, and clearing the active task stops it. Retrying the same request must not toggle the state back.
-- Let the server assign accepted tracking timestamps in remote mode. The client anchors the returned active entry to its monotonic display clock.
+- Let the client create UTC timestamps in both local and remote modes. A remote command carries the timestamp captured by the client, and a retry reuses that value.
+- Assume client and server clocks are sufficiently synchronized initially. The server rejects ordinary invalid intervals such as an end before its start but adds no clock-skew detection, correction, or conflict flow.
 - Keep stable UUIDv7 record identifiers and UTC timestamps.
 - Never switch a configured remote client to local writes after a connection failure.
 - Do not merge an existing local database into a remote tracker automatically. Any future import must be an explicit operation.
@@ -117,7 +119,7 @@ time-tracker/
 Responsibilities:
 
 - `tracker-domain` defines tasks, worklogs, tracking state, identifiers, and domain invariants. It depends on no application, presentation, database, or HTTP package.
-- `tracker-application` defines use cases and repository and clock ports. It depends only on `tracker-domain`.
+- `tracker-application` defines use cases, repository ports, and client-side time handling. It depends only on `tracker-domain`.
 - `tracker-storage` implements the application repository ports with SQLite.
 - `app.rs` owns TUI presentation state and converts semantic input into application operations.
 - `ui.rs` renders TUI state and contains no terminal lifecycle or persistence code.
@@ -252,8 +254,8 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 - [ ] Move repository ports out of the domain crate and into `tracker-application`; keep atomic switch requirements in their contracts and database implementation.
 - [ ] Move repository-backed task and tracking workflows out of `apps/tui/src/app.rs` behind backend-neutral task operations, tracking operations, worklog queries, outcomes, and errors.
 - [ ] Define the application-service boundary that the TUI uses in both local and future remote modes. Do not make the TUI depend directly on repository ports or `StorageError`.
-- [ ] Implement the local service with injected repository and clock ports; the future remote service will implement the same front-end boundary through HTTP.
-- [ ] Move accepted-time decisions behind the clock port so local mode can use the local clock and remote mode can use the server clock without changing TUI logic.
+- [ ] Implement the local service with injected repository and client-clock ports; the future remote service will implement the same front-end boundary through HTTP.
+- [ ] Make application tracking operations accept explicit client-created timestamps. Keep monotonic elapsed-time calculation on the client and preserve the timestamp when a remote request is retried.
 - [ ] Keep task lists, selection, modes, input buffers, key handling, status presentation, and rendering in `tracker-tui`. Preserve the current feature set and do not add worklog browsing or remote-request states during this refactor.
 - [ ] Express tracking operations as desired state rather than a transport-level toggle: set the active task or clear the active task.
 - [ ] Keep `apps/tui/src/main.rs` as a thin composition entry point so later `tt`, `tt --endpoint`, and `tt serve` modes can wire different adapters without changing application workflows.
@@ -279,7 +281,8 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 - [ ] Run the same `tracker-application` workflows behind local and server adapters.
 - [ ] Use SQLite as the initial server store and serialize or pool access safely for concurrent requests.
 - [ ] Bind the initial server only through an explicitly selected localhost or Tailscale address. Client and server may assume the same application version.
-- [ ] Let the server assign accepted tracking timestamps and enforce atomic start, stop, and switch behavior.
+- [ ] Send client-created UTC timestamps with remote task and tracking operations. Assume sufficiently synchronized clocks and add no clock-skew-specific error or conflict handling in the initial version.
+- [ ] Keep server validation to domain and persistence invariants, including rejecting a worklog end before its start and enforcing atomic start, stop, and switch behavior.
 - [ ] Make state-setting and record-creation requests safe to retry without reversing state or duplicating records.
 - [ ] Load the required task and current-tracking queries on connection and refresh affected resources after stale or conflicting commands.
 - [ ] Keep remote network work off the TUI rendering and input thread, with visible loading, saving, and unavailable states.
@@ -332,4 +335,4 @@ Each reviewer must return one complete report with severity, affected files, rat
 
 ## Approval gate
 
-Milestones 1 and 2, their bootstrap prerequisite, the functional defaults recorded above, and the listed subagents are approved. The `Worklog` terminology, domain/application separation, exclusive local-or-remote direction, same-binary server mode, initial same-version and Tailscale assumptions, server-authoritative tracking, resource-oriented REST API, and deferred offline synchronization are approved architectural direction. The domain/application refactor still requires an implementation plan and subagent approval before work begins. Milestone 3 implementation and additional clients require a later planning and approval round.
+Milestones 1 and 2, their bootstrap prerequisite, the functional defaults recorded above, and the listed subagents are approved. The `Worklog` terminology, domain/application separation, exclusive local-or-remote direction, same-binary server mode, initial same-version, synchronized-clock and Tailscale assumptions, client-created timestamps, resource-oriented REST API, and deferred offline synchronization are approved architectural direction. The domain/application refactor still requires an implementation plan and subagent approval before work begins. Milestone 3 implementation and additional clients require a later planning and approval round.
