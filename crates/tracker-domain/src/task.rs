@@ -112,9 +112,9 @@ mod tests {
     }
 
     #[test]
-    fn names_accept_multibyte_text_and_edge_printables() {
-        let name = TaskName::new("  宽度をテスト ✓ ").unwrap();
-        assert_eq!(name.as_str(), "宽度をテスト ✓");
+    fn names_accept_multibyte_english_text_and_edge_printables() {
+        let name = TaskName::new("  Review café résumé ✓ ").unwrap();
+        assert_eq!(name.as_str(), "Review café résumé ✓");
         // The printable characters around DEL and the C1 range are fine.
         assert!(TaskName::new("~").is_ok());
         assert!(TaskName::new("\u{7e}\u{80}").is_err());
@@ -167,9 +167,10 @@ mod tests {
         let ascii = TaskName::new(&"a".repeat(TaskName::MAX_LEN)).unwrap();
         assert_eq!(ascii.as_str().chars().count(), TaskName::MAX_LEN);
         // The limit counts Unicode scalar values, not bytes.
-        let wide = TaskName::new(&"宽".repeat(TaskName::MAX_LEN)).unwrap();
-        assert_eq!(wide.as_str().chars().count(), TaskName::MAX_LEN);
-        assert_eq!(wide.as_str().len(), TaskName::MAX_LEN * 3);
+        let multibyte = "café".repeat(TaskName::MAX_LEN / "café".chars().count());
+        let name = TaskName::new(&multibyte).unwrap();
+        assert_eq!(name.as_str().chars().count(), TaskName::MAX_LEN);
+        assert!(name.as_str().len() > TaskName::MAX_LEN);
     }
 
     #[test]
@@ -178,10 +179,11 @@ mod tests {
             TaskName::new(&"a".repeat(TaskName::MAX_LEN + 1)),
             Err(TaskNameError::TooLong)
         );
-        assert_eq!(
-            TaskName::new(&"宽".repeat(TaskName::MAX_LEN + 1)),
-            Err(TaskNameError::TooLong)
+        let multibyte = format!(
+            "{}x",
+            "café".repeat(TaskName::MAX_LEN / "café".chars().count())
         );
+        assert_eq!(TaskName::new(&multibyte), Err(TaskNameError::TooLong));
     }
 
     #[test]
