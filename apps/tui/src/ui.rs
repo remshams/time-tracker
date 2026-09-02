@@ -529,15 +529,15 @@ mod tests {
     fn wide_characters_scroll_on_whole_characters() {
         let mut app = app_with(&["alpha"]);
         app.handle(Command::OpenAdd);
-        // 30 wide characters are 60 columns, wider than the budget of 38.
-        for character in "宽".repeat(30).chars() {
+        // 30 clock symbols are 60 columns, wider than the budget of 38.
+        for character in "🕒".repeat(30).chars() {
             app.handle(Command::Insert(character));
         }
         let terminal = draw(&app);
         let row_text = row(&terminal, 11);
-        // 19 wide characters fill the 38-column budget exactly; the wide
-        // glyphs occupy their own cells, so count them.
-        assert_eq!(row_text.matches('宽').count(), 19, "got {row_text:?}");
+        // 19 symbols fill the 38-column budget exactly; the wide glyphs
+        // occupy their own cells, so count them.
+        assert_eq!(row_text.matches('🕒').count(), 19, "got {row_text:?}");
         assert!(row_text.contains('▏'), "the cursor must stay visible");
     }
 
@@ -546,10 +546,10 @@ mod tests {
         assert_eq!(fit_prefix("hello", 3), "hel");
         assert_eq!(fit_prefix("hello", 0), "");
         assert_eq!(fit_prefix("hello", 99), "hello");
-        assert_eq!(fit_prefix("宽宽宽", 3), "宽");
+        assert_eq!(fit_prefix("🕒🕒🕒", 3), "🕒");
         assert_eq!(fit_suffix("hello", 3), "llo");
         assert_eq!(fit_suffix("hello", 0), "");
-        assert_eq!(fit_suffix("宽宽宽", 3), "宽");
+        assert_eq!(fit_suffix("🕒🕒🕒", 3), "🕒");
         // Combining marks travel with their base character.
         let acute = "e\u{301}";
         let text: String = acute.repeat(3);
@@ -575,13 +575,13 @@ mod tests {
 
     #[test]
     fn a_wide_character_task_name_truncates_without_splitting_a_character() {
-        // 128 wide characters are 256 scalar values and 256 columns.
-        let wide = "宽".repeat(128);
+        // 128 clock symbols occupy 256 terminal columns.
+        let wide = "🕒".repeat(128);
         let app = app_with(&[&wide]);
         let terminal = draw(&app);
         let row_text = row(&terminal, 2);
-        // The 76-cell budget fits 38 wide characters.
-        assert_eq!(row_text.matches('宽').count(), 38, "got {row_text:?}");
+        // The 76-cell budget fits 38 wide symbols.
+        assert_eq!(row_text.matches('🕒').count(), 38, "got {row_text:?}");
         assert!(row_text.ends_with('│'), "got {row_text:?}");
     }
 
