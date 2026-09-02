@@ -4,14 +4,14 @@
 
 Milestones 0, 1, and 2, the terminal-palette checkpoint, and the domain/application separation are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. Task browsing and ordering are next; remote storage follows.
 
-The completed implementation is committed locally and ready to push. Current validation found 205 passing Rust tests and 10 passing palette-audit tests, 323 caught mutants, no missed or timed-out mutants, 91 unviable mutants, and no CRAP score above 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
+All completed checkpoints are committed and pushed to Forgejo. Current validation found 205 passing Rust tests and 10 passing palette-audit tests, 323 caught mutants, no missed or timed-out mutants, 91 unviable mutants, and no CRAP score above 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
 ## Settled decisions
 
 | Decision | Outcome |
 |---|---|
 | Product and binary names | Product `Time Tracker`, binary `tt` |
-| Rust packages after the next refactor | `tracker-domain`, `tracker-application`, `tracker-storage`, and the `tracker-tui` application |
+| Rust packages | `tracker-domain`, `tracker-application`, `tracker-storage`, and the `tracker-tui` application |
 | Initial platforms | Linux and macOS |
 | Navigation | Keyboard-first. Vim-style keys are primary, with arrow-key aliases where they make sense. |
 | MVP data | Any small hard-coded task list is acceptable. |
@@ -38,7 +38,7 @@ The same `tt` binary will provide the TUI and server process modes, while shared
 ### TUI and workspace
 
 - Use stable Rust with edition 2024.
-- Move to four packages in the next refactor: `tracker-domain`, `tracker-application`, `tracker-storage`, and the `tracker-tui` application.
+- Keep four packages: `tracker-domain`, `tracker-application`, `tracker-storage`, and the `tracker-tui` application.
 - Use `ratatui` for widgets and deterministic test rendering.
 - Use `crossterm` for terminal input, alternate-screen handling, and raw mode.
 - Keep the current synchronous event loop during the domain/application refactor. Do not add Tokio or networking in that checkpoint.
@@ -88,7 +88,7 @@ A suggested initial list is:
 
 The exact text is easy to replace once the intended demo is clear.
 
-## Target architecture after the next refactor
+## Current architecture
 
 ```text
 time-tracker/
@@ -201,7 +201,7 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 
 ### Milestone 1: render the hard-coded task list
 
-- [x] Define the small `Task` type in `tracker-domain`.
+- [x] Define the small `Task` type in `tracker-core`, which was later renamed to `tracker-domain`.
 - [x] Add TUI state with arbitrary hard-coded tasks and bounded selection movement.
 - [x] Render a title, task list, selected row, and one-line key help.
 - [x] Add a central command map and keyboard handling for `j`, `k`, arrow-key aliases, and exit.
@@ -211,13 +211,13 @@ Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check
 - [x] Run formatting, Clippy, tests, mutation tests, coverage, and CRAP checks.
 - [x] Perform a manual terminal smoke test.
 - [x] Commit core and TUI changes separately if both contain meaningful logic:
-  - `feat(TrackerDomain): add task model`
+  - `feat(TrackerCore): add task model`
   - `feat(Tui): render selectable task list`
 
 ### Milestone 2: local tracking
 
 - [x] Model reusable tasks with many worklogs.
-- [x] Define idle and running tracking states and commands in `tracker-domain`.
+- [x] Define idle and running tracking states and commands in the original `tracker-core` package.
 - [x] Persist tasks, worklogs, and the active timer in SQLite through a repository trait.
 - [x] Store the database in the platform application-data directory on Linux and macOS.
 - [x] Add `a` to create a task, `e` to rename it, and `d` to archive it after confirmation.
