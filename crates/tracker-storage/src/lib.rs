@@ -260,6 +260,18 @@ impl SqliteRepository {
         }
     }
 
+    pub fn unarchive_task(&self, id: TaskId) -> Result<Task, StorageError> {
+        let mut statement = self.conn.prepare(
+            "UPDATE tasks SET archived = FALSE WHERE id = ?1
+             RETURNING id, name, archived",
+        )?;
+        match statement.query_row([id.to_string()], raw_task).optional() {
+            Ok(Some(raw)) => task_from_stored(raw.0, raw.1, raw.2),
+            Ok(None) => Err(StorageError::TaskNotFound { id }),
+            Err(error) => Err(error::classify_write_error(error)),
+        }
+    }
+
     pub fn insert_worklog(&self, worklog: &Worklog) -> Result<(), StorageError> {
         let end_us = worklog.end.map(timestamp_to_us);
         self.conn
@@ -385,6 +397,10 @@ impl TaskRepository for SqliteRepository {
 
     fn archive_task(&self, id: TaskId) -> Result<Task, RepositoryError> {
         SqliteRepository::archive_task(self, id).map_err(Into::into)
+    }
+
+    fn unarchive_task(&self, id: TaskId) -> Result<Task, RepositoryError> {
+        SqliteRepository::unarchive_task(self, id).map_err(Into::into)
     }
 }
 

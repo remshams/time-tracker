@@ -77,6 +77,10 @@ impl TaskRepository for SynchronizingRepository {
     fn archive_task(&self, id: TaskId) -> Result<Task, RepositoryError> {
         self.repository.archive_task(id).map_err(Into::into)
     }
+
+    fn unarchive_task(&self, id: TaskId) -> Result<Task, RepositoryError> {
+        self.repository.unarchive_task(id).map_err(Into::into)
+    }
 }
 
 impl WorklogRepository for SynchronizingRepository {
@@ -516,6 +520,17 @@ fn task_create_find_list_rename_archive_and_missing_errors() {
         repository.archive_task(task_id(9)),
         Err(StorageError::TaskNotFound { id }) if id == task_id(9)
     ));
+
+    let unarchived = repository.unarchive_task(task_id(3)).unwrap();
+    assert!(!unarchived.archived);
+    assert!(!repository.find_task(task_id(3)).unwrap().unwrap().archived);
+    // Unarchiving an already active task is a harmless success.
+    assert_eq!(repository.unarchive_task(task_id(3)).unwrap(), unarchived);
+    assert!(matches!(
+        repository.unarchive_task(task_id(9)),
+        Err(StorageError::TaskNotFound { id }) if id == task_id(9)
+    ));
+
     assert!(matches!(
         repository.create_task(named_task(1, "duplicate")),
         Err(StorageError::TaskAlreadyExists { id }) if id == task_id(1)
@@ -651,6 +666,46 @@ fn an_archived_task_rejects_worklogs_at_the_database_level() {
     // Error state: nothing was written.
     assert!(repository.list_worklogs(task.id).unwrap().is_empty());
     assert_eq!(repository.active_worklog().unwrap(), None);
+}
+
+#[test]
+fn unarchiving_restores_a_task_keeps_its_worklogs_and_persists() {
+    let temp = tempfile::tempdir().unwrap();
+    let task = named_task(1, "done");
+    let stopped = Worklog::new(worklog_id(10), task.id, at(100), Some(at(150))).unwrap();
+
+    {
+        let repository = file_repo(&temp);
+        repository.create_task(task.clone()).unwrap();
+        repository.insert_worklog(&stopped).unwrap();
+        repository.archive_task(task.id).unwrap();
+        assert!(repository.find_task(task.id).unwrap().unwrap().archived);
+
+        let unarchived = TaskRepository::unarchive_task(&repository, task.id).unwrap();
+        assert_eq!(unarchived, task);
+        assert_eq!(
+            repository.list_worklogs(task.id).unwrap(),
+            vec![stopped.clone()]
+        );
+
+        // The trigger no longer fires: the restored task accepts worklogs.
+        let resumed = Worklog::begin(worklog_id(11), task.id, at(200));
+        repository.insert_worklog(&resumed).unwrap();
+        // Unarchiving again changes nothing and still returns the task.
+        assert_eq!(repository.unarchive_task(task.id).unwrap(), task);
+
+        repository.create_task(named_task(2, "later")).unwrap();
+    }
+
+    let reopened = file_repo(&temp);
+    assert_eq!(reopened.find_task(task.id).unwrap().unwrap(), task);
+    let worklogs = reopened.list_worklogs(task.id).unwrap();
+    assert_eq!(worklogs.len(), 2);
+    assert_eq!(worklogs[0], stopped);
+    // The list order is untouched by the unarchive.
+    let tasks = reopened.list_tasks().unwrap();
+    let names: Vec<&str> = tasks.iter().map(|task| task.name.as_str()).collect();
+    assert_eq!(names, ["done", "later"]);
 }
 
 #[test]
