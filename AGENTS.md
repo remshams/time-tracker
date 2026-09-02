@@ -5,6 +5,7 @@ Time Tracker is a Rust time-tracking application. It starts with a TUI and may l
 ## General
 
 - Always apply the `unslop` skill when writing or editing any text (responses, code comments, docs, commit messages, etc.)
+- Use English text for test names, fixtures, inputs, and expected values. When a test needs a non-language Unicode glyph, such as a double-width terminal character, use a symbol or emoji instead of Chinese, Japanese, or Korean text.
 
 ## Validation
 
