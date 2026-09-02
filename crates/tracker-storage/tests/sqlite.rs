@@ -15,8 +15,9 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use tempfile::TempDir;
 use tracker_application::{
-    ApplicationError, ClearActiveTaskOutcome, RepositoryError, SetActiveTaskOutcome, TaskQueries,
-    TaskRepository, TrackerApplication, TrackingOperations, TrackingRepository, WorklogRepository,
+    ApplicationError, ClearActiveTaskOutcome, RepositoryError, SetActiveTaskOutcome,
+    TaskOperations, TaskOutcome, TaskQueries, TaskRepository, TrackerApplication,
+    TrackingOperations, TrackingRepository, WorklogRepository,
 };
 use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingError, TrackingOutcome, TrackingState,
@@ -415,6 +416,73 @@ fn two_clients_recover_lost_start_switch_and_stale_clear_without_stopping_the_ot
 }
 
 #[test]
+fn a_stale_client_unarchive_adopts_the_tracking_another_client_started() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let task = named_task(1, "restored");
+    let setup = SqliteRepository::open(&path).unwrap();
+    setup.create_task(task.clone()).unwrap();
+    setup.archive_task(task.id).unwrap();
+    drop(setup);
+
+    // Client A loads while the task is archived and nothing is tracked.
+    let mut stale = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
+    // Client B loads on the same file and restores the task.
+    let mut restoring = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
+    assert!(matches!(
+        restoring.unarchive_task(task.id).unwrap(),
+        TaskOutcome::Unarchived(restored) if !restored.archived
+    ));
+    let started = match restoring.set_active_task(task.id, at(200)).unwrap() {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        other => panic!("expected Started, got {other:?}"),
+    };
+
+    // Client A unarchives from its stale archived row. The refresh before
+    // the write must pick up the tracking B started, not report Idle over
+    // an active worklog that survived the call.
+    assert!(matches!(
+        stale.unarchive_task(task.id).unwrap(),
+        TaskOutcome::Unarchived(restored) if !restored.archived
+    ));
+    assert_eq!(
+        stale.current_tracking(),
+        &TrackingState::Running {
+            worklog: ActiveWorklog::begin(started.id, task.id, at(200))
+        }
+    );
+
+    // One active worklog, and the restored task kept its history.
+    let stored = SqliteRepository::open(&path).unwrap();
+    let active = stored
+        .active_worklog()
+        .unwrap()
+        .expect("one active worklog");
+    assert_eq!(active.id, started.id);
+    assert_eq!(active.task_id, task.id);
+    assert_eq!(active.start, at(200));
+    assert_eq!(
+        stored.list_worklogs(task.id).unwrap(),
+        vec![started.clone()]
+    );
+
+    // Client A stops the tracking it adopted, leaving a clean stopped row.
+    let cleared = stale.clear_active_task(started.id, at(300)).unwrap();
+    assert!(matches!(
+        cleared,
+        ClearActiveTaskOutcome::Stopped { worklog } if worklog.end == Some(at(300))
+    ));
+    assert_eq!(stale.current_tracking(), &TrackingState::Idle);
+    assert_eq!(
+        SqliteRepository::open(&path)
+            .unwrap()
+            .active_worklog()
+            .unwrap(),
+        None
+    );
+}
+
+#[test]
 fn a_real_sqlite_write_conflict_reports_a_failed_recovery_separately() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tracker.db");
@@ -524,7 +592,7 @@ fn task_create_find_list_rename_archive_and_missing_errors() {
     let unarchived = repository.unarchive_task(task_id(3)).unwrap();
     assert!(!unarchived.archived);
     assert!(!repository.find_task(task_id(3)).unwrap().unwrap().archived);
-    // Unarchiving an already active task is a harmless success.
+    // Unarchiving an already unarchived task is a harmless success.
     assert_eq!(repository.unarchive_task(task_id(3)).unwrap(), unarchived);
     assert!(matches!(
         repository.unarchive_task(task_id(9)),
