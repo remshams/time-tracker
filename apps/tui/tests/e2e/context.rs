@@ -38,8 +38,11 @@ impl TestContext {
     }
 
     /// Opens the context's database through the real SQLite adapter for
-    /// postcondition probes. Safe to call while `tt` still runs: probes
-    /// only read.
+    /// postcondition probes. Each call opens a new connection and reruns
+    /// migration setup. A scenario that probes while `tt` runs opens this
+    /// once after the first frame, before its next action, and reuses the
+    /// connection. This avoids opening a migration transaction alongside
+    /// an application action.
     pub(crate) fn database(&self) -> Database {
         Database::open(&self.database_path)
     }

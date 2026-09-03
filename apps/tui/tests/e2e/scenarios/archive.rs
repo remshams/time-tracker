@@ -184,3 +184,90 @@ fn tt_ignores_active_view_keys_in_the_archived_view() {
     assert!(tasks.iter().all(|task| !task.archived));
     assert_eq!(database.active_worklog_task_name(), None);
 }
+
+#[test]
+fn archiving_the_active_task_is_rejected_and_keeps_tracking() {
+    let context = TestContext::new();
+    let mut tt = context.launch();
+    tt.wait_for_first_frame("the first frame", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.header().is_idle() && page.task_panel().task_names().len() == 3
+    });
+    let database = context.database();
+    let original = database
+        .task_by_name("Write release notes")
+        .expect("the tracked task is stored");
+
+    tt.press_and_wait(Key::Char(' '), "the running header", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.header()
+            .active_task()
+            .is_some_and(|active| active.name() == "Write release notes")
+    });
+    let before = database
+        .active_worklog()
+        .expect("the active worklog is stored");
+    assert_eq!(before.task_name, "Write release notes");
+
+    let page = tt.press_and_wait(Key::Char('d'), "the archive confirmation", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .archive_dialog()
+            .is_some_and(|dialog| dialog.question() == "Archive \"Write release notes\"?")
+    });
+    assert_eq!(
+        page.archive_dialog()
+            .expect("the archive dialog is open")
+            .question(),
+        "Archive \"Write release notes\"?"
+    );
+
+    let page = tt.press_and_wait(Key::Char('y'), "the rejection", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.status_bar().text() == "Error: The active task cannot be archived"
+            && page.status_bar().is_error()
+            && page.status_bar().label_is_accented()
+            && page.archive_dialog().is_none()
+            && page
+                .header()
+                .active_task()
+                .is_some_and(|active| active.name() == "Write release notes")
+            && page.task_panel().active_marker_index() == Some(0)
+    });
+    assert_eq!(
+        page.status_bar().text(),
+        "Error: The active task cannot be archived"
+    );
+    assert!(
+        page.status_bar().label_is_accented(),
+        "the error label keeps its red bold accent:\n{}",
+        page.screen()
+    );
+    assert!(
+        page.task_panel()
+            .task_names()
+            .contains(&"Write release notes".to_owned()),
+        "the active task stayed in the active list:\n{}",
+        page.screen()
+    );
+
+    tt.quit().assert_clean_exit();
+
+    let stored = database
+        .task_by_name("Write release notes")
+        .expect("the task is stored");
+    assert_eq!(
+        stored.id, original.id,
+        "the rejected archive kept the task's identity"
+    );
+    assert!(!stored.archived, "the active task was not archived");
+    let after = database
+        .active_worklog()
+        .expect("the active worklog survived the rejected archive");
+    assert_eq!(after.id, before.id, "the same worklog stayed active");
+    assert_eq!(after.start, before.start, "the worklog was not rewritten");
+    assert_eq!(
+        after.task_name, before.task_name,
+        "the worklog still tracks the same task"
+    );
+    assert!(after.end.is_none(), "the worklog is still active");
+}

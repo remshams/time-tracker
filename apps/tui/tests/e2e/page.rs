@@ -248,6 +248,38 @@ impl TaskPanel {
         }
     }
 
+    /// The zero-based index of the selected row, if a task row is selected.
+    ///
+    /// Panics when more than one row is selected. A repaint bug that
+    /// draws the highlight twice must fail a scenario, not let it pick
+    /// whichever duplicate comes first.
+    pub(crate) fn selected_index(&self) -> Option<usize> {
+        let selected: Vec<usize> = (0..self.task_names().len())
+            .filter(|&index| self.row(index).is_selected())
+            .collect();
+        assert!(
+            selected.len() <= 1,
+            "more than one task row is selected: {selected:?}"
+        );
+        selected.into_iter().next()
+    }
+
+    /// The zero-based index of the running task's row, if the list shows
+    /// the active marker.
+    ///
+    /// Panics when more than one row carries the marker, for the same
+    /// reason the selection check does.
+    pub(crate) fn active_marker_index(&self) -> Option<usize> {
+        let marked: Vec<usize> = (0..self.task_names().len())
+            .filter(|&index| self.row(index).has_active_marker())
+            .collect();
+        assert!(
+            marked.len() <= 1,
+            "more than one task row carries the active marker: {marked:?}"
+        );
+        marked.into_iter().next()
+    }
+
     /// The text of one content row, without the border cells.
     fn content_row_text(&self, row: u16) -> String {
         self.screen
