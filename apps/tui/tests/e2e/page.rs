@@ -8,35 +8,15 @@
 //!
 //! Components know the public layout (which row holds what) and the visible
 //! labels and accents. All coordinates and cell styles stay here; scenarios
-//! ask semantic questions only.
+//! ask semantic questions only. The layout is derived from the snapshot's
+//! own size, so the components read correctly at the supported scenario
+//! geometries, including the relocated layout after a resize.
 
 use termlens::{Color, Screen};
-
-/// The terminal geometry every scenario runs at.
-pub(crate) const COLS: u16 = 80;
-pub(crate) const ROWS: u16 = 24;
 
 /// The exact empty-state hints the two views render instead of task rows.
 const ACTIVE_EMPTY_HINT: &str = "No active tasks. Press a to add one.";
 const ARCHIVED_EMPTY_HINT: &str = "No archived tasks.";
-
-/// The geometry of the centered 56x3 modal over the panel. The body spans
-/// rows 1..=21 of the fixed 80x24 screen, so the modal sits at rows
-/// 10..=12, columns 12..=67.
-const DIALOG_LEFT_COL: u16 = 12;
-const DIALOG_RIGHT_COL: u16 = DIALOG_LEFT_COL + 55;
-const DIALOG_TOP_ROW: u16 = 10;
-const DIALOG_TEXT_ROW: u16 = DIALOG_TOP_ROW + 1;
-const DIALOG_BOTTOM_ROW: u16 = DIALOG_TOP_ROW + 2;
-
-/// The fixed frame layout: one header line, the bordered task panel, one
-/// status line, one footer line.
-const HEADER_ROW: u16 = 0;
-const PANEL_TOP_ROW: u16 = 1;
-const PANEL_FIRST_CONTENT_ROW: u16 = 2;
-const PANEL_LAST_CONTENT_ROW: u16 = 20;
-const STATUS_ROW: u16 = 22;
-const FOOTER_ROW: u16 = 23;
 
 /// The accents the interface draws with, as the terminal palette reports
 /// them. Ratatui sends named ANSI colors as 256-color indexes: blue is
@@ -44,6 +24,81 @@ const FOOTER_ROW: u16 = 23;
 const BLUE: Color = Color::Indexed(4);
 const GREEN: Color = Color::Indexed(2);
 const RED: Color = Color::Indexed(1);
+
+/// The public frame layout of one snapshot, derived from the snapshot's
+/// own size.
+///
+/// The frame spends one row on the header, the rest of the top of the
+/// screen on the bordered task panel, one row on the status line, and one
+/// row on the footer; the modal dialogs are 56x3 boxes centered over the
+/// panel area. Scenarios never name a coordinate, so a resize that moves
+/// every component needs no changes here: the components simply read the
+/// new geometry off the next snapshot.
+#[derive(Clone, Copy)]
+struct Layout {
+    cols: u16,
+    rows: u16,
+}
+
+impl Layout {
+    fn of(screen: &Screen) -> Self {
+        let (cols, rows) = screen.size();
+        Self { cols, rows }
+    }
+
+    fn header_row(&self) -> u16 {
+        0
+    }
+
+    fn panel_top_row(&self) -> u16 {
+        1
+    }
+
+    fn panel_first_content_row(&self) -> u16 {
+        2
+    }
+
+    fn panel_last_content_row(&self) -> u16 {
+        self.rows - 4
+    }
+
+    fn panel_bottom_row(&self) -> u16 {
+        self.rows - 3
+    }
+
+    fn status_row(&self) -> u16 {
+        self.rows - 2
+    }
+
+    fn footer_row(&self) -> u16 {
+        self.rows - 1
+    }
+
+    /// The centered 56x3 modal over the panel area.
+    ///
+    /// The panel area always spans at least the dialog's size in the
+    /// geometries the scenarios run at; the saturating subtraction keeps a
+    /// meaningless answer below that threshold from panicking.
+    fn dialog_left_col(&self) -> u16 {
+        self.cols.saturating_sub(56) / 2
+    }
+
+    fn dialog_right_col(&self) -> u16 {
+        self.dialog_left_col() + 55
+    }
+
+    fn dialog_top_row(&self) -> u16 {
+        1 + self.rows.saturating_sub(6) / 2
+    }
+
+    fn dialog_text_row(&self) -> u16 {
+        self.dialog_top_row() + 1
+    }
+
+    fn dialog_bottom_row(&self) -> u16 {
+        self.dialog_top_row() + 2
+    }
+}
 
 /// One rendered screen, decomposed into the interface's components.
 pub(crate) struct TimeTrackerPage {
@@ -59,6 +114,11 @@ impl TimeTrackerPage {
     /// The staleness rules of the page apply.
     pub(crate) fn screen(&self) -> &Screen {
         &self.screen
+    }
+
+    /// The terminal geometry the snapshot was taken at, as `(cols, rows)`.
+    pub(crate) fn size(&self) -> (u16, u16) {
+        self.screen.size()
     }
 
     pub(crate) fn header(&self) -> Header {
@@ -104,12 +164,13 @@ pub(crate) struct Header {
 impl Header {
     /// The full text of the header line.
     pub(crate) fn text(&self) -> String {
-        trimmed_row(&self.screen, HEADER_ROW)
+        trimmed_row(&self.screen, Layout::of(&self.screen).header_row())
     }
 
     /// Whether the title keeps its blue bold accent.
     pub(crate) fn title_is_accented(&self) -> bool {
-        matches!(self.screen.cell(HEADER_ROW, 0), Some(cell)
+        let header_row = Layout::of(&self.screen).header_row();
+        matches!(self.screen.cell(header_row, 0), Some(cell)
             if cell.style().fg == BLUE && cell.style().bold)
     }
 
@@ -120,10 +181,11 @@ impl Header {
 
     /// The running task the header names, if tracking is on.
     pub(crate) fn active_task(&self) -> Option<ActiveTask> {
+        let header_row = Layout::of(&self.screen).header_row();
         // Task rows carry the same marker, so the marker must sit in the
         // header row to count.
         let (marker_row, marker_col) = self.screen.find("▶")?;
-        if marker_row != HEADER_ROW {
+        if marker_row != header_row {
             return None;
         }
         // The header reads "Time Tracker  ▶ Name  HH:MM:SS"; the elapsed
@@ -137,6 +199,7 @@ impl Header {
         let split = after_marker.len() - 8;
         Some(ActiveTask {
             screen: self.screen.clone(),
+            header_row,
             marker_col,
             name: after_marker[..split].trim_end().to_owned(),
             elapsed: after_marker[split..].to_owned(),
@@ -147,6 +210,7 @@ impl Header {
 /// The running task as the header shows it.
 pub(crate) struct ActiveTask {
     screen: Screen,
+    header_row: u16,
     marker_col: u16,
     name: String,
     elapsed: String,
@@ -175,7 +239,7 @@ impl ActiveTask {
 
     /// Whether the ▶ marker keeps its green accent.
     pub(crate) fn marker_is_green(&self) -> bool {
-        matches!(self.screen.cell(HEADER_ROW, self.marker_col), Some(cell)
+        matches!(self.screen.cell(self.header_row, self.marker_col), Some(cell)
             if cell.style().fg == GREEN)
     }
 }
@@ -189,7 +253,7 @@ impl TaskPanel {
     /// The block title of the panel, e.g. "Active tasks".
     pub(crate) fn title(&self) -> String {
         self.screen
-            .row_text(PANEL_TOP_ROW)
+            .row_text(Layout::of(&self.screen).panel_top_row())
             .trim_matches(|character| matches!(character, '┌' | '─' | '┐'))
             .trim()
             .to_owned()
@@ -208,8 +272,32 @@ impl TaskPanel {
     /// Whether the panel border carries the focused blue accent, which
     /// normal mode gives it.
     pub(crate) fn is_focused(&self) -> bool {
-        matches!(self.screen.cell(PANEL_TOP_ROW, 0), Some(cell)
+        matches!(self.screen.cell(Layout::of(&self.screen).panel_top_row(), 0), Some(cell)
             if cell.style().fg == BLUE)
+    }
+
+    /// Whether the panel's four corner glyphs sit where the snapshot's own
+    /// geometry puts them.
+    ///
+    /// This checks the four corners only, not the full border. After a
+    /// resize, termlens clips or pads the pre-repaint grid to the new
+    /// size, so the stale grid keeps the *old* corners. Corners that fit
+    /// the current geometry are therefore something only a fresh repaint
+    /// can show, and resize predicates lean on that.
+    pub(crate) fn frame_corners_fit_current_geometry(&self) -> bool {
+        let layout = Layout::of(&self.screen);
+        [
+            (layout.panel_top_row(), 0, "┌"),
+            (layout.panel_top_row(), layout.cols - 1, "┐"),
+            (layout.panel_bottom_row(), 0, "└"),
+            (layout.panel_bottom_row(), layout.cols - 1, "┘"),
+        ]
+        .into_iter()
+        .all(|(row, col, glyph)| {
+            self.screen
+                .cell(row, col)
+                .is_some_and(|cell| cell.contents() == glyph)
+        })
     }
 
     /// The empty-state hint shown instead of task rows, if the list is
@@ -218,7 +306,7 @@ impl TaskPanel {
     /// Only the two exact view-specific hints count. A task row that
     /// happens to start with "No " can never pass the list off as empty.
     pub(crate) fn empty_hint(&self) -> Option<String> {
-        let hint = self.content_row_text(PANEL_FIRST_CONTENT_ROW);
+        let hint = self.content_row_text(Layout::of(&self.screen).panel_first_content_row());
         ([ACTIVE_EMPTY_HINT, ARCHIVED_EMPTY_HINT].contains(&hint.as_str())).then_some(hint)
     }
 
@@ -227,7 +315,8 @@ impl TaskPanel {
         if self.empty_hint().is_some() {
             return Vec::new();
         }
-        (PANEL_FIRST_CONTENT_ROW..=PANEL_LAST_CONTENT_ROW)
+        let layout = Layout::of(&self.screen);
+        (layout.panel_first_content_row()..=layout.panel_last_content_row())
             .map(|row| task_name_text(&self.screen, row))
             .take_while(|text| !text.is_empty())
             .collect()
@@ -244,7 +333,7 @@ impl TaskPanel {
         );
         TaskRow {
             screen: self.screen.clone(),
-            row: PANEL_FIRST_CONTENT_ROW + index as u16,
+            row: Layout::of(&self.screen).panel_first_content_row() + index as u16,
         }
     }
 
@@ -282,8 +371,9 @@ impl TaskPanel {
 
     /// The text of one content row, without the border cells.
     fn content_row_text(&self, row: u16) -> String {
+        let cols = Layout::of(&self.screen).cols;
         self.screen
-            .rect_text(1..(COLS - 1), row..row + 1)
+            .rect_text(1..(cols - 1), row..row + 1)
             .trim_end()
             .to_owned()
     }
@@ -292,8 +382,9 @@ impl TaskPanel {
 /// The task name on one panel content row: the text after the two marker
 /// cells, with trailing blanks removed.
 fn task_name_text(screen: &Screen, row: u16) -> String {
+    let cols = Layout::of(screen).cols;
     screen
-        .rect_text(3..(COLS - 1), row..row + 1)
+        .rect_text(3..(cols - 1), row..row + 1)
         .trim_end()
         .to_owned()
 }
@@ -319,7 +410,8 @@ impl TaskRow {
 
     /// Whether this row carries the selection highlight.
     pub(crate) fn is_selected(&self) -> bool {
-        (1..COLS - 1).any(
+        let cols = Layout::of(&self.screen).cols;
+        (1..cols - 1).any(
             |col| matches!(self.screen.cell(self.row, col), Some(cell) if cell.style().reverse),
         )
     }
@@ -333,7 +425,7 @@ pub(crate) struct StatusBar {
 impl StatusBar {
     /// The full text of the status line.
     pub(crate) fn text(&self) -> String {
-        trimmed_row(&self.screen, STATUS_ROW)
+        trimmed_row(&self.screen, Layout::of(&self.screen).status_row())
     }
 
     /// Whether the line reports an error through its label.
@@ -343,8 +435,9 @@ impl StatusBar {
 
     /// Whether the "Error: " label keeps its red bold accent.
     pub(crate) fn label_is_accented(&self) -> bool {
+        let status_row = Layout::of(&self.screen).status_row();
         (0.."Error: ".len() as u16).all(|col| {
-            matches!(self.screen.cell(STATUS_ROW, col), Some(cell)
+            matches!(self.screen.cell(status_row, col), Some(cell)
                 if cell.style().fg == RED && cell.style().bold)
         })
     }
@@ -358,7 +451,7 @@ pub(crate) struct Footer {
 impl Footer {
     /// The full text of the footer line.
     pub(crate) fn text(&self) -> String {
-        trimmed_row(&self.screen, FOOTER_ROW)
+        trimmed_row(&self.screen, Layout::of(&self.screen).footer_row())
     }
 
     /// Whether the footer names the movement keys.
@@ -381,6 +474,11 @@ impl Footer {
         self.text().contains("a/e/d add/rename/archive")
     }
 
+    /// Whether the footer names the text-input keys.
+    pub(crate) fn hints_input(&self) -> bool {
+        self.text().contains("enter save")
+    }
+
     /// Whether the footer names the unarchive action of the archived view.
     pub(crate) fn hints_unarchive(&self) -> bool {
         self.text().contains("u unarchive")
@@ -395,18 +493,21 @@ impl Footer {
 /// The one-line text input dialog.
 pub(crate) struct TaskInputDialog {
     screen: Screen,
+    layout: Layout,
     prompt_start_col: u16,
     prompt: &'static str,
 }
 
 impl TaskInputDialog {
     fn find(screen: &Screen) -> Option<Self> {
+        let layout = Layout::of(screen);
         for prompt in ["New task name:", "Rename task:"] {
             if let Some((row, col)) = screen.find(prompt)
-                && dialog_geometry_holds(screen, row, col)
+                && dialog_geometry_holds(screen, layout, row, col)
             {
                 return Some(Self {
                     screen: screen.clone(),
+                    layout,
                     prompt_start_col: col,
                     prompt,
                 });
@@ -429,8 +530,8 @@ impl TaskInputDialog {
     pub(crate) fn text(&self) -> String {
         self.screen
             .rect_text(
-                self.prompt_end_col() + 1..DIALOG_RIGHT_COL,
-                DIALOG_TEXT_ROW..DIALOG_TEXT_ROW + 1,
+                self.prompt_end_col() + 1..self.layout.dialog_right_col(),
+                self.layout.dialog_text_row()..self.layout.dialog_text_row() + 1,
             )
             .trim_end_matches('▏')
             .trim_end()
@@ -439,8 +540,8 @@ impl TaskInputDialog {
 
     /// Whether the text cursor glyph is visible at the end of the input.
     pub(crate) fn cursor_is_visible(&self) -> bool {
-        (self.prompt_end_col()..DIALOG_RIGHT_COL).any(|col| {
-            matches!(self.screen.cell(DIALOG_TEXT_ROW, col), Some(cell)
+        (self.prompt_end_col()..self.layout.dialog_right_col()).any(|col| {
+            matches!(self.screen.cell(self.layout.dialog_text_row(), col), Some(cell)
                 if cell.contents() == "▏")
         })
     }
@@ -449,13 +550,16 @@ impl TaskInputDialog {
 /// The archive confirmation dialog.
 pub(crate) struct ArchiveDialog {
     screen: Screen,
+    layout: Layout,
 }
 
 impl ArchiveDialog {
     fn find(screen: &Screen) -> Option<Self> {
+        let layout = Layout::of(screen);
         let (row, col) = screen.find("Confirm archive")?;
-        dialog_geometry_holds(screen, row, col).then(|| Self {
+        dialog_geometry_holds(screen, layout, row, col).then_some(Self {
             screen: screen.clone(),
+            layout,
         })
     }
 
@@ -463,8 +567,8 @@ impl ArchiveDialog {
     pub(crate) fn question(&self) -> String {
         self.screen
             .rect_text(
-                DIALOG_LEFT_COL + 1..DIALOG_RIGHT_COL,
-                DIALOG_TEXT_ROW..DIALOG_TEXT_ROW + 1,
+                self.layout.dialog_left_col() + 1..self.layout.dialog_right_col(),
+                self.layout.dialog_text_row()..self.layout.dialog_text_row() + 1,
             )
             .trim_end()
             .to_owned()
@@ -472,24 +576,29 @@ impl ArchiveDialog {
 }
 
 /// Whether a found dialog text sits where the centered 56x3 modal renders
-/// it, and the box borders are all present.
+/// it at the snapshot's geometry, and the box borders are all present.
 ///
 /// The modal's prompt or title starts one cell inside the left border:
 /// the title on the top border row, a prompt on the single text row below
 /// it. Without these checks a task named, say, "New task name:" could
-/// pass as an open dialog.
-fn dialog_geometry_holds(screen: &Screen, text_row: u16, text_col: u16) -> bool {
-    let is_title = text_row == DIALOG_TOP_ROW;
-    if (!is_title && text_row != DIALOG_TEXT_ROW) || text_col != DIALOG_LEFT_COL + 1 {
+/// pass as an open dialog. Because every position comes from the
+/// snapshot's own size, a dialog painted for a different geometry, such
+/// as the clipped or padded pre-repaint grid a resize leaves behind,
+/// never matches.
+fn dialog_geometry_holds(screen: &Screen, layout: Layout, text_row: u16, text_col: u16) -> bool {
+    let is_title = text_row == layout.dialog_top_row();
+    if (!is_title && text_row != layout.dialog_text_row())
+        || text_col != layout.dialog_left_col() + 1
+    {
         return false;
     }
     [
-        (DIALOG_TOP_ROW, DIALOG_LEFT_COL, "┌"),
-        (DIALOG_TOP_ROW, DIALOG_RIGHT_COL, "┐"),
-        (DIALOG_TEXT_ROW, DIALOG_LEFT_COL, "│"),
-        (DIALOG_TEXT_ROW, DIALOG_RIGHT_COL, "│"),
-        (DIALOG_BOTTOM_ROW, DIALOG_LEFT_COL, "└"),
-        (DIALOG_BOTTOM_ROW, DIALOG_RIGHT_COL, "┘"),
+        (layout.dialog_top_row(), layout.dialog_left_col(), "┌"),
+        (layout.dialog_top_row(), layout.dialog_right_col(), "┐"),
+        (layout.dialog_text_row(), layout.dialog_left_col(), "│"),
+        (layout.dialog_text_row(), layout.dialog_right_col(), "│"),
+        (layout.dialog_bottom_row(), layout.dialog_left_col(), "└"),
+        (layout.dialog_bottom_row(), layout.dialog_right_col(), "┘"),
     ]
     .iter()
     .all(|(row, col, glyph)| {

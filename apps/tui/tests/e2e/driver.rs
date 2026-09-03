@@ -5,7 +5,13 @@ use std::time::Duration;
 
 use termlens::{ExitStatus, Key, Screen, Signal, Terminal};
 
-use crate::page::{COLS, ROWS, TimeTrackerPage};
+use crate::page::TimeTrackerPage;
+
+/// The geometry every scenario starts at. Resize scenarios leave this
+/// baseline behind; the page components derive their rows and columns from
+/// the snapshot's own size, so no scenario pins to these numbers.
+const COLS: u16 = 80;
+const ROWS: u16 = 24;
 
 /// How long `tt` may take to start up and render its first frame before
 /// the test gives up. Startup also covers creating and seeding the
@@ -145,6 +151,39 @@ impl TuiDriver {
              predicate must describe the state after the key press:\n{before}"
         );
         self.press(key);
+        self.wait_for(waiting_for, condition)
+    }
+
+    /// Resizes the terminal and waits for the repaint that answers it.
+    ///
+    /// `tt` emits no DEC 2026 synchronized-update markers, so there is no
+    /// formal frame boundary to wait for and no `wait_frame_for` here.
+    /// What makes the wait sound instead is the predicate: termlens clips
+    /// or pads the visible grid to the new size the moment the resize
+    /// lands, so the pre-repaint grid already *reports* the new geometry.
+    /// Only postconditions that name the relocated components, such as
+    /// status and footer text on the new bottom rows, the panel corners
+    /// on the new edges, or a dialog at its new center, can separate that
+    /// stale grid from the post-SIGWINCH repaint, and the caller's
+    /// predicate must cover exactly those. A match therefore proves the
+    /// post-SIGWINCH visible state; the settle afterwards stays best
+    /// effort, exactly as after every other wait.
+    pub(crate) fn resize_and_wait(
+        &mut self,
+        cols: u16,
+        rows: u16,
+        waiting_for: &str,
+        mut condition: impl FnMut(&Screen) -> bool,
+    ) -> TimeTrackerPage {
+        let before = self.terminal.screen();
+        assert!(
+            !condition(&before),
+            "{waiting_for} already holds before the resize to {cols}x{rows}; the wait \
+             predicate must describe the state after the repaint:\n{before}"
+        );
+        self.terminal
+            .resize(cols, rows)
+            .expect("the terminal must accept the resize");
         self.wait_for(waiting_for, condition)
     }
 

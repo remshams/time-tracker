@@ -4,7 +4,10 @@ use std::io::Read;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
+use termlens::Key;
+
 use crate::context::TestContext;
+use crate::database::StoredTask;
 use crate::page::TimeTrackerPage;
 
 /// How long the failing `tt` may take to exit before the test kills and
@@ -101,11 +104,8 @@ fn tt_seeds_the_database_renders_the_task_list_and_quits_on_q() {
         page.screen()
     );
 
-    let outcome = tt.exit_with(termlens::Key::Char('q'));
-    outcome.assert_clean_exit();
-
-    // Seeding went through the real SQLite adapter and quit touched
-    // neither the task list nor the timer.
+    // Keep the exact stored records the first frame showed, so the exit
+    // can be checked against them record by record.
     let database = context.database();
     assert_eq!(
         database.task_names(),
@@ -114,6 +114,18 @@ fn tt_seeds_the_database_renders_the_task_list_and_quits_on_q() {
             "Fix the coffee machine".to_owned(),
             "Plan Friday's demo".to_owned()
         ]
+    );
+    let stored = database.tasks();
+
+    let outcome = tt.exit_with(termlens::Key::Char('q'));
+    outcome.assert_clean_exit();
+
+    // Seeding went through the real SQLite adapter and quit touched
+    // neither the stored records nor the timer.
+    assert_eq!(
+        database.tasks(),
+        stored,
+        "quitting changed no stored record"
     );
     assert_eq!(
         database.active_worklog_task_name(),
@@ -188,5 +200,149 @@ fn tt_reports_a_startup_failure_and_exits_nonzero() {
     assert!(
         !stdout.contains('\x1b') && !stderr.contains('\x1b'),
         "setup must not touch the terminal on a startup failure:\n{stdout:?}\n{stderr:?}"
+    );
+}
+
+#[test]
+fn an_existing_custom_database_is_shown_as_is_without_reseeding() {
+    let context = TestContext::new();
+    // Seed through the real adapter before tt starts, and keep the exact
+    // stored records the launch must leave untouched.
+    let before_launch: Vec<StoredTask> = {
+        let database = context.database();
+        database.create_task("Ship the beta");
+        database.create_task("Water the plants");
+        database.tasks()
+    };
+    let mut tt = context.launch();
+
+    let page = tt.wait_for_first_frame("the first frame", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.header().is_idle()
+            && page.task_panel().task_names()
+                == ["Ship the beta".to_owned(), "Water the plants".to_owned()]
+            && page.status_bar().text() == "Ready"
+            && page.footer().hints_quit()
+    });
+    // The rendered view is compared against fixed names, not against
+    // whatever the fixture happened to store.
+    assert_eq!(
+        page.task_panel().task_names(),
+        ["Ship the beta".to_owned(), "Water the plants".to_owned()],
+        "the existing tasks render in storage order:\n{}",
+        page.screen()
+    );
+    assert!(
+        page.header().is_idle(),
+        "an existing database starts idle:\n{}",
+        page.screen()
+    );
+
+    tt.quit().assert_clean_exit();
+
+    // A database that already has tasks is never reseeded: every stored
+    // record is exactly what setup put there, so no default task was
+    // inserted and nothing else changed.
+    let database = context.database();
+    assert_eq!(
+        database.tasks(),
+        before_launch,
+        "launching an existing database changed no stored record"
+    );
+    assert_eq!(
+        database.active_worklog_task_name(),
+        None,
+        "quitting must not start a timer"
+    );
+}
+
+#[test]
+fn a_mixed_database_shows_active_and_archived_tasks_in_their_own_views() {
+    let context = TestContext::new();
+    // Seed through the real adapter before tt starts, and keep the exact
+    // stored records the launch must leave untouched.
+    let before_launch: Vec<StoredTask> = {
+        let database = context.database();
+        database.create_task("Plan the sprint");
+        database.create_task("Review the budget");
+        database.create_task("Retire the old importer");
+        let target = database
+            .task_by_name("Retire the old importer")
+            .expect("the task to archive is stored");
+        let archived = database.archive_task("Retire the old importer");
+        assert_eq!(archived.id, target.id, "archiving kept the stored identity");
+        assert!(archived.archived, "the fixture archived the task");
+        database.tasks()
+    };
+    let mut tt = context.launch();
+
+    let page = tt.wait_for_first_frame("the first frame", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.header().is_idle()
+            && page.task_panel().shows_active_tasks()
+            && page.task_panel().task_names()
+                == ["Plan the sprint".to_owned(), "Review the budget".to_owned()]
+            && page.task_panel().selected_index() == Some(0)
+    });
+    assert_eq!(
+        page.task_panel().task_names(),
+        ["Plan the sprint".to_owned(), "Review the budget".to_owned()],
+        "the active view shows exactly the active tasks:\n{}",
+        page.screen()
+    );
+    assert_eq!(
+        page.task_panel().selected_index(),
+        Some(0),
+        "the active view selects its first row:\n{}",
+        page.screen()
+    );
+
+    // Move to the second active row first, so the view switch happens
+    // from a selection past the archived view's single row.
+    let page = tt.press_and_wait(Key::Char('j'), "the second active row", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_panel().selected_index() == Some(1)
+    });
+    assert_eq!(page.task_panel().row(1).name(), "Review the budget");
+
+    let page = tt.press_and_wait(Key::Char('l'), "the archived view", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_panel().shows_archived_tasks()
+            && page.task_panel().task_names() == ["Retire the old importer".to_owned()]
+            && page.task_panel().selected_index() == Some(0)
+            && page.footer().hints_unarchive()
+    });
+    assert_eq!(
+        page.task_panel().task_names(),
+        ["Retire the old importer".to_owned()],
+        "the archived view shows exactly the archived tasks:\n{}",
+        page.screen()
+    );
+    assert_eq!(
+        page.task_panel().selected_index(),
+        Some(0),
+        "the one-row archived view selects safely:\n{}",
+        page.screen()
+    );
+    assert!(
+        page.footer().hints_unarchive(),
+        "the archived footer names the unarchive key:\n{}",
+        page.screen()
+    );
+
+    tt.quit().assert_clean_exit();
+
+    // Every stored record is exactly what setup put there, so no default
+    // task was inserted and the archive flag survived the launch.
+    let database = context.database();
+    assert_eq!(
+        database.tasks(),
+        before_launch,
+        "launching a mixed database changed no stored record"
+    );
+    assert_eq!(
+        database.active_worklog_task_name(),
+        None,
+        "launching a mixed database starts nothing"
     );
 }

@@ -192,3 +192,127 @@ fn selection_moves_with_j_and_k_and_never_wraps_at_the_list_edges() {
 
     tt.quit().assert_clean_exit();
 }
+
+#[test]
+fn a_failed_create_keeps_the_dialog_and_a_retry_persists_the_task() {
+    let context = TestContext::new();
+    let mut tt = context.launch();
+    tt.wait_for_first_frame("the first frame", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.header().is_idle() && page.task_panel().task_names().len() == 3
+    });
+
+    let page = tt.press_and_wait(Key::Char('a'), "the add dialog", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_input_dialog()
+            .is_some_and(|dialog| {
+                dialog.prompt() == "New task name:"
+                    && dialog.text().is_empty()
+                    && dialog.cursor_is_visible()
+            })
+    });
+    assert_eq!(
+        page.task_input_dialog()
+            .expect("the add dialog is open")
+            .prompt(),
+        "New task name:"
+    );
+
+    tt.type_text("Prepare sprint review");
+    tt.wait_for("the typed name", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_input_dialog()
+            .is_some_and(|dialog| dialog.text() == "Prepare sprint review")
+    });
+
+    // Open one database now and keep it: it holds the exact stored
+    // records the failure must not change and probes the store after the
+    // failed submit and the retry.
+    let database = context.database();
+    let original = database.tasks();
+
+    // Inject the failure without touching production code: a persistent
+    // trigger in this temporary database aborts the insert, no matter
+    // what user runs the test.
+    database.inject_task_create_failure();
+    let page = tt.press_and_wait(Key::Enter, "the storage error", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.status_bar().is_error()
+            && page.status_bar().label_is_accented()
+            && page.status_bar().text().starts_with("Error: Storage error")
+            && page.task_input_dialog().is_some_and(|dialog| {
+                dialog.text() == "Prepare sprint review" && dialog.cursor_is_visible()
+            })
+    });
+    assert!(
+        page.status_bar().text().starts_with("Error: Storage error"),
+        "the failed create reports a storage error:\n{}",
+        page.screen()
+    );
+    assert!(
+        page.status_bar().label_is_accented(),
+        "the error label keeps its red bold accent:\n{}",
+        page.screen()
+    );
+    let dialog = page
+        .task_input_dialog()
+        .expect("the failed create keeps the dialog open");
+    assert_eq!(
+        dialog.text(),
+        "Prepare sprint review",
+        "the buffered name survives the failure:\n{}",
+        page.screen()
+    );
+    assert!(
+        dialog.cursor_is_visible(),
+        "the input cursor is visible after the failure:\n{}",
+        page.screen()
+    );
+
+    // The failed submit changed nothing in storage.
+    assert_eq!(
+        database.tasks(),
+        original,
+        "the failed create stored no task:\n{}",
+        page.screen()
+    );
+
+    // Remove the trigger and retry without retyping: the same Enter saves
+    // the buffered name.
+    database.remove_injected_task_create_failure();
+    let page = tt.press_and_wait(Key::Enter, "the added task", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_input_dialog().is_none()
+            && page.status_bar().text() == "Added \"Prepare sprint review\""
+            && page.task_panel().task_names().len() == 4
+            && page.task_panel().row(3).is_selected()
+    });
+    assert_eq!(page.task_panel().row(3).name(), "Prepare sprint review");
+    assert!(
+        page.task_input_dialog().is_none(),
+        "the dialog closed after the retry saved:\n{}",
+        page.screen()
+    );
+
+    tt.quit().assert_clean_exit();
+
+    // Exactly one new unarchived task was added, and every original
+    // record survived unchanged.
+    let after = database.tasks();
+    assert_eq!(
+        after.len(),
+        original.len() + 1,
+        "the retry added exactly one task: {after:?}"
+    );
+    for record in &original {
+        assert!(
+            after.contains(record),
+            "the original record {record:?} did not survive the failure and retry"
+        );
+    }
+    let stored = after
+        .iter()
+        .find(|task| task.name == "Prepare sprint review")
+        .expect("the retried task is stored");
+    assert!(!stored.archived, "the retried task is unarchived");
+}

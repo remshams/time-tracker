@@ -1,5 +1,6 @@
 //! Test fixtures: one isolated temporary home per scenario.
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
@@ -18,7 +19,10 @@ pub(crate) struct TestContext {
 
 impl TestContext {
     /// Creates the temporary home. The home directory itself must exist so
-    /// `tt` can create the platform data directory below it.
+    /// `tt` can create the platform data directory below it. Nothing below
+    /// it is created here: a fresh-start scenario lets `tt` build its own
+    /// data path, and a scenario that seeds first calls [`TestContext::database`],
+    /// which prepares the directory then.
     pub(crate) fn new() -> Self {
         let temp = tempfile::tempdir().expect("a temporary directory must be creatable");
         let home = temp.path().join("home");
@@ -37,13 +41,29 @@ impl TestContext {
         TuiDriver::spawn(&self.home)
     }
 
-    /// Opens the context's database through the real SQLite adapter for
-    /// postcondition probes. Each call opens a new connection and reruns
-    /// migration setup. A scenario that probes while `tt` runs opens this
-    /// once after the first frame, before its next action, and reuses the
-    /// connection. This avoids opening a migration transaction alongside
-    /// an application action.
+    /// Opens the context's database through the real SQLite adapter, as a
+    /// fixture for seeding and injected failures and as a probe for
+    /// postconditions.
+    ///
+    /// The database's parent directory is created lazily, only when it is
+    /// absent, so a scenario that seeds before launch can create it here
+    /// while a post-launch probe uses the directory `tt` itself created.
+    /// A directory created here gets the mode production uses, so the
+    /// adapter's own validation accepts it. Each call opens a new
+    /// connection and reruns migration setup. A scenario that probes
+    /// while `tt` runs opens this once after the first frame, before its
+    /// next action, and reuses the connection. This avoids opening a
+    /// migration transaction alongside an application action.
     pub(crate) fn database(&self) -> Database {
+        let database_dir = self
+            .database_path
+            .parent()
+            .expect("the database path has a parent directory");
+        if !database_dir.exists() {
+            std::fs::create_dir_all(database_dir).expect("the data directory must be creatable");
+            std::fs::set_permissions(database_dir, std::fs::Permissions::from_mode(0o700))
+                .expect("the data directory permissions must be settable");
+        }
         Database::open(&self.database_path)
     }
 }
