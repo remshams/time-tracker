@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use termlens::{ExitStatus, Key, Screen, Terminal};
+use termlens::{ExitStatus, Key, Screen, Signal, Terminal};
 
 use crate::page::{COLS, ROWS, TimeTrackerPage};
 
@@ -12,7 +12,7 @@ use crate::page::{COLS, ROWS, TimeTrackerPage};
 /// database; a healthy debug build renders in well under a second, so a
 /// full allowance here still keeps every scenario inside the mutation
 /// test's per-run timeout.
-const STARTUP_LIMIT: Duration = Duration::from_secs(5);
+const STARTUP_LIMIT: Duration = Duration::from_secs(3);
 
 /// How long `tt` may take to answer one key press after the first frame,
 /// and to exit once quit was sent.
@@ -30,6 +30,10 @@ const RESPONSE_LIMIT: Duration = Duration::from_secs(3);
 /// the settle only lowers the odds of reading a half-finished repaint in
 /// regions no predicate named.
 const FRAME_QUIET: Duration = Duration::from_millis(50);
+
+/// How long panic cleanup gives a terminated child to exit before termlens'
+/// own bounded drop cleanup takes over.
+const FAILURE_SHUTDOWN_LIMIT: Duration = Duration::from_millis(500);
 
 /// Drives one `tt` process and reads its rendered screen.
 pub(crate) struct TuiDriver {
@@ -162,6 +166,17 @@ impl TuiDriver {
             status,
             screen: self.terminal.screen(),
         }
+    }
+}
+
+impl Drop for TuiDriver {
+    fn drop(&mut self) {
+        // Normal exits are already cached, making both calls harmless. On a
+        // scenario panic, terminate and reap before termlens enters its
+        // process-wide serialized fallback cleanup. This keeps a shared
+        // rendering failure from paying that fallback once per test.
+        let _ = self.terminal.signal(Signal::Term);
+        let _ = self.terminal.wait_exit_for(FAILURE_SHUTDOWN_LIMIT);
     }
 }
 
