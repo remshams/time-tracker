@@ -136,10 +136,10 @@ impl Tracker {
                 active: worklog.clone(),
             });
         }
-        if task.archived {
-            return Err(TrackingError::TaskArchived { id: task.id });
+        if task.is_archived() {
+            return Err(TrackingError::TaskArchived { id: task.id() });
         }
-        let active = ActiveWorklog::begin(WorklogId::generate(), task.id, at);
+        let active = ActiveWorklog::begin(WorklogId::generate(), task.id(), at);
         let worklog = active.to_worklog();
         self.state = TrackingState::Running { worklog: active };
         Ok(worklog)
@@ -177,17 +177,17 @@ impl Tracker {
             TrackingState::Idle => return Err(TrackingError::NotRunning),
             TrackingState::Running { worklog } => worklog.clone(),
         };
-        if task.id == active.task_id {
-            return Err(TrackingError::TaskAlreadyActive { id: task.id });
+        if task.id() == active.task_id {
+            return Err(TrackingError::TaskAlreadyActive { id: task.id() });
         }
-        if task.archived {
-            return Err(TrackingError::TaskArchived { id: task.id });
+        if task.is_archived() {
+            return Err(TrackingError::TaskArchived { id: task.id() });
         }
         let stopped = active.stop(stop_at)?;
         if start_at < stop_at {
             return Err(TrackingError::StartBeforeStop { stop_at, start_at });
         }
-        let started = ActiveWorklog::begin(WorklogId::generate(), task.id, start_at);
+        let started = ActiveWorklog::begin(WorklogId::generate(), task.id(), start_at);
         self.state = TrackingState::Running {
             worklog: started.clone(),
         };
@@ -215,7 +215,7 @@ impl Tracker {
             }
             TrackingState::Running { worklog } => worklog.clone(),
         };
-        if active.task_id == task.id {
+        if active.task_id == task.id() {
             return self
                 .stop(at)
                 .map(|worklog| TrackingOutcome::Stopped { worklog });
@@ -256,14 +256,13 @@ mod tests {
     }
 
     fn task(tag: u32) -> Task {
-        Task::new(task_id(tag), TaskName::new("task").unwrap())
+        Task::create(task_id(tag), TaskName::new("task").unwrap(), at(100))
     }
 
     fn archived_task(tag: u32) -> Task {
-        Task {
-            archived: true,
-            ..task(tag)
-        }
+        let mut task = task(tag);
+        assert!(task.archive(at(100)));
+        task
     }
 
     fn at(seconds: i64) -> DateTime<Utc> {

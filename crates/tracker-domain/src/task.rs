@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use chrono::{DateTime, Utc};
+
 use crate::ids::TaskId;
 
 /// The name of a task.
@@ -65,27 +67,142 @@ impl fmt::Display for TaskName {
     }
 }
 
+/// Why a task could not be built from stored values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum TaskError {
+    /// `updated_at` precedes `created_at`, which no task history can
+    /// produce.
+    #[error("task updated_at must not precede created_at")]
+    UpdatedBeforeCreated,
+}
+
 /// A reusable task that worklogs can be recorded against.
 ///
 /// Tasks are archived instead of deleted so past worklogs keep their context.
+/// Both timestamps are client-created UTC values. Creating a task sets them
+/// to the same instant; only semantic metadata changes (rename, archive,
+/// restore) ever advance `updated_at`, and it never moves backward.
+/// Tracking operations leave both timestamps untouched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
     /// The stable UUIDv7 identifier.
     pub id: TaskId,
     /// The non-empty trimmed name.
-    pub name: TaskName,
+    name: TaskName,
     /// Whether the task is archived. Archived tasks cannot start tracking.
-    pub archived: bool,
+    archived: bool,
+    /// When the task was created, in UTC.
+    created_at: DateTime<Utc>,
+    /// When the task's metadata last changed semantically, in UTC.
+    updated_at: DateTime<Utc>,
 }
 
 impl Task {
-    /// Creates a new, not archived task.
-    pub fn new(id: TaskId, name: TaskName) -> Self {
+    /// Returns the stable task identifier.
+    pub fn id(&self) -> TaskId {
+        self.id
+    }
+
+    /// Returns the task name.
+    pub fn name(&self) -> &TaskName {
+        &self.name
+    }
+
+    /// Whether the task is archived.
+    pub fn is_archived(&self) -> bool {
+        self.archived
+    }
+
+    /// Returns the task creation timestamp.
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+
+    /// Returns the last semantic metadata-change timestamp.
+    pub fn updated_at(&self) -> DateTime<Utc> {
+        self.updated_at
+    }
+
+    /// Creates a new, not archived task stamped with the client's creation
+    /// timestamp. Creation sets `created_at` and `updated_at` to the same
+    /// value.
+    pub fn create(id: TaskId, name: TaskName, created_at: DateTime<Utc>) -> Self {
         Self {
             id,
             name,
             archived: false,
+            created_at,
+            updated_at: created_at,
         }
+    }
+
+    /// Rebuilds a task from stored values, rejecting an `updated_at` that
+    /// precedes `created_at`.
+    pub fn rehydrate(
+        id: TaskId,
+        name: TaskName,
+        archived: bool,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    ) -> Result<Self, TaskError> {
+        if updated_at < created_at {
+            return Err(TaskError::UpdatedBeforeCreated);
+        }
+        Ok(Self {
+            id,
+            name,
+            archived,
+            created_at,
+            updated_at,
+        })
+    }
+
+    /// Renames the task, advancing `updated_at` by the domain rules.
+    ///
+    /// Renaming to the current name is an idempotent no-op that leaves
+    /// `updated_at` alone. A real rename advances `updated_at` to the later
+    /// of the stored value and `occurred_at`, so a client clock that reports
+    /// an earlier time cannot move the timestamp backward. Returns whether
+    /// the task changed.
+    pub fn rename(&mut self, name: TaskName, occurred_at: DateTime<Utc>) -> bool {
+        if name == self.name {
+            return false;
+        }
+        self.name = name;
+        self.touch(occurred_at);
+        true
+    }
+
+    /// Archives the task, advancing `updated_at` by the domain rules.
+    ///
+    /// Archiving an already archived task is an idempotent no-op. Returns
+    /// whether the task changed.
+    pub fn archive(&mut self, occurred_at: DateTime<Utc>) -> bool {
+        if self.archived {
+            return false;
+        }
+        self.archived = true;
+        self.touch(occurred_at);
+        true
+    }
+
+    /// Restores an archived task, advancing `updated_at` by the domain
+    /// rules.
+    ///
+    /// Restoring a task that is not archived is an idempotent no-op.
+    /// Returns whether the task changed.
+    pub fn restore(&mut self, occurred_at: DateTime<Utc>) -> bool {
+        if !self.archived {
+            return false;
+        }
+        self.archived = false;
+        self.touch(occurred_at);
+        true
+    }
+
+    /// Advances `updated_at` to the later of the stored value and `at`.
+    fn touch(&mut self, at: DateTime<Utc>) {
+        self.updated_at = self.updated_at.max(at);
     }
 }
 
@@ -97,11 +214,112 @@ mod tests {
         TaskId::from_uuid(uuid::Uuid::from_u128(tag as u128))
     }
 
+    fn at(seconds: i64) -> DateTime<Utc> {
+        DateTime::from_timestamp(seconds, 0).unwrap()
+    }
+
+    fn created(tag: u32, seconds: i64) -> Task {
+        Task::create(id(tag), TaskName::new("task").unwrap(), at(seconds))
+    }
+
     #[test]
-    fn new_trims_the_name_and_starts_not_archived() {
-        let task = Task::new(id(1), TaskName::new("  Write tests  ").unwrap());
+    fn create_sets_both_timestamps_to_the_same_client_value() {
+        let task = Task::create(id(1), TaskName::new("  Write tests  ").unwrap(), at(500));
         assert_eq!(task.name.as_str(), "Write tests");
         assert!(!task.archived);
+        assert_eq!(task.created_at, at(500));
+        assert_eq!(task.updated_at, at(500));
+    }
+
+    #[test]
+    fn rehydrate_accepts_equal_and_later_updated_timestamps() {
+        let equal = Task::rehydrate(
+            id(1),
+            TaskName::new("kept").unwrap(),
+            true,
+            at(100),
+            at(100),
+        )
+        .unwrap();
+        assert!(equal.archived);
+        assert_eq!(equal.created_at, at(100));
+        assert_eq!(equal.updated_at, at(100));
+
+        let later = Task::rehydrate(
+            id(2),
+            TaskName::new("edited").unwrap(),
+            false,
+            at(100),
+            at(350),
+        )
+        .unwrap();
+        assert_eq!(later.updated_at, at(350));
+    }
+
+    #[test]
+    fn rehydrate_rejects_an_updated_timestamp_before_creation() {
+        let error = Task::rehydrate(
+            id(1),
+            TaskName::new("broken").unwrap(),
+            false,
+            at(200),
+            at(199),
+        )
+        .expect_err("updated before created is impossible");
+        assert_eq!(error, TaskError::UpdatedBeforeCreated);
+    }
+
+    #[test]
+    fn rename_advances_updated_at_to_the_operation_timestamp() {
+        let mut task = created(1, 100);
+        let renamed = task.rename(TaskName::new("new name").unwrap(), at(300));
+        assert!(renamed);
+        assert_eq!(task.name.as_str(), "new name");
+        assert_eq!(task.created_at, at(100));
+        assert_eq!(task.updated_at, at(300));
+    }
+
+    #[test]
+    fn rename_never_moves_updated_at_backward() {
+        let mut task = created(1, 100);
+        task.rename(TaskName::new("first").unwrap(), at(500));
+        let renamed = task.rename(TaskName::new("second").unwrap(), at(200));
+        assert!(renamed);
+        assert_eq!(task.name.as_str(), "second");
+        assert_eq!(task.updated_at, at(500), "the stored value stays");
+    }
+
+    #[test]
+    fn renaming_to_the_current_name_changes_nothing() {
+        let mut task = created(1, 100);
+        task.rename(TaskName::new("same").unwrap(), at(300));
+        let renamed = task.rename(TaskName::new(" same ").unwrap(), at(400));
+        assert!(!renamed, "the trimmed name is the current name");
+        assert_eq!(task.updated_at, at(300), "a no-op rename does not advance");
+    }
+
+    #[test]
+    fn archive_and_restore_advance_updated_at() {
+        let mut task = created(1, 100);
+        assert!(task.archive(at(200)));
+        assert!(task.archived);
+        assert_eq!(task.updated_at, at(200));
+        assert!(task.restore(at(300)));
+        assert!(!task.archived);
+        assert_eq!(task.updated_at, at(300));
+        assert_eq!(task.created_at, at(100), "creation is never rewritten");
+    }
+
+    #[test]
+    fn archive_and_restore_forward_only_and_idempotent() {
+        let mut task = created(1, 100);
+        assert!(task.archive(at(500)));
+        assert!(!task.archive(at(600)), "already archived is a no-op");
+        assert_eq!(task.updated_at, at(500));
+        assert!(task.restore(at(200)), "a late client clock cannot rewind");
+        assert_eq!(task.updated_at, at(500));
+        assert!(!task.restore(at(700)), "already restored is a no-op");
+        assert_eq!(task.updated_at, at(500));
     }
 
     #[test]
