@@ -7,6 +7,11 @@ Time Tracker is a Rust time-tracking application. It starts with a TUI and may l
 - Always apply the `unslop` skill when writing or editing any text (responses, code comments, docs, commit messages, etc.)
 - Use English text for test names, fixtures, inputs, and expected values. When a test needs a non-language Unicode glyph, such as a double-width terminal character, use a symbol or emoji instead of Chinese, Japanese, or Korean text.
 
+## End-to-end tests
+
+- Keep E2E tests unchanged when a task does not change requirements or externally observable behavior.
+- If changed requirements or behavior warrant E2E updates, obtain explicit user consent before modifying those tests.
+
 ## Validation
 
 - After completing a task or feature, run `python3 -m unittest discover -s scripts/tests -p 'test_*.py'`, `cargo test`, `cargo mutants`, `cargo llvm-cov --lcov --output-path lcov.info`, and `cargo crap --workspace --lcov lcov.info` before handoff.
