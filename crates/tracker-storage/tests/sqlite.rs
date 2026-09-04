@@ -1565,6 +1565,19 @@ fn worklog_pages_walk_55_records_through_the_next_cursor_without_repeats_or_gaps
 }
 
 #[test]
+fn a_history_of_exactly_one_page_has_no_continuation_cursor() {
+    let repository = repo();
+    let task = named_task(1, "full page");
+    repository.create_task(task.clone()).unwrap();
+    insert_numbered_worklogs(&repository, &task, WORKLOG_PAGE_SIZE as u32);
+
+    let page = repository.worklog_page(task.id, None).unwrap();
+
+    assert_eq!(page.worklogs.len(), WORKLOG_PAGE_SIZE);
+    assert_eq!(page.next_cursor, None);
+}
+
+#[test]
 fn a_page_boundary_inside_equal_starts_neither_dups_nor_skips_rows() {
     let repository = repo();
     let task = named_task(1, "simultaneous");
