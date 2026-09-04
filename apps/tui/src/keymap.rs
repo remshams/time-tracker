@@ -138,8 +138,10 @@ pub fn footer_hints(mode: &Mode, view: TaskView, screen: Screen, width: u16) -> 
     if width < 80 {
         return match mode {
             Mode::Normal => match view {
-                TaskView::Active => "j/k/↑/↓ · h/l · space · a/e/d · s sort · q/esc/ctrl+c quit",
-                TaskView::Archived => "j/k/↑/↓ · h/l · s sort · u restore · q/esc/ctrl+c quit",
+                TaskView::Active => "j/k/↑/↓ h/l spc enter history a/e/d s sort q/esc/ctrl+c quit",
+                TaskView::Archived => {
+                    "j/k/↑/↓ h/l enter history s sort u restore q/esc/ctrl+c quit"
+                }
             },
             Mode::Input { .. } => "type · backspace · enter save · esc cancel · ctrl+c quit",
             Mode::ConfirmArchive { .. } => "y/enter · n/esc · ctrl+c quit",
@@ -149,10 +151,10 @@ pub fn footer_hints(mode: &Mode, view: TaskView, screen: Screen, width: u16) -> 
     match mode {
         Mode::Normal => match view {
             TaskView::Active => {
-                "j/k/↑/↓ move · h/l view · space track · s sort · a/e/d edit · q/esc/ctrl+c quit"
+                "j/k/↑/↓ h/l view space track enter history s sort a/e/d edit q/esc/ctrl+c quit"
             }
             TaskView::Archived => {
-                "j/k/↑/↓ move · h/l view · s sort · u unarchive · q/esc/ctrl+c quit"
+                "j/k/↑/↓ move h/l view enter history s sort u unarchive q/esc/ctrl+c quit"
             }
         },
         Mode::Input { .. } => "type · backspace delete · enter save · esc cancel · ctrl+c quit",
@@ -822,6 +824,7 @@ mod tests {
             "j/k/↑/↓",
             "h/l",
             "space",
+            "enter history",
             "s sort",
             "a/e/d",
             "edit",
@@ -832,7 +835,15 @@ mod tests {
         }
         assert!(active_keys.contains("s sort"));
         let archived_keys = footer_hints(&Mode::Normal, TaskView::Archived, Screen::TaskList, 80);
-        for hint in ["j/k/↑/↓", "h/l", "s sort", "u ", "q/esc", "ctrl+c"] {
+        for hint in [
+            "j/k/↑/↓",
+            "h/l",
+            "enter history",
+            "s sort",
+            "u ",
+            "q/esc",
+            "ctrl+c",
+        ] {
             assert!(
                 archived_keys.contains(hint),
                 "archived footer misses {hint:?}"
@@ -877,6 +888,19 @@ mod tests {
     }
 
     #[test]
+    fn normal_task_list_footers_explain_how_to_open_worklogs() {
+        for width in [60, 80] {
+            for view in [TaskView::Active, TaskView::Archived] {
+                let footer = footer_hints(&Mode::Normal, view, Screen::TaskList, width);
+                assert!(
+                    footer.contains("enter history"),
+                    "task-list footer misses the history hint at width {width}: {footer:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn compact_footers_keep_every_key_visible_at_sixty_columns() {
         let footers = [
             footer_hints(&Mode::Normal, TaskView::Active, Screen::TaskList, 60),
@@ -894,9 +918,11 @@ mod tests {
         }
         assert!(footers[0].contains("j/k/↑/↓"));
         assert!(footers[0].contains("h/l"));
-        assert!(footers[0].contains("space"));
+        assert!(footers[0].contains("spc"));
         assert!(footers[0].contains("a/e/d"));
+        assert!(footers[0].contains("enter history"));
         assert!(footers[0].contains("s sort"));
+        assert!(footers[1].contains("enter history"));
         assert!(footers[1].contains("u restore"));
         assert!(footers[4].contains("o older"));
         assert!(footers[4].contains("r refresh"));

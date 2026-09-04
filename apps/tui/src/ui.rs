@@ -427,6 +427,7 @@ mod tests {
         assert!(rows[2].contains("alpha"));
         assert!(rows[3].contains("beta"));
         assert!(rows[22].contains("Ready"));
+        assert!(rows[23].contains("enter history"));
         assert!(rows[23].contains("s sort"));
         assert!(rows[23].contains("a/e/d edit"));
         assert!(rows[23].contains("ctrl+c quit"));
@@ -543,6 +544,7 @@ mod tests {
         let terminal = draw(&app);
         assert!(row(&terminal, 23).contains("h/l view"));
         assert!(row(&terminal, 23).contains("space track"));
+        assert!(row(&terminal, 23).contains("enter history"));
 
         app.handle(Command::OpenAdd);
         let terminal = draw(&app);
@@ -560,6 +562,7 @@ mod tests {
         let terminal = draw_at(&app, 60, 20);
         assert!(row(&terminal, 1).contains("Active tasks · recently worked"));
         let footer = row(&terminal, 19);
+        assert!(footer.contains("enter history"), "got {footer:?}");
         assert!(footer.contains("s sort"), "got {footer:?}");
         assert!(footer.contains("q/esc/ctrl+c quit"), "got {footer:?}");
 
@@ -568,6 +571,7 @@ mod tests {
         let terminal = draw_at(&app, 60, 20);
         assert!(row(&terminal, 1).contains("Archived tasks · recently updated"));
         let footer = row(&terminal, 19);
+        assert!(footer.contains("enter history"), "got {footer:?}");
         assert!(footer.contains("u restore"), "got {footer:?}");
         assert!(footer.contains("s sort"), "got {footer:?}");
         assert!(footer.contains("q/esc/ctrl+c quit"), "got {footer:?}");
@@ -617,6 +621,7 @@ mod tests {
         assert!(!rows[3].contains("beta"), "beta is still active");
         assert!(rows[23].contains("u unarchive"), "got {:?}", rows[23]);
         assert!(rows[23].contains("h/l view"));
+        assert!(rows[23].contains("enter history"));
         assert!(
             !rows[23].contains("a add"),
             "archived view must not hint add"
