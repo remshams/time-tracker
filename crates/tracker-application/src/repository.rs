@@ -1,18 +1,19 @@
 //! Backend-neutral persistence ports.
 //!
 //! Implementations return task rows in identifier order and a task's
-//! worklogs by start time, then identifier. They enforce one active
-//! worklog, reject an end before its start, reject worklogs on archived
-//! tasks, and reject archiving the active task. Unarchiving a task is
-//! non-destructive and must not discard its worklogs. A switch must stop
-//! the old worklog and start the new one atomically. The task-list read
-//! model carries each task's latest worklog start as a per-task `MAX(start)`
-//! aggregate, without loading full worklogs.
+//! worklog history as bounded pages ordered by start descending, then
+//! identifier. They enforce one active worklog, reject an end before its
+//! start, reject worklogs on archived tasks, and reject archiving the
+//! active task. Unarchiving a task is non-destructive and must not discard
+//! its worklogs. A switch must stop the old worklog and start the new one
+//! atomically. The task-list read model carries each task's latest worklog
+//! start as a per-task `MAX(start)` aggregate, without loading full
+//! worklogs.
 
 use chrono::{DateTime, Utc};
 use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId};
 
-use crate::TaskListItem;
+use crate::{TaskListItem, WorklogCursor, WorklogPage};
 
 /// A persistence failure that application callers can handle without knowing
 /// which backend produced it.
@@ -82,7 +83,18 @@ pub trait TaskRepository {
 
 /// Persistence needed to read worklog history.
 pub trait WorklogRepository {
-    fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, RepositoryError>;
+    /// One bounded page of the task's worklog history, continuing strictly
+    /// after the optional cursor in history order: start descending, then
+    /// `WorklogId` ascending. A page carries
+    /// [`WORKLOG_PAGE_SIZE`](crate::WORKLOG_PAGE_SIZE) worklogs unless the
+    /// history ends inside it, and includes active worklogs. A boundary
+    /// between worklogs that share a start time must neither duplicate nor
+    /// skip any of them.
+    fn worklog_page(
+        &self,
+        task_id: TaskId,
+        after: Option<&WorklogCursor>,
+    ) -> Result<WorklogPage, RepositoryError>;
 }
 
 /// Persistence needed by tracking commands.

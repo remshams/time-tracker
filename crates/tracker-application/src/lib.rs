@@ -77,6 +77,42 @@ pub struct TaskListItem {
     pub latest_work_start: Option<DateTime<Utc>>,
 }
 
+/// How many worklogs one history page carries.
+///
+/// The size is an application constant, not a caller argument, so no caller
+/// can request an unbounded page.
+pub const WORKLOG_PAGE_SIZE: usize = 50;
+
+/// The position of one worklog in the history order, used to fetch the next
+/// page after it.
+///
+/// History is ordered by start descending, then `WorklogId` ascending as the
+/// deterministic tie-break, so a cursor carries both values. Rows that share
+/// a start are ordered and bounded by identifier, which is what keeps page
+/// boundaries from repeating or dropping them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorklogCursor {
+    /// The start time of the page's last worklog, in UTC.
+    pub start: DateTime<Utc>,
+    /// The identifier of the page's last worklog.
+    pub id: WorklogId,
+}
+
+/// One bounded page of a task's worklog history.
+///
+/// Worklogs appear in history order: start descending, then `WorklogId`
+/// ascending. Active worklogs are part of the history. A `next_cursor` of
+/// `None` means the page reached the end of the history; it does not mean
+/// the page was full.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorklogPage {
+    /// The worklogs of this page, in history order.
+    pub worklogs: Vec<Worklog>,
+    /// The cursor to pass for the next page, or `None` at the end of the
+    /// history.
+    pub next_cursor: Option<WorklogCursor>,
+}
+
 /// Why an application operation failed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ApplicationError {
@@ -171,10 +207,18 @@ pub trait TrackingOperations {
     ) -> Result<ClearActiveTaskOutcome, ApplicationError>;
 }
 
-/// Queries for completed and active worklogs. No presentation snapshot is
-/// built; each call reads the selected backend.
+/// Queries for worklog history. No presentation snapshot is
+/// built; each call reads the selected backend and refreshes the current
+/// tracking state before returning.
 pub trait WorklogQueries {
-    fn worklogs_for_task(&self, task_id: TaskId) -> Result<Vec<Worklog>, ApplicationError>;
+    /// One bounded page of the task's worklog history, continuing strictly
+    /// after the optional cursor. The page size is the fixed
+    /// [`WORKLOG_PAGE_SIZE`]; callers cannot request more.
+    fn worklogs_for_task(
+        &mut self,
+        task_id: TaskId,
+        after: Option<&WorklogCursor>,
+    ) -> Result<WorklogPage, ApplicationError>;
 }
 
 /// The application service required by presentation and transport clients.
@@ -491,8 +535,18 @@ impl<R: TrackerRepository> TrackingOperations for TrackerApplication<R> {
 }
 
 impl<R: TrackerRepository> WorklogQueries for TrackerApplication<R> {
-    fn worklogs_for_task(&self, task_id: TaskId) -> Result<Vec<Worklog>, ApplicationError> {
-        Ok(self.repository.list_worklogs(task_id)?)
+    fn worklogs_for_task(
+        &mut self,
+        task_id: TaskId,
+        after: Option<&WorklogCursor>,
+    ) -> Result<WorklogPage, ApplicationError> {
+        self.refresh_tracking()?;
+        let page = self.repository.worklog_page(task_id, after)?;
+        if let Some(worklog) = page.worklogs.iter().find(|worklog| worklog.end.is_none()) {
+            self.tracker = Tracker::resume(worklog.clone())?;
+            Self::align_active_work(&mut self.tasks, &self.tracker);
+        }
+        Ok(page)
     }
 }
 
@@ -514,6 +568,7 @@ mod tests {
         replacement_on_failure: Option<Worklog>,
         fail_reads_after_write: bool,
         fail_reads_after_task_write: bool,
+        hide_next_active_read: bool,
         list_reads: usize,
     }
 
@@ -547,6 +602,10 @@ mod tests {
 
         fn fail_refresh_after_next_task_write(&self) {
             self.0.borrow_mut().fail_reads_after_task_write = true;
+        }
+
+        fn hide_next_active_read(&self) {
+            self.0.borrow_mut().hide_next_active_read = true;
         }
 
         fn read_guard(&self) -> Result<(), RepositoryError> {
@@ -692,7 +751,11 @@ mod tests {
     }
 
     impl WorklogRepository for MemoryRepository {
-        fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, RepositoryError> {
+        fn worklog_page(
+            &self,
+            task_id: TaskId,
+            after: Option<&WorklogCursor>,
+        ) -> Result<WorklogPage, RepositoryError> {
             self.read_guard()?;
             let mut worklogs = self
                 .0
@@ -702,8 +765,41 @@ mod tests {
                 .filter(|worklog| worklog.task_id == task_id)
                 .cloned()
                 .collect::<Vec<_>>();
-            worklogs.sort_by_key(|worklog| (worklog.start, worklog.id));
-            Ok(worklogs)
+            // History order: start descending, then identifier ascending.
+            worklogs.sort_by_key(|worklog| (std::cmp::Reverse(worklog.start), worklog.id));
+            let first = match after {
+                None => 0,
+                Some(cursor) => worklogs
+                    .iter()
+                    .position(|worklog| {
+                        (std::cmp::Reverse(worklog.start), worklog.id)
+                            > (std::cmp::Reverse(cursor.start), cursor.id)
+                    })
+                    .unwrap_or(worklogs.len()),
+            };
+            // One worklog past the page size reveals whether a next page
+            // follows; the extra worklog is dropped again before returning.
+            let overshot = worklogs
+                .into_iter()
+                .skip(first)
+                .take(WORKLOG_PAGE_SIZE + 1)
+                .collect::<Vec<_>>();
+            let has_next = overshot.len() > WORKLOG_PAGE_SIZE;
+            let worklogs = overshot
+                .into_iter()
+                .take(WORKLOG_PAGE_SIZE)
+                .collect::<Vec<_>>();
+            let next_cursor = has_next.then(|| {
+                let last = worklogs.last().expect("a full page has a last worklog");
+                WorklogCursor {
+                    start: last.start,
+                    id: last.id,
+                }
+            });
+            Ok(WorklogPage {
+                worklogs,
+                next_cursor,
+            })
         }
     }
 
@@ -763,9 +859,12 @@ mod tests {
 
         fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError> {
             self.read_guard()?;
-            Ok(self
-                .0
-                .borrow()
+            let mut data = self.0.borrow_mut();
+            if data.hide_next_active_read {
+                data.hide_next_active_read = false;
+                return Ok(None);
+            }
+            Ok(data
                 .worklogs
                 .iter()
                 .find(|worklog| worklog.end.is_none())
@@ -1225,7 +1324,14 @@ mod tests {
             matches!(&unarchived, TaskOutcome::Unarchived(task) if !task.is_archived() && task.updated_at() == at(300))
         );
         assert!(!application.task(alpha.id).unwrap().is_archived());
-        assert_eq!(application.worklogs_for_task(alpha.id).unwrap().len(), 1);
+        assert_eq!(
+            application
+                .worklogs_for_task(alpha.id, None)
+                .unwrap()
+                .worklogs
+                .len(),
+            1
+        );
         assert!(!repository.0.borrow().tasks[0].task.is_archived());
     }
 
@@ -1588,14 +1694,17 @@ mod tests {
             Worklog::new(worklog(1, alpha.id, 10).id, alpha.id, at(10), Some(at(15))).unwrap();
         repository.insert_worklog(&later).unwrap();
         repository.insert_worklog(&earlier).unwrap();
+        // History order is start descending, so the later worklog leads.
+        assert_eq!(WORKLOG_PAGE_SIZE, 50);
         assert_eq!(
             repository
-                .list_worklogs(alpha.id)
+                .worklog_page(alpha.id, None)
                 .unwrap()
+                .worklogs
                 .into_iter()
                 .map(|worklog| worklog.id)
                 .collect::<Vec<_>>(),
-            vec![earlier.id, later.id]
+            vec![later.id, earlier.id]
         );
         assert!(matches!(
             repository.insert_worklog(&worklog(3, archived.id, 40)),
@@ -1622,15 +1731,159 @@ mod tests {
     fn worklog_queries_read_the_backend_without_building_a_snapshot() {
         let alpha = task(1, "alpha");
         let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
-        let application = TrackerApplication::load(repository.clone()).unwrap();
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
         repository
             .0
             .borrow_mut()
             .worklogs
             .push(worklog(10, alpha.id, 100));
-        assert_eq!(application.worklogs_for_task(alpha.id).unwrap().len(), 1);
+        assert_eq!(
+            application
+                .worklogs_for_task(alpha.id, None)
+                .unwrap()
+                .worklogs
+                .len(),
+            1
+        );
+        assert!(matches!(
+            application.current_tracking(),
+            TrackingState::Running { worklog: active }
+                if active.id == worklog(10, alpha.id, 100).id
+        ));
         repository.0.borrow_mut().worklogs.clear();
-        assert!(application.worklogs_for_task(alpha.id).unwrap().is_empty());
+        assert!(
+            application
+                .worklogs_for_task(alpha.id, None)
+                .unwrap()
+                .worklogs
+                .is_empty()
+        );
+        assert_eq!(application.current_tracking(), &TrackingState::Idle);
+    }
+
+    #[test]
+    fn a_running_history_row_wins_a_race_after_the_tracking_refresh() {
+        let alpha = task(1, "alpha");
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        let active = worklog(10, alpha.id, 100);
+        repository.0.borrow_mut().worklogs.push(active.clone());
+        repository.hide_next_active_read();
+
+        let page = application.worklogs_for_task(alpha.id, None).unwrap();
+
+        assert_eq!(page.worklogs, vec![active.clone()]);
+        assert!(matches!(
+            application.current_tracking(),
+            TrackingState::Running { worklog } if worklog.id == active.id
+        ));
+    }
+
+    #[test]
+    fn worklog_history_pages_are_bounded_ordered_and_continue_after_the_cursor() {
+        let alpha = task(1, "alpha");
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        // 55 worklogs with distinct starts; the earliest one stays active,
+        // and active worklogs belong to the history.
+        for tag in 1..=55u128 {
+            let worklog = if tag == 1 {
+                worklog(tag, alpha.id, i64::try_from(tag).unwrap())
+            } else {
+                Worklog::new(
+                    WorklogId::from_uuid(uuid::Uuid::from_u128(tag)),
+                    alpha.id,
+                    at(i64::try_from(tag).unwrap()),
+                    Some(at(i64::try_from(tag).unwrap() + 1)),
+                )
+                .unwrap()
+            };
+            repository.insert_worklog(&worklog).unwrap();
+        }
+        let mut application = TrackerApplication::load(repository).unwrap();
+
+        let first = application.worklogs_for_task(alpha.id, None).unwrap();
+        assert_eq!(first.worklogs.len(), WORKLOG_PAGE_SIZE);
+        let starts: Vec<i64> = first.worklogs.iter().map(|w| w.start.timestamp()).collect();
+        assert_eq!(
+            starts,
+            (6..=55).rev().collect::<Vec<_>>(),
+            "start descending"
+        );
+        let cursor = first.next_cursor.expect("more history follows");
+        assert_eq!(cursor.start, at(6));
+        assert_eq!(cursor.id, WorklogId::from_uuid(uuid::Uuid::from_u128(6)));
+
+        let second = application
+            .worklogs_for_task(alpha.id, Some(&cursor))
+            .unwrap();
+        assert_eq!(second.worklogs.len(), 5);
+        assert_eq!(
+            second.next_cursor, None,
+            "the history ended inside the page"
+        );
+        let rest_starts: Vec<i64> = second
+            .worklogs
+            .iter()
+            .map(|w| w.start.timestamp())
+            .collect();
+        assert_eq!(rest_starts, [5, 4, 3, 2, 1]);
+
+        // The two pages cover every worklog exactly once: none skipped,
+        // none repeated.
+        let mut ids: Vec<u128> = first
+            .worklogs
+            .iter()
+            .chain(&second.worklogs)
+            .map(|w| w.id.as_uuid().as_u128())
+            .collect();
+        ids.sort_unstable();
+        assert_eq!(ids, (1..=55).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_page_boundary_inside_equal_starts_neither_dups_nor_skips_rows() {
+        let alpha = task(1, "alpha");
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        // 55 worklogs share one start, so identifier ascending decides the
+        // whole order and the page boundary falls between two of them. A
+        // weaker boundary rule would repeat or drop rows 51 to 55.
+        for tag in 1..=55u128 {
+            let worklog = if tag == 1 {
+                Worklog::begin(
+                    WorklogId::from_uuid(uuid::Uuid::from_u128(tag)),
+                    alpha.id,
+                    at(500),
+                )
+            } else {
+                Worklog::new(
+                    WorklogId::from_uuid(uuid::Uuid::from_u128(tag)),
+                    alpha.id,
+                    at(500),
+                    Some(at(501)),
+                )
+                .unwrap()
+            };
+            repository.insert_worklog(&worklog).unwrap();
+        }
+        let mut application = TrackerApplication::load(repository).unwrap();
+
+        let page = application.worklogs_for_task(alpha.id, None).unwrap();
+        let ids: Vec<u128> = page
+            .worklogs
+            .iter()
+            .map(|w| w.id.as_uuid().as_u128())
+            .collect();
+        assert_eq!(ids, (1..=50).collect::<Vec<_>>(), "id ascending");
+        let cursor = page.next_cursor.expect("equal starts continue");
+        assert_eq!(cursor.start, at(500));
+        assert_eq!(cursor.id.as_uuid().as_u128(), 50);
+
+        let rest = application
+            .worklogs_for_task(alpha.id, Some(&cursor))
+            .unwrap()
+            .worklogs;
+        let rest_ids: Vec<u128> = rest.iter().map(|w| w.id.as_uuid().as_u128()).collect();
+        assert_eq!(rest_ids, (51..=55).collect::<Vec<_>>());
     }
 
     #[test]
