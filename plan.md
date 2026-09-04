@@ -4,7 +4,7 @@
 
 Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, and task browsing and ordering are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, and orders both task views by recent work, metadata updates, or creation time. The timestamp and ordering rules live in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), and [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds. Remote storage follows.
 
-All completed checkpoints are committed and pushed to Forgejo. Current validation found 311 passing Rust tests, including 24 E2E scenarios, 10 passing Python tests, 393 caught mutants, no missed or timed-out mutants, 122 unviable mutants, and 215 functions below CRAP 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
+Current validation found 311 passing Rust tests, including 24 E2E scenarios, 10 passing Python tests, 393 caught mutants, no missed or timed-out mutants, 122 unviable mutants, and 215 functions below CRAP 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
 ## Settled decisions
 
