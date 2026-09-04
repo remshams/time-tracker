@@ -8,6 +8,8 @@ The TUI works end to end. It stores tasks and worklogs in SQLite, seeds a new da
 
 Tasks carry creation and metadata-update timestamps. The default list order puts the most recently worked tasks first without loading their full worklog histories. Tasks without worklogs follow, newest first. The TUI can also order tasks by their latest metadata update or creation time. Starting or switching tracking updates that task's latest-work value and re-sorts the default view, while selection stays with the task.
 
+Enter opens the selected task's read-only worklog history from either task view. History loads newest first in bounded batches of 50 and includes the active worklog. Timestamps use the terminal's local timezone and show their UTC offset. The active row shares the timer header's monotonic duration.
+
 The database enforces the tracking rules itself, so a second `tt` process sees the same bounds: an archived task cannot receive worklogs, a task with an active worklog cannot be archived, at most one worklog is active, and duplicate worklog identifiers are reported as such. Seeding and switching happen inside single transactions, so simultaneous starts of two `tt` processes neither double-seed a new database nor lose a switch.
 
 While a timer runs, the visible elapsed time comes from a monotonic clock anchored to the worklog's UTC start, so system clock adjustments do not make the timer jump. Stopping or switching derives its UTC instant from the same clock, so the persisted duration always matches the displayed one.
@@ -64,6 +66,14 @@ Archived view only:
 
 - `u`: restore the selected task to the Active view without confirmation. The restore stays in the Archived view and removes the row there, and the Active view remembers the restored task for selection. The task keeps its identifier, name, and worklogs. A successful restore uses the authoritative stored task. After a successful write or an ordinary write failure, the application refreshes active tracking; a refresh failure is reported instead of claiming authoritative state.
 
+Worklog history:
+
+- Enter opens the selected task's history from either task view.
+- `j` / `k` or Down / Up moves between loaded worklogs without wrapping.
+- `o` loads the next batch of older worklogs when one exists.
+- `r` discards the loaded snapshot and reloads its newest batch.
+- Escape returns to the same task and task view. `q` and Ctrl+C quit without stopping active tracking.
+
 Text input (`a` and `e`):
 
 - Printable characters and Backspace edit the text; Space is ordinary input. Input stops growing at 256 characters, the task-name limit.
@@ -81,11 +91,11 @@ Ctrl+C quits from every mode.
 The workspace has four packages:
 
 - `crates/tracker-domain`: tasks, worklogs, tracking state, identifiers, and domain invariants. It has no application, terminal, database, or network code.
-- `crates/tracker-application`: backend-neutral repository ports and synchronous use cases for task commands, current tracking, desired-state tracking commands, and worklog queries. It depends only on `tracker-domain` among workspace packages.
+- `crates/tracker-application`: backend-neutral repository ports and synchronous use cases for task commands, current tracking, desired-state tracking commands, and bounded worklog-history queries. It depends only on `tracker-domain` among workspace packages.
 - `crates/tracker-storage`: SQLite persistence. It implements the application repository ports and owns schema migrations and platform paths.
 - `apps/tui`: the `tt` binary. `app.rs` holds presentation state and converts semantic commands into application operations. It keeps the active and archived views with their separate selections and maps archiving and restoration between them. `keymap.rs` maps raw keys to commands, `ui.rs` renders, `styles.rs` defines terminal styles, and `terminal.rs` owns setup and cleanup. `main.rs` creates SQLite storage and the application service, then starts the TUI.
 
-The event loop stays synchronous. `tracker-application` validates a tracking candidate before writing it, uses one atomic repository call for switches, and reloads authoritative task and tracking state after a cross-process tracking write conflict. Its task-list read model carries each task and an optional latest worklog start, which SQLite derives with `MAX(start_us)` instead of returning complete worklog histories. Clearing tracking includes the worklog the TUI expects to stop, so stale state cannot stop another process's timer. The TUI owns the monotonic elapsed clock and supplies explicit UTC timestamps to task and tracking operations; the application canonicalizes them to microseconds. The TUI does not sequence persistence or handle SQLite errors.
+The event loop stays synchronous. `tracker-application` validates a tracking candidate before writing, uses one atomic repository call for switches, and reloads authoritative task and tracking state after a cross-process tracking write conflict. Its task-list read model carries each task and an optional latest worklog start, which SQLite derives with `MAX(start_us)` instead of returning complete worklog histories. Worklog history uses 50-record cursor pages ordered by start descending and `WorklogId` ascending. Each history query refreshes current tracking so a running row and the timer header use the same monotonic clock. Clearing tracking includes the worklog the TUI expects to stop, so stale state cannot stop another process's timer. The TUI owns the monotonic elapsed clock and supplies explicit UTC timestamps to task and tracking operations; the application canonicalizes them to microseconds. The TUI does not sequence persistence or handle SQLite errors.
 
 Terminal setup and teardown are staged: raw mode, the alternate screen, and cursor visibility are tracked in one restoration state shared by the guard and the panic hook, so exactly the completed stages are restored exactly once, and a raw-mode failure writes no escape sequence at all.
 

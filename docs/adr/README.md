@@ -16,3 +16,4 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
 | [0002](0002-task-timestamps-and-ordering.md) | Task timestamps and list ordering | Accepted |
 | [0003](0003-canonical-timestamp-precision.md) | Canonical timestamp precision | Accepted |
+| [0004](0004-paginated-worklog-history.md) | Paginate worklog history by cursor | Accepted |
