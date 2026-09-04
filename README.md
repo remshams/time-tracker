@@ -4,17 +4,20 @@ A keyboard-first time tracker written in Rust. `tt` is a terminal application fo
 
 ## Current state
 
-The TUI works end to end. It stores tasks and worklogs in SQLite, seeds a new database with three example tasks, and keeps one timer running across restarts: quitting never stops the active worklog, and the next start resumes it. Tasks are reusable, so starting a task again records a new worklog instead of resuming an old one. Archived tasks can be browsed in their own view and restored from there; restoring preserves the task's identifier, name, and worklogs, so no schema change was needed to support it.
+The TUI works end to end. It stores tasks and worklogs in SQLite, seeds a new database with three example tasks, and keeps one timer running across restarts: quitting never stops the active worklog, and the next start resumes it. Tasks are reusable, so starting a task again records a new worklog instead of resuming an old one. Archived tasks can be browsed in their own view and restored from there; restoring preserves the task's identifier, name, and worklogs.
+
+Tasks carry creation and metadata-update timestamps. The default list order puts the most recently worked tasks first without loading their full worklog histories. Tasks without worklogs follow, newest first. The TUI can also order tasks by their latest metadata update or creation time. Starting or switching tracking updates that task's latest-work value and re-sorts the default view, while selection stays with the task.
 
 The database enforces the tracking rules itself, so a second `tt` process sees the same bounds: an archived task cannot receive worklogs, a task with an active worklog cannot be archived, at most one worklog is active, and duplicate worklog identifiers are reported as such. Seeding and switching happen inside single transactions, so simultaneous starts of two `tt` processes neither double-seed a new database nor lose a switch.
 
 While a timer runs, the visible elapsed time comes from a monotonic clock anchored to the worklog's UTC start, so system clock adjustments do not make the timer jump. Stopping or switching derives its UTC instant from the same clock, so the persisted duration always matches the displayed one.
 
-Task names are trimmed, non-empty, at most 256 characters long, and free of control characters. The same rules guard names read back from the database.
+Task names are trimmed, non-empty, at most 256 characters long, and free of control characters. The same rules guard names read back from the database. Renaming, archiving, or restoring a task advances its metadata-update timestamp without moving it backward. Tracking activity does not change that timestamp because recent work is derived from worklogs separately.
 
 ## Prerequisites
 
 - Linux or macOS
+- A terminal at least 60 columns wide. Narrower terminals show a resize message instead of the interactive interface.
 - Rust 1.88 or newer, installed with [rustup](https://rustup.rs). The workspace uses edition 2024, and Ratatui requires Rust 1.88.
 - For coverage: `rustup component add llvm-tools-preview`
 
@@ -46,6 +49,7 @@ Shared:
 
 - `h`: switch to the Active view. `l`: switch to the Archived view. Switching to the view already shown does nothing.
 - `j` / `k` or Down / Up: move the selection, with safe bounds at both ends.
+- `s`: cycle through Recently worked, Recently updated, and Recently created ordering. One session-only choice applies to both task views, and selection follows the same task when its row changes.
 - `q` or Escape: quit. An active timer keeps running and is recovered on the next start.
 - Only unmodified keys act in the task list and confirmation modes; modifier chords other than Ctrl+C are ignored.
 
@@ -58,7 +62,7 @@ Archiving stays in the Active view and remembers the archived task's identifier,
 
 Archived view only:
 
-- `u`: restore the selected task to the Active view without confirmation. The restore stays in the Archived view and removes the row there, and the Active view remembers the restored task for selection. The task keeps its identifier, name, and worklogs. Both the restore success and a failure resynchronize from the database, so if another `tt` process started a timer for the task while this one had stale state, the timer header shows that existing timer.
+- `u`: restore the selected task to the Active view without confirmation. The restore stays in the Archived view and removes the row there, and the Active view remembers the restored task for selection. The task keeps its identifier, name, and worklogs. A successful restore uses the authoritative stored task. After a successful write or an ordinary write failure, the application refreshes active tracking; a refresh failure is reported instead of claiming authoritative state.
 
 Text input (`a` and `e`):
 
@@ -81,7 +85,7 @@ The workspace has four packages:
 - `crates/tracker-storage`: SQLite persistence. It implements the application repository ports and owns schema migrations and platform paths.
 - `apps/tui`: the `tt` binary. `app.rs` holds presentation state and converts semantic commands into application operations. It keeps the active and archived views with their separate selections and maps archiving and restoration between them. `keymap.rs` maps raw keys to commands, `ui.rs` renders, `styles.rs` defines terminal styles, and `terminal.rs` owns setup and cleanup. `main.rs` creates SQLite storage and the application service, then starts the TUI.
 
-The event loop stays synchronous. `tracker-application` validates a tracking candidate before writing it, uses one atomic repository call for switches, and reloads authoritative task and tracking state after a cross-process tracking write conflict. Clearing tracking includes the worklog the TUI expects to stop, so stale state cannot stop another process's timer. The TUI owns the monotonic elapsed clock and supplies explicit UTC timestamps to `set_active_task` and `clear_active_task`; it does not sequence persistence or handle SQLite errors.
+The event loop stays synchronous. `tracker-application` validates a tracking candidate before writing it, uses one atomic repository call for switches, and reloads authoritative task and tracking state after a cross-process tracking write conflict. Its task-list read model carries each task and an optional latest worklog start, which SQLite derives with `MAX(start_us)` instead of returning complete worklog histories. Clearing tracking includes the worklog the TUI expects to stop, so stale state cannot stop another process's timer. The TUI owns the monotonic elapsed clock and supplies explicit UTC timestamps to task and tracking operations; the application canonicalizes them to microseconds. The TUI does not sequence persistence or handle SQLite errors.
 
 Terminal setup and teardown are staged: raw mode, the alternate screen, and cursor visibility are tracked in one restoration state shared by the guard and the panic hook, so exactly the completed stages are restored exactly once, and a raw-mode failure writes no escape sequence at all.
 

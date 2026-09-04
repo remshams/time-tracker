@@ -2,9 +2,9 @@
 
 ## Status
 
-Milestones 0, 1, and 2, the terminal-palette checkpoint, and the domain/application separation are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. The archived-task part of the task-browsing checkpoint is complete: the TUI browses archived tasks in their own view and restores them with `u`. Task creation and update timestamps with stable ordering remain; remote storage follows.
+Milestones 0, 1, and 2, the terminal-palette checkpoint, and the domain/application separation are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. The archived-task part of the task-browsing checkpoint is complete: the TUI browses archived tasks in their own view and restores them with `u`. Task timestamps and ordering are approved in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md) and implementation is in progress; remote storage follows.
 
-All completed checkpoints are committed and pushed to Forgejo. Current validation found 232 passing Rust tests and 10 passing palette-audit tests, 356 caught mutants, no missed or timed-out mutants, 100 unviable mutants, and no CRAP score above 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
+All completed checkpoints are committed and pushed to Forgejo. Current validation found 251 passing Rust tests, including 22 E2E scenarios, 10 passing Python tests, 356 caught mutants, no missed or timed-out mutants, 100 unviable mutants, and 190 functions below CRAP 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
 ## Settled decisions
 
@@ -23,7 +23,7 @@ All completed checkpoints are committed and pushed to Forgejo. Current validatio
 | Domain terminology | A persisted tracking record is a `Worklog`. It is active while its end time is absent and completed once its end time is set. |
 | Layering direction | Use `tracker-domain` for the domain model, put repository-backed use cases in `tracker-application`, and keep local SQLite and future HTTP implementations as adapters. |
 | Timestamp authority | The client creates task and tracking timestamps in local and remote modes. The initial remote design assumes client and server clocks are sufficiently synchronized; the server enforces ordinary domain checks such as end not preceding start but adds no clock-skew protocol. |
-| Pre-release schema compatibility | There is no production database to preserve yet. During the domain/application refactor, update the baseline schema and recreate test or development databases instead of adding a compatibility migration. |
+| Pre-release schema compatibility | Rewriting the baseline was limited to the completed domain/application refactor. The later task-timestamp decision preserves version 1 task and worklog data through the migration specified by [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md). |
 
 ## Product direction
 
@@ -258,11 +258,13 @@ This checkpoint does not add worklog browsing, HTTP, asynchronous execution, ser
 
 ### Interim checkpoint: task browsing and ordering
 
+The timestamp and ordering decisions for this checkpoint are approved in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md). Implementation is in progress; nothing below is complete until its behavior lands with tests.
+
 - [x] Add a TUI view for archived tasks while keeping them out of the default active-task list.
 - [x] Decide which actions, if any, are available from the archived-task view before implementing them.
-- [ ] Add explicit task creation and update timestamps. Define which events count as an update before changing the schema.
-- [ ] Add stable task ordering by creation time and last update time, with deterministic tie-breakers.
-- [ ] Add TUI controls for choosing the ordering and decide whether that choice lasts only for the current run or persists locally.
+- [ ] Add explicit task creation and update timestamps. Creation sets both; rename, archive, and restore advance `updated_at`; idempotent metadata operations and tracking never touch it.
+- [ ] Add the recently worked, recently updated, and recently created orderings from ADR 0002, with deterministic tie-breakers.
+- [ ] Add TUI controls for choosing the ordering. The choice is session-only, applies to both views, and cycles only in normal mode.
 - [ ] Migrate existing tasks without losing their archive state or worklogs.
 - [ ] Cover active and archived views, each ordering, migration behavior, and empty states in tests.
 
