@@ -1,14 +1,18 @@
 //! Backend-neutral persistence ports.
 //!
-//! Implementations order tasks by identifier and a task's worklogs by start
-//! time, then identifier. They enforce one active worklog, reject an end
-//! before its start, reject worklogs on archived tasks, and reject archiving
-//! the active task. Unarchiving a task is non-destructive and must not
-//! discard its worklogs. A switch must stop the old worklog and start the
-//! new one atomically.
+//! Implementations return task rows in identifier order and a task's
+//! worklogs by start time, then identifier. They enforce one active
+//! worklog, reject an end before its start, reject worklogs on archived
+//! tasks, and reject archiving the active task. Unarchiving a task is
+//! non-destructive and must not discard its worklogs. A switch must stop
+//! the old worklog and start the new one atomically. The task-list read
+//! model carries each task's latest worklog start as a per-task `MAX(start)`
+//! aggregate, without loading full worklogs.
 
 use chrono::{DateTime, Utc};
 use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId};
+
+use crate::TaskListItem;
 
 /// A persistence failure that application callers can handle without knowing
 /// which backend produced it.
@@ -39,16 +43,41 @@ pub enum RepositoryError {
 }
 
 /// Persistence needed by task use cases.
+///
+/// Each metadata operation is atomic and preserves unrelated concurrent
+/// metadata changes. `updated_at` advances only when the requested value
+/// changes, and to the later of the stored value and `occurred_at`, so it
+/// never moves backward. Every method returns the authoritative stored task
+/// after the operation.
 pub trait TaskRepository {
     fn create_task(&self, task: Task) -> Result<(), RepositoryError>;
     fn find_task(&self, id: TaskId) -> Result<Option<Task>, RepositoryError>;
-    fn list_tasks(&self) -> Result<Vec<Task>, RepositoryError>;
-    fn rename_task(&self, id: TaskId, name: TaskName) -> Result<Task, RepositoryError>;
-    fn archive_task(&self, id: TaskId) -> Result<Task, RepositoryError>;
 
-    /// Restores an archived task. Must keep the task's worklogs intact and
-    /// succeed when the task is already unarchived.
-    fn unarchive_task(&self, id: TaskId) -> Result<Task, RepositoryError>;
+    /// Lists every task with its latest worklog start, or `None` for tasks
+    /// without worklogs. The result does not include worklog histories.
+    fn list_task_items(&self) -> Result<Vec<TaskListItem>, RepositoryError>;
+
+    /// Renames the task. Renaming to the stored name changes nothing.
+    /// Rejects a missing task.
+    fn rename_task(
+        &self,
+        id: TaskId,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError>;
+
+    /// Archives the task. Archiving an archived task changes nothing.
+    /// Rejects a missing task and refuses a task with an active worklog.
+    fn archive_task(&self, id: TaskId, occurred_at: DateTime<Utc>)
+    -> Result<Task, RepositoryError>;
+
+    /// Restores an archived task. Restoring an active task changes nothing,
+    /// and the task's worklogs must survive. Rejects a missing task.
+    fn unarchive_task(
+        &self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError>;
 }
 
 /// Persistence needed to read worklog history.

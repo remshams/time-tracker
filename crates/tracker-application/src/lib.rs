@@ -12,6 +12,71 @@ pub use repository::{
     RepositoryError, TaskRepository, TrackerRepository, TrackingRepository, WorklogRepository,
 };
 
+/// Canonicalizes a client timestamp to the microsecond precision shared by
+/// every current persistence adapter.
+fn canonical_timestamp(timestamp: DateTime<Utc>) -> DateTime<Utc> {
+    DateTime::from_timestamp_micros(timestamp.timestamp_micros())
+        .expect("every UTC timestamp fits the canonical microsecond range")
+}
+
+/// How the task list is ordered.
+///
+/// The ordering rules live here once, backend-neutral, per ADR 0002:
+/// recently worked puts the latest worklog start first and tasks without
+/// worklogs last; the alternatives are newest-first by `updated_at` and by
+/// `created_at`. Every ordering ends in a deterministic `TaskId` ascending
+/// tie-break.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TaskOrdering {
+    /// Latest worklog start descending, tasks without worklogs last, then
+    /// `created_at` descending, then `TaskId` ascending. The default.
+    #[default]
+    RecentlyWorked,
+    /// `updated_at` descending, then `created_at` descending, then `TaskId`
+    /// ascending.
+    RecentlyUpdated,
+    /// `created_at` descending, then `TaskId` ascending.
+    RecentlyCreated,
+}
+
+impl TaskOrdering {
+    /// Sorts task-list items in place by this ordering, exactly per ADR 0002.
+    pub fn sort_items(self, items: &mut [TaskListItem]) {
+        match self {
+            TaskOrdering::RecentlyWorked => items.sort_by(|a, b| {
+                b.latest_work_start
+                    .cmp(&a.latest_work_start)
+                    .then_with(|| b.task.created_at().cmp(&a.task.created_at()))
+                    .then_with(|| a.task.id().cmp(&b.task.id()))
+            }),
+            TaskOrdering::RecentlyUpdated => items.sort_by(|a, b| {
+                b.task
+                    .updated_at()
+                    .cmp(&a.task.updated_at())
+                    .then_with(|| b.task.created_at().cmp(&a.task.created_at()))
+                    .then_with(|| a.task.id().cmp(&b.task.id()))
+            }),
+            TaskOrdering::RecentlyCreated => items.sort_by(|a, b| {
+                b.task
+                    .created_at()
+                    .cmp(&a.task.created_at())
+                    .then_with(|| a.task.id().cmp(&b.task.id()))
+            }),
+        };
+    }
+}
+
+/// One row of the task-list read model: the task plus its latest worklog
+/// start, or `None` when the task has no worklogs.
+///
+/// The latest work start is derived, never stored on the task, so it stays
+/// correct no matter which client wrote the worklog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskListItem {
+    pub task: Task,
+    pub latest_work_start: Option<DateTime<Utc>>,
+}
+
 /// Why an application operation failed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ApplicationError {
@@ -23,6 +88,8 @@ pub enum ApplicationError {
     TrackingWrite(#[source] RepositoryError),
     #[error("tracking state could not be recovered: {0}")]
     TrackingRecovery(#[source] RepositoryError),
+    #[error("task state could not be recovered: {0}")]
+    TaskRecovery(#[source] RepositoryError),
     #[error("tracking state changed in another client")]
     TrackingStateChanged,
 }
@@ -52,17 +119,41 @@ pub enum ClearActiveTaskOutcome {
 }
 
 /// Task queries available to presentation and transport layers.
+///
+/// The service keeps its task snapshot current on every committed write, so
+/// querying never reads the backend again and cannot fail.
 pub trait TaskQueries {
-    fn tasks(&self) -> &[Task];
+    /// The tasks of the selected backend, ordered by the given ordering.
+    fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem>;
     fn task(&self, id: TaskId) -> Option<&Task>;
 }
 
 /// Commands that create or change tasks.
+///
+/// Every operation takes the client-created instant it occurred at; the
+/// domain decides how that instant moves `updated_at`.
 pub trait TaskOperations {
-    fn create_task(&mut self, name: TaskName) -> Result<TaskOutcome, ApplicationError>;
-    fn rename_task(&mut self, id: TaskId, name: TaskName) -> Result<TaskOutcome, ApplicationError>;
-    fn archive_task(&mut self, id: TaskId) -> Result<TaskOutcome, ApplicationError>;
-    fn unarchive_task(&mut self, id: TaskId) -> Result<TaskOutcome, ApplicationError>;
+    fn create_task(
+        &mut self,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<TaskOutcome, ApplicationError>;
+    fn rename_task(
+        &mut self,
+        id: TaskId,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<TaskOutcome, ApplicationError>;
+    fn archive_task(
+        &mut self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<TaskOutcome, ApplicationError>;
+    fn unarchive_task(
+        &mut self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<TaskOutcome, ApplicationError>;
 }
 
 /// Current tracking state and desired-state tracking commands.
@@ -101,26 +192,37 @@ impl<T> TrackerApplicationService for T where
 
 /// Stateful application service backed by one repository.
 ///
-/// The service owns persistence sequencing. It keeps task and current
-/// tracking queries ready for a synchronous client, commits switches through
-/// the repository's atomic operation, and reloads authoritative state after
-/// any tracking write conflict.
+/// The service owns persistence sequencing. It keeps the task snapshot and
+/// current tracking queries ready for a synchronous client, updates the
+/// snapshot itself on every committed write instead of reading the backend
+/// again behind an ambiguous result, commits switches through the
+/// repository's atomic operation, and reloads authoritative state after any
+/// tracking write conflict.
 pub struct TrackerApplication<R> {
     repository: R,
-    tasks: Vec<Task>,
+    /// The snapshot in canonical `TaskId` order; queries sort it per the
+    /// requested ordering.
+    tasks: Vec<TaskListItem>,
     tracker: Tracker,
 }
 
 impl<R: TrackerRepository> TrackerApplication<R> {
     /// Loads task and tracking state from the selected backend.
     pub fn load(repository: R) -> Result<Self, ApplicationError> {
-        let tasks = repository.list_tasks()?;
+        let mut tasks = Self::load_task_items(&repository)?;
         let tracker = Self::load_tracker(&repository)?;
+        Self::align_active_work(&mut tasks, &tracker);
         Ok(Self {
             repository,
             tasks,
             tracker,
         })
+    }
+
+    fn load_task_items(repository: &R) -> Result<Vec<TaskListItem>, ApplicationError> {
+        let mut items = repository.list_task_items()?;
+        items.sort_by_key(|a| a.task.id());
+        Ok(items)
     }
 
     fn load_tracker(repository: &R) -> Result<Tracker, ApplicationError> {
@@ -130,15 +232,35 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         }
     }
 
+    fn align_active_work(items: &mut [TaskListItem], tracker: &Tracker) {
+        if let Some(active) = tracker.active()
+            && let Some(item) = items
+                .iter_mut()
+                .find(|item| item.task.id() == active.task_id)
+        {
+            item.latest_work_start = Some(
+                item.latest_work_start
+                    .map_or(active.start, |old| old.max(active.start)),
+            );
+        }
+    }
+
     fn refresh_tracking(&mut self) -> Result<(), ApplicationError> {
-        self.tracker = Self::load_tracker(&self.repository)?;
+        let tracker = Self::load_tracker(&self.repository)?;
+        // Another client may have started or switched this worklog after our
+        // task snapshot was loaded. Aligning the active start keeps the two
+        // snapshots consistent at the point of the authoritative active read.
+        Self::align_active_work(&mut self.tasks, &tracker);
+        self.tracker = tracker;
         Ok(())
     }
 
     fn recover_after_tracking_write(&mut self, write_error: RepositoryError) -> ApplicationError {
         let loaded = (|| {
-            let tasks = self.repository.list_tasks()?;
+            let mut tasks = self.repository.list_task_items()?;
+            tasks.sort_by_key(|a| a.task.id());
             let tracker = Self::load_tracker(&self.repository)?;
+            Self::align_active_work(&mut tasks, &tracker);
             Ok::<_, ApplicationError>((tasks, tracker))
         })();
         match loaded {
@@ -150,72 +272,139 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             Err(ApplicationError::Repository(error)) => ApplicationError::TrackingRecovery(error),
             Err(ApplicationError::Domain(error)) => ApplicationError::Domain(error),
             Err(ApplicationError::TrackingWrite(error))
-            | Err(ApplicationError::TrackingRecovery(error)) => {
+            | Err(ApplicationError::TrackingRecovery(error))
+            | Err(ApplicationError::TaskRecovery(error)) => {
                 ApplicationError::TrackingRecovery(error)
             }
             Err(ApplicationError::TrackingStateChanged) => ApplicationError::TrackingStateChanged,
         }
     }
 
-    fn task_for_command(&self, id: TaskId) -> Result<Task, ApplicationError> {
-        self.tasks
-            .iter()
-            .find(|task| task.id == id)
-            .cloned()
-            .ok_or(RepositoryError::TaskNotFound { id }.into())
+    fn refresh_after_task_operation(&mut self) -> Result<(), ApplicationError> {
+        match self.refresh_tracking() {
+            Err(ApplicationError::Repository(error)) => Err(ApplicationError::TaskRecovery(error)),
+            result => result,
+        }
     }
 
     fn replace_task(&mut self, changed: Task) {
-        if let Some(index) = self.tasks.iter().position(|task| task.id == changed.id) {
-            self.tasks[index] = changed;
+        if let Some(item) = self
+            .tasks
+            .iter_mut()
+            .find(|item| item.task.id() == changed.id())
+        {
+            item.task = changed;
         } else {
-            self.tasks.push(changed);
-            self.tasks.sort_by_key(|task| task.id);
+            self.tasks.push(TaskListItem {
+                task: changed,
+                latest_work_start: None,
+            });
+            self.tasks.sort_by_key(|a| a.task.id());
+        }
+    }
+
+    /// Records that a worklog started on a task at `at`, keeping the
+    /// snapshot's latest-work value equal to the stored `MAX(start)`
+    /// without reading the backend again.
+    fn note_work_start(&mut self, task_id: TaskId, at: DateTime<Utc>) {
+        if let Some(item) = self.tasks.iter_mut().find(|item| item.task.id() == task_id) {
+            item.latest_work_start = Some(item.latest_work_start.map_or(at, |old| old.max(at)));
         }
     }
 }
 
 impl<R: TrackerRepository> TaskQueries for TrackerApplication<R> {
-    fn tasks(&self) -> &[Task] {
-        &self.tasks
+    fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
+        let mut items = self.tasks.clone();
+        ordering.sort_items(&mut items);
+        items
     }
 
     fn task(&self, id: TaskId) -> Option<&Task> {
-        self.tasks.iter().find(|task| task.id == id)
+        self.tasks
+            .iter()
+            .find(|item| item.task.id() == id)
+            .map(|TaskListItem { task, .. }| task)
     }
 }
 
 impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
-    fn create_task(&mut self, name: TaskName) -> Result<TaskOutcome, ApplicationError> {
-        let task = Task::new(TaskId::generate(), name);
+    fn create_task(
+        &mut self,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<TaskOutcome, ApplicationError> {
+        let occurred_at = canonical_timestamp(occurred_at);
+        let task = Task::create(TaskId::generate(), name, occurred_at);
         self.repository.create_task(task.clone())?;
         self.replace_task(task.clone());
         Ok(TaskOutcome::Created(task))
     }
 
-    fn rename_task(&mut self, id: TaskId, name: TaskName) -> Result<TaskOutcome, ApplicationError> {
-        let task = self.repository.rename_task(id, name)?;
+    fn rename_task(
+        &mut self,
+        id: TaskId,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<TaskOutcome, ApplicationError> {
+        let occurred_at = canonical_timestamp(occurred_at);
+        // The port changes only the name and its metadata timestamp, so a
+        // concurrent archive state survives the write.
+        let task = self.repository.rename_task(id, name, occurred_at)?;
         self.replace_task(task.clone());
         Ok(TaskOutcome::Renamed(task))
     }
 
-    fn archive_task(&mut self, id: TaskId) -> Result<TaskOutcome, ApplicationError> {
+    fn archive_task(
+        &mut self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<TaskOutcome, ApplicationError> {
+        let occurred_at = canonical_timestamp(occurred_at);
         self.refresh_tracking()?;
         self.tracker.ensure_archivable(id)?;
-        let task = self.repository.archive_task(id)?;
-        self.replace_task(task.clone());
-        Ok(TaskOutcome::Archived(task))
+        // The operation preserves unrelated metadata, so a concurrent rename
+        // survives the archive.
+        match self.repository.archive_task(id, occurred_at) {
+            Ok(task) => {
+                self.replace_task(task.clone());
+                self.refresh_after_task_operation()?;
+                Ok(TaskOutcome::Archived(task))
+            }
+            Err(error) => {
+                self.refresh_after_task_operation()?;
+                match error {
+                    RepositoryError::TaskIsActive { id } => {
+                        Err(TrackingError::TaskIsActive { id }.into())
+                    }
+                    error => Err(error.into()),
+                }
+            }
+        }
     }
 
-    fn unarchive_task(&mut self, id: TaskId) -> Result<TaskOutcome, ApplicationError> {
+    fn unarchive_task(
+        &mut self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<TaskOutcome, ApplicationError> {
+        let occurred_at = canonical_timestamp(occurred_at);
         // Another client may have restored this task and started tracking it
         // since our last load. Refresh before the write so a read failure
         // prevents the unarchive and Idle is never reported over an active
         // worklog that survived the call.
         self.refresh_tracking()?;
-        let task = self.repository.unarchive_task(id)?;
-        self.replace_task(task.clone());
-        Ok(TaskOutcome::Unarchived(task))
+        match self.repository.unarchive_task(id, occurred_at) {
+            Ok(task) => {
+                self.replace_task(task.clone());
+                self.refresh_after_task_operation()?;
+                Ok(TaskOutcome::Unarchived(task))
+            }
+            Err(error) => {
+                self.refresh_after_task_operation()?;
+                Err(error.into())
+            }
+        }
     }
 }
 
@@ -229,16 +418,24 @@ impl<R: TrackerRepository> TrackingOperations for TrackerApplication<R> {
         task_id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+        let occurred_at = canonical_timestamp(occurred_at);
         self.refresh_tracking()?;
-        if let Some(active) = self.tracker.active()
+        if let Some(active) = self.tracker.active().cloned()
             && active.task_id == task_id
         {
-            return Ok(SetActiveTaskOutcome::AlreadyActive {
-                worklog: active.clone(),
-            });
+            // Another client may have started this worklog after our task
+            // snapshot was loaded. Keep the derived latest-work value current
+            // even though the desired tracking state already exists.
+            self.note_work_start(task_id, active.start);
+            return Ok(SetActiveTaskOutcome::AlreadyActive { worklog: active });
         }
 
-        let task = self.task_for_command(task_id)?;
+        let task = self
+            .tasks
+            .iter()
+            .find(|item| item.task.id() == task_id)
+            .map(|TaskListItem { task, .. }| task.clone())
+            .ok_or_else(|| ApplicationError::from(RepositoryError::TaskNotFound { id: task_id }))?;
         let mut candidate = self.tracker.clone();
         let outcome = match candidate.active() {
             None => {
@@ -261,6 +458,9 @@ impl<R: TrackerRepository> TrackingOperations for TrackerApplication<R> {
             }
         };
         self.tracker = candidate;
+        // Starting or switching work makes this task the latest work on the
+        // snapshot; stopping never touches it.
+        self.note_work_start(task_id, occurred_at);
         Ok(outcome)
     }
 
@@ -269,6 +469,7 @@ impl<R: TrackerRepository> TrackingOperations for TrackerApplication<R> {
         expected_active: WorklogId,
         occurred_at: DateTime<Utc>,
     ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
+        let occurred_at = canonical_timestamp(occurred_at);
         self.refresh_tracking()?;
         let Some(active) = self.tracker.active() else {
             return Ok(ClearActiveTaskOutcome::AlreadyIdle);
@@ -300,28 +501,35 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use tracker_domain::{TaskName, WorklogId};
+    use tracker_domain::WorklogId;
 
     use super::*;
 
     #[derive(Default)]
     struct Data {
-        tasks: Vec<Task>,
+        tasks: Vec<TaskListItem>,
         worklogs: Vec<Worklog>,
         fail_next_write: Option<RepositoryError>,
         fail_reads: bool,
         replacement_on_failure: Option<Worklog>,
         fail_reads_after_write: bool,
+        list_reads: usize,
     }
 
     #[derive(Clone, Default)]
     struct MemoryRepository(Rc<RefCell<Data>>);
 
     impl MemoryRepository {
-        fn with_tasks(mut tasks: Vec<Task>) -> Self {
-            tasks.sort_by_key(|task| task.id);
+        fn with_tasks(tasks: Vec<Task>) -> Self {
+            let items = tasks
+                .into_iter()
+                .map(|task| TaskListItem {
+                    task,
+                    latest_work_start: None,
+                })
+                .collect::<Vec<_>>();
             Self(Rc::new(RefCell::new(Data {
-                tasks,
+                tasks: items,
                 ..Data::default()
             })))
         }
@@ -367,11 +575,14 @@ mod tests {
                 return Err(error);
             }
             let mut data = self.0.borrow_mut();
-            if data.tasks.iter().any(|stored| stored.id == task.id) {
-                return Err(RepositoryError::TaskAlreadyExists { id: task.id });
+            if data.tasks.iter().any(|item| item.task.id() == task.id()) {
+                return Err(RepositoryError::TaskAlreadyExists { id: task.id() });
             }
-            data.tasks.push(task);
-            data.tasks.sort_by_key(|task| task.id);
+            data.tasks.push(TaskListItem {
+                task,
+                latest_work_start: None,
+            });
+            data.tasks.sort_by_key(|a| a.task.id());
             Ok(())
         }
 
@@ -382,62 +593,86 @@ mod tests {
                 .borrow()
                 .tasks
                 .iter()
-                .find(|task| task.id == id)
-                .cloned())
+                .find(|item| item.task.id() == id)
+                .map(|item| item.task.clone()))
         }
 
-        fn list_tasks(&self) -> Result<Vec<Task>, RepositoryError> {
+        fn list_task_items(&self) -> Result<Vec<TaskListItem>, RepositoryError> {
             self.read_guard()?;
-            Ok(self.0.borrow().tasks.clone())
+            let mut data = self.0.borrow_mut();
+            data.list_reads += 1;
+            let mut items = data.tasks.clone();
+            items.sort_by_key(|a| a.task.id());
+            Ok(items)
         }
 
-        fn rename_task(&self, id: TaskId, name: TaskName) -> Result<Task, RepositoryError> {
+        fn rename_task(
+            &self,
+            id: TaskId,
+            name: TaskName,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<Task, RepositoryError> {
             if let Some(error) = self.take_write_failure() {
                 return Err(error);
             }
             let mut data = self.0.borrow_mut();
-            let task = data
+            let index = data
                 .tasks
-                .iter_mut()
-                .find(|task| task.id == id)
+                .iter()
+                .position(|item| item.task.id() == id)
                 .ok_or(RepositoryError::TaskNotFound { id })?;
-            task.name = name;
-            Ok(task.clone())
+            // The domain method carries the semantics the storage statement
+            // implements: an equal name changes nothing, and a real rename
+            // never moves `updated_at` backward.
+            data.tasks[index].task.rename(name, occurred_at);
+            Ok(data.tasks[index].task.clone())
         }
 
-        fn archive_task(&self, id: TaskId) -> Result<Task, RepositoryError> {
+        fn archive_task(
+            &self,
+            id: TaskId,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<Task, RepositoryError> {
             if let Some(error) = self.take_write_failure() {
                 return Err(error);
             }
             let mut data = self.0.borrow_mut();
-            if data
-                .worklogs
+            let index = data
+                .tasks
                 .iter()
-                .any(|worklog| worklog.task_id == id && worklog.end.is_none())
+                .position(|item| item.task.id() == id)
+                .ok_or(RepositoryError::TaskNotFound { id })?;
+            // The archive trigger's rule: a running task cannot archive. An
+            // already archived task cannot run, so the idempotent case
+            // passes.
+            if !data.tasks[index].task.is_archived()
+                && data
+                    .worklogs
+                    .iter()
+                    .any(|worklog| worklog.task_id == id && worklog.end.is_none())
             {
                 return Err(RepositoryError::TaskIsActive { id });
             }
-            let task = data
-                .tasks
-                .iter_mut()
-                .find(|task| task.id == id)
-                .ok_or(RepositoryError::TaskNotFound { id })?;
-            task.archived = true;
-            Ok(task.clone())
+            data.tasks[index].task.archive(occurred_at);
+            Ok(data.tasks[index].task.clone())
         }
 
-        fn unarchive_task(&self, id: TaskId) -> Result<Task, RepositoryError> {
+        fn unarchive_task(
+            &self,
+            id: TaskId,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<Task, RepositoryError> {
             if let Some(error) = self.take_write_failure() {
                 return Err(error);
             }
             let mut data = self.0.borrow_mut();
-            let task = data
+            let index = data
                 .tasks
-                .iter_mut()
-                .find(|task| task.id == id)
+                .iter()
+                .position(|item| item.task.id() == id)
                 .ok_or(RepositoryError::TaskNotFound { id })?;
-            task.archived = false;
-            Ok(task.clone())
+            data.tasks[index].task.restore(occurred_at);
+            Ok(data.tasks[index].task.clone())
         }
     }
 
@@ -466,11 +701,11 @@ mod tests {
             let task = data
                 .tasks
                 .iter()
-                .find(|task| task.id == worklog.task_id)
+                .find(|item| item.task.id() == worklog.task_id)
                 .ok_or(RepositoryError::TaskNotFound {
                     id: worklog.task_id,
                 })?;
-            if task.archived {
+            if task.task.is_archived() {
                 return Err(RepositoryError::TaskArchived {
                     id: worklog.task_id,
                 });
@@ -547,9 +782,9 @@ mod tests {
             let task = data
                 .tasks
                 .iter()
-                .find(|task| task.id == next.task_id)
+                .find(|item| item.task.id() == next.task_id)
                 .ok_or(RepositoryError::TaskNotFound { id: next.task_id })?;
-            if task.archived {
+            if task.task.is_archived() {
                 return Err(RepositoryError::TaskArchived { id: next.task_id });
             }
             if data.worklogs.iter().any(|worklog| worklog.id == next.id) {
@@ -565,11 +800,27 @@ mod tests {
         DateTime::from_timestamp(seconds, 0).unwrap()
     }
 
+    fn at_nanos(seconds: i64, nanos: u32) -> DateTime<Utc> {
+        DateTime::from_timestamp(seconds, nanos).unwrap()
+    }
+
     fn task(tag: u128, name: &str) -> Task {
-        Task::new(
+        Task::create(
             TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
             TaskName::new(name).unwrap(),
+            at(100),
         )
+    }
+
+    fn stamped_task(tag: u128, name: &str, created: i64, updated: i64) -> Task {
+        Task::rehydrate(
+            TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
+            TaskName::new(name).unwrap(),
+            false,
+            at(created),
+            at(updated),
+        )
+        .unwrap()
     }
 
     fn worklog(tag: u128, task_id: TaskId, start: i64) -> Worklog {
@@ -578,6 +829,134 @@ mod tests {
             task_id,
             at(start),
         )
+    }
+
+    fn ordered_names(
+        application: &TrackerApplication<MemoryRepository>,
+        ordering: TaskOrdering,
+    ) -> Vec<String> {
+        application
+            .tasks(ordering)
+            .into_iter()
+            .map(|item| item.task.name().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn the_default_ordering_is_recently_worked() {
+        assert_eq!(TaskOrdering::default(), TaskOrdering::RecentlyWorked);
+    }
+
+    #[test]
+    fn recently_worked_orders_by_latest_work_then_creation_then_id() {
+        let one = stamped_task(1, "one", 100, 100);
+        let two = stamped_task(2, "two", 300, 300);
+        let three = stamped_task(3, "three", 200, 200);
+        let repository =
+            MemoryRepository::with_tasks(vec![one.clone(), two.clone(), three.clone()]);
+        // one worked most recently, then three; two never worked.
+        repository.0.borrow_mut().tasks[0].latest_work_start = Some(at(900));
+        repository.0.borrow_mut().tasks[2].latest_work_start = Some(at(800));
+        let application = TrackerApplication::load(repository).unwrap();
+
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyWorked),
+            ["one".to_owned(), "three".to_owned(), "two".to_owned()]
+        );
+    }
+
+    #[test]
+    fn recently_worked_puts_tasks_without_worklogs_last() {
+        let never = stamped_task(1, "never", 900, 900);
+        let worked = stamped_task(2, "worked", 100, 100);
+        let repository = MemoryRepository::with_tasks(vec![never, worked.clone()]);
+        repository.0.borrow_mut().tasks[1].latest_work_start = Some(at(50));
+        let application = TrackerApplication::load(repository).unwrap();
+
+        // Even a task created much later stays behind any worked task.
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyWorked),
+            ["worked".to_owned(), "never".to_owned()]
+        );
+    }
+
+    #[test]
+    fn ties_break_by_created_descending_then_id_ascending() {
+        let early = stamped_task(3, "early", 100, 500);
+        let late = stamped_task(1, "late", 400, 400);
+        let same_created = stamped_task(2, "same created", 400, 600);
+        let repository = MemoryRepository::with_tasks(vec![early, late, same_created]);
+        // Every task shares the same latest work start, so the tie rules
+        // decide the whole list.
+        for item in &mut repository.0.borrow_mut().tasks {
+            item.latest_work_start = Some(at(700));
+        }
+        let application = TrackerApplication::load(repository).unwrap();
+
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyWorked),
+            [
+                "late".to_owned(),
+                "same created".to_owned(),
+                "early".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn recently_updated_orders_by_updated_then_created_then_id() {
+        let one = stamped_task(1, "one", 100, 500);
+        let two = stamped_task(2, "two", 500, 900);
+        let three = stamped_task(3, "three", 600, 800);
+        let four = stamped_task(4, "four", 600, 800);
+        let five = stamped_task(5, "five", 400, 800);
+        let repository =
+            MemoryRepository::with_tasks(vec![one, two.clone(), three.clone(), four.clone(), five]);
+        let application = TrackerApplication::load(repository).unwrap();
+
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyUpdated),
+            [
+                "two".to_owned(),
+                "three".to_owned(),
+                "four".to_owned(),
+                "five".to_owned(),
+                "one".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn recently_created_orders_by_created_then_id() {
+        let one = stamped_task(1, "one", 300, 900);
+        let two = stamped_task(2, "two", 700, 700);
+        let three = stamped_task(3, "three", 700, 800);
+        let repository = MemoryRepository::with_tasks(vec![one, two, three]);
+        let application = TrackerApplication::load(repository).unwrap();
+
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyCreated),
+            ["two".to_owned(), "three".to_owned(), "one".to_owned()]
+        );
+    }
+
+    #[test]
+    fn load_aligns_an_active_worklog_missing_from_the_task_aggregate_read() {
+        let active_task = stamped_task(1, "active", 100, 100);
+        let newer_unworked = stamped_task(2, "newer unworked", 500, 500);
+        let repository = MemoryRepository::with_tasks(vec![active_task.clone(), newer_unworked]);
+        repository
+            .0
+            .borrow_mut()
+            .worklogs
+            .push(worklog(10, active_task.id, 900));
+
+        let application = TrackerApplication::load(repository).unwrap();
+
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyWorked),
+            ["active".to_owned(), "newer unworked".to_owned()]
+        );
     }
 
     #[test]
@@ -590,7 +969,14 @@ mod tests {
             .worklogs
             .push(worklog(10, alpha.id, 100));
         let application = TrackerApplication::load(repository).unwrap();
-        assert_eq!(application.tasks(), std::slice::from_ref(&alpha));
+        assert_eq!(
+            application
+                .tasks(TaskOrdering::RecentlyWorked)
+                .into_iter()
+                .map(|item| item.task)
+                .collect::<Vec<_>>(),
+            std::slice::from_ref(&alpha)
+        );
         assert_eq!(application.task(alpha.id), Some(&alpha));
         assert_eq!(
             application.task(TaskId::from_uuid(uuid::Uuid::from_u128(99))),
@@ -609,24 +995,170 @@ mod tests {
     }
 
     #[test]
-    fn task_operations_return_stored_outcomes_and_update_queries() {
+    fn create_task_stamps_the_client_timestamp_on_both_values() {
         let repository = MemoryRepository::default();
-        let mut application = TrackerApplication::load(repository).unwrap();
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
         let created = match application
-            .create_task(TaskName::new("alpha").unwrap())
+            .create_task(TaskName::new("alpha").unwrap(), at(500))
             .unwrap()
         {
             TaskOutcome::Created(task) => task,
             other => panic!("expected create, got {other:?}"),
         };
-        assert_eq!(application.tasks(), std::slice::from_ref(&created));
+        assert_eq!(created.created_at(), at(500));
+        assert_eq!(created.updated_at(), at(500));
+        assert_eq!(application.task(created.id), Some(&created));
+        assert_eq!(
+            application
+                .tasks(TaskOrdering::RecentlyCreated)
+                .into_iter()
+                .map(|item| item.task)
+                .collect::<Vec<_>>(),
+            std::slice::from_ref(&created)
+        );
+    }
+
+    #[test]
+    fn client_timestamps_are_canonicalized_to_microseconds() {
+        let repository = MemoryRepository::default();
+        let mut application = TrackerApplication::load(repository).unwrap();
+        let created = match application
+            .create_task(
+                TaskName::new("precise").unwrap(),
+                at_nanos(100, 123_456_789),
+            )
+            .unwrap()
+        {
+            TaskOutcome::Created(task) => task,
+            other => panic!("expected create, got {other:?}"),
+        };
+        assert_eq!(created.created_at(), at_nanos(100, 123_456_000));
+
         let renamed = application
-            .rename_task(created.id, TaskName::new("beta").unwrap())
+            .rename_task(
+                created.id,
+                TaskName::new("canonical").unwrap(),
+                at_nanos(100, 123_456_100),
+            )
             .unwrap();
-        assert!(matches!(renamed, TaskOutcome::Renamed(task) if task.name.as_str() == "beta"));
-        let archived = application.archive_task(created.id).unwrap();
-        assert!(matches!(archived, TaskOutcome::Archived(task) if task.archived));
-        assert!(application.tasks()[0].archived);
+        assert!(
+            matches!(renamed, TaskOutcome::Renamed(task) if task.updated_at() == at_nanos(100, 123_456_000))
+        );
+
+        let started = application
+            .set_active_task(created.id, at_nanos(200, 987_654_321))
+            .unwrap();
+        assert!(
+            matches!(started, SetActiveTaskOutcome::Started { worklog } if worklog.start == at_nanos(200, 987_654_000))
+        );
+    }
+
+    #[test]
+    fn task_operations_return_stored_outcomes_and_update_queries() {
+        let repository = MemoryRepository::default();
+        let mut application = TrackerApplication::load(repository).unwrap();
+        let created = match application
+            .create_task(TaskName::new("alpha").unwrap(), at(100))
+            .unwrap()
+        {
+            TaskOutcome::Created(task) => task,
+            other => panic!("expected create, got {other:?}"),
+        };
+        assert_eq!(application.task(created.id), Some(&created));
+        let renamed = application
+            .rename_task(created.id, TaskName::new("beta").unwrap(), at(200))
+            .unwrap();
+        assert!(
+            matches!(&renamed, TaskOutcome::Renamed(task) if task.name().as_str() == "beta" && task.updated_at() == at(200))
+        );
+        let archived = application.archive_task(created.id, at(300)).unwrap();
+        assert!(
+            matches!(&archived, TaskOutcome::Archived(task) if task.is_archived() && task.updated_at() == at(300))
+        );
+        assert!(application.task(created.id).unwrap().is_archived());
+    }
+
+    #[test]
+    fn renaming_to_the_stored_name_keeps_updated_at() {
+        let alpha = stamped_task(1, "alpha", 100, 200);
+        let repository = MemoryRepository::with_tasks(vec![alpha]);
+        let mut application = TrackerApplication::load(repository).unwrap();
+
+        let renamed = application
+            .rename_task(
+                TaskId::from_uuid(uuid::Uuid::from_u128(1)),
+                TaskName::new("alpha").unwrap(),
+                at(900),
+            )
+            .unwrap();
+        match renamed {
+            TaskOutcome::Renamed(task) => {
+                assert_eq!(task.name().as_str(), "alpha");
+                assert_eq!(
+                    task.updated_at(),
+                    at(200),
+                    "a no-op rename does not advance"
+                );
+            }
+            other => panic!("expected rename, got {other:?}"),
+        }
+        assert_eq!(
+            application
+                .task(TaskId::from_uuid(uuid::Uuid::from_u128(1)))
+                .unwrap()
+                .updated_at(),
+            at(200)
+        );
+    }
+
+    #[test]
+    fn metadata_operations_never_move_updated_at_backward() {
+        let alpha = stamped_task(1, "alpha", 100, 500);
+        let repository = MemoryRepository::with_tasks(vec![alpha]);
+        let mut application = TrackerApplication::load(repository).unwrap();
+        let id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+
+        let renamed = application
+            .rename_task(id, TaskName::new("beta").unwrap(), at(200))
+            .unwrap();
+        assert!(
+            matches!(&renamed, TaskOutcome::Renamed(task) if task.updated_at() == at(500)),
+            "a late client clock cannot rewind updated_at"
+        );
+    }
+
+    #[test]
+    fn archiving_an_archived_task_and_restoring_an_active_task_are_noops() {
+        let mut archived = stamped_task(1, "archived", 100, 400);
+        assert!(archived.archive(at(400)));
+        let active = stamped_task(2, "active", 100, 300);
+        let repository = MemoryRepository::with_tasks(vec![archived, active]);
+        let mut application = TrackerApplication::load(repository).unwrap();
+
+        let again = application
+            .archive_task(TaskId::from_uuid(uuid::Uuid::from_u128(1)), at(900))
+            .unwrap();
+        assert!(matches!(&again, TaskOutcome::Archived(task) if task.updated_at() == at(400)));
+        let restore = application
+            .unarchive_task(TaskId::from_uuid(uuid::Uuid::from_u128(2)), at(900))
+            .unwrap();
+        assert!(
+            matches!(&restore, TaskOutcome::Unarchived(task) if !task.is_archived() && task.updated_at() == at(300))
+        );
+        assert_eq!(
+            application
+                .task(TaskId::from_uuid(uuid::Uuid::from_u128(1)))
+                .unwrap()
+                .updated_at(),
+            at(400)
+        );
+        assert_eq!(
+            application
+                .task(TaskId::from_uuid(uuid::Uuid::from_u128(2)))
+                .unwrap()
+                .updated_at(),
+            at(300)
+        );
     }
 
     #[test]
@@ -643,17 +1175,15 @@ mod tests {
             .unwrap(),
         );
         let mut application = TrackerApplication::load(repository.clone()).unwrap();
-        application.archive_task(alpha.id).unwrap();
+        application.archive_task(alpha.id, at(200)).unwrap();
 
-        let unarchived = application.unarchive_task(alpha.id).unwrap();
-        assert!(matches!(unarchived, TaskOutcome::Unarchived(task) if !task.archived));
-        assert!(!application.tasks()[0].archived);
-        assert_eq!(
-            application.task(alpha.id),
-            Some(&Task::new(alpha.id, alpha.name.clone()))
+        let unarchived = application.unarchive_task(alpha.id, at(300)).unwrap();
+        assert!(
+            matches!(&unarchived, TaskOutcome::Unarchived(task) if !task.is_archived() && task.updated_at() == at(300))
         );
+        assert!(!application.task(alpha.id).unwrap().is_archived());
         assert_eq!(application.worklogs_for_task(alpha.id).unwrap().len(), 1);
-        assert!(!repository.0.borrow().tasks[0].archived);
+        assert!(!repository.0.borrow().tasks[0].task.is_archived());
     }
 
     #[test]
@@ -662,7 +1192,7 @@ mod tests {
         let mut application = TrackerApplication::load(repository).unwrap();
         let missing = TaskId::from_uuid(uuid::Uuid::from_u128(99));
         assert_eq!(
-            application.unarchive_task(missing),
+            application.unarchive_task(missing, at(100)),
             Err(ApplicationError::Repository(
                 RepositoryError::TaskNotFound { id: missing }
             ))
@@ -674,17 +1204,25 @@ mod tests {
         let alpha = task(1, "alpha");
         let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
         let mut application = TrackerApplication::load(repository.clone()).unwrap();
-        application.archive_task(alpha.id).unwrap();
+        application.archive_task(alpha.id, at(150)).unwrap();
 
         // A second client restores the archived task and starts tracking it
         // before the stale client issues its unarchive.
-        repository.unarchive_task(alpha.id).unwrap();
+        repository
+            .0
+            .borrow_mut()
+            .tasks
+            .iter_mut()
+            .find(|item| item.task.id() == alpha.id)
+            .unwrap()
+            .task
+            .restore(at(160));
         repository
             .insert_worklog(&worklog(10, alpha.id, 150))
             .unwrap();
 
-        let unarchived = application.unarchive_task(alpha.id).unwrap();
-        assert!(matches!(unarchived, TaskOutcome::Unarchived(task) if !task.archived));
+        let unarchived = application.unarchive_task(alpha.id, at(200)).unwrap();
+        assert!(matches!(&unarchived, TaskOutcome::Unarchived(task) if !task.is_archived()));
         assert_eq!(
             application.current_tracking(),
             &TrackingState::Running {
@@ -706,16 +1244,16 @@ mod tests {
         let alpha = task(1, "alpha");
         let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
         let mut application = TrackerApplication::load(repository.clone()).unwrap();
-        application.archive_task(alpha.id).unwrap();
+        application.archive_task(alpha.id, at(100)).unwrap();
         repository.0.borrow_mut().fail_reads = true;
 
         assert_eq!(
-            application.unarchive_task(alpha.id),
+            application.unarchive_task(alpha.id, at(150)),
             Err(ApplicationError::Repository(RepositoryError::Backend {
                 message: "read failed".to_owned()
             }))
         );
-        assert!(repository.0.borrow().tasks[0].archived);
+        assert!(repository.0.borrow().tasks[0].task.is_archived());
         assert_eq!(application.current_tracking(), &TrackingState::Idle);
     }
 
@@ -724,13 +1262,11 @@ mod tests {
         let alpha = task(1, "alpha");
         let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
         let mut application = TrackerApplication::load(repository.clone()).unwrap();
-        let first = application.unarchive_task(alpha.id).unwrap();
-        assert!(matches!(first, TaskOutcome::Unarchived(task) if !task.archived));
-        assert!(!application.tasks()[0].archived);
-        assert_eq!(
-            application.unarchive_task(alpha.id).unwrap(),
-            TaskOutcome::Unarchived(Task::new(alpha.id, alpha.name.clone()))
-        );
+        let first = application.unarchive_task(alpha.id, at(100)).unwrap();
+        assert!(matches!(&first, TaskOutcome::Unarchived(task) if !task.is_archived()));
+        assert!(!application.task(alpha.id).unwrap().is_archived());
+        let second = application.unarchive_task(alpha.id, at(200)).unwrap();
+        assert!(matches!(&second, TaskOutcome::Unarchived(task) if !task.is_archived()));
         assert_eq!(repository.0.borrow().tasks.len(), 1);
     }
 
@@ -760,6 +1296,27 @@ mod tests {
             SetActiveTaskOutcome::AlreadyActive { worklog } if worklog.id == first.id
         ));
         assert_eq!(repository.0.borrow().worklogs.len(), 1);
+    }
+
+    #[test]
+    fn adopting_another_clients_active_work_updates_recent_work_ordering() {
+        let alpha = task(1, "alpha");
+        let beta = task(2, "beta");
+        let repository = MemoryRepository::with_tasks(vec![alpha, beta.clone()]);
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        repository
+            .insert_worklog(&worklog(10, beta.id, 900))
+            .unwrap();
+
+        let outcome = application.set_active_task(beta.id, at(999)).unwrap();
+        assert!(matches!(
+            outcome,
+            SetActiveTaskOutcome::AlreadyActive { worklog } if worklog.start == at(900)
+        ));
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyWorked),
+            ["beta".to_owned(), "alpha".to_owned()]
+        );
     }
 
     #[test]
@@ -838,6 +1395,11 @@ mod tests {
             first.current_tracking(),
             TrackingState::Running { worklog } if worklog.task_id == beta.id
         ));
+        assert_eq!(
+            ordered_names(&first, TaskOrdering::RecentlyWorked),
+            ["beta".to_owned(), "alpha".to_owned()],
+            "the adopted active worklog supplies authoritative recent activity"
+        );
         assert!(matches!(
             repository.active_worklog(),
             Ok(Some(worklog)) if worklog.task_id == beta.id
@@ -845,7 +1407,116 @@ mod tests {
     }
 
     #[test]
-    fn tracking_write_errors_keep_the_repository_error_as_their_source() {
+    fn tracking_never_changes_a_tasks_updated_at() {
+        let alpha = stamped_task(1, "alpha", 100, 200);
+        let beta = stamped_task(2, "beta", 100, 200);
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+        let mut application = TrackerApplication::load(repository).unwrap();
+
+        application.set_active_task(alpha.id, at(500)).unwrap();
+        application.set_active_task(beta.id, at(600)).unwrap();
+        application
+            .clear_active_task(
+                match application.current_tracking() {
+                    TrackingState::Running { worklog } => worklog.id,
+                    TrackingState::Idle => panic!("beta must be active"),
+                },
+                at(700),
+            )
+            .unwrap();
+
+        assert_eq!(application.task(alpha.id).unwrap().updated_at(), at(200));
+        assert_eq!(application.task(beta.id).unwrap().updated_at(), at(200));
+    }
+
+    #[test]
+    fn start_and_switch_reorder_recently_worked_but_stop_does_not() {
+        let alpha = stamped_task(1, "alpha", 100, 100);
+        let beta = stamped_task(2, "beta", 200, 200);
+        let gamma = stamped_task(3, "gamma", 300, 300);
+        let repository =
+            MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone(), gamma.clone()]);
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        // No work has happened yet, so created_at descending decides:
+        // gamma first, alpha last.
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyWorked),
+            ["gamma".to_owned(), "beta".to_owned(), "alpha".to_owned()]
+        );
+
+        // Starting alpha works it most recently: alpha rises to the top.
+        application.set_active_task(alpha.id, at(500)).unwrap();
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyWorked),
+            ["alpha".to_owned(), "gamma".to_owned(), "beta".to_owned()]
+        );
+
+        // Switching to beta makes beta the latest work: beta rises above
+        // alpha without a backend read.
+        let list_reads_before = repository.0.borrow().list_reads;
+        application.set_active_task(beta.id, at(600)).unwrap();
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyWorked),
+            ["beta".to_owned(), "alpha".to_owned(), "gamma".to_owned()]
+        );
+        assert_eq!(
+            repository.0.borrow().list_reads,
+            list_reads_before,
+            "the snapshot reordered without rereading the backend"
+        );
+
+        // Stopping changes nothing about the ordering.
+        application
+            .clear_active_task(
+                match application.current_tracking() {
+                    TrackingState::Running { worklog } => worklog.id,
+                    TrackingState::Idle => panic!("beta must be active"),
+                },
+                at(700),
+            )
+            .unwrap();
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyWorked),
+            ["beta".to_owned(), "alpha".to_owned(), "gamma".to_owned()]
+        );
+    }
+
+    #[test]
+    fn a_committed_write_never_triggers_a_fallible_backend_read() {
+        let alpha = stamped_task(1, "alpha", 100, 100);
+        let repository = MemoryRepository::with_tasks(vec![alpha]);
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        let list_reads_after_load = repository.0.borrow().list_reads;
+
+        application
+            .create_task(TaskName::new("beta").unwrap(), at(200))
+            .unwrap();
+        application
+            .rename_task(
+                TaskId::from_uuid(uuid::Uuid::from_u128(1)),
+                TaskName::new("renamed").unwrap(),
+                at(300),
+            )
+            .unwrap();
+        application
+            .set_active_task(TaskId::from_uuid(uuid::Uuid::from_u128(1)), at(400))
+            .unwrap();
+        assert_eq!(
+            repository.0.borrow().list_reads,
+            list_reads_after_load,
+            "successful writes update the snapshot without another list read"
+        );
+        // The snapshot still reflects every write.
+        let names: Vec<String> = application
+            .tasks(TaskOrdering::RecentlyWorked)
+            .into_iter()
+            .map(|item| item.task.name().to_string())
+            .collect();
+        assert_eq!(names, ["renamed".to_owned(), "beta".to_owned()]);
+    }
+
+    #[test]
+    fn recovery_errors_keep_the_repository_error_as_their_source() {
         use std::error::Error as _;
 
         let error = ApplicationError::TrackingWrite(RepositoryError::Backend {
@@ -856,15 +1527,17 @@ mod tests {
             message: "reload failed".to_owned(),
         });
         assert!(error.source().is_some());
+        let error = ApplicationError::TaskRecovery(RepositoryError::Backend {
+            message: "task reload failed".to_owned(),
+        });
+        assert!(error.source().is_some());
     }
 
     #[test]
     fn memory_repository_honors_worklog_ordering_and_write_contracts() {
         let alpha = task(1, "alpha");
-        let archived = Task {
-            archived: true,
-            ..task(2, "archived")
-        };
+        let mut archived = task(2, "archived");
+        assert!(archived.archive(at(100)));
         let repository = MemoryRepository::with_tasks(vec![archived.clone(), alpha.clone()]);
         let later =
             Worklog::new(worklog(2, alpha.id, 20).id, alpha.id, at(20), Some(at(30))).unwrap();
@@ -939,6 +1612,12 @@ mod tests {
                 worklog: ActiveWorklog::begin(foreign.id, foreign.task_id, foreign.start)
             }
         );
+        // The authoritative active start is aligned with the aggregate read,
+        // even when the simulated list read did not include the new worklog.
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyWorked),
+            ["beta".to_owned(), "alpha".to_owned()]
+        );
     }
 
     #[test]
@@ -967,11 +1646,74 @@ mod tests {
         let mut application = TrackerApplication::load(repository).unwrap();
         application.set_active_task(alpha.id, at(100)).unwrap();
         assert_eq!(
-            application.archive_task(alpha.id),
+            application.archive_task(alpha.id, at(150)),
             Err(ApplicationError::Domain(TrackingError::TaskIsActive {
                 id: alpha.id
             }))
         );
-        assert!(!application.tasks()[0].archived);
+        assert!(!application.task(alpha.id).unwrap().is_archived());
+    }
+
+    #[test]
+    fn rename_task_never_moves_stored_updated_at_backward() {
+        let alpha = stamped_task(1, "alpha", 100, 500);
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        let saved = repository
+            .rename_task(alpha.id, TaskName::new("older clock").unwrap(), at(200))
+            .unwrap();
+        assert_eq!(
+            saved.updated_at(),
+            at(500),
+            "the backend keeps the newer value"
+        );
+        assert_eq!(saved.name().as_str(), "older clock");
+        assert_eq!(saved.created_at(), at(100), "creation is never rewritten");
+    }
+
+    #[test]
+    fn renaming_a_missing_task_reports_task_not_found() {
+        let repository = MemoryRepository::default();
+        let missing = TaskId::from_uuid(uuid::Uuid::from_u128(99));
+        assert_eq!(
+            repository.rename_task(missing, TaskName::new("ghost").unwrap(), at(100)),
+            Err(RepositoryError::TaskNotFound { id: missing })
+        );
+    }
+
+    #[test]
+    fn renaming_after_a_concurrent_archive_keeps_the_archived_state() {
+        let alpha = stamped_task(1, "alpha", 100, 100);
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        // Another client archives the task after this client last looked.
+        repository.archive_task(alpha.id, at(150)).unwrap();
+
+        // The stale client renames from its unarchived view: the rename
+        // lands and the archive state survives it.
+        let renamed = repository
+            .rename_task(alpha.id, TaskName::new("beta").unwrap(), at(200))
+            .unwrap();
+        assert_eq!(renamed.name().as_str(), "beta");
+        assert!(
+            renamed.is_archived(),
+            "the rename did not resurrect the task"
+        );
+    }
+
+    #[test]
+    fn archiving_after_a_concurrent_rename_keeps_the_name() {
+        let alpha = stamped_task(1, "alpha", 100, 100);
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        repository
+            .rename_task(alpha.id, TaskName::new("beta").unwrap(), at(150))
+            .unwrap();
+
+        let archived = repository.archive_task(alpha.id, at(200)).unwrap();
+        assert!(archived.is_archived());
+        assert_eq!(
+            archived.name().as_str(),
+            "beta",
+            "the archive kept the rename"
+        );
+        assert_eq!(archived.updated_at(), at(200));
     }
 }
