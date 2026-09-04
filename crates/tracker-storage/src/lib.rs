@@ -20,7 +20,8 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior};
 use tracker_application::{
-    RepositoryError, TaskListItem, TaskRepository, TrackingRepository, WorklogRepository,
+    RepositoryError, TaskListItem, TaskRepository, TrackingRepository, WORKLOG_PAGE_SIZE,
+    WorklogCursor, WorklogPage, WorklogRepository,
 };
 use tracker_domain::{Task, TaskError, TaskId, TaskName, Worklog, WorklogError, WorklogId};
 
@@ -98,6 +99,8 @@ fn worklog_from_stored(
 
 type RawTask = (String, String, bool, i64, i64);
 type RawTaskItem = (RawTask, Option<i64>);
+/// One worklog's raw stored columns.
+type RawWorklog = (String, String, i64, Option<i64>);
 
 /// Extracts the raw task columns from a row.
 fn raw_task(row: &Row<'_>) -> rusqlite::Result<RawTask> {
@@ -111,13 +114,18 @@ fn raw_task(row: &Row<'_>) -> rusqlite::Result<RawTask> {
 }
 
 /// Extracts the raw worklog columns from a row.
-fn raw_worklog(row: &Row<'_>) -> rusqlite::Result<(String, String, i64, Option<i64>)> {
+fn raw_worklog(row: &Row<'_>) -> rusqlite::Result<RawWorklog> {
     Ok((
         row.get("id")?,
         row.get("task_id")?,
         row.get("start_us")?,
         row.get("end_us")?,
     ))
+}
+
+/// Builds a worklog from raw stored columns, rejecting domain-rule breaks.
+fn worklog_from_raw(raw: RawWorklog) -> Result<Worklog, StorageError> {
+    worklog_from_stored(raw.0, raw.1, raw.2, raw.3)
 }
 
 /// Extracts one task-list row: the task columns plus the latest worklog
@@ -443,12 +451,87 @@ impl SqliteRepository {
         statement
             .query_row([], raw_worklog)
             .optional()?
-            .map(|(id, task_id, start_us, end_us)| {
-                worklog_from_stored(id, task_id, start_us, end_us)
-            })
+            .map(worklog_from_raw)
             .transpose()
     }
 
+    /// Reads one bounded page of the task's worklog history.
+    ///
+    /// The page is keyset paginated. The optional cursor carries the start
+    /// time and id of the previous page's last row, and the query continues
+    /// strictly after that row in `start_us DESC, id ASC` order. Because the
+    /// cursor carries both values, a boundary between rows that share a
+    /// start time neither repeats nor skips any of them. The statement reads
+    /// one row more than the page size to decide whether a next page
+    /// follows; that extra row is discarded, and no page ever reads the
+    /// whole history. Active worklogs are included.
+    pub fn worklog_page(
+        &self,
+        task_id: TaskId,
+        after: Option<&WorklogCursor>,
+    ) -> Result<WorklogPage, StorageError> {
+        // One row past the page size only signals "another page exists".
+        let limit =
+            i64::try_from(WORKLOG_PAGE_SIZE + 1).expect("the page size plus one always fits i64");
+        let raw = match after {
+            None => {
+                let mut statement = self.conn.prepare(
+                    "SELECT id, task_id, start_us, end_us FROM worklogs
+                     WHERE task_id = ?1
+                     ORDER BY start_us DESC, id
+                     LIMIT ?2",
+                )?;
+                statement
+                    .query_map(rusqlite::params![task_id.to_string(), limit], raw_worklog)?
+                    .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
+            }
+            Some(cursor) => {
+                let cursor_start_us = timestamp_to_us(cursor.start);
+                let mut statement = self.conn.prepare(
+                    "SELECT id, task_id, start_us, end_us FROM worklogs
+                     WHERE task_id = ?1
+                       AND (start_us < ?2 OR (start_us = ?2 AND id > ?3))
+                     ORDER BY start_us DESC, id
+                     LIMIT ?4",
+                )?;
+                statement
+                    .query_map(
+                        rusqlite::params![
+                            task_id.to_string(),
+                            cursor_start_us,
+                            cursor.id.to_string(),
+                            limit
+                        ],
+                        raw_worklog,
+                    )?
+                    .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
+            }
+        };
+        let has_next = raw.len() > WORKLOG_PAGE_SIZE;
+        let worklogs = raw
+            .into_iter()
+            .take(WORKLOG_PAGE_SIZE)
+            .map(worklog_from_raw)
+            .collect::<Result<Vec<_>, _>>()?;
+        let next_cursor = has_next.then(|| {
+            let last = worklogs.last().expect("a full page has a last worklog");
+            WorklogCursor {
+                start: last.start,
+                id: last.id,
+            }
+        });
+        Ok(WorklogPage {
+            worklogs,
+            next_cursor,
+        })
+    }
+
+    /// Lists every worklog of the task, oldest first.
+    ///
+    /// Storage-only helper for tests and diagnostics that need the whole
+    /// list at once. Application worklog history does not go through this
+    /// method; it reads bounded pages through the
+    /// [`WorklogRepository::worklog_page`] port.
     pub fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, StorageError> {
         let mut statement = self.conn.prepare(
             "SELECT id, task_id, start_us, end_us FROM worklogs
@@ -458,8 +541,8 @@ impl SqliteRepository {
         let mut rows = statement.query([task_id.to_string()])?;
         let mut worklogs = Vec::new();
         while let Some(row) = rows.next()? {
-            let (id, task_id, start_us, end_us) = raw_worklog(row)?;
-            worklogs.push(worklog_from_stored(id, task_id, start_us, end_us)?);
+            let raw = raw_worklog(row)?;
+            worklogs.push(worklog_from_raw(raw)?);
         }
         Ok(worklogs)
     }
@@ -565,8 +648,12 @@ impl TrackingRepository for SqliteRepository {
 }
 
 impl WorklogRepository for SqliteRepository {
-    fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, RepositoryError> {
-        SqliteRepository::list_worklogs(self, task_id).map_err(Into::into)
+    fn worklog_page(
+        &self,
+        task_id: TaskId,
+        after: Option<&WorklogCursor>,
+    ) -> Result<WorklogPage, RepositoryError> {
+        SqliteRepository::worklog_page(self, task_id, after).map_err(Into::into)
     }
 }
 

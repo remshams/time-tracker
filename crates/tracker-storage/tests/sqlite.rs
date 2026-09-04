@@ -18,7 +18,8 @@ use tempfile::TempDir;
 use tracker_application::{
     ApplicationError, ClearActiveTaskOutcome, RepositoryError, SetActiveTaskOutcome, TaskListItem,
     TaskOperations, TaskOrdering, TaskOutcome, TaskQueries, TaskRepository, TrackerApplication,
-    TrackingOperations, TrackingRepository, WorklogRepository,
+    TrackingOperations, TrackingRepository, WORKLOG_PAGE_SIZE, WorklogCursor, WorklogPage,
+    WorklogQueries, WorklogRepository,
 };
 use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingError, TrackingOutcome, TrackingState,
@@ -176,8 +177,14 @@ impl TaskRepository for SynchronizingRepository {
 }
 
 impl WorklogRepository for SynchronizingRepository {
-    fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, RepositoryError> {
-        self.repository.list_worklogs(task_id).map_err(Into::into)
+    fn worklog_page(
+        &self,
+        task_id: TaskId,
+        after: Option<&WorklogCursor>,
+    ) -> Result<WorklogPage, RepositoryError> {
+        self.repository
+            .worklog_page(task_id, after)
+            .map_err(Into::into)
     }
 }
 
@@ -539,7 +546,9 @@ fn sqlite_application_ports_delegate_task_and_worklog_queries() {
     let worklog = Worklog::begin(worklog_id(1), task.id, at(100));
     TrackingRepository::insert_worklog(&repository, &worklog).unwrap();
     assert_eq!(
-        WorklogRepository::list_worklogs(&repository, task.id).unwrap(),
+        WorklogRepository::worklog_page(&repository, task.id, None)
+            .unwrap()
+            .worklogs,
         vec![worklog]
     );
 
@@ -1486,6 +1495,164 @@ fn restarts_record_separate_worklogs() {
     assert_eq!(worklogs[1].end, Some(at(400)));
 }
 
+/// Inserts `worklogs` worklogs for the task, one per tag, started at
+/// `at(tag)`; the first one is active, the others stop one second later.
+fn insert_numbered_worklogs(repository: &SqliteRepository, task: &Task, worklogs: u32) {
+    for tag in 1..=worklogs {
+        let worklog = if tag == 1 {
+            Worklog::begin(worklog_id(tag), task.id, at(i64::from(tag)))
+        } else {
+            Worklog::new(
+                worklog_id(tag),
+                task.id,
+                at(i64::from(tag)),
+                Some(at(i64::from(tag) + 1)),
+            )
+            .unwrap()
+        };
+        repository.insert_worklog(&worklog).unwrap();
+    }
+}
+
+#[test]
+fn worklog_pages_walk_55_records_through_the_next_cursor_without_repeats_or_gaps() {
+    let repository = repo();
+    let task = named_task(1, "history");
+    repository.create_task(task.clone()).unwrap();
+    insert_numbered_worklogs(&repository, &task, 55);
+
+    // The first page is bounded by the page size and ordered start
+    // descending, newest first.
+    let first = repository.worklog_page(task.id, None).unwrap();
+    assert_eq!(first.worklogs.len(), WORKLOG_PAGE_SIZE);
+    let starts: Vec<i64> = first
+        .worklogs
+        .iter()
+        .map(|worklog| worklog.start.timestamp())
+        .collect();
+    assert_eq!(starts, (6..=55).rev().collect::<Vec<_>>());
+    let cursor = first.next_cursor.expect("more history follows");
+    assert_eq!(cursor.start, at(6));
+    assert_eq!(cursor.id, worklog_id(6));
+
+    // The second page carries the remaining five records, and the history
+    // ends inside it.
+    let second = repository.worklog_page(task.id, Some(&cursor)).unwrap();
+    assert_eq!(second.worklogs.len(), 5);
+    assert_eq!(second.next_cursor, None);
+    let rest_starts: Vec<i64> = second
+        .worklogs
+        .iter()
+        .map(|worklog| worklog.start.timestamp())
+        .collect();
+    assert_eq!(rest_starts, [5, 4, 3, 2, 1]);
+
+    // The two pages cover every record exactly once: none skipped, none
+    // repeated. The active worklog is part of the history.
+    let mut ids: Vec<u32> = first
+        .worklogs
+        .iter()
+        .chain(&second.worklogs)
+        .map(|worklog| worklog.id.as_uuid().as_u128() as u32)
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(ids, (1..=55).collect::<Vec<_>>());
+    assert_eq!(
+        second.worklogs.last().unwrap().end,
+        None,
+        "the active worklog appears in the second page"
+    );
+}
+
+#[test]
+fn a_page_boundary_inside_equal_starts_neither_dups_nor_skips_rows() {
+    let repository = repo();
+    let task = named_task(1, "simultaneous");
+    repository.create_task(task.clone()).unwrap();
+    // 55 worklogs share one start, so identifier ascending decides the
+    // whole order and the page boundary falls between two of them. A
+    // boundary that ignores the identifier would repeat or drop rows 51
+    // to 55.
+    for tag in 1..=55u32 {
+        let worklog = if tag == 1 {
+            Worklog::begin(worklog_id(tag), task.id, at(500))
+        } else {
+            Worklog::new(worklog_id(tag), task.id, at(500), Some(at(501))).unwrap()
+        };
+        repository.insert_worklog(&worklog).unwrap();
+    }
+
+    let first = repository.worklog_page(task.id, None).unwrap();
+    let ids: Vec<u32> = first
+        .worklogs
+        .iter()
+        .map(|worklog| worklog.id.as_uuid().as_u128() as u32)
+        .collect();
+    assert_eq!(ids, (1..=50).collect::<Vec<_>>(), "identifier ascending");
+    let cursor = first.next_cursor.expect("equal starts continue");
+    assert_eq!(cursor.start, at(500));
+    assert_eq!(cursor.id, worklog_id(50));
+
+    let second = repository.worklog_page(task.id, Some(&cursor)).unwrap();
+    let rest_ids: Vec<u32> = second
+        .worklogs
+        .iter()
+        .map(|worklog| worklog.id.as_uuid().as_u128() as u32)
+        .collect();
+    assert_eq!(rest_ids, (51..=55).collect::<Vec<_>>());
+    assert_eq!(second.next_cursor, None);
+}
+
+#[test]
+fn an_active_worklog_is_part_of_a_history_page() {
+    let repository = repo();
+    let task = named_task(1, "running");
+    repository.create_task(task.clone()).unwrap();
+    let stopped = Worklog::new(worklog_id(1), task.id, at(100), Some(at(150))).unwrap();
+    repository.insert_worklog(&stopped).unwrap();
+    let active = Worklog::begin(worklog_id(2), task.id, at(200));
+    repository.insert_worklog(&active).unwrap();
+
+    let page = repository.worklog_page(task.id, None).unwrap();
+    assert_eq!(page.worklogs.len(), 2);
+    // History order is start descending, so the active worklog leads.
+    assert_eq!(page.worklogs[0].id, active.id);
+    assert_eq!(page.worklogs[0].end, None);
+    assert_eq!(page.worklogs[1].id, stopped.id);
+    assert_eq!(page.next_cursor, None);
+}
+
+#[test]
+fn a_cursor_stays_stable_when_a_newer_worklog_is_inserted_between_page_reads() {
+    let repository = repo();
+    let task = named_task(1, "history");
+    repository.create_task(task.clone()).unwrap();
+    insert_numbered_worklogs(&repository, &task, 55);
+
+    let first = repository.worklog_page(task.id, None).unwrap();
+    assert_eq!(first.worklogs.len(), WORKLOG_PAGE_SIZE);
+    let cursor = first.next_cursor.expect("more history follows");
+
+    // A newer worklog lands between the two page reads. The keyset cursor
+    // still continues after the page's last row, so the second page neither
+    // repeats a row of the first page nor skips one.
+    let newer = Worklog::new(worklog_id(100), task.id, at(1000), Some(at(1001))).unwrap();
+    repository.insert_worklog(&newer).unwrap();
+
+    let second = repository.worklog_page(task.id, Some(&cursor)).unwrap();
+    let rest_ids: Vec<u32> = second
+        .worklogs
+        .iter()
+        .map(|worklog| worklog.id.as_uuid().as_u128() as u32)
+        .collect();
+    assert_eq!(rest_ids, (1..=5).rev().collect::<Vec<_>>());
+    assert_eq!(second.next_cursor, None);
+
+    // The newer worklog is not lost; a fresh first page leads with it.
+    let fresh = repository.worklog_page(task.id, None).unwrap();
+    assert_eq!(fresh.worklogs[0].id, newer.id);
+}
+
 #[test]
 fn switch_stops_the_old_worklog_and_starts_the_new_one_atomically() {
     let repository = repo();
@@ -1896,6 +2063,10 @@ fn corrupt_worklog_rows_are_reported_as_corrupt_data() {
         .list_worklogs(task_id(1))
         .expect_err("huge timestamp is corrupt");
     assert!(matches!(error, StorageError::CorruptData("timestamp")));
+    let error = repository
+        .worklog_page(task_id(1), None)
+        .expect_err("the paged query rejects the huge timestamp too");
+    assert!(matches!(error, StorageError::CorruptData("timestamp")));
     // The aggregate rejects the corrupt start as well.
     let error = repository
         .list_task_items()
@@ -1925,6 +2096,21 @@ fn corrupt_worklog_rows_are_reported_as_corrupt_data() {
     assert!(matches!(
         error,
         StorageError::CorruptData("worklog interval")
+    ));
+    let error = repository
+        .worklog_page(task_id(1), None)
+        .expect_err("the paged query rejects the backwards interval too");
+    assert!(matches!(
+        error,
+        StorageError::CorruptData("worklog interval")
+    ));
+
+    let mut application = TrackerApplication::load(repository).unwrap();
+    assert!(matches!(
+        application.worklogs_for_task(task_id(1), None),
+        Err(ApplicationError::Repository(RepositoryError::CorruptData {
+            field: "worklog interval"
+        }))
     ));
 }
 
