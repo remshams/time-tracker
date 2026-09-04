@@ -14,6 +14,8 @@ pub enum Command {
     ShowActiveTasks,
     /// Show the list of archived tasks.
     ShowArchivedTasks,
+    /// Cycle the shared task-list ordering.
+    CycleOrdering,
     /// Restore the selected archived task to the active list.
     UnarchiveSelected,
     /// Start, stop, or switch tracking for the selected task.

@@ -16,6 +16,9 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
 
+/// The narrowest terminal that renders the full interactive interface.
+pub(crate) const MIN_TERMINAL_WIDTH: u16 = 60;
+
 /// The display width of one character in terminal cells.
 fn char_width(character: char) -> usize {
     character.width().unwrap_or(0)
@@ -64,6 +67,14 @@ fn fit_suffix(text: &str, max_width: usize) -> &str {
 
 /// Renders one frame of the interface.
 pub fn render<S: TrackerApplicationService>(frame: &mut Frame, app: &App<S>) {
+    if frame.area().width < MIN_TERMINAL_WIDTH {
+        frame.render_widget(
+            Paragraph::new("Time Tracker needs at least 60 columns."),
+            frame.area(),
+        );
+        return;
+    }
+
     let [header, body, status_area, footer] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(0),
@@ -95,12 +106,12 @@ fn render_header<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, ap
 
 /// Renders the task list, its selection, and the active-task marker.
 fn render_tasks<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app: &App<S>) {
-    let (title, empty_text) = match app.view() {
+    let (view_title, empty_text) = match app.view() {
         TaskView::Active => ("Active tasks", "No active tasks. Press a to add one."),
         TaskView::Archived => ("Archived tasks", "No archived tasks."),
     };
     let block = Block::bordered()
-        .title(title)
+        .title(format!("{view_title} · {}", app.ordering_label()))
         .border_style(if app.mode() == &Mode::Normal {
             styles::focused_border()
         } else {
@@ -123,7 +134,7 @@ fn render_tasks<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app
             } else {
                 Span::raw("  ")
             };
-            let name = fit_prefix(task.name.as_str(), name_budget);
+            let name = fit_prefix(task.name().as_str(), name_budget);
             ListItem::new(Line::from(vec![marker, Span::raw(name)]))
         })
         .collect();
@@ -149,7 +160,7 @@ fn render_status<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, ap
 /// Renders the context-sensitive key help for the current mode.
 fn render_footer<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app: &App<S>) {
     frame.render_widget(
-        Paragraph::new(keymap::footer_hints(app.mode(), app.view())),
+        Paragraph::new(keymap::footer_hints(app.mode(), app.view(), area.width)),
         area,
     );
 }
@@ -235,6 +246,7 @@ fn format_elapsed(total: Duration) -> String {
 
 #[cfg(test)]
 mod tests {
+    use chrono::{DateTime, Utc};
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::{Terminal, backend::TestBackend};
     use tracker_application::TrackerApplication;
@@ -250,14 +262,26 @@ mod tests {
     fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
         let repository = SqliteRepository::open_in_memory().unwrap();
         for name in names {
-            let task = Task::new(TaskId::generate(), TaskName::new(name).unwrap());
+            let task = Task::create(
+                TaskId::generate(),
+                TaskName::new(name).unwrap(),
+                DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
+            );
             repository.create_task(task).unwrap();
         }
         App::load(TrackerApplication::load(repository).unwrap())
     }
 
     fn draw(app: &App<TrackerApplication<SqliteRepository>>) -> Terminal<TestBackend> {
-        let mut terminal = Terminal::new(TestBackend::new(WIDTH, HEIGHT)).unwrap();
+        draw_at(app, WIDTH, HEIGHT)
+    }
+
+    fn draw_at(
+        app: &App<TrackerApplication<SqliteRepository>>,
+        width: u16,
+        height: u16,
+    ) -> Terminal<TestBackend> {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal.draw(|frame| render(frame, app)).unwrap();
         terminal
     }
@@ -283,17 +307,26 @@ mod tests {
     }
 
     #[test]
+    fn a_terminal_below_the_minimum_width_shows_a_resize_message() {
+        let app = app_with(&["alpha"]);
+        let terminal = draw_at(&app, 59, HEIGHT);
+        assert!(row(&terminal, 0).contains("Time Tracker needs at least 60 columns."));
+        assert!(!row(&terminal, 1).contains("Active tasks"));
+    }
+
+    #[test]
     fn the_seeded_list_renders_with_title_selection_and_help() {
         let app = app_with(&["alpha", "beta"]);
         let terminal = draw(&app);
         let rows = rows(&terminal);
 
         assert!(rows[0].contains("Time Tracker"));
-        assert!(rows[1].contains("Active tasks"));
+        assert!(rows[1].contains("Active tasks · recently worked"));
         assert!(rows[2].contains("alpha"));
         assert!(rows[3].contains("beta"));
         assert!(rows[22].contains("Ready"));
-        assert!(rows[23].contains("a/e/d add"));
+        assert!(rows[23].contains("s sort"));
+        assert!(rows[23].contains("a/e/d edit"));
         assert!(rows[23].contains("ctrl+c quit"));
         assert_eq!(cell(&terminal, 0, 0).fg, Some(Color::Blue));
         assert_eq!(cell(&terminal, 0, 1).fg, Some(Color::Blue));
@@ -417,6 +450,45 @@ mod tests {
         app.handle(Command::OpenArchiveConfirm);
         let terminal = draw(&app);
         assert!(row(&terminal, 23).contains("y/enter confirm"));
+    }
+
+    #[test]
+    fn narrow_views_keep_ordering_titles_and_complete_compact_footers() {
+        let mut app = app_with(&["alpha"]);
+        let terminal = draw_at(&app, 60, 20);
+        assert!(row(&terminal, 1).contains("Active tasks · recently worked"));
+        let footer = row(&terminal, 19);
+        assert!(footer.contains("s sort"), "got {footer:?}");
+        assert!(footer.contains("q/esc/ctrl+c quit"), "got {footer:?}");
+
+        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::CycleOrdering);
+        let terminal = draw_at(&app, 60, 20);
+        assert!(row(&terminal, 1).contains("Archived tasks · recently updated"));
+        let footer = row(&terminal, 19);
+        assert!(footer.contains("u restore"), "got {footer:?}");
+        assert!(footer.contains("s sort"), "got {footer:?}");
+        assert!(footer.contains("q/esc/ctrl+c quit"), "got {footer:?}");
+    }
+
+    #[test]
+    fn task_panel_titles_show_the_shared_ordering_in_both_views() {
+        let mut app = app_with(&["alpha"]);
+        app.handle(Command::CycleOrdering);
+        let terminal = draw(&app);
+        assert!(
+            row(&terminal, 1).contains("Active tasks · recently updated"),
+            "got {:?}",
+            row(&terminal, 1)
+        );
+
+        app.handle(Command::ShowArchivedTasks);
+        let terminal = draw(&app);
+        assert!(
+            row(&terminal, 1).contains("Archived tasks · recently updated"),
+            "got {:?}",
+            row(&terminal, 1)
+        );
     }
 
     #[test]

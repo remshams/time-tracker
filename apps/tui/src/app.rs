@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, TimeDelta, Utc};
 use tracker_application::{
-    ApplicationError, ClearActiveTaskOutcome, SetActiveTaskOutcome, TaskOutcome,
+    ApplicationError, ClearActiveTaskOutcome, SetActiveTaskOutcome, TaskOrdering, TaskOutcome,
     TrackerApplicationService,
 };
 use tracker_domain::{Task, TaskId, TaskName, TaskNameError, TrackingError, TrackingState};
@@ -104,13 +104,31 @@ fn task_name_error_text(error: TaskNameError) -> String {
     }
 }
 
+fn next_ordering(ordering: TaskOrdering) -> TaskOrdering {
+    match ordering {
+        TaskOrdering::RecentlyWorked => TaskOrdering::RecentlyUpdated,
+        TaskOrdering::RecentlyUpdated => TaskOrdering::RecentlyCreated,
+        TaskOrdering::RecentlyCreated => TaskOrdering::RecentlyWorked,
+    }
+}
+
+fn ordering_label(ordering: TaskOrdering) -> &'static str {
+    match ordering {
+        TaskOrdering::RecentlyWorked => "recently worked",
+        TaskOrdering::RecentlyUpdated => "recently updated",
+        TaskOrdering::RecentlyCreated => "recently created",
+    }
+}
+
 fn application_error_text(error: &ApplicationError) -> String {
     match error {
         ApplicationError::Domain(error) => error.to_string(),
         ApplicationError::Repository(error) | ApplicationError::TrackingWrite(error) => {
             format!("Storage error: {error}")
         }
-        ApplicationError::TrackingRecovery(error) => format!("Storage error: {error}"),
+        ApplicationError::TrackingRecovery(error) | ApplicationError::TaskRecovery(error) => {
+            format!("Storage error: {error}")
+        }
         ApplicationError::TrackingStateChanged => {
             "Tracking state changed in another client. Refreshed state.".to_owned()
         }
@@ -126,6 +144,7 @@ pub struct App<S: TrackerApplicationService> {
     application: S,
     tasks: Vec<Task>,
     archived_tasks: Vec<Task>,
+    ordering: TaskOrdering,
     view: TaskView,
     active_selection: Option<TaskId>,
     archived_selection: Option<TaskId>,
@@ -139,8 +158,8 @@ pub struct App<S: TrackerApplicationService> {
 impl<S: TrackerApplicationService> App<S> {
     /// Builds presentation state from an already loaded application service.
     pub fn load(application: S) -> Self {
-        let tasks = active_tasks(&application);
-        let archived_tasks = archived_tasks(&application);
+        let ordering = TaskOrdering::default();
+        let (tasks, archived_tasks) = task_lists(&application, ordering);
         let tracking = application.current_tracking().clone();
         let clock = match &tracking {
             TrackingState::Idle => None,
@@ -156,6 +175,7 @@ impl<S: TrackerApplicationService> App<S> {
             application,
             tasks,
             archived_tasks,
+            ordering,
             view: TaskView::Active,
             active_selection,
             archived_selection: None,
@@ -173,6 +193,7 @@ impl<S: TrackerApplicationService> App<S> {
             Command::MoveDown => self.move_down(),
             Command::ShowActiveTasks => self.show_tasks(TaskView::Active),
             Command::ShowArchivedTasks => self.show_tasks(TaskView::Archived),
+            Command::CycleOrdering => self.cycle_ordering(),
             Command::UnarchiveSelected => self.unarchive_selected(),
             Command::ToggleTracking => self.toggle_tracking(),
             Command::OpenAdd => self.open_add(),
@@ -209,6 +230,17 @@ impl<S: TrackerApplicationService> App<S> {
         self.view
     }
 
+    /// The session-only ordering shared by the active and archived views.
+    #[cfg(test)]
+    pub fn ordering(&self) -> TaskOrdering {
+        self.ordering
+    }
+
+    /// The concise label for the current ordering.
+    pub fn ordering_label(&self) -> &'static str {
+        ordering_label(self.ordering)
+    }
+
     /// The selected row of the currently shown view.
     ///
     /// The selection is remembered by task id, so it follows the task across
@@ -239,7 +271,7 @@ impl<S: TrackerApplicationService> App<S> {
         let task_id = self.active_task_id()?;
         // Query the application service, not the visible list: the timer
         // header must keep naming the active task in the archived view too.
-        Some(self.application.task(task_id)?.name.as_str())
+        Some(self.application.task(task_id)?.name().as_str())
     }
 
     pub fn elapsed(&self) -> Option<Duration> {
@@ -320,6 +352,16 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
+    /// Cycles the one ordering shared by both task views.
+    fn cycle_ordering(&mut self) {
+        if self.mode != Mode::Normal {
+            return;
+        }
+        self.ordering = next_ordering(self.ordering);
+        self.sync_tasks_from_application();
+        self.status = Status::Info(format!("Sorted by {}", self.ordering_label()));
+    }
+
     /// Translates Space into desired tracking state with an explicit client
     /// timestamp. The application service owns persistence and recovery.
     ///
@@ -367,9 +409,9 @@ impl<S: TrackerApplicationService> App<S> {
             Ok((action, fresh_active)) => {
                 self.sync_from_application(fresh_active);
                 self.status = match action {
-                    "started" => Status::Info(format!("Started \"{}\"", task.name)),
-                    "switched" => Status::Info(format!("Switched to \"{}\"", task.name)),
-                    _ => Status::Info(format!("Stopped \"{}\"", task.name)),
+                    "started" => Status::Info(format!("Started \"{}\"", task.name())),
+                    "switched" => Status::Info(format!("Switched to \"{}\"", task.name())),
+                    _ => Status::Info(format!("Stopped \"{}\"", task.name())),
                 };
             }
             Err(error) => {
@@ -395,8 +437,7 @@ impl<S: TrackerApplicationService> App<S> {
     fn sync_tasks_from_application(&mut self) {
         let previous_index = self.selected();
         let preferred = self.selection_id();
-        self.tasks = active_tasks(&self.application);
-        self.archived_tasks = archived_tasks(&self.application);
+        (self.tasks, self.archived_tasks) = task_lists(&self.application, self.ordering);
         // Prefer the remembered task, then clamp the previous row to the
         // nearest row that remains, so archiving and unarchiving keep the
         // selection on a sensible neighbor.
@@ -433,7 +474,7 @@ impl<S: TrackerApplicationService> App<S> {
         };
         self.mode = Mode::Input {
             purpose: InputPurpose::Rename { task_id: task.id },
-            buffer: task.name.to_string(),
+            buffer: task.name().to_string(),
         };
     }
 
@@ -446,7 +487,7 @@ impl<S: TrackerApplicationService> App<S> {
         };
         self.mode = Mode::ConfirmArchive {
             task_id: task.id,
-            name: task.name.to_string(),
+            name: task.name().to_string(),
         };
     }
 
@@ -474,11 +515,11 @@ impl<S: TrackerApplicationService> App<S> {
         let Some(task) = self.selected_task().cloned() else {
             return;
         };
-        match self.application.unarchive_task(task.id) {
+        match self.application.unarchive_task(task.id, Utc::now()) {
             Ok(TaskOutcome::Unarchived(restored)) => {
                 self.active_selection = Some(restored.id);
                 self.sync_from_application(false);
-                self.status = Status::Info(format!("Restored \"{}\"", restored.name));
+                self.status = Status::Info(format!("Restored \"{}\"", restored.name()));
             }
             Ok(TaskOutcome::Created(_) | TaskOutcome::Renamed(_) | TaskOutcome::Archived(_)) => {
                 unreachable!("unarchive returned another task outcome")
@@ -509,21 +550,24 @@ impl<S: TrackerApplicationService> App<S> {
                 return;
             }
         };
+        let occurred_at = Utc::now();
         let result = match purpose {
-            InputPurpose::Add => self.application.create_task(name),
-            InputPurpose::Rename { task_id } => self.application.rename_task(task_id, name),
+            InputPurpose::Add => self.application.create_task(name, occurred_at),
+            InputPurpose::Rename { task_id } => {
+                self.application.rename_task(task_id, name, occurred_at)
+            }
         };
         match result {
             Ok(TaskOutcome::Created(task)) => {
                 self.sync_tasks_from_application();
                 self.set_selection_id(Some(task.id));
                 self.mode = Mode::Normal;
-                self.status = Status::Info(format!("Added \"{}\"", task.name));
+                self.status = Status::Info(format!("Added \"{}\"", task.name()));
             }
             Ok(TaskOutcome::Renamed(task)) => {
                 self.sync_tasks_from_application();
                 self.mode = Mode::Normal;
-                self.status = Status::Info(format!("Renamed to \"{}\"", task.name));
+                self.status = Status::Info(format!("Renamed to \"{}\"", task.name()));
             }
             Ok(TaskOutcome::Archived(_)) => unreachable!("input cannot archive a task"),
             Ok(TaskOutcome::Unarchived(_)) => unreachable!("input cannot unarchive a task"),
@@ -535,21 +579,24 @@ impl<S: TrackerApplicationService> App<S> {
         let Mode::ConfirmArchive { task_id, .. } = self.mode.clone() else {
             return;
         };
-        match self.application.archive_task(task_id) {
+        match self.application.archive_task(task_id, Utc::now()) {
             Ok(TaskOutcome::Archived(task)) => {
-                self.sync_tasks_from_application();
+                self.sync_from_application(false);
                 // The archived view will select the newly archived task when
                 // opened.
                 self.archived_selection = Some(task.id);
                 self.mode = Mode::Normal;
-                self.status = Status::Info(format!("Archived \"{}\"", task.name));
+                self.status = Status::Info(format!("Archived \"{}\"", task.name()));
             }
             Err(ApplicationError::Domain(TrackingError::TaskIsActive { .. })) => {
                 self.sync_from_application(false);
                 self.mode = Mode::Normal;
                 self.status = Status::Error("The active task cannot be archived".to_owned());
             }
-            Err(error) => self.status = Status::Error(application_error_text(&error)),
+            Err(error) => {
+                self.sync_from_application(false);
+                self.status = Status::Error(application_error_text(&error));
+            }
             Ok(TaskOutcome::Created(_) | TaskOutcome::Renamed(_) | TaskOutcome::Unarchived(_)) => {
                 unreachable!("archive returned another task outcome")
             }
@@ -562,43 +609,43 @@ impl<S: TrackerApplicationService> App<S> {
     }
 }
 
-/// The active task list from the application service's backend-neutral query.
-fn active_tasks<S: TrackerApplicationService>(application: &S) -> Vec<Task> {
+/// Builds both views from one ordered application read.
+fn task_lists<S: TrackerApplicationService>(
+    application: &S,
+    ordering: TaskOrdering,
+) -> (Vec<Task>, Vec<Task>) {
     application
-        .tasks()
-        .iter()
-        .filter(|task| !task.archived)
-        .cloned()
-        .collect()
-}
-
-/// The archived task list from the application service's backend-neutral query.
-fn archived_tasks<S: TrackerApplicationService>(application: &S) -> Vec<Task> {
-    application
-        .tasks()
-        .iter()
-        .filter(|task| task.archived)
-        .cloned()
-        .collect()
+        .tasks(ordering)
+        .into_iter()
+        .map(|item| item.task)
+        .partition(|task| !task.is_archived())
 }
 
 #[cfg(test)]
 mod tests {
     use chrono::TimeDelta;
     use tracker_application::{
-        RepositoryError, TaskOperations, TaskOutcome, TaskQueries, TrackerApplication,
-        TrackingOperations, WorklogQueries,
+        RepositoryError, TaskListItem, TaskOperations, TaskOutcome, TaskQueries,
+        TrackerApplication, TrackingOperations, WorklogQueries,
     };
     use tracker_domain::{ActiveWorklog, Task, TaskId, TaskName, Worklog, WorklogId};
     use tracker_storage::SqliteRepository;
 
     use super::*;
 
+    fn at(seconds: i64) -> DateTime<Utc> {
+        DateTime::from_timestamp(seconds, 0).unwrap()
+    }
+
     fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
         let repository = SqliteRepository::open_in_memory().unwrap();
         for name in names {
             repository
-                .create_task(Task::new(TaskId::generate(), TaskName::new(name).unwrap()))
+                .create_task(Task::create(
+                    TaskId::generate(),
+                    TaskName::new(name).unwrap(),
+                    at(100),
+                ))
                 .unwrap();
         }
         App::load(TrackerApplication::load(repository).unwrap())
@@ -617,9 +664,11 @@ mod tests {
         fail_rename: bool,
         fail_archive: bool,
         fail_unarchive: bool,
+        archive_activates: Option<DateTime<Utc>>,
         unarchive_activates: Option<DateTime<Utc>>,
         set_returns_already_active: bool,
         set_timestamp: Option<DateTime<Utc>>,
+        latest_work_starts: Vec<(TaskId, DateTime<Utc>)>,
     }
 
     impl TestService {
@@ -631,9 +680,11 @@ mod tests {
                 fail_rename: false,
                 fail_archive: false,
                 fail_unarchive: false,
+                archive_activates: None,
                 unarchive_activates: None,
                 set_returns_already_active: false,
                 set_timestamp: None,
+                latest_work_starts: Vec::new(),
             }
         }
 
@@ -645,8 +696,22 @@ mod tests {
     }
 
     impl TaskQueries for TestService {
-        fn tasks(&self) -> &[Task] {
-            &self.tasks
+        fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
+            let mut items = self
+                .tasks
+                .iter()
+                .cloned()
+                .map(|task| TaskListItem {
+                    latest_work_start: self
+                        .latest_work_starts
+                        .iter()
+                        .find(|(id, _)| *id == task.id)
+                        .map(|(_, start)| *start),
+                    task,
+                })
+                .collect::<Vec<_>>();
+            ordering.sort_items(&mut items);
+            items
         }
 
         fn task(&self, id: TaskId) -> Option<&Task> {
@@ -655,13 +720,20 @@ mod tests {
     }
 
     impl TaskOperations for TestService {
-        fn create_task(&mut self, name: TaskName) -> Result<TaskOutcome, ApplicationError> {
+        fn create_task(
+            &mut self,
+            name: TaskName,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<TaskOutcome, ApplicationError> {
             if self.fail_create {
                 return Err(Self::failure());
             }
-            let task = Task::new(TaskId::from_uuid(uuid::Uuid::from_u128(2)), name);
+            let task = Task::create(
+                TaskId::from_uuid(uuid::Uuid::from_u128(2)),
+                name,
+                occurred_at,
+            );
             self.tasks.push(task.clone());
-            self.tasks.sort_by_key(|task| task.id);
             Ok(TaskOutcome::Created(task))
         }
 
@@ -669,6 +741,7 @@ mod tests {
             &mut self,
             id: TaskId,
             name: TaskName,
+            occurred_at: DateTime<Utc>,
         ) -> Result<TaskOutcome, ApplicationError> {
             if self.fail_rename {
                 return Err(Self::failure());
@@ -678,11 +751,15 @@ mod tests {
                 .iter_mut()
                 .find(|task| task.id == id)
                 .expect("test task exists");
-            task.name = name;
+            task.rename(name, occurred_at);
             Ok(TaskOutcome::Renamed(task.clone()))
         }
 
-        fn archive_task(&mut self, id: TaskId) -> Result<TaskOutcome, ApplicationError> {
+        fn archive_task(
+            &mut self,
+            id: TaskId,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<TaskOutcome, ApplicationError> {
             if self.fail_archive {
                 return Err(Self::failure());
             }
@@ -691,11 +768,26 @@ mod tests {
                 .iter_mut()
                 .find(|task| task.id == id)
                 .expect("test task exists");
-            task.archived = true;
-            Ok(TaskOutcome::Archived(task.clone()))
+            task.archive(occurred_at);
+            let archived = task.clone();
+            if let Some(start) = self.archive_activates {
+                let other = self
+                    .tasks
+                    .iter()
+                    .find(|task| task.id != id && !task.is_archived())
+                    .expect("the test service needs another active task");
+                self.tracking = TrackingState::Running {
+                    worklog: ActiveWorklog::begin(WorklogId::generate(), other.id, start),
+                };
+            }
+            Ok(TaskOutcome::Archived(archived))
         }
 
-        fn unarchive_task(&mut self, id: TaskId) -> Result<TaskOutcome, ApplicationError> {
+        fn unarchive_task(
+            &mut self,
+            id: TaskId,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<TaskOutcome, ApplicationError> {
             if self.fail_unarchive {
                 return Err(Self::failure());
             }
@@ -704,7 +796,7 @@ mod tests {
                 .iter_mut()
                 .find(|task| task.id == id)
                 .expect("test task exists");
-            task.archived = false;
+            task.restore(occurred_at);
             // Stands in for a second client that restored the task and
             // started tracking it before this unarchive ran.
             if let Some(start) = self.unarchive_activates {
@@ -731,6 +823,15 @@ mod tests {
             occurred_at: DateTime<Utc>,
         ) -> Result<SetActiveTaskOutcome, ApplicationError> {
             let started_at = self.set_timestamp.unwrap_or(occurred_at);
+            if let Some((_, latest)) = self
+                .latest_work_starts
+                .iter_mut()
+                .find(|(id, _)| *id == task_id)
+            {
+                *latest = (*latest).max(started_at);
+            } else {
+                self.latest_work_starts.push((task_id, started_at));
+            }
             let worklog = Worklog::begin(
                 WorklogId::from_uuid(uuid::Uuid::from_u128(99)),
                 task_id,
@@ -767,7 +868,7 @@ mod tests {
     fn application_and_tui_recover_tracking_after_a_restart() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("tracker.db");
-        let task = Task::new(TaskId::generate(), TaskName::new("alpha").unwrap());
+        let task = Task::create(TaskId::generate(), TaskName::new("alpha").unwrap(), at(100));
         {
             let repository = SqliteRepository::open(&path).unwrap();
             repository.create_task(task.clone()).unwrap();
@@ -824,17 +925,21 @@ mod tests {
         }
         app.handle(Command::Confirm);
         assert_eq!(app.mode(), &Mode::Normal);
-        assert_eq!(app.tasks()[1].name.as_str(), "new task");
-        assert_eq!(app.selected(), Some(1));
+        assert_eq!(app.selected(), Some(0));
+        assert_eq!(
+            app.tasks()[app.selected().unwrap()].name().as_str(),
+            "new task"
+        );
         assert_eq!(app.status(), &Status::Info("Added \"new task\"".to_owned()));
     }
 
     #[test]
     fn adding_in_the_middle_selects_the_new_task() {
         let task = |tag, name| {
-            Task::new(
+            Task::create(
                 TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
                 TaskName::new(name).unwrap(),
+                at(100),
             )
         };
         let mut app = App::load(TestService::with_tasks(vec![
@@ -848,20 +953,21 @@ mod tests {
         assert_eq!(
             app.tasks().iter().map(|task| task.id).collect::<Vec<_>>(),
             vec![
-                TaskId::from_uuid(uuid::Uuid::from_u128(1)),
                 TaskId::from_uuid(uuid::Uuid::from_u128(2)),
+                TaskId::from_uuid(uuid::Uuid::from_u128(1)),
                 TaskId::from_uuid(uuid::Uuid::from_u128(3)),
             ]
         );
-        assert_eq!(app.selected(), Some(1));
+        assert_eq!(app.selected(), Some(0));
     }
 
     #[test]
     fn refreshing_tasks_preserves_the_selected_task_after_reordering() {
         let task = |tag, name| {
-            Task::new(
+            Task::create(
                 TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
                 TaskName::new(name).unwrap(),
+                at(100),
             )
         };
         let selected = task(3, "three");
@@ -878,9 +984,10 @@ mod tests {
 
     #[test]
     fn failed_writes_keep_the_active_modal_and_input_buffer() {
-        let task = Task::new(
+        let task = Task::create(
             TaskId::from_uuid(uuid::Uuid::from_u128(1)),
             TaskName::new("one").unwrap(),
+            at(100),
         );
         let mut service = TestService::with_tasks(vec![task]);
         service.fail_create = true;
@@ -953,7 +1060,7 @@ mod tests {
             app.handle(Command::Insert(character));
         }
         app.handle(Command::Confirm);
-        assert_eq!(app.tasks()[0].name.as_str(), "new");
+        assert_eq!(app.tasks()[0].name().as_str(), "new");
         assert_eq!(app.selected(), Some(0));
         assert_eq!(app.status(), &Status::Info("Renamed to \"new\"".to_owned()));
     }
@@ -965,9 +1072,24 @@ mod tests {
         app.handle(Command::OpenArchiveConfirm);
         app.handle(Command::Confirm);
         assert_eq!(app.tasks().len(), 1);
-        assert_eq!(app.tasks()[0].name.as_str(), "alpha");
+        assert_eq!(app.tasks()[0].name().as_str(), "alpha");
         assert_eq!(app.selected(), Some(0));
         assert_eq!(app.status(), &Status::Info("Archived \"beta\"".to_owned()));
+    }
+
+    #[test]
+    fn a_successful_archive_copies_tracking_refreshed_by_the_application() {
+        let alpha = task(1, "alpha");
+        let beta = task(2, "beta");
+        let mut app = App::load(TestService::with_tasks(vec![alpha.clone(), beta.clone()]));
+        app.application.archive_activates = Some(at(200));
+
+        app.handle(Command::OpenArchiveConfirm);
+        app.handle(Command::Confirm);
+
+        assert_eq!(app.active_task_id(), Some(beta.id));
+        assert_eq!(app.active_task_name(), Some("beta"));
+        assert_eq!(app.status(), &Status::Info("Archived \"alpha\"".to_owned()));
     }
 
     #[test]
@@ -1018,9 +1140,10 @@ mod tests {
     #[test]
     fn tracking_outcomes_choose_the_right_status_and_clock_anchor() {
         let task = |tag, name| {
-            Task::new(
+            Task::create(
                 TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
                 TaskName::new(name).unwrap(),
+                at(100),
             )
         };
         let old = DateTime::from_timestamp(100, 0).unwrap();
@@ -1095,7 +1218,7 @@ mod tests {
     fn a_backward_wall_clock_jump_persists_a_nonnegative_duration() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("tracker.db");
-        let task = Task::new(TaskId::generate(), TaskName::new("alpha").unwrap());
+        let task = Task::create(TaskId::generate(), TaskName::new("alpha").unwrap(), at(100));
         let start = Utc::now() + TimeDelta::hours(1);
         let repository = SqliteRepository::open(&path).unwrap();
         repository.create_task(task.clone()).unwrap();
@@ -1120,7 +1243,7 @@ mod tests {
     fn a_forward_wall_clock_jump_persists_the_displayed_duration() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("tracker.db");
-        let task = Task::new(TaskId::generate(), TaskName::new("alpha").unwrap());
+        let task = Task::create(TaskId::generate(), TaskName::new("alpha").unwrap(), at(100));
         let start = Utc::now() - TimeDelta::hours(2);
         let repository = SqliteRepository::open(&path).unwrap();
         repository.create_task(task.clone()).unwrap();
@@ -1171,9 +1294,10 @@ mod tests {
             Some(Command::OpenRename),
             Some(Command::OpenArchiveConfirm),
         ] {
-            let task = Task::new(
+            let task = Task::create(
                 TaskId::from_uuid(uuid::Uuid::from_u128(1)),
                 TaskName::new("one").unwrap(),
+                at(100),
             );
             let mut service = TestService::with_tasks(vec![task.clone()]);
             service.tracking = TrackingState::Running {
@@ -1202,7 +1326,7 @@ mod tests {
         }
         app.handle(Command::Confirm);
         assert_eq!(
-            app.tasks()[0].name.as_str().chars().count(),
+            app.tasks()[0].name().as_str().chars().count(),
             TaskName::MAX_LEN
         );
     }
@@ -1248,16 +1372,151 @@ mod tests {
     }
 
     fn task(tag: u128, name: &str) -> Task {
-        Task::new(
+        Task::create(
             TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
             TaskName::new(name).unwrap(),
+            at(100),
         )
     }
 
     fn archived_task(tag: u128, name: &str) -> Task {
         let mut task = task(tag, name);
-        task.archived = true;
+        assert!(task.archive(at(100)));
         task
+    }
+
+    fn stamped_task(
+        tag: u128,
+        name: &str,
+        archived: bool,
+        created_at: i64,
+        updated_at: i64,
+    ) -> Task {
+        Task::rehydrate(
+            TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
+            TaskName::new(name).unwrap(),
+            archived,
+            at(created_at),
+            at(updated_at),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn ordering_defaults_cycles_and_is_shared_by_both_views() {
+        let tasks = vec![
+            stamped_task(1, "older active", false, 100, 900),
+            stamped_task(2, "newer active", false, 800, 800),
+            stamped_task(3, "older archived", true, 200, 700),
+            stamped_task(4, "newer archived", true, 600, 600),
+        ];
+        let mut service = TestService::with_tasks(tasks);
+        service.latest_work_starts = vec![(TaskId::from_uuid(uuid::Uuid::from_u128(3)), at(1_000))];
+        let mut app = App::load(service);
+
+        assert_eq!(app.ordering(), TaskOrdering::RecentlyWorked);
+        assert_eq!(app.tasks()[0].name().as_str(), "newer active");
+        app.handle(Command::ShowArchivedTasks);
+        assert_eq!(app.tasks()[0].name().as_str(), "older archived");
+        app.handle(Command::ShowActiveTasks);
+        app.handle(Command::CycleOrdering);
+        assert_eq!(app.ordering(), TaskOrdering::RecentlyUpdated);
+        assert_eq!(app.tasks()[0].name().as_str(), "older active");
+
+        app.handle(Command::ShowArchivedTasks);
+        assert_eq!(app.ordering(), TaskOrdering::RecentlyUpdated);
+        assert_eq!(app.tasks()[0].name().as_str(), "older archived");
+        app.handle(Command::CycleOrdering);
+        assert_eq!(app.ordering(), TaskOrdering::RecentlyCreated);
+        assert_eq!(app.tasks()[0].name().as_str(), "newer archived");
+        app.handle(Command::CycleOrdering);
+        assert_eq!(app.ordering(), TaskOrdering::RecentlyWorked);
+    }
+
+    #[test]
+    fn sorting_preserves_each_views_selected_task_id() {
+        let active = stamped_task(1, "active selection", false, 100, 900);
+        let archived = stamped_task(3, "archived selection", true, 100, 900);
+        let mut app = App::load(TestService::with_tasks(vec![
+            active.clone(),
+            stamped_task(2, "new active", false, 800, 800),
+            archived.clone(),
+            stamped_task(4, "new archived", true, 800, 800),
+        ]));
+
+        app.handle(Command::MoveDown);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id, active.id);
+        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::MoveDown);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id, archived.id);
+
+        app.handle(Command::CycleOrdering);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id, archived.id);
+        app.handle(Command::ShowActiveTasks);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id, active.id);
+    }
+
+    #[test]
+    fn input_and_confirmation_modes_block_sorting() {
+        let mut app = App::load(TestService::with_tasks(vec![task(1, "alpha")]));
+        app.handle(Command::OpenAdd);
+        app.handle(Command::CycleOrdering);
+        assert_eq!(app.ordering(), TaskOrdering::RecentlyWorked);
+        assert!(matches!(app.mode(), Mode::Input { .. }));
+
+        app.handle(Command::Cancel);
+        app.handle(Command::OpenArchiveConfirm);
+        app.handle(Command::CycleOrdering);
+        assert_eq!(app.ordering(), TaskOrdering::RecentlyWorked);
+        assert!(matches!(app.mode(), Mode::ConfirmArchive { .. }));
+    }
+
+    #[test]
+    fn start_switch_and_stop_keep_selection_on_the_operated_task() {
+        let mut app = app_with(&["alpha", "beta"]);
+        let alpha = app
+            .tasks()
+            .iter()
+            .find(|task| task.name().as_str() == "alpha")
+            .unwrap()
+            .id;
+        let beta = app
+            .tasks()
+            .iter()
+            .find(|task| task.name().as_str() == "beta")
+            .unwrap()
+            .id;
+
+        app.handle(Command::MoveDown);
+        app.handle(Command::ToggleTracking);
+        assert_eq!(app.tasks()[0].id, beta);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id, beta);
+
+        app.handle(Command::MoveDown);
+        app.handle(Command::ToggleTracking);
+        assert_eq!(app.tasks()[0].id, alpha);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id, alpha);
+
+        app.handle(Command::ToggleTracking);
+        assert_eq!(app.tasks()[0].id, alpha, "stopping does not reorder");
+        assert_eq!(app.tasks()[app.selected().unwrap()].id, alpha);
+    }
+
+    #[test]
+    fn rename_reorders_recently_updated_and_keeps_the_task_selected() {
+        let alpha = task(1, "alpha");
+        let beta = task(2, "beta");
+        let mut app = App::load(TestService::with_tasks(vec![alpha, beta.clone()]));
+        app.handle(Command::CycleOrdering);
+        app.handle(Command::MoveDown);
+        app.handle(Command::OpenRename);
+        app.handle(Command::Backspace);
+        app.handle(Command::Insert('x'));
+        app.handle(Command::Confirm);
+
+        assert_eq!(app.ordering(), TaskOrdering::RecentlyUpdated);
+        assert_eq!(app.tasks()[0].id, beta.id);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id, beta.id);
     }
 
     #[test]

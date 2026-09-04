@@ -47,6 +47,7 @@ fn map_normal(view: TaskView, key: KeyEvent) -> Option<Command> {
         KeyCode::Char('k') | KeyCode::Up => Some(Command::MoveUp),
         KeyCode::Char('h') => Some(Command::ShowActiveTasks),
         KeyCode::Char('l') => Some(Command::ShowArchivedTasks),
+        KeyCode::Char('s') => Some(Command::CycleOrdering),
         KeyCode::Char(' ') if view == TaskView::Active => Some(Command::ToggleTracking),
         KeyCode::Char('a') if view == TaskView::Active => Some(Command::OpenAdd),
         KeyCode::Char('e') if view == TaskView::Active => Some(Command::OpenRename),
@@ -94,16 +95,30 @@ fn map_confirm(key: KeyEvent) -> Option<Command> {
     }
 }
 
-/// One-line key help for the given mode and task view.
+/// One-line key help for the given mode, task view, and available width.
 ///
-/// Every key the mode accepts appears here.
-pub fn footer_hints(mode: &Mode, view: TaskView) -> &'static str {
+/// Every accepted key appears in both the standard and compact variants.
+/// The compact text fits the narrowest geometry covered by the TUI.
+pub fn footer_hints(mode: &Mode, view: TaskView, width: u16) -> &'static str {
+    if width < 80 {
+        return match mode {
+            Mode::Normal => match view {
+                TaskView::Active => "j/k/↑/↓ · h/l · space · a/e/d · s sort · q/esc/ctrl+c quit",
+                TaskView::Archived => "j/k/↑/↓ · h/l · s sort · u restore · q/esc/ctrl+c quit",
+            },
+            Mode::Input { .. } => "type · backspace · enter save · esc cancel · ctrl+c quit",
+            Mode::ConfirmArchive { .. } => "y/enter · n/esc · ctrl+c quit",
+        };
+    }
+
     match mode {
         Mode::Normal => match view {
             TaskView::Active => {
-                "j/k/↑/↓ · h/l view · space track · a/e/d add/rename/archive · q/esc/ctrl+c quit"
+                "j/k/↑/↓ move · h/l view · space track · s sort · a/e/d edit · q/esc/ctrl+c quit"
             }
-            TaskView::Archived => "j/k/↑/↓ move · h/l view · u unarchive · q/esc/ctrl+c quit",
+            TaskView::Archived => {
+                "j/k/↑/↓ move · h/l view · s sort · u unarchive · q/esc/ctrl+c quit"
+            }
         },
         Mode::Input { .. } => "type · backspace delete · enter save · esc cancel · ctrl+c quit",
         Mode::ConfirmArchive { .. } => "y/enter confirm · n/esc cancel · ctrl+c quit",
@@ -193,6 +208,10 @@ mod tests {
             Some(Command::ShowArchivedTasks)
         );
         assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Char('s'))),
+            Some(Command::CycleOrdering)
+        );
+        assert_eq!(
             map(&Mode::Normal, view, key(KeyCode::Char(' '))),
             Some(Command::ToggleTracking)
         );
@@ -246,6 +265,10 @@ mod tests {
             Some(Command::ShowArchivedTasks)
         );
         assert_eq!(
+            map(&Mode::Normal, view, key(KeyCode::Char('s'))),
+            Some(Command::CycleOrdering)
+        );
+        assert_eq!(
             map(&Mode::Normal, view, key(KeyCode::Char('u'))),
             Some(Command::UnarchiveSelected)
         );
@@ -291,6 +314,24 @@ mod tests {
         );
         assert_eq!(
             map(&Mode::Normal, TaskView::Active, key(KeyCode::Char('u'))),
+            None
+        );
+    }
+
+    #[test]
+    fn sort_is_normal_mode_only() {
+        for view in [TaskView::Active, TaskView::Archived] {
+            assert_eq!(
+                map(&Mode::Normal, view, key(KeyCode::Char('s'))),
+                Some(Command::CycleOrdering)
+            );
+        }
+        assert_eq!(
+            map(&input(), TaskView::Active, key(KeyCode::Char('s'))),
+            Some(Command::Insert('s'))
+        );
+        assert_eq!(
+            map(&confirm(), TaskView::Active, key(KeyCode::Char('s'))),
             None
         );
     }
@@ -434,30 +475,32 @@ mod tests {
 
     #[test]
     fn every_accepted_key_is_listed_in_the_footer() {
-        let active_keys = footer_hints(&Mode::Normal, TaskView::Active);
+        let active_keys = footer_hints(&Mode::Normal, TaskView::Active, 80);
         for hint in [
             "j/k/↑/↓",
             "h/l",
             "space",
+            "s sort",
             "a/e/d",
-            "add/rename/archive",
+            "edit",
             "q/esc",
             "ctrl+c",
         ] {
             assert!(active_keys.contains(hint), "active footer misses {hint:?}");
         }
-        let archived_keys = footer_hints(&Mode::Normal, TaskView::Archived);
-        for hint in ["j/k/↑/↓", "h/l", "u ", "q/esc", "ctrl+c"] {
+        assert!(active_keys.contains("s sort"));
+        let archived_keys = footer_hints(&Mode::Normal, TaskView::Archived, 80);
+        for hint in ["j/k/↑/↓", "h/l", "s sort", "u ", "q/esc", "ctrl+c"] {
             assert!(
                 archived_keys.contains(hint),
                 "archived footer misses {hint:?}"
             );
         }
-        let input_keys = footer_hints(&input(), TaskView::Active);
+        let input_keys = footer_hints(&input(), TaskView::Active, 80);
         for hint in ["type", "backspace", "enter", "esc", "ctrl+c"] {
             assert!(input_keys.contains(hint), "input footer misses {hint:?}");
         }
-        let confirm_keys = footer_hints(&confirm(), TaskView::Active);
+        let confirm_keys = footer_hints(&confirm(), TaskView::Active, 80);
         for hint in ["y/enter", "n/esc", "ctrl+c"] {
             assert!(
                 confirm_keys.contains(hint),
@@ -468,5 +511,28 @@ mod tests {
         for footer in [active_keys, archived_keys, input_keys, confirm_keys] {
             assert!(footer.chars().count() <= 80, "footer too wide: {footer:?}");
         }
+    }
+
+    #[test]
+    fn compact_footers_keep_every_key_visible_at_sixty_columns() {
+        let footers = [
+            footer_hints(&Mode::Normal, TaskView::Active, 60),
+            footer_hints(&Mode::Normal, TaskView::Archived, 60),
+            footer_hints(&input(), TaskView::Active, 60),
+            footer_hints(&confirm(), TaskView::Active, 60),
+        ];
+        for footer in footers {
+            assert!(footer.chars().count() <= 60, "footer too wide: {footer:?}");
+            assert!(
+                footer.contains("ctrl+c"),
+                "footer misses ctrl+c: {footer:?}"
+            );
+        }
+        assert!(footers[0].contains("j/k/↑/↓"));
+        assert!(footers[0].contains("h/l"));
+        assert!(footers[0].contains("space"));
+        assert!(footers[0].contains("a/e/d"));
+        assert!(footers[0].contains("s sort"));
+        assert!(footers[1].contains("u restore"));
     }
 }
