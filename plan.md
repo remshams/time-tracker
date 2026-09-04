@@ -4,7 +4,7 @@
 
 Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, task browsing and ordering, and read-only worklog history are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, orders both task views, and loads one task's worklogs in bounded pages. The timestamp and ordering rules live in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds, and [ADR 0004](docs/adr/0004-paginated-worklog-history.md) records history pagination and display behavior. Worklog correction is planned next, before remote storage.
 
-Current validation found 352 passing Rust tests, including 28 E2E scenarios, 10 passing Python tests, 415 caught mutants, no missed or timed-out mutants, 130 unviable mutants, and 237 functions below CRAP 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
+Current validation found 353 passing Rust tests, including 28 E2E scenarios, 10 passing Python tests, 415 caught mutants, no missed or timed-out mutants, 130 unviable mutants, and 237 functions below CRAP 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
 ## Settled decisions
 
