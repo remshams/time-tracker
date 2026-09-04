@@ -47,17 +47,19 @@ pub(crate) struct TuiDriver {
 }
 
 impl TuiDriver {
-    /// Spawns `tt` with a cleared environment: a temporary `HOME`, a fixed
-    /// `SHELL`, and the terminal's fixed `TERM`. The coverage profile file
-    /// passes through when the suite runs under cargo-llvm-cov, so the
-    /// child's execution counts toward the measured coverage.
+    /// Spawns `tt` with a cleared environment: a temporary `HOME`, UTC as
+    /// the child process's time zone, a fixed `SHELL`, and the terminal's
+    /// fixed `TERM`. The coverage profile file passes through when the suite
+    /// runs under cargo-llvm-cov, so the child's execution counts toward the
+    /// measured coverage.
     pub(crate) fn spawn(home: &Path) -> Self {
         let mut builder = Terminal::builder()
             .size(COLS, ROWS)
             .timeout(STARTUP_LIMIT)
             .env_clear()
             .env("HOME", home)
-            .env("SHELL", "/bin/sh");
+            .env("SHELL", "/bin/sh")
+            .env("TZ", "UTC");
         if let Ok(profile) = std::env::var("LLVM_PROFILE_FILE") {
             builder = builder.env("LLVM_PROFILE_FILE", profile);
         }

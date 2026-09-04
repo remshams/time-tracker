@@ -18,6 +18,16 @@ use termlens::{Color, Screen};
 const ACTIVE_EMPTY_HINT: &str = "No active tasks. Press a to add one.";
 const ARCHIVED_EMPTY_HINT: &str = "No archived tasks.";
 
+/// The empty-state hint the worklog history renders instead of rows.
+const HISTORY_EMPTY_HINT: &str = "No worklogs yet.";
+/// What the history renders instead of an end time while a worklog runs.
+const RUNNING_LABEL: &str = "Running";
+/// The arrow a history row renders between its start and its end.
+const HISTORY_ARROW: &str = " → ";
+/// How many screen lines one history row occupies: the interval line,
+/// then the duration line.
+const HISTORY_ROW_LINES: u16 = 2;
+
 /// The accents the interface draws with, as the terminal palette reports
 /// them. Ratatui sends named ANSI colors as 256-color indexes: blue is
 /// index 4, green 2, red 1.
@@ -154,6 +164,15 @@ impl TimeTrackerPage {
     pub(crate) fn archive_dialog(&self) -> Option<ArchiveDialog> {
         ArchiveDialog::find(&self.screen)
     }
+
+    /// The read-only worklog history, however the screen looks. The
+    /// components answer whether the history is shown at all; a task list
+    /// snapshot reports `false` there.
+    pub(crate) fn worklog_history_panel(&self) -> WorklogHistoryPanel {
+        WorklogHistoryPanel {
+            screen: self.screen.clone(),
+        }
+    }
 }
 
 /// The top line: application title, and the live timer while tracking runs.
@@ -226,15 +245,14 @@ impl ActiveTask {
         &self.elapsed
     }
 
-    /// Whether the elapsed time reads exactly `HH:MM:SS`: eight bytes,
-    /// ASCII digits in every numeric position, colons at indexes 2 and 5.
+    /// Whether the elapsed time reads exactly `HH:MM:SS`.
     pub(crate) fn elapsed_is_hhmmss(&self) -> bool {
-        let bytes = self.elapsed.as_bytes();
-        bytes.len() == 8
-            && bytes.iter().enumerate().all(|(index, byte)| match index {
-                2 | 5 => *byte == b':',
-                _ => byte.is_ascii_digit(),
-            })
+        text_is_hhmmss(&self.elapsed)
+    }
+
+    /// The elapsed time in whole seconds, when it is valid `HH:MM:SS`.
+    pub(crate) fn elapsed_seconds(&self) -> Option<u64> {
+        hhmmss_seconds(&self.elapsed)
     }
 
     /// Whether the ▶ marker keeps its green accent.
@@ -252,11 +270,7 @@ pub(crate) struct TaskPanel {
 impl TaskPanel {
     /// The block title of the panel, including its current ordering.
     pub(crate) fn title(&self) -> String {
-        self.screen
-            .row_text(Layout::of(&self.screen).panel_top_row())
-            .trim_matches(|character| matches!(character, '┌' | '─' | '┐'))
-            .trim()
-            .to_owned()
+        panel_title(&self.screen)
     }
 
     /// Whether the active view's panel is shown.
@@ -378,12 +392,49 @@ impl TaskPanel {
 
     /// The text of one content row, without the border cells.
     fn content_row_text(&self, row: u16) -> String {
-        let cols = Layout::of(&self.screen).cols;
-        self.screen
-            .rect_text(1..(cols - 1), row..row + 1)
-            .trim_end()
-            .to_owned()
+        panel_row_text(&self.screen, row)
     }
+}
+
+/// The text of one bordered-panel content row, without the border cells
+/// and trailing blanks.
+fn panel_title(screen: &Screen) -> String {
+    screen
+        .row_text(Layout::of(screen).panel_top_row())
+        .trim_matches(|character| matches!(character, '┌' | '─' | '┐'))
+        .trim()
+        .to_owned()
+}
+
+fn panel_row_text(screen: &Screen, row: u16) -> String {
+    let cols = Layout::of(screen).cols;
+    screen
+        .rect_text(1..(cols - 1), row..row + 1)
+        .trim_end()
+        .to_owned()
+}
+
+/// Whether a time reads exactly `HH:MM:SS`: eight bytes, ASCII digits in
+/// every numeric position, colons at indexes 2 and 5.
+fn text_is_hhmmss(text: &str) -> bool {
+    hhmmss_seconds(text).is_some()
+}
+
+/// Parses an exact `HH:MM:SS` time into whole seconds.
+fn hhmmss_seconds(text: &str) -> Option<u64> {
+    let bytes = text.as_bytes();
+    if bytes.len() != 8
+        || !bytes.iter().enumerate().all(|(index, byte)| match index {
+            2 | 5 => *byte == b':',
+            _ => byte.is_ascii_digit(),
+        })
+    {
+        return None;
+    }
+    let hours = text[0..2].parse::<u64>().ok()?;
+    let minutes = text[3..5].parse::<u64>().ok()?;
+    let seconds = text[6..8].parse::<u64>().ok()?;
+    (minutes < 60 && seconds < 60).then_some(hours * 3600 + minutes * 60 + seconds)
 }
 
 /// The task name on one panel content row: the text after the two marker
@@ -496,9 +547,168 @@ impl Footer {
         self.text().contains("u unarchive")
     }
 
+    /// Whether the footer names the worklog-history keys.
+    pub(crate) fn hints_history(&self) -> bool {
+        self.text().contains("o older") && self.text().contains("esc back")
+    }
+
     /// Whether the footer names the quit keys.
     pub(crate) fn hints_quit(&self) -> bool {
         self.text().contains("q/esc/ctrl+c quit")
+    }
+}
+
+/// The bordered read-only worklog history of one task.
+///
+/// The history takes the task panel's place in the frame: the same
+/// bordered body area, with `Worklog history · <task>` as its block title.
+/// One worklog occupies two content lines, the interval line then the
+/// duration line, and the list scrolls in whole worklogs, so the first
+/// content line always begins a worklog and parsing can walk the rows
+/// top down in pairs.
+pub(crate) struct WorklogHistoryPanel {
+    screen: Screen,
+}
+
+impl WorklogHistoryPanel {
+    /// The block title of the panel, including the task's name.
+    pub(crate) fn title(&self) -> String {
+        panel_title(&self.screen)
+    }
+
+    /// Whether the history screen is shown at all.
+    pub(crate) fn is_shown(&self) -> bool {
+        self.title().starts_with("Worklog history · ")
+    }
+
+    /// The name of the task whose history is open.
+    pub(crate) fn task_name(&self) -> String {
+        self.title()
+            .split_once(" · ")
+            .map_or_else(|| self.title(), |(_, name)| name.to_owned())
+    }
+
+    /// The empty-state hint shown instead of worklog rows, if the open
+    /// task has no worklogs.
+    pub(crate) fn empty_hint(&self) -> Option<&'static str> {
+        let hint = panel_row_text(
+            &self.screen,
+            Layout::of(&self.screen).panel_first_content_row(),
+        );
+        (hint == HISTORY_EMPTY_HINT).then_some(HISTORY_EMPTY_HINT)
+    }
+
+    /// How many worklog rows are visible, top to bottom.
+    ///
+    /// A blank or hint line stops the count, so an empty history counts
+    /// no rows and a partially filled screen counts only its worklogs.
+    pub(crate) fn row_count(&self) -> usize {
+        let layout = Layout::of(&self.screen);
+        let mut count = 0;
+        let mut top = layout.panel_first_content_row();
+        while top + HISTORY_ROW_LINES - 1 <= layout.panel_last_content_row() {
+            if !panel_row_text(&self.screen, top).contains(HISTORY_ARROW) {
+                break;
+            }
+            count += 1;
+            top += HISTORY_ROW_LINES;
+        }
+        count
+    }
+
+    /// One visible worklog row.
+    ///
+    /// Panics for an index past the visible rows; scenarios index rows
+    /// they have already counted.
+    pub(crate) fn row(&self, index: usize) -> WorklogRow {
+        assert!(
+            index < self.row_count(),
+            "history row {index} is not on the screen"
+        );
+        WorklogRow {
+            screen: self.screen.clone(),
+            top_row: Layout::of(&self.screen).panel_first_content_row()
+                + index as u16 * HISTORY_ROW_LINES,
+        }
+    }
+
+    /// The zero-based index of the selected row among the visible rows,
+    /// if a worklog row is selected.
+    ///
+    /// Panics when more than one row is selected, for the same reason the
+    /// task selection check does: a repaint bug that draws the highlight
+    /// twice must fail a scenario, not let it pick a duplicate.
+    pub(crate) fn selected_index(&self) -> Option<usize> {
+        let selected: Vec<usize> = (0..self.row_count())
+            .filter(|&index| self.row(index).is_selected())
+            .collect();
+        assert!(
+            selected.len() <= 1,
+            "more than one history row is selected: {selected:?}"
+        );
+        selected.into_iter().next()
+    }
+}
+
+/// One visible worklog row of the history: its interval line, then its
+/// duration line.
+pub(crate) struct WorklogRow {
+    screen: Screen,
+    /// The screen row of the interval line; the duration line follows it.
+    top_row: u16,
+}
+
+impl WorklogRow {
+    /// The interval line as rendered: the local start, the arrow, and the
+    /// local end or `Running`.
+    pub(crate) fn interval_line(&self) -> String {
+        panel_row_text(&self.screen, self.top_row).trim().to_owned()
+    }
+
+    /// The row's start time as rendered, e.g. `2026-07-12 16:45:00 +00:00`.
+    pub(crate) fn start_text(&self) -> String {
+        self.interval_line()
+            .split_once(HISTORY_ARROW)
+            .map_or_else(|| self.interval_line(), |(start, _)| start.to_owned())
+    }
+
+    /// The row's end as rendered: the local end time, or `Running` while
+    /// the worklog is active.
+    pub(crate) fn end_text(&self) -> String {
+        self.interval_line()
+            .split_once(HISTORY_ARROW)
+            .map_or(String::new(), |(_, end)| end.to_owned())
+    }
+
+    /// Whether this row is the running worklog.
+    pub(crate) fn is_running(&self) -> bool {
+        self.end_text() == RUNNING_LABEL
+    }
+
+    /// The duration line below the interval, as `HH:MM:SS`.
+    pub(crate) fn duration_text(&self) -> String {
+        panel_row_text(&self.screen, self.top_row + 1)
+            .trim()
+            .to_owned()
+    }
+
+    /// Whether the duration reads exactly `HH:MM:SS`.
+    pub(crate) fn duration_is_hhmmss(&self) -> bool {
+        text_is_hhmmss(&self.duration_text())
+    }
+
+    /// The duration in whole seconds, when it is valid `HH:MM:SS`.
+    pub(crate) fn duration_seconds(&self) -> Option<u64> {
+        hhmmss_seconds(&self.duration_text())
+    }
+
+    /// Whether this row carries the selection highlight.
+    pub(crate) fn is_selected(&self) -> bool {
+        let cols = Layout::of(&self.screen).cols;
+        (self.top_row..self.top_row + HISTORY_ROW_LINES).any(|row| {
+            (1..cols - 1)
+                .any(|col| matches!(self.screen.cell(row, col), Some(cell) if cell.style().reverse))
+        })
     }
 }
 
