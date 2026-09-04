@@ -5,8 +5,9 @@
 //! migrations, and database-level rules back the domain invariants: at most
 //! one active worklog, no stopped worklog whose end precedes its start, no
 //! worklogs on archived tasks, and no archiving of a task with an active
-//! worklog. This crate depends on the application and domain crates, never
-//! the other way around.
+//! worklog. Task timestamps are stored as strict integer microseconds and
+//! `updated_at` never moves backward. This crate depends on the application
+//! and domain crates, never the other way around.
 
 mod error;
 mod migrate;
@@ -18,8 +19,10 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior};
-use tracker_application::{RepositoryError, TaskRepository, TrackingRepository, WorklogRepository};
-use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogError, WorklogId};
+use tracker_application::{
+    RepositoryError, TaskListItem, TaskRepository, TrackingRepository, WorklogRepository,
+};
+use tracker_domain::{Task, TaskError, TaskId, TaskName, Worklog, WorklogError, WorklogId};
 
 pub use error::StorageError;
 pub use paths::{app_data_dir, default_database_path, ensure_app_data_dir};
@@ -33,7 +36,7 @@ pub use paths::{app_data_dir, default_database_path, ensure_app_data_dir};
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Converts a UTC timestamp to stored microseconds.
-fn timestamp_to_us(time: DateTime<Utc>) -> i64 {
+pub(crate) fn timestamp_to_us(time: DateTime<Utc>) -> i64 {
     time.timestamp_micros()
 }
 
@@ -51,12 +54,25 @@ fn worklog_id_from_stored(value: &str) -> Result<WorklogId, StorageError> {
 }
 
 /// Builds a task from stored columns, rejecting values that break domain
-/// rules.
-fn task_from_stored(id: String, name: String, archived: bool) -> Result<Task, StorageError> {
-    Ok(Task {
-        id: task_id_from_stored(&id)?,
-        name: TaskName::new(&name).map_err(|_| StorageError::CorruptData("task name"))?,
+/// rules, including an `updated_at` that precedes `created_at`.
+fn task_from_stored(
+    id: String,
+    name: String,
+    archived: bool,
+    created_us: i64,
+    updated_us: i64,
+) -> Result<Task, StorageError> {
+    let created_at = us_to_timestamp(created_us)?;
+    let updated_at = us_to_timestamp(updated_us)?;
+    Task::rehydrate(
+        task_id_from_stored(&id)?,
+        TaskName::new(&name).map_err(|_| StorageError::CorruptData("task name"))?,
         archived,
+        created_at,
+        updated_at,
+    )
+    .map_err(|error| match error {
+        TaskError::UpdatedBeforeCreated => StorageError::CorruptData("task timestamps"),
     })
 }
 
@@ -80,9 +96,18 @@ fn worklog_from_stored(
     })
 }
 
+type RawTask = (String, String, bool, i64, i64);
+type RawTaskItem = (RawTask, Option<i64>);
+
 /// Extracts the raw task columns from a row.
-fn raw_task(row: &Row<'_>) -> rusqlite::Result<(String, String, bool)> {
-    Ok((row.get("id")?, row.get("name")?, row.get("archived")?))
+fn raw_task(row: &Row<'_>) -> rusqlite::Result<RawTask> {
+    Ok((
+        row.get("id")?,
+        row.get("name")?,
+        row.get("archived")?,
+        row.get("created_at_us")?,
+        row.get("updated_at_us")?,
+    ))
 }
 
 /// Extracts the raw worklog columns from a row.
@@ -93,6 +118,25 @@ fn raw_worklog(row: &Row<'_>) -> rusqlite::Result<(String, String, i64, Option<i
         row.get("start_us")?,
         row.get("end_us")?,
     ))
+}
+
+/// Extracts one task-list row: the task columns plus the latest worklog
+/// start aggregate.
+fn raw_task_item(row: &Row<'_>) -> rusqlite::Result<RawTaskItem> {
+    Ok((raw_task(row)?, row.get("latest_start_us")?))
+}
+
+fn task_by_id_on(conn: &Connection, id: TaskId) -> Result<Option<Task>, StorageError> {
+    let mut statement = conn.prepare(
+        "SELECT id, name, archived, created_at_us, updated_at_us FROM tasks WHERE id = ?1",
+    )?;
+    statement
+        .query_row([id.to_string()], raw_task)
+        .optional()?
+        .map(|(id, name, archived, created_us, updated_us)| {
+            task_from_stored(id, name, archived, created_us, updated_us)
+        })
+        .transpose()
 }
 
 /// A tracker repository backed by a bundled SQLite database.
@@ -134,14 +178,7 @@ impl SqliteRepository {
     }
 
     fn task_by_id(&self, id: TaskId) -> Result<Option<Task>, StorageError> {
-        let mut statement = self
-            .conn
-            .prepare("SELECT id, name, archived FROM tasks WHERE id = ?1")?;
-        statement
-            .query_row([id.to_string()], raw_task)
-            .optional()?
-            .map(|(id, name, archived)| task_from_stored(id, name, archived))
-            .transpose()
+        task_by_id_on(&self.conn, id)
     }
 
     fn worklog_by_id(&self, id: WorklogId) -> Result<Option<Worklog>, StorageError> {
@@ -159,15 +196,22 @@ impl SqliteRepository {
 
     /// Seeds the given default tasks when the database has no tasks at all.
     ///
-    /// The emptiness check and the inserts run inside one immediate
-    /// transaction: two processes calling this at the same time serialize on
-    /// the write lock, the second one rechecks and finds the database no
-    /// longer empty, and a failure anywhere rolls the whole seed back.
+    /// Every seeded task shares the given creation timestamp: they are
+    /// created together in one transaction, and a shared, ordered value keeps
+    /// the seed deterministic. The emptiness check and the inserts run
+    /// inside one immediate transaction: two processes calling this at the
+    /// same time serialize on the write lock, the second one rechecks and
+    /// finds the database no longer empty, and a failure anywhere rolls the
+    /// whole seed back.
     ///
     /// Returns whether this call seeded the database.
-    pub fn seed_default_tasks(&self, names: &[TaskName]) -> Result<bool, StorageError> {
+    pub fn seed_default_tasks(
+        &self,
+        names: &[TaskName],
+        created_at: DateTime<Utc>,
+    ) -> Result<bool, StorageError> {
         let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
-        let seeded = Self::seed_within(&transaction, names)?;
+        let seeded = Self::seed_within(&transaction, names, created_at)?;
         transaction.commit()?;
         Ok(seeded)
     }
@@ -176,7 +220,9 @@ impl SqliteRepository {
     fn seed_within(
         transaction: &Transaction<'_>,
         names: &[TaskName],
+        created_at: DateTime<Utc>,
     ) -> Result<bool, StorageError> {
+        let created_at = us_to_timestamp(timestamp_to_us(created_at))?;
         let empty: bool =
             transaction.query_row("SELECT NOT EXISTS (SELECT 1 FROM tasks)", [], |row| {
                 row.get(0)
@@ -185,11 +231,18 @@ impl SqliteRepository {
             return Ok(false);
         }
         for name in names {
-            let task = Task::new(TaskId::generate(), name.clone());
+            let task = Task::create(TaskId::generate(), name.clone(), created_at);
             transaction
                 .execute(
-                    "INSERT INTO tasks (id, name, archived) VALUES (?1, ?2, ?3)",
-                    rusqlite::params![task.id.to_string(), task.name.as_str(), task.archived],
+                    "INSERT INTO tasks (id, name, archived, created_at_us, updated_at_us)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![
+                        task.id.to_string(),
+                        task.name().as_str(),
+                        task.is_archived(),
+                        timestamp_to_us(task.created_at()),
+                        timestamp_to_us(task.updated_at()),
+                    ],
                 )
                 .map(|_| ())
                 .map_err(|error| error::create_task_error(error, task.id))?;
@@ -211,8 +264,15 @@ impl SqliteRepository {
     pub fn create_task(&self, task: Task) -> Result<(), StorageError> {
         self.conn
             .execute(
-                "INSERT INTO tasks (id, name, archived) VALUES (?1, ?2, ?3)",
-                rusqlite::params![task.id.to_string(), task.name.as_str(), task.archived],
+                "INSERT INTO tasks (id, name, archived, created_at_us, updated_at_us)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    task.id.to_string(),
+                    task.name().as_str(),
+                    task.is_archived(),
+                    timestamp_to_us(task.created_at()),
+                    timestamp_to_us(task.updated_at()),
+                ],
             )
             .map(|_| ())
             .map_err(|error| error::create_task_error(error, task.id))
@@ -222,54 +282,118 @@ impl SqliteRepository {
         self.task_by_id(id)
     }
 
+    /// Lists every task, ordered by identifier. This plain listing is not
+    /// part of the application ports; the port's task-list read model is
+    /// [`SqliteRepository::list_task_items`].
     pub fn list_tasks(&self) -> Result<Vec<Task>, StorageError> {
-        let mut statement = self
-            .conn
-            .prepare("SELECT id, name, archived FROM tasks ORDER BY id")?;
+        let mut statement = self.conn.prepare(
+            "SELECT id, name, archived, created_at_us, updated_at_us FROM tasks ORDER BY id",
+        )?;
         let mut rows = statement.query([])?;
         let mut tasks = Vec::new();
         while let Some(row) = rows.next()? {
-            let (id, name, archived) = raw_task(row)?;
-            tasks.push(task_from_stored(id, name, archived)?);
+            let (id, name, archived, created_us, updated_us) = raw_task(row)?;
+            tasks.push(task_from_stored(
+                id, name, archived, created_us, updated_us,
+            )?);
         }
         Ok(tasks)
     }
 
-    pub fn rename_task(&self, id: TaskId, name: TaskName) -> Result<Task, StorageError> {
+    /// Lists every task with its latest worklog start.
+    ///
+    /// The latest work start is derived as a per-task `MAX(start_us)`
+    /// aggregate in this query, backed by the `worklogs_task_start` index;
+    /// full worklogs are never loaded for the listing.
+    pub fn list_task_items(&self) -> Result<Vec<TaskListItem>, StorageError> {
         let mut statement = self.conn.prepare(
-            "UPDATE tasks SET name = ?1 WHERE id = ?2
-             RETURNING id, name, archived",
+            "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us, w.latest_start_us
+             FROM tasks AS t
+             LEFT JOIN (
+                 SELECT task_id, MAX(start_us) AS latest_start_us
+                 FROM worklogs
+                 GROUP BY task_id
+             ) AS w ON w.task_id = t.id
+             ORDER BY t.id",
         )?;
-        statement
-            .query_row([name.as_str().to_owned(), id.to_string()], raw_task)
-            .optional()?
-            .map(|(id, name, archived)| task_from_stored(id, name, archived))
-            .transpose()?
-            .ok_or(StorageError::TaskNotFound { id })
+        let mut rows = statement.query([])?;
+        let mut items = Vec::new();
+        while let Some(row) = rows.next()? {
+            let ((id, name, archived, created_us, updated_us), latest_us) = raw_task_item(row)?;
+            items.push(TaskListItem {
+                task: task_from_stored(id, name, archived, created_us, updated_us)?,
+                latest_work_start: latest_us.map(us_to_timestamp).transpose()?,
+            });
+        }
+        Ok(items)
     }
 
-    pub fn archive_task(&self, id: TaskId) -> Result<Task, StorageError> {
-        let mut statement = self.conn.prepare(
-            "UPDATE tasks SET archived = TRUE WHERE id = ?1
-             RETURNING id, name, archived",
-        )?;
-        match statement.query_row([id.to_string()], raw_task).optional() {
-            Ok(Some(raw)) => task_from_stored(raw.0, raw.1, raw.2),
-            Ok(None) => Err(StorageError::TaskNotFound { id }),
-            Err(error) => Err(error::archive_task_error(error, id)),
+    /// Renames a task atomically while preserving concurrent archive state.
+    pub fn rename_task(
+        &self,
+        id: TaskId,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, StorageError> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let mut task = task_by_id_on(&transaction, id)?.ok_or(StorageError::TaskNotFound { id })?;
+        let occurred_at = us_to_timestamp(timestamp_to_us(occurred_at))?;
+        if task.rename(name, occurred_at) {
+            transaction
+                .execute(
+                    "UPDATE tasks SET name = ?1, updated_at_us = ?2 WHERE id = ?3",
+                    rusqlite::params![
+                        task.name().as_str(),
+                        timestamp_to_us(task.updated_at()),
+                        id.to_string(),
+                    ],
+                )
+                .map_err(error::classify_write_error)?;
         }
+        transaction.commit()?;
+        Ok(task)
     }
 
-    pub fn unarchive_task(&self, id: TaskId) -> Result<Task, StorageError> {
-        let mut statement = self.conn.prepare(
-            "UPDATE tasks SET archived = FALSE WHERE id = ?1
-             RETURNING id, name, archived",
-        )?;
-        match statement.query_row([id.to_string()], raw_task).optional() {
-            Ok(Some(raw)) => task_from_stored(raw.0, raw.1, raw.2),
-            Ok(None) => Err(StorageError::TaskNotFound { id }),
-            Err(error) => Err(error::classify_write_error(error)),
+    /// Archives a task atomically while preserving concurrent name changes.
+    pub fn archive_task(
+        &self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, StorageError> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let mut task = task_by_id_on(&transaction, id)?.ok_or(StorageError::TaskNotFound { id })?;
+        let occurred_at = us_to_timestamp(timestamp_to_us(occurred_at))?;
+        if task.archive(occurred_at)
+            && let Err(error) = transaction.execute(
+                "UPDATE tasks SET archived = TRUE, updated_at_us = ?1 WHERE id = ?2",
+                rusqlite::params![timestamp_to_us(task.updated_at()), id.to_string()],
+            )
+        {
+            return Err(error::archive_task_error(error, id));
         }
+        transaction.commit()?;
+        Ok(task)
+    }
+
+    /// Restores a task atomically without changing its worklogs or name.
+    pub fn unarchive_task(
+        &self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, StorageError> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let mut task = task_by_id_on(&transaction, id)?.ok_or(StorageError::TaskNotFound { id })?;
+        let occurred_at = us_to_timestamp(timestamp_to_us(occurred_at))?;
+        if task.restore(occurred_at) {
+            transaction
+                .execute(
+                    "UPDATE tasks SET archived = FALSE, updated_at_us = ?1 WHERE id = ?2",
+                    rusqlite::params![timestamp_to_us(task.updated_at()), id.to_string()],
+                )
+                .map_err(error::classify_write_error)?;
+        }
+        transaction.commit()?;
+        Ok(task)
     }
 
     pub fn insert_worklog(&self, worklog: &Worklog) -> Result<(), StorageError> {
@@ -387,20 +511,33 @@ impl TaskRepository for SqliteRepository {
         SqliteRepository::find_task(self, id).map_err(Into::into)
     }
 
-    fn list_tasks(&self) -> Result<Vec<Task>, RepositoryError> {
-        SqliteRepository::list_tasks(self).map_err(Into::into)
+    fn list_task_items(&self) -> Result<Vec<TaskListItem>, RepositoryError> {
+        SqliteRepository::list_task_items(self).map_err(Into::into)
     }
 
-    fn rename_task(&self, id: TaskId, name: TaskName) -> Result<Task, RepositoryError> {
-        SqliteRepository::rename_task(self, id, name).map_err(Into::into)
+    fn rename_task(
+        &self,
+        id: TaskId,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError> {
+        SqliteRepository::rename_task(self, id, name, occurred_at).map_err(Into::into)
     }
 
-    fn archive_task(&self, id: TaskId) -> Result<Task, RepositoryError> {
-        SqliteRepository::archive_task(self, id).map_err(Into::into)
+    fn archive_task(
+        &self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError> {
+        SqliteRepository::archive_task(self, id, occurred_at).map_err(Into::into)
     }
 
-    fn unarchive_task(&self, id: TaskId) -> Result<Task, RepositoryError> {
-        SqliteRepository::unarchive_task(self, id).map_err(Into::into)
+    fn unarchive_task(
+        &self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError> {
+        SqliteRepository::unarchive_task(self, id, occurred_at).map_err(Into::into)
     }
 }
 
@@ -467,8 +604,14 @@ mod tests {
 
     #[test]
     fn stored_task_values_reject_an_empty_name() {
-        let error = task_from_stored(TaskId::generate().to_string(), "   ".to_owned(), false)
-            .expect_err("whitespace name is corrupt");
+        let error = task_from_stored(
+            TaskId::generate().to_string(),
+            "   ".to_owned(),
+            false,
+            0,
+            0,
+        )
+        .expect_err("whitespace name is corrupt");
         assert!(matches!(error, StorageError::CorruptData("task name")));
     }
 
@@ -478,6 +621,8 @@ mod tests {
             TaskId::generate().to_string(),
             "bad \u{1b} name".to_owned(),
             false,
+            0,
+            0,
         )
         .expect_err("control characters make a name corrupt");
         assert!(matches!(error, StorageError::CorruptData("task name")));
@@ -486,9 +631,40 @@ mod tests {
             TaskId::generate().to_string(),
             "a".repeat(TaskName::MAX_LEN + 1),
             false,
+            0,
+            0,
         )
         .expect_err("an oversized name is corrupt");
         assert!(matches!(error, StorageError::CorruptData("task name")));
+    }
+
+    #[test]
+    fn stored_task_values_reject_updated_before_created() {
+        let error = task_from_stored(
+            TaskId::generate().to_string(),
+            "backwards".to_owned(),
+            false,
+            200,
+            199,
+        )
+        .expect_err("updated before created is corrupt");
+        assert!(matches!(
+            error,
+            StorageError::CorruptData("task timestamps")
+        ));
+    }
+
+    #[test]
+    fn stored_task_values_reject_out_of_range_timestamps() {
+        let error = task_from_stored(
+            TaskId::generate().to_string(),
+            "huge".to_owned(),
+            false,
+            i64::MAX,
+            i64::MAX,
+        )
+        .expect_err("an unrepresentable timestamp is corrupt");
+        assert!(matches!(error, StorageError::CorruptData("timestamp")));
     }
 
     #[test]
@@ -507,34 +683,57 @@ mod tests {
     }
 
     #[test]
-    fn seeding_an_empty_database_inserts_every_name() {
+    fn seeding_an_empty_database_inserts_every_name_with_one_shared_timestamp() {
         let repository = SqliteRepository::open_in_memory().unwrap();
         let names: Vec<TaskName> = ["one", "two"]
             .iter()
             .map(|name| TaskName::new(name).unwrap())
             .collect();
-        assert!(repository.seed_default_tasks(&names).unwrap());
-        let stored: Vec<String> = repository
-            .list_tasks()
-            .unwrap()
-            .into_iter()
-            .map(|task| task.name.to_string())
-            .collect();
+        let created_at = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        assert!(repository.seed_default_tasks(&names, created_at).unwrap());
+        let tasks = repository.list_tasks().unwrap();
+        let stored: Vec<String> = tasks.iter().map(|task| task.name().to_string()).collect();
         assert_eq!(stored, ["one".to_owned(), "two".to_owned()]);
+        for task in &tasks {
+            assert_eq!(task.created_at(), created_at);
+            assert_eq!(task.updated_at(), created_at);
+        }
 
         // A second call sees a non-empty database and changes nothing.
-        assert!(!repository.seed_default_tasks(&names).unwrap());
+        assert!(!repository.seed_default_tasks(&names, created_at).unwrap());
         assert_eq!(repository.list_tasks().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn seeding_canonicalizes_the_timestamp_before_creating_tasks() {
+        let repository = SqliteRepository::open_in_memory().unwrap();
+        let names = vec![TaskName::new("precise").unwrap()];
+        let timestamp = DateTime::from_timestamp(100, 123_456_789).unwrap();
+
+        assert!(repository.seed_default_tasks(&names, timestamp).unwrap());
+
+        let task = repository.list_tasks().unwrap().pop().unwrap();
+        let canonical = DateTime::from_timestamp(100, 123_456_000).unwrap();
+        assert_eq!(task.created_at(), canonical);
+        assert_eq!(task.updated_at(), canonical);
     }
 
     #[test]
     fn seeding_skips_a_database_that_has_only_archived_tasks() {
         let repository = SqliteRepository::open_in_memory().unwrap();
-        let mut task = Task::new(TaskId::generate(), TaskName::new("mine").unwrap());
-        task.archived = true;
+        let mut task = Task::create(
+            TaskId::generate(),
+            TaskName::new("mine").unwrap(),
+            DateTime::from_timestamp(100, 0).unwrap(),
+        );
+        assert!(task.archive(DateTime::from_timestamp(100, 0).unwrap()));
         repository.create_task(task).unwrap();
         let names = vec![TaskName::new("default").unwrap()];
-        assert!(!repository.seed_default_tasks(&names).unwrap());
+        assert!(
+            !repository
+                .seed_default_tasks(&names, DateTime::from_timestamp(100, 0).unwrap())
+                .unwrap()
+        );
         assert_eq!(repository.list_tasks().unwrap().len(), 1);
     }
 
@@ -555,7 +754,7 @@ mod tests {
             .map(|name| TaskName::new(name).unwrap())
             .collect();
         let error = repository
-            .seed_default_tasks(&names)
+            .seed_default_tasks(&names, DateTime::from_timestamp(0, 0).unwrap())
             .expect_err("the aborted insert fails the seed");
         assert!(matches!(error, StorageError::Sql(_)));
         assert!(
@@ -565,7 +764,11 @@ mod tests {
         // The connection is usable afterwards: the transaction was rolled
         // back, not left open.
         let fresh = vec![TaskName::new("works").unwrap()];
-        assert!(repository.seed_default_tasks(&fresh).unwrap());
+        assert!(
+            repository
+                .seed_default_tasks(&fresh, DateTime::from_timestamp(0, 0).unwrap())
+                .unwrap()
+        );
         assert_eq!(repository.list_tasks().unwrap().len(), 1);
     }
 
@@ -577,18 +780,19 @@ mod tests {
             .iter()
             .map(|name| TaskName::new(name).unwrap())
             .collect();
+        let created_at = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
         let first = std::thread::spawn({
             let path = path.clone();
             let names = names.clone();
             move || -> Result<bool, StorageError> {
-                SqliteRepository::open(&path)?.seed_default_tasks(&names)
+                SqliteRepository::open(&path)?.seed_default_tasks(&names, created_at)
             }
         });
         let second = {
             let path = path.clone();
             let names = names.clone();
             std::thread::spawn(move || -> Result<bool, StorageError> {
-                SqliteRepository::open(&path)?.seed_default_tasks(&names)
+                SqliteRepository::open(&path)?.seed_default_tasks(&names, created_at)
             })
         };
         let first = first.join().unwrap().unwrap();
@@ -602,7 +806,7 @@ mod tests {
             .list_tasks()
             .unwrap()
             .into_iter()
-            .map(|task| task.name.to_string())
+            .map(|task| task.name().to_string())
             .collect();
         assert_eq!(stored, ["alpha".to_owned(), "beta".to_owned()]);
     }
@@ -613,9 +817,10 @@ mod tests {
         let path = temp.path().join("tracker.db");
         let writer = SqliteRepository::open(&path).unwrap();
         writer
-            .create_task(Task::new(
+            .create_task(Task::create(
                 TaskId::generate(),
                 TaskName::new("held").unwrap(),
+                DateTime::from_timestamp(100, 0).unwrap(),
             ))
             .unwrap();
         // A second connection on the same file can read and write while the
@@ -623,9 +828,10 @@ mod tests {
         let reader = SqliteRepository::open(&path).unwrap();
         assert_eq!(reader.list_tasks().unwrap().len(), 1);
         reader
-            .create_task(Task::new(
+            .create_task(Task::create(
                 TaskId::generate(),
                 TaskName::new("next").unwrap(),
+                DateTime::from_timestamp(100, 0).unwrap(),
             ))
             .unwrap();
         assert_eq!(writer.list_tasks().unwrap().len(), 2);
