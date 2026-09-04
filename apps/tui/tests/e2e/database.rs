@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use tracker_domain::{Task, TaskId, TaskName, WorklogId};
+use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId};
 use tracker_storage::SqliteRepository;
 
 /// The name of the trigger a scenario installs to make task creates fail.
@@ -16,13 +16,14 @@ pub(crate) struct Database {
     repository: SqliteRepository,
 }
 
-/// One task as stored: its stable identifier, its name, and whether it is
-/// archived.
+/// One task as stored, including its stable identity and metadata timestamps.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StoredTask {
     pub(crate) id: TaskId,
     pub(crate) name: String,
     pub(crate) archived: bool,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
 }
 
 /// One worklog as stored: its stable identifier, the task it tracks, the
@@ -37,6 +38,20 @@ pub(crate) struct StoredWorklog {
     pub(crate) end: Option<DateTime<Utc>>,
 }
 
+fn fixture_time(seconds: i64) -> DateTime<Utc> {
+    DateTime::from_timestamp(seconds, 0).expect("the fixture timestamp must be valid")
+}
+
+fn stored_task(task: Task) -> StoredTask {
+    StoredTask {
+        id: task.id,
+        name: task.name().to_string(),
+        archived: task.is_archived(),
+        created_at: task.created_at(),
+        updated_at: task.updated_at(),
+    }
+}
+
 impl Database {
     pub(crate) fn open(path: &Path) -> Self {
         Self {
@@ -45,20 +60,31 @@ impl Database {
     }
 
     /// Adds a task through the real adapter, so a scenario can launch `tt`
-    /// against a database that already has content.
+    /// against a database that already has content. Existing scenarios use
+    /// one shared timestamp, which preserves their identifier-based order.
     pub(crate) fn create_task(&self, name: &str) -> StoredTask {
-        let task = Task::new(
+        self.create_task_at(name, fixture_time(0), fixture_time(0))
+    }
+
+    /// Adds a task with explicit metadata timestamps for ordering scenarios.
+    pub(crate) fn create_task_at(
+        &self,
+        name: &str,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    ) -> StoredTask {
+        let task = Task::rehydrate(
             TaskId::generate(),
             TaskName::new(name).expect("the seeded task name must be valid"),
-        );
+            false,
+            created_at,
+            updated_at,
+        )
+        .expect("the fixture task timestamps must be valid");
         self.repository
             .create_task(task.clone())
             .expect("the task must be created");
-        StoredTask {
-            id: task.id,
-            name: task.name.to_string(),
-            archived: task.archived,
-        }
+        stored_task(task)
     }
 
     /// Marks the named stored task archived through the real adapter and
@@ -69,12 +95,32 @@ impl Database {
             .unwrap_or_else(|| panic!("the task {name:?} must be stored"));
         let archived = self
             .repository
-            .archive_task(task.id)
+            .archive_task(task.id, fixture_time(0))
             .expect("the task must be archived");
-        StoredTask {
-            id: archived.id,
-            name: archived.name.to_string(),
-            archived: archived.archived,
+        stored_task(archived)
+    }
+
+    /// Adds a worklog through the real adapter for an existing task.
+    pub(crate) fn create_worklog(
+        &self,
+        task_name: &str,
+        start: DateTime<Utc>,
+        end: Option<DateTime<Utc>>,
+    ) -> StoredWorklog {
+        let task = self
+            .task_by_name(task_name)
+            .unwrap_or_else(|| panic!("the task {task_name:?} must be stored"));
+        let worklog = Worklog::new(WorklogId::generate(), task.id, start, end)
+            .expect("the fixture worklog interval must be valid");
+        self.repository
+            .insert_worklog(&worklog)
+            .expect("the worklog must be created");
+        StoredWorklog {
+            id: worklog.id,
+            task_id: worklog.task_id,
+            task_name: task.name,
+            start: worklog.start,
+            end: worklog.end,
         }
     }
 
@@ -84,11 +130,7 @@ impl Database {
             .list_tasks()
             .expect("the tasks must list")
             .into_iter()
-            .map(|task| StoredTask {
-                id: task.id,
-                name: task.name.to_string(),
-                archived: task.archived,
-            })
+            .map(stored_task)
             .collect()
     }
 
@@ -152,7 +194,7 @@ impl Database {
     pub(crate) fn active_worklogs(&self) -> Vec<StoredWorklog> {
         let mut active = Vec::new();
         for task in self.repository.list_tasks().expect("the tasks must list") {
-            for worklog in self.worklogs_of(task.id, task.name.as_str()) {
+            for worklog in self.worklogs_of(task.id, task.name().as_str()) {
                 if worklog.end.is_none() {
                     active.push(worklog);
                 }
@@ -175,7 +217,7 @@ impl Database {
                 StoredWorklog {
                     id: worklog.id,
                     task_id: worklog.task_id,
-                    task_name: task.name.to_string(),
+                    task_name: task.name().to_string(),
                     start: worklog.start,
                     end: worklog.end,
                 }

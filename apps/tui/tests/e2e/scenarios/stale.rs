@@ -135,7 +135,8 @@ fn a_stale_stop_refreshes_without_stopping_the_newer_worklog() {
         page.header()
             .active_task()
             .is_some_and(|active| active.name() == "Fix the coffee machine")
-            && page.task_panel().active_marker_index() == Some(1)
+            && page.task_panel().active_marker_index() == Some(0)
+            && page.task_panel().row(0).name() == "Fix the coffee machine"
     });
     let newer = database
         .active_worklog()
@@ -156,8 +157,9 @@ fn a_stale_stop_refreshes_without_stopping_the_newer_worklog() {
             && page.header().active_task().is_some_and(|active| {
                 active.name() == "Fix the coffee machine" && active.elapsed_is_hhmmss()
             })
-            && page.task_panel().active_marker_index() == Some(1)
-            && !page.task_panel().row(0).has_active_marker()
+            && page.task_panel().active_marker_index() == Some(0)
+            && page.task_panel().row(0).name() == "Fix the coffee machine"
+            && !page.task_panel().row(1).has_active_marker()
     });
     assert_eq!(
         page.status_bar().text(),
@@ -255,15 +257,16 @@ fn a_stale_set_active_intentionally_switches_from_the_authoritative_state() {
         let page = TimeTrackerPage::new(screen.clone());
         page.header().active_task().is_some_and(|active| {
             active.name() == "Plan Friday's demo" && active.elapsed_is_hhmmss()
-        }) && page.task_panel().active_marker_index() == Some(2)
-            && !page.task_panel().row(0).has_active_marker()
+        }) && page.task_panel().active_marker_index() == Some(0)
+            && page.task_panel().row(0).name() == "Plan Friday's demo"
+            && !page.task_panel().row(1).has_active_marker()
             && page.status_bar().text() == "Switched to \"Plan Friday's demo\""
     });
     assert_eq!(
         page.status_bar().text(),
         "Switched to \"Plan Friday's demo\""
     );
-    assert_eq!(page.task_panel().selected_index(), Some(2));
+    assert_eq!(page.task_panel().selected_index(), Some(0));
 
     stale.quit().assert_clean_exit();
     current.quit().assert_clean_exit();

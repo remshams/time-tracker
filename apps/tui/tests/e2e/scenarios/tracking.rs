@@ -207,8 +207,9 @@ fn switching_tasks_moves_the_marker_and_shares_one_boundary_timestamp() {
         page.header()
             .active_task()
             .is_some_and(|active| active.name() == "Fix the coffee machine")
-            && page.task_panel().active_marker_index() == Some(1)
-            && !page.task_panel().row(0).has_active_marker()
+            && page.task_panel().active_marker_index() == Some(0)
+            && page.task_panel().row(0).name() == "Fix the coffee machine"
+            && !page.task_panel().row(1).has_active_marker()
             && page.status_bar().text() == "Switched to \"Fix the coffee machine\""
     });
     assert_eq!(
@@ -220,11 +221,11 @@ fn switching_tasks_moves_the_marker_and_shares_one_boundary_timestamp() {
     );
     assert_eq!(
         page.task_panel().active_marker_index(),
-        Some(1),
-        "the marker follows the tracked task:\n{}",
+        Some(0),
+        "the marker follows the tracked task to its new row:\n{}",
         page.screen()
     );
-    assert_eq!(page.task_panel().selected_index(), Some(1));
+    assert_eq!(page.task_panel().selected_index(), Some(0));
 
     tt.quit().assert_clean_exit();
 

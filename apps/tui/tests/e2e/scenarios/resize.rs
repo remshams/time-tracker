@@ -18,8 +18,7 @@ const GROWN: (u16, u16) = (110, 34);
 
 /// The shrunken geometry: shorter and narrower than the baseline, so the
 /// pre-repaint grid is clipped instead of padded. Sixty columns still fit
-/// the task names; the wide active-view footer is truncated there, so the
-/// shrunken predicate leans on the hints that survive.
+/// the task names and the compact footer.
 const SHRUNKEN: (u16, u16) = (60, 20);
 
 /// The seeded tasks, in storage order, as every resize predicate expects
@@ -42,11 +41,13 @@ fn the_shrunken_layout_holds(screen: &Screen) -> bool {
         && page.header().title_is_accented()
         && page.header().is_idle()
         && page.task_panel().shows_active_tasks()
+        && page.task_panel().shows_ordering("recently worked")
         && page.task_panel().frame_corners_fit_current_geometry()
         && page.task_panel().task_names() == seeded_task_names()
         && page.task_panel().selected_index() == Some(1)
         && page.status_bar().text() == "Ready"
-        && page.footer().hints_view_switching()
+        && page.footer().hints_sorting()
+        && page.footer().hints_quit()
 }
 
 /// The full normal-mode postconditions at the grown geometry, with the
@@ -57,6 +58,7 @@ fn the_grown_layout_holds(screen: &Screen) -> bool {
         && page.header().title_is_accented()
         && page.header().is_idle()
         && page.task_panel().shows_active_tasks()
+        && page.task_panel().shows_ordering("recently worked")
         && page.task_panel().frame_corners_fit_current_geometry()
         && page.task_panel().task_names() == seeded_task_names()
         && page.task_panel().selected_index() == Some(1)
@@ -74,6 +76,7 @@ fn the_shrunken_dialog_holds(screen: &Screen) -> bool {
         && page.status_bar().text() == "Ready"
         && page.footer().hints_input()
         && page.task_panel().shows_active_tasks()
+        && page.task_panel().shows_ordering("recently worked")
         && page.task_panel().frame_corners_fit_current_geometry()
         && page.task_panel().task_names() == seeded_task_names()
         && page.task_panel().selected_index() == Some(0)
@@ -92,6 +95,7 @@ fn the_grown_dialog_holds(screen: &Screen) -> bool {
         && page.status_bar().text() == "Ready"
         && page.footer().hints_input()
         && page.task_panel().shows_active_tasks()
+        && page.task_panel().shows_ordering("recently worked")
         && page.task_panel().frame_corners_fit_current_geometry()
         && page.task_panel().task_names() == seeded_task_names()
         && page.task_panel().selected_index() == Some(0)
@@ -245,9 +249,9 @@ fn an_open_dialog_recenters_on_resize_and_saves_what_was_typed() {
         page.task_input_dialog().is_none()
             && page.status_bar().text() == "Added \"Prepare sprint review\""
             && page.task_panel().task_names().len() == 4
-            && page.task_panel().row(3).is_selected()
+            && page.task_panel().row(0).is_selected()
     });
-    assert_eq!(page.task_panel().row(3).name(), "Prepare sprint review");
+    assert_eq!(page.task_panel().row(0).name(), "Prepare sprint review");
 
     tt.quit().assert_clean_exit();
 

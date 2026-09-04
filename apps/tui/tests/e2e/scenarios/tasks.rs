@@ -42,12 +42,12 @@ fn adding_a_task_renders_selects_and_persists_it() {
         page.task_input_dialog().is_none()
             && page.status_bar().text() == "Added \"Prepare sprint review\""
             && page.task_panel().task_names().len() == 4
-            && page.task_panel().row(3).is_selected()
+            && page.task_panel().row(0).is_selected()
     });
     let panel = page.task_panel();
-    assert_eq!(panel.task_names()[3], "Prepare sprint review");
-    assert_eq!(panel.selected_index(), Some(3));
-    assert_eq!(panel.row(3).name(), "Prepare sprint review");
+    assert_eq!(panel.task_names()[0], "Prepare sprint review");
+    assert_eq!(panel.selected_index(), Some(0));
+    assert_eq!(panel.row(0).name(), "Prepare sprint review");
     assert!(
         page.task_input_dialog().is_none(),
         "the dialog closed after saving:\n{}",
@@ -285,9 +285,9 @@ fn a_failed_create_keeps_the_dialog_and_a_retry_persists_the_task() {
         page.task_input_dialog().is_none()
             && page.status_bar().text() == "Added \"Prepare sprint review\""
             && page.task_panel().task_names().len() == 4
-            && page.task_panel().row(3).is_selected()
+            && page.task_panel().row(0).is_selected()
     });
-    assert_eq!(page.task_panel().row(3).name(), "Prepare sprint review");
+    assert_eq!(page.task_panel().row(0).name(), "Prepare sprint review");
     assert!(
         page.task_input_dialog().is_none(),
         "the dialog closed after the retry saved:\n{}",

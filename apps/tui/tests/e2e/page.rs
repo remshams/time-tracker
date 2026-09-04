@@ -250,7 +250,7 @@ pub(crate) struct TaskPanel {
 }
 
 impl TaskPanel {
-    /// The block title of the panel, e.g. "Active tasks".
+    /// The block title of the panel, including its current ordering.
     pub(crate) fn title(&self) -> String {
         self.screen
             .row_text(Layout::of(&self.screen).panel_top_row())
@@ -261,12 +261,19 @@ impl TaskPanel {
 
     /// Whether the active view's panel is shown.
     pub(crate) fn shows_active_tasks(&self) -> bool {
-        self.title() == "Active tasks"
+        self.title().starts_with("Active tasks · ")
     }
 
     /// Whether the archived view's panel is shown.
     pub(crate) fn shows_archived_tasks(&self) -> bool {
-        self.title() == "Archived tasks"
+        self.title().starts_with("Archived tasks · ")
+    }
+
+    /// Whether the panel names the given ordering after its view title.
+    pub(crate) fn shows_ordering(&self, ordering: &str) -> bool {
+        self.title()
+            .split_once(" · ")
+            .is_some_and(|(_, shown)| shown == ordering)
     }
 
     /// Whether the panel border carries the focused blue accent, which
@@ -469,9 +476,14 @@ impl Footer {
         self.text().contains("space track")
     }
 
-    /// Whether the footer names the add, rename, and archive actions.
+    /// Whether the footer names the add, rename, and archive keys.
     pub(crate) fn hints_task_actions(&self) -> bool {
-        self.text().contains("a/e/d add/rename/archive")
+        self.text().contains("a/e/d edit")
+    }
+
+    /// Whether the footer names the ordering control.
+    pub(crate) fn hints_sorting(&self) -> bool {
+        self.text().contains("s sort")
     }
 
     /// Whether the footer names the text-input keys.
