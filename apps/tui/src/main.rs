@@ -81,7 +81,7 @@ fn run<S: TrackerApplicationService>(
         guard.draw(|frame| ui::render(frame, app))?;
         if crossterm::event::poll(TICK)?
             && let Event::Key(key) = crossterm::event::read()?
-            && let Some(command) = keymap::map(app.mode(), app.view(), key)
+            && let Some(command) = keymap::map(app.mode(), app.view(), app.screen(), key)
             && command_is_allowed(command, crossterm::terminal::size()?.0)
         {
             app.handle(command);
@@ -181,7 +181,11 @@ mod tests {
         assert!(command_is_allowed(Command::Quit, 1));
         assert!(!command_is_allowed(Command::OpenAdd, 59));
         assert!(!command_is_allowed(Command::CycleOrdering, 59));
+        assert!(!command_is_allowed(Command::OpenHistory, 59));
+        assert!(!command_is_allowed(Command::LoadOlderWorklogs, 59));
+        assert!(!command_is_allowed(Command::RefreshWorklogs, 59));
         assert!(command_is_allowed(Command::OpenAdd, 60));
+        assert!(command_is_allowed(Command::OpenHistory, 60));
     }
 
     #[test]

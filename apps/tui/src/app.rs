@@ -2,12 +2,14 @@
 
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, FixedOffset, Local, TimeDelta, Utc};
 use tracker_application::{
     ApplicationError, ClearActiveTaskOutcome, SetActiveTaskOutcome, TaskOrdering, TaskOutcome,
-    TrackerApplicationService,
+    TrackerApplicationService, WorklogCursor,
 };
-use tracker_domain::{Task, TaskId, TaskName, TaskNameError, TrackingError, TrackingState};
+use tracker_domain::{
+    Task, TaskId, TaskName, TaskNameError, TrackingError, TrackingState, Worklog, WorklogId,
+};
 
 use crate::command::Command;
 
@@ -44,6 +46,50 @@ pub enum Status {
 pub enum TaskView {
     Active,
     Archived,
+}
+
+/// Which screen the interface currently shows.
+///
+/// The task list carries the modes and task views; the worklog history is
+/// its own read-only screen with no task-list commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Screen {
+    /// The active or archived task list.
+    TaskList,
+    /// The read-only worklog history of one task.
+    WorklogHistory,
+}
+
+/// Worklog-history presentation state for one task.
+///
+/// The worklogs are the pages loaded so far, in history order, newest
+/// first. `next_cursor` marks the end of the loaded range; `None` means
+/// the whole history is on screen. The selection remembers a worklog id,
+/// so it survives appends and refreshes the way the task selection
+/// survives reordering.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct History {
+    /// The task whose history is open.
+    pub task_id: TaskId,
+    /// Every worklog loaded so far, newest first.
+    pub worklogs: Vec<Worklog>,
+    /// The cursor the next older page continues after, or `None` at the
+    /// end of the history.
+    pub next_cursor: Option<WorklogCursor>,
+    /// The selected worklog, by id.
+    selected: Option<WorklogId>,
+}
+
+impl History {
+    /// The row of the selected worklog.
+    ///
+    /// The selection is remembered by id, so it follows a worklog across
+    /// appends and refreshes; a worklog that is no longer loaded selects
+    /// nothing.
+    fn selected_index(&self) -> Option<usize> {
+        let id = self.selected?;
+        self.worklogs.iter().position(|worklog| worklog.id == id)
+    }
 }
 
 /// The event loop's two lifecycle states.
@@ -148,10 +194,13 @@ pub struct App<S: TrackerApplicationService> {
     view: TaskView,
     active_selection: Option<TaskId>,
     archived_selection: Option<TaskId>,
+    screen: Screen,
+    history: Option<History>,
     tracking: TrackingState,
     mode: Mode,
     status: Status,
     clock: Option<ElapsedClock>,
+    frozen_offset: Option<FixedOffset>,
     lifecycle: Lifecycle,
 }
 
@@ -179,10 +228,13 @@ impl<S: TrackerApplicationService> App<S> {
             view: TaskView::Active,
             active_selection,
             archived_selection: None,
+            screen: Screen::TaskList,
+            history: None,
             tracking,
             mode: Mode::Normal,
             status,
             clock,
+            frozen_offset: None,
             lifecycle: Lifecycle::Running,
         }
     }
@@ -193,6 +245,10 @@ impl<S: TrackerApplicationService> App<S> {
             Command::MoveDown => self.move_down(),
             Command::ShowActiveTasks => self.show_tasks(TaskView::Active),
             Command::ShowArchivedTasks => self.show_tasks(TaskView::Archived),
+            Command::OpenHistory => self.open_history(),
+            Command::LoadOlderWorklogs => self.load_older_worklogs(),
+            Command::RefreshWorklogs => self.refresh_worklogs(),
+            Command::BackToTaskList => self.back_to_task_list(),
             Command::CycleOrdering => self.cycle_ordering(),
             Command::UnarchiveSelected => self.unarchive_selected(),
             Command::ToggleTracking => self.toggle_tracking(),
@@ -268,14 +324,73 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     pub fn active_task_name(&self) -> Option<&str> {
-        let task_id = self.active_task_id()?;
         // Query the application service, not the visible list: the timer
         // header must keep naming the active task in the archived view too.
-        Some(self.application.task(task_id)?.name().as_str())
+        self.task_name_for(self.active_task_id()?)
     }
 
     pub fn elapsed(&self) -> Option<Duration> {
         self.clock.as_ref().map(ElapsedClock::elapsed)
+    }
+
+    /// The screen the interface currently shows.
+    pub fn screen(&self) -> Screen {
+        self.screen
+    }
+
+    /// The open worklog history, if the history screen is shown.
+    pub fn history(&self) -> Option<&History> {
+        self.history.as_ref()
+    }
+
+    /// The selected row of the open history.
+    ///
+    /// The selection is remembered by worklog id, so it follows a worklog
+    /// across appends and refreshes; a worklog that is no longer loaded
+    /// selects nothing.
+    pub fn history_selected_index(&self) -> Option<usize> {
+        self.history.as_ref()?.selected_index()
+    }
+
+    /// The name of the task whose history is open.
+    ///
+    /// The name is resolved from the application service, not from the
+    /// visible list, so the title survives view switches and reordering.
+    pub fn history_task_name(&self) -> Option<&str> {
+        self.task_name_for(self.history.as_ref()?.task_id)
+    }
+
+    /// Formats a UTC instant for display with its explicit UTC offset.
+    ///
+    /// Every instant converts through chrono::Local on its own, so a
+    /// history that spans a daylight-saving transition shows each worklog
+    /// the offset that was in effect when it ran, not the offset of the
+    /// moment the app loaded. Tests freeze one fixed offset so rendered
+    /// times stay deterministic on every host.
+    pub fn local_time(&self, at: DateTime<Utc>) -> String {
+        match self.frozen_offset {
+            Some(offset) => crate::ui::local_time(at, &offset),
+            None => crate::ui::local_time(at, &Local),
+        }
+    }
+
+    /// The duration a history row shows.
+    ///
+    /// A running row shares the header's monotonic clock. History queries
+    /// refresh current tracking before returning, so a running row that a
+    /// second client created adopts that same clock before it renders.
+    /// Completed rows derive their duration from the stored interval.
+    pub fn history_row_duration(&self, worklog: &Worklog) -> Duration {
+        let Some(end) = worklog.end else {
+            return if self.active_worklog_id() == Some(worklog.id) {
+                self.clock
+                    .as_ref()
+                    .map_or(Duration::ZERO, ElapsedClock::elapsed)
+            } else {
+                Duration::ZERO
+            };
+        };
+        (end - worklog.start).to_std().unwrap_or(Duration::ZERO)
     }
 
     fn active_worklog(&self) -> Option<&tracker_domain::ActiveWorklog> {
@@ -283,6 +398,15 @@ impl<S: TrackerApplicationService> App<S> {
             TrackingState::Idle => None,
             TrackingState::Running { worklog } => Some(worklog),
         }
+    }
+
+    /// The identifier of the running worklog, if tracking runs.
+    fn active_worklog_id(&self) -> Option<WorklogId> {
+        self.active_worklog().map(|worklog| worklog.id)
+    }
+
+    fn task_name_for(&self, task_id: TaskId) -> Option<&str> {
+        Some(self.application.task(task_id)?.name().as_str())
     }
 
     fn tasks_in(&self, view: TaskView) -> &[Task] {
@@ -311,6 +435,10 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn move_up(&mut self) {
+        if self.screen == Screen::WorklogHistory {
+            self.move_history_up();
+            return;
+        }
         let tasks = self.tasks_in(self.view);
         let index = match self.selected() {
             None => tasks.len().checked_sub(1),
@@ -322,6 +450,10 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn move_down(&mut self) {
+        if self.screen == Screen::WorklogHistory {
+            self.move_history_down();
+            return;
+        }
         let tasks = self.tasks_in(self.view);
         if tasks.is_empty() {
             self.set_selection_id(None);
@@ -335,13 +467,45 @@ impl<S: TrackerApplicationService> App<S> {
         self.set_selection_id(Some(tasks[index].id));
     }
 
+    /// Moves the history selection up one row, without wrapping.
+    fn move_history_up(&mut self) {
+        let Some(history) = &mut self.history else {
+            return;
+        };
+        let index = match history.selected_index() {
+            None => history.worklogs.len().checked_sub(1),
+            Some(0) => Some(0),
+            Some(index) => Some(index - 1),
+        };
+        history.selected = index
+            .and_then(|index| history.worklogs.get(index))
+            .map(|worklog| worklog.id);
+    }
+
+    /// Moves the history selection down one row, without wrapping.
+    fn move_history_down(&mut self) {
+        let Some(history) = &mut self.history else {
+            return;
+        };
+        if history.worklogs.is_empty() {
+            history.selected = None;
+            return;
+        }
+        let last = history.worklogs.len() - 1;
+        let index = match history.selected_index() {
+            None => 0,
+            Some(index) => index.saturating_add(1).min(last),
+        };
+        history.selected = Some(history.worklogs[index].id);
+    }
+
     /// Switches to the requested task list.
     ///
     /// Only normal mode switches views, and switching to the shown view does
     /// nothing. A view visited with no remembered selection starts on its
     /// first row.
     fn show_tasks(&mut self, target: TaskView) {
-        if self.mode != Mode::Normal || self.view == target {
+        if self.mode != Mode::Normal || self.screen != Screen::TaskList || self.view == target {
             return;
         }
         self.view = target;
@@ -354,7 +518,7 @@ impl<S: TrackerApplicationService> App<S> {
 
     /// Cycles the one ordering shared by both task views.
     fn cycle_ordering(&mut self) {
-        if self.mode != Mode::Normal {
+        if self.mode != Mode::Normal || self.screen != Screen::TaskList {
             return;
         }
         self.ordering = next_ordering(self.ordering);
@@ -368,7 +532,10 @@ impl<S: TrackerApplicationService> App<S> {
     /// Tracking is an active-view, normal-mode action; the guard keeps a
     /// stray command from acting in the archived view or a modal.
     fn toggle_tracking(&mut self) {
-        if self.mode != Mode::Normal || self.view != TaskView::Active {
+        if self.mode != Mode::Normal
+            || self.screen != Screen::TaskList
+            || self.view != TaskView::Active
+        {
             return;
         }
         let Some(task) = self.selected_task().cloned() else {
@@ -424,14 +591,25 @@ impl<S: TrackerApplicationService> App<S> {
     /// Copies backend-neutral query state after an application operation.
     fn sync_from_application(&mut self, fresh_active: bool) {
         self.sync_tasks_from_application();
-        self.tracking = self.application.current_tracking().clone();
-        self.clock = match &self.tracking {
-            TrackingState::Idle => None,
-            TrackingState::Running { .. } if fresh_active => {
-                Some(ElapsedClock::anchored(Duration::ZERO))
-            }
-            TrackingState::Running { worklog } => Some(ElapsedClock::since(worklog.start)),
-        };
+        self.sync_tracking_from_application(fresh_active);
+    }
+
+    /// Copies current tracking while preserving a matching monotonic clock.
+    fn sync_tracking_from_application(&mut self, fresh_active: bool) {
+        let tracking = self.application.current_tracking().clone();
+        let unchanged = tracking == self.tracking;
+        if fresh_active {
+            self.clock = match &tracking {
+                TrackingState::Idle => None,
+                TrackingState::Running { .. } => Some(ElapsedClock::anchored(Duration::ZERO)),
+            };
+        } else if !unchanged {
+            self.clock = match &tracking {
+                TrackingState::Idle => None,
+                TrackingState::Running { worklog } => Some(ElapsedClock::since(worklog.start)),
+            };
+        }
+        self.tracking = tracking;
     }
 
     fn sync_tasks_from_application(&mut self) {
@@ -497,7 +675,9 @@ impl<S: TrackerApplicationService> App<S> {
     /// map already refuses to emit them elsewhere; this guard is the second
     /// line of defense in command handling.
     fn accepts_active_actions(&self) -> bool {
-        self.mode == Mode::Normal && self.view == TaskView::Active
+        self.mode == Mode::Normal
+            && self.screen == Screen::TaskList
+            && self.view == TaskView::Active
     }
 
     /// Restores the selected archived task to the active list.
@@ -509,7 +689,10 @@ impl<S: TrackerApplicationService> App<S> {
     /// timer header and a failed write leaves no stale tracking state
     /// behind the status line.
     fn unarchive_selected(&mut self) {
-        if self.mode != Mode::Normal || self.view != TaskView::Archived {
+        if self.mode != Mode::Normal
+            || self.screen != Screen::TaskList
+            || self.view != TaskView::Archived
+        {
             return;
         }
         let Some(task) = self.selected_task().cloned() else {
@@ -529,6 +712,128 @@ impl<S: TrackerApplicationService> App<S> {
                 self.status = Status::Error(application_error_text(&error));
             }
         }
+    }
+
+    /// Opens the read-only worklog history of the selected task.
+    ///
+    /// Enter works in both task views of normal mode. An empty list selects
+    /// no task and the command does nothing. A failed initial load keeps the
+    /// task list on screen and reports an application error; no history
+    /// state is built.
+    fn open_history(&mut self) {
+        if self.mode != Mode::Normal || self.screen != Screen::TaskList {
+            return;
+        }
+        let Some(task) = self.selected_task().cloned() else {
+            return;
+        };
+        let result = self.application.worklogs_for_task(task.id, None);
+        self.sync_from_application(false);
+        match result {
+            Ok(page) => {
+                let selected = page.worklogs.first().map(|worklog| worklog.id);
+                self.history = Some(History {
+                    task_id: task.id,
+                    worklogs: page.worklogs,
+                    next_cursor: page.next_cursor,
+                    selected,
+                });
+                self.screen = Screen::WorklogHistory;
+                self.status = Status::Info(format!("History of \"{}\"", task.name()));
+            }
+            Err(error) => {
+                self.status = Status::Error(application_error_text(&error));
+            }
+        }
+    }
+
+    /// Appends the next bounded older page to the open history.
+    ///
+    /// The command does nothing once the loaded range reaches the end of
+    /// the history. A failed load keeps every displayed worklog and the
+    /// cursor state untouched and reports the application error, so `o`
+    /// can simply be pressed again.
+    fn load_older_worklogs(&mut self) {
+        if self.screen != Screen::WorklogHistory {
+            return;
+        }
+        let Some(task_id) = self.history.as_ref().map(|history| history.task_id) else {
+            return;
+        };
+        let Some(cursor) = self
+            .history
+            .as_ref()
+            .and_then(|history| history.next_cursor)
+        else {
+            self.status = Status::Info("No older worklogs".to_owned());
+            return;
+        };
+        let result = self.application.worklogs_for_task(task_id, Some(&cursor));
+        self.sync_from_application(false);
+        match result {
+            Ok(page) => {
+                let loaded = page.worklogs.len();
+                let next_cursor = page.next_cursor;
+                if let Some(history) = &mut self.history {
+                    history.worklogs.extend(page.worklogs);
+                    history.next_cursor = next_cursor;
+                }
+                self.status = if loaded == 0 {
+                    Status::Info("No older worklogs".to_owned())
+                } else {
+                    Status::Info(format!("Loaded {loaded} older worklogs"))
+                };
+            }
+            Err(error) => self.status = Status::Error(application_error_text(&error)),
+        }
+    }
+
+    /// Reloads the open history from its newest page.
+    ///
+    /// The reload discards the loaded older pages and the cursor. The
+    /// selection follows the same worklog id when that worklog is still on
+    /// the newest page, and otherwise starts on the newest row. A failed
+    /// reload keeps the displayed worklogs and the cursor state untouched
+    /// and reports the application error.
+    fn refresh_worklogs(&mut self) {
+        if self.screen != Screen::WorklogHistory {
+            return;
+        }
+        let Some(task_id) = self.history.as_ref().map(|history| history.task_id) else {
+            return;
+        };
+        let keep = self.history.as_ref().and_then(|history| history.selected);
+        let result = self.application.worklogs_for_task(task_id, None);
+        self.sync_from_application(false);
+        match result {
+            Ok(page) => {
+                let worklogs = page.worklogs;
+                let selected = keep
+                    .filter(|id| worklogs.iter().any(|worklog| worklog.id == *id))
+                    .or_else(|| worklogs.first().map(|worklog| worklog.id));
+                self.history = Some(History {
+                    task_id,
+                    worklogs,
+                    next_cursor: page.next_cursor,
+                    selected,
+                });
+                self.status = Status::Info("Refreshed".to_owned());
+            }
+            Err(error) => self.status = Status::Error(application_error_text(&error)),
+        }
+    }
+
+    /// Leaves the history and returns to the task list.
+    ///
+    /// The task-list selection was never touched, so Escape lands on the
+    /// same selected task, and the history state is discarded: opening a
+    /// history always loads its newest page.
+    fn back_to_task_list(&mut self) {
+        if self.screen != Screen::WorklogHistory {
+            return;
+        }
+        self.screen = Screen::TaskList;
+        self.history = None;
     }
 
     fn confirm(&mut self) {
@@ -607,6 +912,16 @@ impl<S: TrackerApplicationService> App<S> {
     pub(crate) fn freeze_elapsed_for_tests(&mut self, base: Duration) {
         self.clock = Some(ElapsedClock::anchored(base));
     }
+
+    /// Freezes one fixed display offset for deterministic rendering.
+    ///
+    /// Production converts every instant through chrono::Local; tests
+    /// replace that with one fixed offset, so rendered times never depend
+    /// on the host timezone or a daylight-saving rule.
+    #[cfg(test)]
+    pub(crate) fn freeze_offset_for_tests(&mut self, offset: FixedOffset) {
+        self.frozen_offset = Some(offset);
+    }
 }
 
 /// Builds both views from one ordered application read.
@@ -624,9 +939,10 @@ fn task_lists<S: TrackerApplicationService>(
 #[cfg(test)]
 mod tests {
     use chrono::TimeDelta;
+    use std::cell::Cell;
     use tracker_application::{
         RepositoryError, TaskListItem, TaskOperations, TaskOutcome, TaskQueries,
-        TrackerApplication, TrackingOperations, WorklogQueries,
+        TrackerApplication, TrackingOperations, WorklogCursor, WorklogPage, WorklogQueries,
     };
     use tracker_domain::{ActiveWorklog, Task, TaskId, TaskName, Worklog, WorklogId};
     use tracker_storage::SqliteRepository;
@@ -669,6 +985,8 @@ mod tests {
         set_returns_already_active: bool,
         set_timestamp: Option<DateTime<Utc>>,
         latest_work_starts: Vec<(TaskId, DateTime<Utc>)>,
+        worklog_pages: Vec<Result<WorklogPage, ApplicationError>>,
+        worklog_reads: Cell<usize>,
     }
 
     impl TestService {
@@ -685,6 +1003,8 @@ mod tests {
                 set_returns_already_active: false,
                 set_timestamp: None,
                 latest_work_starts: Vec::new(),
+                worklog_pages: Vec::new(),
+                worklog_reads: Cell::new(0),
             }
         }
 
@@ -859,8 +1179,37 @@ mod tests {
     }
 
     impl WorklogQueries for TestService {
-        fn worklogs_for_task(&self, _task_id: TaskId) -> Result<Vec<Worklog>, ApplicationError> {
-            Ok(Vec::new())
+        fn worklogs_for_task(
+            &mut self,
+            task_id: TaskId,
+            _after: Option<&WorklogCursor>,
+        ) -> Result<WorklogPage, ApplicationError> {
+            // Each read consumes the next queued page, so one service can
+            // answer an initial load, several older pages, and failures.
+            let read = self.worklog_reads.get();
+            self.worklog_reads.set(read + 1);
+            let result = self.worklog_pages.get(read).cloned().unwrap_or_else(|| {
+                Ok(WorklogPage {
+                    worklogs: Vec::new(),
+                    next_cursor: None,
+                })
+            });
+            if let Ok(page) = &result {
+                if let Some(worklog) = page.worklogs.iter().find(|worklog| worklog.end.is_none()) {
+                    self.tracking = TrackingState::Running {
+                        worklog: ActiveWorklog::begin(worklog.id, worklog.task_id, worklog.start),
+                    };
+                } else if let TrackingState::Running { worklog } = &self.tracking
+                    && worklog.task_id == task_id
+                    && page
+                        .worklogs
+                        .iter()
+                        .any(|stored| stored.id == worklog.id && stored.end.is_some())
+                {
+                    self.tracking = TrackingState::Idle;
+                }
+            }
+            result
         }
     }
 
@@ -1118,7 +1467,11 @@ mod tests {
         assert_eq!(app.active_task_id(), None);
         assert_eq!(text(app.status()), "Stopped \"alpha\"");
         app.handle(Command::ToggleTracking);
-        let worklogs = app.application.worklogs_for_task(task_id).unwrap();
+        let worklogs = app
+            .application
+            .worklogs_for_task(task_id, None)
+            .unwrap()
+            .worklogs;
         assert_eq!(worklogs.len(), 2);
         assert_ne!(worklogs[0].id, worklogs[1].id);
     }
@@ -1201,14 +1554,16 @@ mod tests {
         app.handle(Command::ToggleTracking);
         let alpha_worklog = app
             .application
-            .worklogs_for_task(alpha)
+            .worklogs_for_task(alpha, None)
             .unwrap()
+            .worklogs
             .pop()
             .unwrap();
         let beta_worklog = app
             .application
-            .worklogs_for_task(beta)
+            .worklogs_for_task(beta, None)
             .unwrap()
+            .worklogs
             .pop()
             .unwrap();
         assert_eq!(alpha_worklog.end, Some(beta_worklog.start));
@@ -1231,8 +1586,9 @@ mod tests {
 
         let stored = app
             .application
-            .worklogs_for_task(task.id)
+            .worklogs_for_task(task.id, None)
             .unwrap()
+            .worklogs
             .remove(0);
         let duration = (stored.end.unwrap() - stored.start).to_std().unwrap();
         assert!(duration < Duration::from_secs(60), "got {duration:?}");
@@ -1258,8 +1614,9 @@ mod tests {
 
         let stored = app
             .application
-            .worklogs_for_task(task.id)
+            .worklogs_for_task(task.id, None)
             .unwrap()
+            .worklogs
             .remove(0);
         let duration = (stored.end.unwrap() - stored.start).to_std().unwrap();
         assert!(
@@ -1869,5 +2226,556 @@ mod tests {
         assert_eq!(app.view(), TaskView::Archived);
         assert_eq!(app.tasks().len(), 1, "only archived tasks are listed");
         assert_eq!(app.active_task_name(), Some("alpha"));
+    }
+
+    fn worklog_id(tag: u128) -> WorklogId {
+        WorklogId::from_uuid(uuid::Uuid::from_u128(tag))
+    }
+
+    /// A stopped worklog for the task, started at `start` and running one
+    /// minute.
+    fn history_worklog(tag: u128, task_id: TaskId, start: i64) -> Worklog {
+        Worklog::new(worklog_id(tag), task_id, at(start), Some(at(start + 60))).unwrap()
+    }
+
+    fn cursor(start: i64, tag: u128) -> WorklogCursor {
+        WorklogCursor {
+            start: at(start),
+            id: worklog_id(tag),
+        }
+    }
+
+    fn page(worklogs: Vec<Worklog>, next_cursor: Option<WorklogCursor>) -> WorklogPage {
+        WorklogPage {
+            worklogs,
+            next_cursor,
+        }
+    }
+
+    #[test]
+    fn enter_opens_the_selected_tasks_history_and_escape_returns_to_it() {
+        let alpha = task(1, "alpha");
+        let first = page(
+            vec![
+                history_worklog(11, alpha.id, 200),
+                history_worklog(10, alpha.id, 100),
+            ],
+            Some(cursor(100, 10)),
+        );
+        let second = page(vec![history_worklog(12, alpha.id, 300)], None);
+        let mut service = TestService::with_tasks(vec![alpha.clone(), task(2, "beta")]);
+        service.worklog_pages = vec![Ok(first.clone()), Ok(second.clone())];
+        let mut app = App::load(service);
+
+        app.handle(Command::OpenHistory);
+
+        assert_eq!(app.screen(), Screen::WorklogHistory);
+        let history = app.history().expect("the history is open");
+        assert_eq!(history.task_id, alpha.id);
+        assert_eq!(history.worklogs, first.worklogs);
+        assert_eq!(history.next_cursor, first.next_cursor);
+        assert_eq!(
+            app.history_selected_index(),
+            Some(0),
+            "the newest row leads"
+        );
+        assert_eq!(
+            app.status(),
+            &Status::Info("History of \"alpha\"".to_owned())
+        );
+
+        // The task-list selection was never touched, so Escape returns to
+        // the same task, and reopening loads the newest page afresh.
+        app.handle(Command::MoveDown);
+        app.handle(Command::BackToTaskList);
+        assert_eq!(app.screen(), Screen::TaskList);
+        assert_eq!(app.history(), None);
+        assert_eq!(app.selected(), Some(0));
+        assert_eq!(app.tasks()[0].id, alpha.id);
+
+        app.handle(Command::OpenHistory);
+        assert_eq!(app.history().unwrap().worklogs, second.worklogs);
+    }
+
+    #[test]
+    fn history_times_render_through_the_local_zone_per_instant() {
+        let mut app = App::load(TestService::with_tasks(vec![task(1, "alpha")]));
+        // Without a frozen offset every instant converts through
+        // chrono::Local on its own, matching the pure formatter instead of
+        // any single offset captured when the app loaded.
+        for seconds in [0, 1_700_000_000] {
+            assert_eq!(
+                app.local_time(at(seconds)),
+                crate::ui::local_time(at(seconds), &Local)
+            );
+        }
+        // The test override replaces the local zone with one fixed offset.
+        app.freeze_offset_for_tests(FixedOffset::east_opt(2 * 3600).unwrap());
+        assert_eq!(app.local_time(at(0)), "1970-01-01 02:00:00 +02:00");
+    }
+
+    #[test]
+    fn enter_opens_the_history_from_the_archived_view() {
+        let gone = archived_task(3, "gone");
+        let mut service = TestService::with_tasks(vec![task(1, "alpha"), gone.clone()]);
+        service.worklog_pages = vec![Ok(page(vec![history_worklog(5, gone.id, 100)], None))];
+        let mut app = App::load(service);
+        app.handle(Command::ShowArchivedTasks);
+
+        app.handle(Command::OpenHistory);
+
+        assert_eq!(app.screen(), Screen::WorklogHistory);
+        assert_eq!(app.history().unwrap().task_id, gone.id);
+
+        app.handle(Command::BackToTaskList);
+        assert_eq!(app.view(), TaskView::Archived);
+        assert_eq!(app.selected(), Some(0), "the archived selection returned");
+    }
+
+    #[test]
+    fn enter_on_an_empty_task_list_is_a_no_op() {
+        let mut app = App::load(TestService::with_tasks(vec![]));
+
+        app.handle(Command::OpenHistory);
+
+        assert_eq!(app.screen(), Screen::TaskList);
+        assert_eq!(app.history(), None);
+        assert_eq!(app.status(), &Status::Info("Ready".to_owned()));
+        assert_eq!(
+            app.application.worklog_reads.get(),
+            0,
+            "no task was selected, so nothing was read"
+        );
+    }
+
+    #[test]
+    fn a_failed_history_load_keeps_the_task_list_and_reports_the_error() {
+        let mut service = TestService::with_tasks(vec![task(1, "alpha")]);
+        service.worklog_pages = vec![Err(TestService::failure())];
+        let mut app = App::load(service);
+
+        app.handle(Command::OpenHistory);
+
+        assert_eq!(app.screen(), Screen::TaskList);
+        assert_eq!(app.history(), None);
+        assert_eq!(
+            app.status(),
+            &Status::Error("Storage error: write failed".to_owned())
+        );
+    }
+
+    #[test]
+    fn history_movement_clamps_without_wrapping() {
+        let alpha = task(1, "alpha");
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(page(
+            vec![
+                history_worklog(13, alpha.id, 300),
+                history_worklog(12, alpha.id, 200),
+                history_worklog(11, alpha.id, 100),
+            ],
+            None,
+        ))];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        app.handle(Command::MoveUp);
+        assert_eq!(app.history_selected_index(), Some(0), "no wrap to the end");
+        for _ in 0..5 {
+            app.handle(Command::MoveDown);
+        }
+        assert_eq!(
+            app.history_selected_index(),
+            Some(2),
+            "no wrap to the start"
+        );
+        app.handle(Command::MoveUp);
+        assert_eq!(app.history_selected_index(), Some(1));
+    }
+
+    #[test]
+    fn an_empty_history_has_no_selection_and_movement_does_nothing() {
+        let mut service = TestService::with_tasks(vec![task(1, "alpha")]);
+        service.worklog_pages = vec![Ok(page(Vec::new(), None))];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        assert_eq!(app.history_selected_index(), None);
+        app.handle(Command::MoveDown);
+        app.handle(Command::MoveUp);
+        assert_eq!(app.history_selected_index(), None);
+    }
+
+    #[test]
+    fn loading_older_appends_the_page_and_keeps_the_selection() {
+        let alpha = task(1, "alpha");
+        let first = page(
+            vec![
+                history_worklog(20, alpha.id, 200),
+                history_worklog(19, alpha.id, 100),
+            ],
+            Some(cursor(100, 19)),
+        );
+        let older = page(
+            vec![
+                history_worklog(18, alpha.id, 50),
+                history_worklog(17, alpha.id, 40),
+            ],
+            None,
+        );
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(first), Ok(older)];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::MoveDown);
+        assert_eq!(app.history_selected_index(), Some(1));
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        let history = app.history().expect("the history is still open");
+        assert_eq!(history.worklogs.len(), 4, "the older page was appended");
+        assert_eq!(
+            history
+                .worklogs
+                .iter()
+                .map(|worklog| worklog.id)
+                .collect::<Vec<_>>(),
+            vec![
+                worklog_id(20),
+                worklog_id(19),
+                worklog_id(18),
+                worklog_id(17)
+            ],
+            "older worklogs follow the loaded ones"
+        );
+        assert_eq!(history.next_cursor, None);
+        assert_eq!(app.history_selected_index(), Some(1), "the row stayed put");
+        assert_eq!(
+            app.status(),
+            &Status::Info("Loaded 2 older worklogs".to_owned())
+        );
+    }
+
+    #[test]
+    fn loading_older_at_the_end_of_the_history_changes_nothing() {
+        let alpha = task(1, "alpha");
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(page(vec![history_worklog(20, alpha.id, 200)], None))];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        assert_eq!(app.history().unwrap().worklogs.len(), 1);
+        assert_eq!(app.history_selected_index(), Some(0));
+        assert_eq!(app.status(), &Status::Info("No older worklogs".to_owned()));
+        assert_eq!(
+            app.application.worklog_reads.get(),
+            1,
+            "the end of the history is not read again"
+        );
+    }
+
+    #[test]
+    fn a_failed_load_older_preserves_the_displayed_history() {
+        let alpha = task(1, "alpha");
+        let first = page(
+            vec![
+                history_worklog(20, alpha.id, 200),
+                history_worklog(19, alpha.id, 100),
+            ],
+            Some(cursor(100, 19)),
+        );
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(first), Err(TestService::failure())];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::MoveDown);
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        let history = app.history().expect("the history is still open");
+        assert_eq!(history.worklogs.len(), 2, "no row was lost");
+        assert_eq!(
+            history.next_cursor,
+            Some(cursor(100, 19)),
+            "the cursor state survived"
+        );
+        assert_eq!(app.history_selected_index(), Some(1), "the row stayed put");
+        assert_eq!(
+            app.status(),
+            &Status::Error("Storage error: write failed".to_owned())
+        );
+    }
+
+    #[test]
+    fn refresh_reloads_the_newest_page_and_keeps_the_selection_by_id() {
+        let alpha = task(1, "alpha");
+        let first = page(
+            vec![
+                history_worklog(20, alpha.id, 200),
+                history_worklog(19, alpha.id, 100),
+            ],
+            Some(cursor(100, 19)),
+        );
+        let newest = page(
+            vec![
+                history_worklog(21, alpha.id, 300),
+                history_worklog(19, alpha.id, 100),
+            ],
+            None,
+        );
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(first), Ok(newest)];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::MoveDown);
+
+        app.handle(Command::RefreshWorklogs);
+
+        let history = app.history().expect("the history is still open");
+        assert_eq!(
+            history
+                .worklogs
+                .iter()
+                .map(|worklog| worklog.id)
+                .collect::<Vec<_>>(),
+            vec![worklog_id(21), worklog_id(19)],
+            "the newest page replaced the loaded one"
+        );
+        assert_eq!(history.next_cursor, None);
+        assert_eq!(
+            app.history_selected_index(),
+            Some(1),
+            "the selection followed its worklog id"
+        );
+        assert_eq!(app.status(), &Status::Info("Refreshed".to_owned()));
+    }
+
+    #[test]
+    fn refresh_falls_back_to_the_newest_row_when_the_selection_left_the_page() {
+        let alpha = task(1, "alpha");
+        let first = page(
+            vec![
+                history_worklog(20, alpha.id, 300),
+                history_worklog(19, alpha.id, 200),
+                history_worklog(18, alpha.id, 100),
+            ],
+            Some(cursor(100, 18)),
+        );
+        let older = page(vec![history_worklog(17, alpha.id, 50)], None);
+        // The reload keeps only the newest page; the selected worklog of
+        // the longer loaded range is not on it.
+        let newest = page(vec![history_worklog(20, alpha.id, 300)], None);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(first), Ok(older), Ok(newest)];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::LoadOlderWorklogs);
+        for _ in 0..3 {
+            app.handle(Command::MoveDown);
+        }
+        assert_eq!(app.history_selected_index(), Some(3));
+
+        app.handle(Command::RefreshWorklogs);
+
+        assert_eq!(app.history().unwrap().worklogs.len(), 1);
+        assert_eq!(app.history_selected_index(), Some(0));
+    }
+
+    #[test]
+    fn a_failed_refresh_preserves_the_displayed_history() {
+        let alpha = task(1, "alpha");
+        let first = page(
+            vec![history_worklog(20, alpha.id, 200)],
+            Some(cursor(200, 20)),
+        );
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(first), Err(TestService::failure())];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        app.handle(Command::RefreshWorklogs);
+
+        let history = app.history().expect("the history is still open");
+        assert_eq!(
+            history
+                .worklogs
+                .iter()
+                .map(|worklog| worklog.id)
+                .collect::<Vec<_>>(),
+            vec![worklog_id(20)],
+            "no row was lost"
+        );
+        assert_eq!(history.next_cursor, Some(cursor(200, 20)));
+        assert_eq!(app.history_selected_index(), Some(0));
+        assert_eq!(
+            app.status(),
+            &Status::Error("Storage error: write failed".to_owned())
+        );
+    }
+
+    #[test]
+    fn task_list_commands_do_not_act_on_the_history_screen() {
+        let alpha = task(1, "alpha");
+        let first = page(
+            vec![
+                history_worklog(20, alpha.id, 200),
+                history_worklog(19, alpha.id, 100),
+            ],
+            None,
+        );
+        let mut service = TestService::with_tasks(vec![alpha.clone(), task(2, "beta")]);
+        service.worklog_pages = vec![Ok(first)];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        let before = app.history().expect("the history is open").clone();
+        let tasks_before = app.tasks().to_vec();
+
+        app.handle(Command::ToggleTracking);
+        app.handle(Command::CycleOrdering);
+        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::ShowActiveTasks);
+        app.handle(Command::OpenAdd);
+        app.handle(Command::OpenRename);
+        app.handle(Command::OpenArchiveConfirm);
+        app.handle(Command::UnarchiveSelected);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::Insert('x'));
+        app.handle(Command::Backspace);
+        app.handle(Command::Confirm);
+        app.handle(Command::Cancel);
+
+        assert_eq!(app.screen(), Screen::WorklogHistory);
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(app.history().unwrap(), &before);
+        assert_eq!(app.view(), TaskView::Active);
+        assert_eq!(app.ordering(), TaskOrdering::RecentlyWorked);
+        assert_eq!(app.tasks(), tasks_before.as_slice());
+        assert_eq!(app.active_task_id(), None, "no tracking was started");
+        assert_eq!(
+            app.application.worklog_reads.get(),
+            1,
+            "the open history was not read again"
+        );
+    }
+
+    #[test]
+    fn history_commands_do_not_act_on_the_task_list() {
+        let mut app = App::load(TestService::with_tasks(vec![task(1, "alpha")]));
+
+        app.handle(Command::LoadOlderWorklogs);
+        app.handle(Command::RefreshWorklogs);
+        app.handle(Command::BackToTaskList);
+
+        assert_eq!(app.screen(), Screen::TaskList);
+        assert_eq!(app.history(), None);
+        assert_eq!(app.status(), &Status::Info("Ready".to_owned()));
+        assert_eq!(
+            app.application.worklog_reads.get(),
+            0,
+            "no history is open, so nothing was read"
+        );
+    }
+
+    #[test]
+    fn opening_a_history_requires_normal_mode() {
+        let mut app = App::load(TestService::with_tasks(vec![task(1, "alpha")]));
+        app.handle(Command::OpenAdd);
+        app.handle(Command::OpenHistory);
+        assert!(matches!(app.mode(), Mode::Input { .. }));
+        assert_eq!(app.screen(), Screen::TaskList);
+        assert_eq!(app.application.worklog_reads.get(), 0);
+
+        app.handle(Command::Cancel);
+        app.mode = Mode::ConfirmArchive {
+            task_id: TaskId::from_uuid(uuid::Uuid::from_u128(1)),
+            name: "alpha".to_owned(),
+        };
+        app.handle(Command::OpenHistory);
+        assert!(matches!(app.mode(), Mode::ConfirmArchive { .. }));
+        assert_eq!(app.screen(), Screen::TaskList);
+        assert_eq!(app.application.worklog_reads.get(), 0);
+    }
+
+    #[test]
+    fn quitting_from_the_history_leaves_tracking_active() {
+        let task = task(1, "alpha");
+        let mut service = TestService::with_tasks(vec![task.clone()]);
+        service.tracking = TrackingState::Running {
+            worklog: ActiveWorklog::begin(worklog_id(10), task.id, at(100)),
+        };
+        service.worklog_pages = vec![Ok(page(
+            vec![Worklog::begin(worklog_id(10), task.id, at(100))],
+            None,
+        ))];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        app.handle(Command::Quit);
+
+        assert!(!app.is_running());
+        assert_eq!(app.active_task_id(), Some(task.id));
+    }
+
+    #[test]
+    fn opening_history_adopts_an_active_worklog_that_another_client_started() {
+        let task = task(1, "alpha");
+        let active = Worklog::begin(worklog_id(10), task.id, at(100));
+        let mut service = TestService::with_tasks(vec![task.clone()]);
+        service.worklog_pages = vec![Ok(page(vec![active.clone()], None))];
+        let mut app = App::load(service);
+        assert_eq!(app.active_task_id(), None);
+
+        app.handle(Command::OpenHistory);
+
+        assert_eq!(app.active_task_id(), Some(task.id));
+        assert_eq!(app.active_worklog_id(), Some(active.id));
+        app.freeze_elapsed_for_tests(Duration::from_secs(125));
+        assert_eq!(
+            app.history_row_duration(&active).as_secs(),
+            app.elapsed()
+                .expect("the header adopted a monotonic clock")
+                .as_secs()
+        );
+    }
+
+    #[test]
+    fn history_row_durations_use_the_monotonic_clock_for_the_running_worklog() {
+        let task = task(1, "alpha");
+        let active = Worklog::begin(worklog_id(10), task.id, at(100));
+        let mut service = TestService::with_tasks(vec![task.clone()]);
+        service.tracking = TrackingState::Running {
+            worklog: ActiveWorklog::begin(active.id, task.id, at(100)),
+        };
+        service.worklog_pages = vec![Ok(page(
+            vec![active, history_worklog(11, task.id, 200)],
+            None,
+        ))];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.freeze_elapsed_for_tests(Duration::from_secs(125));
+
+        let rows = app.history().expect("the history is open").worklogs.clone();
+        let running = app.history_row_duration(&rows[0]);
+        assert!(
+            running >= Duration::from_secs(125) && running < Duration::from_secs(126),
+            "the running row shares the header's clock, got {running:?}"
+        );
+        assert!(
+            app.elapsed().unwrap() >= Duration::from_secs(125),
+            "the header reads the same clock"
+        );
+        assert_eq!(
+            app.history_row_duration(&rows[1]),
+            Duration::from_secs(60),
+            "a stopped row derives its duration from its stored times"
+        );
+        let unmatched = Worklog::begin(worklog_id(12), task.id, at(300));
+        assert_eq!(
+            app.history_row_duration(&unmatched),
+            Duration::ZERO,
+            "an inconsistent running row never falls back to wall time"
+        );
     }
 }

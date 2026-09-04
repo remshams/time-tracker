@@ -14,6 +14,14 @@ pub enum Command {
     ShowActiveTasks,
     /// Show the list of archived tasks.
     ShowArchivedTasks,
+    /// Open the read-only worklog history of the selected task.
+    OpenHistory,
+    /// Append the next bounded older page to the open worklog history.
+    LoadOlderWorklogs,
+    /// Reload the open worklog history from its newest page.
+    RefreshWorklogs,
+    /// Leave the worklog history and return to the task list.
+    BackToTaskList,
     /// Cycle the shared task-list ordering.
     CycleOrdering,
     /// Restore the selected archived task to the active list.

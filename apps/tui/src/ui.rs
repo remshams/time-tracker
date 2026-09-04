@@ -3,12 +3,14 @@
 //! Everything here only reads state. Layout, styles, and widgets draw the
 //! current [`App`]; mutating state happens in [`crate::app`].
 
+use std::fmt;
 use std::time::Duration;
 
+use chrono::{DateTime, TimeZone, Utc};
 use tracker_application::TrackerApplicationService;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{App, InputPurpose, Mode, Status, TaskView};
+use crate::app::{App, InputPurpose, Mode, Screen, Status, TaskView};
 use crate::{keymap, styles};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -84,7 +86,10 @@ pub fn render<S: TrackerApplicationService>(frame: &mut Frame, app: &App<S>) {
     .areas(frame.area());
 
     render_header(frame, header, app);
-    render_tasks(frame, body, app);
+    match app.screen() {
+        Screen::TaskList => render_tasks(frame, body, app),
+        Screen::WorklogHistory => render_history(frame, body, app),
+    }
     render_status(frame, status_area, app);
     render_footer(frame, footer, app);
     render_modal(frame, body, app);
@@ -145,6 +150,69 @@ fn render_tasks<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app
     frame.render_stateful_widget(list, area, &mut state);
 }
 
+/// Renders the read-only worklog history of one task.
+///
+/// Rows appear newest first. Each row takes two lines, so the local start,
+/// the local end or Running, the explicit UTC offsets, and the duration
+/// all stay visible at the 60-column minimum: the first line carries both
+/// timestamps with their offsets, the second the duration. Each timestamp
+/// converts to local time on its own, so rows on either side of a
+/// daylight-saving transition show their own valid offsets.
+fn render_history<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app: &App<S>) {
+    let Some(history) = app.history() else {
+        return;
+    };
+    let name = app.history_task_name().unwrap_or("unknown task");
+    let block = Block::bordered()
+        .title(format!("Worklog history · {name}"))
+        .border_style(styles::focused_border());
+    if history.worklogs.is_empty() {
+        frame.render_widget(Paragraph::new("No worklogs yet.").block(block), area);
+        return;
+    }
+    let items: Vec<ListItem> = history
+        .worklogs
+        .iter()
+        .map(|worklog| {
+            let end = match worklog.end {
+                Some(end) => Span::raw(app.local_time(end)),
+                None => Span::styled("Running", styles::active_marker()),
+            };
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::raw(app.local_time(worklog.start)),
+                    Span::raw(" → "),
+                    end,
+                ]),
+                Line::from(vec![
+                    Span::raw("  "),
+                    Span::raw(format_elapsed(app.history_row_duration(worklog))),
+                ]),
+            ])
+        })
+        .collect();
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(styles::selected());
+    let mut state = ListState::default().with_selected(app.history_selected_index());
+    frame.render_stateful_widget(list, area, &mut state);
+}
+
+/// Formats an instant in `tz` with the UTC offset valid at that instant,
+/// e.g. `2026-07-12 14:30:00 +02:00`.
+///
+/// The conversion happens per instant, so times on either side of a
+/// daylight-saving transition render with their own correct offsets.
+pub(crate) fn local_time<Tz>(at: DateTime<Utc>, tz: &Tz) -> String
+where
+    Tz: TimeZone,
+    Tz::Offset: fmt::Display,
+{
+    at.with_timezone(tz)
+        .format("%Y-%m-%d %H:%M:%S %:z")
+        .to_string()
+}
+
 /// Renders the status or error line.
 fn render_status<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app: &App<S>) {
     let paragraph = match app.status() {
@@ -160,7 +228,12 @@ fn render_status<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, ap
 /// Renders the context-sensitive key help for the current mode.
 fn render_footer<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app: &App<S>) {
     frame.render_widget(
-        Paragraph::new(keymap::footer_hints(app.mode(), app.view(), area.width)),
+        Paragraph::new(keymap::footer_hints(
+            app.mode(),
+            app.view(),
+            app.screen(),
+            area.width,
+        )),
         area,
     );
 }
@@ -246,11 +319,11 @@ fn format_elapsed(total: Duration) -> String {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{DateTime, Utc};
+    use chrono::{DateTime, FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::{Terminal, backend::TestBackend};
     use tracker_application::TrackerApplication;
-    use tracker_domain::{Task, TaskId, TaskName};
+    use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId};
     use tracker_storage::SqliteRepository;
 
     use super::*;
@@ -270,6 +343,35 @@ mod tests {
             repository.create_task(task).unwrap();
         }
         App::load(TrackerApplication::load(repository).unwrap())
+    }
+
+    /// An app whose "alpha" history is open, holding one stopped worklog
+    /// per `(start, end)` pair, newest first on screen.
+    ///
+    /// The display offset is frozen at UTC+02:00, so rendered local times
+    /// and offsets are deterministic on every host.
+    fn history_app(entries: &[(i64, i64)]) -> App<TrackerApplication<SqliteRepository>> {
+        let repository = SqliteRepository::open_in_memory().unwrap();
+        let task = Task::create(
+            TaskId::from_uuid(uuid::Uuid::from_u128(1)),
+            TaskName::new("alpha").unwrap(),
+            DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
+        );
+        repository.create_task(task.clone()).unwrap();
+        for (index, (start, end)) in entries.iter().enumerate() {
+            let worklog = Worklog::new(
+                WorklogId::from_uuid(uuid::Uuid::from_u128(index as u128 + 1)),
+                task.id,
+                DateTime::<Utc>::from_timestamp(*start, 0).unwrap(),
+                Some(DateTime::<Utc>::from_timestamp(*end, 0).unwrap()),
+            )
+            .unwrap();
+            repository.insert_worklog(&worklog).unwrap();
+        }
+        let mut app = App::load(TrackerApplication::load(repository).unwrap());
+        app.freeze_offset_for_tests(FixedOffset::east_opt(2 * 3600).unwrap());
+        app.handle(Command::OpenHistory);
+        app
     }
 
     fn draw(app: &App<TrackerApplication<SqliteRepository>>) -> Terminal<TestBackend> {
@@ -693,5 +795,200 @@ mod tests {
         assert_eq!(format_elapsed(Duration::from_secs(3661)), "01:01:01");
         assert_eq!(format_elapsed(Duration::from_secs(86_399)), "23:59:59");
         assert_eq!(format_elapsed(Duration::from_secs(25 * 3600)), "25:00:00");
+    }
+
+    #[test]
+    fn local_times_render_with_the_explicit_utc_offset() {
+        let plus_two = FixedOffset::east_opt(2 * 3600).unwrap();
+        assert_eq!(
+            local_time(DateTime::<Utc>::from_timestamp(0, 0).unwrap(), &plus_two),
+            "1970-01-01 02:00:00 +02:00"
+        );
+        assert_eq!(
+            local_time(
+                DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
+                &FixedOffset::west_opt(5 * 3600 + 1800).unwrap()
+            ),
+            "1969-12-31 18:30:00 -05:30"
+        );
+        assert_eq!(
+            local_time(
+                DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
+                &FixedOffset::east_opt(0).unwrap()
+            ),
+            "1970-01-01 00:00:00 +00:00"
+        );
+    }
+
+    /// A zone that jumps from UTC+01:00 to UTC+02:00 at a fixed UTC
+    /// instant, standing in for a daylight-saving transition.
+    #[derive(Clone, Copy, Debug)]
+    struct SwitchingZone {
+        /// The UTC second the jump happens at; before it the offset is
+        /// +01:00, from it on +02:00.
+        switch: i64,
+    }
+
+    impl SwitchingZone {
+        fn pick(&self, utc_seconds: i64) -> FixedOffset {
+            if utc_seconds < self.switch {
+                FixedOffset::east_opt(3600).unwrap()
+            } else {
+                FixedOffset::east_opt(2 * 3600).unwrap()
+            }
+        }
+    }
+
+    impl TimeZone for SwitchingZone {
+        type Offset = FixedOffset;
+
+        fn from_offset(_offset: &FixedOffset) -> Self {
+            // The zone is a plain value, so it cannot be reconstructed from
+            // an offset; the formatter never asks.
+            unimplemented!("the formatter never recovers the zone")
+        }
+
+        fn offset_from_local_date(&self, local: &NaiveDate) -> MappedLocalTime<FixedOffset> {
+            self.offset_from_local_datetime(
+                &local
+                    .and_hms_opt(0, 0, 0)
+                    .expect("midnight exists on every date"),
+            )
+        }
+
+        fn offset_from_local_datetime(
+            &self,
+            local: &NaiveDateTime,
+        ) -> MappedLocalTime<FixedOffset> {
+            // The formatter only asks about UTC instants; reading the naive
+            // value as UTC is enough to pick a side of the jump.
+            MappedLocalTime::Single(self.pick(local.and_utc().timestamp()))
+        }
+
+        fn offset_from_utc_date(&self, utc: &NaiveDate) -> FixedOffset {
+            self.pick(
+                utc.and_hms_opt(0, 0, 0)
+                    .expect("midnight exists on every date")
+                    .and_utc()
+                    .timestamp(),
+            )
+        }
+
+        fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> FixedOffset {
+            self.pick(utc.and_utc().timestamp())
+        }
+    }
+
+    #[test]
+    fn local_times_use_the_offset_valid_at_each_instant() {
+        // The zone jumps from +01:00 to +02:00 one hour after the epoch, so
+        // the second before and the second of the jump render through
+        // different offsets, exactly like a worklog on each side of a
+        // daylight-saving transition.
+        let zone = SwitchingZone { switch: 3600 };
+        assert_eq!(
+            local_time(DateTime::<Utc>::from_timestamp(3599, 0).unwrap(), &zone),
+            "1970-01-01 01:59:59 +01:00"
+        );
+        assert_eq!(
+            local_time(DateTime::<Utc>::from_timestamp(3600, 0).unwrap(), &zone),
+            "1970-01-01 03:00:00 +02:00"
+        );
+    }
+
+    #[test]
+    fn the_history_renders_title_rows_offsets_and_durations() {
+        // 01:00:00Z to 01:00:15Z, then a whole day later, newest first.
+        let app = history_app(&[(3600, 3615), (86_400, 86_400 + 90)]);
+        let terminal = draw(&app);
+        let rows = rows(&terminal);
+
+        assert!(
+            rows[1].contains("Worklog history · alpha"),
+            "got {:?}",
+            rows[1]
+        );
+        assert!(
+            rows[2].contains("1970-01-02 02:00:00 +02:00 → 1970-01-02 02:01:30 +02:00"),
+            "the newest row leads: {:?}",
+            rows[2]
+        );
+        assert!(rows[3].contains("00:01:30"), "got {:?}", rows[3]);
+        assert!(
+            rows[4].contains("1970-01-01 03:00:00 +02:00 → 1970-01-01 03:00:15 +02:00"),
+            "got {:?}",
+            rows[4]
+        );
+        assert!(rows[5].contains("00:00:15"), "got {:?}", rows[5]);
+        assert!(rows[23].contains("o older"), "got {:?}", rows[23]);
+        assert!(rows[23].contains("r refresh"), "got {:?}", rows[23]);
+        assert!(rows[23].contains("esc back"), "got {:?}", rows[23]);
+        assert!(
+            !rows[23].contains("space track"),
+            "no task-list hint leaks in"
+        );
+        // The newest row carries the selection highlight.
+        assert!(
+            cell(&terminal, 1, 2)
+                .add_modifier
+                .contains(Modifier::REVERSED),
+            "the first history row is selected"
+        );
+        assert!(
+            !cell(&terminal, 1, 4)
+                .add_modifier
+                .contains(Modifier::REVERSED),
+            "the second row is not selected"
+        );
+    }
+
+    #[test]
+    fn history_rows_stay_complete_at_sixty_columns() {
+        let app = history_app(&[(3600, 3615)]);
+        let terminal = draw_at(&app, 60, 20);
+        let row_text = row(&terminal, 2);
+        assert!(
+            row_text.contains("1970-01-01 03:00:00 +02:00 → 1970-01-01 03:00:15 +02:00"),
+            "both timestamps and offsets stayed visible: {row_text:?}"
+        );
+        assert!(row_text.ends_with('│'), "the border survived: {row_text:?}");
+        assert!(row(&terminal, 3).contains("00:00:15"));
+        let footer = row(&terminal, 19);
+        assert!(footer.contains("o older"), "got {footer:?}");
+        assert!(footer.contains("esc back"), "got {footer:?}");
+        assert!(footer.contains("ctrl+c"), "got {footer:?}");
+    }
+
+    #[test]
+    fn the_running_row_shows_running_and_the_headers_elapsed_time() {
+        let mut app = app_with(&["alpha"]);
+        app.handle(Command::ToggleTracking);
+        app.freeze_elapsed_for_tests(Duration::from_secs(125));
+        app.handle(Command::OpenHistory);
+        let terminal = draw(&app);
+        let rows = rows(&terminal);
+
+        // The header keeps the timer while the history is open.
+        assert!(rows[0].contains("▶ alpha"), "got {:?}", rows[0]);
+        assert!(rows[0].contains("00:02:05"), "got {:?}", rows[0]);
+        assert!(rows[2].contains("Running"), "got {:?}", rows[2]);
+        assert!(
+            rows[3].contains("00:02:05"),
+            "the running row shares the header's clock: {:?}",
+            rows[3]
+        );
+    }
+
+    #[test]
+    fn an_empty_history_renders_its_own_message() {
+        let mut app = app_with(&["alpha"]);
+        app.handle(Command::OpenHistory);
+        let terminal = draw(&app);
+        assert!(
+            row(&terminal, 2).contains("No worklogs yet."),
+            "got {:?}",
+            row(&terminal, 2)
+        );
+        assert!(row(&terminal, 1).contains("Worklog history · alpha"));
     }
 }
