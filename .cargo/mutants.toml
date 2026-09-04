@@ -1,4 +1,7 @@
-minimum_test_timeout = 20.0
+# Terminal glue mutants can make every serialized real-binary scenario wait
+# for its bounded failure cleanup. Twenty seconds no longer lets the expanded
+# E2E suite finish reporting those failures, while thirty still bounds hangs.
+minimum_test_timeout = 30.0
 
 # Ratatui's Terminal::drop re-shows the cursor after our restore, so removing
 # the crossterm Show call in RealEffects::show_cursor is not observable by any
