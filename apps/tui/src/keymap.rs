@@ -851,7 +851,14 @@ mod tests {
         }
         let history_keys =
             footer_hints(&Mode::Normal, TaskView::Active, Screen::WorklogHistory, 80);
-        for hint in ["j/k/↑/↓", "o older", "r refresh", "esc back", "q", "ctrl+c"] {
+        for hint in [
+            "j/k/↑/↓ move",
+            "o older",
+            "r refresh",
+            "esc back",
+            "q",
+            "ctrl+c",
+        ] {
             assert!(
                 history_keys.contains(hint),
                 "history footer misses {hint:?}"
