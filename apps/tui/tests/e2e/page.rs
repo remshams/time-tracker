@@ -532,6 +532,11 @@ impl Footer {
         self.text().contains("a/e/d edit")
     }
 
+    /// Whether the task-list footer names the worklog-history shortcut.
+    pub(crate) fn hints_open_history(&self) -> bool {
+        self.text().contains("enter history")
+    }
+
     /// Whether the footer names the ordering control.
     pub(crate) fn hints_sorting(&self) -> bool {
         self.text().contains("s sort")

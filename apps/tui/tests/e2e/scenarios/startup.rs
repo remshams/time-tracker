@@ -33,6 +33,7 @@ fn tt_seeds_the_database_renders_the_task_list_and_quits_on_q() {
                     "Plan Friday's demo".to_owned(),
                 ]
             && page.status_bar().text() == "Ready"
+            && page.footer().hints_open_history()
             && page.footer().hints_quit()
     });
 
@@ -91,6 +92,11 @@ fn tt_seeds_the_database_renders_the_task_list_and_quits_on_q() {
     assert!(
         footer.hints_task_actions(),
         "the footer names add, rename, and archive:\n{}",
+        page.screen()
+    );
+    assert!(
+        footer.hints_open_history(),
+        "the footer names the worklog-history shortcut:\n{}",
         page.screen()
     );
     assert!(

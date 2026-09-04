@@ -46,6 +46,7 @@ fn the_shrunken_layout_holds(screen: &Screen) -> bool {
         && page.task_panel().task_names() == seeded_task_names()
         && page.task_panel().selected_index() == Some(1)
         && page.status_bar().text() == "Ready"
+        && page.footer().hints_open_history()
         && page.footer().hints_sorting()
         && page.footer().hints_quit()
 }
@@ -142,6 +143,11 @@ fn a_resized_terminal_relocates_every_component_and_stays_drivable() {
         page.status_bar().text(),
         "Ready",
         "the status line sits on the new bottom rows:\n{}",
+        page.screen()
+    );
+    assert!(
+        page.footer().hints_open_history(),
+        "the compact footer names the worklog-history shortcut:\n{}",
         page.screen()
     );
     assert_eq!(

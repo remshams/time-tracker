@@ -42,8 +42,14 @@ fn tt_archives_restores_and_persists_the_round_trip() {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_archived_tasks()
             && page.task_panel().task_names() == ["Write release notes".to_owned()]
+            && page.footer().hints_open_history()
             && page.footer().hints_unarchive()
     });
+    assert!(
+        page.footer().hints_open_history(),
+        "the archived footer names the worklog-history shortcut:\n{}",
+        page.screen()
+    );
     assert!(
         page.footer().hints_unarchive(),
         "the archived footer names the unarchive key:\n{}",
