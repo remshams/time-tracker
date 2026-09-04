@@ -2,7 +2,7 @@
 
 ## Status
 
-Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, and task browsing and ordering are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, and orders both task views by recent work, metadata updates, or creation time. The timestamp and ordering rules live in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), and [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds. Remote storage follows.
+Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, task browsing and ordering, and read-only worklog history are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, orders both task views, and loads one task's worklogs in bounded pages. The timestamp and ordering rules live in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds, and [ADR 0004](docs/adr/0004-paginated-worklog-history.md) records history pagination and display behavior. Worklog correction is planned next, before remote storage.
 
 Current validation found 311 passing Rust tests, including 24 E2E scenarios, 10 passing Python tests, 393 caught mutants, no missed or timed-out mutants, 122 unviable mutants, and 215 functions below CRAP 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
@@ -267,6 +267,29 @@ The timestamp and ordering decisions for this checkpoint are recorded in [ADR 00
 - [x] Add TUI controls for choosing the ordering. The choice is session-only, applies to both views, and cycles only in normal mode.
 - [x] Migrate existing tasks without losing their archive state or worklogs.
 - [x] Cover active and archived views, each ordering, migration behavior, and empty states in tests.
+
+### Interim checkpoint: read-only worklog history
+
+The pagination and display decisions for this checkpoint are recorded in [ADR 0004](docs/adr/0004-paginated-worklog-history.md).
+
+- [x] Open the selected task's history from the active or archived task view and return to the same selection.
+- [x] Load worklogs on demand in newest-first pages of at most 50 records.
+- [x] Use a `(start, WorklogId)` cursor so equal starts and concurrent newer inserts do not disturb page boundaries.
+- [x] Show local start and end timestamps with explicit UTC offsets, completed durations, and a live active duration from the timer's monotonic clock.
+- [x] Add explicit older-page and refresh commands while keeping history read-only.
+- [x] Preserve loaded state after read failures and keep selections by stable identifier.
+- [x] Cover completed, active, archived, empty, and paginated histories in real-binary E2E scenarios that do not depend on the production seed.
+
+### Planned checkpoint: worklog correction
+
+- [ ] Encapsulate `Worklog` and `ActiveWorklog` fields before exposing update operations.
+- [ ] Edit the start and end of a completed worklog while preserving its identity and task.
+- [ ] Edit only the start of the active worklog and re-anchor the visible monotonic timer.
+- [ ] Canonicalize edited timestamps to UTC microseconds and reject an end before its start.
+- [ ] Detect stale edits, including another client stopping or switching the active worklog.
+- [ ] Decide whether completed worklogs may overlap before defining the persistence constraint.
+- [ ] Keep worklog corrections separate from task `updated_at`; refresh recently-worked ordering after a changed start.
+- [ ] Defer manual worklog creation and deletion unless they receive separate approval.
 
 ### Milestone 3: exclusive local or remote storage
 
