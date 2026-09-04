@@ -513,6 +513,7 @@ mod tests {
         fail_reads: bool,
         replacement_on_failure: Option<Worklog>,
         fail_reads_after_write: bool,
+        fail_reads_after_task_write: bool,
         list_reads: usize,
     }
 
@@ -542,6 +543,10 @@ mod tests {
 
         fn fail_recovery_after_next_write(&self) {
             self.0.borrow_mut().fail_reads_after_write = true;
+        }
+
+        fn fail_refresh_after_next_task_write(&self) {
+            self.0.borrow_mut().fail_reads_after_task_write = true;
         }
 
         fn read_guard(&self) -> Result<(), RepositoryError> {
@@ -654,7 +659,12 @@ mod tests {
                 return Err(RepositoryError::TaskIsActive { id });
             }
             data.tasks[index].task.archive(occurred_at);
-            Ok(data.tasks[index].task.clone())
+            let task = data.tasks[index].task.clone();
+            if data.fail_reads_after_task_write {
+                data.fail_reads = true;
+                data.fail_reads_after_task_write = false;
+            }
+            Ok(task)
         }
 
         fn unarchive_task(
@@ -672,7 +682,12 @@ mod tests {
                 .position(|item| item.task.id() == id)
                 .ok_or(RepositoryError::TaskNotFound { id })?;
             data.tasks[index].task.restore(occurred_at);
-            Ok(data.tasks[index].task.clone())
+            let task = data.tasks[index].task.clone();
+            if data.fail_reads_after_task_write {
+                data.fail_reads = true;
+                data.fail_reads_after_task_write = false;
+            }
+            Ok(task)
         }
     }
 
@@ -1159,6 +1174,34 @@ mod tests {
                 .updated_at(),
             at(300)
         );
+    }
+
+    #[test]
+    fn committed_task_writes_report_a_failed_tracking_refresh() {
+        let alpha = stamped_task(1, "alpha", 100, 100);
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        repository.fail_refresh_after_next_task_write();
+
+        assert_eq!(
+            application.archive_task(alpha.id, at(200)),
+            Err(ApplicationError::TaskRecovery(RepositoryError::Backend {
+                message: "read failed".to_owned()
+            }))
+        );
+        assert!(application.task(alpha.id).unwrap().is_archived());
+        assert!(repository.0.borrow().tasks[0].task.is_archived());
+
+        repository.0.borrow_mut().fail_reads = false;
+        repository.fail_refresh_after_next_task_write();
+        assert_eq!(
+            application.unarchive_task(alpha.id, at(300)),
+            Err(ApplicationError::TaskRecovery(RepositoryError::Backend {
+                message: "read failed".to_owned()
+            }))
+        );
+        assert!(!application.task(alpha.id).unwrap().is_archived());
+        assert!(!repository.0.borrow().tasks[0].task.is_archived());
     }
 
     #[test]
