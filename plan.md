@@ -2,9 +2,9 @@
 
 ## Status
 
-Milestones 0, 1, and 2, the terminal-palette checkpoint, and the domain/application separation are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, and recovers the active timer across restarts. The archived-task part of the task-browsing checkpoint is complete: the TUI browses archived tasks in their own view and restores them with `u`. Task timestamps and ordering are approved in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md) and implementation is in progress; remote storage follows.
+Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, and task browsing and ordering are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, and orders both task views by recent work, metadata updates, or creation time. The timestamp and ordering rules live in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), and [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds. Remote storage follows.
 
-All completed checkpoints are committed and pushed to Forgejo. Current validation found 251 passing Rust tests, including 22 E2E scenarios, 10 passing Python tests, 356 caught mutants, no missed or timed-out mutants, 100 unviable mutants, and 190 functions below CRAP 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
+All completed checkpoints are committed and pushed to Forgejo. Current validation found 311 passing Rust tests, including 24 E2E scenarios, 10 passing Python tests, 393 caught mutants, no missed or timed-out mutants, 122 unviable mutants, and 215 functions below CRAP 30. Linux PTY tests pass. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
 ## Settled decisions
 
@@ -258,15 +258,15 @@ This checkpoint does not add worklog browsing, HTTP, asynchronous execution, ser
 
 ### Interim checkpoint: task browsing and ordering
 
-The timestamp and ordering decisions for this checkpoint are approved in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md). Implementation is in progress; nothing below is complete until its behavior lands with tests.
+The timestamp and ordering decisions for this checkpoint are recorded in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), with canonical precision in [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md).
 
 - [x] Add a TUI view for archived tasks while keeping them out of the default active-task list.
 - [x] Decide which actions, if any, are available from the archived-task view before implementing them.
-- [ ] Add explicit task creation and update timestamps. Creation sets both; rename, archive, and restore advance `updated_at`; idempotent metadata operations and tracking never touch it.
-- [ ] Add the recently worked, recently updated, and recently created orderings from ADR 0002, with deterministic tie-breakers.
-- [ ] Add TUI controls for choosing the ordering. The choice is session-only, applies to both views, and cycles only in normal mode.
-- [ ] Migrate existing tasks without losing their archive state or worklogs.
-- [ ] Cover active and archived views, each ordering, migration behavior, and empty states in tests.
+- [x] Add explicit task creation and update timestamps. Creation sets both; rename, archive, and restore advance `updated_at`; idempotent metadata operations and tracking never touch it.
+- [x] Add the recently worked, recently updated, and recently created orderings from ADR 0002, with deterministic tie-breakers.
+- [x] Add TUI controls for choosing the ordering. The choice is session-only, applies to both views, and cycles only in normal mode.
+- [x] Migrate existing tasks without losing their archive state or worklogs.
+- [x] Cover active and archived views, each ordering, migration behavior, and empty states in tests.
 
 ### Milestone 3: exclusive local or remote storage
 
