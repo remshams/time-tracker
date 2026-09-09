@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Partially superseded by ADR 0006; all other decisions remain accepted.
 
 ## Date
 
