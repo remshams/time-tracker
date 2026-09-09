@@ -165,6 +165,11 @@ impl TimeTrackerPage {
         ArchiveDialog::find(&self.screen)
     }
 
+    /// The correction dialog, if one is open over worklog history.
+    pub(crate) fn correction_dialog(&self) -> Option<CorrectionDialog> {
+        CorrectionDialog::find(&self.screen)
+    }
+
     /// The read-only worklog history, however the screen looks. The
     /// components answer whether the history is shown at all; a task list
     /// snapshot reports `false` there.
@@ -553,8 +558,17 @@ impl Footer {
     }
 
     /// Whether the footer names the worklog-history keys.
+    pub(crate) fn hints_correction(&self) -> bool {
+        self.text().contains("e correct") || self.text().contains("e edit")
+    }
+
+    /// Whether the footer names the worklog-history keys and correction shortcut.
     pub(crate) fn hints_history(&self) -> bool {
-        self.text().contains("o older") && self.text().contains("esc back")
+        self.text().contains("o older")
+            && self.text().contains("r refresh")
+            && self.text().contains("esc back")
+            && self.text().contains("q/ctrl+c quit")
+            && self.hints_correction()
     }
 
     /// Whether the footer names the quit keys.
@@ -799,6 +813,63 @@ impl ArchiveDialog {
             )
             .trim_end()
             .to_owned()
+    }
+}
+
+/// The timestamp correction dialog over worklog history.
+pub(crate) struct CorrectionDialog {
+    screen: Screen,
+    top: u16,
+    height: u16,
+}
+
+impl CorrectionDialog {
+    fn find(screen: &Screen) -> Option<Self> {
+        let (title_row, _) = screen.find("Correct worklog")?;
+        let top = title_row;
+        let height = if screen.row_text(top + 2).contains("End  :") {
+            4
+        } else {
+            3
+        };
+        Some(Self {
+            screen: screen.clone(),
+            top,
+            height,
+        })
+    }
+
+    pub(crate) fn start_text(&self) -> String {
+        self.field_text(self.top + 1, "Start")
+    }
+
+    pub(crate) fn end_text(&self) -> Option<String> {
+        (self.height == 4).then(|| self.field_text(self.top + 2, "End"))
+    }
+
+    pub(crate) fn focused_field(&self) -> &'static str {
+        if self.field_has_cursor(self.top + 1) {
+            "Start"
+        } else {
+            "End"
+        }
+    }
+
+    pub(crate) fn is_full_draft_visible(&self) -> bool {
+        self.end_text().is_some()
+    }
+
+    fn field_text(&self, row: u16, label: &str) -> String {
+        let line = self.screen.row_text(row);
+        line.split_once(&format!("{label:<5}: "))
+            .map(|(_, text)| text.split(['▏', '│']).next().unwrap_or(text))
+            .unwrap_or_default()
+            .trim_end()
+            .to_owned()
+    }
+
+    fn field_has_cursor(&self, row: u16) -> bool {
+        self.screen.row_text(row).contains('▏')
     }
 }
 

@@ -2,6 +2,8 @@
 
 #[path = "scenarios/archive.rs"]
 mod archive;
+#[path = "scenarios/correction.rs"]
+mod correction;
 #[path = "scenarios/history.rs"]
 mod history;
 #[path = "scenarios/ordering.rs"]

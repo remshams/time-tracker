@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId};
+use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
 use tracker_storage::SqliteRepository;
 
 /// The name of the trigger a scenario installs to make task creates fail.
@@ -116,11 +116,11 @@ impl Database {
             .insert_worklog(&worklog)
             .expect("the worklog must be created");
         StoredWorklog {
-            id: worklog.id,
-            task_id: worklog.task_id,
+            id: worklog.id(),
+            task_id: worklog.task_id(),
             task_name: task.name,
-            start: worklog.start,
-            end: worklog.end,
+            start: worklog.start(),
+            end: worklog.end(),
         }
     }
 
@@ -174,6 +174,21 @@ impl Database {
             .expect("the failure trigger must be removable");
     }
 
+    /// Corrects one stored worklog start through the real SQLite adapter.
+    ///
+    /// This is used only to model a second client's write while another
+    /// `tt` process is open.
+    pub(crate) fn correct_worklog_start(&self, worklog: &StoredWorklog, start: DateTime<Utc>) {
+        let end = worklog.end.map(|end| start + (end - worklog.start));
+        self.repository
+            .compare_and_set_worklog_times(
+                worklog.id,
+                WorklogTimes::new(worklog.start, worklog.end),
+                WorklogTimes::new(start, end),
+            )
+            .expect("the worklog correction must be stored");
+    }
+
     /// Every worklog of the named task, oldest first.
     ///
     /// Panics when the task is not stored; scenarios call this for tasks
@@ -211,15 +226,15 @@ impl Database {
             .map(|worklog| {
                 let task = self
                     .repository
-                    .find_task(worklog.task_id)
+                    .find_task(worklog.task_id())
                     .expect("the task lookup must work")
                     .unwrap_or_else(|| panic!("the active worklog's task must be stored"));
                 StoredWorklog {
-                    id: worklog.id,
-                    task_id: worklog.task_id,
+                    id: worklog.id(),
+                    task_id: worklog.task_id(),
                     task_name: task.name().to_string(),
-                    start: worklog.start,
-                    end: worklog.end,
+                    start: worklog.start(),
+                    end: worklog.end(),
                 }
             })
     }
@@ -236,11 +251,11 @@ impl Database {
             .expect("the worklogs must list")
             .into_iter()
             .map(|worklog| StoredWorklog {
-                id: worklog.id,
-                task_id: worklog.task_id,
+                id: worklog.id(),
+                task_id: worklog.task_id(),
                 task_name: task_name.to_owned(),
-                start: worklog.start,
-                end: worklog.end,
+                start: worklog.start(),
+                end: worklog.end(),
             })
             .collect()
     }
