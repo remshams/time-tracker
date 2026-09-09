@@ -26,12 +26,16 @@ pub fn map(mode: &Mode, view: TaskView, screen: Screen, key: KeyEvent) -> Option
     if key.modifiers.contains(QUIT_MODIFIER) && key.code == QUIT_KEY {
         return Some(Command::Quit);
     }
-    match screen {
-        Screen::WorklogHistory => map_history(key),
-        Screen::TaskList => match mode {
-            Mode::Normal => map_normal(view, key),
-            Mode::Input { .. } => map_input(key),
-            Mode::ConfirmArchive { .. } => map_confirm(key),
+    match mode {
+        Mode::Correction(_) => map_correction(key),
+        _ => match screen {
+            Screen::WorklogHistory => map_history(key),
+            Screen::TaskList => match mode {
+                Mode::Normal => map_normal(view, key),
+                Mode::Input { .. } => map_input(key),
+                Mode::ConfirmArchive { .. } => map_confirm(key),
+                Mode::Correction(_) => unreachable!("correction was handled above"),
+            },
         },
     }
 }
@@ -65,7 +69,7 @@ fn map_normal(view: TaskView, key: KeyEvent) -> Option<Command> {
     }
 }
 
-/// Keys for the read-only worklog history.
+/// Keys for worklog history outside correction mode.
 ///
 /// Every action needs an unmodified key. The history answers to no
 /// task-list command; Escape returns to the task list and quit works as
@@ -77,10 +81,45 @@ fn map_history(key: KeyEvent) -> Option<Command> {
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => Some(Command::MoveDown),
         KeyCode::Char('k') | KeyCode::Up => Some(Command::MoveUp),
+        KeyCode::Char('e') => Some(Command::OpenCorrection),
         KeyCode::Char('o') => Some(Command::LoadOlderWorklogs),
         KeyCode::Char('r') => Some(Command::RefreshWorklogs),
         KeyCode::Esc => Some(Command::BackToTaskList),
         KeyCode::Char('q') => Some(Command::Quit),
+        _ => None,
+    }
+}
+
+/// Keys for timestamp correction.
+fn map_correction(key: KeyEvent) -> Option<Command> {
+    match (key.code, key.modifiers) {
+        (KeyCode::Enter, KeyModifiers::NONE) => Some(Command::Confirm),
+        (KeyCode::Esc, KeyModifiers::NONE) => Some(Command::Cancel),
+        (KeyCode::Tab, KeyModifiers::NONE)
+        | (KeyCode::BackTab, KeyModifiers::SHIFT)
+        | (KeyCode::BackTab, KeyModifiers::NONE) => Some(Command::SwitchCorrectionField),
+        (KeyCode::Left, KeyModifiers::NONE) => Some(Command::MoveCursorLeft),
+        (KeyCode::Right, KeyModifiers::NONE) => Some(Command::MoveCursorRight),
+        (KeyCode::Backspace, KeyModifiers::NONE) => Some(Command::Backspace),
+        (KeyCode::Delete, KeyModifiers::NONE) => Some(Command::Delete),
+        (KeyCode::Char('j'), KeyModifiers::NONE) => Some(Command::AdjustForwardFiveMinutes),
+        (KeyCode::Char('k'), KeyModifiers::NONE) => Some(Command::AdjustBackwardFiveMinutes),
+        (KeyCode::Char('J'), modifiers)
+            if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT =>
+        {
+            Some(Command::AdjustForwardOneHour)
+        }
+        (KeyCode::Char('K'), modifiers)
+            if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT =>
+        {
+            Some(Command::AdjustBackwardOneHour)
+        }
+        (KeyCode::Char(character), modifiers)
+            if modifiers - KeyModifiers::SHIFT == KeyModifiers::NONE
+                && super::app::is_timestamp_character(character) =>
+        {
+            Some(Command::Insert(character))
+        }
         _ => None,
     }
 }
@@ -127,12 +166,32 @@ fn map_confirm(key: KeyEvent) -> Option<Command> {
 ///
 /// Every accepted key appears in both the standard and compact variants.
 /// The compact text fits the narrowest geometry covered by the TUI.
-pub fn footer_hints(mode: &Mode, view: TaskView, screen: Screen, width: u16) -> &'static str {
-    if screen == Screen::WorklogHistory {
+pub fn footer_hints(
+    mode: &Mode,
+    view: TaskView,
+    screen: Screen,
+    history_available: bool,
+    width: u16,
+) -> &'static str {
+    if matches!(mode, Mode::Correction(_)) {
         return if width < 80 {
-            "j/k/↑/↓ · o older · r refresh · esc back · q/ctrl+c quit"
+            "type ←/→ bs/del tab/S-tab j/k ±5m J/K ±1h enter esc ctrl+c"
         } else {
-            "j/k/↑/↓ move · o older · r refresh · esc back · q/ctrl+c quit"
+            "type · ←/→ · bs/del · tab/S-tab · j/k ±5m · J/K ±1h · enter · esc · ctrl+c"
+        };
+    }
+    if screen == Screen::WorklogHistory {
+        if !history_available {
+            return if width < 80 {
+                "r retry esc back q/ctrl+c quit"
+            } else {
+                "r retry · esc back · q/ctrl+c quit"
+            };
+        }
+        return if width < 80 {
+            "j/k/↑/↓ e edit o older r refresh esc back q/ctrl+c quit"
+        } else {
+            "j/k/↑/↓ move · e correct · o older · r refresh · esc back · q/ctrl+c quit"
         };
     }
     if width < 80 {
@@ -145,6 +204,7 @@ pub fn footer_hints(mode: &Mode, view: TaskView, screen: Screen, width: u16) -> 
             },
             Mode::Input { .. } => "type · backspace · enter save · esc cancel · ctrl+c quit",
             Mode::ConfirmArchive { .. } => "y/enter · n/esc · ctrl+c quit",
+            Mode::Correction(_) => unreachable!("correction footer was handled above"),
         };
     }
 
@@ -159,6 +219,7 @@ pub fn footer_hints(mode: &Mode, view: TaskView, screen: Screen, width: u16) -> 
         },
         Mode::Input { .. } => "type · backspace delete · enter save · esc cancel · ctrl+c quit",
         Mode::ConfirmArchive { .. } => "y/enter confirm · n/esc cancel · ctrl+c quit",
+        Mode::Correction(_) => unreachable!("correction footer was handled above"),
     }
 }
 
@@ -166,8 +227,11 @@ pub fn footer_hints(mode: &Mode, view: TaskView, screen: Screen, width: u16) -> 
 mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
+    use chrono::{DateTime, Utc};
+
     use super::*;
-    use crate::app::InputPurpose;
+    use crate::app::{CorrectionDraft, InputPurpose};
+    use tracker_domain::{WorklogId, WorklogTimes};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -193,6 +257,16 @@ mod tests {
             task_id: tracker_domain::TaskId::generate(),
             name: "task".to_owned(),
         }
+    }
+
+    fn correction() -> Mode {
+        let at = DateTime::<Utc>::from_timestamp(0, 0).unwrap();
+        Mode::Correction(CorrectionDraft::new(
+            WorklogId::generate(),
+            WorklogTimes::new(at, Some(at)),
+            "1970-01-01T00:00:00.000000+00:00".to_owned(),
+            Some("1970-01-01T00:00:00.000000+00:00".to_owned()),
+        ))
     }
 
     fn normal_modes() -> [(TaskView, Mode); 2] {
@@ -424,8 +498,8 @@ mod tests {
                 "archived mode must not map {code:?}"
             );
         }
-        // Enter is the one key both task views share: it opens the read-only
-        // history instead of acting on the task.
+        // Enter is the one key both task views share. It opens history
+        // instead of acting on the task.
         assert_eq!(
             map(&Mode::Normal, view, Screen::TaskList, key(KeyCode::Enter)),
             Some(Command::OpenHistory)
@@ -736,6 +810,15 @@ mod tests {
                 &Mode::Normal,
                 TaskView::Active,
                 history,
+                key(KeyCode::Char('e'))
+            ),
+            Some(Command::OpenCorrection)
+        );
+        assert_eq!(
+            map(
+                &Mode::Normal,
+                TaskView::Active,
+                history,
                 key(KeyCode::Char('o'))
             ),
             Some(Command::LoadOlderWorklogs)
@@ -769,7 +852,6 @@ mod tests {
         for code in [
             KeyCode::Char(' '),
             KeyCode::Char('a'),
-            KeyCode::Char('e'),
             KeyCode::Char('d'),
             KeyCode::Char('u'),
             KeyCode::Char('s'),
@@ -818,8 +900,145 @@ mod tests {
     }
 
     #[test]
+    fn correction_maps_editing_switching_adjustment_and_exit_commands() {
+        let mode = correction();
+        let screen = Screen::WorklogHistory;
+        let cases = [
+            (key(KeyCode::Tab), Command::SwitchCorrectionField),
+            (key(KeyCode::BackTab), Command::SwitchCorrectionField),
+            (key(KeyCode::Left), Command::MoveCursorLeft),
+            (key(KeyCode::Right), Command::MoveCursorRight),
+            (key(KeyCode::Backspace), Command::Backspace),
+            (key(KeyCode::Delete), Command::Delete),
+            (key(KeyCode::Char('j')), Command::AdjustForwardFiveMinutes),
+            (key(KeyCode::Char('k')), Command::AdjustBackwardFiveMinutes),
+            (key(KeyCode::Char('J')), Command::AdjustForwardOneHour),
+            (key(KeyCode::Char('K')), Command::AdjustBackwardOneHour),
+            (key(KeyCode::Char('2')), Command::Insert('2')),
+            (key(KeyCode::Enter), Command::Confirm),
+            (key(KeyCode::Esc), Command::Cancel),
+            (ctrl('c'), Command::Quit),
+        ];
+        for (key, expected) in cases {
+            assert_eq!(
+                map(&mode, TaskView::Active, screen, key),
+                Some(expected),
+                "wrong command for {key:?}"
+            );
+        }
+        assert_eq!(
+            map(
+                &mode,
+                TaskView::Active,
+                screen,
+                KeyEvent::new(KeyCode::Char('J'), KeyModifiers::SHIFT)
+            ),
+            Some(Command::AdjustForwardOneHour)
+        );
+        assert_eq!(
+            map(
+                &mode,
+                TaskView::Active,
+                screen,
+                KeyEvent::new(KeyCode::Char('K'), KeyModifiers::SHIFT)
+            ),
+            Some(Command::AdjustBackwardOneHour)
+        );
+        for key in [
+            ctrl('j'),
+            ctrl('J'),
+            ctrl('K'),
+            with_modifier('J', KeyModifiers::ALT),
+            with_modifier('K', KeyModifiers::ALT),
+            ctrl('2'),
+            key(KeyCode::Char('x')),
+        ] {
+            assert_eq!(
+                map(&mode, TaskView::Active, screen, key),
+                None,
+                "modified or invalid correction key must not act: {key:?}"
+            );
+        }
+        assert_eq!(map(&mode, TaskView::Active, screen, key(KeyCode::Up)), None);
+    }
+
+    #[test]
+    fn correction_footers_fit_and_advertise_every_accepted_key() {
+        for width in [60, 80] {
+            let footer = footer_hints(
+                &correction(),
+                TaskView::Active,
+                Screen::WorklogHistory,
+                true,
+                width,
+            );
+            assert!(footer.chars().count() <= width as usize, "{footer:?}");
+            for hint in [
+                "type",
+                "←/→",
+                "bs/del",
+                "tab/S-tab",
+                "j/k",
+                "±5m",
+                "J/K",
+                "±1h",
+                "enter",
+                "esc",
+                "ctrl+c",
+            ] {
+                assert!(footer.contains(hint), "correction footer misses {hint:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn unavailable_history_footers_advertise_only_working_commands() {
+        for (width, expected) in [
+            (60, "r retry esc back q/ctrl+c quit"),
+            (80, "r retry · esc back · q/ctrl+c quit"),
+        ] {
+            let footer = footer_hints(
+                &Mode::Normal,
+                TaskView::Active,
+                Screen::WorklogHistory,
+                false,
+                width,
+            );
+            assert_eq!(footer, expected);
+            assert!(footer.chars().count() <= width as usize, "{footer:?}");
+            for unavailable in ["j/k", "e edit", "o older"] {
+                assert!(!footer.contains(unavailable), "{footer:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn correction_footer_switches_to_the_full_variant_at_eighty_columns() {
+        assert_eq!(
+            footer_hints(
+                &correction(),
+                TaskView::Active,
+                Screen::WorklogHistory,
+                true,
+                79
+            ),
+            "type ←/→ bs/del tab/S-tab j/k ±5m J/K ±1h enter esc ctrl+c"
+        );
+        assert_eq!(
+            footer_hints(
+                &correction(),
+                TaskView::Active,
+                Screen::WorklogHistory,
+                true,
+                80
+            ),
+            "type · ←/→ · bs/del · tab/S-tab · j/k ±5m · J/K ±1h · enter · esc · ctrl+c"
+        );
+    }
+
+    #[test]
     fn every_accepted_key_is_listed_in_the_footer() {
-        let active_keys = footer_hints(&Mode::Normal, TaskView::Active, Screen::TaskList, 80);
+        let active_keys = footer_hints(&Mode::Normal, TaskView::Active, Screen::TaskList, true, 80);
         for hint in [
             "j/k/↑/↓",
             "h/l",
@@ -834,7 +1053,13 @@ mod tests {
             assert!(active_keys.contains(hint), "active footer misses {hint:?}");
         }
         assert!(active_keys.contains("s sort"));
-        let archived_keys = footer_hints(&Mode::Normal, TaskView::Archived, Screen::TaskList, 80);
+        let archived_keys = footer_hints(
+            &Mode::Normal,
+            TaskView::Archived,
+            Screen::TaskList,
+            true,
+            80,
+        );
         for hint in [
             "j/k/↑/↓",
             "h/l",
@@ -849,21 +1074,27 @@ mod tests {
                 "archived footer misses {hint:?}"
             );
         }
-        let input_keys = footer_hints(&input(), TaskView::Active, Screen::TaskList, 80);
+        let input_keys = footer_hints(&input(), TaskView::Active, Screen::TaskList, true, 80);
         for hint in ["type", "backspace", "enter", "esc", "ctrl+c"] {
             assert!(input_keys.contains(hint), "input footer misses {hint:?}");
         }
-        let confirm_keys = footer_hints(&confirm(), TaskView::Active, Screen::TaskList, 80);
+        let confirm_keys = footer_hints(&confirm(), TaskView::Active, Screen::TaskList, true, 80);
         for hint in ["y/enter", "n/esc", "ctrl+c"] {
             assert!(
                 confirm_keys.contains(hint),
                 "confirm footer misses {hint:?}"
             );
         }
-        let history_keys =
-            footer_hints(&Mode::Normal, TaskView::Active, Screen::WorklogHistory, 80);
+        let history_keys = footer_hints(
+            &Mode::Normal,
+            TaskView::Active,
+            Screen::WorklogHistory,
+            true,
+            80,
+        );
         for hint in [
             "j/k/↑/↓ move",
+            "e correct",
             "o older",
             "r refresh",
             "esc back",
@@ -891,7 +1122,7 @@ mod tests {
     fn normal_task_list_footers_explain_how_to_open_worklogs() {
         for width in [60, 80] {
             for view in [TaskView::Active, TaskView::Archived] {
-                let footer = footer_hints(&Mode::Normal, view, Screen::TaskList, width);
+                let footer = footer_hints(&Mode::Normal, view, Screen::TaskList, true, width);
                 assert!(
                     footer.contains("enter history"),
                     "task-list footer misses the history hint at width {width}: {footer:?}"
@@ -903,11 +1134,23 @@ mod tests {
     #[test]
     fn compact_footers_keep_every_key_visible_at_sixty_columns() {
         let footers = [
-            footer_hints(&Mode::Normal, TaskView::Active, Screen::TaskList, 60),
-            footer_hints(&Mode::Normal, TaskView::Archived, Screen::TaskList, 60),
-            footer_hints(&input(), TaskView::Active, Screen::TaskList, 60),
-            footer_hints(&confirm(), TaskView::Active, Screen::TaskList, 60),
-            footer_hints(&Mode::Normal, TaskView::Active, Screen::WorklogHistory, 60),
+            footer_hints(&Mode::Normal, TaskView::Active, Screen::TaskList, true, 60),
+            footer_hints(
+                &Mode::Normal,
+                TaskView::Archived,
+                Screen::TaskList,
+                true,
+                60,
+            ),
+            footer_hints(&input(), TaskView::Active, Screen::TaskList, true, 60),
+            footer_hints(&confirm(), TaskView::Active, Screen::TaskList, true, 60),
+            footer_hints(
+                &Mode::Normal,
+                TaskView::Active,
+                Screen::WorklogHistory,
+                true,
+                60,
+            ),
         ];
         for footer in footers {
             assert!(footer.chars().count() <= 60, "footer too wide: {footer:?}");

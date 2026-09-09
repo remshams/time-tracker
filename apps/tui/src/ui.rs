@@ -10,7 +10,9 @@ use chrono::{DateTime, TimeZone, Utc};
 use tracker_application::TrackerApplicationService;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{App, InputPurpose, Mode, Screen, Status, TaskView};
+use crate::app::{
+    App, CorrectionDraft, CorrectionField, History, InputPurpose, Mode, Screen, Status, TaskView,
+};
 use crate::{keymap, styles};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -150,7 +152,7 @@ fn render_tasks<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app
     frame.render_stateful_widget(list, area, &mut state);
 }
 
-/// Renders the read-only worklog history of one task.
+/// Renders the worklog history of one task.
 ///
 /// Rows appear newest first. Each row takes two lines, so the local start,
 /// the local end or Running, the explicit UTC offsets, and the duration
@@ -165,7 +167,18 @@ fn render_history<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, a
     let name = app.history_task_name().unwrap_or("unknown task");
     let block = Block::bordered()
         .title(format!("Worklog history · {name}"))
-        .border_style(styles::focused_border());
+        .border_style(if app.mode() == &Mode::Normal {
+            styles::focused_border()
+        } else {
+            Style::default()
+        });
+    if history.availability == crate::app::HistoryAvailability::Unavailable {
+        frame.render_widget(
+            Paragraph::new("History unavailable. Press r to retry.").block(block),
+            area,
+        );
+        return;
+    }
     if history.worklogs.is_empty() {
         frame.render_widget(Paragraph::new("No worklogs yet.").block(block), area);
         return;
@@ -174,13 +187,13 @@ fn render_history<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, a
         .worklogs
         .iter()
         .map(|worklog| {
-            let end = match worklog.end {
+            let end = match worklog.end() {
                 Some(end) => Span::raw(app.local_time(end)),
                 None => Span::styled("Running", styles::active_marker()),
             };
             ListItem::new(vec![
                 Line::from(vec![
-                    Span::raw(app.local_time(worklog.start)),
+                    Span::raw(app.local_time(worklog.start())),
                     Span::raw(" → "),
                     end,
                 ]),
@@ -232,6 +245,7 @@ fn render_footer<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, ap
             app.mode(),
             app.view(),
             app.screen(),
+            app.history().is_some_and(History::is_available),
             area.width,
         )),
         area,
@@ -243,6 +257,7 @@ fn render_modal<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app
     match app.mode() {
         Mode::Input { purpose, buffer } => render_input_modal(frame, area, *purpose, buffer),
         Mode::ConfirmArchive { name, .. } => render_confirm_modal(frame, area, name),
+        Mode::Correction(draft) => render_correction_modal(frame, area, draft),
         Mode::Normal => {}
     }
 }
@@ -276,6 +291,55 @@ fn render_input_modal(frame: &mut Frame, area: Rect, purpose: InputPurpose, buff
         Paragraph::new(line).block(Block::bordered().border_style(styles::focused_border())),
         modal,
     );
+}
+
+fn render_correction_modal(frame: &mut Frame, area: Rect, draft: &CorrectionDraft) {
+    let height = if draft.end().is_some() { 4 } else { 3 };
+    let modal = centered(58, height, area);
+    frame.render_widget(Clear, modal);
+    let mut lines = vec![correction_field_line(
+        "Start",
+        draft.start(),
+        draft.focused() == CorrectionField::Start,
+    )];
+    if let Some(end) = draft.end() {
+        lines.push(correction_field_line(
+            "End",
+            end,
+            draft.focused() == CorrectionField::End,
+        ));
+    }
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::bordered()
+                .title("Correct worklog")
+                .border_style(styles::focused_border()),
+        ),
+        modal,
+    );
+}
+
+fn correction_field_line<'a>(
+    label: &'static str,
+    input: &'a crate::app::TimestampInput,
+    focused: bool,
+) -> Line<'a> {
+    let label = format!("{label:<5}: ");
+    if !focused {
+        return Line::from(vec![Span::raw(label), Span::raw(input.text())]);
+    }
+    let cursor_byte = input
+        .text()
+        .char_indices()
+        .nth(input.cursor())
+        .map_or(input.text().len(), |(index, _)| index);
+    let (before, after) = input.text().split_at(cursor_byte);
+    Line::from(vec![
+        Span::styled(label, styles::selected()),
+        Span::raw(before),
+        Span::styled("▏", styles::input_cursor()),
+        Span::raw(after),
+    ])
 }
 
 /// Renders the archive confirmation.
@@ -995,5 +1059,46 @@ mod tests {
             row(&terminal, 2)
         );
         assert!(row(&terminal, 1).contains("Worklog history · alpha"));
+    }
+
+    #[test]
+    fn correction_modal_marks_focus_shows_the_cursor_and_fits_sixty_columns() {
+        let mut app = history_app(&[(3600, 3615)]);
+        app.handle(Command::OpenCorrection);
+        let terminal = draw_at(&app, 60, 20);
+        let screen_rows = rows(&terminal);
+        let start_row = screen_rows
+            .iter()
+            .position(|row| row.contains("Start: "))
+            .expect("the start field is visible") as u16;
+        let end_row = screen_rows
+            .iter()
+            .position(|row| row.contains("End  : "))
+            .expect("the end field is visible") as u16;
+        assert!(screen_rows[start_row as usize].contains("1970-01-01T03:00:00.000000+02:00▏"));
+        assert!(screen_rows[end_row as usize].contains("1970-01-01T03:00:15.000000+02:00"));
+        assert!(
+            cell(&terminal, 2, start_row)
+                .add_modifier
+                .contains(Modifier::REVERSED),
+            "the focused label uses the selection style"
+        );
+        let footer = &screen_rows[19];
+        for hint in [
+            "←/→", "bs/del", "tab", "j/k", "J/K", "enter", "esc", "ctrl+c",
+        ] {
+            assert!(footer.contains(hint), "footer misses {hint:?}: {footer:?}");
+        }
+
+        app.handle(Command::SwitchCorrectionField);
+        let terminal = draw_at(&app, 60, 20);
+        let rows = rows(&terminal);
+        let end_row = rows.iter().position(|row| row.contains("End  : ")).unwrap() as u16;
+        assert!(rows[end_row as usize].contains("+02:00▏"));
+        assert!(
+            cell(&terminal, 2, end_row)
+                .add_modifier
+                .contains(Modifier::REVERSED)
+        );
     }
 }

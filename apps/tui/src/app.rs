@@ -2,13 +2,14 @@
 
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, FixedOffset, Local, TimeDelta, Utc};
+use chrono::{DateTime, FixedOffset, Local, TimeDelta, TimeZone, Utc};
 use tracker_application::{
-    ApplicationError, ClearActiveTaskOutcome, SetActiveTaskOutcome, TaskOrdering, TaskOutcome,
-    TrackerApplicationService, WorklogCursor,
+    ApplicationError, ClearActiveTaskOutcome, CorrectWorklogOutcome, RepositoryError,
+    SetActiveTaskOutcome, TaskOrdering, TaskOutcome, TrackerApplicationService, WorklogCursor,
 };
 use tracker_domain::{
     Task, TaskId, TaskName, TaskNameError, TrackingError, TrackingState, Worklog, WorklogId,
+    WorklogTimes,
 };
 
 use crate::command::Command;
@@ -25,6 +26,157 @@ pub enum Mode {
         task_id: TaskId,
         name: String,
     },
+    Correction(CorrectionDraft),
+}
+
+/// The correction field that receives input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CorrectionField {
+    Start,
+    End,
+}
+
+/// One bounded timestamp input with a character-indexed cursor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimestampInput {
+    text: String,
+    cursor: usize,
+}
+
+impl TimestampInput {
+    const MAX_LEN: usize = 40;
+
+    fn new(text: String) -> Self {
+        let cursor = text.chars().count();
+        Self { text, cursor }
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    fn insert(&mut self, character: char) {
+        if self.text.chars().count() >= Self::MAX_LEN || !is_timestamp_character(character) {
+            return;
+        }
+        let byte = byte_index(&self.text, self.cursor);
+        self.text.insert(byte, character);
+        self.cursor += 1;
+    }
+
+    fn backspace(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let end = byte_index(&self.text, self.cursor);
+        let start = byte_index(&self.text, self.cursor - 1);
+        self.text.replace_range(start..end, "");
+        self.cursor -= 1;
+    }
+
+    fn delete(&mut self) {
+        if self.cursor == self.text.chars().count() {
+            return;
+        }
+        let start = byte_index(&self.text, self.cursor);
+        let end = byte_index(&self.text, self.cursor + 1);
+        self.text.replace_range(start..end, "");
+    }
+
+    fn move_left(&mut self) {
+        self.cursor = self.cursor.saturating_sub(1);
+    }
+
+    fn move_right(&mut self) {
+        self.cursor = self.cursor.saturating_add(1).min(self.text.chars().count());
+    }
+
+    fn replace(&mut self, text: String) {
+        self.cursor = text.chars().count();
+        self.text = text;
+    }
+}
+
+fn byte_index(text: &str, character_index: usize) -> usize {
+    text.char_indices()
+        .nth(character_index)
+        .map_or(text.len(), |(index, _)| index)
+}
+
+pub(crate) fn is_timestamp_character(character: char) -> bool {
+    character.is_ascii_digit() || matches!(character, '-' | '+' | ':' | '.' | 'T' | 't')
+}
+
+/// Editable timestamps and the immutable snapshot used for stale detection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorrectionDraft {
+    id: WorklogId,
+    expected: WorklogTimes,
+    start: TimestampInput,
+    end: Option<TimestampInput>,
+    focused: CorrectionField,
+}
+
+impl CorrectionDraft {
+    pub(crate) fn new(
+        id: WorklogId,
+        expected: WorklogTimes,
+        start: String,
+        end: Option<String>,
+    ) -> Self {
+        Self {
+            id,
+            expected,
+            start: TimestampInput::new(start),
+            end: end.map(TimestampInput::new),
+            focused: CorrectionField::Start,
+        }
+    }
+
+    pub fn start(&self) -> &TimestampInput {
+        &self.start
+    }
+
+    pub fn end(&self) -> Option<&TimestampInput> {
+        self.end.as_ref()
+    }
+
+    pub fn focused(&self) -> CorrectionField {
+        self.focused
+    }
+
+    fn focused_input(&self) -> &TimestampInput {
+        match self.focused {
+            CorrectionField::Start => &self.start,
+            CorrectionField::End => self
+                .end
+                .as_ref()
+                .expect("only completed corrections can focus the end"),
+        }
+    }
+
+    fn focused_mut(&mut self) -> &mut TimestampInput {
+        match self.focused {
+            CorrectionField::Start => &mut self.start,
+            CorrectionField::End => self
+                .end
+                .as_mut()
+                .expect("only completed corrections can focus the end"),
+        }
+    }
+
+    fn switch_field(&mut self) {
+        if self.end.is_some() {
+            self.focused = match self.focused {
+                CorrectionField::Start => CorrectionField::End,
+                CorrectionField::End => CorrectionField::Start,
+            };
+        }
+    }
 }
 
 /// What a confirmed text input does.
@@ -50,37 +202,54 @@ pub enum TaskView {
 
 /// Which screen the interface currently shows.
 ///
-/// The task list carries the modes and task views; the worklog history is
-/// its own read-only screen with no task-list commands.
+/// The task list carries the task modes and views. Worklog history has its
+/// own navigation and timestamp-correction mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     /// The active or archived task list.
     TaskList,
-    /// The read-only worklog history of one task.
+    /// The worklog history of one task.
     WorklogHistory,
+}
+
+/// Whether the open history holds a valid page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryAvailability {
+    Available,
+    Unavailable,
 }
 
 /// Worklog-history presentation state for one task.
 ///
 /// The worklogs are the pages loaded so far, in history order, newest
 /// first. `next_cursor` marks the end of the loaded range; `None` means
-/// the whole history is on screen. The selection remembers a worklog id,
+/// the whole history is on screen. When a saved correction cannot reload
+/// its newest page, the history becomes unavailable instead of pretending
+/// that an empty history is valid. The selection remembers a worklog id,
 /// so it survives appends and refreshes the way the task selection
 /// survives reordering.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct History {
     /// The task whose history is open.
     pub task_id: TaskId,
+    /// Whether `worklogs` and `next_cursor` describe a valid history page.
+    pub availability: HistoryAvailability,
     /// Every worklog loaded so far, newest first.
     pub worklogs: Vec<Worklog>,
     /// The cursor the next older page continues after, or `None` at the
     /// end of the history.
     pub next_cursor: Option<WorklogCursor>,
+    /// The active worklog for this task when the newest page was read.
+    active_worklog_baseline: Option<(WorklogId, DateTime<Utc>)>,
     /// The selected worklog, by id.
     selected: Option<WorklogId>,
 }
 
 impl History {
+    pub(crate) fn is_available(&self) -> bool {
+        self.availability == HistoryAvailability::Available
+    }
+
     /// The row of the selected worklog.
     ///
     /// The selection is remembered by id, so it follows a worklog across
@@ -88,8 +257,20 @@ impl History {
     /// nothing.
     fn selected_index(&self) -> Option<usize> {
         let id = self.selected?;
-        self.worklogs.iter().position(|worklog| worklog.id == id)
+        self.is_available()
+            .then(|| self.worklogs.iter().position(|worklog| worklog.id() == id))
+            .flatten()
     }
+}
+
+fn active_worklog_for_task(
+    active_worklog: &Option<Worklog>,
+    task_id: TaskId,
+) -> Option<(WorklogId, DateTime<Utc>)> {
+    active_worklog
+        .as_ref()
+        .filter(|worklog| worklog.task_id() == task_id)
+        .map(|worklog| (worklog.id(), worklog.start()))
 }
 
 /// The event loop's two lifecycle states.
@@ -112,10 +293,11 @@ impl ElapsedClock {
     }
 
     pub(crate) fn anchored(base: Duration) -> Self {
-        Self {
-            anchor: Instant::now(),
-            base,
-        }
+        Self::at_anchor(base, Instant::now())
+    }
+
+    fn at_anchor(base: Duration, anchor: Instant) -> Self {
+        Self { anchor, base }
     }
 
     fn base_since(start: DateTime<Utc>, now: DateTime<Utc>) -> Duration {
@@ -166,19 +348,120 @@ fn ordering_label(ordering: TaskOrdering) -> &'static str {
     }
 }
 
+fn repository_error_text(error: &RepositoryError) -> &'static str {
+    match error {
+        RepositoryError::TaskNotFound { .. } => "Task not found",
+        RepositoryError::WorklogNotFound { .. } => "Worklog not found",
+        RepositoryError::WorklogAlreadyStopped { .. } => "Worklog is already stopped",
+        RepositoryError::WorklogChanged { .. } => "Worklog changed in another client",
+        RepositoryError::WorklogHistoryChanged { .. } => {
+            "Worklog history changed. Press r to refresh"
+        }
+        RepositoryError::SameTaskWorklogOverlap { .. } => "The worklog overlaps another worklog",
+        RepositoryError::WorklogAlreadyExists { .. } => "Worklog already exists",
+        RepositoryError::TaskAlreadyExists { .. } => "Task already exists",
+        RepositoryError::ActiveWorklogExists => "Another worklog is active",
+        RepositoryError::TaskArchived { .. } => "Task is archived",
+        RepositoryError::TaskIsActive { .. } => "Task has active work",
+        RepositoryError::Constraint { .. } => "Storage rejected the change",
+        RepositoryError::CorruptData { .. } => "Stored data is invalid",
+        RepositoryError::Backend { .. } => "Storage error",
+    }
+}
+
 fn application_error_text(error: &ApplicationError) -> String {
     match error {
         ApplicationError::Domain(error) => error.to_string(),
-        ApplicationError::Repository(error) | ApplicationError::TrackingWrite(error) => {
-            format!("Storage error: {error}")
+        ApplicationError::InvalidWorklogCorrection(error) => error.to_string(),
+        ApplicationError::Repository(error)
+        | ApplicationError::TrackingWrite(error)
+        | ApplicationError::TrackingRecovery(error)
+        | ApplicationError::TaskRecovery(error) => repository_error_text(error).to_owned(),
+        ApplicationError::WorklogCorrectionWrite { write } => {
+            repository_error_text(write).to_owned()
         }
-        ApplicationError::TrackingRecovery(error) | ApplicationError::TaskRecovery(error) => {
-            format!("Storage error: {error}")
-        }
+        ApplicationError::WorklogCorrectionRecovery { write, recovery } => format!(
+            "Correction failed: {}. State recovery failed: {}.",
+            repository_error_text(write),
+            repository_error_text(recovery)
+        ),
         ApplicationError::TrackingStateChanged => {
             "Tracking state changed in another client. Refreshed state.".to_owned()
         }
     }
+}
+
+fn correction_error_text(error: &ApplicationError) -> String {
+    match error {
+        ApplicationError::WorklogCorrectionWrite {
+            write: RepositoryError::WorklogChanged { .. } | RepositoryError::WorklogNotFound { .. },
+        } => "Worklog changed. Cancel and press r to refresh.".to_owned(),
+        ApplicationError::WorklogCorrectionWrite {
+            write: RepositoryError::SameTaskWorklogOverlap { .. },
+        } => "The corrected time overlaps another worklog".to_owned(),
+        ApplicationError::WorklogCorrectionRecovery {
+            write: RepositoryError::WorklogChanged { .. } | RepositoryError::WorklogNotFound { .. },
+            recovery,
+        } => format!(
+            "Worklog changed. State recovery also failed: {}. Cancel and press r to refresh.",
+            repository_error_text(recovery)
+        ),
+        ApplicationError::WorklogCorrectionRecovery {
+            write: RepositoryError::SameTaskWorklogOverlap { .. },
+            recovery,
+        } => format!(
+            "The corrected time overlaps another worklog. State recovery also failed: {}.",
+            repository_error_text(recovery)
+        ),
+        _ => application_error_text(error),
+    }
+}
+
+fn parse_correction_timestamp(text: &str) -> Result<DateTime<Utc>, &'static str> {
+    let bytes = text.as_bytes();
+    let has_offset = bytes.len() >= 6
+        && matches!(bytes[bytes.len() - 6], b'+' | b'-')
+        && bytes[bytes.len() - 3] == b':'
+        && bytes[bytes.len() - 5..bytes.len() - 3]
+            .iter()
+            .chain(bytes[bytes.len() - 2..].iter())
+            .all(u8::is_ascii_digit);
+    if !has_offset
+        || bytes
+            .get(10)
+            .is_none_or(|separator| !matches!(separator, b'T' | b't'))
+    {
+        return Err("Use RFC 3339 with an explicit offset");
+    }
+    DateTime::parse_from_rfc3339(text)
+        .map(|timestamp| timestamp.with_timezone(&Utc))
+        .map_err(|_| "Use RFC 3339 with an explicit offset")
+}
+
+fn correction_timestamp<Tz>(at: DateTime<Utc>, timezone: &Tz) -> String
+where
+    Tz: TimeZone,
+    Tz::Offset: std::fmt::Display,
+{
+    at.with_timezone(timezone)
+        .format("%Y-%m-%dT%H:%M:%S%.6f%:z")
+        .to_string()
+}
+
+fn adjusted_correction_timestamp<Tz>(
+    text: &str,
+    delta: TimeDelta,
+    timezone: &Tz,
+) -> Result<String, &'static str>
+where
+    Tz: TimeZone,
+    Tz::Offset: std::fmt::Display,
+{
+    let timestamp = parse_correction_timestamp(text)?;
+    let adjusted = timestamp
+        .checked_add_signed(delta)
+        .ok_or("Timestamp is out of range")?;
+    Ok(correction_timestamp(adjusted, timezone))
 }
 
 /// Task-list presentation state.
@@ -212,7 +495,7 @@ impl<S: TrackerApplicationService> App<S> {
         let tracking = application.current_tracking().clone();
         let clock = match &tracking {
             TrackingState::Idle => None,
-            TrackingState::Running { worklog } => Some(ElapsedClock::since(worklog.start)),
+            TrackingState::Running { worklog } => Some(ElapsedClock::since(worklog.start())),
         };
         let status = if clock.is_some() {
             Status::Info("Recovered the previous active timer".to_owned())
@@ -241,6 +524,38 @@ impl<S: TrackerApplicationService> App<S> {
 
     pub fn handle(&mut self, command: Command) {
         match command {
+            Command::MoveUp
+            | Command::MoveDown
+            | Command::ShowActiveTasks
+            | Command::ShowArchivedTasks
+            | Command::OpenHistory
+            | Command::LoadOlderWorklogs
+            | Command::RefreshWorklogs
+            | Command::BackToTaskList => self.handle_navigation(command),
+            Command::OpenCorrection
+            | Command::SwitchCorrectionField
+            | Command::MoveCursorLeft
+            | Command::MoveCursorRight
+            | Command::Delete
+            | Command::AdjustForwardFiveMinutes
+            | Command::AdjustBackwardFiveMinutes
+            | Command::AdjustForwardOneHour
+            | Command::AdjustBackwardOneHour => self.handle_correction_command(command),
+            Command::Insert(_) | Command::Backspace => self.handle_text_input(command),
+            Command::CycleOrdering => self.cycle_ordering(),
+            Command::UnarchiveSelected => self.unarchive_selected(),
+            Command::ToggleTracking => self.toggle_tracking(),
+            Command::OpenAdd => self.open_add(),
+            Command::OpenRename => self.open_rename(),
+            Command::OpenArchiveConfirm => self.open_archive_confirm(),
+            Command::Confirm => self.confirm(),
+            Command::Cancel => self.cancel(),
+            Command::Quit => self.lifecycle = Lifecycle::Quitting,
+        }
+    }
+
+    fn handle_navigation(&mut self, command: Command) {
+        match command {
             Command::MoveUp => self.move_up(),
             Command::MoveDown => self.move_down(),
             Command::ShowActiveTasks => self.show_tasks(TaskView::Active),
@@ -249,27 +564,44 @@ impl<S: TrackerApplicationService> App<S> {
             Command::LoadOlderWorklogs => self.load_older_worklogs(),
             Command::RefreshWorklogs => self.refresh_worklogs(),
             Command::BackToTaskList => self.back_to_task_list(),
-            Command::CycleOrdering => self.cycle_ordering(),
-            Command::UnarchiveSelected => self.unarchive_selected(),
-            Command::ToggleTracking => self.toggle_tracking(),
-            Command::OpenAdd => self.open_add(),
-            Command::OpenRename => self.open_rename(),
-            Command::OpenArchiveConfirm => self.open_archive_confirm(),
-            Command::Confirm => self.confirm(),
-            Command::Cancel => self.mode = Mode::Normal,
-            Command::Insert(character) => {
-                if let Mode::Input { buffer, .. } = &mut self.mode
-                    && buffer.chars().count() < TaskName::MAX_LEN
-                {
-                    buffer.push(character);
-                }
+            _ => unreachable!("navigation commands are grouped by handle"),
+        }
+    }
+
+    fn handle_correction_command(&mut self, command: Command) {
+        match command {
+            Command::OpenCorrection => self.open_correction(),
+            Command::SwitchCorrectionField => self.edit_correction(|draft| draft.switch_field()),
+            Command::MoveCursorLeft => {
+                self.edit_correction(|draft| draft.focused_mut().move_left())
             }
-            Command::Backspace => {
-                if let Mode::Input { buffer, .. } = &mut self.mode {
-                    buffer.pop();
-                }
+            Command::MoveCursorRight => {
+                self.edit_correction(|draft| draft.focused_mut().move_right())
             }
-            Command::Quit => self.lifecycle = Lifecycle::Quitting,
+            Command::Delete => self.edit_correction(|draft| draft.focused_mut().delete()),
+            Command::AdjustForwardFiveMinutes => self.adjust_correction(TimeDelta::minutes(5)),
+            Command::AdjustBackwardFiveMinutes => self.adjust_correction(TimeDelta::minutes(-5)),
+            Command::AdjustForwardOneHour => self.adjust_correction(TimeDelta::hours(1)),
+            Command::AdjustBackwardOneHour => self.adjust_correction(TimeDelta::hours(-1)),
+            _ => unreachable!("correction commands are grouped by handle"),
+        }
+    }
+
+    fn handle_text_input(&mut self, command: Command) {
+        match (command, &mut self.mode) {
+            (Command::Insert(character), Mode::Input { buffer, .. })
+                if buffer.chars().count() < TaskName::MAX_LEN =>
+            {
+                buffer.push(character)
+            }
+            (Command::Insert(character), Mode::Correction(draft)) => {
+                draft.focused_mut().insert(character)
+            }
+            (Command::Backspace, Mode::Input { buffer, .. }) => {
+                buffer.pop();
+            }
+            (Command::Backspace, Mode::Correction(draft)) => draft.focused_mut().backspace(),
+            _ => {}
         }
     }
 
@@ -312,6 +644,21 @@ impl<S: TrackerApplicationService> App<S> {
         &self.mode
     }
 
+    pub fn correction(&self) -> Option<&CorrectionDraft> {
+        match &self.mode {
+            Mode::Correction(draft) => Some(draft),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    fn correction_mut_for_tests(&mut self) -> &mut CorrectionDraft {
+        match &mut self.mode {
+            Mode::Correction(draft) => draft,
+            _ => panic!("correction is not open"),
+        }
+    }
+
     pub fn status(&self) -> &Status {
         &self.status
     }
@@ -319,7 +666,7 @@ impl<S: TrackerApplicationService> App<S> {
     pub fn active_task_id(&self) -> Option<TaskId> {
         match &self.tracking {
             TrackingState::Idle => None,
-            TrackingState::Running { worklog } => Some(worklog.task_id),
+            TrackingState::Running { worklog } => Some(worklog.task_id()),
         }
     }
 
@@ -381,8 +728,8 @@ impl<S: TrackerApplicationService> App<S> {
     /// second client created adopts that same clock before it renders.
     /// Completed rows derive their duration from the stored interval.
     pub fn history_row_duration(&self, worklog: &Worklog) -> Duration {
-        let Some(end) = worklog.end else {
-            return if self.active_worklog_id() == Some(worklog.id) {
+        let Some(end) = worklog.end() else {
+            return if self.active_worklog_id() == Some(worklog.id()) {
                 self.clock
                     .as_ref()
                     .map_or(Duration::ZERO, ElapsedClock::elapsed)
@@ -390,7 +737,7 @@ impl<S: TrackerApplicationService> App<S> {
                 Duration::ZERO
             };
         };
-        (end - worklog.start).to_std().unwrap_or(Duration::ZERO)
+        (end - worklog.start()).to_std().unwrap_or(Duration::ZERO)
     }
 
     fn active_worklog(&self) -> Option<&tracker_domain::ActiveWorklog> {
@@ -402,7 +749,7 @@ impl<S: TrackerApplicationService> App<S> {
 
     /// The identifier of the running worklog, if tracking runs.
     fn active_worklog_id(&self) -> Option<WorklogId> {
-        self.active_worklog().map(|worklog| worklog.id)
+        self.active_worklog().map(|worklog| worklog.id())
     }
 
     fn task_name_for(&self, task_id: TaskId) -> Option<&str> {
@@ -435,6 +782,9 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn move_up(&mut self) {
+        if self.mode != Mode::Normal {
+            return;
+        }
         if self.screen == Screen::WorklogHistory {
             self.move_history_up();
             return;
@@ -450,6 +800,9 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn move_down(&mut self) {
+        if self.mode != Mode::Normal {
+            return;
+        }
         if self.screen == Screen::WorklogHistory {
             self.move_history_down();
             return;
@@ -472,6 +825,9 @@ impl<S: TrackerApplicationService> App<S> {
         let Some(history) = &mut self.history else {
             return;
         };
+        if !history.is_available() {
+            return;
+        }
         let index = match history.selected_index() {
             None => history.worklogs.len().checked_sub(1),
             Some(0) => Some(0),
@@ -479,7 +835,7 @@ impl<S: TrackerApplicationService> App<S> {
         };
         history.selected = index
             .and_then(|index| history.worklogs.get(index))
-            .map(|worklog| worklog.id);
+            .map(|worklog| worklog.id());
     }
 
     /// Moves the history selection down one row, without wrapping.
@@ -487,6 +843,9 @@ impl<S: TrackerApplicationService> App<S> {
         let Some(history) = &mut self.history else {
             return;
         };
+        if !history.is_available() {
+            return;
+        }
         if history.worklogs.is_empty() {
             history.selected = None;
             return;
@@ -496,7 +855,7 @@ impl<S: TrackerApplicationService> App<S> {
             None => 0,
             Some(index) => index.saturating_add(1).min(last),
         };
-        history.selected = Some(history.worklogs[index].id);
+        history.selected = Some(history.worklogs[index].id());
     }
 
     /// Switches to the requested task list.
@@ -542,9 +901,9 @@ impl<S: TrackerApplicationService> App<S> {
             return;
         };
         let active = self.active_worklog().cloned();
-        let was_active = active.as_ref().map(|worklog| worklog.task_id);
+        let was_active = active.as_ref().map(|worklog| worklog.task_id());
         let occurred_at = active.as_ref().map_or_else(Utc::now, |worklog| {
-            let start = worklog.start;
+            let start = worklog.start();
             let elapsed = self
                 .clock
                 .as_ref()
@@ -554,7 +913,7 @@ impl<S: TrackerApplicationService> App<S> {
 
         let result = if was_active == Some(task.id) {
             self.application
-                .clear_active_task(active.expect("active task has a worklog").id, occurred_at)
+                .clear_active_task(active.expect("active task has a worklog").id(), occurred_at)
                 .map(|outcome| match outcome {
                     ClearActiveTaskOutcome::Stopped { .. }
                     | ClearActiveTaskOutcome::AlreadyIdle => ("stopped", false),
@@ -606,7 +965,7 @@ impl<S: TrackerApplicationService> App<S> {
         } else if !unchanged {
             self.clock = match &tracking {
                 TrackingState::Idle => None,
-                TrackingState::Running { worklog } => Some(ElapsedClock::since(worklog.start)),
+                TrackingState::Running { worklog } => Some(ElapsedClock::since(worklog.start())),
             };
         }
         self.tracking = tracking;
@@ -714,7 +1073,7 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
-    /// Opens the read-only worklog history of the selected task.
+    /// Opens the worklog history of the selected task.
     ///
     /// Enter works in both task views of normal mode. An empty list selects
     /// no task and the command does nothing. A failed initial load keeps the
@@ -731,11 +1090,15 @@ impl<S: TrackerApplicationService> App<S> {
         self.sync_from_application(false);
         match result {
             Ok(page) => {
-                let selected = page.worklogs.first().map(|worklog| worklog.id);
+                let selected = page.worklogs.first().map(|worklog| worklog.id());
+                let active_worklog_baseline =
+                    active_worklog_for_task(&page.snapshot.active_worklog, task.id);
                 self.history = Some(History {
                     task_id: task.id,
+                    availability: HistoryAvailability::Available,
                     worklogs: page.worklogs,
                     next_cursor: page.next_cursor,
+                    active_worklog_baseline,
                     selected,
                 });
                 self.screen = Screen::WorklogHistory;
@@ -747,6 +1110,67 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
+    fn open_correction(&mut self) {
+        if self.mode != Mode::Normal || self.screen != Screen::WorklogHistory {
+            return;
+        }
+        let Some(worklog) = self
+            .history
+            .as_ref()
+            .filter(|history| history.is_available())
+            .and_then(|history| {
+                history
+                    .selected_index()
+                    .map(|index| &history.worklogs[index])
+            })
+            .cloned()
+        else {
+            return;
+        };
+        self.mode = Mode::Correction(CorrectionDraft::new(
+            worklog.id(),
+            worklog.times(),
+            self.format_correction_timestamp(worklog.start()),
+            worklog
+                .end()
+                .map(|end| self.format_correction_timestamp(end)),
+        ));
+        self.status = Status::Info("Edit the worklog timestamps".to_owned());
+    }
+
+    fn format_correction_timestamp(&self, timestamp: DateTime<Utc>) -> String {
+        match self.frozen_offset {
+            Some(offset) => correction_timestamp(timestamp, &offset),
+            None => correction_timestamp(timestamp, &Local),
+        }
+    }
+
+    fn edit_correction(&mut self, edit: impl FnOnce(&mut CorrectionDraft)) {
+        if let Mode::Correction(draft) = &mut self.mode {
+            edit(draft);
+        }
+    }
+
+    fn adjust_correction(&mut self, delta: TimeDelta) {
+        let Some(text) = self
+            .correction()
+            .map(|draft| draft.focused_input().text().to_owned())
+        else {
+            return;
+        };
+        let adjusted = match self.frozen_offset {
+            Some(offset) => adjusted_correction_timestamp(&text, delta, &offset),
+            None => adjusted_correction_timestamp(&text, delta, &Local),
+        };
+        match adjusted {
+            Ok(text) => {
+                self.edit_correction(|draft| draft.focused_mut().replace(text));
+                self.status = Status::Info("Adjusted timestamp".to_owned());
+            }
+            Err(message) => self.status = Status::Error(message.to_owned()),
+        }
+    }
+
     /// Appends the next bounded older page to the open history.
     ///
     /// The command does nothing once the loaded range reaches the end of
@@ -754,10 +1178,15 @@ impl<S: TrackerApplicationService> App<S> {
     /// cursor state untouched and reports the application error, so `o`
     /// can simply be pressed again.
     fn load_older_worklogs(&mut self) {
-        if self.screen != Screen::WorklogHistory {
+        if self.mode != Mode::Normal || self.screen != Screen::WorklogHistory {
             return;
         }
-        let Some(task_id) = self.history.as_ref().map(|history| history.task_id) else {
+        let Some(task_id) = self
+            .history
+            .as_ref()
+            .filter(|history| history.is_available())
+            .map(|history| history.task_id)
+        else {
             return;
         };
         let Some(cursor) = self
@@ -768,23 +1197,40 @@ impl<S: TrackerApplicationService> App<S> {
             self.status = Status::Info("No older worklogs".to_owned());
             return;
         };
-        let result = self.application.worklogs_for_task(task_id, Some(&cursor));
-        self.sync_from_application(false);
-        match result {
+        let active_worklog_baseline = self
+            .history
+            .as_ref()
+            .and_then(|history| history.active_worklog_baseline);
+        match self.application.worklogs_for_task(task_id, Some(&cursor)) {
             Ok(page) => {
+                let active_worklog =
+                    active_worklog_for_task(&page.snapshot.active_worklog, task_id);
+                if active_worklog != active_worklog_baseline {
+                    self.reload_newest_history_after_change(task_id);
+                    return;
+                }
                 let loaded = page.worklogs.len();
                 let next_cursor = page.next_cursor;
                 if let Some(history) = &mut self.history {
                     history.worklogs.extend(page.worklogs);
                     history.next_cursor = next_cursor;
                 }
+                self.sync_from_application(false);
                 self.status = if loaded == 0 {
                     Status::Info("No older worklogs".to_owned())
                 } else {
                     Status::Info(format!("Loaded {loaded} older worklogs"))
                 };
             }
-            Err(error) => self.status = Status::Error(application_error_text(&error)),
+            Err(ApplicationError::Repository(RepositoryError::WorklogHistoryChanged {
+                ..
+            })) => {
+                self.reload_newest_history_after_change(task_id);
+            }
+            Err(error) => {
+                self.sync_from_application(false);
+                self.status = Status::Error(application_error_text(&error));
+            }
         }
     }
 
@@ -793,10 +1239,10 @@ impl<S: TrackerApplicationService> App<S> {
     /// The reload discards the loaded older pages and the cursor. The
     /// selection follows the same worklog id when that worklog is still on
     /// the newest page, and otherwise starts on the newest row. A failed
-    /// reload keeps the displayed worklogs and the cursor state untouched
-    /// and reports the application error.
+    /// reload preserves a valid history. A reload after an invalidated
+    /// continuation clears obsolete rows and marks history unavailable.
     fn refresh_worklogs(&mut self) {
-        if self.screen != Screen::WorklogHistory {
+        if self.mode != Mode::Normal || self.screen != Screen::WorklogHistory {
             return;
         }
         let Some(task_id) = self.history.as_ref().map(|history| history.task_id) else {
@@ -807,20 +1253,60 @@ impl<S: TrackerApplicationService> App<S> {
         self.sync_from_application(false);
         match result {
             Ok(page) => {
-                let worklogs = page.worklogs;
-                let selected = keep
-                    .filter(|id| worklogs.iter().any(|worklog| worklog.id == *id))
-                    .or_else(|| worklogs.first().map(|worklog| worklog.id));
-                self.history = Some(History {
-                    task_id,
-                    worklogs,
-                    next_cursor: page.next_cursor,
-                    selected,
-                });
+                self.replace_history_with_newest_page(task_id, keep, page);
                 self.status = Status::Info("Refreshed".to_owned());
             }
             Err(error) => self.status = Status::Error(application_error_text(&error)),
         }
+    }
+
+    fn reload_newest_history_after_change(&mut self, task_id: TaskId) {
+        let keep = self.history.as_ref().and_then(|history| history.selected);
+        match self.application.worklogs_for_task(task_id, None) {
+            Ok(page) => {
+                self.replace_history_with_newest_page(task_id, keep, page);
+                self.sync_from_application(false);
+                self.status = Status::Info("History changed and was refreshed".to_owned());
+            }
+            Err(error) => {
+                self.mark_history_unavailable();
+                self.sync_from_application(false);
+                self.status = Status::Error(format!(
+                    "History changed, but refresh failed: {}",
+                    application_error_text(&error)
+                ));
+            }
+        }
+    }
+
+    fn replace_history_with_newest_page(
+        &mut self,
+        task_id: TaskId,
+        keep: Option<WorklogId>,
+        page: tracker_application::WorklogPage,
+    ) {
+        let selected = keep
+            .filter(|id| page.worklogs.iter().any(|worklog| worklog.id() == *id))
+            .or_else(|| page.worklogs.first().map(Worklog::id));
+        let active_worklog_baseline =
+            active_worklog_for_task(&page.snapshot.active_worklog, task_id);
+        self.history = Some(History {
+            task_id,
+            availability: HistoryAvailability::Available,
+            worklogs: page.worklogs,
+            next_cursor: page.next_cursor,
+            active_worklog_baseline,
+            selected,
+        });
+    }
+
+    fn mark_history_unavailable(&mut self) {
+        let Some(history) = &mut self.history else {
+            return;
+        };
+        history.availability = HistoryAvailability::Unavailable;
+        history.worklogs.clear();
+        history.next_cursor = None;
     }
 
     /// Leaves the history and returns to the task list.
@@ -829,7 +1315,7 @@ impl<S: TrackerApplicationService> App<S> {
     /// same selected task, and the history state is discarded: opening a
     /// history always loads its newest page.
     fn back_to_task_list(&mut self) {
-        if self.screen != Screen::WorklogHistory {
+        if self.mode != Mode::Normal || self.screen != Screen::WorklogHistory {
             return;
         }
         self.screen = Screen::TaskList;
@@ -840,8 +1326,105 @@ impl<S: TrackerApplicationService> App<S> {
         match &self.mode {
             Mode::Input { .. } => self.confirm_input(),
             Mode::ConfirmArchive { .. } => self.confirm_archive(),
+            Mode::Correction(_) => self.confirm_correction(),
             Mode::Normal => {}
         }
+    }
+
+    fn cancel(&mut self) {
+        if matches!(self.mode, Mode::Correction(_)) {
+            self.mode = Mode::Normal;
+            self.status = Status::Info("Correction cancelled".to_owned());
+        } else {
+            self.mode = Mode::Normal;
+        }
+    }
+
+    fn confirm_correction(&mut self) {
+        let Mode::Correction(draft) = self.mode.clone() else {
+            return;
+        };
+        let start = match parse_correction_timestamp(draft.start.text()) {
+            Ok(start) => start,
+            Err(message) => {
+                self.status = Status::Error(format!("Start: {message}"));
+                return;
+            }
+        };
+        let end = match draft.end.as_ref() {
+            Some(input) => match parse_correction_timestamp(input.text()) {
+                Ok(end) => Some(end),
+                Err(message) => {
+                    self.status = Status::Error(format!("End: {message}"));
+                    return;
+                }
+            },
+            None => None,
+        };
+        let occurred_at = Utc::now();
+        let replacement = WorklogTimes::new(start, end);
+        match self
+            .application
+            .correct_worklog(draft.id, draft.expected, replacement, occurred_at)
+        {
+            Ok(CorrectWorklogOutcome::Corrected { worklog }) => {
+                let task_id = self
+                    .history
+                    .as_ref()
+                    .map(|history| history.task_id)
+                    .expect("a correction belongs to an open history");
+                let corrected_id = worklog.id();
+                self.mode = Mode::Normal;
+                match self.application.worklogs_for_task(task_id, None) {
+                    Ok(page) => {
+                        self.replace_history_with_newest_page(task_id, Some(corrected_id), page);
+                        self.sync_tasks_from_application();
+                        self.sync_tracking_after_history_reload();
+                        self.status = Status::Info("Corrected worklog".to_owned());
+                    }
+                    Err(_) => {
+                        self.mark_history_unavailable();
+                        self.sync_from_application(false);
+                        self.status = Status::Error(
+                            "Correction saved, but history refresh failed".to_owned(),
+                        );
+                    }
+                }
+            }
+            Err(error) => {
+                self.sync_from_application(false);
+                self.status = Status::Error(correction_error_text(&error));
+            }
+        }
+    }
+
+    fn sync_tracking_after_history_reload(&mut self) {
+        self.sync_tracking_after_history_reload_at(Utc::now(), Instant::now());
+    }
+
+    fn sync_tracking_after_history_reload_at(
+        &mut self,
+        wall_clock: DateTime<Utc>,
+        monotonic_clock: Instant,
+    ) {
+        let tracking = self.application.current_tracking().clone();
+        match (&self.tracking, &tracking) {
+            (
+                TrackingState::Running { worklog: current },
+                TrackingState::Running {
+                    worklog: final_worklog,
+                },
+            ) if current.id() == final_worklog.id() && current.start() == final_worklog.start() => {
+            }
+            (_, TrackingState::Idle) => self.clock = None,
+            (_, TrackingState::Running { worklog }) => {
+                self.clock = Some(ElapsedClock::at_anchor(
+                    ElapsedClock::base_since(worklog.start(), wall_clock),
+                    monotonic_clock,
+                ));
+            }
+        }
+        self.tracking = tracking;
     }
 
     fn confirm_input(&mut self) {
@@ -910,7 +1493,10 @@ impl<S: TrackerApplicationService> App<S> {
 
     #[cfg(test)]
     pub(crate) fn freeze_elapsed_for_tests(&mut self, base: Duration) {
-        self.clock = Some(ElapsedClock::anchored(base));
+        let anchor = Instant::now()
+            .checked_add(Duration::from_secs(86_400))
+            .expect("a test clock can advance one day");
+        self.clock = Some(ElapsedClock::at_anchor(base, anchor));
     }
 
     /// Freezes one fixed display offset for deterministic rendering.
@@ -938,13 +1524,17 @@ fn task_lists<S: TrackerApplicationService>(
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeDelta;
+    use chrono::{MappedLocalTime, NaiveDate, NaiveDateTime, TimeDelta};
     use std::cell::Cell;
     use tracker_application::{
-        RepositoryError, TaskListItem, TaskOperations, TaskOutcome, TaskQueries,
-        TrackerApplication, TrackingOperations, WorklogCursor, WorklogPage, WorklogQueries,
+        CorrectWorklogOutcome, RepositoryError, TaskListItem, TaskOperations, TaskOutcome,
+        TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor, WorklogOperations,
+        WorklogPage, WorklogPageSnapshot, WorklogQueries,
     };
-    use tracker_domain::{ActiveWorklog, Task, TaskId, TaskName, Worklog, WorklogId};
+    use tracker_domain::{
+        ActiveWorklog, Task, TaskId, TaskName, Worklog, WorklogCorrectionError, WorklogId,
+        WorklogTimes,
+    };
     use tracker_storage::SqliteRepository;
 
     use super::*;
@@ -987,6 +1577,9 @@ mod tests {
         latest_work_starts: Vec<(TaskId, DateTime<Utc>)>,
         worklog_pages: Vec<Result<WorklogPage, ApplicationError>>,
         worklog_reads: Cell<usize>,
+        correction_error: Option<ApplicationError>,
+        correction_calls: Vec<(WorklogId, WorklogTimes, WorklogTimes, DateTime<Utc>)>,
+        clear_calls: Vec<(WorklogId, DateTime<Utc>)>,
     }
 
     impl TestService {
@@ -1005,6 +1598,9 @@ mod tests {
                 latest_work_starts: Vec::new(),
                 worklog_pages: Vec::new(),
                 worklog_reads: Cell::new(0),
+                correction_error: None,
+                correction_calls: Vec::new(),
+                clear_calls: Vec::new(),
             }
         }
 
@@ -1157,7 +1753,7 @@ mod tests {
                 task_id,
                 started_at,
             );
-            let active = ActiveWorklog::begin(worklog.id, task_id, started_at);
+            let active = ActiveWorklog::begin(worklog.id(), task_id, started_at);
             self.tracking = TrackingState::Running {
                 worklog: active.clone(),
             };
@@ -1170,18 +1766,54 @@ mod tests {
 
         fn clear_active_task(
             &mut self,
-            _expected_active: WorklogId,
-            _occurred_at: DateTime<Utc>,
+            expected_active: WorklogId,
+            occurred_at: DateTime<Utc>,
         ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
+            self.clear_calls.push((expected_active, occurred_at));
             self.tracking = TrackingState::Idle;
             Ok(ClearActiveTaskOutcome::AlreadyIdle)
+        }
+    }
+
+    impl WorklogOperations for TestService {
+        fn correct_worklog(
+            &mut self,
+            id: WorklogId,
+            expected: WorklogTimes,
+            replacement: WorklogTimes,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<CorrectWorklogOutcome, ApplicationError> {
+            self.correction_calls
+                .push((id, expected, replacement, occurred_at));
+            if let Some(error) = self.correction_error.clone() {
+                return Err(error);
+            }
+            let original = self
+                .worklog_pages
+                .iter()
+                .filter_map(|page| page.as_ref().ok())
+                .flat_map(|page| &page.worklogs)
+                .find(|worklog| worklog.id() == id)
+                .cloned()
+                .expect("the corrected worklog exists in a queued page");
+            let corrected = original.corrected(replacement, occurred_at)?;
+            if corrected.is_active() {
+                self.tracking = TrackingState::Running {
+                    worklog: ActiveWorklog::begin(
+                        corrected.id(),
+                        corrected.task_id(),
+                        corrected.start(),
+                    ),
+                };
+            }
+            Ok(CorrectWorklogOutcome::Corrected { worklog: corrected })
         }
     }
 
     impl WorklogQueries for TestService {
         fn worklogs_for_task(
             &mut self,
-            task_id: TaskId,
+            _task_id: TaskId,
             _after: Option<&WorklogCursor>,
         ) -> Result<WorklogPage, ApplicationError> {
             // Each read consumes the next queued page, so one service can
@@ -1191,23 +1823,25 @@ mod tests {
             let result = self.worklog_pages.get(read).cloned().unwrap_or_else(|| {
                 Ok(WorklogPage {
                     worklogs: Vec::new(),
+                    snapshot: WorklogPageSnapshot {
+                        requested_task_latest_work_start: None,
+                        active_worklog: None,
+                        active_task_latest_work_start: None,
+                    },
                     next_cursor: None,
                 })
             });
             if let Ok(page) = &result {
-                if let Some(worklog) = page.worklogs.iter().find(|worklog| worklog.end.is_none()) {
-                    self.tracking = TrackingState::Running {
-                        worklog: ActiveWorklog::begin(worklog.id, worklog.task_id, worklog.start),
-                    };
-                } else if let TrackingState::Running { worklog } = &self.tracking
-                    && worklog.task_id == task_id
-                    && page
-                        .worklogs
-                        .iter()
-                        .any(|stored| stored.id == worklog.id && stored.end.is_some())
-                {
-                    self.tracking = TrackingState::Idle;
-                }
+                self.tracking = match &page.snapshot.active_worklog {
+                    Some(worklog) => TrackingState::Running {
+                        worklog: ActiveWorklog::begin(
+                            worklog.id(),
+                            worklog.task_id(),
+                            worklog.start(),
+                        ),
+                    },
+                    None => TrackingState::Idle,
+                };
             }
             result
         }
@@ -1356,10 +1990,7 @@ mod tests {
                 buffer,
             } if buffer == "blocked"
         ));
-        assert_eq!(
-            app.status(),
-            &Status::Error("Storage error: write failed".to_owned())
-        );
+        assert_eq!(app.status(), &Status::Error("Storage error".to_owned()));
         app.handle(Command::Cancel);
 
         app.handle(Command::OpenRename);
@@ -1371,19 +2002,13 @@ mod tests {
                 buffer,
             } if buffer == "one"
         ));
-        assert_eq!(
-            app.status(),
-            &Status::Error("Storage error: write failed".to_owned())
-        );
+        assert_eq!(app.status(), &Status::Error("Storage error".to_owned()));
         app.handle(Command::Cancel);
 
         app.handle(Command::OpenArchiveConfirm);
         app.handle(Command::Confirm);
         assert!(matches!(app.mode(), Mode::ConfirmArchive { .. }));
-        assert_eq!(
-            app.status(),
-            &Status::Error("Storage error: write failed".to_owned())
-        );
+        assert_eq!(app.status(), &Status::Error("Storage error".to_owned()));
     }
 
     #[test]
@@ -1473,7 +2098,7 @@ mod tests {
             .unwrap()
             .worklogs;
         assert_eq!(worklogs.len(), 2);
-        assert_ne!(worklogs[0].id, worklogs[1].id);
+        assert_ne!(worklogs[0].id(), worklogs[1].id());
     }
 
     #[test]
@@ -1566,7 +2191,7 @@ mod tests {
             .worklogs
             .pop()
             .unwrap();
-        assert_eq!(alpha_worklog.end, Some(beta_worklog.start));
+        assert_eq!(alpha_worklog.end(), Some(beta_worklog.start()));
     }
 
     #[test]
@@ -1574,7 +2199,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("tracker.db");
         let task = Task::create(TaskId::generate(), TaskName::new("alpha").unwrap(), at(100));
-        let start = Utc::now() + TimeDelta::hours(1);
+        let start = DateTime::from_timestamp_micros(Utc::now().timestamp_micros()).unwrap()
+            + TimeDelta::hours(1);
         let repository = SqliteRepository::open(&path).unwrap();
         repository.create_task(task.clone()).unwrap();
         repository
@@ -1590,9 +2216,9 @@ mod tests {
             .unwrap()
             .worklogs
             .remove(0);
-        let duration = (stored.end.unwrap() - stored.start).to_std().unwrap();
+        let duration = (stored.end().unwrap() - stored.start()).to_std().unwrap();
         assert!(duration < Duration::from_secs(60), "got {duration:?}");
-        assert!(stored.end.unwrap() >= start);
+        assert!(stored.end().unwrap() >= start);
     }
 
     #[test]
@@ -1618,7 +2244,7 @@ mod tests {
             .unwrap()
             .worklogs
             .remove(0);
-        let duration = (stored.end.unwrap() - stored.start).to_std().unwrap();
+        let duration = (stored.end().unwrap() - stored.start()).to_std().unwrap();
         assert!(
             duration >= shown,
             "persisted {duration:?} < shown {shown:?}"
@@ -2173,10 +2799,7 @@ mod tests {
             Some(TaskId::from_uuid(uuid::Uuid::from_u128(3))),
             "the failed unarchive still refreshes tracking state"
         );
-        assert_eq!(
-            app.status(),
-            &Status::Error("Storage error: write failed".to_owned())
-        );
+        assert_eq!(app.status(), &Status::Error("Storage error".to_owned()));
     }
 
     #[test]
@@ -2240,13 +2863,39 @@ mod tests {
 
     fn cursor(start: i64, tag: u128) -> WorklogCursor {
         WorklogCursor {
+            task_id: TaskId::from_uuid(uuid::Uuid::from_u128(1)),
             start: at(start),
             id: worklog_id(tag),
+            revision: 0,
         }
     }
 
     fn page(worklogs: Vec<Worklog>, next_cursor: Option<WorklogCursor>) -> WorklogPage {
+        let requested_task_latest_work_start = worklogs.iter().map(Worklog::start).max();
+        let active_worklog = worklogs.iter().find(|worklog| worklog.is_active()).cloned();
         WorklogPage {
+            snapshot: WorklogPageSnapshot {
+                requested_task_latest_work_start,
+                active_task_latest_work_start: active_worklog.as_ref().map(Worklog::start),
+                active_worklog,
+            },
+            worklogs,
+            next_cursor,
+        }
+    }
+
+    fn page_with_active(
+        worklogs: Vec<Worklog>,
+        active_worklog: Option<Worklog>,
+        next_cursor: Option<WorklogCursor>,
+    ) -> WorklogPage {
+        let requested_task_latest_work_start = worklogs.iter().map(Worklog::start).max();
+        WorklogPage {
+            snapshot: WorklogPageSnapshot {
+                requested_task_latest_work_start,
+                active_task_latest_work_start: active_worklog.as_ref().map(Worklog::start),
+                active_worklog,
+            },
             worklogs,
             next_cursor,
         }
@@ -2358,10 +3007,7 @@ mod tests {
 
         assert_eq!(app.screen(), Screen::TaskList);
         assert_eq!(app.history(), None);
-        assert_eq!(
-            app.status(),
-            &Status::Error("Storage error: write failed".to_owned())
-        );
+        assert_eq!(app.status(), &Status::Error("Storage error".to_owned()));
     }
 
     #[test]
@@ -2438,7 +3084,7 @@ mod tests {
             history
                 .worklogs
                 .iter()
-                .map(|worklog| worklog.id)
+                .map(|worklog| worklog.id())
                 .collect::<Vec<_>>(),
             vec![
                 worklog_id(20),
@@ -2454,6 +3100,241 @@ mod tests {
             app.status(),
             &Status::Info("Loaded 2 older worklogs".to_owned())
         );
+    }
+
+    #[test]
+    fn loading_older_reloads_newest_when_the_loaded_active_worklog_stopped() {
+        let alpha = task(1, "alpha");
+        let active = Worklog::begin(worklog_id(20), alpha.id, at(200));
+        let first = page(vec![active], Some(cursor(200, 20)));
+        let continuation = page_with_active(vec![history_worklog(19, alpha.id, 100)], None, None);
+        let newest = page(vec![history_worklog(20, alpha.id, 200)], None);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(first), Ok(continuation), Ok(newest)];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        assert_eq!(
+            app.history()
+                .unwrap()
+                .worklogs
+                .iter()
+                .map(Worklog::id)
+                .collect::<Vec<_>>(),
+            vec![worklog_id(20)],
+            "the continuation was discarded after the active row changed"
+        );
+        assert_eq!(
+            app.status(),
+            &Status::Info("History changed and was refreshed".to_owned())
+        );
+        assert_eq!(app.application.worklog_reads.get(), 3);
+    }
+
+    #[test]
+    fn loading_older_appends_when_the_active_worklog_is_unchanged() {
+        let alpha = task(1, "alpha");
+        let active = Worklog::begin(worklog_id(20), alpha.id, at(200));
+        let first = page(vec![active.clone()], Some(cursor(200, 20)));
+        let continuation =
+            page_with_active(vec![history_worklog(19, alpha.id, 100)], Some(active), None);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(first), Ok(continuation)];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        assert_eq!(
+            app.history()
+                .unwrap()
+                .worklogs
+                .iter()
+                .map(Worklog::id)
+                .collect::<Vec<_>>(),
+            vec![worklog_id(20), worklog_id(19)]
+        );
+        assert_eq!(
+            app.status(),
+            &Status::Info("Loaded 1 older worklogs".to_owned())
+        );
+        assert_eq!(app.application.worklog_reads.get(), 2);
+    }
+
+    #[test]
+    fn loading_older_appends_an_unchanged_active_worklog_after_a_full_newest_page() {
+        let alpha = task(1, "alpha");
+        let active = Worklog::begin(worklog_id(51), alpha.id, at(500));
+        let newest = (1..=50)
+            .map(|tag| Worklog::new(worklog_id(tag), alpha.id, at(500), Some(at(500))).unwrap())
+            .collect();
+        let first = page_with_active(newest, Some(active.clone()), Some(cursor(500, 50)));
+        let continuation = page_with_active(
+            vec![active.clone(), history_worklog(52, alpha.id, 400)],
+            Some(active.clone()),
+            Some(cursor(400, 52)),
+        );
+        let older = page_with_active(vec![history_worklog(53, alpha.id, 300)], Some(active), None);
+        let mut service = TestService::with_tasks(vec![alpha]);
+        service.worklog_pages = vec![Ok(first), Ok(continuation), Ok(older)];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        let history = app.history().unwrap();
+        assert_eq!(history.worklogs.len(), 52);
+        assert_eq!(history.worklogs[50].id(), worklog_id(51));
+        assert_eq!(history.next_cursor, Some(cursor(400, 52)));
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        let history = app.history().unwrap();
+        assert_eq!(history.worklogs.len(), 53);
+        assert_eq!(history.worklogs[52].id(), worklog_id(53));
+        assert_eq!(history.next_cursor, None);
+        assert_eq!(app.application.worklog_reads.get(), 3);
+    }
+
+    #[test]
+    fn loading_older_reloads_newest_when_the_active_worklog_start_changes() {
+        let alpha = task(1, "alpha");
+        let first = page(
+            vec![Worklog::begin(worklog_id(20), alpha.id, at(200))],
+            Some(cursor(200, 20)),
+        );
+        let active = Worklog::begin(worklog_id(20), alpha.id, at(300));
+        let continuation = page_with_active(
+            vec![history_worklog(19, alpha.id, 100)],
+            Some(active.clone()),
+            None,
+        );
+        let newest = page_with_active(vec![active.clone()], Some(active), None);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(first), Ok(continuation), Ok(newest)];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        assert_eq!(
+            app.history()
+                .unwrap()
+                .worklogs
+                .iter()
+                .map(Worklog::id)
+                .collect::<Vec<_>>(),
+            vec![worklog_id(20)]
+        );
+        assert_eq!(
+            app.status(),
+            &Status::Info("History changed and was refreshed".to_owned())
+        );
+        assert_eq!(app.application.worklog_reads.get(), 3);
+    }
+
+    #[test]
+    fn loading_older_reloads_newest_when_active_work_starts_for_the_open_task() {
+        let alpha = task(1, "alpha");
+        let first = page(
+            vec![
+                history_worklog(20, alpha.id, 200),
+                history_worklog(19, alpha.id, 100),
+            ],
+            Some(cursor(100, 19)),
+        );
+        let active = Worklog::begin(worklog_id(21), alpha.id, at(300));
+        let continuation = page_with_active(
+            vec![history_worklog(18, alpha.id, 50)],
+            Some(active.clone()),
+            None,
+        );
+        let newest = page_with_active(
+            vec![active, history_worklog(20, alpha.id, 200)],
+            Some(Worklog::begin(worklog_id(21), alpha.id, at(300))),
+            Some(cursor(200, 20)),
+        );
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(first), Ok(continuation), Ok(newest)];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        assert_eq!(
+            app.history()
+                .unwrap()
+                .worklogs
+                .iter()
+                .map(Worklog::id)
+                .collect::<Vec<_>>(),
+            vec![worklog_id(21), worklog_id(20)]
+        );
+        assert_eq!(
+            app.status(),
+            &Status::Info("History changed and was refreshed".to_owned())
+        );
+        assert_eq!(app.application.worklog_reads.get(), 3);
+    }
+
+    #[test]
+    fn loading_older_ignores_active_work_for_another_task() {
+        let alpha = task(1, "alpha");
+        let beta = task(2, "beta");
+        let first = page(
+            vec![
+                history_worklog(20, alpha.id, 200),
+                history_worklog(19, alpha.id, 100),
+            ],
+            Some(cursor(100, 19)),
+        );
+        let continuation = page_with_active(
+            vec![history_worklog(18, alpha.id, 50)],
+            Some(Worklog::begin(worklog_id(21), beta.id, at(300))),
+            None,
+        );
+        let mut service = TestService::with_tasks(vec![alpha.clone(), beta]);
+        service.worklog_pages = vec![Ok(first), Ok(continuation)];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        assert_eq!(
+            app.history()
+                .unwrap()
+                .worklogs
+                .iter()
+                .map(Worklog::id)
+                .collect::<Vec<_>>(),
+            vec![worklog_id(20), worklog_id(19), worklog_id(18)]
+        );
+        assert_eq!(
+            app.status(),
+            &Status::Info("Loaded 1 older worklogs".to_owned())
+        );
+        assert_eq!(app.application.worklog_reads.get(), 2);
+    }
+
+    #[test]
+    fn a_failed_active_row_reload_marks_history_unavailable() {
+        let alpha = task(1, "alpha");
+        let active = Worklog::begin(worklog_id(20), alpha.id, at(200));
+        let first = page(vec![active], Some(cursor(200, 20)));
+        let continuation = page_with_active(vec![history_worklog(19, alpha.id, 100)], None, None);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(first), Ok(continuation), Err(TestService::failure())];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        let history = app.history().unwrap();
+        assert_eq!(history.availability, HistoryAvailability::Unavailable);
+        assert!(history.worklogs.is_empty());
+        assert_eq!(app.application.worklog_reads.get(), 3);
     }
 
     #[test]
@@ -2502,9 +3383,87 @@ mod tests {
             "the cursor state survived"
         );
         assert_eq!(app.history_selected_index(), Some(1), "the row stayed put");
+        assert_eq!(app.status(), &Status::Error("Storage error".to_owned()));
+    }
+
+    #[test]
+    fn history_change_while_loading_older_resets_to_the_newest_page() {
+        let alpha = task(1, "alpha");
+        let first = page(
+            vec![
+                history_worklog(20, alpha.id, 200),
+                history_worklog(19, alpha.id, 100),
+            ],
+            Some(cursor(100, 19)),
+        );
+        let newest = page(
+            vec![
+                history_worklog(21, alpha.id, 300),
+                history_worklog(19, alpha.id, 90),
+            ],
+            Some(cursor(90, 19)),
+        );
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![
+            Ok(first),
+            Err(ApplicationError::Repository(
+                RepositoryError::WorklogHistoryChanged { task_id: alpha.id },
+            )),
+            Ok(newest),
+        ];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::MoveDown);
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        let history = app.history().unwrap();
+        assert_eq!(
+            history.worklogs.iter().map(Worklog::id).collect::<Vec<_>>(),
+            vec![worklog_id(21), worklog_id(19)]
+        );
+        assert_eq!(history.next_cursor, Some(cursor(90, 19)));
+        assert_eq!(app.history_selected_index(), Some(1));
         assert_eq!(
             app.status(),
-            &Status::Error("Storage error: write failed".to_owned())
+            &Status::Info("History changed and was refreshed".to_owned())
+        );
+        assert_eq!(app.application.worklog_reads.get(), 3);
+    }
+
+    #[test]
+    fn failed_reset_after_history_change_marks_history_unavailable() {
+        let alpha = task(1, "alpha");
+        let first = page(
+            vec![
+                history_worklog(20, alpha.id, 200),
+                history_worklog(19, alpha.id, 100),
+            ],
+            Some(cursor(100, 19)),
+        );
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![
+            Ok(first),
+            Err(ApplicationError::Repository(
+                RepositoryError::WorklogHistoryChanged { task_id: alpha.id },
+            )),
+            Err(TestService::failure()),
+        ];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::MoveDown);
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        let history = app.history().unwrap();
+        assert_eq!(history.availability, HistoryAvailability::Unavailable);
+        assert!(history.worklogs.is_empty());
+        assert_eq!(history.next_cursor, None);
+        assert_eq!(history.selected, Some(worklog_id(19)));
+        assert_eq!(app.history_selected_index(), None);
+        assert_eq!(
+            app.status(),
+            &Status::Error("History changed, but refresh failed: Storage error".to_owned())
         );
     }
 
@@ -2538,7 +3497,7 @@ mod tests {
             history
                 .worklogs
                 .iter()
-                .map(|worklog| worklog.id)
+                .map(|worklog| worklog.id())
                 .collect::<Vec<_>>(),
             vec![worklog_id(21), worklog_id(19)],
             "the newest page replaced the loaded one"
@@ -2602,17 +3561,14 @@ mod tests {
             history
                 .worklogs
                 .iter()
-                .map(|worklog| worklog.id)
+                .map(|worklog| worklog.id())
                 .collect::<Vec<_>>(),
             vec![worklog_id(20)],
             "no row was lost"
         );
         assert_eq!(history.next_cursor, Some(cursor(200, 20)));
         assert_eq!(app.history_selected_index(), Some(0));
-        assert_eq!(
-            app.status(),
-            &Status::Error("Storage error: write failed".to_owned())
-        );
+        assert_eq!(app.status(), &Status::Error("Storage error".to_owned()));
     }
 
     #[test]
@@ -2730,7 +3686,7 @@ mod tests {
         app.handle(Command::OpenHistory);
 
         assert_eq!(app.active_task_id(), Some(task.id));
-        assert_eq!(app.active_worklog_id(), Some(active.id));
+        assert_eq!(app.active_worklog_id(), Some(active.id()));
         app.freeze_elapsed_for_tests(Duration::from_secs(125));
         assert_eq!(
             app.history_row_duration(&active).as_secs(),
@@ -2746,7 +3702,7 @@ mod tests {
         let active = Worklog::begin(worklog_id(10), task.id, at(100));
         let mut service = TestService::with_tasks(vec![task.clone()]);
         service.tracking = TrackingState::Running {
-            worklog: ActiveWorklog::begin(active.id, task.id, at(100)),
+            worklog: ActiveWorklog::begin(active.id(), task.id, at(100)),
         };
         service.worklog_pages = vec![Ok(page(
             vec![active, history_worklog(11, task.id, 200)],
@@ -2777,5 +3733,870 @@ mod tests {
             Duration::ZERO,
             "an inconsistent running row never falls back to wall time"
         );
+    }
+
+    fn correction_app(initial: Worklog, reload: Vec<Worklog>) -> App<TestService> {
+        let task = task(1, "alpha");
+        let mut service = TestService::with_tasks(vec![task]);
+        service.worklog_pages = vec![
+            Ok(page(vec![initial], Some(cursor(50, 50)))),
+            Ok(page(reload, None)),
+        ];
+        let mut app = App::load(service);
+        app.freeze_offset_for_tests(FixedOffset::east_opt(2 * 3600).unwrap());
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenCorrection);
+        app
+    }
+
+    #[test]
+    fn correction_prefills_canonical_microseconds_and_the_right_shape() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let start = DateTime::from_timestamp(100, 123_456_000).unwrap();
+        let end = DateTime::from_timestamp(200, 654_321_000).unwrap();
+        let completed = Worklog::new(worklog_id(10), task_id, start, Some(end)).unwrap();
+        let app = correction_app(completed.clone(), vec![completed]);
+        let draft = app.correction().unwrap();
+        assert_eq!(draft.start().text(), "1970-01-01T02:01:40.123456+02:00");
+        assert_eq!(
+            draft.end().unwrap().text(),
+            "1970-01-01T02:03:20.654321+02:00"
+        );
+
+        let active = Worklog::begin(worklog_id(11), task_id, start);
+        let mut app = correction_app(active.clone(), vec![active]);
+        assert!(app.correction().unwrap().end().is_none());
+        app.handle(Command::SwitchCorrectionField);
+        assert_eq!(app.correction().unwrap().focused(), CorrectionField::Start);
+    }
+
+    #[test]
+    fn timestamp_input_edits_and_moves_at_the_character_cursor() {
+        let mut input = TimestampInput::new("123".to_owned());
+
+        input.move_left();
+        input.insert('9');
+        assert_eq!(input.text(), "1293");
+        assert_eq!(input.cursor(), 3);
+
+        input.backspace();
+        assert_eq!(input.text(), "123");
+        assert_eq!(input.cursor(), 2);
+
+        input.delete();
+        assert_eq!(input.text(), "12");
+        assert_eq!(input.cursor(), 2);
+
+        input.move_left();
+        assert_eq!(input.cursor(), 1);
+        input.move_right();
+        assert_eq!(input.cursor(), 2);
+    }
+
+    #[test]
+    fn correction_switches_fields_and_edits_at_a_bounded_character_cursor() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = history_worklog(10, task_id, 100);
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+        app.handle(Command::SwitchCorrectionField);
+        assert_eq!(app.correction().unwrap().focused(), CorrectionField::End);
+        let original = app.correction().unwrap().end().unwrap().text().to_owned();
+        app.handle(Command::MoveCursorLeft);
+        app.handle(Command::Backspace);
+        app.handle(Command::Insert('9'));
+        assert_ne!(app.correction().unwrap().end().unwrap().text(), original);
+        app.handle(Command::MoveCursorRight);
+        app.handle(Command::Delete);
+        app.handle(Command::SwitchCorrectionField);
+        assert_eq!(app.correction().unwrap().focused(), CorrectionField::Start);
+
+        let mut input = TimestampInput::new("1🕒".to_owned());
+        input.backspace();
+        assert_eq!(input.text(), "1");
+        input.insert('x');
+        assert_eq!(input.text(), "1", "invalid timestamp text is ignored");
+        for _ in 0..100 {
+            input.insert('2');
+        }
+        assert_eq!(input.text().chars().count(), TimestampInput::MAX_LEN);
+    }
+
+    #[test]
+    fn correction_commands_adjust_and_edit_the_focused_timestamp() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = history_worklog(10, task_id, 100);
+        let mut app = correction_app(worklog.clone(), vec![worklog.clone()]);
+
+        app.handle(Command::AdjustForwardOneHour);
+        assert_eq!(
+            app.correction().unwrap().start().text(),
+            "1970-01-01T03:01:40.000000+02:00"
+        );
+
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+        let original = app.correction().unwrap().start().text().to_owned();
+        app.handle(Command::Backspace);
+        assert_eq!(
+            app.correction().unwrap().start().text(),
+            &original[..original.len() - 1]
+        );
+        app.handle(Command::Insert('0'));
+        assert_eq!(app.correction().unwrap().start().text(), original);
+        assert_eq!(
+            app.correction().unwrap().start().cursor(),
+            app.correction().unwrap().start().text().chars().count()
+        );
+    }
+
+    #[test]
+    fn correction_parsing_requires_rfc3339_with_a_numeric_offset() {
+        assert_eq!(
+            parse_correction_timestamp("1970-01-01T02:00:00.123456+02:00").unwrap(),
+            DateTime::from_timestamp(0, 123_456_000).unwrap()
+        );
+        for invalid in [
+            "1970-01-01T00:00:00Z",
+            "1970-01-01T00:00:00−00:00",
+            "1970-01-01T00:00:00+0000",
+            "1970-01-01 00:00:00+00:00",
+            "1970-01-01T00:00:00",
+            "not-a-timestamp",
+        ] {
+            assert_eq!(
+                parse_correction_timestamp(invalid),
+                Err("Use RFC 3339 with an explicit offset")
+            );
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct CorrectionSwitchingZone {
+        switch: i64,
+    }
+
+    impl CorrectionSwitchingZone {
+        fn offset(self, seconds: i64) -> FixedOffset {
+            if seconds < self.switch {
+                FixedOffset::east_opt(3600).unwrap()
+            } else {
+                FixedOffset::east_opt(7200).unwrap()
+            }
+        }
+    }
+
+    impl TimeZone for CorrectionSwitchingZone {
+        type Offset = FixedOffset;
+
+        fn from_offset(_offset: &Self::Offset) -> Self {
+            unreachable!("the test formatter does not reconstruct the timezone")
+        }
+
+        fn offset_from_local_date(&self, local: &NaiveDate) -> MappedLocalTime<Self::Offset> {
+            self.offset_from_local_datetime(&local.and_hms_opt(0, 0, 0).unwrap())
+        }
+
+        fn offset_from_local_datetime(
+            &self,
+            local: &NaiveDateTime,
+        ) -> MappedLocalTime<Self::Offset> {
+            MappedLocalTime::Single(self.offset(local.and_utc().timestamp()))
+        }
+
+        fn offset_from_utc_date(&self, utc: &NaiveDate) -> Self::Offset {
+            self.offset(utc.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp())
+        }
+
+        fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> Self::Offset {
+            self.offset(utc.and_utc().timestamp())
+        }
+    }
+
+    #[test]
+    fn minute_and_hour_adjustments_reformat_in_the_configured_timezone() {
+        let utc = FixedOffset::east_opt(0).unwrap();
+        assert_eq!(
+            adjusted_correction_timestamp(
+                "1970-01-01T00:00:00.123456+00:00",
+                TimeDelta::minutes(5),
+                &utc
+            )
+            .unwrap(),
+            "1970-01-01T00:05:00.123456+00:00"
+        );
+        assert_eq!(
+            adjusted_correction_timestamp(
+                "1970-01-01T00:00:00.123456+00:00",
+                TimeDelta::minutes(-5),
+                &utc
+            )
+            .unwrap(),
+            "1969-12-31T23:55:00.123456+00:00"
+        );
+        assert_eq!(
+            adjusted_correction_timestamp(
+                "1970-01-01T00:00:00.123456+00:00",
+                TimeDelta::hours(1),
+                &utc
+            )
+            .unwrap(),
+            "1970-01-01T01:00:00.123456+00:00"
+        );
+        assert_eq!(
+            adjusted_correction_timestamp(
+                "1970-01-01T00:00:00.123456+00:00",
+                TimeDelta::hours(-1),
+                &utc
+            )
+            .unwrap(),
+            "1969-12-31T23:00:00.123456+00:00"
+        );
+
+        let zone = CorrectionSwitchingZone { switch: 3600 };
+        assert_eq!(
+            adjusted_correction_timestamp(
+                "1970-01-01T01:55:00.000000+01:00",
+                TimeDelta::minutes(5),
+                &zone
+            )
+            .unwrap(),
+            "1970-01-01T03:00:00.000000+02:00"
+        );
+    }
+
+    #[test]
+    fn an_unparseable_adjustment_keeps_the_draft() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = history_worklog(10, task_id, 100);
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+        app.correction_mut_for_tests()
+            .start
+            .replace("bad".to_owned());
+        let before = app.correction().unwrap().clone();
+        app.handle(Command::AdjustForwardFiveMinutes);
+        assert_eq!(app.correction().unwrap(), &before);
+        assert_eq!(text(app.status()), "Use RFC 3339 with an explicit offset");
+    }
+
+    #[test]
+    fn escape_cancels_correction_without_writing() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = history_worklog(10, task_id, 100);
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+        app.handle(Command::Insert('2'));
+        app.handle(Command::Cancel);
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(
+            app.status(),
+            &Status::Info("Correction cancelled".to_owned())
+        );
+        assert!(app.application.correction_calls.is_empty());
+    }
+
+    #[test]
+    fn correction_failure_reports_write_and_recovery_causes() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = history_worklog(10, task_id, 100);
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+        app.application.correction_error = Some(ApplicationError::WorklogCorrectionRecovery {
+            write: RepositoryError::WorklogChanged { id: worklog_id(10) },
+            recovery: RepositoryError::Backend {
+                message: "reload failed".to_owned(),
+            },
+        });
+
+        app.handle(Command::Confirm);
+
+        assert_eq!(
+            text(app.status()),
+            "Worklog changed. State recovery also failed: Storage error. Cancel and press r to refresh."
+        );
+        assert!(app.correction().is_some());
+    }
+
+    #[test]
+    fn repository_error_presentation_is_stable_for_every_variant() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog_id = worklog_id(2);
+        let presented = [
+            (
+                RepositoryError::TaskNotFound { id: task_id },
+                "Task not found",
+            ),
+            (
+                RepositoryError::WorklogNotFound { id: worklog_id },
+                "Worklog not found",
+            ),
+            (
+                RepositoryError::WorklogAlreadyStopped { id: worklog_id },
+                "Worklog is already stopped",
+            ),
+            (
+                RepositoryError::WorklogChanged { id: worklog_id },
+                "Worklog changed in another client",
+            ),
+            (
+                RepositoryError::WorklogHistoryChanged { task_id },
+                "Worklog history changed. Press r to refresh",
+            ),
+            (
+                RepositoryError::SameTaskWorklogOverlap { id: worklog_id },
+                "The worklog overlaps another worklog",
+            ),
+            (
+                RepositoryError::WorklogAlreadyExists { id: worklog_id },
+                "Worklog already exists",
+            ),
+            (
+                RepositoryError::TaskAlreadyExists { id: task_id },
+                "Task already exists",
+            ),
+            (
+                RepositoryError::ActiveWorklogExists,
+                "Another worklog is active",
+            ),
+            (
+                RepositoryError::TaskArchived { id: task_id },
+                "Task is archived",
+            ),
+            (
+                RepositoryError::TaskIsActive { id: task_id },
+                "Task has active work",
+            ),
+            (
+                RepositoryError::Constraint {
+                    message: "private constraint".to_owned(),
+                },
+                "Storage rejected the change",
+            ),
+            (
+                RepositoryError::CorruptData {
+                    field: "private field",
+                },
+                "Stored data is invalid",
+            ),
+            (
+                RepositoryError::Backend {
+                    message: "private backend".to_owned(),
+                },
+                "Storage error",
+            ),
+        ];
+        for (error, expected) in presented {
+            assert_eq!(repository_error_text(&error), expected);
+        }
+    }
+
+    #[test]
+    fn repository_statuses_hide_backend_secrets_and_corrupt_data_fields() {
+        let secret = "postgres://user:secret@host/tracker";
+        let backend = RepositoryError::Backend {
+            message: secret.to_owned(),
+        };
+        let corrupt = RepositoryError::CorruptData {
+            field: "account token",
+        };
+        let ordinary = [
+            ApplicationError::Repository(backend.clone()),
+            ApplicationError::TrackingWrite(backend.clone()),
+            ApplicationError::TrackingRecovery(backend.clone()),
+            ApplicationError::TaskRecovery(corrupt.clone()),
+            ApplicationError::WorklogCorrectionWrite {
+                write: backend.clone(),
+            },
+            ApplicationError::WorklogCorrectionRecovery {
+                write: backend.clone(),
+                recovery: corrupt,
+            },
+        ];
+        for error in ordinary {
+            let status = application_error_text(&error);
+            assert!(!status.contains(secret), "{status}");
+            assert!(!status.contains("account token"), "{status}");
+        }
+        let correction = ApplicationError::WorklogCorrectionRecovery {
+            write: RepositoryError::WorklogChanged { id: worklog_id(10) },
+            recovery: backend,
+        };
+        let status = correction_error_text(&correction);
+        assert!(!status.contains(secret), "{status}");
+        assert_eq!(
+            status,
+            "Worklog changed. State recovery also failed: Storage error. Cancel and press r to refresh."
+        );
+    }
+
+    #[test]
+    fn generic_correction_recovery_reports_both_sanitized_causes() {
+        let write_secret = "postgres://writer:secret@host/tracker";
+        let recovery_secret = "postgres://reader:secret@host/tracker";
+        let error = ApplicationError::WorklogCorrectionRecovery {
+            write: RepositoryError::Backend {
+                message: write_secret.to_owned(),
+            },
+            recovery: RepositoryError::Backend {
+                message: recovery_secret.to_owned(),
+            },
+        };
+
+        let status = correction_error_text(&error);
+
+        assert_eq!(
+            status,
+            "Correction failed: Storage error. State recovery failed: Storage error."
+        );
+        assert!(!status.contains(write_secret), "{status}");
+        assert!(!status.contains(recovery_secret), "{status}");
+    }
+
+    #[test]
+    fn overlap_recovery_failure_keeps_the_overlap_error_text() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = history_worklog(10, task_id, 100);
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+        app.application.correction_error = Some(ApplicationError::WorklogCorrectionRecovery {
+            write: RepositoryError::SameTaskWorklogOverlap { id: worklog_id(10) },
+            recovery: RepositoryError::Backend {
+                message: "reload failed".to_owned(),
+            },
+        });
+
+        app.handle(Command::Confirm);
+
+        assert_eq!(
+            text(app.status()),
+            "The corrected time overlaps another worklog. State recovery also failed: Storage error."
+        );
+    }
+
+    #[test]
+    fn quitting_from_correction_does_not_write() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = history_worklog(10, task_id, 100);
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+        app.handle(Command::Quit);
+        assert!(!app.is_running());
+        assert!(app.application.correction_calls.is_empty());
+        assert!(app.correction().is_some());
+    }
+
+    #[test]
+    fn every_correction_failure_keeps_the_full_draft_open() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = history_worklog(10, task_id, 100);
+        let failures = [
+            ApplicationError::InvalidWorklogCorrection(WorklogCorrectionError::EndBeforeStart),
+            ApplicationError::WorklogCorrectionWrite {
+                write: RepositoryError::SameTaskWorklogOverlap { id: worklog.id() },
+            },
+            ApplicationError::WorklogCorrectionWrite {
+                write: RepositoryError::Backend {
+                    message: "write failed".to_owned(),
+                },
+            },
+            ApplicationError::WorklogCorrectionRecovery {
+                write: RepositoryError::Backend {
+                    message: "write failed".to_owned(),
+                },
+                recovery: RepositoryError::Backend {
+                    message: "reload failed".to_owned(),
+                },
+            },
+            ApplicationError::WorklogCorrectionWrite {
+                write: RepositoryError::WorklogChanged { id: worklog.id() },
+            },
+        ];
+        for failure in failures {
+            let mut app = correction_app(worklog.clone(), vec![worklog.clone()]);
+            app.application.correction_error = Some(failure.clone());
+            let before = app.correction().unwrap().clone();
+            app.handle(Command::Confirm);
+            assert_eq!(
+                app.correction().unwrap(),
+                &before,
+                "draft changed for {failure:?}"
+            );
+            if matches!(
+                failure,
+                ApplicationError::WorklogCorrectionWrite {
+                    write: RepositoryError::WorklogChanged { .. }
+                }
+            ) {
+                assert_eq!(
+                    text(app.status()),
+                    "Worklog changed. Cancel and press r to refresh."
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn parse_failures_keep_both_drafts_and_skip_the_application() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = history_worklog(10, task_id, 100);
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+        app.correction_mut_for_tests()
+            .start
+            .replace("bad".to_owned());
+        let before = app.correction().unwrap().clone();
+        app.handle(Command::Confirm);
+        assert_eq!(app.correction().unwrap(), &before);
+        assert!(app.application.correction_calls.is_empty());
+    }
+
+    #[test]
+    fn successful_correction_discards_older_pages_and_resolves_selection() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let corrected = history_worklog(10, task_id, 100);
+        let newest = history_worklog(11, task_id, 300);
+        let mut app = correction_app(corrected.clone(), vec![newest.clone(), corrected.clone()]);
+        app.handle(Command::Confirm);
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(app.history().unwrap().worklogs.len(), 2);
+        assert_eq!(app.history().unwrap().next_cursor, None);
+        assert_eq!(app.history_selected_index(), Some(1));
+        assert_eq!(app.application.worklog_reads.get(), 2);
+        let (id, expected, replacement, occurred_at) = app.application.correction_calls[0];
+        assert_eq!(id, corrected.id());
+        assert_eq!(expected, corrected.times());
+        assert_eq!(replacement, corrected.times());
+        assert!(occurred_at <= Utc::now());
+
+        let mut app = correction_app(corrected.clone(), vec![newest.clone()]);
+        app.handle(Command::Confirm);
+        assert_eq!(app.history().unwrap().selected, Some(newest.id()));
+        assert_eq!(app.history_selected_index(), Some(0));
+    }
+
+    #[test]
+    fn correction_and_history_commands_require_their_own_screen_and_mode() {
+        let task = task(1, "alpha");
+        let worklog = history_worklog(10, task.id, 100);
+        let mut service = TestService::with_tasks(vec![task]);
+        service.worklog_pages = vec![Ok(page(vec![worklog], None))];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.screen = Screen::TaskList;
+        app.handle(Command::OpenCorrection);
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(app.screen(), Screen::TaskList);
+
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = history_worklog(10, task_id, 100);
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+        let reads = app.application.worklog_reads.get();
+        app.handle(Command::LoadOlderWorklogs);
+        assert_eq!(app.application.worklog_reads.get(), reads);
+        app.handle(Command::RefreshWorklogs);
+        assert_eq!(app.application.worklog_reads.get(), reads);
+        app.handle(Command::BackToTaskList);
+        assert_eq!(app.screen(), Screen::WorklogHistory);
+        assert!(app.correction().is_some());
+    }
+
+    #[test]
+    fn unavailable_history_renders_its_retry_message_with_the_focused_border() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        use ratatui::style::Color;
+
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = history_worklog(10, task_id, 100);
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+        app.mode = Mode::Normal;
+        app.mark_history_unavailable();
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|frame| crate::ui::render(frame, &app))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let text = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol()))
+            .collect::<String>();
+
+        assert!(text.contains("History unavailable. Press r to retry."));
+        assert_eq!(buffer[(0, 1)].fg, Color::Blue);
+    }
+
+    #[test]
+    fn saved_correction_marks_history_unavailable_until_retry_succeeds() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let original = history_worklog(10, task_id, 100);
+        let corrected = Worklog::new(worklog_id(10), task_id, at(110), Some(at(170))).unwrap();
+        let mut service = TestService::with_tasks(vec![task(1, "alpha")]);
+        service.worklog_pages = vec![
+            Ok(page(vec![original.clone()], Some(cursor(100, 10)))),
+            Err(TestService::failure()),
+            Ok(page(vec![corrected.clone()], None)),
+        ];
+        let mut app = App::load(service);
+        app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenCorrection);
+        {
+            let draft = app.correction_mut_for_tests();
+            draft
+                .start
+                .replace("1970-01-01T00:01:50.000000+00:00".to_owned());
+            draft
+                .end
+                .as_mut()
+                .unwrap()
+                .replace("1970-01-01T00:02:50.000000+00:00".to_owned());
+        }
+
+        app.handle(Command::Confirm);
+
+        let history = app.history().unwrap();
+        assert_eq!(history.availability, HistoryAvailability::Unavailable);
+        assert!(!history.is_available());
+        assert!(history.worklogs.is_empty());
+        assert_eq!(history.next_cursor, None);
+        assert_eq!(history.selected, Some(original.id()));
+        assert_eq!(app.history_selected_index(), None);
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(
+            app.status(),
+            &Status::Error("Correction saved, but history refresh failed".to_owned())
+        );
+
+        app.handle(Command::MoveDown);
+        app.handle(Command::MoveUp);
+        assert_eq!(app.history().unwrap().selected, Some(original.id()));
+
+        app.handle(Command::OpenCorrection);
+        app.handle(Command::LoadOlderWorklogs);
+        assert_eq!(app.application.worklog_reads.get(), 2);
+        assert!(app.correction().is_none());
+
+        app.handle(Command::RefreshWorklogs);
+        let history = app.history().unwrap();
+        assert_eq!(history.availability, HistoryAvailability::Available);
+        assert_eq!(history.worklogs, vec![corrected]);
+        assert_eq!(history.next_cursor, None);
+        assert_eq!(app.history_selected_index(), Some(0));
+        assert_eq!(app.status(), &Status::Info("Refreshed".to_owned()));
+    }
+
+    #[test]
+    fn failed_post_save_reload_keeps_the_externally_corrected_active_aggregate() {
+        let active_task = task(1, "active");
+        let corrected_task = task(2, "corrected");
+        let active = Worklog::begin(worklog_id(10), active_task.id, at(600));
+        let corrected = history_worklog(11, corrected_task.id, 480);
+        let mut service =
+            TestService::with_tasks(vec![active_task.clone(), corrected_task.clone()]);
+        service.latest_work_starts = vec![(active_task.id, at(600)), (corrected_task.id, at(480))];
+        service.tracking = TrackingState::Running {
+            worklog: ActiveWorklog::begin(active.id(), active.task_id(), active.start()),
+        };
+        service.worklog_pages = vec![
+            Ok(page_with_active(
+                vec![corrected.clone()],
+                Some(active.clone()),
+                None,
+            )),
+            Err(TestService::failure()),
+        ];
+        let mut app = App::load(service);
+        app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
+        app.handle(Command::MoveDown);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenCorrection);
+        app.application.latest_work_starts[0].1 = at(540);
+        app.application.tracking = TrackingState::Running {
+            worklog: ActiveWorklog::begin(active.id(), active.task_id(), at(540)),
+        };
+        {
+            let draft = app.correction_mut_for_tests();
+            draft
+                .start
+                .replace("1970-01-01T00:07:50.000000+00:00".to_owned());
+            draft
+                .end
+                .as_mut()
+                .unwrap()
+                .replace("1970-01-01T00:08:50.000000+00:00".to_owned());
+        }
+
+        app.handle(Command::Confirm);
+
+        assert_eq!(
+            app.application
+                .tasks(TaskOrdering::RecentlyWorked)
+                .into_iter()
+                .find(|item| item.task.id == active_task.id)
+                .unwrap()
+                .latest_work_start,
+            Some(at(540))
+        );
+        assert_eq!(
+            app.status(),
+            &Status::Error("Correction saved, but history refresh failed".to_owned())
+        );
+    }
+
+    #[test]
+    fn correction_is_available_from_archived_history() {
+        let mut archived = task(1, "archived");
+        archived.archive(at(200));
+        let worklog = history_worklog(10, archived.id, 100);
+        let mut service = TestService::with_tasks(vec![archived]);
+        service.worklog_pages = vec![
+            Ok(page(vec![worklog.clone()], None)),
+            Ok(page(vec![worklog], None)),
+        ];
+        let mut app = App::load(service);
+        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenCorrection);
+        assert!(app.correction().is_some());
+        app.handle(Command::Confirm);
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(app.view(), TaskView::Archived);
+    }
+
+    #[test]
+    fn successful_correction_refreshes_recently_worked_ordering() {
+        let repository = SqliteRepository::open_in_memory().unwrap();
+        let alpha = task(1, "alpha");
+        let beta = task(2, "beta");
+        repository.create_task(alpha.clone()).unwrap();
+        repository.create_task(beta.clone()).unwrap();
+        repository
+            .insert_worklog(&history_worklog(10, alpha.id, 200))
+            .unwrap();
+        repository
+            .insert_worklog(&history_worklog(11, beta.id, 300))
+            .unwrap();
+        let mut app = App::load(TrackerApplication::load(repository).unwrap());
+        app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
+        assert_eq!(app.tasks()[0].id, beta.id);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenCorrection);
+        {
+            let draft = app.correction_mut_for_tests();
+            draft
+                .start
+                .replace("1970-01-01T00:01:40.000000+00:00".to_owned());
+            draft
+                .end
+                .as_mut()
+                .unwrap()
+                .replace("1970-01-01T00:02:40.000000+00:00".to_owned());
+        }
+        app.handle(Command::Confirm);
+        assert_eq!(app.tasks()[0].id, alpha.id);
+        assert_eq!(app.tasks()[1].id, beta.id);
+    }
+
+    #[test]
+    fn correction_reload_uses_the_final_active_start_for_elapsed_and_stopping() {
+        let task = task(1, "alpha");
+        let now = Utc::now();
+        let initial = Worklog::begin(worklog_id(10), task.id, now - TimeDelta::minutes(10));
+        let correction_start = now - TimeDelta::minutes(1);
+        let final_start = now - TimeDelta::minutes(2);
+        let final_active = Worklog::begin(worklog_id(10), task.id, final_start);
+        let mut service = TestService::with_tasks(vec![task]);
+        service.worklog_pages = vec![
+            Ok(page_with_active(vec![initial.clone()], Some(initial), None)),
+            Ok(page_with_active(
+                vec![final_active.clone()],
+                Some(final_active.clone()),
+                None,
+            )),
+        ];
+        let mut app = App::load(service);
+        app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenCorrection);
+        app.correction_mut_for_tests()
+            .start
+            .replace(correction_timestamp(
+                correction_start,
+                &FixedOffset::east_opt(0).unwrap(),
+            ));
+
+        app.handle(Command::Confirm);
+
+        app.freeze_elapsed_for_tests(Duration::from_secs(180));
+        assert!(app.elapsed().unwrap() >= Duration::from_secs(180));
+        assert_eq!(app.history_row_duration(&final_active).as_secs(), 180);
+        app.handle(Command::BackToTaskList);
+        app.handle(Command::ToggleTracking);
+        let (_, stopped_at) = app.application.clear_calls[0];
+        assert!(stopped_at >= final_start + TimeDelta::seconds(180));
+        assert!(stopped_at < final_start + TimeDelta::seconds(181));
+    }
+
+    #[test]
+    fn completed_correction_preserves_a_frozen_timer_across_a_wall_clock_jump() {
+        let task = task(1, "alpha");
+        let active = Worklog::begin(worklog_id(10), task.id, at(100));
+        let completed = Worklog::new(worklog_id(11), task.id, at(50), Some(at(60))).unwrap();
+        let mut service = TestService::with_tasks(vec![task]);
+        service.worklog_pages = vec![
+            Ok(page_with_active(
+                vec![active.clone(), completed.clone()],
+                Some(active.clone()),
+                None,
+            )),
+            Ok(page_with_active(
+                vec![active.clone(), completed],
+                Some(active.clone()),
+                None,
+            )),
+        ];
+        let mut app = App::load(service);
+        app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
+        app.handle(Command::OpenHistory);
+        app.handle(Command::MoveDown);
+        app.handle(Command::OpenCorrection);
+        app.freeze_elapsed_for_tests(Duration::from_secs(600));
+
+        app.handle(Command::Confirm);
+        app.sync_tracking_after_history_reload_at(at(10_000), Instant::now());
+
+        app.handle(Command::BackToTaskList);
+        app.handle(Command::ToggleTracking);
+        let (_, stopped_at) = app.application.clear_calls[0];
+        assert!(stopped_at >= at(700));
+        assert!(stopped_at < at(701));
+    }
+
+    #[test]
+    fn correcting_active_start_reanchors_header_and_running_row_without_negatives() {
+        let task = task(1, "alpha");
+        let now = Utc::now();
+        let original_start = now - TimeDelta::minutes(10);
+        let corrected_start = now - TimeDelta::minutes(1);
+        let original = Worklog::begin(worklog_id(10), task.id, original_start);
+        let corrected = Worklog::begin(worklog_id(10), task.id, corrected_start);
+        let mut service = TestService::with_tasks(vec![task.clone()]);
+        service.tracking = TrackingState::Running {
+            worklog: ActiveWorklog::begin(original.id(), task.id, original_start),
+        };
+        service.worklog_pages = vec![
+            Ok(page(vec![original], None)),
+            Ok(page(vec![corrected.clone()], None)),
+        ];
+        let mut app = App::load(service);
+        app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenCorrection);
+        app.correction_mut_for_tests()
+            .start
+            .replace(correction_timestamp(
+                corrected_start,
+                &FixedOffset::east_opt(0).unwrap(),
+            ));
+        app.handle(Command::Confirm);
+
+        let header = app.elapsed().unwrap();
+        let row = app.history_row_duration(&corrected);
+        assert!(header >= Duration::from_secs(59) && header < Duration::from_secs(62));
+        assert!(row >= Duration::from_secs(59) && row < Duration::from_secs(62));
+
+        assert!(app.elapsed().unwrap() >= Duration::from_secs(59));
     }
 }

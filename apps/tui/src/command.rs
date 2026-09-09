@@ -14,8 +14,26 @@ pub enum Command {
     ShowActiveTasks,
     /// Show the list of archived tasks.
     ShowArchivedTasks,
-    /// Open the read-only worklog history of the selected task.
+    /// Open the worklog history of the selected task.
     OpenHistory,
+    /// Open timestamp correction for the selected worklog.
+    OpenCorrection,
+    /// Move focus between correction fields.
+    SwitchCorrectionField,
+    /// Move the correction cursor left.
+    MoveCursorLeft,
+    /// Move the correction cursor right.
+    MoveCursorRight,
+    /// Delete the character under the correction cursor.
+    Delete,
+    /// Move the focused correction timestamp forward five minutes.
+    AdjustForwardFiveMinutes,
+    /// Move the focused correction timestamp backward five minutes.
+    AdjustBackwardFiveMinutes,
+    /// Move the focused correction timestamp forward one hour.
+    AdjustForwardOneHour,
+    /// Move the focused correction timestamp backward one hour.
+    AdjustBackwardOneHour,
     /// Append the next bounded older page to the open worklog history.
     LoadOlderWorklogs,
     /// Reload the open worklog history from its newest page.
@@ -34,13 +52,13 @@ pub enum Command {
     OpenRename,
     /// Ask for confirmation before archiving the selected task.
     OpenArchiveConfirm,
-    /// Confirm the pending text input or archive dialog.
+    /// Confirm the pending input, correction, or archive dialog.
     Confirm,
-    /// Dismiss the pending text input or archive dialog.
+    /// Dismiss the pending input, correction, or archive dialog.
     Cancel,
     /// Type a character into the open text input.
     Insert(char),
-    /// Delete the last character of the open text input.
+    /// Delete the character before the cursor in the open input.
     Backspace,
     /// Leave the application.
     Quit,
