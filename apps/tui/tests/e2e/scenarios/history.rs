@@ -15,7 +15,7 @@ fn at(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> D
 }
 
 fn utc_text(at: DateTime<Utc>) -> String {
-    at.format("%Y-%m-%d %H:%M:%S +00:00").to_string()
+    at.format("%Y-%m-%d %H:%M").to_string()
 }
 
 fn selected_start(panel: &WorklogHistoryPanel) -> Option<String> {
@@ -62,11 +62,11 @@ fn selected_task_history_lists_completed_worklogs_newest_first() {
         panel.is_shown()
             && panel.task_name() == "Customer migration"
             && panel.row_count() == 2
-            && panel.row(0).start_text() == "2025-06-20 14:30:00 +00:00"
-            && panel.row(0).end_text() == "2025-06-20 16:02:03 +00:00"
+            && panel.row(0).start_text() == "2025-06-20 14:30"
+            && panel.row(0).end_text() == "2025-06-20 16:02"
             && panel.row(0).duration_text() == "01:32:03"
-            && panel.row(1).start_text() == "2025-01-15 08:00:00 +00:00"
-            && panel.row(1).end_text() == "2025-01-15 08:45:30 +00:00"
+            && panel.row(1).start_text() == "2025-01-15 08:00"
+            && panel.row(1).end_text() == "2025-01-15 08:45"
             && panel.row(1).duration_text() == "00:45:30"
             && panel.selected_index() == Some(0)
             && page.footer().hints_history()
@@ -75,11 +75,11 @@ fn selected_task_history_lists_completed_worklogs_newest_first() {
     assert_eq!(panel.title(), "Worklog history · Customer migration");
     assert_eq!(panel.task_name(), "Customer migration");
     assert_eq!(panel.row_count(), 2);
-    assert_eq!(panel.row(0).start_text(), "2025-06-20 14:30:00 +00:00");
-    assert_eq!(panel.row(0).end_text(), "2025-06-20 16:02:03 +00:00");
+    assert_eq!(panel.row(0).start_text(), "2025-06-20 14:30");
+    assert_eq!(panel.row(0).end_text(), "2025-06-20 16:02");
     assert_eq!(panel.row(0).duration_text(), "01:32:03");
-    assert_eq!(panel.row(1).start_text(), "2025-01-15 08:00:00 +00:00");
-    assert_eq!(panel.row(1).end_text(), "2025-01-15 08:45:30 +00:00");
+    assert_eq!(panel.row(1).start_text(), "2025-01-15 08:00");
+    assert_eq!(panel.row(1).end_text(), "2025-01-15 08:45");
     assert_eq!(panel.row(1).duration_text(), "00:45:30");
 
     let page = tt.press_and_wait(Key::Esc, "the same selected task", |screen| {
@@ -306,8 +306,8 @@ fn archived_and_empty_tasks_expose_their_history() {
             panel.is_shown()
                 && panel.task_name() == "Archived audit"
                 && panel.row_count() == 1
-                && panel.row(0).start_text() == "2025-04-08 10:00:00 +00:00"
-                && panel.row(0).end_text() == "2025-04-08 10:20:15 +00:00"
+                && panel.row(0).start_text() == "2025-04-08 10:00"
+                && panel.row(0).end_text() == "2025-04-08 10:20"
                 && panel.row(0).duration_text() == "00:20:15"
         },
     );

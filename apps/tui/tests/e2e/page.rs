@@ -684,7 +684,7 @@ impl WorklogRow {
         panel_row_text(&self.screen, self.top_row).trim().to_owned()
     }
 
-    /// The row's start time as rendered, e.g. `2026-07-12 16:45:00 +00:00`.
+    /// The row's start time as rendered, e.g. `2026-07-12 16:45`.
     pub(crate) fn start_text(&self) -> String {
         self.interval_line()
             .split_once(HISTORY_ARROW)

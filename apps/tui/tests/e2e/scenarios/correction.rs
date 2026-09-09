@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Timelike, Utc};
 use termlens::Key;
 
 use crate::context::TestContext;
@@ -15,9 +15,7 @@ fn at(hour: u32, minute: u32) -> DateTime<Utc> {
 }
 
 fn correction_text(timestamp: DateTime<Utc>) -> String {
-    timestamp
-        .format("%Y-%m-%dT%H:%M:%S.000000+00:00")
-        .to_string()
+    timestamp.format("%Y-%m-%d %H:%M").to_string()
 }
 
 fn open_history(tt: &mut crate::driver::TuiDriver, task_name: &str) -> TimeTrackerPage {
@@ -55,7 +53,7 @@ fn completed_worklog_correction_persists_and_refreshes_history() {
     });
     assert_eq!(
         page.correction_dialog().unwrap().start_text(),
-        "2025-07-12T10:05:00.000000+00:00"
+        "2025-07-12 10:05"
     );
     tt.press_and_wait(Key::Tab, "the end correction field", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -65,9 +63,8 @@ fn completed_worklog_correction_persists_and_refreshes_history() {
 
     tt.press_and_wait(Key::Char('K'), "the hour adjustment", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
-        page.correction_dialog().is_some_and(|dialog| {
-            dialog.end_text().as_deref() == Some("2025-07-12T11:00:00.000000+00:00")
-        })
+        page.correction_dialog()
+            .is_some_and(|dialog| dialog.end_text().as_deref() == Some("2025-07-12 11:00"))
     });
     let page = tt.press_and_wait(Key::Enter, "the corrected history", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -76,9 +73,9 @@ fn completed_worklog_correction_persists_and_refreshes_history() {
             && page.correction_dialog().is_none()
             && page.status_bar().text() == "Corrected worklog"
             && panel.row_count() == 2
-            && panel.row(0).start_text() == "2025-07-12 10:05:00 +00:00"
+            && panel.row(0).start_text() == "2025-07-12 10:05"
             && panel.row(0).duration_text() == "00:55:00"
-            && panel.row(1).start_text() == "2025-07-12 08:00:00 +00:00"
+            && panel.row(1).start_text() == "2025-07-12 08:00"
     });
     assert_eq!(page.worklog_history_panel().selected_index(), Some(0));
 
@@ -92,6 +89,55 @@ fn completed_worklog_correction_persists_and_refreshes_history() {
     assert_eq!(stored.task_name, original.task_name);
     assert_eq!(stored.start, at(10, 5));
     assert_eq!(stored.end, Some(at(11, 0)));
+    tt.quit().assert_clean_exit();
+}
+
+#[test]
+fn timezone_override_renders_local_minutes_and_saves_utc() {
+    let context = TestContext::new();
+    let database = context.database();
+    database.create_task("Timezone review");
+    let original = database.create_worklog("Timezone review", at(14, 30), Some(at(15, 0)));
+
+    let mut tt = context.launch_in_timezone("America/New_York");
+    let page = open_history(&mut tt, "Timezone review");
+    let row = page.worklog_history_panel().row(0);
+    assert_eq!(row.start_text(), "2025-07-12 10:30");
+    assert_eq!(row.end_text(), "2025-07-12 11:00");
+
+    let page = tt.press_and_wait(Key::Char('e'), "the local correction dialog", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.correction_dialog().is_some_and(|dialog| {
+            dialog.start_text() == "2025-07-12 10:30"
+                && dialog.end_text().as_deref() == Some("2025-07-12 11:00")
+        })
+    });
+    assert_eq!(
+        page.correction_dialog().unwrap().start_text(),
+        "2025-07-12 10:30"
+    );
+
+    tt.press_and_wait(Key::Char('j'), "the adjusted local minute", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .correction_dialog()
+            .is_some_and(|dialog| dialog.start_text() == "2025-07-12 10:35")
+    });
+    tt.press_and_wait(Key::Enter, "the corrected local history", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        let row = page.worklog_history_panel().row(0);
+        page.status_bar().text() == "Corrected worklog"
+            && row.start_text() == "2025-07-12 10:35"
+            && row.end_text() == "2025-07-12 11:00"
+    });
+
+    let stored = context
+        .database()
+        .worklogs_for_task("Timezone review")
+        .into_iter()
+        .find(|worklog| worklog.id == original.id)
+        .expect("the corrected worklog must remain stored");
+    assert_eq!(stored.start, at(14, 35));
+    assert_eq!(stored.end, Some(at(15, 0)));
     tt.quit().assert_clean_exit();
 }
 
@@ -145,7 +191,13 @@ fn active_worklog_start_correction_keeps_tracking_and_reanchors_timers() {
     let after = context.database().active_worklog().unwrap();
     assert_eq!(after.id, original.id);
     assert_eq!(after.task_id, original.task_id);
-    assert_eq!(after.start, start + chrono::TimeDelta::minutes(5));
+    assert_eq!(
+        after.start,
+        (start + chrono::TimeDelta::minutes(5))
+            .with_second(0)
+            .unwrap(),
+        "the adjusted local minute is stored at second 00",
+    );
     assert!(after.end.is_none());
     tt.quit().assert_clean_exit();
 }
@@ -170,7 +222,7 @@ fn correction_escape_reports_cancelled_and_preserves_storage() {
         let page = TimeTrackerPage::new(screen.clone());
         page.correction_dialog().is_none()
             && page.status_bar().text() == "Correction cancelled"
-            && page.worklog_history_panel().row(0).start_text() == "2025-07-12 10:00:00 +00:00"
+            && page.worklog_history_panel().row(0).start_text() == "2025-07-12 10:00"
     });
     assert_eq!(page.status_bar().text(), "Correction cancelled");
     assert_eq!(
@@ -217,7 +269,7 @@ fn older_page_load_after_another_client_changes_start_reloads_newest_page() {
         let panel = page.worklog_history_panel();
         panel.is_shown()
             && page.status_bar().text() == "History changed and was refreshed"
-            && panel.row(0).start_text() == "2025-07-12 12:00:00 +00:00"
+            && panel.row(0).start_text() == "2025-07-12 12:00"
     });
     let starts: Vec<String> = (0..page.worklog_history_panel().row_count())
         .map(|index| page.worklog_history_panel().row(index).start_text())
@@ -227,11 +279,11 @@ fn older_page_load_after_another_client_changes_start_reloads_newest_page() {
     assert_eq!(
         starts
             .iter()
-            .filter(|start| **start == "2025-07-12 12:00:00 +00:00")
+            .filter(|start| **start == "2025-07-12 12:00")
             .count(),
         1
     );
-    assert!(!starts.contains(&"2025-07-12 09:51:00 +00:00".to_owned()));
+    assert!(!starts.contains(&"2025-07-12 09:51".to_owned()));
 
     tt.quit().assert_clean_exit();
 }
@@ -267,7 +319,7 @@ fn archived_history_allows_worklog_correction() {
     tt.press_and_wait(Key::Esc, "the unchanged archived history", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.correction_dialog().is_none()
-            && page.worklog_history_panel().row(0).start_text() == "2025-07-12 09:00:00 +00:00"
+            && page.worklog_history_panel().row(0).start_text() == "2025-07-12 09:00"
     });
     tt.quit().assert_clean_exit();
 }

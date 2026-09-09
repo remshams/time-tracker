@@ -41,6 +41,11 @@ impl TestContext {
         TuiDriver::spawn(&self.home)
     }
 
+    /// Launches `tt` with a specific IANA timezone for display assertions.
+    pub(crate) fn launch_in_timezone(&self, timezone: &str) -> TuiDriver {
+        TuiDriver::spawn_in_timezone(&self.home, timezone)
+    }
+
     /// Opens the context's database through the real SQLite adapter, as a
     /// fixture for seeding and injected failures and as a probe for
     /// postconditions.
