@@ -99,16 +99,12 @@ impl Tracker {
     /// Fails when the worklog is already stopped, because a stopped worklog is
     /// never resumed.
     pub fn resume(worklog: Worklog) -> Result<Self, TrackingError> {
-        if worklog.end.is_some() {
-            return Err(TrackingError::WorklogNotActive { id: worklog.id });
+        if !worklog.is_active() {
+            return Err(TrackingError::WorklogNotActive { id: worklog.id() });
         }
         Ok(Self {
             state: TrackingState::Running {
-                worklog: ActiveWorklog {
-                    id: worklog.id,
-                    task_id: worklog.task_id,
-                    start: worklog.start,
-                },
+                worklog: ActiveWorklog::begin(worklog.id(), worklog.task_id(), worklog.start()),
             },
         })
     }
@@ -177,7 +173,7 @@ impl Tracker {
             TrackingState::Idle => return Err(TrackingError::NotRunning),
             TrackingState::Running { worklog } => worklog.clone(),
         };
-        if task.id() == active.task_id {
+        if task.id() == active.task_id() {
             return Err(TrackingError::TaskAlreadyActive { id: task.id() });
         }
         if task.is_archived() {
@@ -215,7 +211,7 @@ impl Tracker {
             }
             TrackingState::Running { worklog } => worklog.clone(),
         };
-        if active.task_id == task.id() {
+        if active.task_id() == task.id() {
             return self
                 .stop(at)
                 .map(|worklog| TrackingOutcome::Stopped { worklog });
@@ -234,7 +230,7 @@ impl Tracker {
     pub fn ensure_archivable(&self, task_id: TaskId) -> Result<(), TrackingError> {
         match &self.state {
             TrackingState::Idle => Ok(()),
-            TrackingState::Running { worklog } if worklog.task_id == task_id => {
+            TrackingState::Running { worklog } if worklog.task_id() == task_id => {
                 Err(TrackingError::TaskIsActive { id: task_id })
             }
             TrackingState::Running { .. } => Ok(()),
@@ -280,18 +276,14 @@ mod tests {
     fn start_creates_one_active_worklog_for_the_task() {
         let mut tracker = Tracker::idle();
         let worklog = tracker.start(&task(1), at(100)).unwrap();
-        assert_eq!(worklog.task_id, task_id(1));
-        assert_eq!(worklog.start, at(100));
-        assert_eq!(worklog.end, None);
-        assert_eq!(tracker.active().map(|e| e.id), Some(worklog.id));
+        assert_eq!(worklog.task_id(), task_id(1));
+        assert_eq!(worklog.start(), at(100));
+        assert_eq!(worklog.end(), None);
+        assert_eq!(tracker.active().map(|e| e.id()), Some(worklog.id()));
         assert_eq!(
             tracker.state(),
             &TrackingState::Running {
-                worklog: ActiveWorklog {
-                    id: worklog.id,
-                    task_id: task_id(1),
-                    start: at(100),
-                }
+                worklog: ActiveWorklog::begin(worklog.id(), task_id(1), at(100))
             }
         );
     }
@@ -306,14 +298,10 @@ mod tests {
         assert_eq!(
             error,
             TrackingError::AlreadyRunning {
-                active: ActiveWorklog {
-                    id: first.id,
-                    task_id: task_id(1),
-                    start: at(100),
-                }
+                active: ActiveWorklog::begin(first.id(), task_id(1), at(100))
             }
         );
-        assert_eq!(tracker.active().map(|e| e.id), Some(first.id));
+        assert_eq!(tracker.active().map(|e| e.id()), Some(first.id()));
     }
 
     #[test]
@@ -337,9 +325,9 @@ mod tests {
         let mut tracker = Tracker::idle();
         let started = tracker.start(&task(1), at(100)).unwrap();
         let stopped = tracker.stop(at(150)).unwrap();
-        assert_eq!(stopped.id, started.id);
-        assert_eq!(stopped.start, at(100));
-        assert_eq!(stopped.end, Some(at(150)));
+        assert_eq!(stopped.id(), started.id());
+        assert_eq!(stopped.start(), at(100));
+        assert_eq!(stopped.end(), Some(at(150)));
         assert_eq!(tracker.state(), &TrackingState::Idle);
     }
 
@@ -348,7 +336,7 @@ mod tests {
         let mut tracker = Tracker::idle();
         tracker.start(&task(1), at(100)).unwrap();
         let stopped = tracker.stop(at(100)).unwrap();
-        assert_eq!(stopped.end, Some(at(100)));
+        assert_eq!(stopped.end(), Some(at(100)));
     }
 
     #[test]
@@ -359,12 +347,12 @@ mod tests {
         assert_eq!(
             error,
             TrackingError::StopBeforeStart {
-                worklog_id: started.id,
+                worklog_id: started.id(),
                 start: at(100),
                 stop_at: at(99),
             }
         );
-        assert_eq!(tracker.active().map(|e| e.id), Some(started.id));
+        assert_eq!(tracker.active().map(|e| e.id()), Some(started.id()));
     }
 
     #[test]
@@ -373,12 +361,12 @@ mod tests {
         let first = tracker.start(&task(1), at(100)).unwrap();
         let first_stopped = tracker.stop(at(150)).unwrap();
         let second = tracker.start(&task(1), at(200)).unwrap();
-        assert_ne!(first.id, second.id);
-        assert_eq!(first_stopped.id, first.id);
-        assert_eq!(first_stopped.end, Some(at(150)));
-        assert_eq!(second.start, at(200));
-        assert_eq!(second.end, None);
-        assert_eq!(tracker.active().map(|e| e.id), Some(second.id));
+        assert_ne!(first.id(), second.id());
+        assert_eq!(first_stopped.id(), first.id());
+        assert_eq!(first_stopped.end(), Some(at(150)));
+        assert_eq!(second.start(), at(200));
+        assert_eq!(second.end(), None);
+        assert_eq!(tracker.active().map(|e| e.id()), Some(second.id()));
     }
 
     #[test]
@@ -398,7 +386,7 @@ mod tests {
             .switch(&task(1), at(110), at(110))
             .expect_err("same task switch must fail");
         assert_eq!(error, TrackingError::TaskAlreadyActive { id: task_id(1) });
-        assert_eq!(tracker.active().map(|e| e.id), Some(started.id));
+        assert_eq!(tracker.active().map(|e| e.id()), Some(started.id()));
     }
 
     #[test]
@@ -409,7 +397,7 @@ mod tests {
             .switch(&archived_task(2), at(110), at(110))
             .expect_err("archived target must fail");
         assert_eq!(error, TrackingError::TaskArchived { id: task_id(2) });
-        assert_eq!(tracker.active().map(|e| e.id), Some(started.id));
+        assert_eq!(tracker.active().map(|e| e.id()), Some(started.id()));
     }
 
     #[test]
@@ -417,15 +405,18 @@ mod tests {
         let mut tracker = Tracker::idle();
         let first = tracker.start(&task(1), at(100)).unwrap();
         let switched = tracker.switch(&task(2), at(150), at(160)).unwrap();
-        assert_eq!(switched.stopped.id, first.id);
-        assert_eq!(switched.stopped.task_id, task_id(1));
-        assert_eq!(switched.stopped.end, Some(at(150)));
-        assert_eq!(switched.started.task_id, task_id(2));
-        assert_eq!(switched.started.start, at(160));
-        assert_eq!(switched.started.end, None);
-        assert_ne!(switched.stopped.id, switched.started.id);
-        assert_eq!(tracker.active().map(|e| e.id), Some(switched.started.id));
-        assert_eq!(tracker.active().map(|e| e.task_id), Some(task_id(2)));
+        assert_eq!(switched.stopped.id(), first.id());
+        assert_eq!(switched.stopped.task_id(), task_id(1));
+        assert_eq!(switched.stopped.end(), Some(at(150)));
+        assert_eq!(switched.started.task_id(), task_id(2));
+        assert_eq!(switched.started.start(), at(160));
+        assert_eq!(switched.started.end(), None);
+        assert_ne!(switched.stopped.id(), switched.started.id());
+        assert_eq!(
+            tracker.active().map(|e| e.id()),
+            Some(switched.started.id())
+        );
+        assert_eq!(tracker.active().map(|e| e.task_id()), Some(task_id(2)));
     }
 
     #[test]
@@ -433,8 +424,8 @@ mod tests {
         let mut tracker = Tracker::idle();
         tracker.start(&task(1), at(100)).unwrap();
         let switched = tracker.switch(&task(2), at(100), at(100)).unwrap();
-        assert_eq!(switched.stopped.end, Some(at(100)));
-        assert_eq!(switched.started.start, at(100));
+        assert_eq!(switched.stopped.end(), Some(at(100)));
+        assert_eq!(switched.started.start(), at(100));
     }
 
     #[test]
@@ -447,12 +438,12 @@ mod tests {
         assert_eq!(
             error,
             TrackingError::StopBeforeStart {
-                worklog_id: started.id,
+                worklog_id: started.id(),
                 start: at(100),
                 stop_at: at(99),
             }
         );
-        assert_eq!(tracker.active().map(|e| e.id), Some(started.id));
+        assert_eq!(tracker.active().map(|e| e.id()), Some(started.id()));
     }
 
     #[test]
@@ -469,8 +460,8 @@ mod tests {
                 start_at: at(149),
             }
         );
-        assert_eq!(tracker.active().map(|e| e.id), Some(started.id));
-        assert_eq!(tracker.active().map(|e| e.task_id), Some(task_id(1)));
+        assert_eq!(tracker.active().map(|e| e.id()), Some(started.id()));
+        assert_eq!(tracker.active().map(|e| e.task_id()), Some(task_id(1)));
     }
 
     #[test]
@@ -479,9 +470,9 @@ mod tests {
         let outcome = tracker.toggle(&task(1), at(100)).unwrap();
         match outcome {
             TrackingOutcome::Started { worklog } => {
-                assert_eq!(worklog.task_id, task_id(1));
-                assert_eq!(worklog.start, at(100));
-                assert_eq!(worklog.end, None);
+                assert_eq!(worklog.task_id(), task_id(1));
+                assert_eq!(worklog.start(), at(100));
+                assert_eq!(worklog.end(), None);
             }
             other => panic!("expected Started, got {other:?}"),
         }
@@ -495,8 +486,8 @@ mod tests {
         let outcome = tracker.toggle(&task(1), at(150)).unwrap();
         match outcome {
             TrackingOutcome::Stopped { worklog } => {
-                assert_eq!(worklog.id, started.id);
-                assert_eq!(worklog.end, Some(at(150)));
+                assert_eq!(worklog.id(), started.id());
+                assert_eq!(worklog.end(), Some(at(150)));
             }
             other => panic!("expected Stopped, got {other:?}"),
         }
@@ -510,14 +501,14 @@ mod tests {
         let outcome = tracker.toggle(&task(2), at(150)).unwrap();
         match outcome {
             TrackingOutcome::Switched { stopped, started } => {
-                assert_eq!(stopped.end, Some(at(150)));
-                assert_eq!(started.start, at(150));
-                assert_eq!(started.end, None);
+                assert_eq!(stopped.end(), Some(at(150)));
+                assert_eq!(started.start(), at(150));
+                assert_eq!(started.end(), None);
             }
             other => panic!("expected Switched, got {other:?}"),
         }
-        assert_eq!(tracker.active().map(|e| e.task_id), Some(task_id(2)));
-        assert_ne!(tracker.active().map(|e| e.id), Some(started.id));
+        assert_eq!(tracker.active().map(|e| e.task_id()), Some(task_id(2)));
+        assert_ne!(tracker.active().map(|e| e.id()), Some(started.id()));
     }
 
     #[test]
@@ -548,11 +539,7 @@ mod tests {
         assert_eq!(
             tracker.state(),
             &TrackingState::Running {
-                worklog: ActiveWorklog {
-                    id: worklog_id(1),
-                    task_id: task_id(2),
-                    start: at(100),
-                }
+                worklog: ActiveWorklog::begin(worklog_id(1), task_id(2), at(100))
             }
         );
     }
