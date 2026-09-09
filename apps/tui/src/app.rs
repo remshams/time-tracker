@@ -2,7 +2,8 @@
 
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, FixedOffset, Local, TimeDelta, TimeZone, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, Offset, TimeDelta, TimeZone, Utc};
+use chrono_tz::Tz;
 use tracker_application::{
     ApplicationError, ClearActiveTaskOutcome, CorrectWorklogOutcome, RepositoryError,
     SetActiveTaskOutcome, TaskOrdering, TaskOutcome, TrackerApplicationService, WorklogCursor,
@@ -40,15 +41,22 @@ pub enum CorrectionField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimestampInput {
     text: String,
+    initial_text: String,
     cursor: usize,
+    adjusted_instant: Option<DateTime<Utc>>,
 }
 
 impl TimestampInput {
-    const MAX_LEN: usize = 40;
+    const MAX_LEN: usize = 19;
 
     fn new(text: String) -> Self {
         let cursor = text.chars().count();
-        Self { text, cursor }
+        Self {
+            initial_text: text.clone(),
+            text,
+            cursor,
+            adjusted_instant: None,
+        }
     }
 
     pub fn text(&self) -> &str {
@@ -66,6 +74,7 @@ impl TimestampInput {
         let byte = byte_index(&self.text, self.cursor);
         self.text.insert(byte, character);
         self.cursor += 1;
+        self.adjusted_instant = None;
     }
 
     fn backspace(&mut self) {
@@ -76,6 +85,7 @@ impl TimestampInput {
         let start = byte_index(&self.text, self.cursor - 1);
         self.text.replace_range(start..end, "");
         self.cursor -= 1;
+        self.adjusted_instant = None;
     }
 
     fn delete(&mut self) {
@@ -85,6 +95,7 @@ impl TimestampInput {
         let start = byte_index(&self.text, self.cursor);
         let end = byte_index(&self.text, self.cursor + 1);
         self.text.replace_range(start..end, "");
+        self.adjusted_instant = None;
     }
 
     fn move_left(&mut self) {
@@ -95,9 +106,21 @@ impl TimestampInput {
         self.cursor = self.cursor.saturating_add(1).min(self.text.chars().count());
     }
 
+    #[cfg(test)]
     fn replace(&mut self, text: String) {
         self.cursor = text.chars().count();
         self.text = text;
+        self.adjusted_instant = None;
+    }
+
+    fn replace_with_adjustment(&mut self, text: String, instant: DateTime<Utc>) {
+        self.cursor = text.chars().count();
+        self.text = text;
+        self.adjusted_instant = Some(instant);
+    }
+
+    fn is_unchanged(&self) -> bool {
+        self.adjusted_instant.is_none() && self.text == self.initial_text
     }
 }
 
@@ -108,7 +131,7 @@ fn byte_index(text: &str, character_index: usize) -> usize {
 }
 
 pub(crate) fn is_timestamp_character(character: char) -> bool {
-    character.is_ascii_digit() || matches!(character, '-' | '+' | ':' | '.' | 'T' | 't')
+    character.is_ascii_digit() || matches!(character, '+' | '-' | ':' | ' ')
 }
 
 /// Editable timestamps and the immutable snapshot used for stale detection.
@@ -119,6 +142,8 @@ pub struct CorrectionDraft {
     start: TimestampInput,
     end: Option<TimestampInput>,
     focused: CorrectionField,
+    original_start: DateTime<Utc>,
+    original_end: Option<DateTime<Utc>>,
 }
 
 impl CorrectionDraft {
@@ -130,6 +155,8 @@ impl CorrectionDraft {
     ) -> Self {
         Self {
             id,
+            original_start: expected.start(),
+            original_end: expected.end(),
             expected,
             start: TimestampInput::new(start),
             end: end.map(TimestampInput::new),
@@ -147,6 +174,15 @@ impl CorrectionDraft {
 
     pub fn focused(&self) -> CorrectionField {
         self.focused
+    }
+
+    fn original(&self, field: CorrectionField) -> DateTime<Utc> {
+        match field {
+            CorrectionField::Start => self.original_start,
+            CorrectionField::End => self
+                .original_end
+                .expect("completed corrections have an end"),
+        }
     }
 
     fn focused_input(&self) -> &TimestampInput {
@@ -417,51 +453,143 @@ fn correction_error_text(error: &ApplicationError) -> String {
     }
 }
 
-fn parse_correction_timestamp(text: &str) -> Result<DateTime<Utc>, &'static str> {
-    let bytes = text.as_bytes();
-    let has_offset = bytes.len() >= 6
-        && matches!(bytes[bytes.len() - 6], b'+' | b'-')
-        && bytes[bytes.len() - 3] == b':'
-        && bytes[bytes.len() - 5..bytes.len() - 3]
-            .iter()
-            .chain(bytes[bytes.len() - 2..].iter())
-            .all(u8::is_ascii_digit);
-    if !has_offset
-        || bytes
-            .get(10)
-            .is_none_or(|separator| !matches!(separator, b'T' | b't'))
-    {
-        return Err("Use RFC 3339 with an explicit offset");
-    }
-    DateTime::parse_from_rfc3339(text)
-        .map(|timestamp| timestamp.with_timezone(&Utc))
-        .map_err(|_| "Use RFC 3339 with an explicit offset")
+const CORRECTION_FORMAT: &str = "%Y-%m-%d %H:%M";
+const OUTSIDE_EDITABLE_RANGE: &str = "Timestamp is outside editable range";
+
+/// Resolves an IANA timezone once for the process. A valid `TZ` value wins,
+/// including the zoneinfo path form used by some shells and test runners.
+fn startup_timezone() -> (Tz, Option<&'static str>) {
+    let environment = std::env::var("TZ").ok();
+    let system = iana_time_zone::get_timezone().ok();
+    resolve_timezone(environment.as_deref(), system.as_deref())
 }
 
-fn correction_timestamp<Tz>(at: DateTime<Utc>, timezone: &Tz) -> String
+fn resolve_timezone(environment: Option<&str>, system: Option<&str>) -> (Tz, Option<&'static str>) {
+    let from_environment = environment.and_then(parse_timezone_name);
+    let from_system = system.and_then(parse_timezone_name);
+    match from_environment.or(from_system) {
+        Some(timezone) => (timezone, None),
+        None => (
+            chrono_tz::UTC,
+            Some("Could not detect an IANA timezone; using UTC for this session."),
+        ),
+    }
+}
+
+fn parse_timezone_name(value: &str) -> Option<Tz> {
+    let value = value.strip_prefix(':').unwrap_or(value);
+    let value = [
+        "/usr/share/zoneinfo/",
+        "../usr/share/zoneinfo/",
+        "/usr/share/lib/zoneinfo/",
+        "/etc/zoneinfo/",
+        "../etc/zoneinfo/",
+        "/var/db/timezone/zoneinfo/",
+        "zoneinfo/",
+    ]
+    .iter()
+    .find_map(|prefix| value.strip_prefix(prefix))
+    .unwrap_or(value);
+    let value = value
+        .strip_prefix("posix/")
+        .or_else(|| value.strip_prefix("right/"))
+        .unwrap_or(value);
+    value.parse().ok()
+}
+
+fn local_naive<Tz>(at: DateTime<Utc>, timezone: &Tz) -> Option<NaiveDateTime>
 where
     Tz: TimeZone,
-    Tz::Offset: std::fmt::Display,
 {
-    at.with_timezone(timezone)
-        .format("%Y-%m-%dT%H:%M:%S%.6f%:z")
-        .to_string()
+    let offset = timezone.offset_from_utc_datetime(&at.naive_utc()).fix();
+    at.naive_utc().checked_add_offset(offset)
+}
+
+fn correction_timestamp<Tz>(at: DateTime<Utc>, timezone: &Tz) -> Option<String>
+where
+    Tz: TimeZone,
+{
+    local_naive(at, timezone).map(|local| local.format(CORRECTION_FORMAT).to_string())
+}
+
+fn parse_correction_timestamp<Tz>(
+    text: &str,
+    timezone: &Tz,
+    original: Option<DateTime<Utc>>,
+) -> Result<DateTime<Utc>, &'static str>
+where
+    Tz: TimeZone,
+{
+    let local = NaiveDateTime::parse_from_str(text, CORRECTION_FORMAT)
+        .map_err(|_| "Use YYYY-MM-DD HH:MM")?;
+    if local.format(CORRECTION_FORMAT).to_string() != text {
+        return Err("Use YYYY-MM-DD HH:MM");
+    }
+    match timezone.offset_from_local_datetime(&local) {
+        chrono::LocalResult::Single(offset) => local_to_utc(local, offset.fix()),
+        chrono::LocalResult::Ambiguous(first, second) => {
+            let wanted =
+                original.map(|at| timezone.offset_from_utc_datetime(&at.naive_utc()).fix());
+            let first = first.fix();
+            let second = second.fix();
+            match (
+                wanted.is_some_and(|offset| offset == first),
+                wanted.is_some_and(|offset| offset == second),
+            ) {
+                (true, false) => local_to_utc(local, first),
+                (false, true) => local_to_utc(local, second),
+                _ => Err("Ambiguous local time"),
+            }
+        }
+        chrono::LocalResult::None => Err("Local time does not exist"),
+    }
+}
+
+fn local_to_utc(local: NaiveDateTime, offset: FixedOffset) -> Result<DateTime<Utc>, &'static str> {
+    local
+        .checked_sub_offset(offset)
+        .map(|utc| DateTime::from_naive_utc_and_offset(utc, Utc))
+        .ok_or(OUTSIDE_EDITABLE_RANGE)
+}
+
+fn resolve_correction_timestamp<Tz>(
+    input: &TimestampInput,
+    timezone: &Tz,
+    original: DateTime<Utc>,
+) -> Result<DateTime<Utc>, &'static str>
+where
+    Tz: TimeZone,
+{
+    if let Some(instant) = input.adjusted_instant {
+        Ok(instant)
+    } else if input.is_unchanged() {
+        Ok(original)
+    } else {
+        parse_correction_timestamp(input.text(), timezone, Some(original))
+    }
 }
 
 fn adjusted_correction_timestamp<Tz>(
-    text: &str,
+    input: &TimestampInput,
     delta: TimeDelta,
     timezone: &Tz,
-) -> Result<String, &'static str>
+    original: DateTime<Utc>,
+) -> Result<(String, DateTime<Utc>), &'static str>
 where
     Tz: TimeZone,
-    Tz::Offset: std::fmt::Display,
 {
-    let timestamp = parse_correction_timestamp(text)?;
+    let timestamp = match input.adjusted_instant {
+        Some(instant) => instant,
+        None => parse_correction_timestamp(input.text(), timezone, Some(original))?,
+    };
     let adjusted = timestamp
         .checked_add_signed(delta)
         .ok_or("Timestamp is out of range")?;
-    Ok(correction_timestamp(adjusted, timezone))
+    let text = correction_timestamp(adjusted, timezone).ok_or(OUTSIDE_EDITABLE_RANGE)?;
+    if parse_correction_timestamp(&text, timezone, Some(adjusted)) != Ok(adjusted) {
+        return Err("Adjustment cannot be represented as a local minute");
+    }
+    Ok((text, adjusted))
 }
 
 /// Task-list presentation state.
@@ -483,6 +611,7 @@ pub struct App<S: TrackerApplicationService> {
     mode: Mode,
     status: Status,
     clock: Option<ElapsedClock>,
+    timezone: Tz,
     frozen_offset: Option<FixedOffset>,
     lifecycle: Lifecycle,
 }
@@ -497,10 +626,13 @@ impl<S: TrackerApplicationService> App<S> {
             TrackingState::Idle => None,
             TrackingState::Running { worklog } => Some(ElapsedClock::since(worklog.start())),
         };
-        let status = if clock.is_some() {
-            Status::Info("Recovered the previous active timer".to_owned())
-        } else {
-            Status::Info("Ready".to_owned())
+        let (timezone, timezone_status) = startup_timezone();
+        let status = match timezone_status {
+            Some(message) => Status::Error(message.to_owned()),
+            None if clock.is_some() => {
+                Status::Info("Recovered the previous active timer".to_owned())
+            }
+            None => Status::Info("Ready".to_owned()),
         };
         let active_selection = tasks.first().map(|task| task.id);
         Self {
@@ -517,6 +649,7 @@ impl<S: TrackerApplicationService> App<S> {
             mode: Mode::Normal,
             status,
             clock,
+            timezone,
             frozen_offset: None,
             lifecycle: Lifecycle::Running,
         }
@@ -707,17 +840,16 @@ impl<S: TrackerApplicationService> App<S> {
         self.task_name_for(self.history.as_ref()?.task_id)
     }
 
-    /// Formats a UTC instant for display with its explicit UTC offset.
+    /// Formats a UTC instant as a local minute timestamp.
     ///
-    /// Every instant converts through chrono::Local on its own, so a
-    /// history that spans a daylight-saving transition shows each worklog
-    /// the offset that was in effect when it ran, not the offset of the
-    /// moment the app loaded. Tests freeze one fixed offset so rendered
-    /// times stay deterministic on every host.
+    /// Every instant converts through the session timezone snapshot, so a history
+    /// that spans a daylight-saving transition shows each worklog in the
+    /// local time valid when it ran. Tests freeze one fixed offset so
+    /// rendering stays deterministic.
     pub fn local_time(&self, at: DateTime<Utc>) -> String {
         match self.frozen_offset {
             Some(offset) => crate::ui::local_time(at, &offset),
-            None => crate::ui::local_time(at, &Local),
+            None => crate::ui::local_time(at, &self.timezone),
         }
     }
 
@@ -1111,6 +1243,17 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn open_correction(&mut self) {
+        let timezone = self.timezone;
+        match self.frozen_offset {
+            Some(offset) => self.open_correction_in(&offset),
+            None => self.open_correction_in(&timezone),
+        }
+    }
+
+    fn open_correction_in<Tz>(&mut self, timezone: &Tz)
+    where
+        Tz: TimeZone,
+    {
         if self.mode != Mode::Normal || self.screen != Screen::WorklogHistory {
             return;
         }
@@ -1127,22 +1270,25 @@ impl<S: TrackerApplicationService> App<S> {
         else {
             return;
         };
+        let Some(start) = correction_timestamp(worklog.start(), timezone) else {
+            self.status = Status::Error(OUTSIDE_EDITABLE_RANGE.to_owned());
+            return;
+        };
+        let end = match worklog.end().map(|end| correction_timestamp(end, timezone)) {
+            Some(Some(end)) => Some(end),
+            Some(None) => {
+                self.status = Status::Error(OUTSIDE_EDITABLE_RANGE.to_owned());
+                return;
+            }
+            None => None,
+        };
         self.mode = Mode::Correction(CorrectionDraft::new(
             worklog.id(),
             worklog.times(),
-            self.format_correction_timestamp(worklog.start()),
-            worklog
-                .end()
-                .map(|end| self.format_correction_timestamp(end)),
+            start,
+            end,
         ));
         self.status = Status::Info("Edit the worklog timestamps".to_owned());
-    }
-
-    fn format_correction_timestamp(&self, timestamp: DateTime<Utc>) -> String {
-        match self.frozen_offset {
-            Some(offset) => correction_timestamp(timestamp, &offset),
-            None => correction_timestamp(timestamp, &Local),
-        }
     }
 
     fn edit_correction(&mut self, edit: impl FnOnce(&mut CorrectionDraft)) {
@@ -1152,19 +1298,31 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn adjust_correction(&mut self, delta: TimeDelta) {
-        let Some(text) = self
-            .correction()
-            .map(|draft| draft.focused_input().text().to_owned())
-        else {
+        let timezone = self.timezone;
+        match self.frozen_offset {
+            Some(offset) => self.adjust_correction_in(delta, &offset),
+            None => self.adjust_correction_in(delta, &timezone),
+        }
+    }
+
+    fn adjust_correction_in<Tz>(&mut self, delta: TimeDelta, timezone: &Tz)
+    where
+        Tz: TimeZone,
+    {
+        let Some(draft) = self.correction() else {
             return;
         };
-        let adjusted = match self.frozen_offset {
-            Some(offset) => adjusted_correction_timestamp(&text, delta, &offset),
-            None => adjusted_correction_timestamp(&text, delta, &Local),
-        };
+        let adjusted = adjusted_correction_timestamp(
+            draft.focused_input(),
+            delta,
+            timezone,
+            draft.original(draft.focused),
+        );
         match adjusted {
-            Ok(text) => {
-                self.edit_correction(|draft| draft.focused_mut().replace(text));
+            Ok((text, instant)) => {
+                self.edit_correction(|draft| {
+                    draft.focused_mut().replace_with_adjustment(text, instant)
+                });
                 self.status = Status::Info("Adjusted timestamp".to_owned());
             }
             Err(message) => self.status = Status::Error(message.to_owned()),
@@ -1341,10 +1499,22 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn confirm_correction(&mut self) {
+        let timezone = self.timezone;
+        match self.frozen_offset {
+            Some(offset) => self.confirm_correction_in(&offset),
+            None => self.confirm_correction_in(&timezone),
+        }
+    }
+
+    fn confirm_correction_in<Tz>(&mut self, timezone: &Tz)
+    where
+        Tz: TimeZone,
+    {
         let Mode::Correction(draft) = self.mode.clone() else {
             return;
         };
-        let start = match parse_correction_timestamp(draft.start.text()) {
+        let start = match resolve_correction_timestamp(&draft.start, timezone, draft.original_start)
+        {
             Ok(start) => start,
             Err(message) => {
                 self.status = Status::Error(format!("Start: {message}"));
@@ -1352,13 +1522,18 @@ impl<S: TrackerApplicationService> App<S> {
             }
         };
         let end = match draft.end.as_ref() {
-            Some(input) => match parse_correction_timestamp(input.text()) {
-                Ok(end) => Some(end),
-                Err(message) => {
-                    self.status = Status::Error(format!("End: {message}"));
-                    return;
+            Some(input) => {
+                let original = draft
+                    .original_end
+                    .expect("completed corrections have an end");
+                match resolve_correction_timestamp(input, timezone, original) {
+                    Ok(end) => Some(end),
+                    Err(message) => {
+                        self.status = Status::Error(format!("End: {message}"));
+                        return;
+                    }
                 }
-            },
+            }
             None => None,
         };
         let occurred_at = Utc::now();
@@ -1492,6 +1667,12 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     #[cfg(test)]
+    fn set_timezone_for_tests(&mut self, timezone: Tz) {
+        self.timezone = timezone;
+        self.frozen_offset = None;
+    }
+
+    #[cfg(test)]
     pub(crate) fn freeze_elapsed_for_tests(&mut self, base: Duration) {
         let anchor = Instant::now()
             .checked_add(Duration::from_secs(86_400))
@@ -1501,9 +1682,8 @@ impl<S: TrackerApplicationService> App<S> {
 
     /// Freezes one fixed display offset for deterministic rendering.
     ///
-    /// Production converts every instant through chrono::Local; tests
-    /// replace that with one fixed offset, so rendered times never depend
-    /// on the host timezone or a daylight-saving rule.
+    /// Tests replace the session timezone with one fixed offset, so rendered
+    /// times never depend on the host timezone or a daylight-saving rule.
     #[cfg(test)]
     pub(crate) fn freeze_offset_for_tests(&mut self, offset: FixedOffset) {
         self.frozen_offset = Some(offset);
@@ -2947,20 +3127,60 @@ mod tests {
     }
 
     #[test]
-    fn history_times_render_through_the_local_zone_per_instant() {
+    fn history_uses_the_session_timezone_snapshot() {
         let mut app = App::load(TestService::with_tasks(vec![task(1, "alpha")]));
-        // Without a frozen offset every instant converts through
-        // chrono::Local on its own, matching the pure formatter instead of
-        // any single offset captured when the app loaded.
+        app.set_timezone_for_tests(chrono_tz::Europe::London);
         for seconds in [0, 1_700_000_000] {
             assert_eq!(
                 app.local_time(at(seconds)),
-                crate::ui::local_time(at(seconds), &Local)
+                crate::ui::local_time(at(seconds), &chrono_tz::Europe::London)
             );
         }
-        // The test override replaces the local zone with one fixed offset.
         app.freeze_offset_for_tests(FixedOffset::east_opt(2 * 3600).unwrap());
-        assert_eq!(app.local_time(at(0)), "1970-01-01 02:00:00 +02:00");
+        assert_eq!(app.local_time(at(0)), "1970-01-01 02:00");
+    }
+
+    #[test]
+    fn timezone_resolution_accepts_common_tz_forms_and_reports_the_utc_fallback() {
+        for (value, expected) in [
+            ("UTC", chrono_tz::UTC),
+            (":UTC", chrono_tz::UTC),
+            (
+                "/usr/share/zoneinfo/Europe/London",
+                chrono_tz::Europe::London,
+            ),
+            (
+                "../usr/share/zoneinfo/posix/Europe/London",
+                chrono_tz::Europe::London,
+            ),
+            (":/etc/zoneinfo/Europe/London", chrono_tz::Europe::London),
+            ("../etc/zoneinfo/Europe/London", chrono_tz::Europe::London),
+            (
+                "/usr/share/zoneinfo/right/Europe/London",
+                chrono_tz::Europe::London,
+            ),
+        ] {
+            assert_eq!(parse_timezone_name(value), Some(expected));
+        }
+        assert_eq!(
+            resolve_timezone(
+                Some(":/etc/zoneinfo/America/Phoenix"),
+                Some("America/Denver")
+            ),
+            (chrono_tz::America::Phoenix, None),
+            "a valid environment override wins over the OS timezone"
+        );
+        assert_eq!(
+            resolve_timezone(Some("not a timezone"), Some("Europe/Paris")),
+            (chrono_tz::Europe::Paris, None)
+        );
+        assert_eq!(
+            resolve_timezone(Some("not a timezone"), Some("also invalid")),
+            (
+                chrono_tz::UTC,
+                Some("Could not detect an IANA timezone; using UTC for this session.")
+            )
+        );
     }
 
     #[test]
@@ -3735,7 +3955,7 @@ mod tests {
         );
     }
 
-    fn correction_app(initial: Worklog, reload: Vec<Worklog>) -> App<TestService> {
+    fn correction_history_app(initial: Worklog, reload: Vec<Worklog>) -> App<TestService> {
         let task = task(1, "alpha");
         let mut service = TestService::with_tasks(vec![task]);
         service.worklog_pages = vec![
@@ -3743,25 +3963,41 @@ mod tests {
             Ok(page(reload, None)),
         ];
         let mut app = App::load(service);
-        app.freeze_offset_for_tests(FixedOffset::east_opt(2 * 3600).unwrap());
         app.handle(Command::OpenHistory);
+        app
+    }
+
+    fn correction_app(initial: Worklog, reload: Vec<Worklog>) -> App<TestService> {
+        let mut app = correction_history_app(initial, reload);
+        app.freeze_offset_for_tests(FixedOffset::east_opt(2 * 3600).unwrap());
         app.handle(Command::OpenCorrection);
         app
     }
 
+    fn correction_app_in<Tz>(
+        initial: Worklog,
+        reload: Vec<Worklog>,
+        timezone: &Tz,
+    ) -> App<TestService>
+    where
+        Tz: TimeZone,
+        Tz::Offset: std::fmt::Display,
+    {
+        let mut app = correction_history_app(initial, reload);
+        app.open_correction_in(timezone);
+        app
+    }
+
     #[test]
-    fn correction_prefills_canonical_microseconds_and_the_right_shape() {
+    fn correction_prefills_local_minutes() {
         let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
         let start = DateTime::from_timestamp(100, 123_456_000).unwrap();
         let end = DateTime::from_timestamp(200, 654_321_000).unwrap();
         let completed = Worklog::new(worklog_id(10), task_id, start, Some(end)).unwrap();
         let app = correction_app(completed.clone(), vec![completed]);
         let draft = app.correction().unwrap();
-        assert_eq!(draft.start().text(), "1970-01-01T02:01:40.123456+02:00");
-        assert_eq!(
-            draft.end().unwrap().text(),
-            "1970-01-01T02:03:20.654321+02:00"
-        );
+        assert_eq!(draft.start().text(), "1970-01-01 02:01");
+        assert_eq!(draft.end().unwrap().text(), "1970-01-01 02:03");
 
         let active = Worklog::begin(worklog_id(11), task_id, start);
         let mut app = correction_app(active.clone(), vec![active]);
@@ -3828,10 +4064,7 @@ mod tests {
         let mut app = correction_app(worklog.clone(), vec![worklog.clone()]);
 
         app.handle(Command::AdjustForwardOneHour);
-        assert_eq!(
-            app.correction().unwrap().start().text(),
-            "1970-01-01T03:01:40.000000+02:00"
-        );
+        assert_eq!(app.correction().unwrap().start().text(), "1970-01-01 03:01");
 
         let mut app = correction_app(worklog.clone(), vec![worklog]);
         let original = app.correction().unwrap().start().text().to_owned();
@@ -3840,7 +4073,7 @@ mod tests {
             app.correction().unwrap().start().text(),
             &original[..original.len() - 1]
         );
-        app.handle(Command::Insert('0'));
+        app.handle(Command::Insert('1'));
         assert_eq!(app.correction().unwrap().start().text(), original);
         assert_eq!(
             app.correction().unwrap().start().cursor(),
@@ -3849,46 +4082,117 @@ mod tests {
     }
 
     #[test]
-    fn correction_parsing_requires_rfc3339_with_a_numeric_offset() {
+    fn correction_parsing_requires_local_minute_format() {
+        let timezone = FixedOffset::east_opt(2 * 3600).unwrap();
         assert_eq!(
-            parse_correction_timestamp("1970-01-01T02:00:00.123456+02:00").unwrap(),
-            DateTime::from_timestamp(0, 123_456_000).unwrap()
+            parse_correction_timestamp("1970-01-01 02:00", &timezone, None).unwrap(),
+            DateTime::from_timestamp(0, 0).unwrap()
         );
         for invalid in [
-            "1970-01-01T00:00:00Z",
-            "1970-01-01T00:00:00−00:00",
-            "1970-01-01T00:00:00+0000",
-            "1970-01-01 00:00:00+00:00",
-            "1970-01-01T00:00:00",
+            "1970-01-01 00:00+02:00",
+            "1970-01-01 00:00:01",
+            "1970-01-01 00:00:00",
+            "+9999-01-01 00:00",
+            "10000-01-01 00:00",
             "not-a-timestamp",
         ] {
             assert_eq!(
-                parse_correction_timestamp(invalid),
-                Err("Use RFC 3339 with an explicit offset")
+                parse_correction_timestamp(invalid, &timezone, None),
+                Err("Use YYYY-MM-DD HH:MM")
             );
         }
     }
 
-    #[derive(Clone, Copy, Debug)]
-    struct CorrectionSwitchingZone {
-        switch: i64,
-    }
-
-    impl CorrectionSwitchingZone {
-        fn offset(self, seconds: i64) -> FixedOffset {
-            if seconds < self.switch {
-                FixedOffset::east_opt(3600).unwrap()
-            } else {
-                FixedOffset::east_opt(7200).unwrap()
-            }
+    #[test]
+    fn correction_years_format_and_parse_with_chrono_strict_expanded_form() {
+        let timezone = FixedOffset::east_opt(0).unwrap();
+        for (year, expected) in [
+            (-1, "-0001-01-02 03:04"),
+            (0, "0000-01-02 03:04"),
+            (9999, "9999-01-02 03:04"),
+            (10000, "+10000-01-02 03:04"),
+        ] {
+            let instant = Utc.with_ymd_and_hms(year, 1, 2, 3, 4, 0).single().unwrap();
+            assert_eq!(
+                correction_timestamp(instant, &timezone).as_deref(),
+                Some(expected)
+            );
+            assert_eq!(
+                parse_correction_timestamp(expected, &timezone, None),
+                Ok(instant)
+            );
         }
     }
 
-    impl TimeZone for CorrectionSwitchingZone {
+    #[test]
+    fn local_to_utc_range_overflow_is_not_reported_as_a_daylight_saving_gap() {
+        assert_eq!(
+            parse_correction_timestamp(
+                "-262143-01-01 00:00",
+                &FixedOffset::east_opt(60).unwrap(),
+                None,
+            ),
+            Err(OUTSIDE_EDITABLE_RANGE)
+        );
+        assert_eq!(
+            parse_correction_timestamp(
+                "+262142-12-31 23:59",
+                &FixedOffset::west_opt(60).unwrap(),
+                None,
+            ),
+            Err(OUTSIDE_EDITABLE_RANGE)
+        );
+    }
+
+    #[test]
+    fn timestamp_input_accepts_every_supported_year_shape_up_to_chrono_limit() {
+        for timestamp in [
+            "-0001-01-02 03:04",
+            "0000-01-02 03:04",
+            "9999-01-02 03:04",
+            "+10000-01-02 03:04",
+        ] {
+            let mut input = TimestampInput::new(String::new());
+            for character in timestamp.chars() {
+                input.insert(character);
+            }
+            assert_eq!(input.text(), timestamp);
+        }
+
+        for longest in ["-262143-01-01 00:00", "+262142-12-31 23:59"] {
+            assert_eq!(longest.chars().count(), TimestampInput::MAX_LEN);
+            let mut input = TimestampInput::new(String::new());
+            for character in longest.chars() {
+                input.insert(character);
+            }
+            input.insert('0');
+            assert_eq!(input.text(), longest);
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct CorrectionTestZone;
+
+    impl CorrectionTestZone {
+        fn offset(seconds: i64) -> FixedOffset {
+            let offset = if seconds < 3_600 {
+                3_600
+            } else if seconds < 18_000 {
+                7_200
+            } else if seconds < 100_000 {
+                3_600
+            } else {
+                10_800
+            };
+            FixedOffset::east_opt(offset).unwrap()
+        }
+    }
+
+    impl TimeZone for CorrectionTestZone {
         type Offset = FixedOffset;
 
         fn from_offset(_offset: &Self::Offset) -> Self {
-            unreachable!("the test formatter does not reconstruct the timezone")
+            Self
         }
 
         fn offset_from_local_date(&self, local: &NaiveDate) -> MappedLocalTime<Self::Offset> {
@@ -3899,68 +4203,188 @@ mod tests {
             &self,
             local: &NaiveDateTime,
         ) -> MappedLocalTime<Self::Offset> {
-            MappedLocalTime::Single(self.offset(local.and_utc().timestamp()))
+            let seconds = local.and_utc().timestamp();
+            if seconds < 7_200 {
+                MappedLocalTime::Single(FixedOffset::east_opt(3_600).unwrap())
+            } else if seconds < 10_800 {
+                MappedLocalTime::None
+            } else if seconds < 21_600 {
+                MappedLocalTime::Single(FixedOffset::east_opt(7_200).unwrap())
+            } else if seconds < 25_200 {
+                MappedLocalTime::Ambiguous(
+                    FixedOffset::east_opt(7_200).unwrap(),
+                    FixedOffset::east_opt(3_600).unwrap(),
+                )
+            } else if seconds < 103_600 {
+                MappedLocalTime::Single(FixedOffset::east_opt(3_600).unwrap())
+            } else if seconds < 110_800 {
+                MappedLocalTime::None
+            } else {
+                MappedLocalTime::Single(FixedOffset::east_opt(10_800).unwrap())
+            }
         }
 
         fn offset_from_utc_date(&self, utc: &NaiveDate) -> Self::Offset {
-            self.offset(utc.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp())
+            Self::offset(utc.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp())
         }
 
         fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> Self::Offset {
-            self.offset(utc.and_utc().timestamp())
+            Self::offset(utc.and_utc().timestamp())
         }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct SubminuteTransitionZone;
+
+    impl TimeZone for SubminuteTransitionZone {
+        type Offset = FixedOffset;
+
+        fn from_offset(_offset: &Self::Offset) -> Self {
+            Self
+        }
+
+        fn offset_from_local_date(&self, local: &NaiveDate) -> MappedLocalTime<Self::Offset> {
+            self.offset_from_local_datetime(&local.and_hms_opt(0, 0, 0).unwrap())
+        }
+
+        fn offset_from_local_datetime(
+            &self,
+            local: &NaiveDateTime,
+        ) -> MappedLocalTime<Self::Offset> {
+            let seconds = local.and_utc().timestamp();
+            if seconds < 330 {
+                MappedLocalTime::Single(FixedOffset::east_opt(30).unwrap())
+            } else if seconds < 360 {
+                MappedLocalTime::None
+            } else {
+                MappedLocalTime::Single(FixedOffset::east_opt(60).unwrap())
+            }
+        }
+
+        fn offset_from_utc_date(&self, utc: &NaiveDate) -> Self::Offset {
+            self.offset_from_utc_datetime(&utc.and_hms_opt(0, 0, 0).unwrap())
+        }
+
+        fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> Self::Offset {
+            if utc.and_utc().timestamp() < 300 {
+                FixedOffset::east_opt(30).unwrap()
+            } else {
+                FixedOffset::east_opt(60).unwrap()
+            }
+        }
+    }
+
+    #[test]
+    fn changed_ambiguous_input_uses_the_original_offset_or_is_rejected() {
+        let zone = CorrectionTestZone;
+        let mut input = TimestampInput::new("1970-01-01 00:00".to_owned());
+        input.replace("1970-01-01 06:30".to_owned());
+
+        assert_eq!(
+            resolve_correction_timestamp(&input, &zone, at(10_000)).unwrap(),
+            at(16_200)
+        );
+        assert_eq!(
+            resolve_correction_timestamp(&input, &zone, at(20_000)).unwrap(),
+            at(19_800)
+        );
+        assert_eq!(
+            resolve_correction_timestamp(&input, &zone, at(100_000)),
+            Err("Ambiguous local time")
+        );
     }
 
     #[test]
     fn minute_and_hour_adjustments_reformat_in_the_configured_timezone() {
         let utc = FixedOffset::east_opt(0).unwrap();
+        let original = DateTime::from_timestamp(0, 123_456_000).unwrap();
         assert_eq!(
             adjusted_correction_timestamp(
-                "1970-01-01T00:00:00.123456+00:00",
+                &TimestampInput::new("1970-01-01 00:00".to_owned()),
                 TimeDelta::minutes(5),
-                &utc
+                &utc,
+                original
             )
             .unwrap(),
-            "1970-01-01T00:05:00.123456+00:00"
+            ("1970-01-01 00:05".to_owned(), at(300))
         );
         assert_eq!(
             adjusted_correction_timestamp(
-                "1970-01-01T00:00:00.123456+00:00",
-                TimeDelta::minutes(-5),
-                &utc
-            )
-            .unwrap(),
-            "1969-12-31T23:55:00.123456+00:00"
-        );
-        assert_eq!(
-            adjusted_correction_timestamp(
-                "1970-01-01T00:00:00.123456+00:00",
-                TimeDelta::hours(1),
-                &utc
-            )
-            .unwrap(),
-            "1970-01-01T01:00:00.123456+00:00"
-        );
-        assert_eq!(
-            adjusted_correction_timestamp(
-                "1970-01-01T00:00:00.123456+00:00",
+                &TimestampInput::new("1970-01-01 00:00".to_owned()),
                 TimeDelta::hours(-1),
-                &utc
+                &utc,
+                original
             )
             .unwrap(),
-            "1969-12-31T23:00:00.123456+00:00"
+            ("1969-12-31 23:00".to_owned(), at(-3_600))
+        );
+        let zone = CorrectionTestZone;
+        let original = DateTime::from_timestamp(3300, 0).unwrap();
+        assert_eq!(
+            adjusted_correction_timestamp(
+                &TimestampInput::new("1970-01-01 01:55".to_owned()),
+                TimeDelta::minutes(5),
+                &zone,
+                original
+            )
+            .unwrap(),
+            ("1970-01-01 03:00".to_owned(), at(3_600))
+        );
+    }
+
+    #[test]
+    fn subminute_offset_transition_rejects_an_unrepresentable_absolute_adjustment() {
+        assert_eq!(
+            parse_correction_timestamp("1970-01-01 00:01", &SubminuteTransitionZone, None,),
+            Ok(at(30)),
+            "local wall-clock second 00 can map to nonzero UTC seconds",
         );
 
-        let zone = CorrectionSwitchingZone { switch: 3600 };
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = Worklog::begin(worklog_id(10), task_id, at(30));
+        let mut app = correction_app_in(worklog.clone(), vec![worklog], &SubminuteTransitionZone);
+        let before = app.correction().unwrap().clone();
+
+        app.adjust_correction_in(TimeDelta::minutes(5), &SubminuteTransitionZone);
+
+        assert_eq!(app.correction().unwrap(), &before);
         assert_eq!(
-            adjusted_correction_timestamp(
-                "1970-01-01T01:55:00.000000+01:00",
-                TimeDelta::minutes(5),
-                &zone
-            )
-            .unwrap(),
-            "1970-01-01T03:00:00.000000+02:00"
+            text(app.status()),
+            "Adjustment cannot be represented as a local minute"
         );
+        assert!(app.application.correction_calls.is_empty());
+    }
+
+    #[test]
+    fn fallback_adjustment_keeps_the_resolved_occurrence_when_the_text_repeats() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let original_start = DateTime::from_timestamp(16_230, 123_456_000).unwrap();
+        let worklog = Worklog::begin(worklog_id(10), task_id, original_start);
+        let mut app = correction_app_in(worklog.clone(), vec![worklog], &CorrectionTestZone);
+
+        app.adjust_correction_in(TimeDelta::hours(1), &CorrectionTestZone);
+
+        assert_eq!(app.correction().unwrap().start().text(), "1970-01-01 06:30");
+        app.confirm_correction_in(&CorrectionTestZone);
+        let replacement = app.application.correction_calls[0].2;
+        assert_eq!(replacement.start(), at(19_800));
+        assert_eq!(replacement.end(), None);
+    }
+
+    #[test]
+    fn changed_gap_input_is_rejected_without_calling_the_application() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let worklog = Worklog::begin(worklog_id(10), task_id, at(0));
+        let mut app = correction_app_in(worklog.clone(), vec![worklog], &CorrectionTestZone);
+        app.correction_mut_for_tests()
+            .start
+            .replace("1970-01-01 02:30".to_owned());
+
+        app.confirm_correction_in(&CorrectionTestZone);
+
+        assert_eq!(text(app.status()), "Start: Local time does not exist");
+        assert!(app.application.correction_calls.is_empty());
+        assert!(app.correction().is_some());
     }
 
     #[test]
@@ -3974,7 +4398,7 @@ mod tests {
         let before = app.correction().unwrap().clone();
         app.handle(Command::AdjustForwardFiveMinutes);
         assert_eq!(app.correction().unwrap(), &before);
-        assert_eq!(text(app.status()), "Use RFC 3339 with an explicit offset");
+        assert_eq!(text(app.status()), "Use YYYY-MM-DD HH:MM");
     }
 
     #[test]
@@ -4244,6 +4668,118 @@ mod tests {
     }
 
     #[test]
+    fn changed_and_unchanged_fields_keep_their_independent_precision() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let start = DateTime::from_timestamp(100, 123_456_000).unwrap();
+        let end = DateTime::from_timestamp(200, 654_321_000).unwrap();
+        let worklog = Worklog::new(worklog_id(10), task_id, start, Some(end)).unwrap();
+
+        let mut app = correction_app(worklog.clone(), vec![worklog.clone()]);
+        app.correction_mut_for_tests()
+            .start
+            .replace("1970-01-01 02:02".to_owned());
+        app.handle(Command::Confirm);
+        let replacement = app.application.correction_calls[0].2;
+        assert_eq!(replacement.start(), at(120));
+        assert_eq!(replacement.end(), Some(end));
+
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+        app.handle(Command::SwitchCorrectionField);
+        app.correction_mut_for_tests()
+            .end
+            .as_mut()
+            .unwrap()
+            .replace("1970-01-01 02:04".to_owned());
+        app.handle(Command::Confirm);
+        let replacement = app.application.correction_calls[0].2;
+        assert_eq!(replacement.start(), start);
+        assert_eq!(replacement.end(), Some(at(240)));
+    }
+
+    #[test]
+    fn text_edited_back_to_its_opening_value_preserves_the_original_instant() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let start = DateTime::from_timestamp(100, 123_456_000).unwrap();
+        let worklog = Worklog::begin(worklog_id(10), task_id, start);
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+
+        app.handle(Command::Backspace);
+        app.handle(Command::Insert('1'));
+        app.handle(Command::Confirm);
+
+        assert_eq!(app.application.correction_calls[0].2.start(), start);
+    }
+
+    #[test]
+    fn untouched_fields_preserve_exact_utc_when_the_timezone_is_stable() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let start = DateTime::from_timestamp(100, 123_456_000).unwrap();
+        let end = DateTime::from_timestamp(200, 654_321_000).unwrap();
+        let worklog = Worklog::new(worklog_id(10), task_id, start, Some(end)).unwrap();
+        let mut app = correction_app(worklog.clone(), vec![worklog]);
+
+        app.handle(Command::Confirm);
+
+        assert_eq!(
+            app.application.correction_calls[0].2,
+            WorklogTimes::new(start, Some(end))
+        );
+    }
+
+    #[test]
+    fn a_timezone_snapshot_keeps_utc_rules_when_london_changes_later() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        let original = Utc
+            .with_ymd_and_hms(2025, 1, 15, 10, 0, 0)
+            .single()
+            .unwrap();
+        let worklog = Worklog::begin(worklog_id(10), task_id, original);
+        let mut app = correction_history_app(worklog.clone(), vec![worklog]);
+        app.set_timezone_for_tests(chrono_tz::UTC);
+        app.handle(Command::OpenCorrection);
+        app.correction_mut_for_tests()
+            .start
+            .replace("2025-07-01 10:00".to_owned());
+
+        let london = chrono_tz::Europe::London;
+        assert_eq!(
+            parse_correction_timestamp("2025-07-01 10:00", &london, Some(original)),
+            Ok(Utc.with_ymd_and_hms(2025, 7, 1, 9, 0, 0).single().unwrap())
+        );
+
+        app.handle(Command::Confirm);
+
+        assert_eq!(
+            app.application.correction_calls[0].2.start(),
+            Utc.with_ymd_and_hms(2025, 7, 1, 10, 0, 0).single().unwrap()
+        );
+    }
+
+    #[test]
+    fn out_of_range_local_timestamps_cannot_open_correction() {
+        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+        for (timestamp, offset) in [
+            (DateTime::<Utc>::MIN_UTC, FixedOffset::west_opt(1).unwrap()),
+            (DateTime::<Utc>::MAX_UTC, FixedOffset::east_opt(1).unwrap()),
+        ] {
+            assert_eq!(correction_timestamp(timestamp, &offset), None);
+            let worklog = Worklog::begin(
+                worklog_id(offset.local_minus_utc() as u128),
+                task_id,
+                timestamp,
+            );
+            let mut app = correction_history_app(worklog, Vec::new());
+            app.freeze_offset_for_tests(offset);
+
+            app.handle(Command::OpenCorrection);
+
+            assert_eq!(app.mode(), &Mode::Normal);
+            assert_eq!(text(app.status()), OUTSIDE_EDITABLE_RANGE);
+            assert!(app.application.correction_calls.is_empty());
+        }
+    }
+
+    #[test]
     fn successful_correction_discards_older_pages_and_resolves_selection() {
         let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
         let corrected = history_worklog(10, task_id, 100);
@@ -4334,14 +4870,12 @@ mod tests {
         app.handle(Command::OpenCorrection);
         {
             let draft = app.correction_mut_for_tests();
-            draft
-                .start
-                .replace("1970-01-01T00:01:50.000000+00:00".to_owned());
+            draft.start.replace("1970-01-01 00:01".to_owned());
             draft
                 .end
                 .as_mut()
                 .unwrap()
-                .replace("1970-01-01T00:02:50.000000+00:00".to_owned());
+                .replace("1970-01-01 00:02".to_owned());
         }
 
         app.handle(Command::Confirm);
@@ -4408,14 +4942,12 @@ mod tests {
         };
         {
             let draft = app.correction_mut_for_tests();
-            draft
-                .start
-                .replace("1970-01-01T00:07:50.000000+00:00".to_owned());
+            draft.start.replace("1970-01-01 00:07".to_owned());
             draft
                 .end
                 .as_mut()
                 .unwrap()
-                .replace("1970-01-01T00:08:50.000000+00:00".to_owned());
+                .replace("1970-01-01 00:08".to_owned());
         }
 
         app.handle(Command::Confirm);
@@ -4475,14 +5007,12 @@ mod tests {
         app.handle(Command::OpenCorrection);
         {
             let draft = app.correction_mut_for_tests();
-            draft
-                .start
-                .replace("1970-01-01T00:01:40.000000+00:00".to_owned());
+            draft.start.replace("1970-01-01 00:01".to_owned());
             draft
                 .end
                 .as_mut()
                 .unwrap()
-                .replace("1970-01-01T00:02:40.000000+00:00".to_owned());
+                .replace("1970-01-01 00:02".to_owned());
         }
         app.handle(Command::Confirm);
         assert_eq!(app.tasks()[0].id, alpha.id);
@@ -4510,12 +5040,10 @@ mod tests {
         app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
         app.handle(Command::OpenHistory);
         app.handle(Command::OpenCorrection);
-        app.correction_mut_for_tests()
-            .start
-            .replace(correction_timestamp(
-                correction_start,
-                &FixedOffset::east_opt(0).unwrap(),
-            ));
+        app.correction_mut_for_tests().start.replace(
+            correction_timestamp(correction_start, &FixedOffset::east_opt(0).unwrap())
+                .expect("the test timestamp is representable"),
+        );
 
         app.handle(Command::Confirm);
 
@@ -4584,12 +5112,10 @@ mod tests {
         app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
         app.handle(Command::OpenHistory);
         app.handle(Command::OpenCorrection);
-        app.correction_mut_for_tests()
-            .start
-            .replace(correction_timestamp(
-                corrected_start,
-                &FixedOffset::east_opt(0).unwrap(),
-            ));
+        app.correction_mut_for_tests().start.replace(
+            correction_timestamp(corrected_start, &FixedOffset::east_opt(0).unwrap())
+                .expect("the test timestamp is representable"),
+        );
         app.handle(Command::Confirm);
 
         let header = app.elapsed().unwrap();

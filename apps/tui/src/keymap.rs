@@ -261,11 +261,12 @@ mod tests {
 
     fn correction() -> Mode {
         let at = DateTime::<Utc>::from_timestamp(0, 0).unwrap();
+        let times = WorklogTimes::new(at, Some(at));
         Mode::Correction(CorrectionDraft::new(
             WorklogId::generate(),
-            WorklogTimes::new(at, Some(at)),
-            "1970-01-01T00:00:00.000000+00:00".to_owned(),
-            Some("1970-01-01T00:00:00.000000+00:00".to_owned()),
+            times,
+            "1970-01-01 00:00".to_owned(),
+            Some("1970-01-01 00:00".to_owned()),
         ))
     }
 

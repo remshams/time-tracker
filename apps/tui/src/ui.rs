@@ -3,10 +3,9 @@
 //! Everything here only reads state. Layout, styles, and widgets draw the
 //! current [`App`]; mutating state happens in [`crate::app`].
 
-use std::fmt;
 use std::time::Duration;
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Offset, TimeZone, Utc};
 use tracker_application::TrackerApplicationService;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -154,12 +153,10 @@ fn render_tasks<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app
 
 /// Renders the worklog history of one task.
 ///
-/// Rows appear newest first. Each row takes two lines, so the local start,
-/// the local end or Running, the explicit UTC offsets, and the duration
-/// all stay visible at the 60-column minimum: the first line carries both
-/// timestamps with their offsets, the second the duration. Each timestamp
-/// converts to local time on its own, so rows on either side of a
-/// daylight-saving transition show their own valid offsets.
+/// Rows appear newest first. Each row takes two lines, with local timestamps
+/// on the first line and the duration on the second. Each timestamp converts
+/// to local time on its own, so rows on either side of a daylight-saving
+/// transition show their own local minute.
 fn render_history<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app: &App<S>) {
     let Some(history) = app.history() else {
         return;
@@ -211,19 +208,16 @@ fn render_history<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, a
     frame.render_stateful_widget(list, area, &mut state);
 }
 
-/// Formats an instant in `tz` with the UTC offset valid at that instant,
-/// e.g. `2026-07-12 14:30:00 +02:00`.
-///
-/// The conversion happens per instant, so times on either side of a
-/// daylight-saving transition render with their own correct offsets.
+/// Formats an instant in `tz` as a local minute timestamp.
 pub(crate) fn local_time<Tz>(at: DateTime<Utc>, tz: &Tz) -> String
 where
     Tz: TimeZone,
-    Tz::Offset: fmt::Display,
 {
-    at.with_timezone(tz)
-        .format("%Y-%m-%d %H:%M:%S %:z")
-        .to_string()
+    let offset = tz.offset_from_utc_datetime(&at.naive_utc()).fix();
+    at.naive_utc()
+        .checked_add_offset(offset)
+        .map(|local| local.format("%Y-%m-%d %H:%M").to_string())
+        .unwrap_or_else(|| "outside local range".to_owned())
 }
 
 /// Renders the status or error line.
@@ -413,7 +407,7 @@ mod tests {
     /// per `(start, end)` pair, newest first on screen.
     ///
     /// The display offset is frozen at UTC+02:00, so rendered local times
-    /// and offsets are deterministic on every host.
+    /// are deterministic on every host.
     fn history_app(entries: &[(i64, i64)]) -> App<TrackerApplication<SqliteRepository>> {
         let repository = SqliteRepository::open_in_memory().unwrap();
         let task = Task::create(
@@ -867,25 +861,50 @@ mod tests {
     }
 
     #[test]
-    fn local_times_render_with_the_explicit_utc_offset() {
+    fn local_times_render_as_local_minutes() {
         let plus_two = FixedOffset::east_opt(2 * 3600).unwrap();
         assert_eq!(
             local_time(DateTime::<Utc>::from_timestamp(0, 0).unwrap(), &plus_two),
-            "1970-01-01 02:00:00 +02:00"
+            "1970-01-01 02:00"
         );
         assert_eq!(
             local_time(
                 DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
                 &FixedOffset::west_opt(5 * 3600 + 1800).unwrap()
             ),
-            "1969-12-31 18:30:00 -05:30"
+            "1969-12-31 18:30"
         );
         assert_eq!(
             local_time(
                 DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
                 &FixedOffset::east_opt(0).unwrap()
             ),
-            "1970-01-01 00:00:00 +00:00"
+            "1970-01-01 00:00"
+        );
+    }
+
+    #[test]
+    fn local_times_render_chrono_signed_expanded_years() {
+        for (year, expected) in [
+            (-1, "-0001-01-02 03:04"),
+            (0, "0000-01-02 03:04"),
+            (9999, "9999-01-02 03:04"),
+            (10000, "+10000-01-02 03:04"),
+        ] {
+            let instant = Utc.with_ymd_and_hms(year, 1, 2, 3, 4, 0).single().unwrap();
+            assert_eq!(local_time(instant, &Utc), expected);
+        }
+    }
+
+    #[test]
+    fn local_times_outside_chrono_range_render_a_safe_marker() {
+        assert_eq!(
+            local_time(DateTime::<Utc>::MIN_UTC, &FixedOffset::west_opt(1).unwrap()),
+            "outside local range"
+        );
+        assert_eq!(
+            local_time(DateTime::<Utc>::MAX_UTC, &FixedOffset::east_opt(1).unwrap()),
+            "outside local range"
         );
     }
 
@@ -957,16 +976,16 @@ mod tests {
         let zone = SwitchingZone { switch: 3600 };
         assert_eq!(
             local_time(DateTime::<Utc>::from_timestamp(3599, 0).unwrap(), &zone),
-            "1970-01-01 01:59:59 +01:00"
+            "1970-01-01 01:59"
         );
         assert_eq!(
             local_time(DateTime::<Utc>::from_timestamp(3600, 0).unwrap(), &zone),
-            "1970-01-01 03:00:00 +02:00"
+            "1970-01-01 03:00"
         );
     }
 
     #[test]
-    fn the_history_renders_title_rows_offsets_and_durations() {
+    fn the_history_renders_title_rows_and_durations() {
         // 01:00:00Z to 01:00:15Z, then a whole day later, newest first.
         let app = history_app(&[(3600, 3615), (86_400, 86_400 + 90)]);
         let terminal = draw(&app);
@@ -978,13 +997,13 @@ mod tests {
             rows[1]
         );
         assert!(
-            rows[2].contains("1970-01-02 02:00:00 +02:00 → 1970-01-02 02:01:30 +02:00"),
+            rows[2].contains("1970-01-02 02:00 → 1970-01-02 02:01"),
             "the newest row leads: {:?}",
             rows[2]
         );
         assert!(rows[3].contains("00:01:30"), "got {:?}", rows[3]);
         assert!(
-            rows[4].contains("1970-01-01 03:00:00 +02:00 → 1970-01-01 03:00:15 +02:00"),
+            rows[4].contains("1970-01-01 03:00 → 1970-01-01 03:00"),
             "got {:?}",
             rows[4]
         );
@@ -1017,8 +1036,8 @@ mod tests {
         let terminal = draw_at(&app, 60, 20);
         let row_text = row(&terminal, 2);
         assert!(
-            row_text.contains("1970-01-01 03:00:00 +02:00 → 1970-01-01 03:00:15 +02:00"),
-            "both timestamps and offsets stayed visible: {row_text:?}"
+            row_text.contains("1970-01-01 03:00 → 1970-01-01 03:00"),
+            "both timestamps stayed visible: {row_text:?}"
         );
         assert!(row_text.ends_with('│'), "the border survived: {row_text:?}");
         assert!(row(&terminal, 3).contains("00:00:15"));
@@ -1075,8 +1094,8 @@ mod tests {
             .iter()
             .position(|row| row.contains("End  : "))
             .expect("the end field is visible") as u16;
-        assert!(screen_rows[start_row as usize].contains("1970-01-01T03:00:00.000000+02:00▏"));
-        assert!(screen_rows[end_row as usize].contains("1970-01-01T03:00:15.000000+02:00"));
+        assert!(screen_rows[start_row as usize].contains("1970-01-01 03:00▏"));
+        assert!(screen_rows[end_row as usize].contains("1970-01-01 03:00"));
         assert!(
             cell(&terminal, 2, start_row)
                 .add_modifier
@@ -1094,7 +1113,7 @@ mod tests {
         let terminal = draw_at(&app, 60, 20);
         let rows = rows(&terminal);
         let end_row = rows.iter().position(|row| row.contains("End  : ")).unwrap() as u16;
-        assert!(rows[end_row as usize].contains("+02:00▏"));
+        assert!(rows[end_row as usize].contains("1970-01-01 03:00▏"));
         assert!(
             cell(&terminal, 2, end_row)
                 .add_modifier
