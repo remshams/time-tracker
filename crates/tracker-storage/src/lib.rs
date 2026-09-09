@@ -4,10 +4,10 @@
 //! `tracker-application` with a bundled SQLite database. The schema is created and upgraded by
 //! migrations, and database-level rules back the domain invariants: at most
 //! one active worklog, no stopped worklog whose end precedes its start, no
-//! worklogs on archived tasks, and no archiving of a task with an active
-//! worklog. Task timestamps are stored as strict integer microseconds and
-//! `updated_at` never moves backward. This crate depends on the application
-//! and domain crates, never the other way around.
+//! same-task interval overlap, no worklogs on archived tasks, and no archiving
+//! of a task with an active worklog. Task timestamps are stored as strict
+//! integer microseconds, and `updated_at` never moves backward. This crate
+//! depends on the application and domain crates, never the other way around.
 
 mod error;
 mod migrate;
@@ -20,10 +20,13 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior};
 use tracker_application::{
-    RepositoryError, TaskListItem, TaskRepository, TrackingRepository, WORKLOG_PAGE_SIZE,
-    WorklogCursor, WorklogPage, WorklogRepository,
+    RepositoryError, TaskListItem, TaskRepository, TrackerSnapshot, TrackingRepository,
+    WORKLOG_PAGE_SIZE, WorklogCorrection, WorklogCursor, WorklogPage, WorklogPageSnapshot,
+    WorklogRepository,
 };
-use tracker_domain::{Task, TaskError, TaskId, TaskName, Worklog, WorklogError, WorklogId};
+use tracker_domain::{
+    Task, TaskError, TaskId, TaskName, Worklog, WorklogError, WorklogId, WorklogTimes,
+};
 
 pub use error::StorageError;
 pub use paths::{app_data_dir, default_database_path, ensure_app_data_dir};
@@ -147,6 +150,63 @@ fn task_by_id_on(conn: &Connection, id: TaskId) -> Result<Option<Task>, StorageE
         .transpose()
 }
 
+fn worklog_by_id_on(conn: &Connection, id: WorklogId) -> Result<Option<Worklog>, StorageError> {
+    let mut statement =
+        conn.prepare("SELECT id, task_id, start_us, end_us FROM worklogs WHERE id = ?1")?;
+    statement
+        .query_row([id.to_string()], raw_worklog)
+        .optional()?
+        .map(worklog_from_raw)
+        .transpose()
+}
+
+fn list_task_items_on(conn: &Connection) -> Result<Vec<TaskListItem>, StorageError> {
+    let mut statement = conn.prepare(
+        "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us, w.latest_start_us
+         FROM tasks AS t
+         LEFT JOIN (
+             SELECT task_id, MAX(start_us) AS latest_start_us
+             FROM worklogs
+             GROUP BY task_id
+         ) AS w ON w.task_id = t.id
+         ORDER BY t.id",
+    )?;
+    let mut rows = statement.query([])?;
+    let mut items = Vec::new();
+    while let Some(row) = rows.next()? {
+        let ((id, name, archived, created_us, updated_us), latest_us) = raw_task_item(row)?;
+        items.push(TaskListItem {
+            task: task_from_stored(id, name, archived, created_us, updated_us)?,
+            latest_work_start: latest_us.map(us_to_timestamp).transpose()?,
+        });
+    }
+    Ok(items)
+}
+
+fn active_worklog_on(conn: &Connection) -> Result<Option<Worklog>, StorageError> {
+    let mut statement =
+        conn.prepare("SELECT id, task_id, start_us, end_us FROM worklogs WHERE end_us IS NULL")?;
+    statement
+        .query_row([], raw_worklog)
+        .optional()?
+        .map(worklog_from_raw)
+        .transpose()
+}
+
+/// Reads one task's latest work start through `worklogs_task_start`.
+fn latest_work_start_on(
+    conn: &Connection,
+    task_id: TaskId,
+) -> Result<Option<DateTime<Utc>>, StorageError> {
+    conn.query_row(
+        "SELECT MAX(start_us) FROM worklogs WHERE task_id = ?1",
+        [task_id.to_string()],
+        |row| row.get::<_, Option<i64>>(0),
+    )?
+    .map(us_to_timestamp)
+    .transpose()
+}
+
 /// A tracker repository backed by a bundled SQLite database.
 #[derive(Debug)]
 pub struct SqliteRepository {
@@ -190,16 +250,7 @@ impl SqliteRepository {
     }
 
     fn worklog_by_id(&self, id: WorklogId) -> Result<Option<Worklog>, StorageError> {
-        let mut statement = self
-            .conn
-            .prepare("SELECT id, task_id, start_us, end_us FROM worklogs WHERE id = ?1")?;
-        statement
-            .query_row([id.to_string()], raw_worklog)
-            .optional()?
-            .map(|(id, task_id, start_us, end_us)| {
-                worklog_from_stored(id, task_id, start_us, end_us)
-            })
-            .transpose()
+        worklog_by_id_on(&self.conn, id)
     }
 
     /// Seeds the given default tasks when the database has no tasks at all.
@@ -314,26 +365,19 @@ impl SqliteRepository {
     /// aggregate in this query, backed by the `worklogs_task_start` index;
     /// full worklogs are never loaded for the listing.
     pub fn list_task_items(&self) -> Result<Vec<TaskListItem>, StorageError> {
-        let mut statement = self.conn.prepare(
-            "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us, w.latest_start_us
-             FROM tasks AS t
-             LEFT JOIN (
-                 SELECT task_id, MAX(start_us) AS latest_start_us
-                 FROM worklogs
-                 GROUP BY task_id
-             ) AS w ON w.task_id = t.id
-             ORDER BY t.id",
-        )?;
-        let mut rows = statement.query([])?;
-        let mut items = Vec::new();
-        while let Some(row) = rows.next()? {
-            let ((id, name, archived, created_us, updated_us), latest_us) = raw_task_item(row)?;
-            items.push(TaskListItem {
-                task: task_from_stored(id, name, archived, created_us, updated_us)?,
-                latest_work_start: latest_us.map(us_to_timestamp).transpose()?,
-            });
-        }
-        Ok(items)
+        list_task_items_on(&self.conn)
+    }
+
+    /// Reads task aggregates and global tracking from one SQLite read transaction.
+    pub fn tracker_snapshot(&self) -> Result<TrackerSnapshot, StorageError> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Deferred)?;
+        let task_items = list_task_items_on(&transaction)?;
+        let active_worklog = active_worklog_on(&transaction)?;
+        transaction.commit()?;
+        Ok(TrackerSnapshot {
+            task_items,
+            active_worklog,
+        })
     }
 
     /// Renames a task atomically while preserving concurrent archive state.
@@ -405,14 +449,14 @@ impl SqliteRepository {
     }
 
     pub fn insert_worklog(&self, worklog: &Worklog) -> Result<(), StorageError> {
-        let end_us = worklog.end.map(timestamp_to_us);
+        let end_us = worklog.end().map(timestamp_to_us);
         self.conn
             .execute(
                 "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![
-                    worklog.id.to_string(),
-                    worklog.task_id.to_string(),
-                    timestamp_to_us(worklog.start),
+                    worklog.id().to_string(),
+                    worklog.task_id().to_string(),
+                    timestamp_to_us(worklog.start()),
                     end_us,
                 ],
             )
@@ -420,39 +464,129 @@ impl SqliteRepository {
             .map_err(|error| error::insert_worklog_error(error, worklog))
     }
 
-    pub fn stop_worklog(&self, id: WorklogId, end: DateTime<Utc>) -> Result<Worklog, StorageError> {
+    pub fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, StorageError> {
+        self.worklog_by_id(id)
+    }
+
+    /// Replaces timestamps when the stored pair still matches `expected`.
+    ///
+    /// The immediate transaction serializes this read-modify-write sequence
+    /// with other processes. The conditional UPDATE remains the concurrency
+    /// check, while the follow-up read distinguishes a missing row, stale
+    /// timestamps, and a forbidden completion-state change.
+    pub fn compare_and_set_worklog_times(
+        &self,
+        id: WorklogId,
+        expected: WorklogTimes,
+        replacement: WorklogTimes,
+    ) -> Result<WorklogCorrection, StorageError> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let expected_start_us = timestamp_to_us(expected.start());
+        let expected_end_us = expected.end().map(timestamp_to_us);
+        let replacement_start_us = timestamp_to_us(replacement.start());
+        let replacement_end_us = replacement.end().map(timestamp_to_us);
+
+        let update = transaction.execute(
+            "UPDATE worklogs
+             SET start_us = ?1, end_us = ?2
+             WHERE id = ?3
+               AND start_us = ?4
+               AND end_us IS ?5
+               AND ((end_us IS NULL AND ?2 IS NULL)
+                    OR (end_us IS NOT NULL AND ?2 IS NOT NULL))",
+            rusqlite::params![
+                replacement_start_us,
+                replacement_end_us,
+                id.to_string(),
+                expected_start_us,
+                expected_end_us,
+            ],
+        );
+
+        match update {
+            Ok(1) => {
+                let corrected = worklog_by_id_on(&transaction, id)?
+                    .ok_or(StorageError::WorklogNotFound { id })?;
+                let task_latest_work_start = transaction
+                    .query_row(
+                        "SELECT MAX(start_us) FROM worklogs WHERE task_id = ?1",
+                        [corrected.task_id().to_string()],
+                        |row| row.get::<_, Option<i64>>(0),
+                    )?
+                    .map(us_to_timestamp)
+                    .transpose()?;
+                let active_worklog = active_worklog_on(&transaction)?;
+                let active_task_latest_work_start = match active_worklog.as_ref() {
+                    Some(active) if active.task_id() == corrected.task_id() => {
+                        task_latest_work_start
+                    }
+                    Some(active) => latest_work_start_on(&transaction, active.task_id())?,
+                    None => None,
+                };
+                transaction.commit()?;
+                Ok(WorklogCorrection {
+                    worklog: corrected,
+                    task_latest_work_start,
+                    active_worklog,
+                    active_task_latest_work_start,
+                })
+            }
+            Ok(0) => {
+                let current = worklog_by_id_on(&transaction, id)?
+                    .ok_or(StorageError::WorklogNotFound { id })?;
+                if current.times()
+                    != WorklogTimes::new(
+                        us_to_timestamp(expected_start_us)?,
+                        expected_end_us.map(us_to_timestamp).transpose()?,
+                    )
+                {
+                    return Err(StorageError::WorklogChanged { id });
+                }
+                Err(error::constraint(
+                    "a worklog correction must preserve completion state",
+                ))
+            }
+            Ok(_) => Err(StorageError::CorruptData("worklog update count")),
+            Err(sql_error) => Err(error::update_worklog_error(sql_error, id)),
+        }
+    }
+
+    pub fn stop_worklog(
+        &self,
+        id: WorklogId,
+        expected_start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Worklog, StorageError> {
         let mut statement = self.conn.prepare(
-            "UPDATE worklogs SET end_us = ?1 WHERE id = ?2 AND end_us IS NULL
+            "UPDATE worklogs SET end_us = ?1
+             WHERE id = ?2 AND start_us = ?3 AND end_us IS NULL
              RETURNING id, task_id, start_us, end_us",
         )?;
         match statement
             .query_row(
-                rusqlite::params![timestamp_to_us(end), id.to_string()],
+                rusqlite::params![
+                    timestamp_to_us(end),
+                    id.to_string(),
+                    timestamp_to_us(expected_start)
+                ],
                 raw_worklog,
             )
             .optional()
         {
             Ok(Some(raw)) => Ok(worklog_from_stored(raw.0, raw.1, raw.2, raw.3)?),
-            Ok(None) => {
-                if self.worklog_by_id(id)?.is_some() {
+            Ok(None) => match self.worklog_by_id(id)? {
+                None => Err(StorageError::WorklogNotFound { id }),
+                Some(worklog) if !worklog.is_active() => {
                     Err(StorageError::WorklogAlreadyStopped { id })
-                } else {
-                    Err(StorageError::WorklogNotFound { id })
                 }
-            }
+                Some(_) => Err(StorageError::WorklogChanged { id }),
+            },
             Err(error) => Err(error::classify_write_error(error)),
         }
     }
 
     pub fn active_worklog(&self) -> Result<Option<Worklog>, StorageError> {
-        let mut statement = self
-            .conn
-            .prepare("SELECT id, task_id, start_us, end_us FROM worklogs WHERE end_us IS NULL")?;
-        statement
-            .query_row([], raw_worklog)
-            .optional()?
-            .map(worklog_from_raw)
-            .transpose()
+        active_worklog_on(&self.conn)
     }
 
     /// Reads one bounded page of the task's worklog history.
@@ -470,12 +604,26 @@ impl SqliteRepository {
         task_id: TaskId,
         after: Option<&WorklogCursor>,
     ) -> Result<WorklogPage, StorageError> {
-        // One row past the page size only signals "another page exists".
+        if after.is_some_and(|cursor| cursor.task_id != task_id) {
+            return Err(StorageError::WorklogHistoryChanged { task_id });
+        }
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Deferred)?;
+        let revision = transaction
+            .query_row(
+                "SELECT history_order_revision FROM tasks WHERE id = ?1",
+                [task_id.to_string()],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?
+            .unwrap_or(0);
+        if after.is_some_and(|cursor| cursor.revision != revision) {
+            return Err(StorageError::WorklogHistoryChanged { task_id });
+        }
         let limit =
             i64::try_from(WORKLOG_PAGE_SIZE + 1).expect("the page size plus one always fits i64");
         let raw = match after {
             None => {
-                let mut statement = self.conn.prepare(
+                let mut statement = transaction.prepare(
                     "SELECT id, task_id, start_us, end_us FROM worklogs
                      WHERE task_id = ?1
                      ORDER BY start_us DESC, id
@@ -486,8 +634,7 @@ impl SqliteRepository {
                     .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
             }
             Some(cursor) => {
-                let cursor_start_us = timestamp_to_us(cursor.start);
-                let mut statement = self.conn.prepare(
+                let mut statement = transaction.prepare(
                     "SELECT id, task_id, start_us, end_us FROM worklogs
                      WHERE task_id = ?1
                        AND (start_us < ?2 OR (start_us = ?2 AND id > ?3))
@@ -498,7 +645,7 @@ impl SqliteRepository {
                     .query_map(
                         rusqlite::params![
                             task_id.to_string(),
-                            cursor_start_us,
+                            timestamp_to_us(cursor.start),
                             cursor.id.to_string(),
                             limit
                         ],
@@ -516,12 +663,27 @@ impl SqliteRepository {
         let next_cursor = has_next.then(|| {
             let last = worklogs.last().expect("a full page has a last worklog");
             WorklogCursor {
-                start: last.start,
-                id: last.id,
+                task_id,
+                start: last.start(),
+                id: last.id(),
+                revision,
             }
         });
+        let requested_task_latest_work_start = latest_work_start_on(&transaction, task_id)?;
+        let active_worklog = active_worklog_on(&transaction)?;
+        let active_task_latest_work_start = active_worklog
+            .as_ref()
+            .map(|active| latest_work_start_on(&transaction, active.task_id()))
+            .transpose()?
+            .flatten();
+        transaction.commit()?;
         Ok(WorklogPage {
             worklogs,
+            snapshot: WorklogPageSnapshot {
+                requested_task_latest_work_start,
+                active_worklog,
+                active_task_latest_work_start,
+            },
             next_cursor,
         })
     }
@@ -550,31 +712,38 @@ impl SqliteRepository {
     pub fn switch_worklog(
         &self,
         id: WorklogId,
+        expected_start: DateTime<Utc>,
         stop_at: DateTime<Utc>,
         next: &Worklog,
     ) -> Result<(), StorageError> {
         let transaction = self.conn.unchecked_transaction()?;
         let stopped = transaction.execute(
-            "UPDATE worklogs SET end_us = ?1 WHERE id = ?2 AND end_us IS NULL",
-            rusqlite::params![timestamp_to_us(stop_at), id.to_string()],
+            "UPDATE worklogs SET end_us = ?1
+             WHERE id = ?2 AND start_us = ?3 AND end_us IS NULL",
+            rusqlite::params![
+                timestamp_to_us(stop_at),
+                id.to_string(),
+                timestamp_to_us(expected_start)
+            ],
         );
         match stopped {
             Ok(1) => {}
-            Ok(_) => {
-                if self.worklog_by_id(id)?.is_some() {
+            Ok(_) => match self.worklog_by_id(id)? {
+                None => return Err(StorageError::WorklogNotFound { id }),
+                Some(worklog) if !worklog.is_active() => {
                     return Err(StorageError::WorklogAlreadyStopped { id });
                 }
-                return Err(StorageError::WorklogNotFound { id });
-            }
+                Some(_) => return Err(StorageError::WorklogChanged { id }),
+            },
             Err(error) => return Err(error::classify_write_error(error)),
         }
-        let end_us = next.end.map(timestamp_to_us);
+        let end_us = next.end().map(timestamp_to_us);
         if let Err(error) = transaction.execute(
             "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![
-                next.id.to_string(),
-                next.task_id.to_string(),
-                timestamp_to_us(next.start),
+                next.id().to_string(),
+                next.task_id().to_string(),
+                timestamp_to_us(next.start()),
                 end_us,
             ],
         ) {
@@ -596,6 +765,9 @@ impl TaskRepository for SqliteRepository {
 
     fn list_task_items(&self) -> Result<Vec<TaskListItem>, RepositoryError> {
         SqliteRepository::list_task_items(self).map_err(Into::into)
+    }
+    fn tracker_snapshot(&self) -> Result<TrackerSnapshot, RepositoryError> {
+        SqliteRepository::tracker_snapshot(self).map_err(Into::into)
     }
 
     fn rename_task(
@@ -629,8 +801,13 @@ impl TrackingRepository for SqliteRepository {
         SqliteRepository::insert_worklog(self, worklog).map_err(Into::into)
     }
 
-    fn stop_worklog(&self, id: WorklogId, end: DateTime<Utc>) -> Result<Worklog, RepositoryError> {
-        SqliteRepository::stop_worklog(self, id, end).map_err(Into::into)
+    fn stop_worklog(
+        &self,
+        id: WorklogId,
+        expected_start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Worklog, RepositoryError> {
+        SqliteRepository::stop_worklog(self, id, expected_start, end).map_err(Into::into)
     }
 
     fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError> {
@@ -640,14 +817,30 @@ impl TrackingRepository for SqliteRepository {
     fn switch_worklog(
         &self,
         id: WorklogId,
+        expected_start: DateTime<Utc>,
         stop_at: DateTime<Utc>,
         next: &Worklog,
     ) -> Result<(), RepositoryError> {
-        SqliteRepository::switch_worklog(self, id, stop_at, next).map_err(Into::into)
+        SqliteRepository::switch_worklog(self, id, expected_start, stop_at, next)
+            .map_err(Into::into)
     }
 }
 
 impl WorklogRepository for SqliteRepository {
+    fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, RepositoryError> {
+        SqliteRepository::find_worklog(self, id).map_err(Into::into)
+    }
+
+    fn compare_and_set_worklog_times(
+        &self,
+        id: WorklogId,
+        expected: WorklogTimes,
+        replacement: WorklogTimes,
+    ) -> Result<WorklogCorrection, RepositoryError> {
+        SqliteRepository::compare_and_set_worklog_times(self, id, expected, replacement)
+            .map_err(Into::into)
+    }
+
     fn worklog_page(
         &self,
         task_id: TaskId,
@@ -660,6 +853,35 @@ impl WorklogRepository for SqliteRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_history_page_reports_the_active_tasks_authoritative_aggregate() {
+        let repository = SqliteRepository::open_in_memory().unwrap();
+        let task = Task::create(
+            TaskId::generate(),
+            TaskName::new("active").unwrap(),
+            DateTime::from_timestamp(100, 0).unwrap(),
+        );
+        repository.create_task(task.clone()).unwrap();
+        let active = Worklog::begin(
+            WorklogId::generate(),
+            task.id(),
+            DateTime::from_timestamp(200, 0).unwrap(),
+        );
+        repository.insert_worklog(&active).unwrap();
+
+        let page = repository.worklog_page(task.id(), None).unwrap();
+
+        assert_eq!(page.snapshot.active_worklog, Some(active));
+        assert_eq!(
+            page.snapshot.requested_task_latest_work_start,
+            Some(DateTime::from_timestamp(200, 0).unwrap())
+        );
+        assert_eq!(
+            page.snapshot.active_task_latest_work_start,
+            page.snapshot.requested_task_latest_work_start
+        );
+    }
 
     #[test]
     fn timestamp_round_trips_through_microseconds() {

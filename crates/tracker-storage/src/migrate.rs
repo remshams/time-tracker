@@ -23,11 +23,11 @@ pub(crate) const TRIGGER_TASK_ARCHIVED: &str = "task is archived";
 /// The message the active-task archive trigger aborts with.
 pub(crate) const TRIGGER_TASK_ACTIVE: &str = "task is active";
 
-/// The tasks table of the current schema.
-///
-/// Version 2 added the client-created timestamp columns and the invariant
-/// that `updated_at` never precedes `created_at`.
-const TASKS_TABLE: &str = "CREATE TABLE tasks (
+/// The message the same-task overlap triggers abort with.
+pub(crate) const TRIGGER_WORKLOG_OVERLAP: &str = "same-task worklog overlap";
+
+/// The version 2 tasks table, before history ordering revisions existed.
+const TASKS_TABLE_V2: &str = "CREATE TABLE tasks (
         id TEXT PRIMARY KEY NOT NULL,
         name TEXT NOT NULL,
         archived INTEGER NOT NULL CHECK (archived IN (0, 1)),
@@ -47,7 +47,7 @@ const WORKLOGS_TABLE: &str = "CREATE TABLE worklogs (
 
 /// The indexes and triggers of the current schema.
 const WORKLOGS_INDEXES_AND_TRIGGERS: &str =
-    "CREATE INDEX worklogs_task_start ON worklogs (task_id, start_us);
+    "CREATE INDEX worklogs_task_start ON worklogs (task_id, start_us, id, end_us);
     CREATE UNIQUE INDEX worklogs_single_active
         ON worklogs (1) WHERE end_us IS NULL;
     CREATE TRIGGER worklogs_reject_archived_task
@@ -64,6 +64,69 @@ const WORKLOGS_INDEXES_AND_TRIGGERS: &str =
     BEGIN
         SELECT RAISE(ABORT, 'task is active');
     END;";
+
+/// Version 3 triggers that reject same-task overlap with a linear scan.
+const WORKLOG_OVERLAP_TRIGGERS_V3: &str = "CREATE TRIGGER worklogs_reject_same_task_overlap_insert
+     BEFORE INSERT ON worklogs
+     WHEN (NEW.end_us IS NULL OR NEW.end_us > NEW.start_us)
+      AND EXISTS (SELECT 1 FROM worklogs AS stored WHERE stored.task_id = NEW.task_id
+        AND stored.id <> NEW.id AND (stored.end_us IS NULL OR stored.end_us > stored.start_us)
+        AND (stored.end_us IS NULL OR NEW.start_us < stored.end_us)
+        AND (NEW.end_us IS NULL OR stored.start_us < NEW.end_us))
+     BEGIN SELECT RAISE(ABORT, 'same-task worklog overlap'); END;
+     CREATE TRIGGER worklogs_reject_same_task_overlap_update
+     BEFORE UPDATE OF task_id, start_us, end_us ON worklogs
+     WHEN (NEW.end_us IS NULL OR NEW.end_us > NEW.start_us)
+      AND EXISTS (SELECT 1 FROM worklogs AS stored WHERE stored.task_id = NEW.task_id
+        AND stored.id <> OLD.id AND (stored.end_us IS NULL OR stored.end_us > stored.start_us)
+        AND (stored.end_us IS NULL OR NEW.start_us < stored.end_us)
+        AND (NEW.end_us IS NULL OR stored.start_us < NEW.end_us))
+     BEGIN SELECT RAISE(ABORT, 'same-task worklog overlap'); END;
+     CREATE TRIGGER worklogs_bump_history_order_revision
+     AFTER UPDATE OF start_us ON worklogs
+     WHEN NEW.start_us <> OLD.start_us
+     BEGIN UPDATE tasks SET history_order_revision = history_order_revision + 1 WHERE id = NEW.task_id; END;";
+
+/// Version 4 archived-task and overlap triggers. The overlap check needs only
+/// the predecessor because stored nonzero intervals are already disjoint.
+const WORKLOG_TRIGGERS_V4: &str = "CREATE TRIGGER worklogs_reject_archived_task
+     BEFORE INSERT ON worklogs
+     WHEN NEW.task_id IN (SELECT id FROM tasks WHERE archived = 1)
+     BEGIN SELECT RAISE(ABORT, 'task is archived'); END;
+     CREATE TRIGGER worklogs_reject_archived_task_move
+     BEFORE UPDATE OF task_id ON worklogs
+     WHEN NEW.task_id <> OLD.task_id
+      AND NEW.task_id IN (SELECT id FROM tasks WHERE archived = 1)
+     BEGIN SELECT RAISE(ABORT, 'task is archived'); END;
+     CREATE TRIGGER worklogs_reject_same_task_overlap_insert
+     BEFORE INSERT ON worklogs
+     WHEN (NEW.end_us IS NULL OR NEW.end_us > NEW.start_us)
+      AND EXISTS (SELECT 1 FROM (SELECT end_us FROM worklogs AS stored
+          WHERE stored.task_id = NEW.task_id AND stored.id <> NEW.id
+            AND (stored.end_us IS NULL OR stored.end_us > stored.start_us)
+            AND (NEW.end_us IS NULL OR stored.start_us < NEW.end_us)
+          ORDER BY stored.start_us DESC LIMIT 1) AS predecessor
+          WHERE predecessor.end_us IS NULL OR predecessor.end_us > NEW.start_us)
+     BEGIN SELECT RAISE(ABORT, 'same-task worklog overlap'); END;
+     CREATE TRIGGER worklogs_reject_same_task_overlap_update
+     BEFORE UPDATE OF task_id, start_us, end_us ON worklogs
+     WHEN (NEW.end_us IS NULL OR NEW.end_us > NEW.start_us)
+      AND EXISTS (SELECT 1 FROM (SELECT end_us FROM worklogs AS stored
+          WHERE stored.task_id = NEW.task_id AND stored.id <> OLD.id
+            AND (stored.end_us IS NULL OR stored.end_us > stored.start_us)
+            AND (NEW.end_us IS NULL OR stored.start_us < NEW.end_us)
+          ORDER BY stored.start_us DESC LIMIT 1) AS predecessor
+          WHERE predecessor.end_us IS NULL OR predecessor.end_us > NEW.start_us)
+     BEGIN SELECT RAISE(ABORT, 'same-task worklog overlap'); END;
+     CREATE TRIGGER worklogs_bump_history_order_revision
+     AFTER UPDATE OF task_id, start_us ON worklogs
+     WHEN NEW.task_id <> OLD.task_id OR NEW.start_us <> OLD.start_us
+     BEGIN
+         UPDATE tasks
+         SET history_order_revision = history_order_revision + 1
+         WHERE id = OLD.task_id
+            OR (NEW.task_id <> OLD.task_id AND id = NEW.task_id);
+     END;";
 
 /// The baseline schema, exactly as version 1 created it.
 ///
@@ -121,7 +184,7 @@ fn apply_task_timestamps(transaction: &Transaction<'_>) -> Result<(), StorageErr
     transaction.execute_batch(&format!(
         "ALTER TABLE worklogs RENAME TO worklogs_old;
          ALTER TABLE tasks RENAME TO tasks_old;
-         {TASKS_TABLE}
+         {TASKS_TABLE_V2}
          {WORKLOGS_TABLE}"
     ))?;
     transaction.execute(
@@ -139,10 +202,79 @@ fn apply_task_timestamps(transaction: &Transaction<'_>) -> Result<(), StorageErr
     Ok(())
 }
 
+/// Adds database-level same-task overlap enforcement.
+///
+/// A zero-duration completed interval is excluded before the half-open
+/// comparisons. A NULL end has no upper bound. The preflight query uses the
+/// same predicates as the triggers and rejects corrupt version 2 data without
+/// changing any row.
+fn apply_worklog_overlap(transaction: &Transaction<'_>) -> Result<(), StorageError> {
+    // Replace the old pagination index before validating. If validation
+    // fails, the migration transaction restores the old index with the rest
+    // of the schema. The new order serves the window sweep, overlap trigger,
+    // and keyset pagination.
+    transaction.execute_batch(
+        "DROP INDEX worklogs_task_start;
+         CREATE INDEX worklogs_task_start ON worklogs (task_id, start_us, id, end_us);",
+    )?;
+
+    // The running maximum end of prior nonempty intervals detects every
+    // overlap in start order. This avoids the quadratic pairwise self-join.
+    let overlaps: bool = transaction.query_row(
+        "SELECT EXISTS (
+             SELECT 1 FROM (
+                 SELECT start_us,
+                        MAX(CASE WHEN end_us IS NULL THEN 9223372036854775807
+                                 ELSE end_us END) OVER (
+                            PARTITION BY task_id
+                            ORDER BY start_us, id
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        ) AS prior_end_us
+                 FROM worklogs
+                 WHERE end_us IS NULL OR end_us > start_us
+             )
+             WHERE prior_end_us > start_us
+         )",
+        [],
+        |row| row.get(0),
+    )?;
+    if overlaps {
+        return Err(StorageError::CorruptData("same-task worklog overlap"));
+    }
+
+    transaction.execute_batch(
+        "ALTER TABLE tasks ADD COLUMN history_order_revision INTEGER NOT NULL DEFAULT 0;",
+    )?;
+    transaction.execute_batch(WORKLOG_OVERLAP_TRIGGERS_V3)?;
+    Ok(())
+}
+
+/// Replaces version 3's scan-based overlap triggers with predecessor checks
+/// backed by a partial covering index. It also rejects direct moves onto an
+/// archived task while leaving timestamp-only archived-history corrections valid.
+fn apply_indexed_worklog_predecessor(transaction: &Transaction<'_>) -> Result<(), StorageError> {
+    transaction.execute_batch(
+        "DROP TRIGGER worklogs_reject_archived_task;
+         DROP TRIGGER worklogs_reject_same_task_overlap_insert;
+         DROP TRIGGER worklogs_reject_same_task_overlap_update;
+         DROP TRIGGER worklogs_bump_history_order_revision;
+         CREATE INDEX worklogs_nonzero_task_start
+             ON worklogs (task_id, start_us, id, end_us)
+             WHERE end_us IS NULL OR end_us > start_us;",
+    )?;
+    transaction.execute_batch(WORKLOG_TRIGGERS_V4)?;
+    Ok(())
+}
+
 type Migration = fn(&Transaction<'_>) -> Result<(), StorageError>;
 
 /// The migrations in order; index plus one is the version each one produces.
-const MIGRATIONS: &[Migration] = &[apply_baseline, apply_task_timestamps];
+const MIGRATIONS: &[Migration] = &[
+    apply_baseline,
+    apply_task_timestamps,
+    apply_worklog_overlap,
+    apply_indexed_worklog_predecessor,
+];
 
 /// The newest schema version this build understands.
 pub(crate) const LATEST_VERSION: i64 = MIGRATIONS.len() as i64;
@@ -177,7 +309,7 @@ mod tests {
 
     #[test]
     fn latest_version_counts_the_scripts() {
-        assert_eq!(LATEST_VERSION, 2);
+        assert_eq!(LATEST_VERSION, 4);
     }
 
     #[test]
@@ -186,14 +318,16 @@ mod tests {
             assert!(script.contains(&format!("'{TRIGGER_TASK_ARCHIVED}'")));
             assert!(script.contains(&format!("'{TRIGGER_TASK_ACTIVE}'")));
         }
+        assert!(WORKLOG_OVERLAP_TRIGGERS_V3.contains(&format!("'{TRIGGER_WORKLOG_OVERLAP}'")));
+        assert!(WORKLOG_TRIGGERS_V4.contains(&format!("'{TRIGGER_WORKLOG_OVERLAP}'")));
     }
 
     #[test]
     fn the_version_2_schema_has_both_timestamp_columns() {
-        assert!(TASKS_TABLE.contains("created_at_us INTEGER NOT NULL"));
-        assert!(TASKS_TABLE.contains("updated_at_us INTEGER NOT NULL"));
-        assert!(TASKS_TABLE.contains("CHECK (updated_at_us >= created_at_us)"));
-        assert!(TASKS_TABLE.contains(") STRICT;"));
+        assert!(TASKS_TABLE_V2.contains("created_at_us INTEGER NOT NULL"));
+        assert!(TASKS_TABLE_V2.contains("updated_at_us INTEGER NOT NULL"));
+        assert!(TASKS_TABLE_V2.contains("CHECK (updated_at_us >= created_at_us)"));
+        assert!(TASKS_TABLE_V2.contains(") STRICT;"));
     }
 
     #[test]

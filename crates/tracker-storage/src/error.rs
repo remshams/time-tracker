@@ -15,6 +15,15 @@ pub enum StorageError {
     /// The worklog already has an end time and cannot be stopped again.
     #[error("worklog {id} is already stopped")]
     WorklogAlreadyStopped { id: WorklogId },
+    /// The stored timestamps no longer match the caller's expected values.
+    #[error("worklog {id} changed since it was read")]
+    WorklogChanged { id: WorklogId },
+    /// A continuation cursor no longer matches the task's history order.
+    #[error("worklog history for task {task_id} changed since this page was read")]
+    WorklogHistoryChanged { task_id: TaskId },
+    /// The proposed interval overlaps another worklog for the same task.
+    #[error("worklog {id} overlaps another worklog for the same task")]
+    SameTaskWorklogOverlap { id: WorklogId },
     /// A worklog with this identifier is already stored.
     #[error("worklog {id} already exists")]
     WorklogAlreadyExists { id: WorklogId },
@@ -78,6 +87,11 @@ impl From<StorageError> for RepositoryError {
             StorageError::TaskNotFound { id } => Self::TaskNotFound { id },
             StorageError::WorklogNotFound { id } => Self::WorklogNotFound { id },
             StorageError::WorklogAlreadyStopped { id } => Self::WorklogAlreadyStopped { id },
+            StorageError::WorklogChanged { id } => Self::WorklogChanged { id },
+            StorageError::WorklogHistoryChanged { task_id } => {
+                Self::WorklogHistoryChanged { task_id }
+            }
+            StorageError::SameTaskWorklogOverlap { id } => Self::SameTaskWorklogOverlap { id },
             StorageError::WorklogAlreadyExists { id } => Self::WorklogAlreadyExists { id },
             StorageError::TaskAlreadyExists { id } => Self::TaskAlreadyExists { id },
             StorageError::ActiveWorklogExists => Self::ActiveWorklogExists,
@@ -143,6 +157,26 @@ pub(crate) fn classify_write_error(error: rusqlite::Error) -> StorageError {
     }
 }
 
+/// Builds a constraint error for a repository rule checked alongside a
+/// conditional write rather than by a table constraint.
+pub(crate) fn constraint(message: &str) -> StorageError {
+    StorageError::Constraint(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+        Some(message.to_owned()),
+    ))
+}
+
+/// Maps an error from a write to an existing worklog.
+pub(crate) fn update_worklog_error(error: rusqlite::Error, id: WorklogId) -> StorageError {
+    if is_trigger_violation(&error)
+        && failure_message(&error) == Some(crate::migrate::TRIGGER_WORKLOG_OVERLAP)
+    {
+        StorageError::SameTaskWorklogOverlap { id }
+    } else {
+        classify_write_error(error)
+    }
+}
+
 /// Maps a `create_task` error, where only uniqueness failures are expected
 /// beyond generic database errors.
 pub(crate) fn create_task_error(error: rusqlite::Error, id: TaskId) -> StorageError {
@@ -162,22 +196,26 @@ pub(crate) fn insert_worklog_error(
     error: rusqlite::Error,
     worklog: &tracker_domain::Worklog,
 ) -> StorageError {
-    if is_trigger_violation(&error)
-        && failure_message(&error) == Some(crate::migrate::TRIGGER_TASK_ARCHIVED)
-    {
-        return StorageError::TaskArchived {
-            id: worklog.task_id,
+    if is_trigger_violation(&error) {
+        return match failure_message(&error) {
+            Some(crate::migrate::TRIGGER_TASK_ARCHIVED) => StorageError::TaskArchived {
+                id: worklog.task_id(),
+            },
+            Some(crate::migrate::TRIGGER_WORKLOG_OVERLAP) => {
+                StorageError::SameTaskWorklogOverlap { id: worklog.id() }
+            }
+            _ => StorageError::Sql(error),
         };
     }
     if is_foreign_key_violation(&error) {
         return StorageError::TaskNotFound {
-            id: worklog.task_id,
+            id: worklog.task_id(),
         };
     }
     if is_unique_violation(&error) {
         return match failure_message(&error) {
             Some(message) if message.contains("worklogs.id") => {
-                StorageError::WorklogAlreadyExists { id: worklog.id }
+                StorageError::WorklogAlreadyExists { id: worklog.id() }
             }
             _ => StorageError::ActiveWorklogExists,
         };
@@ -311,7 +349,17 @@ mod tests {
                 ),
                 &worklog
             ),
-            StorageError::TaskArchived { id } if id == worklog.task_id
+            StorageError::TaskArchived { id } if id == worklog.task_id()
+        ));
+        assert!(matches!(
+            insert_worklog_error(
+                failure(
+                    rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER,
+                    Some(crate::migrate::TRIGGER_WORKLOG_OVERLAP)
+                ),
+                &worklog
+            ),
+            StorageError::SameTaskWorklogOverlap { id } if id == worklog.id()
         ));
         assert!(matches!(
             insert_worklog_error(
@@ -328,7 +376,7 @@ mod tests {
                 failure(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY, None),
                 &worklog
             ),
-            StorageError::TaskNotFound { id } if id == worklog.task_id
+            StorageError::TaskNotFound { id } if id == worklog.task_id()
         ));
         assert!(matches!(
             insert_worklog_error(
@@ -338,7 +386,7 @@ mod tests {
                 ),
                 &worklog
             ),
-            StorageError::WorklogAlreadyExists { id } if id == worklog.id
+            StorageError::WorklogAlreadyExists { id } if id == worklog.id()
         ));
         assert!(matches!(
             insert_worklog_error(
@@ -368,6 +416,32 @@ mod tests {
                 failure(rusqlite::ffi::SQLITE_CONSTRAINT_CHECK, None),
                 &worklog
             ),
+            StorageError::Constraint(_)
+        ));
+    }
+
+    #[test]
+    fn update_worklog_errors_map_only_the_overlap_trigger() {
+        let id = WorklogId::from_uuid(uuid::Uuid::from_u128(2));
+        assert!(matches!(
+            update_worklog_error(
+                failure(
+                    rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER,
+                    Some(crate::migrate::TRIGGER_WORKLOG_OVERLAP)
+                ),
+                id
+            ),
+            StorageError::SameTaskWorklogOverlap { id: existing } if existing == id
+        ));
+        assert!(matches!(
+            update_worklog_error(
+                failure(rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER, Some("other")),
+                id
+            ),
+            StorageError::Sql(_)
+        ));
+        assert!(matches!(
+            update_worklog_error(failure(rusqlite::ffi::SQLITE_CONSTRAINT_CHECK, None), id),
             StorageError::Constraint(_)
         ));
     }
@@ -420,6 +494,14 @@ mod tests {
         assert_eq!(
             RepositoryError::from(StorageError::WorklogAlreadyStopped { id: worklog_id }),
             RepositoryError::WorklogAlreadyStopped { id: worklog_id }
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::WorklogChanged { id: worklog_id }),
+            RepositoryError::WorklogChanged { id: worklog_id }
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::SameTaskWorklogOverlap { id: worklog_id }),
+            RepositoryError::SameTaskWorklogOverlap { id: worklog_id }
         );
         assert_eq!(
             RepositoryError::from(StorageError::WorklogAlreadyExists { id: worklog_id }),

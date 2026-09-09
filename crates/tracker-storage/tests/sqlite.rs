@@ -6,14 +6,15 @@
 //! task-list read model with its latest-work aggregate.
 
 use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+    Arc, Barrier,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     mpsc::{Receiver, SyncSender, sync_channel},
 };
 use std::thread;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use std::ffi::{CStr, c_char, c_int, c_void};
 use tempfile::TempDir;
 use tracker_application::{
     ApplicationError, ClearActiveTaskOutcome, RepositoryError, SetActiveTaskOutcome, TaskListItem,
@@ -23,12 +24,29 @@ use tracker_application::{
 };
 use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingError, TrackingOutcome, TrackingState,
-    Worklog, WorklogId,
+    Worklog, WorklogId, WorklogTimes,
 };
 use tracker_storage::{SqliteRepository, StorageError};
 
 fn at(seconds: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(seconds, 0).unwrap()
+}
+
+unsafe extern "C" fn count_worklog_start_reads(
+    context: *mut c_void,
+    action: c_int,
+    table: *const c_char,
+    column: *const c_char,
+    _: *const c_char,
+    _: *const c_char,
+) -> c_int {
+    let is_worklog_start_read = action == rusqlite::ffi::SQLITE_READ
+        && unsafe { CStr::from_ptr(table) }.to_bytes() == b"worklogs"
+        && unsafe { CStr::from_ptr(column) }.to_bytes() == b"start_us";
+    if is_worklog_start_read {
+        unsafe { &*(context.cast::<AtomicUsize>()) }.fetch_add(1, Ordering::SeqCst);
+    }
+    rusqlite::ffi::SQLITE_OK
 }
 
 fn task_id(tag: u32) -> TaskId {
@@ -82,6 +100,35 @@ const V1_SCHEMA: &str = "CREATE TABLE tasks (
     CREATE UNIQUE INDEX worklogs_single_active
         ON worklogs (1) WHERE end_us IS NULL;";
 
+/// The version 2 schema before overlap triggers were added.
+const V2_SCHEMA: &str = "CREATE TABLE tasks (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        archived INTEGER NOT NULL CHECK (archived IN (0, 1)),
+        created_at_us INTEGER NOT NULL,
+        updated_at_us INTEGER NOT NULL,
+        CHECK (updated_at_us >= created_at_us)
+    ) STRICT;
+    CREATE TABLE worklogs (
+        id TEXT PRIMARY KEY NOT NULL,
+        task_id TEXT NOT NULL REFERENCES tasks (id),
+        start_us INTEGER NOT NULL,
+        end_us INTEGER,
+        CHECK (end_us IS NULL OR end_us >= start_us)
+    ) STRICT;
+    CREATE INDEX worklogs_task_start ON worklogs (task_id, start_us);
+    CREATE UNIQUE INDEX worklogs_single_active
+        ON worklogs (1) WHERE end_us IS NULL;
+    CREATE TRIGGER worklogs_reject_archived_task
+    BEFORE INSERT ON worklogs
+    WHEN NEW.task_id IN (SELECT id FROM tasks WHERE archived = 1)
+    BEGIN SELECT RAISE(ABORT, 'task is archived'); END;
+    CREATE TRIGGER tasks_reject_archive_while_active
+    BEFORE UPDATE OF archived ON tasks
+    WHEN NEW.archived = 1
+      AND EXISTS (SELECT 1 FROM worklogs WHERE task_id = NEW.id AND end_us IS NULL)
+    BEGIN SELECT RAISE(ABORT, 'task is active'); END;";
+
 /// Creates a genuine version 1 database at the given path, with tasks and
 /// worklogs that carry no timestamps.
 fn create_v1_database(path: &std::path::Path) {
@@ -122,11 +169,38 @@ fn create_v1_database(path: &std::path::Path) {
             rusqlite::params![
                 worklog_id(11).to_string(),
                 task_id(1).to_string(),
-                at(200).timestamp_micros(),
-                at(250).timestamp_micros()
+                at(50).timestamp_micros(),
+                at(75).timestamp_micros()
             ],
         )
         .unwrap();
+}
+
+fn create_v2_database(path: &std::path::Path, intervals: &[(u32, i64, Option<i64>)]) {
+    let connection = rusqlite::Connection::open(path).unwrap();
+    connection.execute_batch(V2_SCHEMA).unwrap();
+    connection.pragma_update(None, "user_version", 2).unwrap();
+    connection
+        .execute(
+            "INSERT INTO tasks (id, name, archived, created_at_us, updated_at_us)
+             VALUES (?1, 'preserved', 0, 1234567, 2345678)",
+            [task_id(1).to_string()],
+        )
+        .unwrap();
+    for &(tag, start_us, end_us) in intervals {
+        connection
+            .execute(
+                "INSERT INTO worklogs (id, task_id, start_us, end_us)
+                 VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![
+                    worklog_id(tag).to_string(),
+                    task_id(1).to_string(),
+                    start_us,
+                    end_us,
+                ],
+            )
+            .unwrap();
+    }
 }
 
 struct SynchronizingRepository {
@@ -148,6 +222,28 @@ impl TaskRepository for SynchronizingRepository {
 
     fn list_task_items(&self) -> Result<Vec<TaskListItem>, RepositoryError> {
         self.repository.list_task_items().map_err(Into::into)
+    }
+    fn tracker_snapshot(&self) -> Result<tracker_application::TrackerSnapshot, RepositoryError> {
+        if self.fail_next_active_read.swap(false, Ordering::SeqCst) {
+            return Err(RepositoryError::Backend {
+                message: "recovery read failed".to_owned(),
+            });
+        }
+        let snapshot = self
+            .repository
+            .tracker_snapshot()
+            .map_err(RepositoryError::from)?;
+        if self.synchronize_active_read.swap(false, Ordering::SeqCst) {
+            self.ready.send(()).map_err(|_| RepositoryError::Backend {
+                message: "the competing client stopped before synchronization".to_owned(),
+            })?;
+            self.started
+                .recv_timeout(Duration::from_secs(5))
+                .map_err(|_| RepositoryError::Backend {
+                    message: "the competing client did not start within five seconds".to_owned(),
+                })?;
+        }
+        Ok(snapshot)
     }
 
     fn rename_task(
@@ -177,6 +273,21 @@ impl TaskRepository for SynchronizingRepository {
 }
 
 impl WorklogRepository for SynchronizingRepository {
+    fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, RepositoryError> {
+        self.repository.find_worklog(id).map_err(Into::into)
+    }
+
+    fn compare_and_set_worklog_times(
+        &self,
+        id: WorklogId,
+        expected: WorklogTimes,
+        replacement: WorklogTimes,
+    ) -> Result<tracker_application::WorklogCorrection, RepositoryError> {
+        self.repository
+            .compare_and_set_worklog_times(id, expected, replacement)
+            .map_err(Into::into)
+    }
+
     fn worklog_page(
         &self,
         task_id: TaskId,
@@ -193,8 +304,15 @@ impl TrackingRepository for SynchronizingRepository {
         self.repository.insert_worklog(worklog).map_err(Into::into)
     }
 
-    fn stop_worklog(&self, id: WorklogId, end: DateTime<Utc>) -> Result<Worklog, RepositoryError> {
-        self.repository.stop_worklog(id, end).map_err(Into::into)
+    fn stop_worklog(
+        &self,
+        id: WorklogId,
+        expected_start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Worklog, RepositoryError> {
+        self.repository
+            .stop_worklog(id, expected_start, end)
+            .map_err(Into::into)
     }
 
     fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError> {
@@ -223,11 +341,12 @@ impl TrackingRepository for SynchronizingRepository {
     fn switch_worklog(
         &self,
         id: WorklogId,
+        expected_start: DateTime<Utc>,
         stop_at: DateTime<Utc>,
         next: &Worklog,
     ) -> Result<(), RepositoryError> {
         self.repository
-            .switch_worklog(id, stop_at, next)
+            .switch_worklog(id, expected_start, stop_at, next)
             .map_err(Into::into)
     }
 }
@@ -236,6 +355,17 @@ fn user_version(repository: &SqliteRepository) -> i64 {
     repository
         .connection()
         .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap()
+}
+
+fn history_revision(repository: &SqliteRepository, task_id: TaskId) -> i64 {
+    repository
+        .connection()
+        .query_row(
+            "SELECT history_order_revision FROM tasks WHERE id = ?1",
+            [task_id.to_string()],
+            |row| row.get(0),
+        )
         .unwrap()
 }
 
@@ -253,7 +383,7 @@ fn migrations_create_the_schema_triggers_and_are_idempotent() {
     }
     // Reopening applies no migration again and keeps the data.
     let reopened = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&reopened), 2);
+    assert_eq!(user_version(&reopened), 4);
     let tasks = reopened.list_tasks().unwrap();
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0].name().as_str(), "first");
@@ -271,10 +401,30 @@ fn migrations_create_the_schema_triggers_and_are_idempotent() {
         "worklogs_reject_archived_task".to_owned(),
         "trigger".to_owned()
     )));
+    assert!(objects.contains(&(
+        "worklogs_reject_same_task_overlap_insert".to_owned(),
+        "trigger".to_owned()
+    )));
+    assert!(objects.contains(&(
+        "worklogs_reject_same_task_overlap_update".to_owned(),
+        "trigger".to_owned()
+    )));
+    let revision_trigger: String = reopened
+        .connection()
+        .query_row(
+            "SELECT sql FROM sqlite_master
+             WHERE type = 'trigger' AND name = 'worklogs_bump_history_order_revision'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(revision_trigger.contains("AFTER UPDATE OF task_id, start_us"));
+    assert!(revision_trigger.contains("id = OLD.task_id"));
+    assert!(revision_trigger.contains("id = NEW.task_id"));
 }
 
 #[test]
-fn a_version_1_database_migrates_to_version_2_and_keeps_every_record() {
+fn a_version_1_database_migrates_to_version_4_and_keeps_every_record() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tracker.db");
     create_v1_database(&path);
@@ -283,7 +433,7 @@ fn a_version_1_database_migrates_to_version_2_and_keeps_every_record() {
     let before = Utc::now();
     let repository = SqliteRepository::open(&path).unwrap();
     let after = Utc::now();
-    assert_eq!(user_version(&repository), 2);
+    assert_eq!(user_version(&repository), 4);
     let backfill = repository.list_tasks().unwrap()[0].created_at();
 
     // Every task id, name, and archive flag survived.
@@ -316,21 +466,21 @@ fn a_version_1_database_migrates_to_version_2_and_keeps_every_record() {
     // Every worklog survived, including the active one.
     let worklogs = repository.list_worklogs(task_id(1)).unwrap();
     assert_eq!(worklogs.len(), 2);
-    assert_eq!(worklogs[0].id, worklog_id(10));
-    assert_eq!(worklogs[0].start, at(100));
-    assert_eq!(worklogs[0].end, None);
-    assert_eq!(worklogs[1].id, worklog_id(11));
-    assert_eq!(worklogs[1].start, at(200));
-    assert_eq!(worklogs[1].end, Some(at(250)));
+    assert_eq!(worklogs[0].id(), worklog_id(11));
+    assert_eq!(worklogs[0].start(), at(50));
+    assert_eq!(worklogs[0].end(), Some(at(75)));
+    assert_eq!(worklogs[1].id(), worklog_id(10));
+    assert_eq!(worklogs[1].start(), at(100));
+    assert_eq!(worklogs[1].end(), None);
     assert_eq!(
-        repository.active_worklog().unwrap().unwrap().id,
+        repository.active_worklog().unwrap().unwrap().id(),
         worklog_id(10)
     );
 
     // The read model derives the latest work start from the migrated rows.
     let items = repository.list_task_items().unwrap();
     assert_eq!(items.len(), 3);
-    assert_eq!(items[0].latest_work_start, Some(at(200)));
+    assert_eq!(items[0].latest_work_start, Some(at(100)));
     assert_eq!(items[1].latest_work_start, None);
     assert_eq!(items[2].latest_work_start, None);
 
@@ -348,6 +498,106 @@ fn a_version_1_database_migrates_to_version_2_and_keeps_every_record() {
 }
 
 #[test]
+fn version_2_migration_preserves_identity_and_timestamp_values_exactly() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let intervals = [
+        (10, 1_000_001, Some(1_000_007)),
+        (11, 1_000_007, None),
+        (12, 1_000_004, Some(1_000_004)),
+    ];
+    create_v2_database(&path, &intervals);
+
+    let repository = SqliteRepository::open(&path).unwrap();
+
+    assert_eq!(user_version(&repository), 4);
+    let task_values: (String, i64, i64) = repository
+        .connection()
+        .query_row(
+            "SELECT id, created_at_us, updated_at_us FROM tasks WHERE id = ?1",
+            [task_id(1).to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(task_values, (task_id(1).to_string(), 1_234_567, 2_345_678));
+    let worklog_values: Vec<(String, String, i64, Option<i64>)> = repository
+        .connection()
+        .prepare("SELECT id, task_id, start_us, end_us FROM worklogs ORDER BY id")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        worklog_values,
+        vec![
+            (
+                worklog_id(10).to_string(),
+                task_id(1).to_string(),
+                1_000_001,
+                Some(1_000_007)
+            ),
+            (
+                worklog_id(11).to_string(),
+                task_id(1).to_string(),
+                1_000_007,
+                None
+            ),
+            (
+                worklog_id(12).to_string(),
+                task_id(1).to_string(),
+                1_000_004,
+                Some(1_000_004)
+            ),
+        ]
+    );
+}
+
+#[test]
+fn version_2_migration_rejects_overlap_and_rolls_back_every_schema_change() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    create_v2_database(&path, &[(10, 100, Some(200)), (11, 150, Some(250))]);
+
+    let error = SqliteRepository::open(&path).expect_err("overlapping v2 rows must fail migration");
+    assert!(matches!(
+        error,
+        StorageError::CorruptData("same-task worklog overlap")
+    ));
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    let version: i64 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 2);
+    let rows: Vec<(String, i64, Option<i64>)> = connection
+        .prepare("SELECT id, start_us, end_us FROM worklogs ORDER BY id")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        rows,
+        vec![
+            (worklog_id(10).to_string(), 100, Some(200)),
+            (worklog_id(11).to_string(), 150, Some(250)),
+        ]
+    );
+    let overlap_triggers: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type = 'trigger' AND name LIKE 'worklogs_reject_same_task_overlap_%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(overlap_triggers, 0);
+}
+
+#[test]
 fn a_migration_is_not_applied_twice() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tracker.db");
@@ -360,7 +610,7 @@ fn a_migration_is_not_applied_twice() {
     drop(first);
 
     let second = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&second), 2);
+    assert_eq!(user_version(&second), 4);
     assert_eq!(second.find_task(task_id(1)).unwrap(), Some(task));
 }
 
@@ -444,7 +694,7 @@ fn a_database_from_a_newer_version_is_rejected_without_changes() {
     match error {
         StorageError::DatabaseTooNew { found, latest } => {
             assert_eq!(found, 99);
-            assert_eq!(latest, 2);
+            assert_eq!(latest, 4);
             assert!(error.to_string().contains("newer"));
         }
         other => panic!("expected DatabaseTooNew, got {other:?}"),
@@ -476,7 +726,7 @@ fn simultaneous_first_opens_of_one_database_all_complete() {
         handle.join().unwrap().expect("every first open completes");
     }
     let repository = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&repository), 2, "migrations ran exactly once");
+    assert_eq!(user_version(&repository), 4, "migrations ran exactly once");
     assert_eq!(repository.list_tasks().unwrap().len(), 8);
 }
 
@@ -495,7 +745,7 @@ fn application_tracking_operations_use_the_sqlite_ports() {
     let mut application = TrackerApplication::load(repository).unwrap();
     assert!(matches!(
         application.set_active_task(alpha.id, at(100)).unwrap(),
-        SetActiveTaskOutcome::Started { worklog } if worklog.start == at(100)
+        SetActiveTaskOutcome::Started { worklog } if worklog.start() == at(100)
     ));
     assert!(matches!(
         application.set_active_task(alpha.id, at(110)).unwrap(),
@@ -504,15 +754,15 @@ fn application_tracking_operations_use_the_sqlite_ports() {
     assert!(matches!(
         application.set_active_task(beta.id, at(150)).unwrap(),
         SetActiveTaskOutcome::Switched { stopped, started }
-            if stopped.end == Some(at(150)) && started.start == at(150)
+            if stopped.end() == Some(at(150)) && started.start() == at(150)
     ));
     let TrackingState::Running { worklog: active } = application.current_tracking() else {
         panic!("the worklog must be active");
     };
-    let active = active.id;
+    let active = active.id();
     assert!(matches!(
         application.clear_active_task(active, at(200)).unwrap(),
-        ClearActiveTaskOutcome::Stopped { worklog } if worklog.end == Some(at(200))
+        ClearActiveTaskOutcome::Stopped { worklog } if worklog.end() == Some(at(200))
     ));
     assert_eq!(
         application.clear_active_task(active, at(250)).unwrap(),
@@ -546,10 +796,22 @@ fn sqlite_application_ports_delegate_task_and_worklog_queries() {
     let worklog = Worklog::begin(worklog_id(1), task.id, at(100));
     TrackingRepository::insert_worklog(&repository, &worklog).unwrap();
     assert_eq!(
+        WorklogRepository::find_worklog(&repository, worklog.id()).unwrap(),
+        Some(worklog.clone())
+    );
+    let corrected = WorklogRepository::compare_and_set_worklog_times(
+        &repository,
+        worklog.id(),
+        worklog.times(),
+        WorklogTimes::new(at(110), None),
+    )
+    .unwrap()
+    .worklog;
+    assert_eq!(
         WorklogRepository::worklog_page(&repository, task.id, None)
             .unwrap()
             .worklogs,
-        vec![worklog]
+        vec![corrected]
     );
 
     let saved = TaskRepository::rename_task(
@@ -650,19 +912,19 @@ fn two_clients_recover_lost_start_switch_and_stale_clear_without_stopping_the_ot
     ));
     assert!(matches!(
         first.current_tracking(),
-        TrackingState::Running { worklog } if worklog.task_id == beta.id
+        TrackingState::Running { worklog } if worklog.task_id() == beta.id
     ));
 
     assert!(matches!(
         first.set_active_task(alpha.id, at(120)),
         Ok(SetActiveTaskOutcome::Switched { stopped, started })
-            if stopped.task_id == beta.id
-                && stopped.end == Some(at(120))
-                && started.task_id == alpha.id
-                && started.start == at(120)
+            if stopped.task_id() == beta.id
+                && stopped.end() == Some(at(120))
+                && started.task_id() == alpha.id
+                && started.start() == at(120)
     ));
     let stale_beta = match second.current_tracking() {
-        TrackingState::Running { worklog } => worklog.id,
+        TrackingState::Running { worklog } => worklog.id(),
         TrackingState::Idle => panic!("beta must be active in the stale client"),
     };
     assert_eq!(
@@ -671,20 +933,18 @@ fn two_clients_recover_lost_start_switch_and_stale_clear_without_stopping_the_ot
     );
     assert!(matches!(
         second.current_tracking(),
-        TrackingState::Running { worklog } if worklog.task_id == alpha.id
+        TrackingState::Running { worklog } if worklog.task_id() == alpha.id
     ));
 
     let other = SqliteRepository::open(&path).unwrap();
     other.archive_task(beta.id, at(130)).unwrap();
     assert!(matches!(
         first.set_active_task(beta.id, at(140)),
-        Err(ApplicationError::TrackingWrite(
-            tracker_application::RepositoryError::TaskArchived { id }
-        )) if id == beta.id
+        Err(ApplicationError::Domain(TrackingError::TaskArchived { id })) if id == beta.id
     ));
     assert!(matches!(
         first.current_tracking(),
-        TrackingState::Running { worklog } if worklog.task_id == alpha.id
+        TrackingState::Running { worklog } if worklog.task_id() == alpha.id
     ));
     assert!(first.task(beta.id).unwrap().is_archived());
 }
@@ -722,7 +982,7 @@ fn a_stale_client_unarchive_adopts_the_tracking_another_client_started() {
     assert_eq!(
         stale.current_tracking(),
         &TrackingState::Running {
-            worklog: ActiveWorklog::begin(started.id, task.id, at(200))
+            worklog: ActiveWorklog::begin(started.id(), task.id, at(200))
         }
     );
 
@@ -732,19 +992,19 @@ fn a_stale_client_unarchive_adopts_the_tracking_another_client_started() {
         .active_worklog()
         .unwrap()
         .expect("one active worklog");
-    assert_eq!(active.id, started.id);
-    assert_eq!(active.task_id, task.id);
-    assert_eq!(active.start, at(200));
+    assert_eq!(active.id(), started.id());
+    assert_eq!(active.task_id(), task.id);
+    assert_eq!(active.start(), at(200));
     assert_eq!(
         stored.list_worklogs(task.id).unwrap(),
         vec![started.clone()]
     );
 
     // Client A stops the tracking it adopted, leaving a clean stopped row.
-    let cleared = stale.clear_active_task(started.id, at(300)).unwrap();
+    let cleared = stale.clear_active_task(started.id(), at(300)).unwrap();
     assert!(matches!(
         cleared,
-        ClearActiveTaskOutcome::Stopped { worklog } if worklog.end == Some(at(300))
+        ClearActiveTaskOutcome::Stopped { worklog } if worklog.end() == Some(at(300))
     ));
     assert_eq!(stale.current_tracking(), &TrackingState::Idle);
     assert_eq!(
@@ -812,7 +1072,7 @@ fn restore_refreshes_tracking_started_between_its_initial_read_and_write() {
     );
     assert!(matches!(
         application.current_tracking(),
-        TrackingState::Running { worklog: active } if active.id == worklog.id
+        TrackingState::Running { worklog: active } if active.id() == worklog.id()
     ));
 }
 
@@ -874,7 +1134,7 @@ fn archive_adopts_tracking_started_between_its_initial_read_and_write() {
     );
     assert!(matches!(
         application.current_tracking(),
-        TrackingState::Running { worklog: active } if active.id == worklog.id
+        TrackingState::Running { worklog: active } if active.id() == worklog.id()
     ));
     assert!(
         !SqliteRepository::open(&path)
@@ -884,6 +1144,187 @@ fn archive_adopts_tracking_started_between_its_initial_read_and_write() {
             .unwrap()
             .is_archived()
     );
+}
+
+#[test]
+fn active_start_correction_between_snapshot_and_stop_cas_recovers_authoritative_state() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let alpha = named_task(1, "alpha");
+    let setup = SqliteRepository::open(&path).unwrap();
+    setup.create_task(alpha.clone()).unwrap();
+    let active = Worklog::begin(worklog_id(1), alpha.id, at(100));
+    setup.insert_worklog(&active).unwrap();
+    drop(setup);
+
+    let (ready_send, ready) = sync_channel(1);
+    let (continue_send, continue_receive) = sync_channel(1);
+    let synchronize_active_read = Arc::new(AtomicBool::new(false));
+    let repository = SynchronizingRepository {
+        repository: SqliteRepository::open(&path).unwrap(),
+        ready: ready_send,
+        started: continue_receive,
+        synchronize_active_read: synchronize_active_read.clone(),
+        fail_next_active_read: Arc::new(AtomicBool::new(false)),
+    };
+    let application = TrackerApplication::load(repository).unwrap();
+    synchronize_active_read.store(true, Ordering::SeqCst);
+
+    let correction = thread::spawn({
+        let path = path.clone();
+        let active = active.clone();
+        move || {
+            ready
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the stop must read its pre-write snapshot");
+            SqliteRepository::open(path)
+                .unwrap()
+                .compare_and_set_worklog_times(
+                    active.id(),
+                    active.times(),
+                    WorklogTimes::new(at(120), None),
+                )
+                .unwrap();
+            continue_send
+                .send(())
+                .expect("the stop must still await the correction");
+        }
+    });
+    let active_id = active.id();
+    let (mut application, result) = thread::spawn(move || {
+        let mut application = application;
+        let result = application.clear_active_task(active_id, at(200));
+        (application, result)
+    })
+    .join()
+    .unwrap();
+    correction.join().unwrap();
+
+    assert_eq!(result, Err(ApplicationError::TrackingStateChanged));
+    let corrected = Worklog::begin(active.id(), alpha.id, at(120));
+    assert_eq!(
+        application.current_tracking(),
+        &TrackingState::Running {
+            worklog: ActiveWorklog::begin(active.id(), alpha.id, at(120))
+        }
+    );
+    assert_eq!(
+        application
+            .tasks(TaskOrdering::RecentlyWorked)
+            .into_iter()
+            .find(|item| item.task.id() == alpha.id)
+            .unwrap()
+            .latest_work_start,
+        Some(at(120))
+    );
+    let stored = SqliteRepository::open(&path).unwrap();
+    assert_eq!(stored.list_worklogs(alpha.id).unwrap(), vec![corrected]);
+    assert_eq!(
+        stored.active_worklog().unwrap(),
+        Some(Worklog::begin(active.id(), alpha.id, at(120)))
+    );
+
+    assert!(matches!(
+        application.clear_active_task(active.id(), at(200)),
+        Ok(ClearActiveTaskOutcome::Stopped { worklog }) if worklog.start() == at(120) && worklog.end() == Some(at(200))
+    ));
+}
+
+#[test]
+fn active_start_correction_between_snapshot_and_switch_cas_recovers_authoritative_state() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let alpha = named_task(1, "alpha");
+    let beta = named_task(2, "beta");
+    let setup = SqliteRepository::open(&path).unwrap();
+    setup.create_task(alpha.clone()).unwrap();
+    setup.create_task(beta.clone()).unwrap();
+    let active = Worklog::begin(worklog_id(1), alpha.id, at(100));
+    setup.insert_worklog(&active).unwrap();
+    drop(setup);
+
+    let (ready_send, ready) = sync_channel(1);
+    let (continue_send, continue_receive) = sync_channel(1);
+    let synchronize_active_read = Arc::new(AtomicBool::new(false));
+    let repository = SynchronizingRepository {
+        repository: SqliteRepository::open(&path).unwrap(),
+        ready: ready_send,
+        started: continue_receive,
+        synchronize_active_read: synchronize_active_read.clone(),
+        fail_next_active_read: Arc::new(AtomicBool::new(false)),
+    };
+    let application = TrackerApplication::load(repository).unwrap();
+    synchronize_active_read.store(true, Ordering::SeqCst);
+
+    let correction = thread::spawn({
+        let path = path.clone();
+        let active = active.clone();
+        move || {
+            ready
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the switch must read its pre-write snapshot");
+            SqliteRepository::open(path)
+                .unwrap()
+                .compare_and_set_worklog_times(
+                    active.id(),
+                    active.times(),
+                    WorklogTimes::new(at(120), None),
+                )
+                .unwrap();
+            continue_send
+                .send(())
+                .expect("the switch must still await the correction");
+        }
+    });
+    let beta_id = beta.id;
+    let (mut application, result) = thread::spawn(move || {
+        let mut application = application;
+        let result = application.set_active_task(beta_id, at(200));
+        (application, result)
+    })
+    .join()
+    .unwrap();
+    correction.join().unwrap();
+
+    assert_eq!(result, Err(ApplicationError::TrackingStateChanged));
+    assert_eq!(
+        application.current_tracking(),
+        &TrackingState::Running {
+            worklog: ActiveWorklog::begin(active.id(), alpha.id, at(120))
+        }
+    );
+    let items = application.tasks(TaskOrdering::RecentlyWorked);
+    assert_eq!(
+        items
+            .iter()
+            .find(|item| item.task.id() == alpha.id)
+            .unwrap()
+            .latest_work_start,
+        Some(at(120))
+    );
+    assert_eq!(
+        items
+            .iter()
+            .find(|item| item.task.id() == beta.id)
+            .unwrap()
+            .latest_work_start,
+        None
+    );
+    let stored = SqliteRepository::open(&path).unwrap();
+    assert_eq!(
+        stored.list_worklogs(alpha.id).unwrap(),
+        vec![Worklog::begin(active.id(), alpha.id, at(120))]
+    );
+    assert_eq!(stored.list_worklogs(beta.id).unwrap(), Vec::new());
+
+    assert!(matches!(
+        application.set_active_task(beta.id, at(200)),
+        Ok(SetActiveTaskOutcome::Switched { stopped, started })
+            if stopped.start() == at(120)
+                && stopped.end() == Some(at(200))
+                && started.task_id() == beta.id
+                && started.start() == at(200)
+    ));
 }
 
 #[test]
@@ -945,7 +1386,7 @@ fn a_real_sqlite_write_conflict_reports_a_failed_recovery_separately() {
     assert_eq!(application.current_tracking(), &TrackingState::Idle);
     assert!(matches!(
         SqliteRepository::open(&path).unwrap().active_worklog(),
-        Ok(Some(worklog)) if worklog.task_id == beta.id
+        Ok(Some(worklog)) if worklog.task_id() == beta.id
     ));
 }
 
@@ -1156,10 +1597,15 @@ fn archiving_a_task_with_an_active_worklog_is_rejected_until_it_stops() {
             .unwrap()
             .is_archived()
     );
-    assert_eq!(repository.active_worklog().unwrap().unwrap().id, started.id);
+    assert_eq!(
+        repository.active_worklog().unwrap().unwrap().id(),
+        started.id()
+    );
 
     // After the worklog is stopped, the same archive succeeds.
-    repository.stop_worklog(started.id, at(400)).unwrap();
+    repository
+        .stop_worklog(started.id(), started.start(), at(400))
+        .unwrap();
     let archived = TaskRepository::archive_task(&repository, task.id, at(300)).unwrap();
     assert!(archived.is_archived());
     assert_eq!(archived.updated_at(), at(300));
@@ -1177,33 +1623,38 @@ fn start_and_stop_persist_and_report_failures() {
     assert_eq!(repository.active_worklog().unwrap(), Some(started.clone()));
 
     let stopped = tracker.stop(at(150)).unwrap();
-    let stored = repository.stop_worklog(stopped.id, at(150)).unwrap();
-    assert_eq!(stored.id, started.id);
-    assert_eq!(stored.start, at(100));
-    assert_eq!(stored.end, Some(at(150)));
+    let stored = repository
+        .stop_worklog(stopped.id(), at(100), at(150))
+        .unwrap();
+    assert_eq!(stored.id(), started.id());
+    assert_eq!(stored.start(), at(100));
+    assert_eq!(stored.end(), Some(at(150)));
     assert_eq!(repository.active_worklog().unwrap(), None);
     assert_eq!(repository.list_worklogs(task_id(1)).unwrap(), vec![stored]);
 
     // Stopping a missing worklog reports which one.
     let missing = worklog_id(77);
     assert!(matches!(
-        repository.stop_worklog(missing, at(200)),
+        repository.stop_worklog(missing, at(100), at(200)),
         Err(StorageError::WorklogNotFound { id }) if id == missing
     ));
     // Stopping a stopped worklog reports the conflict.
     assert!(matches!(
-        repository.stop_worklog(started.id, at(200)),
-        Err(StorageError::WorklogAlreadyStopped { id }) if id == started.id
+        repository.stop_worklog(started.id(), started.start(), at(200)),
+        Err(StorageError::WorklogAlreadyStopped { id }) if id == started.id()
     ));
     // A backwards end time is rejected by the database.
     let mut tracker = Tracker::idle();
     let worklog = tracker.start(&task, at(300)).unwrap();
     repository.insert_worklog(&worklog).unwrap();
     let error = repository
-        .stop_worklog(worklog.id, at(299))
+        .stop_worklog(worklog.id(), worklog.start(), at(299))
         .expect_err("end before start must fail");
     assert!(matches!(error, StorageError::Constraint(_)));
-    assert_eq!(repository.active_worklog().unwrap().unwrap().id, worklog.id);
+    assert_eq!(
+        repository.active_worklog().unwrap().unwrap().id(),
+        worklog.id()
+    );
 }
 
 #[test]
@@ -1219,7 +1670,10 @@ fn inserting_a_second_active_worklog_is_rejected_by_the_database() {
     let error = repository
         .insert_worklog(&second)
         .expect_err("second active worklog must fail");
-    assert!(matches!(error, StorageError::ActiveWorklogExists));
+    assert!(matches!(
+        error,
+        StorageError::SameTaskWorklogOverlap { id } if id == second.id()
+    ));
     // The first worklog is still the only active one.
     assert_eq!(repository.active_worklog().unwrap(), Some(first.clone()));
 
@@ -1227,7 +1681,9 @@ fn inserting_a_second_active_worklog_is_rejected_by_the_database() {
     // worklog is stopped first so the active-worklog rule cannot mask the
     // foreign-key failure.
     tracker.stop(at(200)).unwrap();
-    repository.stop_worklog(first.id, at(200)).unwrap();
+    repository
+        .stop_worklog(first.id(), first.start(), at(200))
+        .unwrap();
     let orphan = Worklog::begin(worklog_id(43), task_id(99), at(300));
     assert!(matches!(
         repository.insert_worklog(&orphan),
@@ -1246,23 +1702,440 @@ fn a_duplicate_worklog_id_is_distinct_from_the_active_worklog_conflict() {
 
     // A stopped worklog reusing a stored id hits the primary key, not the
     // single-active rule.
-    let duplicate = Worklog::new(first.id, task.id, at(500), Some(at(600))).unwrap();
+    let duplicate = Worklog::new(first.id(), task.id, at(500), Some(at(600))).unwrap();
     let error = repository
         .insert_worklog(&duplicate)
         .expect_err("a stored id must not be inserted twice");
     assert!(matches!(
         error,
-        StorageError::WorklogAlreadyExists { id } if id == first.id
+        StorageError::WorklogAlreadyExists { id } if id == first.id()
     ));
 
-    // A fresh id while another worklog is active hits the single-active rule.
+    // A fresh id on the same task is reported as an interval overlap.
     let second_active = Worklog::begin(worklog_id(42), task.id, at(200));
     let error = repository
         .insert_worklog(&second_active)
         .expect_err("two active worklogs cannot coexist");
-    assert!(matches!(error, StorageError::ActiveWorklogExists));
+    assert!(matches!(
+        error,
+        StorageError::SameTaskWorklogOverlap { id } if id == second_active.id()
+    ));
     assert_eq!(repository.active_worklog().unwrap(), Some(first.clone()));
     assert_eq!(repository.list_worklogs(task.id).unwrap().len(), 1);
+}
+
+#[test]
+fn same_task_overlap_insert_uses_half_open_and_zero_duration_rules() {
+    let repository = repo();
+    let first_task = named_task(1, "first");
+    let second_task = named_task(2, "second");
+    repository.create_task(first_task.clone()).unwrap();
+    repository.create_task(second_task.clone()).unwrap();
+    repository
+        .insert_worklog(
+            &Worklog::new(worklog_id(1), first_task.id, at(100), Some(at(200))).unwrap(),
+        )
+        .unwrap();
+
+    let overlap = Worklog::new(worklog_id(2), first_task.id, at(150), Some(at(250))).unwrap();
+    assert!(matches!(
+        repository.insert_worklog(&overlap),
+        Err(StorageError::SameTaskWorklogOverlap { id }) if id == overlap.id()
+    ));
+
+    for worklog in [
+        Worklog::new(worklog_id(3), first_task.id, at(50), Some(at(100))).unwrap(),
+        Worklog::new(worklog_id(4), first_task.id, at(200), Some(at(250))).unwrap(),
+        Worklog::new(worklog_id(5), first_task.id, at(150), Some(at(150))).unwrap(),
+        Worklog::new(worklog_id(6), second_task.id, at(150), Some(at(250))).unwrap(),
+    ] {
+        repository.insert_worklog(&worklog).unwrap();
+    }
+    assert_eq!(repository.list_worklogs(first_task.id).unwrap().len(), 4);
+    assert_eq!(repository.list_worklogs(second_task.id).unwrap().len(), 1);
+}
+
+#[test]
+fn an_active_interval_overlaps_every_later_interval_on_the_same_task() {
+    let repository = repo();
+    let task = named_task(1, "running");
+    repository.create_task(task.clone()).unwrap();
+    let active = Worklog::begin(worklog_id(1), task.id, at(100));
+    repository.insert_worklog(&active).unwrap();
+
+    let later = Worklog::new(worklog_id(2), task.id, at(200), Some(at(300))).unwrap();
+    assert!(matches!(
+        repository.insert_worklog(&later),
+        Err(StorageError::SameTaskWorklogOverlap { id }) if id == later.id()
+    ));
+    assert_eq!(repository.active_worklog().unwrap(), Some(active));
+}
+
+#[test]
+fn concurrent_clients_cannot_insert_overlapping_worklogs_for_one_task() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let setup = SqliteRepository::open(&path).unwrap();
+    let task = named_task(1, "shared");
+    setup.create_task(task.clone()).unwrap();
+    drop(setup);
+
+    let barrier = Arc::new(Barrier::new(3));
+    let handles: Vec<_> = [(1, 100, 200), (2, 150, 250)]
+        .into_iter()
+        .map(|(tag, start, end)| {
+            let path = path.clone();
+            let barrier = barrier.clone();
+            thread::spawn(move || {
+                let repository = SqliteRepository::open(path).unwrap();
+                let worklog =
+                    Worklog::new(worklog_id(tag), task.id, at(start), Some(at(end))).unwrap();
+                barrier.wait();
+                repository.insert_worklog(&worklog)
+            })
+        })
+        .collect();
+    barrier.wait();
+    let results: Vec<_> = handles
+        .into_iter()
+        .map(|handle| handle.join().unwrap())
+        .collect();
+
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| matches!(result, Err(StorageError::SameTaskWorklogOverlap { .. })))
+            .count(),
+        1
+    );
+    assert_eq!(
+        SqliteRepository::open(&path)
+            .unwrap()
+            .list_worklogs(task.id)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn find_and_compare_and_set_correct_a_completed_worklog_without_changing_identity() {
+    let repository = repo();
+    let task = named_task(1, "editable");
+    repository.create_task(task.clone()).unwrap();
+    let original = Worklog::new(worklog_id(1), task.id, at(100), Some(at(200))).unwrap();
+    repository.insert_worklog(&original).unwrap();
+
+    assert_eq!(
+        repository.find_worklog(original.id()).unwrap(),
+        Some(original.clone())
+    );
+    assert_eq!(repository.find_worklog(worklog_id(99)).unwrap(), None);
+    let corrected = repository
+        .compare_and_set_worklog_times(
+            original.id(),
+            original.times(),
+            WorklogTimes::new(at(120), Some(at(220))),
+        )
+        .unwrap()
+        .worklog;
+
+    assert_eq!(corrected.id(), original.id());
+    assert_eq!(corrected.task_id(), task.id);
+    assert_eq!(corrected.start(), at(120));
+    assert_eq!(corrected.end(), Some(at(220)));
+    assert_eq!(
+        repository.find_worklog(original.id()).unwrap(),
+        Some(corrected)
+    );
+
+    let active = Worklog::begin(worklog_id(2), task.id, at(300));
+    repository.insert_worklog(&active).unwrap();
+    let corrected_active = repository
+        .compare_and_set_worklog_times(
+            active.id(),
+            active.times(),
+            WorklogTimes::new(at(250), None),
+        )
+        .unwrap()
+        .worklog;
+    assert_eq!(corrected_active.id(), active.id());
+    assert_eq!(corrected_active.task_id(), active.task_id());
+    assert_eq!(corrected_active.start(), at(250));
+    assert_eq!(corrected_active.end(), None);
+}
+
+#[test]
+fn correction_returns_the_active_tasks_exact_aggregate_for_another_task() {
+    let repository = repo();
+    let active_task = named_task(1, "active");
+    let corrected_task = named_task(2, "corrected");
+    repository.create_task(active_task.clone()).unwrap();
+    repository.create_task(corrected_task.clone()).unwrap();
+    let active = Worklog::begin(worklog_id(1), active_task.id, at(600));
+    let corrected = Worklog::new(worklog_id(2), corrected_task.id, at(400), Some(at(410))).unwrap();
+    repository.insert_worklog(&active).unwrap();
+    repository.insert_worklog(&corrected).unwrap();
+
+    let externally_corrected_active = repository
+        .compare_and_set_worklog_times(
+            active.id(),
+            active.times(),
+            WorklogTimes::new(at(540), None),
+        )
+        .unwrap()
+        .worklog;
+    let correction = repository
+        .compare_and_set_worklog_times(
+            corrected.id(),
+            corrected.times(),
+            WorklogTimes::new(at(350), Some(at(360))),
+        )
+        .unwrap();
+
+    assert_eq!(correction.task_latest_work_start, Some(at(350)));
+    assert_eq!(correction.active_worklog, Some(externally_corrected_active));
+    assert_eq!(correction.active_task_latest_work_start, Some(at(540)));
+}
+
+#[test]
+fn same_task_active_correction_reuses_the_corrected_task_aggregate() {
+    let repository = repo();
+    let task = named_task(1, "active");
+    repository.create_task(task.clone()).unwrap();
+    let active = Worklog::begin(worklog_id(1), task.id, at(600));
+    repository.insert_worklog(&active).unwrap();
+    let start_reads = Box::into_raw(Box::new(AtomicUsize::new(0)));
+    assert_eq!(
+        unsafe {
+            rusqlite::ffi::sqlite3_set_authorizer(
+                repository.connection().handle(),
+                Some(count_worklog_start_reads),
+                start_reads.cast(),
+            )
+        },
+        rusqlite::ffi::SQLITE_OK
+    );
+
+    let correction = repository
+        .compare_and_set_worklog_times(
+            active.id(),
+            active.times(),
+            WorklogTimes::new(at(540), None),
+        )
+        .unwrap();
+
+    assert_eq!(correction.task_latest_work_start, Some(at(540)));
+    assert_eq!(correction.active_task_latest_work_start, Some(at(540)));
+    assert_eq!(
+        unsafe { (&*start_reads).load(Ordering::SeqCst) },
+        11,
+        "the active task reuses the corrected task aggregate"
+    );
+    unsafe {
+        rusqlite::ffi::sqlite3_set_authorizer(
+            repository.connection().handle(),
+            None,
+            std::ptr::null_mut(),
+        );
+        drop(Box::from_raw(start_reads));
+    }
+}
+
+#[test]
+fn compare_and_set_distinguishes_missing_and_each_stale_expected_end_shape() {
+    let repository = repo();
+    let task = named_task(1, "editable");
+    repository.create_task(task.clone()).unwrap();
+    let completed = Worklog::new(worklog_id(1), task.id, at(100), Some(at(200))).unwrap();
+    let active = Worklog::begin(worklog_id(2), task.id, at(200));
+    repository.insert_worklog(&completed).unwrap();
+    repository.insert_worklog(&active).unwrap();
+
+    assert!(matches!(
+        repository.compare_and_set_worklog_times(
+            worklog_id(99),
+            WorklogTimes::new(at(100), Some(at(200))),
+            WorklogTimes::new(at(110), Some(at(210))),
+        ),
+        Err(StorageError::WorklogNotFound { id }) if id == worklog_id(99)
+    ));
+    for expected in [
+        WorklogTimes::new(at(99), Some(at(200))),
+        WorklogTimes::new(at(100), Some(at(201))),
+        WorklogTimes::new(at(100), None),
+    ] {
+        assert!(matches!(
+            repository.compare_and_set_worklog_times(
+                completed.id(),
+                expected,
+                WorklogTimes::new(at(110), Some(at(210))),
+            ),
+            Err(StorageError::WorklogChanged { id }) if id == completed.id()
+        ));
+    }
+    assert!(matches!(
+        repository.compare_and_set_worklog_times(
+            active.id(),
+            WorklogTimes::new(at(200), Some(at(250))),
+            WorklogTimes::new(at(210), None),
+        ),
+        Err(StorageError::WorklogChanged { id }) if id == active.id()
+    ));
+}
+
+#[test]
+fn compare_and_set_rejects_shape_changes_and_backwards_replacements() {
+    let repository = repo();
+    let task = named_task(1, "editable");
+    repository.create_task(task.clone()).unwrap();
+    let completed = Worklog::new(worklog_id(1), task.id, at(50), Some(at(100))).unwrap();
+    let active = Worklog::begin(worklog_id(2), task.id, at(100));
+    repository.insert_worklog(&completed).unwrap();
+    repository.insert_worklog(&active).unwrap();
+
+    for (worklog, replacement) in [
+        (&completed, WorklogTimes::new(at(60), None)),
+        (&active, WorklogTimes::new(at(110), Some(at(120)))),
+        (&completed, WorklogTimes::new(at(90), Some(at(80)))),
+    ] {
+        assert!(matches!(
+            repository.compare_and_set_worklog_times(worklog.id(), worklog.times(), replacement,),
+            Err(StorageError::Constraint(_))
+        ));
+        assert_eq!(
+            repository.find_worklog(worklog.id()).unwrap(),
+            Some(worklog.clone())
+        );
+    }
+}
+
+#[test]
+fn compare_and_set_enforces_overlap_and_rolls_back_the_failed_update() {
+    let repository = repo();
+    let task = named_task(1, "editable");
+    repository.create_task(task.clone()).unwrap();
+    let fixed = Worklog::new(worklog_id(1), task.id, at(100), Some(at(200))).unwrap();
+    let editable = Worklog::new(worklog_id(2), task.id, at(300), Some(at(400))).unwrap();
+    repository.insert_worklog(&fixed).unwrap();
+    repository.insert_worklog(&editable).unwrap();
+
+    let error = repository
+        .compare_and_set_worklog_times(
+            editable.id(),
+            editable.times(),
+            WorklogTimes::new(at(150), Some(at(350))),
+        )
+        .expect_err("the corrected interval overlaps the fixed interval");
+    assert!(matches!(
+        error,
+        StorageError::SameTaskWorklogOverlap { id } if id == editable.id()
+    ));
+    assert_eq!(
+        repository.find_worklog(editable.id()).unwrap(),
+        Some(editable.clone())
+    );
+
+    let touching = repository
+        .compare_and_set_worklog_times(
+            editable.id(),
+            editable.times(),
+            WorklogTimes::new(at(200), Some(at(300))),
+        )
+        .unwrap()
+        .worklog;
+    assert_eq!(touching.start(), at(200));
+    assert_eq!(touching.end(), Some(at(300)));
+}
+
+#[test]
+fn compare_and_set_accepts_zero_duration_and_completed_archived_corrections() {
+    let repository = repo();
+    let task = named_task(1, "archived");
+    repository.create_task(task.clone()).unwrap();
+    let original = Worklog::new(worklog_id(1), task.id, at(100), Some(at(200))).unwrap();
+    repository.insert_worklog(&original).unwrap();
+    repository.archive_task(task.id, at(300)).unwrap();
+
+    let corrected = repository
+        .compare_and_set_worklog_times(
+            original.id(),
+            original.times(),
+            WorklogTimes::new(at(150), Some(at(150))),
+        )
+        .unwrap()
+        .worklog;
+    assert_eq!(corrected.end(), Some(corrected.start()));
+    assert!(
+        repository
+            .find_task(task.id)
+            .unwrap()
+            .unwrap()
+            .is_archived()
+    );
+}
+
+#[test]
+fn a_failed_compare_and_set_transaction_leaves_the_worklog_unchanged() {
+    let repository = repo();
+    let task = named_task(1, "editable");
+    repository.create_task(task.clone()).unwrap();
+    let original = Worklog::new(worklog_id(1), task.id, at(100), Some(at(200))).unwrap();
+    repository.insert_worklog(&original).unwrap();
+    repository
+        .connection()
+        .execute_batch(
+            "CREATE TRIGGER reject_correction
+             AFTER UPDATE OF start_us, end_us ON worklogs
+             BEGIN SELECT RAISE(ABORT, 'reject correction'); END;",
+        )
+        .unwrap();
+
+    assert!(matches!(
+        repository.compare_and_set_worklog_times(
+            original.id(),
+            original.times(),
+            WorklogTimes::new(at(110), Some(at(210))),
+        ),
+        Err(StorageError::Sql(_))
+    ));
+    assert_eq!(
+        repository.find_worklog(original.id()).unwrap(),
+        Some(original)
+    );
+}
+
+#[test]
+fn two_clients_cannot_apply_corrections_from_the_same_expected_values() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let setup = SqliteRepository::open(&path).unwrap();
+    let task = named_task(1, "shared");
+    setup.create_task(task.clone()).unwrap();
+    let original = Worklog::new(worklog_id(1), task.id, at(100), Some(at(200))).unwrap();
+    setup.insert_worklog(&original).unwrap();
+    drop(setup);
+
+    let first = SqliteRepository::open(&path).unwrap();
+    let second = SqliteRepository::open(&path).unwrap();
+    let winner = first
+        .compare_and_set_worklog_times(
+            original.id(),
+            original.times(),
+            WorklogTimes::new(at(110), Some(at(210))),
+        )
+        .unwrap()
+        .worklog;
+    assert!(matches!(
+        second.compare_and_set_worklog_times(
+            original.id(),
+            original.times(),
+            WorklogTimes::new(at(120), Some(at(220))),
+        ),
+        Err(StorageError::WorklogChanged { id }) if id == original.id()
+    ));
+    assert_eq!(second.find_worklog(original.id()).unwrap(), Some(winner));
 }
 
 #[test]
@@ -1376,7 +2249,9 @@ fn a_task_with_an_active_worklog_cannot_be_archived() {
 
     // After the worklog is stopped, the same call archives the task.
     tracker.stop(at(150)).unwrap();
-    repository.stop_worklog(started.id, at(150)).unwrap();
+    repository
+        .stop_worklog(started.id(), started.start(), at(150))
+        .unwrap();
     let archived = repository.archive_task(task.id, at(300)).unwrap();
     assert!(archived.is_archived());
 }
@@ -1416,7 +2291,10 @@ fn concurrent_connections_enforce_the_archive_rules() {
         error,
         StorageError::TaskIsActive { id } if id == other.id
     ));
-    assert_eq!(process_a.active_worklog().unwrap().unwrap().id, started.id);
+    assert_eq!(
+        process_a.active_worklog().unwrap().unwrap().id(),
+        started.id()
+    );
     assert!(
         !process_b
             .find_task(other.id)
@@ -1439,14 +2317,19 @@ fn same_task_toggle_stops_and_later_restarts() {
         other => panic!("expected Started, got {other:?}"),
     };
     repository.insert_worklog(&worklog).unwrap();
-    assert_eq!(repository.active_worklog().unwrap().unwrap().id, worklog.id);
+    assert_eq!(
+        repository.active_worklog().unwrap().unwrap().id(),
+        worklog.id()
+    );
 
     let outcome = tracker.toggle(&task, at(150)).unwrap();
     let stopped = match outcome {
         TrackingOutcome::Stopped { worklog } => worklog,
         other => panic!("expected Stopped, got {other:?}"),
     };
-    repository.stop_worklog(stopped.id, at(150)).unwrap();
+    repository
+        .stop_worklog(stopped.id(), at(100), at(150))
+        .unwrap();
     assert_eq!(repository.active_worklog().unwrap(), None);
 
     // Toggling again starts a fresh worklog, not a resume.
@@ -1456,16 +2339,16 @@ fn same_task_toggle_stops_and_later_restarts() {
         other => panic!("expected Started, got {other:?}"),
     };
     repository.insert_worklog(&restarted).unwrap();
-    assert_ne!(restarted.id, worklog.id);
+    assert_ne!(restarted.id(), worklog.id());
     assert_eq!(
-        repository.active_worklog().unwrap().unwrap().id,
-        restarted.id
+        repository.active_worklog().unwrap().unwrap().id(),
+        restarted.id()
     );
     let worklogs = repository.list_worklogs(task_id(1)).unwrap();
     assert_eq!(worklogs.len(), 2);
-    assert_eq!(worklogs[0].end, Some(at(150)));
-    assert_eq!(worklogs[1].start, at(200));
-    assert_eq!(worklogs[1].end, None);
+    assert_eq!(worklogs[0].end(), Some(at(150)));
+    assert_eq!(worklogs[1].start(), at(200));
+    assert_eq!(worklogs[1].end(), None);
 }
 
 #[test]
@@ -1478,28 +2361,32 @@ fn restarts_record_separate_worklogs() {
     let first = tracker.start(&task, at(100)).unwrap();
     repository.insert_worklog(&first).unwrap();
     let first_stopped = tracker.stop(at(150)).unwrap();
-    repository.stop_worklog(first.id, at(150)).unwrap();
-    assert_eq!(first_stopped.id, first.id);
+    repository
+        .stop_worklog(first.id(), first.start(), at(150))
+        .unwrap();
+    assert_eq!(first_stopped.id(), first.id());
 
     let second = tracker.start(&task, at(300)).unwrap();
     repository.insert_worklog(&second).unwrap();
     tracker.stop(at(400)).unwrap();
-    repository.stop_worklog(second.id, at(400)).unwrap();
+    repository
+        .stop_worklog(second.id(), second.start(), at(400))
+        .unwrap();
 
     let worklogs = repository.list_worklogs(task_id(1)).unwrap();
     assert_eq!(worklogs.len(), 2);
-    assert_ne!(worklogs[0].id, worklogs[1].id);
-    assert_eq!(worklogs[0].start, at(100));
-    assert_eq!(worklogs[0].end, Some(at(150)));
-    assert_eq!(worklogs[1].start, at(300));
-    assert_eq!(worklogs[1].end, Some(at(400)));
+    assert_ne!(worklogs[0].id(), worklogs[1].id());
+    assert_eq!(worklogs[0].start(), at(100));
+    assert_eq!(worklogs[0].end(), Some(at(150)));
+    assert_eq!(worklogs[1].start(), at(300));
+    assert_eq!(worklogs[1].end(), Some(at(400)));
 }
 
 /// Inserts `worklogs` worklogs for the task, one per tag, started at
-/// `at(tag)`; the first one is active, the others stop one second later.
+/// `at(tag)`. The last one is active and the others stop one second later.
 fn insert_numbered_worklogs(repository: &SqliteRepository, task: &Task, worklogs: u32) {
     for tag in 1..=worklogs {
-        let worklog = if tag == 1 {
+        let worklog = if tag == worklogs {
             Worklog::begin(worklog_id(tag), task.id, at(i64::from(tag)))
         } else {
             Worklog::new(
@@ -1528,7 +2415,7 @@ fn worklog_pages_walk_55_records_through_the_next_cursor_without_repeats_or_gaps
     let starts: Vec<i64> = first
         .worklogs
         .iter()
-        .map(|worklog| worklog.start.timestamp())
+        .map(|worklog| worklog.start().timestamp())
         .collect();
     assert_eq!(starts, (6..=55).rev().collect::<Vec<_>>());
     let cursor = first.next_cursor.expect("more history follows");
@@ -1543,7 +2430,7 @@ fn worklog_pages_walk_55_records_through_the_next_cursor_without_repeats_or_gaps
     let rest_starts: Vec<i64> = second
         .worklogs
         .iter()
-        .map(|worklog| worklog.start.timestamp())
+        .map(|worklog| worklog.start().timestamp())
         .collect();
     assert_eq!(rest_starts, [5, 4, 3, 2, 1]);
 
@@ -1553,14 +2440,19 @@ fn worklog_pages_walk_55_records_through_the_next_cursor_without_repeats_or_gaps
         .worklogs
         .iter()
         .chain(&second.worklogs)
-        .map(|worklog| worklog.id.as_uuid().as_u128() as u32)
+        .map(|worklog| worklog.id().as_uuid().as_u128() as u32)
         .collect();
     ids.sort_unstable();
     assert_eq!(ids, (1..=55).collect::<Vec<_>>());
     assert_eq!(
-        second.worklogs.last().unwrap().end,
+        first.worklogs[0].end(),
         None,
-        "the active worklog appears in the second page"
+        "the newest worklog is active"
+    );
+    assert_eq!(
+        second.worklogs.last().unwrap().end(),
+        Some(at(2)),
+        "the oldest worklog is completed"
     );
 }
 
@@ -1582,16 +2474,11 @@ fn a_page_boundary_inside_equal_starts_neither_dups_nor_skips_rows() {
     let repository = repo();
     let task = named_task(1, "simultaneous");
     repository.create_task(task.clone()).unwrap();
-    // 55 worklogs share one start, so identifier ascending decides the
-    // whole order and the page boundary falls between two of them. A
-    // boundary that ignores the identifier would repeat or drop rows 51
-    // to 55.
+    // 55 zero-duration worklogs share one start, so identifier ascending
+    // decides the whole order and the page boundary falls between two of
+    // them. Zero-duration intervals do not overlap.
     for tag in 1..=55u32 {
-        let worklog = if tag == 1 {
-            Worklog::begin(worklog_id(tag), task.id, at(500))
-        } else {
-            Worklog::new(worklog_id(tag), task.id, at(500), Some(at(501))).unwrap()
-        };
+        let worklog = Worklog::new(worklog_id(tag), task.id, at(500), Some(at(500))).unwrap();
         repository.insert_worklog(&worklog).unwrap();
     }
 
@@ -1599,7 +2486,7 @@ fn a_page_boundary_inside_equal_starts_neither_dups_nor_skips_rows() {
     let ids: Vec<u32> = first
         .worklogs
         .iter()
-        .map(|worklog| worklog.id.as_uuid().as_u128() as u32)
+        .map(|worklog| worklog.id().as_uuid().as_u128() as u32)
         .collect();
     assert_eq!(ids, (1..=50).collect::<Vec<_>>(), "identifier ascending");
     let cursor = first.next_cursor.expect("equal starts continue");
@@ -1610,7 +2497,7 @@ fn a_page_boundary_inside_equal_starts_neither_dups_nor_skips_rows() {
     let rest_ids: Vec<u32> = second
         .worklogs
         .iter()
-        .map(|worklog| worklog.id.as_uuid().as_u128() as u32)
+        .map(|worklog| worklog.id().as_uuid().as_u128() as u32)
         .collect();
     assert_eq!(rest_ids, (51..=55).collect::<Vec<_>>());
     assert_eq!(second.next_cursor, None);
@@ -1620,19 +2507,173 @@ fn a_page_boundary_inside_equal_starts_neither_dups_nor_skips_rows() {
 fn an_active_worklog_is_part_of_a_history_page() {
     let repository = repo();
     let task = named_task(1, "running");
+    let other = named_task(2, "other");
     repository.create_task(task.clone()).unwrap();
+    repository.create_task(other.clone()).unwrap();
     let stopped = Worklog::new(worklog_id(1), task.id, at(100), Some(at(150))).unwrap();
     repository.insert_worklog(&stopped).unwrap();
     let active = Worklog::begin(worklog_id(2), task.id, at(200));
     repository.insert_worklog(&active).unwrap();
+    let other_work = Worklog::new(worklog_id(3), other.id, at(300), Some(at(350))).unwrap();
+    repository.insert_worklog(&other_work).unwrap();
 
     let page = repository.worklog_page(task.id, None).unwrap();
     assert_eq!(page.worklogs.len(), 2);
     // History order is start descending, so the active worklog leads.
-    assert_eq!(page.worklogs[0].id, active.id);
-    assert_eq!(page.worklogs[0].end, None);
-    assert_eq!(page.worklogs[1].id, stopped.id);
+    assert_eq!(page.worklogs[0].id(), active.id());
+    assert_eq!(page.worklogs[0].end(), None);
+    assert_eq!(page.worklogs[1].id(), stopped.id());
     assert_eq!(page.next_cursor, None);
+    assert_eq!(page.snapshot.active_worklog, Some(active));
+    assert_eq!(
+        page.snapshot.requested_task_latest_work_start,
+        Some(at(200))
+    );
+    assert_eq!(page.snapshot.active_task_latest_work_start, Some(at(200)));
+    assert_eq!(
+        repository.list_task_items().unwrap()[1].latest_work_start,
+        Some(at(300)),
+        "the full task aggregate remains a load and tracking-refresh read"
+    );
+}
+
+#[test]
+fn a_two_connection_continuation_adopts_a_switched_active_worklog_without_cursor_invalidation() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let first = SqliteRepository::open(&path).unwrap();
+    let requested = named_task(1, "requested");
+    let next_task = named_task(2, "next");
+    first.create_task(requested.clone()).unwrap();
+    first.create_task(next_task.clone()).unwrap();
+    for tag in 1..=51 {
+        let worklog = if tag == 51 {
+            Worklog::begin(worklog_id(tag), requested.id, at(i64::from(tag) * 10))
+        } else {
+            Worklog::new(
+                worklog_id(tag),
+                requested.id,
+                at(i64::from(tag) * 10),
+                Some(at(i64::from(tag) * 10 + 1)),
+            )
+            .unwrap()
+        };
+        first.insert_worklog(&worklog).unwrap();
+    }
+    let first_page = first.worklog_page(requested.id, None).unwrap();
+    let cursor = first_page
+        .next_cursor
+        .expect("the first page has one older row");
+    let loaded_active = first_page
+        .worklogs
+        .iter()
+        .find(|worklog| worklog.is_active())
+        .cloned()
+        .expect("the active worklog was loaded");
+
+    let second = SqliteRepository::open(&path).unwrap();
+    let replacement = Worklog::begin(worklog_id(99), next_task.id, at(520));
+    second
+        .switch_worklog(
+            loaded_active.id(),
+            loaded_active.start(),
+            at(515),
+            &replacement,
+        )
+        .unwrap();
+
+    let continuation = first.worklog_page(requested.id, Some(&cursor)).unwrap();
+    assert_eq!(continuation.worklogs.len(), 1);
+    assert_eq!(continuation.snapshot.active_worklog, Some(replacement));
+    assert_eq!(
+        continuation.snapshot.active_task_latest_work_start,
+        Some(at(520))
+    );
+    assert_eq!(
+        continuation.snapshot.requested_task_latest_work_start,
+        Some(loaded_active.start())
+    );
+}
+
+#[test]
+fn history_page_reads_use_indexed_bounded_rows_and_two_task_aggregates() {
+    let repository = repo();
+    let requested = named_task(1, "requested");
+    let unrelated = named_task(2, "unrelated");
+    repository.create_task(requested.clone()).unwrap();
+    repository.create_task(unrelated.clone()).unwrap();
+    for tag in 1..=WORKLOG_PAGE_SIZE as u32 + 1 {
+        let start = i64::from(tag) * 10;
+        repository
+            .insert_worklog(
+                &Worklog::new(
+                    worklog_id(tag),
+                    requested.id,
+                    at(start),
+                    Some(at(start + 1)),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+    }
+    for tag in 1_000..=3_000 {
+        let start = i64::from(tag) * 10;
+        repository
+            .insert_worklog(
+                &Worklog::new(
+                    worklog_id(tag),
+                    unrelated.id,
+                    at(start),
+                    Some(at(start + 1)),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+    }
+    let active = Worklog::begin(worklog_id(9_999), unrelated.id, at(50_000));
+    repository.insert_worklog(&active).unwrap();
+
+    let page = repository.worklog_page(requested.id, None).unwrap();
+    assert_eq!(page.worklogs.len(), WORKLOG_PAGE_SIZE);
+    assert_eq!(
+        page.snapshot.requested_task_latest_work_start,
+        Some(at(510))
+    );
+    assert_eq!(page.snapshot.active_worklog, Some(active));
+    assert_eq!(
+        page.snapshot.active_task_latest_work_start,
+        Some(at(50_000))
+    );
+    let plan: Vec<String> = repository
+        .connection()
+        .prepare(
+            "EXPLAIN QUERY PLAN SELECT id, task_id, start_us, end_us FROM worklogs
+             WHERE task_id = ?1 ORDER BY start_us DESC, id LIMIT ?2",
+        )
+        .unwrap()
+        .query_map(rusqlite::params![requested.id.to_string(), 51_i64], |row| {
+            row.get(3)
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(
+        plan.iter()
+            .any(|detail| detail.contains("worklogs_task_start"))
+    );
+    let max_plan: Vec<String> = repository
+        .connection()
+        .prepare("EXPLAIN QUERY PLAN SELECT MAX(start_us) FROM worklogs WHERE task_id = ?1")
+        .unwrap()
+        .query_map([requested.id.to_string()], |row| row.get(3))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(
+        max_plan
+            .iter()
+            .any(|detail| detail.contains("worklogs_task_start"))
+    );
 }
 
 #[test]
@@ -1649,21 +2690,21 @@ fn a_cursor_stays_stable_when_a_newer_worklog_is_inserted_between_page_reads() {
     // A newer worklog lands between the two page reads. The keyset cursor
     // still continues after the page's last row, so the second page neither
     // repeats a row of the first page nor skips one.
-    let newer = Worklog::new(worklog_id(100), task.id, at(1000), Some(at(1001))).unwrap();
+    let newer = Worklog::new(worklog_id(100), task.id, at(1000), Some(at(1000))).unwrap();
     repository.insert_worklog(&newer).unwrap();
 
     let second = repository.worklog_page(task.id, Some(&cursor)).unwrap();
     let rest_ids: Vec<u32> = second
         .worklogs
         .iter()
-        .map(|worklog| worklog.id.as_uuid().as_u128() as u32)
+        .map(|worklog| worklog.id().as_uuid().as_u128() as u32)
         .collect();
     assert_eq!(rest_ids, (1..=5).rev().collect::<Vec<_>>());
     assert_eq!(second.next_cursor, None);
 
     // The newer worklog is not lost; a fresh first page leads with it.
     let fresh = repository.worklog_page(task.id, None).unwrap();
-    assert_eq!(fresh.worklogs[0].id, newer.id);
+    assert_eq!(fresh.worklogs[0].id(), newer.id());
 }
 
 #[test]
@@ -1680,24 +2721,29 @@ fn switch_stops_the_old_worklog_and_starts_the_new_one_atomically() {
 
     let switched = tracker.switch(&rest, at(150), at(160)).unwrap();
     repository
-        .switch_worklog(switched.stopped.id, at(150), &switched.started)
+        .switch_worklog(
+            switched.stopped.id(),
+            switched.stopped.start(),
+            at(150),
+            &switched.started,
+        )
         .unwrap();
 
     // Exactly one active worklog, belonging to the new task.
     let active = repository.active_worklog().unwrap().unwrap();
-    assert_eq!(active.id, switched.started.id);
-    assert_eq!(active.task_id, task_id(2));
-    assert_eq!(active.start, at(160));
-    assert_eq!(active.end, None);
+    assert_eq!(active.id(), switched.started.id());
+    assert_eq!(active.task_id(), task_id(2));
+    assert_eq!(active.start(), at(160));
+    assert_eq!(active.end(), None);
     // The old worklog is stopped at the switch instant.
     let old = repository.list_worklogs(task_id(1)).unwrap();
     assert_eq!(old.len(), 1);
-    assert_eq!(old[0].id, started.id);
-    assert_eq!(old[0].end, Some(at(150)));
+    assert_eq!(old[0].id(), started.id());
+    assert_eq!(old[0].end(), Some(at(150)));
     // The new task has one active worklog.
     let new_worklogs = repository.list_worklogs(task_id(2)).unwrap();
     assert_eq!(new_worklogs.len(), 1);
-    assert_eq!(new_worklogs[0].id, switched.started.id);
+    assert_eq!(new_worklogs[0].id(), switched.started.id());
 }
 
 #[test]
@@ -1715,14 +2761,14 @@ fn switch_rolls_back_on_a_backwards_stop_timestamp() {
     // Stop before the active worklog's start violates the CHECK constraint.
     let next = Worklog::begin(worklog_id(42), rest.id, at(160));
     let error = repository
-        .switch_worklog(started.id, at(99), &next)
+        .switch_worklog(started.id(), started.start(), at(99), &next)
         .expect_err("backwards stop must fail");
     assert!(matches!(error, StorageError::Constraint(_)));
 
     // Rollback: the old worklog is still active and untouched, no new worklog.
     let active = repository.active_worklog().unwrap().unwrap();
-    assert_eq!(active.id, started.id);
-    assert_eq!(active.end, None);
+    assert_eq!(active.id(), started.id());
+    assert_eq!(active.end(), None);
     assert_eq!(repository.list_worklogs(task_id(1)).unwrap().len(), 1);
     assert_eq!(repository.list_worklogs(task_id(2)).unwrap(), Vec::new());
 }
@@ -1739,14 +2785,14 @@ fn switch_rolls_back_when_the_target_task_is_missing() {
 
     let next = Worklog::begin(worklog_id(42), task_id(99), at(160));
     assert!(matches!(
-        repository.switch_worklog(started.id, at(150), &next),
+        repository.switch_worklog(started.id(), started.start(), at(150), &next),
         Err(StorageError::TaskNotFound { id }) if id == task_id(99)
     ));
 
     // Rollback: the old worklog is still active, no new worklog was inserted.
     let active = repository.active_worklog().unwrap().unwrap();
-    assert_eq!(active.id, started.id);
-    assert_eq!(active.end, None);
+    assert_eq!(active.id(), started.id());
+    assert_eq!(active.end(), None);
     assert_eq!(repository.list_worklogs(task_id(1)).unwrap().len(), 1);
     assert_eq!(repository.list_worklogs(task_id(99)).unwrap(), Vec::new());
 }
@@ -1766,7 +2812,7 @@ fn switch_reports_a_missing_worklog_and_changes_nothing() {
     let missing = worklog_id(77);
     let next = Worklog::begin(worklog_id(42), rest.id, at(160));
     assert!(matches!(
-        repository.switch_worklog(missing, at(150), &next),
+        repository.switch_worklog(missing, at(100), at(150), &next),
         Err(StorageError::WorklogNotFound { id }) if id == missing
     ));
     assert_eq!(repository.active_worklog().unwrap(), Some(started.clone()));
@@ -1785,12 +2831,14 @@ fn switch_rejects_an_already_stopped_worklog() {
 
     let started = tracker.start(&work, at(100)).unwrap();
     repository.insert_worklog(&started).unwrap();
-    repository.stop_worklog(started.id, at(150)).unwrap();
+    repository
+        .stop_worklog(started.id(), started.start(), at(150))
+        .unwrap();
 
     let next = Worklog::begin(worklog_id(42), rest.id, at(160));
     assert!(matches!(
-        repository.switch_worklog(started.id, at(150), &next),
-        Err(StorageError::WorklogAlreadyStopped { id }) if id == started.id
+        repository.switch_worklog(started.id(), started.start(), at(150), &next),
+        Err(StorageError::WorklogAlreadyStopped { id }) if id == started.id()
     ));
     assert_eq!(repository.active_worklog().unwrap(), None);
     assert_eq!(repository.list_worklogs(task_id(2)).unwrap(), Vec::new());
@@ -1813,7 +2861,7 @@ fn switch_into_an_archived_task_is_rejected_and_rolls_back() {
 
     let next = Worklog::begin(worklog_id(42), rest.id, at(160));
     let error = repository
-        .switch_worklog(started.id, at(150), &next)
+        .switch_worklog(started.id(), started.start(), at(150), &next)
         .expect_err("the archived target must refuse the switch");
     assert!(matches!(
         error,
@@ -1822,11 +2870,14 @@ fn switch_into_an_archived_task_is_rejected_and_rolls_back() {
 
     // Rollback: the old worklog is still active, the archived task received
     // nothing.
-    assert_eq!(repository.active_worklog().unwrap().unwrap().id, started.id);
+    assert_eq!(
+        repository.active_worklog().unwrap().unwrap().id(),
+        started.id()
+    );
     assert_eq!(repository.list_worklogs(rest.id).unwrap(), Vec::new());
     let old = repository.list_worklogs(work.id).unwrap();
     assert_eq!(old.len(), 1);
-    assert_eq!(old[0].end, None);
+    assert_eq!(old[0].end(), None);
 }
 
 #[test]
@@ -1846,7 +2897,7 @@ fn a_switch_with_an_existing_new_worklog_id_rolls_back_and_reports_it() {
     // The new worklog reuses the stored id of the old rest worklog.
     let next = Worklog::begin(worklog_id(42), rest.id, at(160));
     let error = repository
-        .switch_worklog(started.id, at(150), &next)
+        .switch_worklog(started.id(), started.start(), at(150), &next)
         .expect_err("the duplicate id must fail the switch");
     assert!(matches!(
         error,
@@ -1854,10 +2905,13 @@ fn a_switch_with_an_existing_new_worklog_id_rolls_back_and_reports_it() {
     ));
 
     // Rollback: the stop half is undone, so work is still active.
-    assert_eq!(repository.active_worklog().unwrap().unwrap().id, started.id);
+    assert_eq!(
+        repository.active_worklog().unwrap().unwrap().id(),
+        started.id()
+    );
     let rest_worklogs = repository.list_worklogs(rest.id).unwrap();
     assert_eq!(rest_worklogs.len(), 1);
-    assert_eq!(rest_worklogs[0].end, Some(at(20)));
+    assert_eq!(rest_worklogs[0].end(), Some(at(20)));
 }
 
 #[test]
@@ -1899,7 +2953,9 @@ fn archiving_the_active_task_is_rejected() {
 
     // Once the worklog is stopped, the task can be archived.
     tracker.stop(at(150)).unwrap();
-    repository.stop_worklog(started.id, at(150)).unwrap();
+    repository
+        .stop_worklog(started.id(), started.start(), at(150))
+        .unwrap();
     tracker.ensure_archivable(work.id).unwrap();
     repository.archive_task(work.id, at(160)).unwrap();
     assert!(
@@ -1938,7 +2994,7 @@ fn active_worklog_survives_closing_and_reopening_the_database() {
         repository.create_task(task.clone()).unwrap();
         let mut tracker = Tracker::idle();
         let started = tracker.start(&task, at(100)).unwrap();
-        worklog_id = started.id;
+        worklog_id = started.id();
         // Deliberately no stop: exiting must not implicitly stop tracking.
         repository.insert_worklog(&started).unwrap();
     }
@@ -1949,25 +3005,23 @@ fn active_worklog_survives_closing_and_reopening_the_database() {
             .active_worklog()
             .unwrap()
             .expect("worklog recovered");
-        assert_eq!(recovered.id, worklog_id);
-        assert_eq!(recovered.task_id, task.id);
-        assert_eq!(recovered.start, at(100));
-        assert_eq!(recovered.end, None);
+        assert_eq!(recovered.id(), worklog_id);
+        assert_eq!(recovered.task_id(), task.id);
+        assert_eq!(recovered.start(), at(100));
+        assert_eq!(recovered.end(), None);
 
         // The recovered worklog resumes tracking and stops cleanly.
         let mut tracker = Tracker::resume(recovered).unwrap();
         assert_eq!(
             tracker.state(),
             &TrackingState::Running {
-                worklog: ActiveWorklog {
-                    id: worklog_id,
-                    task_id: task.id,
-                    start: at(100),
-                }
+                worklog: ActiveWorklog::begin(worklog_id, task.id, at(100))
             }
         );
         let stopped = tracker.stop(at(250)).unwrap();
-        repository.stop_worklog(stopped.id, at(250)).unwrap();
+        repository
+            .stop_worklog(stopped.id(), at(100), at(250))
+            .unwrap();
     }
 
     // A third open sees a stopped worklog and no active one.
@@ -1975,8 +3029,8 @@ fn active_worklog_survives_closing_and_reopening_the_database() {
     assert_eq!(repository.active_worklog().unwrap(), None);
     let worklogs = repository.list_worklogs(task.id).unwrap();
     assert_eq!(worklogs.len(), 1);
-    assert_eq!(worklogs[0].start, at(100));
-    assert_eq!(worklogs[0].end, Some(at(250)));
+    assert_eq!(worklogs[0].start(), at(100));
+    assert_eq!(worklogs[0].end(), Some(at(250)));
 }
 
 #[test]
@@ -2209,5 +3263,428 @@ fn the_application_orders_the_sqlite_task_list_per_adr_0002() {
             "alpha".to_owned(),
             "delta".to_owned()
         ]
+    );
+}
+
+#[test]
+fn concurrent_corrections_use_two_connections_and_one_stale_loser() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let setup = SqliteRepository::open(&path).unwrap();
+    let task = named_task(1, "shared");
+    let original = Worklog::new(worklog_id(1), task.id, at(100), Some(at(200))).unwrap();
+    setup.create_task(task.clone()).unwrap();
+    setup.insert_worklog(&original).unwrap();
+    drop(setup);
+
+    let barrier = Arc::new(Barrier::new(3));
+    let handles: Vec<_> = [at(110), at(120)]
+        .into_iter()
+        .map(|start| {
+            let barrier = barrier.clone();
+            let path = path.clone();
+            let original = original.clone();
+            thread::spawn(move || {
+                let repository = SqliteRepository::open(path).unwrap();
+                barrier.wait();
+                repository.compare_and_set_worklog_times(
+                    original.id(),
+                    original.times(),
+                    WorklogTimes::new(start, Some(start + chrono::TimeDelta::seconds(100))),
+                )
+            })
+        })
+        .collect();
+    barrier.wait();
+    let results: Vec<_> = handles
+        .into_iter()
+        .map(|handle| handle.join().unwrap())
+        .collect();
+
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| matches!(result, Err(StorageError::WorklogChanged { .. })))
+            .count(),
+        1
+    );
+    let stored = SqliteRepository::open(&path)
+        .unwrap()
+        .find_worklog(original.id())
+        .unwrap()
+        .unwrap();
+    let winner = results.into_iter().find_map(Result::ok).unwrap().worklog;
+    assert_eq!(stored, winner);
+}
+
+#[test]
+fn direct_task_move_cannot_create_a_same_task_overlap() {
+    let repository = repo();
+    let first = named_task(1, "first");
+    let second = named_task(2, "second");
+    repository.create_task(first.clone()).unwrap();
+    repository.create_task(second.clone()).unwrap();
+    let left = Worklog::new(worklog_id(1), first.id, at(100), Some(at(200))).unwrap();
+    let right = Worklog::new(worklog_id(2), second.id, at(150), Some(at(250))).unwrap();
+    repository.insert_worklog(&left).unwrap();
+    repository.insert_worklog(&right).unwrap();
+
+    let error = repository
+        .connection()
+        .execute(
+            "UPDATE worklogs SET task_id = ?1 WHERE id = ?2",
+            [first.id.to_string(), right.id().to_string()],
+        )
+        .expect_err("moving an interval onto an overlap must fail");
+    assert!(matches!(
+        error,
+        rusqlite::Error::SqliteFailure(_, Some(message))
+            if message == "same-task worklog overlap"
+    ));
+    assert_eq!(repository.find_worklog(right.id()).unwrap(), Some(right));
+}
+
+#[test]
+fn start_corrections_invalidate_continuations_but_inserts_and_end_corrections_do_not() {
+    let repository = repo();
+    let task = named_task(1, "history");
+    repository.create_task(task.clone()).unwrap();
+    for tag in 1..=51 {
+        let start = i64::from(tag) * 10;
+        repository
+            .insert_worklog(
+                &Worklog::new(worklog_id(tag), task.id, at(start), Some(at(start + 1))).unwrap(),
+            )
+            .unwrap();
+    }
+
+    let first = repository.worklog_page(task.id, None).unwrap();
+    let cursor = first.next_cursor.unwrap();
+    let unloaded = repository.find_worklog(worklog_id(1)).unwrap().unwrap();
+    repository
+        .compare_and_set_worklog_times(
+            unloaded.id(),
+            unloaded.times(),
+            WorklogTimes::new(at(1_000), Some(at(1_001))),
+        )
+        .unwrap();
+    assert!(matches!(
+        repository.worklog_page(task.id, Some(&cursor)),
+        Err(StorageError::WorklogHistoryChanged { task_id }) if task_id == task.id
+    ));
+
+    let refreshed = repository.worklog_page(task.id, None).unwrap();
+    let cursor = refreshed.next_cursor.unwrap();
+    let loaded = refreshed.worklogs[0].clone();
+    repository
+        .compare_and_set_worklog_times(
+            loaded.id(),
+            loaded.times(),
+            WorklogTimes::new(at(-10), Some(at(-9))),
+        )
+        .unwrap();
+    assert!(matches!(
+        repository.worklog_page(task.id, Some(&cursor)),
+        Err(StorageError::WorklogHistoryChanged { task_id }) if task_id == task.id
+    ));
+
+    let refreshed = repository.worklog_page(task.id, None).unwrap();
+    let cursor = refreshed.next_cursor.unwrap();
+    let unchanged_order = repository.find_worklog(worklog_id(2)).unwrap().unwrap();
+    repository
+        .compare_and_set_worklog_times(
+            unchanged_order.id(),
+            unchanged_order.times(),
+            WorklogTimes::new(unchanged_order.start(), Some(at(21))),
+        )
+        .unwrap();
+    assert!(repository.worklog_page(task.id, Some(&cursor)).is_ok());
+
+    repository
+        .insert_worklog(&Worklog::new(worklog_id(99), task.id, at(2_000), Some(at(2_001))).unwrap())
+        .unwrap();
+    assert!(repository.worklog_page(task.id, Some(&cursor)).is_ok());
+}
+
+#[test]
+fn direct_task_moves_invalidate_both_history_cursors_and_start_changes_bump_once() {
+    let repository = repo();
+    let alpha = named_task(1, "alpha");
+    let beta = named_task(2, "beta");
+    repository.create_task(alpha.clone()).unwrap();
+    repository.create_task(beta.clone()).unwrap();
+    for tag in 1..=51 {
+        repository
+            .insert_worklog(
+                &Worklog::new(
+                    worklog_id(tag),
+                    alpha.id,
+                    at(i64::from(tag) * 10),
+                    Some(at(i64::from(tag) * 10)),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        repository
+            .insert_worklog(
+                &Worklog::new(
+                    worklog_id(tag + 100),
+                    beta.id,
+                    at(10_000 + i64::from(tag) * 10),
+                    Some(at(10_000 + i64::from(tag) * 10)),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+    }
+
+    let alpha_cursor = repository
+        .worklog_page(alpha.id, None)
+        .unwrap()
+        .next_cursor
+        .unwrap();
+    let beta_cursor = repository
+        .worklog_page(beta.id, None)
+        .unwrap()
+        .next_cursor
+        .unwrap();
+    let moved = worklog_id(1);
+    repository
+        .connection()
+        .execute(
+            "UPDATE worklogs SET task_id = ?1 WHERE id = ?2",
+            [beta.id.to_string(), moved.to_string()],
+        )
+        .unwrap();
+
+    assert_eq!(history_revision(&repository, alpha.id), 1);
+    assert_eq!(history_revision(&repository, beta.id), 1);
+    for (task_id, cursor) in [(alpha.id, alpha_cursor), (beta.id, beta_cursor)] {
+        assert!(matches!(
+            repository.worklog_page(task_id, Some(&cursor)),
+            Err(StorageError::WorklogHistoryChanged { task_id: changed }) if changed == task_id
+        ));
+    }
+
+    let beta_cursor = repository
+        .worklog_page(beta.id, None)
+        .unwrap()
+        .next_cursor
+        .unwrap();
+    repository
+        .connection()
+        .execute(
+            "UPDATE worklogs SET start_us = ?1 WHERE id = ?2",
+            rusqlite::params![20_000_i64, moved.as_uuid().to_string()],
+        )
+        .unwrap();
+    assert_eq!(history_revision(&repository, alpha.id), 1);
+    assert_eq!(history_revision(&repository, beta.id), 2);
+    assert!(matches!(
+        repository.worklog_page(beta.id, Some(&beta_cursor)),
+        Err(StorageError::WorklogHistoryChanged { task_id }) if task_id == beta.id
+    ));
+}
+
+#[test]
+fn overlap_migration_uses_an_ordered_indexed_sweep_for_large_valid_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let rows: Vec<_> = (1..=2_000)
+        .map(|tag| (tag, i64::from(tag) * 10, Some(i64::from(tag) * 10 + 1)))
+        .collect();
+    create_v2_database(&path, &rows);
+
+    let repository = SqliteRepository::open(&path).unwrap();
+    assert_eq!(user_version(&repository), 4);
+    let plan: Vec<String> = repository
+        .connection()
+        .prepare("EXPLAIN QUERY PLAN SELECT id FROM worklogs WHERE task_id = ?1 ORDER BY start_us DESC, id")
+        .unwrap()
+        .query_map([task_id(1).to_string()], |row| row.get(3))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(
+        plan.iter()
+            .any(|detail| detail.contains("worklogs_task_start"))
+    );
+}
+
+#[test]
+fn version_3_migration_rejects_direct_moves_to_archived_tasks_but_allows_archived_time_changes() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    create_v2_database(&path, &[(1, 100, None)]);
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute(
+            "INSERT INTO tasks (id, name, archived, created_at_us, updated_at_us)
+             VALUES (?1, 'archived', 0, 100, 100)",
+            [task_id(2).to_string()],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, 10, 20)",
+            [worklog_id(2).to_string(), task_id(2).to_string()],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE tasks SET archived = 1 WHERE id = ?1",
+            [task_id(2).to_string()],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO tasks (id, name, archived, created_at_us, updated_at_us)
+             VALUES (?1, 'open', 0, 100, 100)",
+            [task_id(3).to_string()],
+        )
+        .unwrap();
+    connection
+        .execute_batch(
+            "ALTER TABLE tasks ADD COLUMN history_order_revision INTEGER NOT NULL DEFAULT 0;
+             CREATE TRIGGER worklogs_reject_same_task_overlap_insert
+             BEFORE INSERT ON worklogs BEGIN SELECT 1; END;
+             CREATE TRIGGER worklogs_reject_same_task_overlap_update
+             BEFORE UPDATE OF task_id, start_us, end_us ON worklogs BEGIN SELECT 1; END;
+             CREATE TRIGGER worklogs_bump_history_order_revision
+             AFTER UPDATE OF start_us ON worklogs BEGIN SELECT 1; END;",
+        )
+        .unwrap();
+    connection.pragma_update(None, "user_version", 3).unwrap();
+    drop(connection);
+
+    let repository = SqliteRepository::open(&path).unwrap();
+    assert_eq!(user_version(&repository), 4);
+    let active_id = worklog_id(1);
+    let error = repository
+        .connection()
+        .execute(
+            "UPDATE worklogs SET task_id = ?1 WHERE id = ?2",
+            [task_id(2).to_string(), active_id.to_string()],
+        )
+        .expect_err("an active worklog cannot move to an archived task");
+    assert!(matches!(
+        error,
+        rusqlite::Error::SqliteFailure(_, Some(message)) if message == "task is archived"
+    ));
+
+    // History imported before a task was archived remains editable.
+    repository
+        .connection()
+        .execute(
+            "UPDATE worklogs SET start_us = 11, end_us = 21 WHERE id = ?1",
+            [worklog_id(2).to_string()],
+        )
+        .unwrap();
+
+    repository
+        .connection()
+        .execute(
+            "UPDATE worklogs SET task_id = ?1 WHERE id = ?2",
+            [task_id(3).to_string(), worklog_id(2).to_string()],
+        )
+        .unwrap();
+    assert_eq!(history_revision(&repository, task_id(2)), 2);
+    assert_eq!(history_revision(&repository, task_id(3)), 1);
+    repository
+        .connection()
+        .execute(
+            "UPDATE worklogs SET start_us = 12 WHERE id = ?1",
+            [worklog_id(2).to_string()],
+        )
+        .unwrap();
+    assert_eq!(history_revision(&repository, task_id(2)), 2);
+    assert_eq!(history_revision(&repository, task_id(3)), 2);
+}
+
+#[test]
+fn a_cursor_for_another_task_is_rejected_before_paging() {
+    let repository = repo();
+    let alpha = named_task(1, "alpha");
+    let beta = named_task(2, "beta");
+    repository.create_task(alpha.clone()).unwrap();
+    repository.create_task(beta.clone()).unwrap();
+    for (id, task, start) in [(1, alpha.id, 100), (2, beta.id, 200)] {
+        repository
+            .insert_worklog(
+                &Worklog::new(worklog_id(id), task, at(start), Some(at(start + 1))).unwrap(),
+            )
+            .unwrap();
+    }
+    let cursor = repository.worklog_page(alpha.id, None).unwrap().next_cursor;
+    let cursor = cursor.unwrap_or(WorklogCursor {
+        task_id: alpha.id,
+        start: at(100),
+        id: worklog_id(1),
+        revision: 0,
+    });
+    assert!(matches!(
+        repository.worklog_page(beta.id, Some(&cursor)),
+        Err(StorageError::WorklogHistoryChanged { task_id }) if task_id == beta.id
+    ));
+}
+
+#[test]
+fn predecessor_lookup_uses_the_partial_index_for_large_history_writes() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let rows: Vec<_> = (1..=2_000)
+        .map(|tag| (tag, i64::from(tag) * 10, Some(i64::from(tag) * 10 + 1)))
+        .collect();
+    create_v2_database(&path, &rows);
+    let repository = SqliteRepository::open(&path).unwrap();
+    let plan: Vec<String> = repository
+        .connection()
+        .prepare(
+            "EXPLAIN QUERY PLAN SELECT end_us FROM worklogs
+             WHERE task_id = ?1
+               AND (end_us IS NULL OR end_us > start_us)
+               AND start_us < ?2
+             ORDER BY start_us DESC LIMIT 1",
+        )
+        .unwrap()
+        .query_map(
+            rusqlite::params![task_id(1).to_string(), 30_000_i64],
+            |row| row.get(3),
+        )
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(plan.iter().any(|detail| {
+        detail.contains("worklogs_nonzero_task_start") && detail.contains("task_id=?")
+    }));
+    repository
+        .insert_worklog(
+            &Worklog::new(worklog_id(3_000), task_id(1), at(20_001), Some(at(20_002))).unwrap(),
+        )
+        .unwrap();
+}
+
+#[test]
+fn stop_and_switch_report_an_active_start_compare_failure() {
+    let repository = repo();
+    let alpha = named_task(1, "alpha");
+    let beta = named_task(2, "beta");
+    repository.create_task(alpha.clone()).unwrap();
+    repository.create_task(beta.clone()).unwrap();
+    let active = Worklog::begin(worklog_id(1), alpha.id, at(100));
+    repository.insert_worklog(&active).unwrap();
+    assert!(matches!(
+        repository.stop_worklog(active.id(), at(50), at(150)),
+        Err(StorageError::WorklogChanged { id }) if id == active.id()
+    ));
+    let next = Worklog::begin(worklog_id(2), beta.id, at(150));
+    assert!(matches!(
+        repository.switch_worklog(active.id(), at(50), at(150), &next),
+        Err(StorageError::WorklogChanged { id }) if id == active.id()
+    ));
+    assert_eq!(
+        TrackingRepository::active_worklog(&repository).unwrap(),
+        Some(active)
     );
 }
