@@ -7,7 +7,9 @@
 mod app;
 mod command;
 mod keymap;
+mod screens;
 mod styles;
+mod support;
 mod terminal;
 mod ui;
 
@@ -81,7 +83,7 @@ fn run<S: TrackerApplicationService>(
         guard.draw(|frame| ui::render(frame, app))?;
         if crossterm::event::poll(TICK)?
             && let Event::Key(key) = crossterm::event::read()?
-            && let Some(command) = keymap::map(app.mode(), app.view(), app.screen(), key)
+            && let Some(command) = keymap::map(&app.mode(), app.view(), app.screen(), key)
             && command_is_allowed(command, crossterm::terminal::size()?.0)
         {
             app.handle(command);
