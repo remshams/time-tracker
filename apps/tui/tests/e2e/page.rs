@@ -165,6 +165,11 @@ impl TimeTrackerPage {
         ArchiveDialog::find(&self.screen)
     }
 
+    /// The deletion confirmation dialog, if one is open over worklog history.
+    pub(crate) fn deletion_dialog(&self) -> Option<DeletionDialog> {
+        DeletionDialog::find(&self.screen)
+    }
+
     /// The correction dialog, if one is open over worklog history.
     pub(crate) fn correction_dialog(&self) -> Option<CorrectionDialog> {
         CorrectionDialog::find(&self.screen)
@@ -564,10 +569,14 @@ impl Footer {
 
     /// Whether the footer names the worklog-history keys and correction shortcut.
     pub(crate) fn hints_history(&self) -> bool {
-        self.text().contains("o older")
-            && self.text().contains("r refresh")
-            && self.text().contains("esc back")
-            && self.text().contains("q/ctrl+c quit")
+        let text = self.text();
+        let has_q = text.contains(" q ") || text.contains("q/");
+        text.contains("o older")
+            && text.contains("r refresh")
+            && text.contains("d delete")
+            && text.contains("esc back")
+            && has_q
+            && text.contains("ctrl+c")
             && self.hints_correction()
     }
 
@@ -810,6 +819,74 @@ impl ArchiveDialog {
             .rect_text(
                 self.layout.dialog_left_col() + 1..self.layout.dialog_right_col(),
                 self.layout.dialog_text_row()..self.layout.dialog_text_row() + 1,
+            )
+            .trim_end()
+            .to_owned()
+    }
+}
+
+/// The deletion confirmation dialog over worklog history.
+pub(crate) struct DeletionDialog {
+    screen: Screen,
+    left: u16,
+    top: u16,
+}
+
+impl DeletionDialog {
+    fn find(screen: &Screen) -> Option<Self> {
+        let (top, title_col) = screen.find("Delete worklog")?;
+        let (cols, rows) = screen.size();
+        let left = cols.saturating_sub(58) / 2;
+        let expected_title_col = left + 1;
+        if title_col != expected_title_col || top + 5 >= rows {
+            return None;
+        }
+        let right = left + 57;
+        let borders = [
+            (top, left, "┌"),
+            (top, right, "┐"),
+            (top + 1, left, "│"),
+            (top + 1, right, "│"),
+            (top + 4, left, "│"),
+            (top + 4, right, "│"),
+            (top + 5, left, "└"),
+            (top + 5, right, "┘"),
+        ];
+        borders
+            .iter()
+            .all(|(row, col, glyph)| {
+                screen
+                    .cell(*row, *col)
+                    .is_some_and(|cell| cell.contents() == *glyph)
+            })
+            .then_some(Self {
+                screen: screen.clone(),
+                left,
+                top,
+            })
+    }
+
+    pub(crate) fn title(&self) -> String {
+        "Delete worklog".to_owned()
+    }
+
+    pub(crate) fn question(&self) -> String {
+        self.line(1)
+    }
+
+    pub(crate) fn interval(&self) -> String {
+        self.line(2)
+    }
+
+    pub(crate) fn warning(&self) -> String {
+        self.line(3)
+    }
+
+    fn line(&self, offset: u16) -> String {
+        self.screen
+            .rect_text(
+                self.left + 1..self.left + 57,
+                self.top + offset..self.top + offset + 1,
             )
             .trim_end()
             .to_owned()
