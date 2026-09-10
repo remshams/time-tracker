@@ -44,7 +44,7 @@ fn fixture_time(seconds: i64) -> DateTime<Utc> {
 
 fn stored_task(task: Task) -> StoredTask {
     StoredTask {
-        id: task.id,
+        id: task.id(),
         name: task.name().to_string(),
         archived: task.is_archived(),
         created_at: task.created_at(),
@@ -209,7 +209,7 @@ impl Database {
     pub(crate) fn active_worklogs(&self) -> Vec<StoredWorklog> {
         let mut active = Vec::new();
         for task in self.repository.list_tasks().expect("the tasks must list") {
-            for worklog in self.worklogs_of(task.id, task.name().as_str()) {
+            for worklog in self.worklogs_of(task.id(), task.name().as_str()) {
                 if worklog.end.is_none() {
                     active.push(worklog);
                 }

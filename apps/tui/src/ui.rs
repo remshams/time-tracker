@@ -134,7 +134,7 @@ fn render_tasks<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app
         .tasks()
         .iter()
         .map(|task| {
-            let active = active_task_id == Some(task.id);
+            let active = active_task_id == Some(task.id());
             let marker = if active {
                 Span::styled("▶ ", styles::active_marker())
             } else {
@@ -452,7 +452,7 @@ mod tests {
         for (index, (start, end)) in entries.iter().enumerate() {
             let worklog = Worklog::new(
                 WorklogId::from_uuid(uuid::Uuid::from_u128(index as u128 + 1)),
-                task.id,
+                task.id(),
                 DateTime::<Utc>::from_timestamp(*start, 0).unwrap(),
                 Some(DateTime::<Utc>::from_timestamp(*end, 0).unwrap()),
             )

@@ -5,13 +5,11 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, FixedOffset, NaiveDateTime, Offset, TimeDelta, TimeZone, Utc};
 use chrono_tz::Tz;
 use tracker_application::{
-    ApplicationError, ClearActiveTaskOutcome, CorrectWorklogOutcome, DeleteCompletedWorklogOutcome,
-    RepositoryError, SetActiveTaskOutcome, TaskOrdering, TaskOutcome, TrackerApplicationService,
-    WorklogCursor,
+    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, SetActiveTaskOutcome,
+    TaskOrdering, TrackerApplicationService, WorklogCursor,
 };
 use tracker_domain::{
-    Task, TaskId, TaskName, TaskNameError, TrackingError, TrackingState, Worklog, WorklogId,
-    WorklogTimes,
+    Task, TaskId, TaskName, TaskNameError, TrackingState, Worklog, WorklogId, WorklogTimes,
 };
 
 use crate::command::Command;
@@ -390,111 +388,51 @@ fn ordering_label(ordering: TaskOrdering) -> &'static str {
     }
 }
 
-fn repository_error_text(error: &RepositoryError) -> &'static str {
-    match error {
-        RepositoryError::TaskNotFound { .. } => "Task not found",
-        RepositoryError::WorklogNotFound { .. } => "Worklog not found",
-        RepositoryError::WorklogAlreadyStopped { .. } => "Worklog is already stopped",
-        RepositoryError::WorklogChanged { .. } => "Worklog changed in another client",
-        RepositoryError::WorklogIsActive { .. } => ACTIVE_WORKLOG_DELETE_MESSAGE,
-        RepositoryError::WorklogHistoryChanged { .. } => {
-            "Worklog history changed. Press r to refresh"
-        }
-        RepositoryError::SameTaskWorklogOverlap { .. } => "The worklog overlaps another worklog",
-        RepositoryError::WorklogAlreadyExists { .. } => "Worklog already exists",
-        RepositoryError::TaskAlreadyExists { .. } => "Task already exists",
-        RepositoryError::ActiveWorklogExists => "Another worklog is active",
-        RepositoryError::TaskArchived { .. } => "Task is archived",
-        RepositoryError::TaskIsActive { .. } => "Task has active work",
-        RepositoryError::Constraint { .. } => "Storage rejected the change",
-        RepositoryError::CorruptData { .. } => "Stored data is invalid",
-        RepositoryError::Backend { .. } => "Storage error",
-    }
-}
-
 fn application_error_text(error: &ApplicationError) -> String {
-    match error {
-        ApplicationError::Domain(error) => error.to_string(),
-        ApplicationError::InvalidWorklogCorrection(error) => error.to_string(),
-        ApplicationError::Repository(error)
-        | ApplicationError::TrackingWrite(error)
-        | ApplicationError::TrackingRecovery(error)
-        | ApplicationError::TaskRecovery(error) => repository_error_text(error).to_owned(),
-        ApplicationError::WorklogCorrectionWrite { write } => {
-            repository_error_text(write).to_owned()
-        }
-        ApplicationError::WorklogCorrectionRecovery { write, recovery } => format!(
-            "Correction failed: {}. State recovery failed: {}.",
-            repository_error_text(write),
-            repository_error_text(recovery)
-        ),
-        ApplicationError::WorklogDeletionWrite { write } => repository_error_text(write).to_owned(),
-        ApplicationError::WorklogDeletionRecovery { write, recovery } => format!(
-            "Deletion failed: {}. State recovery failed: {}.",
-            repository_error_text(write),
-            repository_error_text(recovery)
-        ),
-        ApplicationError::TrackingStateChanged => {
-            "Tracking state changed in another client. Refreshed state.".to_owned()
-        }
-    }
-}
-
-fn deletion_repository_error(error: &ApplicationError) -> Option<&RepositoryError> {
-    match error {
-        ApplicationError::WorklogDeletionWrite { write } => Some(write),
-        _ => None,
-    }
+    error.failure().message().to_owned()
 }
 
 fn deletion_conflict(error: &ApplicationError) -> bool {
-    matches!(
-        deletion_repository_error(error),
-        Some(
-            RepositoryError::WorklogChanged { .. }
-                | RepositoryError::WorklogNotFound { .. }
-                | RepositoryError::WorklogIsActive { .. }
+    let failure = error.failure();
+    !failure.recovery_failed()
+        && matches!(
+            failure.category(),
+            ApplicationFailureCategory::WorklogChanged
+                | ApplicationFailureCategory::WorklogNotFound
+                | ApplicationFailureCategory::ActiveWorklog
         )
-    )
 }
 
 fn matches_worklog_active(error: &ApplicationError) -> bool {
-    matches!(
-        deletion_repository_error(error),
-        Some(RepositoryError::WorklogIsActive { .. })
-    )
+    error.failure().category() == ApplicationFailureCategory::ActiveWorklog
 }
 
 fn matches_worklog_not_found(error: &ApplicationError) -> bool {
-    matches!(
-        deletion_repository_error(error),
-        Some(RepositoryError::WorklogNotFound { .. })
-    )
+    error.failure().category() == ApplicationFailureCategory::WorklogNotFound
 }
 
 fn correction_error_text(error: &ApplicationError) -> String {
-    match error {
-        ApplicationError::WorklogCorrectionWrite {
-            write: RepositoryError::WorklogChanged { .. } | RepositoryError::WorklogNotFound { .. },
-        } => "Worklog changed. Cancel and press r to refresh.".to_owned(),
-        ApplicationError::WorklogCorrectionWrite {
-            write: RepositoryError::SameTaskWorklogOverlap { .. },
-        } => "The corrected time overlaps another worklog".to_owned(),
-        ApplicationError::WorklogCorrectionRecovery {
-            write: RepositoryError::WorklogChanged { .. } | RepositoryError::WorklogNotFound { .. },
-            recovery,
-        } => format!(
-            "Worklog changed. State recovery also failed: {}. Cancel and press r to refresh.",
-            repository_error_text(recovery)
+    let failure = error.failure();
+    match (failure.category(), failure.recovery_message()) {
+        (
+            ApplicationFailureCategory::WorklogChanged
+            | ApplicationFailureCategory::WorklogNotFound,
+            None,
+        ) => "Worklog changed. Cancel and press r to refresh.".to_owned(),
+        (ApplicationFailureCategory::WorklogOverlap, None) => {
+            "The corrected time overlaps another worklog".to_owned()
+        }
+        (
+            ApplicationFailureCategory::WorklogChanged
+            | ApplicationFailureCategory::WorklogNotFound,
+            Some(recovery),
+        ) => format!(
+            "Worklog changed. State recovery also failed: {recovery}. Cancel and press r to refresh."
         ),
-        ApplicationError::WorklogCorrectionRecovery {
-            write: RepositoryError::SameTaskWorklogOverlap { .. },
-            recovery,
-        } => format!(
-            "The corrected time overlaps another worklog. State recovery also failed: {}.",
-            repository_error_text(recovery)
+        (ApplicationFailureCategory::WorklogOverlap, Some(recovery)) => format!(
+            "The corrected time overlaps another worklog. State recovery also failed: {recovery}."
         ),
-        _ => application_error_text(error),
+        _ => failure.message().to_owned(),
     }
 }
 
@@ -679,7 +617,7 @@ impl<S: TrackerApplicationService> App<S> {
             }
             None => Status::Info("Ready".to_owned()),
         };
-        let active_selection = tasks.first().map(|task| task.id);
+        let active_selection = tasks.first().map(|task| task.id());
         Self {
             application,
             tasks,
@@ -817,7 +755,7 @@ impl<S: TrackerApplicationService> App<S> {
         let id = self.selection_id()?;
         self.tasks_in(self.view)
             .iter()
-            .position(|task| task.id == id)
+            .position(|task| task.id() == id)
     }
 
     pub fn mode(&self) -> &Mode {
@@ -989,7 +927,9 @@ impl<S: TrackerApplicationService> App<S> {
             Some(0) => Some(0),
             Some(index) => Some(index - 1),
         };
-        let id = index.and_then(|index| tasks.get(index)).map(|task| task.id);
+        let id = index
+            .and_then(|index| tasks.get(index))
+            .map(|task| task.id());
         self.set_selection_id(id);
     }
 
@@ -1011,7 +951,7 @@ impl<S: TrackerApplicationService> App<S> {
             None => 0,
             Some(index) => index.saturating_add(1).min(last),
         };
-        self.set_selection_id(Some(tasks[index].id));
+        self.set_selection_id(Some(tasks[index].id()));
     }
 
     /// Moves the history selection up one row, without wrapping.
@@ -1065,7 +1005,7 @@ impl<S: TrackerApplicationService> App<S> {
         if self.selection_id().is_none()
             && let Some(first) = self.tasks_in(target).first()
         {
-            self.set_selection_id(Some(first.id));
+            self.set_selection_id(Some(first.id()));
         }
     }
 
@@ -1105,7 +1045,7 @@ impl<S: TrackerApplicationService> App<S> {
             tracking_timestamp(start, elapsed)
         });
 
-        let result = if was_active == Some(task.id) {
+        let result = if was_active == Some(task.id()) {
             self.application
                 .clear_active_task(active.expect("active task has a worklog").id(), occurred_at)
                 .map(|outcome| match outcome {
@@ -1114,7 +1054,7 @@ impl<S: TrackerApplicationService> App<S> {
                 })
         } else {
             self.application
-                .set_active_task(task.id, occurred_at)
+                .set_active_task(task.id(), occurred_at)
                 .map(|outcome| match outcome {
                     SetActiveTaskOutcome::Started { .. } => ("started", true),
                     SetActiveTaskOutcome::Switched { .. } => ("switched", true),
@@ -1174,7 +1114,7 @@ impl<S: TrackerApplicationService> App<S> {
         // selection on a sensible neighbor.
         let visible = self.tasks_in(self.view);
         let resolved = preferred
-            .and_then(|id| visible.iter().position(|task| task.id == id))
+            .and_then(|id| visible.iter().position(|task| task.id() == id))
             .or_else(|| {
                 previous_index
                     .filter(|_| !visible.is_empty())
@@ -1182,7 +1122,7 @@ impl<S: TrackerApplicationService> App<S> {
             });
         let id = resolved
             .and_then(|index| visible.get(index))
-            .map(|task| task.id);
+            .map(|task| task.id());
         self.set_selection_id(id);
     }
 
@@ -1204,7 +1144,7 @@ impl<S: TrackerApplicationService> App<S> {
             return;
         };
         self.mode = Mode::Input {
-            purpose: InputPurpose::Rename { task_id: task.id },
+            purpose: InputPurpose::Rename { task_id: task.id() },
             buffer: task.name().to_string(),
         };
     }
@@ -1217,7 +1157,7 @@ impl<S: TrackerApplicationService> App<S> {
             return;
         };
         self.mode = Mode::ConfirmArchive {
-            task_id: task.id,
+            task_id: task.id(),
             name: task.name().to_string(),
         };
     }
@@ -1251,14 +1191,11 @@ impl<S: TrackerApplicationService> App<S> {
         let Some(task) = self.selected_task().cloned() else {
             return;
         };
-        match self.application.unarchive_task(task.id, Utc::now()) {
-            Ok(TaskOutcome::Unarchived(restored)) => {
-                self.active_selection = Some(restored.id);
+        match self.application.unarchive_task(task.id(), Utc::now()) {
+            Ok(restored) => {
+                self.active_selection = Some(restored.id());
                 self.sync_from_application(false);
                 self.status = Status::Info(format!("Restored \"{}\"", restored.name()));
-            }
-            Ok(TaskOutcome::Created(_) | TaskOutcome::Renamed(_) | TaskOutcome::Archived(_)) => {
-                unreachable!("unarchive returned another task outcome")
             }
             Err(error) => {
                 self.sync_from_application(false);
@@ -1280,15 +1217,15 @@ impl<S: TrackerApplicationService> App<S> {
         let Some(task) = self.selected_task().cloned() else {
             return;
         };
-        let result = self.application.worklogs_for_task(task.id, None);
+        let result = self.application.worklogs_for_task(task.id(), None);
         self.sync_from_application(false);
         match result {
             Ok(page) => {
                 let selected = page.worklogs.first().map(|worklog| worklog.id());
                 let active_worklog_baseline =
-                    active_worklog_for_task(&page.snapshot.active_worklog, task.id);
+                    active_worklog_for_task(&page.snapshot.active_worklog, task.id());
                 self.history = Some(History {
-                    task_id: task.id,
+                    task_id: task.id(),
                     availability: HistoryAvailability::Available,
                     worklogs: page.worklogs,
                     next_cursor: page.next_cursor,
@@ -1469,9 +1406,10 @@ impl<S: TrackerApplicationService> App<S> {
                     Status::Info(format!("Loaded {loaded} older worklogs"))
                 };
             }
-            Err(ApplicationError::Repository(RepositoryError::WorklogHistoryChanged {
-                ..
-            })) => {
+            Err(error)
+                if error.failure().category()
+                    == ApplicationFailureCategory::WorklogHistoryChanged =>
+            {
                 self.reload_newest_history_after_change(task_id);
             }
             Err(error) => {
@@ -1601,7 +1539,7 @@ impl<S: TrackerApplicationService> App<S> {
             .application
             .delete_completed_worklog(target_id, task_id, worklog.times());
         match result {
-            Ok(DeleteCompletedWorklogOutcome::Deleted { .. }) => {
+            Ok(_) => {
                 self.remove_deleted_worklog(target_id);
                 self.sync_tasks_from_application();
                 self.mode = Mode::Normal;
@@ -1727,7 +1665,7 @@ impl<S: TrackerApplicationService> App<S> {
             .application
             .correct_worklog(draft.id, draft.expected, replacement, occurred_at)
         {
-            Ok(CorrectWorklogOutcome::Corrected { worklog }) => {
+            Ok(worklog) => {
                 let task_id = self
                     .history
                     .as_ref()
@@ -1805,21 +1743,19 @@ impl<S: TrackerApplicationService> App<S> {
                 self.application.rename_task(task_id, name, occurred_at)
             }
         };
-        match result {
-            Ok(TaskOutcome::Created(task)) => {
+        match (purpose, result) {
+            (InputPurpose::Add, Ok(task)) => {
                 self.sync_tasks_from_application();
-                self.set_selection_id(Some(task.id));
+                self.set_selection_id(Some(task.id()));
                 self.mode = Mode::Normal;
                 self.status = Status::Info(format!("Added \"{}\"", task.name()));
             }
-            Ok(TaskOutcome::Renamed(task)) => {
+            (InputPurpose::Rename { .. }, Ok(task)) => {
                 self.sync_tasks_from_application();
                 self.mode = Mode::Normal;
                 self.status = Status::Info(format!("Renamed to \"{}\"", task.name()));
             }
-            Ok(TaskOutcome::Archived(_)) => unreachable!("input cannot archive a task"),
-            Ok(TaskOutcome::Unarchived(_)) => unreachable!("input cannot unarchive a task"),
-            Err(error) => self.status = Status::Error(application_error_text(&error)),
+            (_, Err(error)) => self.status = Status::Error(application_error_text(&error)),
         }
     }
 
@@ -1828,15 +1764,15 @@ impl<S: TrackerApplicationService> App<S> {
             return;
         };
         match self.application.archive_task(task_id, Utc::now()) {
-            Ok(TaskOutcome::Archived(task)) => {
+            Ok(task) => {
                 self.sync_from_application(false);
                 // The archived view will select the newly archived task when
                 // opened.
-                self.archived_selection = Some(task.id);
+                self.archived_selection = Some(task.id());
                 self.mode = Mode::Normal;
                 self.status = Status::Info(format!("Archived \"{}\"", task.name()));
             }
-            Err(ApplicationError::Domain(TrackingError::TaskIsActive { .. })) => {
+            Err(error) if error.failure().category() == ApplicationFailureCategory::ActiveTask => {
                 self.sync_from_application(false);
                 self.mode = Mode::Normal;
                 self.status = Status::Error("The active task cannot be archived".to_owned());
@@ -1844,9 +1780,6 @@ impl<S: TrackerApplicationService> App<S> {
             Err(error) => {
                 self.sync_from_application(false);
                 self.status = Status::Error(application_error_text(&error));
-            }
-            Ok(TaskOutcome::Created(_) | TaskOutcome::Renamed(_) | TaskOutcome::Unarchived(_)) => {
-                unreachable!("archive returned another task outcome")
             }
         }
     }
@@ -1892,9 +1825,8 @@ mod tests {
     use chrono::{MappedLocalTime, NaiveDate, NaiveDateTime, TimeDelta};
     use std::cell::Cell;
     use tracker_application::{
-        CorrectWorklogOutcome, RepositoryError, TaskListItem, TaskOperations, TaskOutcome,
-        TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor, WorklogOperations,
-        WorklogPage, WorklogPageSnapshot, WorklogQueries,
+        TaskListItem, TaskOperations, TaskQueries, TrackerApplication, TrackingOperations,
+        WorklogCursor, WorklogOperations, WorklogPage, WorklogPageSnapshot, WorklogQueries,
     };
     use tracker_domain::{
         ActiveWorklog, Task, TaskId, TaskName, Worklog, WorklogCorrectionError, WorklogId,
@@ -1976,9 +1908,7 @@ mod tests {
         }
 
         fn failure() -> ApplicationError {
-            ApplicationError::Repository(RepositoryError::Backend {
-                message: "write failed".to_owned(),
-            })
+            ApplicationError::storage_failure("write failed")
         }
     }
 
@@ -1992,7 +1922,7 @@ mod tests {
                     latest_work_start: self
                         .latest_work_starts
                         .iter()
-                        .find(|(id, _)| *id == task.id)
+                        .find(|(id, _)| *id == task.id())
                         .map(|(_, start)| *start),
                     task,
                 })
@@ -2002,7 +1932,7 @@ mod tests {
         }
 
         fn task(&self, id: TaskId) -> Option<&Task> {
-            self.tasks.iter().find(|task| task.id == id)
+            self.tasks.iter().find(|task| task.id() == id)
         }
     }
 
@@ -2011,7 +1941,7 @@ mod tests {
             &mut self,
             name: TaskName,
             occurred_at: DateTime<Utc>,
-        ) -> Result<TaskOutcome, ApplicationError> {
+        ) -> Result<Task, ApplicationError> {
             if self.fail_create {
                 return Err(Self::failure());
             }
@@ -2021,7 +1951,7 @@ mod tests {
                 occurred_at,
             );
             self.tasks.push(task.clone());
-            Ok(TaskOutcome::Created(task))
+            Ok(task)
         }
 
         fn rename_task(
@@ -2029,31 +1959,31 @@ mod tests {
             id: TaskId,
             name: TaskName,
             occurred_at: DateTime<Utc>,
-        ) -> Result<TaskOutcome, ApplicationError> {
+        ) -> Result<Task, ApplicationError> {
             if self.fail_rename {
                 return Err(Self::failure());
             }
             let task = self
                 .tasks
                 .iter_mut()
-                .find(|task| task.id == id)
+                .find(|task| task.id() == id)
                 .expect("test task exists");
             task.rename(name, occurred_at);
-            Ok(TaskOutcome::Renamed(task.clone()))
+            Ok(task.clone())
         }
 
         fn archive_task(
             &mut self,
             id: TaskId,
             occurred_at: DateTime<Utc>,
-        ) -> Result<TaskOutcome, ApplicationError> {
+        ) -> Result<Task, ApplicationError> {
             if self.fail_archive {
                 return Err(Self::failure());
             }
             let task = self
                 .tasks
                 .iter_mut()
-                .find(|task| task.id == id)
+                .find(|task| task.id() == id)
                 .expect("test task exists");
             task.archive(occurred_at);
             let archived = task.clone();
@@ -2061,27 +1991,27 @@ mod tests {
                 let other = self
                     .tasks
                     .iter()
-                    .find(|task| task.id != id && !task.is_archived())
+                    .find(|task| task.id() != id && !task.is_archived())
                     .expect("the test service needs another active task");
                 self.tracking = TrackingState::Running {
-                    worklog: ActiveWorklog::begin(WorklogId::generate(), other.id, start),
+                    worklog: ActiveWorklog::begin(WorklogId::generate(), other.id(), start),
                 };
             }
-            Ok(TaskOutcome::Archived(archived))
+            Ok(archived)
         }
 
         fn unarchive_task(
             &mut self,
             id: TaskId,
             occurred_at: DateTime<Utc>,
-        ) -> Result<TaskOutcome, ApplicationError> {
+        ) -> Result<Task, ApplicationError> {
             if self.fail_unarchive {
                 return Err(Self::failure());
             }
             let task = self
                 .tasks
                 .iter_mut()
-                .find(|task| task.id == id)
+                .find(|task| task.id() == id)
                 .expect("test task exists");
             task.restore(occurred_at);
             // Stands in for a second client that restored the task and
@@ -2090,12 +2020,12 @@ mod tests {
                 self.tracking = TrackingState::Running {
                     worklog: ActiveWorklog::begin(
                         WorklogId::from_uuid(uuid::Uuid::from_u128(20)),
-                        task.id,
+                        task.id(),
                         start,
                     ),
                 };
             }
-            Ok(TaskOutcome::Unarchived(task.clone()))
+            Ok(task.clone())
         }
     }
 
@@ -2153,7 +2083,7 @@ mod tests {
             expected: WorklogTimes,
             replacement: WorklogTimes,
             occurred_at: DateTime<Utc>,
-        ) -> Result<CorrectWorklogOutcome, ApplicationError> {
+        ) -> Result<Worklog, ApplicationError> {
             self.correction_calls
                 .push((id, expected, replacement, occurred_at));
             if let Some(error) = self.correction_error.clone() {
@@ -2177,7 +2107,7 @@ mod tests {
                     ),
                 };
             }
-            Ok(CorrectWorklogOutcome::Corrected { worklog: corrected })
+            Ok(corrected)
         }
 
         fn delete_completed_worklog(
@@ -2185,25 +2115,19 @@ mod tests {
             id: WorklogId,
             task_id: TaskId,
             expected: WorklogTimes,
-        ) -> Result<DeleteCompletedWorklogOutcome, ApplicationError> {
+        ) -> Result<Worklog, ApplicationError> {
             self.deletion_calls.push((id, task_id, expected));
             let index = self
                 .authoritative_worklogs
                 .iter()
                 .position(|worklog| worklog.id() == id)
-                .ok_or(ApplicationError::WorklogDeletionWrite {
-                    write: RepositoryError::WorklogNotFound { id },
-                })?;
+                .ok_or_else(|| ApplicationError::worklog_not_found(id))?;
             let stored = &self.authoritative_worklogs[index];
             if stored.is_active() {
-                return Err(ApplicationError::WorklogDeletionWrite {
-                    write: RepositoryError::WorklogIsActive { id },
-                });
+                return Err(ApplicationError::active_worklog(id));
             }
             if stored.task_id() != task_id || stored.times() != expected {
-                return Err(ApplicationError::WorklogDeletionWrite {
-                    write: RepositoryError::WorklogChanged { id },
-                });
+                return Err(ApplicationError::worklog_changed(id));
             }
             if let Some(error) = self.deletion_error.clone() {
                 return Err(error);
@@ -2228,7 +2152,7 @@ mod tests {
             } else if let Some(latest) = latest {
                 self.latest_work_starts.push((task_id, latest));
             }
-            Ok(DeleteCompletedWorklogOutcome::Deleted { worklog })
+            Ok(worklog)
         }
     }
 
@@ -2280,14 +2204,14 @@ mod tests {
             repository
                 .insert_worklog(&Worklog::begin(
                     WorklogId::generate(),
-                    task.id,
+                    task.id(),
                     DateTime::from_timestamp(100, 0).unwrap(),
                 ))
                 .unwrap();
         }
         let app =
             App::load(TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap());
-        assert_eq!(app.active_task_id(), Some(task.id));
+        assert_eq!(app.active_task_id(), Some(task.id()));
         assert_eq!(
             app.status(),
             &Status::Info("Recovered the previous active timer".to_owned())
@@ -2356,7 +2280,7 @@ mod tests {
         app.handle(Command::Insert('t'));
         app.handle(Command::Confirm);
         assert_eq!(
-            app.tasks().iter().map(|task| task.id).collect::<Vec<_>>(),
+            app.tasks().iter().map(|task| task.id()).collect::<Vec<_>>(),
             vec![
                 TaskId::from_uuid(uuid::Uuid::from_u128(2)),
                 TaskId::from_uuid(uuid::Uuid::from_u128(1)),
@@ -2384,7 +2308,7 @@ mod tests {
         app.application.tasks.insert(1, task(2, "two"));
         app.sync_tasks_from_application();
         assert_eq!(app.selected(), Some(2));
-        assert_eq!(app.tasks()[2].id, selected.id);
+        assert_eq!(app.tasks()[2].id(), selected.id());
     }
 
     #[test]
@@ -2483,7 +2407,7 @@ mod tests {
         app.handle(Command::OpenArchiveConfirm);
         app.handle(Command::Confirm);
 
-        assert_eq!(app.active_task_id(), Some(beta.id));
+        assert_eq!(app.active_task_id(), Some(beta.id()));
         assert_eq!(app.active_task_name(), Some("beta"));
         assert_eq!(app.status(), &Status::Info("Archived \"alpha\"".to_owned()));
     }
@@ -2506,7 +2430,7 @@ mod tests {
     #[test]
     fn space_starts_stops_and_restarts_with_separate_worklogs() {
         let mut app = app_with(&["alpha"]);
-        let task_id = app.tasks()[0].id;
+        let task_id = app.tasks()[0].id();
         app.handle(Command::ToggleTracking);
         assert_eq!(app.active_task_id(), Some(task_id));
         assert_eq!(text(app.status()), "Started \"alpha\"");
@@ -2528,7 +2452,7 @@ mod tests {
         let mut app = app_with(&["alpha", "beta"]);
         app.handle(Command::ToggleTracking);
         app.handle(Command::MoveDown);
-        let beta = app.tasks()[1].id;
+        let beta = app.tasks()[1].id();
         app.handle(Command::ToggleTracking);
         assert_eq!(app.active_task_id(), Some(beta));
         assert_eq!(
@@ -2575,7 +2499,7 @@ mod tests {
         switched_service.tracking = TrackingState::Running {
             worklog: ActiveWorklog::begin(
                 WorklogId::from_uuid(uuid::Uuid::from_u128(10)),
-                alpha.id,
+                alpha.id(),
                 old,
             ),
         };
@@ -2593,8 +2517,8 @@ mod tests {
     #[test]
     fn switching_uses_one_monotonic_timestamp_for_both_worklogs() {
         let mut app = app_with(&["alpha", "beta"]);
-        let alpha = app.tasks()[0].id;
-        let beta = app.tasks()[1].id;
+        let alpha = app.tasks()[0].id();
+        let beta = app.tasks()[1].id();
         app.handle(Command::ToggleTracking);
         app.freeze_elapsed_for_tests(Duration::from_secs(125));
         app.handle(Command::MoveDown);
@@ -2626,7 +2550,7 @@ mod tests {
         let repository = SqliteRepository::open(&path).unwrap();
         repository.create_task(task.clone()).unwrap();
         repository
-            .insert_worklog(&Worklog::begin(WorklogId::generate(), task.id, start))
+            .insert_worklog(&Worklog::begin(WorklogId::generate(), task.id(), start))
             .unwrap();
         let mut app = App::load(TrackerApplication::load(repository).unwrap());
 
@@ -2634,7 +2558,7 @@ mod tests {
 
         let stored = app
             .application
-            .worklogs_for_task(task.id, None)
+            .worklogs_for_task(task.id(), None)
             .unwrap()
             .worklogs
             .remove(0);
@@ -2652,7 +2576,7 @@ mod tests {
         let repository = SqliteRepository::open(&path).unwrap();
         repository.create_task(task.clone()).unwrap();
         repository
-            .insert_worklog(&Worklog::begin(WorklogId::generate(), task.id, start))
+            .insert_worklog(&Worklog::begin(WorklogId::generate(), task.id(), start))
             .unwrap();
         let mut app = App::load(TrackerApplication::load(repository).unwrap());
         app.freeze_elapsed_for_tests(Duration::from_secs(5));
@@ -2662,7 +2586,7 @@ mod tests {
 
         let stored = app
             .application
-            .worklogs_for_task(task.id, None)
+            .worklogs_for_task(task.id(), None)
             .unwrap()
             .worklogs
             .remove(0);
@@ -2708,7 +2632,7 @@ mod tests {
             service.tracking = TrackingState::Running {
                 worklog: ActiveWorklog::begin(
                     WorklogId::from_uuid(uuid::Uuid::from_u128(10)),
-                    task.id,
+                    task.id(),
                     DateTime::from_timestamp(100, 0).unwrap(),
                 ),
             };
@@ -2718,7 +2642,7 @@ mod tests {
             }
             app.handle(Command::Quit);
             assert!(!app.is_running());
-            assert_eq!(app.active_task_id(), Some(task.id));
+            assert_eq!(app.active_task_id(), Some(task.id()));
         }
     }
 
@@ -2850,15 +2774,15 @@ mod tests {
         ]));
 
         app.handle(Command::MoveDown);
-        assert_eq!(app.tasks()[app.selected().unwrap()].id, active.id);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id(), active.id());
         app.handle(Command::ShowArchivedTasks);
         app.handle(Command::MoveDown);
-        assert_eq!(app.tasks()[app.selected().unwrap()].id, archived.id);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id(), archived.id());
 
         app.handle(Command::CycleOrdering);
-        assert_eq!(app.tasks()[app.selected().unwrap()].id, archived.id);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id(), archived.id());
         app.handle(Command::ShowActiveTasks);
-        assert_eq!(app.tasks()[app.selected().unwrap()].id, active.id);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id(), active.id());
     }
 
     #[test]
@@ -2884,27 +2808,27 @@ mod tests {
             .iter()
             .find(|task| task.name().as_str() == "alpha")
             .unwrap()
-            .id;
+            .id();
         let beta = app
             .tasks()
             .iter()
             .find(|task| task.name().as_str() == "beta")
             .unwrap()
-            .id;
+            .id();
 
         app.handle(Command::MoveDown);
         app.handle(Command::ToggleTracking);
-        assert_eq!(app.tasks()[0].id, beta);
-        assert_eq!(app.tasks()[app.selected().unwrap()].id, beta);
+        assert_eq!(app.tasks()[0].id(), beta);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id(), beta);
 
         app.handle(Command::MoveDown);
         app.handle(Command::ToggleTracking);
-        assert_eq!(app.tasks()[0].id, alpha);
-        assert_eq!(app.tasks()[app.selected().unwrap()].id, alpha);
+        assert_eq!(app.tasks()[0].id(), alpha);
+        assert_eq!(app.tasks()[app.selected().unwrap()].id(), alpha);
 
         app.handle(Command::ToggleTracking);
-        assert_eq!(app.tasks()[0].id, alpha, "stopping does not reorder");
-        assert_eq!(app.tasks()[app.selected().unwrap()].id, alpha);
+        assert_eq!(app.tasks()[0].id(), alpha, "stopping does not reorder");
+        assert_eq!(app.tasks()[app.selected().unwrap()].id(), alpha);
     }
 
     #[test]
@@ -2920,8 +2844,8 @@ mod tests {
         app.handle(Command::Confirm);
 
         assert_eq!(app.ordering(), TaskOrdering::RecentlyUpdated);
-        assert_eq!(app.tasks()[0].id, beta.id);
-        assert_eq!(app.tasks()[app.selected().unwrap()].id, beta.id);
+        assert_eq!(app.tasks()[0].id(), beta.id());
+        assert_eq!(app.tasks()[app.selected().unwrap()].id(), beta.id());
     }
 
     #[test]
@@ -2987,7 +2911,7 @@ mod tests {
         app.handle(Command::ShowActiveTasks);
         assert_eq!(app.selected(), Some(1), "the active selection came back");
         assert_eq!(
-            app.tasks()[1].id,
+            app.tasks()[1].id(),
             TaskId::from_uuid(uuid::Uuid::from_u128(2))
         );
 
@@ -3127,7 +3051,7 @@ mod tests {
         app.handle(Command::ShowArchivedTasks);
         assert_eq!(app.selected(), Some(0));
         assert_eq!(
-            app.tasks()[0].id,
+            app.tasks()[0].id(),
             TaskId::from_uuid(uuid::Uuid::from_u128(2))
         );
     }
@@ -3144,7 +3068,7 @@ mod tests {
         assert_eq!(app.tasks().len(), 1);
         assert_eq!(app.selected(), Some(0));
         assert_eq!(
-            app.tasks()[0].id,
+            app.tasks()[0].id(),
             TaskId::from_uuid(uuid::Uuid::from_u128(1))
         );
     }
@@ -3168,7 +3092,7 @@ mod tests {
         assert_eq!(app.tasks().len(), 3);
         assert_eq!(app.selected(), Some(2), "the restored task is selected");
         assert_eq!(
-            app.tasks()[2].id,
+            app.tasks()[2].id(),
             TaskId::from_uuid(uuid::Uuid::from_u128(3))
         );
     }
@@ -3188,7 +3112,7 @@ mod tests {
         assert_eq!(app.tasks().len(), 1);
         assert_eq!(app.selected(), Some(0));
         assert_eq!(
-            app.tasks()[0].id,
+            app.tasks()[0].id(),
             TaskId::from_uuid(uuid::Uuid::from_u128(3))
         );
     }
@@ -3213,7 +3137,7 @@ mod tests {
         assert_eq!(app.view(), TaskView::Archived);
         assert_eq!(app.selected(), Some(0));
         assert_eq!(
-            app.tasks()[0].id,
+            app.tasks()[0].id(),
             TaskId::from_uuid(uuid::Uuid::from_u128(3))
         );
         assert_eq!(
@@ -3249,7 +3173,7 @@ mod tests {
         app.handle(Command::ShowActiveTasks);
         assert_eq!(app.selected(), Some(1), "the restored task is selected");
         assert_eq!(
-            app.tasks()[1].id,
+            app.tasks()[1].id(),
             TaskId::from_uuid(uuid::Uuid::from_u128(3))
         );
     }
@@ -3262,7 +3186,7 @@ mod tests {
         app.tracking = TrackingState::Running {
             worklog: ActiveWorklog::begin(
                 WorklogId::from_uuid(uuid::Uuid::from_u128(10)),
-                alpha.id,
+                alpha.id(),
                 DateTime::from_timestamp(100, 0).unwrap(),
             ),
         };
@@ -3326,7 +3250,7 @@ mod tests {
     #[test]
     fn deletion_opening_requires_normal_history_mode() {
         let alpha = task(1, "alpha");
-        let target = history_worklog(10, alpha.id, 100);
+        let target = history_worklog(10, alpha.id(), 100);
         let mut service = TestService::with_tasks(vec![alpha]);
         service.worklog_pages = vec![Ok(page(vec![target.clone()], None))];
         service.authoritative_worklogs = vec![target];
@@ -3349,11 +3273,11 @@ mod tests {
     #[test]
     fn completed_deletion_uses_the_snapshot_and_preserves_the_cursor() {
         let alpha = task(1, "alpha");
-        let target = history_worklog(12, alpha.id, 300);
-        let following = history_worklog(11, alpha.id, 200);
+        let target = history_worklog(12, alpha.id(), 300);
+        let following = history_worklog(11, alpha.id(), 200);
         let cursor = cursor(200, 11);
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
-        service.latest_work_starts = vec![(alpha.id, target.start())];
+        service.latest_work_starts = vec![(alpha.id(), target.start())];
         service.worklog_pages = vec![Ok(page(
             vec![target.clone(), following.clone()],
             Some(cursor),
@@ -3368,7 +3292,7 @@ mod tests {
 
         assert_eq!(
             app.application.deletion_calls,
-            vec![(target.id(), alpha.id, target.times())]
+            vec![(target.id(), alpha.id(), target.times())]
         );
         let history = app.history().unwrap();
         assert_eq!(history.worklogs, vec![following.clone()]);
@@ -3387,9 +3311,9 @@ mod tests {
     fn deletion_selection_moves_to_the_following_row_or_previous_row() {
         let alpha = task(1, "alpha");
         let rows = vec![
-            history_worklog(13, alpha.id, 300),
-            history_worklog(12, alpha.id, 200),
-            history_worklog(11, alpha.id, 100),
+            history_worklog(13, alpha.id(), 300),
+            history_worklog(12, alpha.id(), 200),
+            history_worklog(11, alpha.id(), 100),
         ];
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![Ok(page(rows.clone(), None))];
@@ -3436,9 +3360,9 @@ mod tests {
     fn repeated_successful_deletions_update_the_latest_work_aggregate() {
         let alpha = task(1, "alpha");
         let rows = vec![
-            history_worklog(13, alpha.id, 300),
-            history_worklog(12, alpha.id, 200),
-            history_worklog(11, alpha.id, 100),
+            history_worklog(13, alpha.id(), 300),
+            history_worklog(12, alpha.id(), 200),
+            history_worklog(11, alpha.id(), 100),
         ];
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![Ok(page(rows.clone(), None))];
@@ -3460,54 +3384,43 @@ mod tests {
     fn test_deletion_uses_authoritative_worklogs_and_validates_the_snapshot() {
         let alpha = task(1, "alpha");
         let beta = task(2, "beta");
-        let target = history_worklog(10, alpha.id, 300);
-        let older = history_worklog(11, alpha.id, 200);
-        let active = Worklog::begin(worklog_id(12), alpha.id, at(100));
+        let target = history_worklog(10, alpha.id(), 300);
+        let older = history_worklog(11, alpha.id(), 200);
+        let active = Worklog::begin(worklog_id(12), alpha.id(), at(100));
         let mut service = TestService::with_tasks(vec![alpha.clone(), beta.clone()]);
         service.authoritative_worklogs = vec![target.clone(), older.clone(), active.clone()];
 
         assert_eq!(
-            service.delete_completed_worklog(worklog_id(99), alpha.id, target.times()),
-            Err(ApplicationError::WorklogDeletionWrite {
-                write: RepositoryError::WorklogNotFound { id: worklog_id(99) }
-            })
+            service.delete_completed_worklog(worklog_id(99), alpha.id(), target.times()),
+            Err(ApplicationError::worklog_not_found(worklog_id(99)))
         );
         assert_eq!(
-            service.delete_completed_worklog(active.id(), alpha.id, active.times()),
-            Err(ApplicationError::WorklogDeletionWrite {
-                write: RepositoryError::WorklogIsActive { id: active.id() }
-            })
+            service.delete_completed_worklog(active.id(), alpha.id(), active.times()),
+            Err(ApplicationError::active_worklog(active.id()))
         );
         assert_eq!(
-            service.delete_completed_worklog(target.id(), beta.id, target.times()),
-            Err(ApplicationError::WorklogDeletionWrite {
-                write: RepositoryError::WorklogChanged { id: target.id() }
-            })
+            service.delete_completed_worklog(target.id(), beta.id(), target.times()),
+            Err(ApplicationError::worklog_changed(target.id()))
         );
         assert_eq!(
             service.delete_completed_worklog(
                 target.id(),
-                alpha.id,
+                alpha.id(),
                 WorklogTimes::new(at(301), Some(at(361)))
             ),
-            Err(ApplicationError::WorklogDeletionWrite {
-                write: RepositoryError::WorklogChanged { id: target.id() }
-            })
+            Err(ApplicationError::worklog_changed(target.id()))
         );
 
         let outcome = service
-            .delete_completed_worklog(target.id(), alpha.id, target.times())
+            .delete_completed_worklog(target.id(), alpha.id(), target.times())
             .unwrap();
-        assert!(matches!(
-            outcome,
-            DeleteCompletedWorklogOutcome::Deleted { .. }
-        ));
+        assert_eq!(outcome, target);
         assert_eq!(service.authoritative_worklogs, vec![older, active]);
         assert_eq!(
             service
                 .latest_work_starts
                 .iter()
-                .find(|(task_id, _)| *task_id == alpha.id)
+                .find(|(task_id, _)| *task_id == alpha.id())
                 .map(|(_, start)| *start),
             Some(at(200))
         );
@@ -3516,10 +3429,10 @@ mod tests {
     #[test]
     fn deleting_the_loaded_newest_row_uses_an_unloaded_older_row_for_latest_work() {
         let alpha = task(1, "alpha");
-        let newest = history_worklog(10, alpha.id, 300);
-        let older = history_worklog(11, alpha.id, 200);
+        let newest = history_worklog(10, alpha.id(), 300);
+        let older = history_worklog(11, alpha.id(), 200);
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
-        service.latest_work_starts = vec![(alpha.id, newest.start())];
+        service.latest_work_starts = vec![(alpha.id(), newest.start())];
         service.worklog_pages = vec![Ok(page(vec![newest.clone()], Some(cursor(300, 10))))];
         service.authoritative_worklogs = vec![newest.clone(), older.clone()];
         let mut app = App::load(service);
@@ -3538,7 +3451,7 @@ mod tests {
     #[test]
     fn active_history_rows_are_not_deletable_and_archived_rows_are() {
         let alpha = task(1, "alpha");
-        let active = Worklog::begin(worklog_id(10), alpha.id, at(300));
+        let active = Worklog::begin(worklog_id(10), alpha.id(), at(300));
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![Ok(page(vec![active.clone()], None))];
         service.authoritative_worklogs = vec![active.clone()];
@@ -3553,7 +3466,7 @@ mod tests {
         assert!(app.application.deletion_calls.is_empty());
 
         let archived = archived_task(2, "archived");
-        let completed = history_worklog(11, archived.id, 100);
+        let completed = history_worklog(11, archived.id(), 100);
         let mut service = TestService::with_tasks(vec![archived.clone()]);
         service.worklog_pages = vec![Ok(page(vec![completed.clone()], None))];
         service.authoritative_worklogs = vec![completed.clone()];
@@ -3567,15 +3480,11 @@ mod tests {
     #[test]
     fn deletion_cancel_and_ordinary_failure_keep_the_snapshot() {
         let alpha = task(1, "alpha");
-        let target = history_worklog(10, alpha.id, 100);
+        let target = history_worklog(10, alpha.id(), 100);
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![Ok(page(vec![target.clone()], None))];
         service.authoritative_worklogs = vec![target.clone()];
-        service.deletion_error = Some(ApplicationError::WorklogDeletionWrite {
-            write: RepositoryError::Backend {
-                message: "private backend detail".to_owned(),
-            },
-        });
+        service.deletion_error = Some(ApplicationError::storage_failure("private backend detail"));
         let mut app = App::load(service);
         app.handle(Command::OpenHistory);
         app.handle(Command::OpenDeletion);
@@ -3591,16 +3500,14 @@ mod tests {
     #[test]
     fn deletion_recovery_failure_keeps_the_snapshot_without_refreshing_history() {
         let alpha = task(1, "alpha");
-        let target = history_worklog(10, alpha.id, 100);
+        let target = history_worklog(10, alpha.id(), 100);
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![Ok(page(vec![target.clone()], None))];
         service.authoritative_worklogs = vec![target.clone()];
-        service.deletion_error = Some(ApplicationError::WorklogDeletionRecovery {
-            write: RepositoryError::WorklogChanged { id: target.id() },
-            recovery: RepositoryError::Backend {
-                message: "recovery secret".to_owned(),
-            },
-        });
+        service.deletion_error = Some(ApplicationError::deletion_changed_with_recovery_failure(
+            target.id(),
+            "recovery secret",
+        ));
         let mut app = App::load(service);
         app.handle(Command::OpenHistory);
         app.handle(Command::OpenDeletion);
@@ -3619,17 +3526,15 @@ mod tests {
     #[test]
     fn stale_deletion_refreshes_and_requires_confirmation_again() {
         let alpha = task(1, "alpha");
-        let target = history_worklog(10, alpha.id, 100);
-        let newest = history_worklog(10, alpha.id, 120);
+        let target = history_worklog(10, alpha.id(), 100);
+        let newest = history_worklog(10, alpha.id(), 120);
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![
             Ok(page(vec![target.clone()], Some(cursor(100, 10)))),
             Ok(page(vec![newest.clone()], None)),
         ];
         service.authoritative_worklogs = vec![target.clone()];
-        service.deletion_error = Some(ApplicationError::WorklogDeletionWrite {
-            write: RepositoryError::WorklogNotFound { id: target.id() },
-        });
+        service.deletion_error = Some(ApplicationError::worklog_not_found(target.id()));
         let mut app = App::load(service);
         app.handle(Command::OpenHistory);
         app.handle(Command::OpenDeletion);
@@ -3648,17 +3553,15 @@ mod tests {
     #[test]
     fn changed_deletion_of_a_missing_row_reports_a_refresh() {
         let alpha = task(1, "alpha");
-        let target = history_worklog(10, alpha.id, 100);
-        let replacement = history_worklog(11, alpha.id, 200);
+        let target = history_worklog(10, alpha.id(), 100);
+        let replacement = history_worklog(11, alpha.id(), 200);
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![
             Ok(page(vec![target.clone()], None)),
             Ok(page(vec![replacement], None)),
         ];
         service.authoritative_worklogs = vec![target.clone()];
-        service.deletion_error = Some(ApplicationError::WorklogDeletionWrite {
-            write: RepositoryError::WorklogChanged { id: target.id() },
-        });
+        service.deletion_error = Some(ApplicationError::worklog_changed(target.id()));
         let mut app = App::load(service);
         app.handle(Command::OpenHistory);
         app.handle(Command::OpenDeletion);
@@ -3673,16 +3576,14 @@ mod tests {
     #[test]
     fn failed_stale_refresh_discards_rows_and_marks_history_unavailable() {
         let alpha = task(1, "alpha");
-        let target = history_worklog(10, alpha.id, 100);
+        let target = history_worklog(10, alpha.id(), 100);
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![
             Ok(page(vec![target.clone()], None)),
             Err(TestService::failure()),
         ];
         service.authoritative_worklogs = vec![target.clone()];
-        service.deletion_error = Some(ApplicationError::WorklogDeletionWrite {
-            write: RepositoryError::WorklogNotFound { id: target.id() },
-        });
+        service.deletion_error = Some(ApplicationError::worklog_not_found(target.id()));
         let mut app = App::load(service);
         app.handle(Command::OpenHistory);
         app.handle(Command::OpenDeletion);
@@ -3706,9 +3607,9 @@ mod tests {
     fn deleting_loaded_pages_then_loading_older_selects_the_first_appended_row() {
         let alpha = task(1, "alpha");
         let loaded = (1..=50)
-            .map(|tag| history_worklog(tag, alpha.id, 2_000 - tag as i64))
+            .map(|tag| history_worklog(tag, alpha.id(), 2_000 - tag as i64))
             .collect::<Vec<_>>();
-        let older = history_worklog(51, alpha.id, 1_900);
+        let older = history_worklog(51, alpha.id(), 1_900);
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![
             Ok(page(loaded.clone(), Some(cursor(1_950, 50)))),
@@ -3740,17 +3641,15 @@ mod tests {
     #[test]
     fn active_race_refreshes_history_and_keeps_confirmation_closed() {
         let alpha = task(1, "alpha");
-        let completed = history_worklog(10, alpha.id, 100);
-        let active = Worklog::begin(completed.id(), alpha.id, at(100));
+        let completed = history_worklog(10, alpha.id(), 100);
+        let active = Worklog::begin(completed.id(), alpha.id(), at(100));
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![
             Ok(page(vec![completed.clone()], None)),
             Ok(page(vec![active.clone()], None)),
         ];
         service.authoritative_worklogs = vec![completed];
-        service.deletion_error = Some(ApplicationError::WorklogDeletionWrite {
-            write: RepositoryError::WorklogIsActive { id: active.id() },
-        });
+        service.deletion_error = Some(ApplicationError::active_worklog(active.id()));
         let mut app = App::load(service);
         app.handle(Command::OpenHistory);
         app.handle(Command::OpenDeletion);
@@ -3764,11 +3663,11 @@ mod tests {
     #[test]
     fn successful_deletion_does_not_reanchor_an_unrelated_timer() {
         let alpha = task(1, "alpha");
-        let target = history_worklog(10, alpha.id, 100);
-        let active = Worklog::begin(worklog_id(11), alpha.id, at(300));
+        let target = history_worklog(10, alpha.id(), 100);
+        let active = Worklog::begin(worklog_id(11), alpha.id(), at(300));
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.tracking = TrackingState::Running {
-            worklog: ActiveWorklog::begin(active.id(), alpha.id, active.start()),
+            worklog: ActiveWorklog::begin(active.id(), alpha.id(), active.start()),
         };
         service.worklog_pages = vec![Ok(page_with_active(
             vec![active.clone(), target.clone()],
@@ -3791,12 +3690,12 @@ mod tests {
         let alpha = task(1, "alpha");
         let first = page(
             vec![
-                history_worklog(11, alpha.id, 200),
-                history_worklog(10, alpha.id, 100),
+                history_worklog(11, alpha.id(), 200),
+                history_worklog(10, alpha.id(), 100),
             ],
             Some(cursor(100, 10)),
         );
-        let second = page(vec![history_worklog(12, alpha.id, 300)], None);
+        let second = page(vec![history_worklog(12, alpha.id(), 300)], None);
         let mut service = TestService::with_tasks(vec![alpha.clone(), task(2, "beta")]);
         service.worklog_pages = vec![Ok(first.clone()), Ok(second.clone())];
         let mut app = App::load(service);
@@ -3805,7 +3704,7 @@ mod tests {
 
         assert_eq!(app.screen(), Screen::WorklogHistory);
         let history = app.history().expect("the history is open");
-        assert_eq!(history.task_id, alpha.id);
+        assert_eq!(history.task_id, alpha.id());
         assert_eq!(history.worklogs, first.worklogs);
         assert_eq!(history.next_cursor, first.next_cursor);
         assert_eq!(
@@ -3825,7 +3724,7 @@ mod tests {
         assert_eq!(app.screen(), Screen::TaskList);
         assert_eq!(app.history(), None);
         assert_eq!(app.selected(), Some(0));
-        assert_eq!(app.tasks()[0].id, alpha.id);
+        assert_eq!(app.tasks()[0].id(), alpha.id());
 
         app.handle(Command::OpenHistory);
         assert_eq!(app.history().unwrap().worklogs, second.worklogs);
@@ -3892,14 +3791,14 @@ mod tests {
     fn enter_opens_the_history_from_the_archived_view() {
         let gone = archived_task(3, "gone");
         let mut service = TestService::with_tasks(vec![task(1, "alpha"), gone.clone()]);
-        service.worklog_pages = vec![Ok(page(vec![history_worklog(5, gone.id, 100)], None))];
+        service.worklog_pages = vec![Ok(page(vec![history_worklog(5, gone.id(), 100)], None))];
         let mut app = App::load(service);
         app.handle(Command::ShowArchivedTasks);
 
         app.handle(Command::OpenHistory);
 
         assert_eq!(app.screen(), Screen::WorklogHistory);
-        assert_eq!(app.history().unwrap().task_id, gone.id);
+        assert_eq!(app.history().unwrap().task_id, gone.id());
 
         app.handle(Command::BackToTaskList);
         assert_eq!(app.view(), TaskView::Archived);
@@ -3941,9 +3840,9 @@ mod tests {
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![Ok(page(
             vec![
-                history_worklog(13, alpha.id, 300),
-                history_worklog(12, alpha.id, 200),
-                history_worklog(11, alpha.id, 100),
+                history_worklog(13, alpha.id(), 300),
+                history_worklog(12, alpha.id(), 200),
+                history_worklog(11, alpha.id(), 100),
             ],
             None,
         ))];
@@ -3982,15 +3881,15 @@ mod tests {
         let alpha = task(1, "alpha");
         let first = page(
             vec![
-                history_worklog(20, alpha.id, 200),
-                history_worklog(19, alpha.id, 100),
+                history_worklog(20, alpha.id(), 200),
+                history_worklog(19, alpha.id(), 100),
             ],
             Some(cursor(100, 19)),
         );
         let older = page(
             vec![
-                history_worklog(18, alpha.id, 50),
-                history_worklog(17, alpha.id, 40),
+                history_worklog(18, alpha.id(), 50),
+                history_worklog(17, alpha.id(), 40),
             ],
             None,
         );
@@ -4030,10 +3929,10 @@ mod tests {
     #[test]
     fn loading_older_reloads_newest_when_the_loaded_active_worklog_stopped() {
         let alpha = task(1, "alpha");
-        let active = Worklog::begin(worklog_id(20), alpha.id, at(200));
+        let active = Worklog::begin(worklog_id(20), alpha.id(), at(200));
         let first = page(vec![active], Some(cursor(200, 20)));
-        let continuation = page_with_active(vec![history_worklog(19, alpha.id, 100)], None, None);
-        let newest = page(vec![history_worklog(20, alpha.id, 200)], None);
+        let continuation = page_with_active(vec![history_worklog(19, alpha.id(), 100)], None, None);
+        let newest = page(vec![history_worklog(20, alpha.id(), 200)], None);
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![Ok(first), Ok(continuation), Ok(newest)];
         let mut app = App::load(service);
@@ -4061,10 +3960,13 @@ mod tests {
     #[test]
     fn loading_older_appends_when_the_active_worklog_is_unchanged() {
         let alpha = task(1, "alpha");
-        let active = Worklog::begin(worklog_id(20), alpha.id, at(200));
+        let active = Worklog::begin(worklog_id(20), alpha.id(), at(200));
         let first = page(vec![active.clone()], Some(cursor(200, 20)));
-        let continuation =
-            page_with_active(vec![history_worklog(19, alpha.id, 100)], Some(active), None);
+        let continuation = page_with_active(
+            vec![history_worklog(19, alpha.id(), 100)],
+            Some(active),
+            None,
+        );
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![Ok(first), Ok(continuation)];
         let mut app = App::load(service);
@@ -4091,17 +3993,21 @@ mod tests {
     #[test]
     fn loading_older_appends_an_unchanged_active_worklog_after_a_full_newest_page() {
         let alpha = task(1, "alpha");
-        let active = Worklog::begin(worklog_id(51), alpha.id, at(500));
+        let active = Worklog::begin(worklog_id(51), alpha.id(), at(500));
         let newest = (1..=50)
-            .map(|tag| Worklog::new(worklog_id(tag), alpha.id, at(500), Some(at(500))).unwrap())
+            .map(|tag| Worklog::new(worklog_id(tag), alpha.id(), at(500), Some(at(500))).unwrap())
             .collect();
         let first = page_with_active(newest, Some(active.clone()), Some(cursor(500, 50)));
         let continuation = page_with_active(
-            vec![active.clone(), history_worklog(52, alpha.id, 400)],
+            vec![active.clone(), history_worklog(52, alpha.id(), 400)],
             Some(active.clone()),
             Some(cursor(400, 52)),
         );
-        let older = page_with_active(vec![history_worklog(53, alpha.id, 300)], Some(active), None);
+        let older = page_with_active(
+            vec![history_worklog(53, alpha.id(), 300)],
+            Some(active),
+            None,
+        );
         let mut service = TestService::with_tasks(vec![alpha]);
         service.worklog_pages = vec![Ok(first), Ok(continuation), Ok(older)];
         let mut app = App::load(service);
@@ -4127,12 +4033,12 @@ mod tests {
     fn loading_older_reloads_newest_when_the_active_worklog_start_changes() {
         let alpha = task(1, "alpha");
         let first = page(
-            vec![Worklog::begin(worklog_id(20), alpha.id, at(200))],
+            vec![Worklog::begin(worklog_id(20), alpha.id(), at(200))],
             Some(cursor(200, 20)),
         );
-        let active = Worklog::begin(worklog_id(20), alpha.id, at(300));
+        let active = Worklog::begin(worklog_id(20), alpha.id(), at(300));
         let continuation = page_with_active(
-            vec![history_worklog(19, alpha.id, 100)],
+            vec![history_worklog(19, alpha.id(), 100)],
             Some(active.clone()),
             None,
         );
@@ -4165,20 +4071,20 @@ mod tests {
         let alpha = task(1, "alpha");
         let first = page(
             vec![
-                history_worklog(20, alpha.id, 200),
-                history_worklog(19, alpha.id, 100),
+                history_worklog(20, alpha.id(), 200),
+                history_worklog(19, alpha.id(), 100),
             ],
             Some(cursor(100, 19)),
         );
-        let active = Worklog::begin(worklog_id(21), alpha.id, at(300));
+        let active = Worklog::begin(worklog_id(21), alpha.id(), at(300));
         let continuation = page_with_active(
-            vec![history_worklog(18, alpha.id, 50)],
+            vec![history_worklog(18, alpha.id(), 50)],
             Some(active.clone()),
             None,
         );
         let newest = page_with_active(
-            vec![active, history_worklog(20, alpha.id, 200)],
-            Some(Worklog::begin(worklog_id(21), alpha.id, at(300))),
+            vec![active, history_worklog(20, alpha.id(), 200)],
+            Some(Worklog::begin(worklog_id(21), alpha.id(), at(300))),
             Some(cursor(200, 20)),
         );
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
@@ -4210,14 +4116,14 @@ mod tests {
         let beta = task(2, "beta");
         let first = page(
             vec![
-                history_worklog(20, alpha.id, 200),
-                history_worklog(19, alpha.id, 100),
+                history_worklog(20, alpha.id(), 200),
+                history_worklog(19, alpha.id(), 100),
             ],
             Some(cursor(100, 19)),
         );
         let continuation = page_with_active(
-            vec![history_worklog(18, alpha.id, 50)],
-            Some(Worklog::begin(worklog_id(21), beta.id, at(300))),
+            vec![history_worklog(18, alpha.id(), 50)],
+            Some(Worklog::begin(worklog_id(21), beta.id(), at(300))),
             None,
         );
         let mut service = TestService::with_tasks(vec![alpha.clone(), beta]);
@@ -4246,9 +4152,9 @@ mod tests {
     #[test]
     fn a_failed_active_row_reload_marks_history_unavailable() {
         let alpha = task(1, "alpha");
-        let active = Worklog::begin(worklog_id(20), alpha.id, at(200));
+        let active = Worklog::begin(worklog_id(20), alpha.id(), at(200));
         let first = page(vec![active], Some(cursor(200, 20)));
-        let continuation = page_with_active(vec![history_worklog(19, alpha.id, 100)], None, None);
+        let continuation = page_with_active(vec![history_worklog(19, alpha.id(), 100)], None, None);
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![Ok(first), Ok(continuation), Err(TestService::failure())];
         let mut app = App::load(service);
@@ -4266,7 +4172,7 @@ mod tests {
     fn loading_older_at_the_end_of_the_history_changes_nothing() {
         let alpha = task(1, "alpha");
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
-        service.worklog_pages = vec![Ok(page(vec![history_worklog(20, alpha.id, 200)], None))];
+        service.worklog_pages = vec![Ok(page(vec![history_worklog(20, alpha.id(), 200)], None))];
         let mut app = App::load(service);
         app.handle(Command::OpenHistory);
 
@@ -4287,8 +4193,8 @@ mod tests {
         let alpha = task(1, "alpha");
         let first = page(
             vec![
-                history_worklog(20, alpha.id, 200),
-                history_worklog(19, alpha.id, 100),
+                history_worklog(20, alpha.id(), 200),
+                history_worklog(19, alpha.id(), 100),
             ],
             Some(cursor(100, 19)),
         );
@@ -4316,24 +4222,22 @@ mod tests {
         let alpha = task(1, "alpha");
         let first = page(
             vec![
-                history_worklog(20, alpha.id, 200),
-                history_worklog(19, alpha.id, 100),
+                history_worklog(20, alpha.id(), 200),
+                history_worklog(19, alpha.id(), 100),
             ],
             Some(cursor(100, 19)),
         );
         let newest = page(
             vec![
-                history_worklog(21, alpha.id, 300),
-                history_worklog(19, alpha.id, 90),
+                history_worklog(21, alpha.id(), 300),
+                history_worklog(19, alpha.id(), 90),
             ],
             Some(cursor(90, 19)),
         );
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![
             Ok(first),
-            Err(ApplicationError::Repository(
-                RepositoryError::WorklogHistoryChanged { task_id: alpha.id },
-            )),
+            Err(ApplicationError::worklog_history_changed(alpha.id())),
             Ok(newest),
         ];
         let mut app = App::load(service);
@@ -4361,17 +4265,15 @@ mod tests {
         let alpha = task(1, "alpha");
         let first = page(
             vec![
-                history_worklog(20, alpha.id, 200),
-                history_worklog(19, alpha.id, 100),
+                history_worklog(20, alpha.id(), 200),
+                history_worklog(19, alpha.id(), 100),
             ],
             Some(cursor(100, 19)),
         );
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![
             Ok(first),
-            Err(ApplicationError::Repository(
-                RepositoryError::WorklogHistoryChanged { task_id: alpha.id },
-            )),
+            Err(ApplicationError::worklog_history_changed(alpha.id())),
             Err(TestService::failure()),
         ];
         let mut app = App::load(service);
@@ -4397,15 +4299,15 @@ mod tests {
         let alpha = task(1, "alpha");
         let first = page(
             vec![
-                history_worklog(20, alpha.id, 200),
-                history_worklog(19, alpha.id, 100),
+                history_worklog(20, alpha.id(), 200),
+                history_worklog(19, alpha.id(), 100),
             ],
             Some(cursor(100, 19)),
         );
         let newest = page(
             vec![
-                history_worklog(21, alpha.id, 300),
-                history_worklog(19, alpha.id, 100),
+                history_worklog(21, alpha.id(), 300),
+                history_worklog(19, alpha.id(), 100),
             ],
             None,
         );
@@ -4441,16 +4343,16 @@ mod tests {
         let alpha = task(1, "alpha");
         let first = page(
             vec![
-                history_worklog(20, alpha.id, 300),
-                history_worklog(19, alpha.id, 200),
-                history_worklog(18, alpha.id, 100),
+                history_worklog(20, alpha.id(), 300),
+                history_worklog(19, alpha.id(), 200),
+                history_worklog(18, alpha.id(), 100),
             ],
             Some(cursor(100, 18)),
         );
-        let older = page(vec![history_worklog(17, alpha.id, 50)], None);
+        let older = page(vec![history_worklog(17, alpha.id(), 50)], None);
         // The reload keeps only the newest page; the selected worklog of
         // the longer loaded range is not on it.
-        let newest = page(vec![history_worklog(20, alpha.id, 300)], None);
+        let newest = page(vec![history_worklog(20, alpha.id(), 300)], None);
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
         service.worklog_pages = vec![Ok(first), Ok(older), Ok(newest)];
         let mut app = App::load(service);
@@ -4471,7 +4373,7 @@ mod tests {
     fn a_failed_refresh_preserves_the_displayed_history() {
         let alpha = task(1, "alpha");
         let first = page(
-            vec![history_worklog(20, alpha.id, 200)],
+            vec![history_worklog(20, alpha.id(), 200)],
             Some(cursor(200, 20)),
         );
         let mut service = TestService::with_tasks(vec![alpha.clone()]);
@@ -4501,8 +4403,8 @@ mod tests {
         let alpha = task(1, "alpha");
         let first = page(
             vec![
-                history_worklog(20, alpha.id, 200),
-                history_worklog(19, alpha.id, 100),
+                history_worklog(20, alpha.id(), 200),
+                history_worklog(19, alpha.id(), 100),
             ],
             None,
         );
@@ -4584,10 +4486,10 @@ mod tests {
         let task = task(1, "alpha");
         let mut service = TestService::with_tasks(vec![task.clone()]);
         service.tracking = TrackingState::Running {
-            worklog: ActiveWorklog::begin(worklog_id(10), task.id, at(100)),
+            worklog: ActiveWorklog::begin(worklog_id(10), task.id(), at(100)),
         };
         service.worklog_pages = vec![Ok(page(
-            vec![Worklog::begin(worklog_id(10), task.id, at(100))],
+            vec![Worklog::begin(worklog_id(10), task.id(), at(100))],
             None,
         ))];
         let mut app = App::load(service);
@@ -4596,13 +4498,13 @@ mod tests {
         app.handle(Command::Quit);
 
         assert!(!app.is_running());
-        assert_eq!(app.active_task_id(), Some(task.id));
+        assert_eq!(app.active_task_id(), Some(task.id()));
     }
 
     #[test]
     fn opening_history_adopts_an_active_worklog_that_another_client_started() {
         let task = task(1, "alpha");
-        let active = Worklog::begin(worklog_id(10), task.id, at(100));
+        let active = Worklog::begin(worklog_id(10), task.id(), at(100));
         let mut service = TestService::with_tasks(vec![task.clone()]);
         service.worklog_pages = vec![Ok(page(vec![active.clone()], None))];
         let mut app = App::load(service);
@@ -4610,7 +4512,7 @@ mod tests {
 
         app.handle(Command::OpenHistory);
 
-        assert_eq!(app.active_task_id(), Some(task.id));
+        assert_eq!(app.active_task_id(), Some(task.id()));
         assert_eq!(app.active_worklog_id(), Some(active.id()));
         app.freeze_elapsed_for_tests(Duration::from_secs(125));
         assert_eq!(
@@ -4624,13 +4526,13 @@ mod tests {
     #[test]
     fn history_row_durations_use_the_monotonic_clock_for_the_running_worklog() {
         let task = task(1, "alpha");
-        let active = Worklog::begin(worklog_id(10), task.id, at(100));
+        let active = Worklog::begin(worklog_id(10), task.id(), at(100));
         let mut service = TestService::with_tasks(vec![task.clone()]);
         service.tracking = TrackingState::Running {
-            worklog: ActiveWorklog::begin(active.id(), task.id, at(100)),
+            worklog: ActiveWorklog::begin(active.id(), task.id(), at(100)),
         };
         service.worklog_pages = vec![Ok(page(
-            vec![active, history_worklog(11, task.id, 200)],
+            vec![active, history_worklog(11, task.id(), 200)],
             None,
         ))];
         let mut app = App::load(service);
@@ -4652,7 +4554,7 @@ mod tests {
             Duration::from_secs(60),
             "a stopped row derives its duration from its stored times"
         );
-        let unmatched = Worklog::begin(worklog_id(12), task.id, at(300));
+        let unmatched = Worklog::begin(worklog_id(12), task.id(), at(300));
         assert_eq!(
             app.history_row_duration(&unmatched),
             Duration::ZERO,
@@ -5126,12 +5028,11 @@ mod tests {
         let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
         let worklog = history_worklog(10, task_id, 100);
         let mut app = correction_app(worklog.clone(), vec![worklog]);
-        app.application.correction_error = Some(ApplicationError::WorklogCorrectionRecovery {
-            write: RepositoryError::WorklogChanged { id: worklog_id(10) },
-            recovery: RepositoryError::Backend {
-                message: "reload failed".to_owned(),
-            },
-        });
+        app.application.correction_error =
+            Some(ApplicationError::correction_changed_with_recovery_failure(
+                worklog_id(10),
+                "reload failed",
+            ));
 
         app.handle(Command::Confirm);
 
@@ -5143,193 +5044,15 @@ mod tests {
     }
 
     #[test]
-    fn repository_error_presentation_is_stable_for_every_variant() {
-        let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
-        let worklog_id = worklog_id(2);
-        let presented = [
-            (
-                RepositoryError::TaskNotFound { id: task_id },
-                "Task not found",
-            ),
-            (
-                RepositoryError::WorklogNotFound { id: worklog_id },
-                "Worklog not found",
-            ),
-            (
-                RepositoryError::WorklogAlreadyStopped { id: worklog_id },
-                "Worklog is already stopped",
-            ),
-            (
-                RepositoryError::WorklogChanged { id: worklog_id },
-                "Worklog changed in another client",
-            ),
-            (
-                RepositoryError::WorklogHistoryChanged { task_id },
-                "Worklog history changed. Press r to refresh",
-            ),
-            (
-                RepositoryError::SameTaskWorklogOverlap { id: worklog_id },
-                "The worklog overlaps another worklog",
-            ),
-            (
-                RepositoryError::WorklogAlreadyExists { id: worklog_id },
-                "Worklog already exists",
-            ),
-            (
-                RepositoryError::TaskAlreadyExists { id: task_id },
-                "Task already exists",
-            ),
-            (
-                RepositoryError::ActiveWorklogExists,
-                "Another worklog is active",
-            ),
-            (
-                RepositoryError::TaskArchived { id: task_id },
-                "Task is archived",
-            ),
-            (
-                RepositoryError::TaskIsActive { id: task_id },
-                "Task has active work",
-            ),
-            (
-                RepositoryError::Constraint {
-                    message: "private constraint".to_owned(),
-                },
-                "Storage rejected the change",
-            ),
-            (
-                RepositoryError::CorruptData {
-                    field: "private field",
-                },
-                "Stored data is invalid",
-            ),
-            (
-                RepositoryError::Backend {
-                    message: "private backend".to_owned(),
-                },
-                "Storage error",
-            ),
-        ];
-        for (error, expected) in presented {
-            assert_eq!(repository_error_text(&error), expected);
-        }
-    }
-
-    #[test]
-    fn deletion_statuses_use_stable_sanitized_text() {
-        let active = ApplicationError::WorklogDeletionWrite {
-            write: RepositoryError::WorklogIsActive { id: worklog_id(2) },
-        };
-        assert_eq!(
-            application_error_text(&active),
-            ACTIVE_WORKLOG_DELETE_MESSAGE
-        );
-        let active_recovery = ApplicationError::WorklogDeletionRecovery {
-            write: RepositoryError::WorklogIsActive { id: worklog_id(2) },
-            recovery: RepositoryError::Backend {
-                message: "recovery secret".to_owned(),
-            },
-        };
-        assert_eq!(
-            application_error_text(&active_recovery),
-            "Deletion failed: Running worklogs cannot be deleted. State recovery failed: Storage error."
-        );
-        let recovery = ApplicationError::WorklogDeletionRecovery {
-            write: RepositoryError::Backend {
-                message: "write secret".to_owned(),
-            },
-            recovery: RepositoryError::Backend {
-                message: "recovery secret".to_owned(),
-            },
-        };
-        assert_eq!(
-            application_error_text(&recovery),
-            "Deletion failed: Storage error. State recovery failed: Storage error."
-        );
-    }
-
-    #[test]
-    fn repository_statuses_hide_backend_secrets_and_corrupt_data_fields() {
-        let secret = "postgres://user:secret@host/tracker";
-        let backend = RepositoryError::Backend {
-            message: secret.to_owned(),
-        };
-        let corrupt = RepositoryError::CorruptData {
-            field: "account token",
-        };
-        let ordinary = [
-            ApplicationError::Repository(backend.clone()),
-            ApplicationError::TrackingWrite(backend.clone()),
-            ApplicationError::TrackingRecovery(backend.clone()),
-            ApplicationError::TaskRecovery(corrupt.clone()),
-            ApplicationError::WorklogCorrectionWrite {
-                write: backend.clone(),
-            },
-            ApplicationError::WorklogCorrectionRecovery {
-                write: backend.clone(),
-                recovery: corrupt,
-            },
-            ApplicationError::WorklogDeletionWrite {
-                write: backend.clone(),
-            },
-            ApplicationError::WorklogDeletionRecovery {
-                write: backend.clone(),
-                recovery: RepositoryError::CorruptData {
-                    field: "account token",
-                },
-            },
-        ];
-        for error in ordinary {
-            let status = application_error_text(&error);
-            assert!(!status.contains(secret), "{status}");
-            assert!(!status.contains("account token"), "{status}");
-        }
-        let correction = ApplicationError::WorklogCorrectionRecovery {
-            write: RepositoryError::WorklogChanged { id: worklog_id(10) },
-            recovery: backend,
-        };
-        let status = correction_error_text(&correction);
-        assert!(!status.contains(secret), "{status}");
-        assert_eq!(
-            status,
-            "Worklog changed. State recovery also failed: Storage error. Cancel and press r to refresh."
-        );
-    }
-
-    #[test]
-    fn generic_correction_recovery_reports_both_sanitized_causes() {
-        let write_secret = "postgres://writer:secret@host/tracker";
-        let recovery_secret = "postgres://reader:secret@host/tracker";
-        let error = ApplicationError::WorklogCorrectionRecovery {
-            write: RepositoryError::Backend {
-                message: write_secret.to_owned(),
-            },
-            recovery: RepositoryError::Backend {
-                message: recovery_secret.to_owned(),
-            },
-        };
-
-        let status = correction_error_text(&error);
-
-        assert_eq!(
-            status,
-            "Correction failed: Storage error. State recovery failed: Storage error."
-        );
-        assert!(!status.contains(write_secret), "{status}");
-        assert!(!status.contains(recovery_secret), "{status}");
-    }
-
-    #[test]
     fn overlap_recovery_failure_keeps_the_overlap_error_text() {
         let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
         let worklog = history_worklog(10, task_id, 100);
         let mut app = correction_app(worklog.clone(), vec![worklog]);
-        app.application.correction_error = Some(ApplicationError::WorklogCorrectionRecovery {
-            write: RepositoryError::SameTaskWorklogOverlap { id: worklog_id(10) },
-            recovery: RepositoryError::Backend {
-                message: "reload failed".to_owned(),
-            },
-        });
+        app.application.correction_error =
+            Some(ApplicationError::correction_overlap_with_recovery_failure(
+                worklog_id(10),
+                "reload failed",
+            ));
 
         app.handle(Command::Confirm);
 
@@ -5356,25 +5079,13 @@ mod tests {
         let worklog = history_worklog(10, task_id, 100);
         let failures = [
             ApplicationError::InvalidWorklogCorrection(WorklogCorrectionError::EndBeforeStart),
-            ApplicationError::WorklogCorrectionWrite {
-                write: RepositoryError::SameTaskWorklogOverlap { id: worklog.id() },
-            },
-            ApplicationError::WorklogCorrectionWrite {
-                write: RepositoryError::Backend {
-                    message: "write failed".to_owned(),
-                },
-            },
-            ApplicationError::WorklogCorrectionRecovery {
-                write: RepositoryError::Backend {
-                    message: "write failed".to_owned(),
-                },
-                recovery: RepositoryError::Backend {
-                    message: "reload failed".to_owned(),
-                },
-            },
-            ApplicationError::WorklogCorrectionWrite {
-                write: RepositoryError::WorklogChanged { id: worklog.id() },
-            },
+            ApplicationError::worklog_overlap(worklog.id()),
+            ApplicationError::storage_failure("write failed"),
+            ApplicationError::correction_changed_with_recovery_failure(
+                worklog.id(),
+                "reload failed",
+            ),
+            ApplicationError::worklog_changed(worklog.id()),
         ];
         for failure in failures {
             let mut app = correction_app(worklog.clone(), vec![worklog.clone()]);
@@ -5386,12 +5097,10 @@ mod tests {
                 &before,
                 "draft changed for {failure:?}"
             );
-            if matches!(
-                failure,
-                ApplicationError::WorklogCorrectionWrite {
-                    write: RepositoryError::WorklogChanged { .. }
-                }
-            ) {
+            let classified = failure.failure();
+            if classified.category() == ApplicationFailureCategory::WorklogChanged
+                && !classified.recovery_failed()
+            {
                 assert_eq!(
                     text(app.status()),
                     "Worklog changed. Cancel and press r to refresh."
@@ -5553,7 +5262,7 @@ mod tests {
     #[test]
     fn correction_and_history_commands_require_their_own_screen_and_mode() {
         let task = task(1, "alpha");
-        let worklog = history_worklog(10, task.id, 100);
+        let worklog = history_worklog(10, task.id(), 100);
         let mut service = TestService::with_tasks(vec![task]);
         service.worklog_pages = vec![Ok(page(vec![worklog], None))];
         let mut app = App::load(service);
@@ -5662,11 +5371,12 @@ mod tests {
     fn failed_post_save_reload_keeps_the_externally_corrected_active_aggregate() {
         let active_task = task(1, "active");
         let corrected_task = task(2, "corrected");
-        let active = Worklog::begin(worklog_id(10), active_task.id, at(600));
-        let corrected = history_worklog(11, corrected_task.id, 480);
+        let active = Worklog::begin(worklog_id(10), active_task.id(), at(600));
+        let corrected = history_worklog(11, corrected_task.id(), 480);
         let mut service =
             TestService::with_tasks(vec![active_task.clone(), corrected_task.clone()]);
-        service.latest_work_starts = vec![(active_task.id, at(600)), (corrected_task.id, at(480))];
+        service.latest_work_starts =
+            vec![(active_task.id(), at(600)), (corrected_task.id(), at(480))];
         service.tracking = TrackingState::Running {
             worklog: ActiveWorklog::begin(active.id(), active.task_id(), active.start()),
         };
@@ -5703,7 +5413,7 @@ mod tests {
             app.application
                 .tasks(TaskOrdering::RecentlyWorked)
                 .into_iter()
-                .find(|item| item.task.id == active_task.id)
+                .find(|item| item.task.id() == active_task.id())
                 .unwrap()
                 .latest_work_start,
             Some(at(540))
@@ -5718,7 +5428,7 @@ mod tests {
     fn correction_is_available_from_archived_history() {
         let mut archived = task(1, "archived");
         archived.archive(at(200));
-        let worklog = history_worklog(10, archived.id, 100);
+        let worklog = history_worklog(10, archived.id(), 100);
         let mut service = TestService::with_tasks(vec![archived]);
         service.worklog_pages = vec![
             Ok(page(vec![worklog.clone()], None)),
@@ -5742,14 +5452,14 @@ mod tests {
         repository.create_task(alpha.clone()).unwrap();
         repository.create_task(beta.clone()).unwrap();
         repository
-            .insert_worklog(&history_worklog(10, alpha.id, 200))
+            .insert_worklog(&history_worklog(10, alpha.id(), 200))
             .unwrap();
         repository
-            .insert_worklog(&history_worklog(11, beta.id, 300))
+            .insert_worklog(&history_worklog(11, beta.id(), 300))
             .unwrap();
         let mut app = App::load(TrackerApplication::load(repository).unwrap());
         app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
-        assert_eq!(app.tasks()[0].id, beta.id);
+        assert_eq!(app.tasks()[0].id(), beta.id());
         app.handle(Command::OpenHistory);
         app.handle(Command::OpenCorrection);
         {
@@ -5762,18 +5472,18 @@ mod tests {
                 .replace("1970-01-01 00:02".to_owned());
         }
         app.handle(Command::Confirm);
-        assert_eq!(app.tasks()[0].id, alpha.id);
-        assert_eq!(app.tasks()[1].id, beta.id);
+        assert_eq!(app.tasks()[0].id(), alpha.id());
+        assert_eq!(app.tasks()[1].id(), beta.id());
     }
 
     #[test]
     fn correction_reload_uses_the_final_active_start_for_elapsed_and_stopping() {
         let task = task(1, "alpha");
         let now = Utc::now();
-        let initial = Worklog::begin(worklog_id(10), task.id, now - TimeDelta::minutes(10));
+        let initial = Worklog::begin(worklog_id(10), task.id(), now - TimeDelta::minutes(10));
         let correction_start = now - TimeDelta::minutes(1);
         let final_start = now - TimeDelta::minutes(2);
-        let final_active = Worklog::begin(worklog_id(10), task.id, final_start);
+        let final_active = Worklog::begin(worklog_id(10), task.id(), final_start);
         let mut service = TestService::with_tasks(vec![task]);
         service.worklog_pages = vec![
             Ok(page_with_active(vec![initial.clone()], Some(initial), None)),
@@ -5807,8 +5517,8 @@ mod tests {
     #[test]
     fn completed_correction_preserves_a_frozen_timer_across_a_wall_clock_jump() {
         let task = task(1, "alpha");
-        let active = Worklog::begin(worklog_id(10), task.id, at(100));
-        let completed = Worklog::new(worklog_id(11), task.id, at(50), Some(at(60))).unwrap();
+        let active = Worklog::begin(worklog_id(10), task.id(), at(100));
+        let completed = Worklog::new(worklog_id(11), task.id(), at(50), Some(at(60))).unwrap();
         let mut service = TestService::with_tasks(vec![task]);
         service.worklog_pages = vec![
             Ok(page_with_active(
@@ -5845,11 +5555,11 @@ mod tests {
         let now = Utc::now();
         let original_start = now - TimeDelta::minutes(10);
         let corrected_start = now - TimeDelta::minutes(1);
-        let original = Worklog::begin(worklog_id(10), task.id, original_start);
-        let corrected = Worklog::begin(worklog_id(10), task.id, corrected_start);
+        let original = Worklog::begin(worklog_id(10), task.id(), original_start);
+        let corrected = Worklog::begin(worklog_id(10), task.id(), corrected_start);
         let mut service = TestService::with_tasks(vec![task.clone()]);
         service.tracking = TrackingState::Running {
-            worklog: ActiveWorklog::begin(original.id(), task.id, original_start),
+            worklog: ActiveWorklog::begin(original.id(), task.id(), original_start),
         };
         service.worklog_pages = vec![
             Ok(page(vec![original], None)),
