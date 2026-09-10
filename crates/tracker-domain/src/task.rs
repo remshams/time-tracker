@@ -86,7 +86,7 @@ pub enum TaskError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
     /// The stable UUIDv7 identifier.
-    pub id: TaskId,
+    id: TaskId,
     /// The non-empty trimmed name.
     name: TaskName,
     /// Whether the task is archived. Archived tasks cannot start tracking.
@@ -225,6 +225,7 @@ mod tests {
     #[test]
     fn create_sets_both_timestamps_to_the_same_client_value() {
         let task = Task::create(id(1), TaskName::new("  Write tests  ").unwrap(), at(500));
+        assert_eq!(task.id(), id(1));
         assert_eq!(task.name.as_str(), "Write tests");
         assert!(!task.archived);
         assert_eq!(task.created_at, at(500));

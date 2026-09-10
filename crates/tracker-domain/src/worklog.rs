@@ -136,6 +136,24 @@ impl Worklog {
         WorklogTimes::new(self.start, self.end)
     }
 
+    /// Whether this worklog overlaps another worklog for the same task.
+    ///
+    /// Intervals are half-open. Touching boundaries do not overlap, completed
+    /// zero-duration intervals overlap nothing, and active intervals extend
+    /// indefinitely. Worklogs for different tasks never overlap.
+    pub fn overlaps(&self, other: &Self) -> bool {
+        if self.task_id != other.task_id
+            || self.end == Some(self.start)
+            || other.end == Some(other.start)
+        {
+            return false;
+        }
+
+        let self_starts_before_other_ends = other.end.is_none_or(|end| self.start < end);
+        let other_starts_before_self_ends = self.end.is_none_or(|end| other.start < end);
+        self_starts_before_other_ends && other_starts_before_self_ends
+    }
+
     /// Returns a corrected copy while preserving identity, task, and active
     /// state.
     ///
@@ -286,6 +304,57 @@ mod tests {
         assert_eq!(worklog.end(), None);
         assert!(worklog.is_active());
         assert_eq!(worklog.times(), WorklogTimes::new(at(100), None));
+    }
+
+    #[test]
+    fn overlapping_same_task_intervals_are_detected_in_both_directions() {
+        let first = Worklog::new(worklog_id(1), task_id(1), at(100), Some(at(200))).unwrap();
+        let second = Worklog::new(worklog_id(2), task_id(1), at(150), Some(at(250))).unwrap();
+
+        assert!(first.overlaps(&second));
+        assert!(second.overlaps(&first));
+    }
+
+    #[test]
+    fn touching_same_task_intervals_do_not_overlap() {
+        let first = Worklog::new(worklog_id(1), task_id(1), at(100), Some(at(200))).unwrap();
+        let second = Worklog::new(worklog_id(2), task_id(1), at(200), Some(at(300))).unwrap();
+
+        assert!(!first.overlaps(&second));
+        assert!(!second.overlaps(&first));
+    }
+
+    #[test]
+    fn completed_zero_duration_intervals_do_not_overlap() {
+        let interval = Worklog::new(worklog_id(1), task_id(1), at(100), Some(at(200))).unwrap();
+        let inside = Worklog::new(worklog_id(2), task_id(1), at(150), Some(at(150))).unwrap();
+        let same_start = Worklog::new(worklog_id(3), task_id(1), at(100), Some(at(100))).unwrap();
+
+        assert!(!interval.overlaps(&inside));
+        assert!(!inside.overlaps(&interval));
+        assert!(!interval.overlaps(&same_start));
+        assert!(!same_start.overlaps(&interval));
+    }
+
+    #[test]
+    fn worklogs_for_different_tasks_do_not_overlap() {
+        let first = Worklog::new(worklog_id(1), task_id(1), at(100), Some(at(200))).unwrap();
+        let second = Worklog::begin(worklog_id(2), task_id(2), at(150));
+
+        assert!(!first.overlaps(&second));
+        assert!(!second.overlaps(&first));
+    }
+
+    #[test]
+    fn active_same_task_intervals_extend_indefinitely() {
+        let active = Worklog::begin(worklog_id(1), task_id(1), at(100));
+        let later = Worklog::new(worklog_id(2), task_id(1), at(10_000), Some(at(10_001))).unwrap();
+        let earlier = Worklog::new(worklog_id(3), task_id(1), at(50), Some(at(100))).unwrap();
+
+        assert!(active.overlaps(&later));
+        assert!(later.overlaps(&active));
+        assert!(!active.overlaps(&earlier));
+        assert!(!earlier.overlaps(&active));
     }
 
     #[test]
