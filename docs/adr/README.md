@@ -17,6 +17,7 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
 | [0002](0002-task-timestamps-and-ordering.md) | Task timestamps and list ordering | Accepted |
 | [0003](0003-canonical-timestamp-precision.md) | Canonical timestamp precision | Accepted |
-| [0004](0004-paginated-worklog-history.md) | Paginate worklog history by cursor | Partially superseded by ADR 0006; all other decisions remain accepted. |
-| [0005](0005-worklog-correction.md) | Correct worklog timestamps without overlap | Partially superseded by ADR 0006; all other decisions remain accepted. |
+| [0004](0004-paginated-worklog-history.md) | Paginate worklog history by cursor | Partially superseded by ADR 0006 and ADR 0007; all other decisions remain accepted. |
+| [0005](0005-worklog-correction.md) | Correct worklog timestamps without overlap | Partially superseded by ADR 0006 and ADR 0007; all other decisions remain accepted. |
 | [0006](0006-local-minute-tui-timestamps.md) | Local-minute TUI timestamps | Accepted |
+| [0007](0007-completed-worklog-deletion.md) | Delete completed worklogs | Accepted |
