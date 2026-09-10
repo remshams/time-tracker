@@ -10,7 +10,7 @@ use tracker_domain::{
 
 pub use repository::{
     RepositoryError, TaskRepository, TrackerRepository, TrackerSnapshot, TrackingRepository,
-    WorklogCorrection, WorklogRepository,
+    WorklogCorrection, WorklogDeletion, WorklogRepository,
 };
 
 /// Canonicalizes a client timestamp to the microsecond precision shared by
@@ -170,6 +170,17 @@ pub enum ApplicationError {
         write: RepositoryError,
         recovery: RepositoryError,
     },
+    #[error("worklog deletion write failed: {write}")]
+    WorklogDeletionWrite {
+        #[source]
+        write: RepositoryError,
+    },
+    #[error("worklog deletion write failed: {write}; state recovery failed: {recovery}")]
+    WorklogDeletionRecovery {
+        #[source]
+        write: RepositoryError,
+        recovery: RepositoryError,
+    },
     #[error("tracking state changed in another client")]
     TrackingStateChanged,
 }
@@ -202,6 +213,12 @@ pub enum ClearActiveTaskOutcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CorrectWorklogOutcome {
     Corrected { worklog: Worklog },
+}
+
+/// The result of permanently deleting one completed worklog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeleteCompletedWorklogOutcome {
+    Deleted { worklog: Worklog },
 }
 
 /// Task queries available to presentation and transport layers.
@@ -270,7 +287,7 @@ pub trait WorklogQueries {
     ) -> Result<WorklogPage, ApplicationError>;
 }
 
-/// Commands that correct existing worklogs.
+/// Commands that change existing worklog history.
 pub trait WorklogOperations {
     /// Replaces a worklog's timestamps if the stored timestamps still match
     /// `expected`.
@@ -287,6 +304,17 @@ pub trait WorklogOperations {
         replacement: WorklogTimes,
         occurred_at: DateTime<Utc>,
     ) -> Result<CorrectWorklogOutcome, ApplicationError>;
+
+    /// Permanently deletes a completed worklog if its task and timestamps
+    /// still match the selected row. The timestamps are canonicalized to UTC
+    /// microseconds before comparison. An expected active worklog is rejected
+    /// before the repository call. Active worklogs are never deleted.
+    fn delete_completed_worklog(
+        &mut self,
+        id: WorklogId,
+        expected_task_id: TaskId,
+        expected: WorklogTimes,
+    ) -> Result<DeleteCompletedWorklogOutcome, ApplicationError>;
 }
 
 /// The application service required by presentation and transport clients.
@@ -413,6 +441,13 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         }
     }
 
+    fn recover_after_worklog_deletion(&mut self, write: RepositoryError) -> ApplicationError {
+        match self.reload_authoritative_state() {
+            Ok(()) => ApplicationError::WorklogDeletionWrite { write },
+            Err(recovery) => ApplicationError::WorklogDeletionRecovery { write, recovery },
+        }
+    }
+
     fn adopt_worklog_correction(
         &mut self,
         correction: WorklogCorrection,
@@ -430,6 +465,11 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             self.set_latest_work_start(active.task_id(), correction.active_task_latest_work_start);
         }
         Ok(worklog)
+    }
+
+    fn adopt_worklog_deletion(&mut self, deletion: WorklogDeletion) -> Worklog {
+        self.set_latest_work_start(deletion.worklog.task_id(), deletion.task_latest_work_start);
+        deletion.worklog
     }
 
     fn refresh_after_task_operation(&mut self) -> Result<(), ApplicationError> {
@@ -714,6 +754,30 @@ impl<R: TrackerRepository> WorklogOperations for TrackerApplication<R> {
         let worklog = self.adopt_worklog_correction(correction)?;
         Ok(CorrectWorklogOutcome::Corrected { worklog })
     }
+
+    fn delete_completed_worklog(
+        &mut self,
+        id: WorklogId,
+        expected_task_id: TaskId,
+        expected: WorklogTimes,
+    ) -> Result<DeleteCompletedWorklogOutcome, ApplicationError> {
+        let expected = canonical_worklog_times(expected);
+        if expected.is_active() {
+            return Err(ApplicationError::WorklogDeletionWrite {
+                write: RepositoryError::WorklogIsActive { id },
+            });
+        }
+        let deletion = match self.repository.compare_and_delete_completed_worklog(
+            id,
+            expected_task_id,
+            expected,
+        ) {
+            Ok(deletion) => deletion,
+            Err(error) => return Err(self.recover_after_worklog_deletion(error)),
+        };
+        let worklog = self.adopt_worklog_deletion(deletion);
+        Ok(DeleteCompletedWorklogOutcome::Deleted { worklog })
+    }
 }
 
 #[cfg(test)]
@@ -736,6 +800,7 @@ mod tests {
         fail_reads_after_task_write: bool,
         hide_next_active_read: bool,
         list_reads: usize,
+        deletion_writes: usize,
         history_revisions: Vec<(TaskId, i64)>,
     }
 
@@ -1069,6 +1134,42 @@ mod tests {
                 task_latest_work_start,
                 active_worklog,
                 active_task_latest_work_start,
+            })
+        }
+
+        fn compare_and_delete_completed_worklog(
+            &self,
+            id: WorklogId,
+            expected_task_id: TaskId,
+            expected: WorklogTimes,
+        ) -> Result<WorklogDeletion, RepositoryError> {
+            self.0.borrow_mut().deletion_writes += 1;
+            if let Some(error) = self.take_write_failure() {
+                return Err(error);
+            }
+            let mut data = self.0.borrow_mut();
+            let index = data
+                .worklogs
+                .iter()
+                .position(|worklog| worklog.id() == id)
+                .ok_or(RepositoryError::WorklogNotFound { id })?;
+            let stored = &data.worklogs[index];
+            if stored.is_active() {
+                return Err(RepositoryError::WorklogIsActive { id });
+            }
+            if stored.task_id() != expected_task_id || stored.times() != expected {
+                return Err(RepositoryError::WorklogChanged { id });
+            }
+            let worklog = data.worklogs.remove(index);
+            let task_latest_work_start = data
+                .worklogs
+                .iter()
+                .filter(|candidate| candidate.task_id() == worklog.task_id())
+                .map(Worklog::start)
+                .max();
+            Ok(WorklogDeletion {
+                worklog,
+                task_latest_work_start,
             })
         }
 
@@ -2132,6 +2233,21 @@ mod tests {
             },
         };
         assert!(error.source().is_some());
+        let error = ApplicationError::WorklogDeletionWrite {
+            write: RepositoryError::Backend {
+                message: "deletion failed".to_owned(),
+            },
+        };
+        assert!(error.source().is_some());
+        let error = ApplicationError::WorklogDeletionRecovery {
+            write: RepositoryError::Backend {
+                message: "deletion failed".to_owned(),
+            },
+            recovery: RepositoryError::Backend {
+                message: "deletion reload failed".to_owned(),
+            },
+        };
+        assert!(error.source().is_some());
     }
 
     #[test]
@@ -2506,6 +2622,217 @@ mod tests {
             "the archive kept the rename"
         );
         assert_eq!(archived.updated_at(), at(200));
+    }
+
+    #[test]
+    fn deletion_canonicalizes_expected_times_and_adopts_the_transaction_aggregate() {
+        let alpha = task(1, "alpha");
+        let beta = task(2, "beta");
+        let old_alpha = completed_worklog(10, alpha.id, 100, 110);
+        let latest_alpha = Worklog::new(
+            WorklogId::from_uuid(uuid::Uuid::from_u128(11)),
+            alpha.id,
+            at_nanos(300, 123_456_000),
+            Some(at_nanos(310, 654_321_000)),
+        )
+        .unwrap();
+        let beta_work = worklog(12, beta.id, 250);
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+        for worklog in [&old_alpha, &latest_alpha, &beta_work] {
+            repository.insert_worklog(worklog).unwrap();
+        }
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        repository.0.borrow_mut().fail_reads = true;
+
+        let outcome = application
+            .delete_completed_worklog(
+                latest_alpha.id(),
+                alpha.id,
+                WorklogTimes::new(at_nanos(300, 123_456_999), Some(at_nanos(310, 654_321_999))),
+            )
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            DeleteCompletedWorklogOutcome::Deleted {
+                worklog: latest_alpha
+            }
+        );
+        assert_eq!(
+            ordered_names(&application, TaskOrdering::RecentlyWorked),
+            ["beta".to_owned(), "alpha".to_owned()]
+        );
+        let alpha_item = application
+            .tasks(TaskOrdering::RecentlyWorked)
+            .into_iter()
+            .find(|item| item.task.id() == alpha.id)
+            .unwrap();
+        assert_eq!(alpha_item.latest_work_start, Some(at(100)));
+        assert!(matches!(
+            application.current_tracking(),
+            TrackingState::Running { worklog } if worklog.id() == beta_work.id()
+        ));
+        assert_eq!(repository.0.borrow().worklogs, [old_alpha, beta_work]);
+    }
+
+    #[test]
+    fn deletion_rejects_active_missing_stale_and_task_moved_targets() {
+        let alpha = task(1, "alpha");
+        let beta = task(2, "beta");
+        let completed = completed_worklog(10, alpha.id, 100, 150);
+        let active = worklog(11, alpha.id, 200);
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+        repository.insert_worklog(&completed).unwrap();
+        repository.insert_worklog(&active).unwrap();
+
+        assert_eq!(
+            repository.compare_and_delete_completed_worklog(
+                active.id(),
+                active.task_id(),
+                active.times(),
+            ),
+            Err(RepositoryError::WorklogIsActive { id: active.id() })
+        );
+        assert_eq!(
+            repository.compare_and_delete_completed_worklog(
+                WorklogId::from_uuid(uuid::Uuid::from_u128(99)),
+                alpha.id,
+                completed.times(),
+            ),
+            Err(RepositoryError::WorklogNotFound {
+                id: WorklogId::from_uuid(uuid::Uuid::from_u128(99))
+            })
+        );
+        assert_eq!(
+            repository.compare_and_delete_completed_worklog(
+                completed.id(),
+                alpha.id,
+                WorklogTimes::new(at(100), Some(at(151))),
+            ),
+            Err(RepositoryError::WorklogChanged { id: completed.id() })
+        );
+        let moved =
+            Worklog::new(completed.id(), beta.id, completed.start(), completed.end()).unwrap();
+        repository.0.borrow_mut().worklogs[0] = moved.clone();
+        assert_eq!(
+            repository.compare_and_delete_completed_worklog(
+                completed.id(),
+                alpha.id,
+                completed.times(),
+            ),
+            Err(RepositoryError::WorklogChanged { id: completed.id() })
+        );
+        assert!(repository.0.borrow().worklogs.contains(&moved));
+        assert!(repository.0.borrow().worklogs.contains(&active));
+    }
+
+    #[test]
+    fn expected_active_deletion_is_rejected_before_the_repository_write() {
+        let alpha = task(1, "alpha");
+        let active = worklog(10, alpha.id, 100);
+        let repository = MemoryRepository::with_tasks(vec![alpha]);
+        repository.insert_worklog(&active).unwrap();
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+
+        assert_eq!(
+            application.delete_completed_worklog(active.id(), active.task_id(), active.times()),
+            Err(ApplicationError::WorklogDeletionWrite {
+                write: RepositoryError::WorklogIsActive { id: active.id() }
+            })
+        );
+        assert_eq!(repository.0.borrow().deletion_writes, 0);
+        assert_eq!(repository.find_worklog(active.id()).unwrap(), Some(active));
+    }
+
+    #[test]
+    fn deletion_recovers_when_the_completed_target_became_active() {
+        let alpha = task(1, "alpha");
+        let completed = completed_worklog(10, alpha.id, 100, 150);
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        repository.insert_worklog(&completed).unwrap();
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        repository
+            .rename_task(alpha.id, TaskName::new("renamed").unwrap(), at(175))
+            .unwrap();
+        let active = Worklog::begin(completed.id(), completed.task_id(), completed.start());
+        repository.0.borrow_mut().worklogs[0] = active.clone();
+
+        assert_eq!(
+            application.delete_completed_worklog(
+                completed.id(),
+                completed.task_id(),
+                completed.times(),
+            ),
+            Err(ApplicationError::WorklogDeletionWrite {
+                write: RepositoryError::WorklogIsActive { id: completed.id() }
+            })
+        );
+        assert_eq!(repository.0.borrow().deletion_writes, 1);
+        assert!(matches!(
+            application.current_tracking(),
+            TrackingState::Running { worklog } if worklog.id() == active.id()
+        ));
+        assert_eq!(
+            application.task(alpha.id).unwrap().name().as_str(),
+            "renamed"
+        );
+        assert_eq!(repository.find_worklog(active.id()).unwrap(), Some(active));
+    }
+
+    #[test]
+    fn deletion_write_errors_reload_authoritative_state() {
+        let alpha = task(1, "alpha");
+        let target = completed_worklog(10, alpha.id, 100, 150);
+        let foreign = worklog(11, alpha.id, 200);
+        let repository = MemoryRepository::with_tasks(vec![alpha]);
+        repository.insert_worklog(&target).unwrap();
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        repository.fail_next_write(
+            RepositoryError::Backend {
+                message: "write failed".to_owned(),
+            },
+            Some(foreign.clone()),
+        );
+
+        assert_eq!(
+            application.delete_completed_worklog(target.id(), target.task_id(), target.times()),
+            Err(ApplicationError::WorklogDeletionWrite {
+                write: RepositoryError::Backend {
+                    message: "write failed".to_owned()
+                }
+            })
+        );
+        assert!(matches!(
+            application.current_tracking(),
+            TrackingState::Running { worklog } if worklog == &ActiveWorklog::begin(
+                foreign.id(), foreign.task_id(), foreign.start()
+            )
+        ));
+    }
+
+    #[test]
+    fn deletion_preserves_write_and_recovery_errors() {
+        let alpha = task(1, "alpha");
+        let target = completed_worklog(10, alpha.id, 100, 150);
+        let repository = MemoryRepository::with_tasks(vec![alpha]);
+        repository.insert_worklog(&target).unwrap();
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        let write = RepositoryError::Backend {
+            message: "write failed".to_owned(),
+        };
+        repository.fail_next_write(write.clone(), None);
+        repository.fail_recovery_after_next_write();
+
+        assert_eq!(
+            application.delete_completed_worklog(target.id(), target.task_id(), target.times()),
+            Err(ApplicationError::WorklogDeletionRecovery {
+                write,
+                recovery: RepositoryError::Backend {
+                    message: "read failed".to_owned()
+                }
+            })
+        );
+        assert!(repository.0.borrow().worklogs.contains(&target));
     }
 
     #[test]

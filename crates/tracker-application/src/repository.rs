@@ -10,9 +10,10 @@
 //! Intervals are half-open: touching is allowed, zero-duration worklogs
 //! overlap nothing, and different tasks may overlap. Worklog corrections use
 //! exact timestamp compare-and-swap and preserve identity, task, and active or
-//! completed state. The task-list read model carries each task's latest
-//! worklog start as a per-task `MAX(start)` aggregate, without loading full
-//! worklogs.
+//! completed state. Completed worklog deletion uses an exact match on
+//! identity, task, start, and end; active worklogs cannot be deleted. The
+//! task-list read model carries each task's latest worklog start as a per-task
+//! `MAX(start)` aggregate, without loading full worklogs.
 
 use chrono::{DateTime, Utc};
 use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
@@ -31,6 +32,8 @@ pub enum RepositoryError {
     WorklogAlreadyStopped { id: WorklogId },
     #[error("worklog {id} changed since it was read")]
     WorklogChanged { id: WorklogId },
+    #[error("worklog {id} is active and cannot be deleted")]
+    WorklogIsActive { id: WorklogId },
     #[error("worklog history for task {task_id} changed since this page was read")]
     WorklogHistoryChanged { task_id: TaskId },
     #[error("worklog {id} overlaps another worklog for the same task")]
@@ -73,6 +76,16 @@ pub struct WorklogCorrection {
     pub active_task_latest_work_start: Option<DateTime<Utc>>,
 }
 
+/// The committed result of deleting a completed worklog.
+///
+/// The latest-work aggregate comes from the delete transaction. Callers must
+/// adopt it rather than issue a post-commit read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorklogDeletion {
+    pub worklog: Worklog,
+    pub task_latest_work_start: Option<DateTime<Utc>>,
+}
+
 /// Persistence needed by task use cases.
 pub trait TaskRepository {
     fn create_task(&self, task: Task) -> Result<(), RepositoryError>;
@@ -113,6 +126,15 @@ pub trait WorklogRepository {
         expected: WorklogTimes,
         replacement: WorklogTimes,
     ) -> Result<WorklogCorrection, RepositoryError>;
+
+    /// Atomically deletes a completed worklog when its task and timestamps
+    /// exactly match the caller's expected values.
+    fn compare_and_delete_completed_worklog(
+        &self,
+        id: WorklogId,
+        expected_task_id: TaskId,
+        expected: WorklogTimes,
+    ) -> Result<WorklogDeletion, RepositoryError>;
 
     /// One bounded page of task history plus only the page-adoption state
     /// from the same read transaction. A continuation cursor becomes invalid
