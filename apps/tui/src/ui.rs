@@ -177,7 +177,12 @@ fn render_history<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, a
         return;
     }
     if history.worklogs.is_empty() {
-        frame.render_widget(Paragraph::new("No worklogs yet.").block(block), area);
+        let message = if history.next_cursor.is_some() {
+            "No loaded worklogs. Older worklogs remain. Press o to load them."
+        } else {
+            "No worklogs yet."
+        };
+        frame.render_widget(Paragraph::new(message).block(block), area);
         return;
     }
     let items: Vec<ListItem> = history
@@ -251,6 +256,7 @@ fn render_modal<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app
     match app.mode() {
         Mode::Input { purpose, buffer } => render_input_modal(frame, area, *purpose, buffer),
         Mode::ConfirmArchive { name, .. } => render_confirm_modal(frame, area, name),
+        Mode::ConfirmDeletion { worklog } => render_delete_modal(frame, area, app, worklog),
         Mode::Correction(draft) => render_correction_modal(frame, area, draft),
         Mode::Normal => {}
     }
@@ -350,6 +356,33 @@ fn render_confirm_modal(frame: &mut Frame, area: Rect, name: &str) {
     );
 }
 
+fn render_delete_modal<S: TrackerApplicationService>(
+    frame: &mut Frame,
+    area: Rect,
+    app: &App<S>,
+    worklog: &tracker_domain::Worklog,
+) {
+    let modal = centered(58, 6, area);
+    frame.render_widget(Clear, modal);
+    let end = worklog
+        .end()
+        .map(|end| app.local_time(end))
+        .unwrap_or_else(|| "Running".to_owned());
+    let lines = vec![
+        Line::from("Delete this worklog permanently?"),
+        Line::from(format!("{} → {end}", app.local_time(worklog.start()))),
+        Line::from("This cannot be undone."),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::bordered()
+                .title("Delete worklog")
+                .border_style(styles::focused_border()),
+        ),
+        modal,
+    );
+}
+
 /// Shrinks `area` to `width` × `height`, centered inside it.
 ///
 /// The result never exceeds the available area.
@@ -380,7 +413,7 @@ mod tests {
     use chrono::{DateTime, FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::{Terminal, backend::TestBackend};
-    use tracker_application::TrackerApplication;
+    use tracker_application::{TrackerApplication, WorklogCursor};
     use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId};
     use tracker_storage::SqliteRepository;
 
@@ -840,6 +873,25 @@ mod tests {
     }
 
     #[test]
+    fn the_deletion_modal_shows_local_times_and_permanence_at_sixty_columns() {
+        let mut app = history_app(&[(3_600, 3_615)]);
+        app.handle(Command::OpenDeletion);
+        let terminal = draw_at(&app, 60, 20);
+        let screen = rows(&terminal).join("\n");
+        assert!(screen.contains("Delete worklog"), "got {screen:?}");
+        assert!(
+            screen.contains("Delete this worklog permanently?"),
+            "got {screen:?}"
+        );
+        assert!(
+            screen.contains("1970-01-01 03:00 → 1970-01-01 03:00"),
+            "got {screen:?}"
+        );
+        assert!(screen.contains("This cannot be undone."), "got {screen:?}");
+        assert!(screen.contains("d/y/enter delete"), "got {screen:?}");
+    }
+
+    #[test]
     fn centered_keeps_the_modal_inside_the_area() {
         let area = Rect::new(0, 0, 80, 24);
         assert_eq!(centered(56, 3, area), Rect::new(12, 10, 56, 3));
@@ -1009,6 +1061,7 @@ mod tests {
         );
         assert!(rows[5].contains("00:00:15"), "got {:?}", rows[5]);
         assert!(rows[23].contains("o older"), "got {:?}", rows[23]);
+        assert!(rows[23].contains("d delete"), "got {:?}", rows[23]);
         assert!(rows[23].contains("r refresh"), "got {:?}", rows[23]);
         assert!(rows[23].contains("esc back"), "got {:?}", rows[23]);
         assert!(
@@ -1078,6 +1131,23 @@ mod tests {
             row(&terminal, 2)
         );
         assert!(row(&terminal, 1).contains("Worklog history · alpha"));
+    }
+
+    #[test]
+    fn an_empty_loaded_history_prompts_for_older_worklogs() {
+        let mut app = history_app(&[(3600, 3615)]);
+        let task_id = app.history().unwrap().task_id;
+        app.set_history_next_cursor_for_tests(WorklogCursor {
+            task_id,
+            start: DateTime::<Utc>::from_timestamp(3600, 0).unwrap(),
+            id: WorklogId::from_uuid(uuid::Uuid::from_u128(1)),
+            revision: 0,
+        });
+        app.handle(Command::OpenDeletion);
+        app.handle(Command::Confirm);
+
+        let terminal = draw(&app);
+        assert!(row(&terminal, 2).contains("Older worklogs remain. Press o to load them."));
     }
 
     #[test]

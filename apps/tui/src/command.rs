@@ -18,6 +18,8 @@ pub enum Command {
     OpenHistory,
     /// Open timestamp correction for the selected worklog.
     OpenCorrection,
+    /// Ask for confirmation before deleting the selected completed worklog.
+    OpenDeletion,
     /// Move focus between correction fields.
     SwitchCorrectionField,
     /// Move the correction cursor left.

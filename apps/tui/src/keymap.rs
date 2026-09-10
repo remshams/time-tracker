@@ -28,12 +28,14 @@ pub fn map(mode: &Mode, view: TaskView, screen: Screen, key: KeyEvent) -> Option
     }
     match mode {
         Mode::Correction(_) => map_correction(key),
+        Mode::ConfirmDeletion { .. } => map_confirm_deletion(key),
         _ => match screen {
             Screen::WorklogHistory => map_history(key),
             Screen::TaskList => match mode {
                 Mode::Normal => map_normal(view, key),
                 Mode::Input { .. } => map_input(key),
                 Mode::ConfirmArchive { .. } => map_confirm(key),
+                Mode::ConfirmDeletion { .. } => unreachable!("deletion was handled above"),
                 Mode::Correction(_) => unreachable!("correction was handled above"),
             },
         },
@@ -82,10 +84,23 @@ fn map_history(key: KeyEvent) -> Option<Command> {
         KeyCode::Char('j') | KeyCode::Down => Some(Command::MoveDown),
         KeyCode::Char('k') | KeyCode::Up => Some(Command::MoveUp),
         KeyCode::Char('e') => Some(Command::OpenCorrection),
+        KeyCode::Char('d') => Some(Command::OpenDeletion),
         KeyCode::Char('o') => Some(Command::LoadOlderWorklogs),
         KeyCode::Char('r') => Some(Command::RefreshWorklogs),
         KeyCode::Esc => Some(Command::BackToTaskList),
         KeyCode::Char('q') => Some(Command::Quit),
+        _ => None,
+    }
+}
+
+/// Keys for the worklog deletion confirmation.
+fn map_confirm_deletion(key: KeyEvent) -> Option<Command> {
+    if key.modifiers != KeyModifiers::NONE {
+        return None;
+    }
+    match key.code {
+        KeyCode::Enter | KeyCode::Char('d') | KeyCode::Char('y') => Some(Command::Confirm),
+        KeyCode::Esc | KeyCode::Char('n') => Some(Command::Cancel),
         _ => None,
     }
 }
@@ -180,6 +195,13 @@ pub fn footer_hints(
             "type · ←/→ · bs/del · tab/S-tab · j/k ±5m · J/K ±1h · enter · esc · ctrl+c"
         };
     }
+    if matches!(mode, Mode::ConfirmDeletion { .. }) {
+        return if width < 80 {
+            "d/y/enter delete n/esc cancel ctrl+c quit"
+        } else {
+            "d/y/enter delete · n/esc cancel · ctrl+c quit"
+        };
+    }
     if screen == Screen::WorklogHistory {
         if !history_available {
             return if width < 80 {
@@ -189,9 +211,9 @@ pub fn footer_hints(
             };
         }
         return if width < 80 {
-            "j/k/↑/↓ e edit o older r refresh esc back q/ctrl+c quit"
+            "j/k/↑/↓ e edit d delete o older r refresh esc back q ctrl+c"
         } else {
-            "j/k/↑/↓ move · e correct · o older · r refresh · esc back · q/ctrl+c quit"
+            "j/k/↑/↓ move e edit d delete o older r refresh esc back q/ctrl+c quit"
         };
     }
     if width < 80 {
@@ -204,6 +226,7 @@ pub fn footer_hints(
             },
             Mode::Input { .. } => "type · backspace · enter save · esc cancel · ctrl+c quit",
             Mode::ConfirmArchive { .. } => "y/enter · n/esc · ctrl+c quit",
+            Mode::ConfirmDeletion { .. } => "d/y/enter delete · n/esc cancel · ctrl+c quit",
             Mode::Correction(_) => unreachable!("correction footer was handled above"),
         };
     }
@@ -219,6 +242,7 @@ pub fn footer_hints(
         },
         Mode::Input { .. } => "type · backspace delete · enter save · esc cancel · ctrl+c quit",
         Mode::ConfirmArchive { .. } => "y/enter confirm · n/esc cancel · ctrl+c quit",
+        Mode::ConfirmDeletion { .. } => "d/y/enter delete · n/esc cancel · ctrl+c quit",
         Mode::Correction(_) => unreachable!("correction footer was handled above"),
     }
 }
@@ -231,7 +255,7 @@ mod tests {
 
     use super::*;
     use crate::app::{CorrectionDraft, InputPurpose};
-    use tracker_domain::{WorklogId, WorklogTimes};
+    use tracker_domain::{Worklog, WorklogId, WorklogTimes};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -256,6 +280,18 @@ mod tests {
         Mode::ConfirmArchive {
             task_id: tracker_domain::TaskId::generate(),
             name: "task".to_owned(),
+        }
+    }
+
+    fn deletion() -> Mode {
+        Mode::ConfirmDeletion {
+            worklog: Worklog::new(
+                WorklogId::generate(),
+                tracker_domain::TaskId::generate(),
+                DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
+                Some(DateTime::<Utc>::from_timestamp(60, 0).unwrap()),
+            )
+            .unwrap(),
         }
     }
 
@@ -287,7 +323,7 @@ mod tests {
         for (view, mode) in normal_modes() {
             assert_eq!(map(&mode, view, Screen::TaskList, release), None);
         }
-        for mode in [input(), confirm()] {
+        for mode in [input(), confirm(), deletion()] {
             assert_eq!(
                 map(&mode, TaskView::Active, Screen::TaskList, release),
                 None
@@ -647,7 +683,7 @@ mod tests {
                 Some(Command::Quit)
             );
         }
-        for mode in [input(), confirm()] {
+        for mode in [input(), confirm(), deletion()] {
             assert_eq!(
                 map(&mode, TaskView::Active, Screen::TaskList, ctrl('c')),
                 Some(Command::Quit)
@@ -721,6 +757,43 @@ mod tests {
             map(&input(), TaskView::Active, Screen::TaskList, capital),
             Some(Command::Insert('A'))
         );
+    }
+
+    #[test]
+    fn deletion_mode_accepts_and_cancels_without_other_commands() {
+        let mode = deletion();
+        for code in [KeyCode::Enter, KeyCode::Char('d'), KeyCode::Char('y')] {
+            assert_eq!(
+                map(&mode, TaskView::Active, Screen::WorklogHistory, key(code)),
+                Some(Command::Confirm)
+            );
+        }
+        for code in [KeyCode::Esc, KeyCode::Char('n')] {
+            assert_eq!(
+                map(&mode, TaskView::Active, Screen::WorklogHistory, key(code)),
+                Some(Command::Cancel)
+            );
+        }
+        assert_eq!(
+            map(
+                &mode,
+                TaskView::Active,
+                Screen::WorklogHistory,
+                with_modifier('d', KeyModifiers::SHIFT),
+            ),
+            None
+        );
+        for code in [
+            KeyCode::Char('e'),
+            KeyCode::Char('o'),
+            KeyCode::Char('r'),
+            KeyCode::Char('j'),
+        ] {
+            assert_eq!(
+                map(&mode, TaskView::Active, Screen::WorklogHistory, key(code)),
+                None
+            );
+        }
     }
 
     #[test]
@@ -820,6 +893,15 @@ mod tests {
                 &Mode::Normal,
                 TaskView::Active,
                 history,
+                key(KeyCode::Char('d'))
+            ),
+            Some(Command::OpenDeletion)
+        );
+        assert_eq!(
+            map(
+                &Mode::Normal,
+                TaskView::Active,
+                history,
                 key(KeyCode::Char('o'))
             ),
             Some(Command::LoadOlderWorklogs)
@@ -853,7 +935,6 @@ mod tests {
         for code in [
             KeyCode::Char(' '),
             KeyCode::Char('a'),
-            KeyCode::Char('d'),
             KeyCode::Char('u'),
             KeyCode::Char('s'),
             KeyCode::Char('h'),
@@ -1014,6 +1095,83 @@ mod tests {
     }
 
     #[test]
+    fn deletion_footers_advertise_delete_and_confirmation_keys_at_both_widths() {
+        for (width, delete_hint, confirm_hint) in [
+            (60, "d delete", "d/y/enter delete"),
+            (80, "d delete", "d/y/enter delete"),
+        ] {
+            let history = footer_hints(
+                &Mode::Normal,
+                TaskView::Active,
+                Screen::WorklogHistory,
+                true,
+                width,
+            );
+            assert!(history.contains(delete_hint), "{history:?}");
+            let confirmation = footer_hints(
+                &deletion(),
+                TaskView::Active,
+                Screen::WorklogHistory,
+                true,
+                width,
+            );
+            assert!(history.chars().count() <= width as usize, "{history:?}");
+            assert!(confirmation.contains(confirm_hint), "{confirmation:?}");
+            assert!(
+                confirmation.chars().count() <= width as usize,
+                "{confirmation:?}"
+            );
+            assert!(confirmation.contains("ctrl+c"), "{confirmation:?}");
+        }
+    }
+
+    #[test]
+    fn deletion_footer_switches_to_the_full_variant_at_eighty_columns() {
+        let compact = footer_hints(
+            &Mode::Normal,
+            TaskView::Active,
+            Screen::WorklogHistory,
+            true,
+            79,
+        );
+        let full = footer_hints(
+            &Mode::Normal,
+            TaskView::Active,
+            Screen::WorklogHistory,
+            true,
+            80,
+        );
+        assert_eq!(
+            compact,
+            "j/k/↑/↓ e edit d delete o older r refresh esc back q ctrl+c"
+        );
+        assert_eq!(
+            full,
+            "j/k/↑/↓ move e edit d delete o older r refresh esc back q/ctrl+c quit"
+        );
+        assert_eq!(
+            footer_hints(
+                &deletion(),
+                TaskView::Active,
+                Screen::WorklogHistory,
+                true,
+                79,
+            ),
+            "d/y/enter delete n/esc cancel ctrl+c quit"
+        );
+        assert_eq!(
+            footer_hints(
+                &deletion(),
+                TaskView::Active,
+                Screen::WorklogHistory,
+                true,
+                80,
+            ),
+            "d/y/enter delete · n/esc cancel · ctrl+c quit"
+        );
+    }
+
+    #[test]
     fn correction_footer_switches_to_the_full_variant_at_eighty_columns() {
         assert_eq!(
             footer_hints(
@@ -1095,7 +1253,7 @@ mod tests {
         );
         for hint in [
             "j/k/↑/↓ move",
-            "e correct",
+            "e edit",
             "o older",
             "r refresh",
             "esc back",

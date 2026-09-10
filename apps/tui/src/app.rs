@@ -5,8 +5,9 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, FixedOffset, NaiveDateTime, Offset, TimeDelta, TimeZone, Utc};
 use chrono_tz::Tz;
 use tracker_application::{
-    ApplicationError, ClearActiveTaskOutcome, CorrectWorklogOutcome, RepositoryError,
-    SetActiveTaskOutcome, TaskOrdering, TaskOutcome, TrackerApplicationService, WorklogCursor,
+    ApplicationError, ClearActiveTaskOutcome, CorrectWorklogOutcome, DeleteCompletedWorklogOutcome,
+    RepositoryError, SetActiveTaskOutcome, TaskOrdering, TaskOutcome, TrackerApplicationService,
+    WorklogCursor,
 };
 use tracker_domain::{
     Task, TaskId, TaskName, TaskNameError, TrackingError, TrackingState, Worklog, WorklogId,
@@ -14,6 +15,8 @@ use tracker_domain::{
 };
 
 use crate::command::Command;
+
+const ACTIVE_WORKLOG_DELETE_MESSAGE: &str = "Running worklogs cannot be deleted";
 
 /// What the TUI is currently asking of the user.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +29,9 @@ pub enum Mode {
     ConfirmArchive {
         task_id: TaskId,
         name: String,
+    },
+    ConfirmDeletion {
+        worklog: Worklog,
     },
     Correction(CorrectionDraft),
 }
@@ -390,6 +396,7 @@ fn repository_error_text(error: &RepositoryError) -> &'static str {
         RepositoryError::WorklogNotFound { .. } => "Worklog not found",
         RepositoryError::WorklogAlreadyStopped { .. } => "Worklog is already stopped",
         RepositoryError::WorklogChanged { .. } => "Worklog changed in another client",
+        RepositoryError::WorklogIsActive { .. } => ACTIVE_WORKLOG_DELETE_MESSAGE,
         RepositoryError::WorklogHistoryChanged { .. } => {
             "Worklog history changed. Press r to refresh"
         }
@@ -421,9 +428,56 @@ fn application_error_text(error: &ApplicationError) -> String {
             repository_error_text(write),
             repository_error_text(recovery)
         ),
+        ApplicationError::WorklogDeletionWrite { write } => repository_error_text(write).to_owned(),
+        ApplicationError::WorklogDeletionRecovery { write, recovery } => format!(
+            "Deletion failed: {}. State recovery failed: {}.",
+            repository_error_text(write),
+            repository_error_text(recovery)
+        ),
         ApplicationError::TrackingStateChanged => {
             "Tracking state changed in another client. Refreshed state.".to_owned()
         }
+    }
+}
+
+fn deletion_repository_error(error: &ApplicationError) -> Option<&RepositoryError> {
+    match error {
+        ApplicationError::WorklogDeletionWrite { write } => Some(write),
+        _ => None,
+    }
+}
+
+fn deletion_conflict(error: &ApplicationError) -> bool {
+    matches!(
+        deletion_repository_error(error),
+        Some(
+            RepositoryError::WorklogChanged { .. }
+                | RepositoryError::WorklogNotFound { .. }
+                | RepositoryError::WorklogIsActive { .. }
+        )
+    )
+}
+
+fn matches_worklog_active(error: &ApplicationError) -> bool {
+    matches!(
+        deletion_repository_error(error),
+        Some(RepositoryError::WorklogIsActive { .. })
+    )
+}
+
+fn matches_worklog_not_found(error: &ApplicationError) -> bool {
+    matches!(
+        deletion_repository_error(error),
+        Some(RepositoryError::WorklogNotFound { .. })
+    )
+}
+
+fn deletion_error_text(error: &ApplicationError) -> String {
+    match error {
+        ApplicationError::WorklogDeletionWrite {
+            write: RepositoryError::WorklogIsActive { .. },
+        } => ACTIVE_WORKLOG_DELETE_MESSAGE.to_owned(),
+        _ => application_error_text(error),
     }
 }
 
@@ -666,6 +720,7 @@ impl<S: TrackerApplicationService> App<S> {
             | Command::RefreshWorklogs
             | Command::BackToTaskList => self.handle_navigation(command),
             Command::OpenCorrection
+            | Command::OpenDeletion
             | Command::SwitchCorrectionField
             | Command::MoveCursorLeft
             | Command::MoveCursorRight
@@ -704,6 +759,7 @@ impl<S: TrackerApplicationService> App<S> {
     fn handle_correction_command(&mut self, command: Command) {
         match command {
             Command::OpenCorrection => self.open_correction(),
+            Command::OpenDeletion => self.open_deletion(),
             Command::SwitchCorrectionField => self.edit_correction(|draft| draft.switch_field()),
             Command::MoveCursorLeft => {
                 self.edit_correction(|draft| draft.focused_mut().move_left())
@@ -785,6 +841,14 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     #[cfg(test)]
+    pub fn deletion(&self) -> Option<&Worklog> {
+        match &self.mode {
+            Mode::ConfirmDeletion { worklog } => Some(worklog),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
     fn correction_mut_for_tests(&mut self) -> &mut CorrectionDraft {
         match &mut self.mode {
             Mode::Correction(draft) => draft,
@@ -821,6 +885,13 @@ impl<S: TrackerApplicationService> App<S> {
     /// The open worklog history, if the history screen is shown.
     pub fn history(&self) -> Option<&History> {
         self.history.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_history_next_cursor_for_tests(&mut self, cursor: WorklogCursor) {
+        if let Some(history) = &mut self.history {
+            history.next_cursor = Some(cursor);
+        }
     }
 
     /// The selected row of the open history.
@@ -1250,6 +1321,29 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
+    fn open_deletion(&mut self) {
+        if self.mode != Mode::Normal || self.screen != Screen::WorklogHistory {
+            return;
+        }
+        let Some(worklog) = self
+            .history
+            .as_ref()
+            .filter(|history| history.is_available())
+            .and_then(|history| {
+                history
+                    .selected_index()
+                    .map(|index| history.worklogs[index].clone())
+            })
+        else {
+            return;
+        };
+        if worklog.is_active() {
+            self.status = Status::Error(ACTIVE_WORKLOG_DELETE_MESSAGE.to_owned());
+            return;
+        }
+        self.mode = Mode::ConfirmDeletion { worklog };
+    }
+
     fn open_correction_in<Tz>(&mut self, timezone: &Tz)
     where
         Tz: TimeZone,
@@ -1370,8 +1464,12 @@ impl<S: TrackerApplicationService> App<S> {
                 let loaded = page.worklogs.len();
                 let next_cursor = page.next_cursor;
                 if let Some(history) = &mut self.history {
+                    let select_first = history.worklogs.is_empty() && history.selected.is_none();
                     history.worklogs.extend(page.worklogs);
                     history.next_cursor = next_cursor;
+                    if select_first {
+                        history.selected = history.worklogs.first().map(Worklog::id);
+                    }
                 }
                 self.sync_from_application(false);
                 self.status = if loaded == 0 {
@@ -1484,6 +1582,7 @@ impl<S: TrackerApplicationService> App<S> {
         match &self.mode {
             Mode::Input { .. } => self.confirm_input(),
             Mode::ConfirmArchive { .. } => self.confirm_archive(),
+            Mode::ConfirmDeletion { .. } => self.confirm_deletion(),
             Mode::Correction(_) => self.confirm_correction(),
             Mode::Normal => {}
         }
@@ -1493,8 +1592,103 @@ impl<S: TrackerApplicationService> App<S> {
         if matches!(self.mode, Mode::Correction(_)) {
             self.mode = Mode::Normal;
             self.status = Status::Info("Correction cancelled".to_owned());
+        } else if matches!(self.mode, Mode::ConfirmDeletion { .. }) {
+            self.mode = Mode::Normal;
+            self.status = Status::Info("Deletion cancelled".to_owned());
         } else {
             self.mode = Mode::Normal;
+        }
+    }
+
+    fn confirm_deletion(&mut self) {
+        let Mode::ConfirmDeletion { worklog } = self.mode.clone() else {
+            return;
+        };
+        let target_id = worklog.id();
+        let task_id = worklog.task_id();
+        let result = self
+            .application
+            .delete_completed_worklog(target_id, task_id, worklog.times());
+        match result {
+            Ok(DeleteCompletedWorklogOutcome::Deleted { .. }) => {
+                self.remove_deleted_worklog(target_id);
+                self.sync_tasks_from_application();
+                self.mode = Mode::Normal;
+                self.status = Status::Info("Deleted worklog".to_owned());
+            }
+            Err(error) if deletion_conflict(&error) => {
+                self.mode = Mode::Normal;
+                self.reload_newest_history_after_deletion(task_id, target_id, &error);
+            }
+            Err(error) => {
+                self.sync_from_application(false);
+                self.status = Status::Error(deletion_error_text(&error));
+            }
+        }
+    }
+
+    fn remove_deleted_worklog(&mut self, deleted_id: WorklogId) {
+        let Some(history) = &mut self.history else {
+            return;
+        };
+        let Some(index) = history
+            .worklogs
+            .iter()
+            .position(|worklog| worklog.id() == deleted_id)
+        else {
+            history.selected = None;
+            return;
+        };
+        history.worklogs.remove(index);
+        history.selected = history
+            .worklogs
+            .get(index.min(history.worklogs.len().saturating_sub(1)))
+            .map(Worklog::id);
+    }
+
+    fn reload_newest_history_after_deletion(
+        &mut self,
+        task_id: TaskId,
+        target_id: WorklogId,
+        error: &ApplicationError,
+    ) {
+        let result = self.application.worklogs_for_task(task_id, None);
+        match result {
+            Ok(page) => {
+                let target_is_present = page
+                    .worklogs
+                    .iter()
+                    .any(|worklog| worklog.id() == target_id);
+                self.replace_history_with_newest_page(task_id, Some(target_id), page);
+                self.sync_from_application(false);
+                self.status = if matches_worklog_active(error) {
+                    Status::Error(ACTIVE_WORKLOG_DELETE_MESSAGE.to_owned())
+                } else if matches_worklog_not_found(error) {
+                    if target_is_present {
+                        Status::Error(
+                            "Worklog was not found. Press d to confirm deletion again.".to_owned(),
+                        )
+                    } else {
+                        Status::Error("Worklog was not found. History was refreshed.".to_owned())
+                    }
+                } else if target_is_present {
+                    Status::Error("Worklog changed. Press d to confirm deletion again.".to_owned())
+                } else {
+                    Status::Error("Worklog changed. History was refreshed.".to_owned())
+                };
+            }
+            Err(refresh_error) => {
+                self.mark_history_unavailable();
+                self.sync_from_application(false);
+                self.status = if matches_worklog_active(error) {
+                    Status::Error(ACTIVE_WORKLOG_DELETE_MESSAGE.to_owned())
+                } else {
+                    Status::Error(format!(
+                        "Worklog changed, but history refresh failed: {}",
+                        application_error_text(&refresh_error)
+                    ))
+                };
+            }
         }
     }
 
@@ -1759,6 +1953,9 @@ mod tests {
         worklog_reads: Cell<usize>,
         correction_error: Option<ApplicationError>,
         correction_calls: Vec<(WorklogId, WorklogTimes, WorklogTimes, DateTime<Utc>)>,
+        deletion_error: Option<ApplicationError>,
+        deletion_calls: Vec<(WorklogId, TaskId, WorklogTimes)>,
+        authoritative_worklogs: Vec<Worklog>,
         clear_calls: Vec<(WorklogId, DateTime<Utc>)>,
     }
 
@@ -1780,6 +1977,9 @@ mod tests {
                 worklog_reads: Cell::new(0),
                 correction_error: None,
                 correction_calls: Vec::new(),
+                deletion_error: None,
+                deletion_calls: Vec::new(),
+                authoritative_worklogs: Vec::new(),
                 clear_calls: Vec::new(),
             }
         }
@@ -1987,6 +2187,57 @@ mod tests {
                 };
             }
             Ok(CorrectWorklogOutcome::Corrected { worklog: corrected })
+        }
+
+        fn delete_completed_worklog(
+            &mut self,
+            id: WorklogId,
+            task_id: TaskId,
+            expected: WorklogTimes,
+        ) -> Result<DeleteCompletedWorklogOutcome, ApplicationError> {
+            self.deletion_calls.push((id, task_id, expected));
+            let index = self
+                .authoritative_worklogs
+                .iter()
+                .position(|worklog| worklog.id() == id)
+                .ok_or(ApplicationError::WorklogDeletionWrite {
+                    write: RepositoryError::WorklogNotFound { id },
+                })?;
+            let stored = &self.authoritative_worklogs[index];
+            if stored.is_active() {
+                return Err(ApplicationError::WorklogDeletionWrite {
+                    write: RepositoryError::WorklogIsActive { id },
+                });
+            }
+            if stored.task_id() != task_id || stored.times() != expected {
+                return Err(ApplicationError::WorklogDeletionWrite {
+                    write: RepositoryError::WorklogChanged { id },
+                });
+            }
+            if let Some(error) = self.deletion_error.clone() {
+                return Err(error);
+            }
+            let worklog = self.authoritative_worklogs.remove(index);
+            let latest = self
+                .authoritative_worklogs
+                .iter()
+                .filter(|candidate| candidate.task_id() == task_id)
+                .map(Worklog::start)
+                .max();
+            if let Some(position) = self
+                .latest_work_starts
+                .iter()
+                .position(|(candidate, _)| *candidate == task_id)
+            {
+                if let Some(latest) = latest {
+                    self.latest_work_starts[position].1 = latest;
+                } else {
+                    self.latest_work_starts.remove(position);
+                }
+            } else if let Some(latest) = latest {
+                self.latest_work_starts.push((task_id, latest));
+            }
+            Ok(DeleteCompletedWorklogOutcome::Deleted { worklog })
         }
     }
 
@@ -3079,6 +3330,469 @@ mod tests {
             worklogs,
             next_cursor,
         }
+    }
+
+    #[test]
+    fn deletion_opening_requires_normal_history_mode() {
+        let alpha = task(1, "alpha");
+        let target = history_worklog(10, alpha.id, 100);
+        let mut service = TestService::with_tasks(vec![alpha]);
+        service.worklog_pages = vec![Ok(page(vec![target.clone()], None))];
+        service.authoritative_worklogs = vec![target];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        app.mode = Mode::ConfirmArchive {
+            task_id: TaskId::from_uuid(uuid::Uuid::from_u128(1)),
+            name: "alpha".to_owned(),
+        };
+        app.handle(Command::OpenDeletion);
+        assert!(matches!(app.mode(), Mode::ConfirmArchive { .. }));
+
+        app.mode = Mode::Normal;
+        app.screen = Screen::TaskList;
+        app.handle(Command::OpenDeletion);
+        assert_eq!(app.mode(), &Mode::Normal);
+    }
+
+    #[test]
+    fn completed_deletion_uses_the_snapshot_and_preserves_the_cursor() {
+        let alpha = task(1, "alpha");
+        let target = history_worklog(12, alpha.id, 300);
+        let following = history_worklog(11, alpha.id, 200);
+        let cursor = cursor(200, 11);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.latest_work_starts = vec![(alpha.id, target.start())];
+        service.worklog_pages = vec![Ok(page(
+            vec![target.clone(), following.clone()],
+            Some(cursor),
+        ))];
+        service.authoritative_worklogs = vec![target.clone(), following.clone()];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenDeletion);
+
+        assert_eq!(app.deletion(), Some(&target));
+        app.handle(Command::Confirm);
+
+        assert_eq!(
+            app.application.deletion_calls,
+            vec![(target.id(), alpha.id, target.times())]
+        );
+        let history = app.history().unwrap();
+        assert_eq!(history.worklogs, vec![following.clone()]);
+        assert_eq!(history.next_cursor, Some(cursor));
+        assert_eq!(app.history_selected_index(), Some(0));
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(app.status(), &Status::Info("Deleted worklog".to_owned()));
+        assert_eq!(
+            app.application.tasks(TaskOrdering::RecentlyWorked)[0].latest_work_start,
+            Some(following.start())
+        );
+        assert_eq!(app.application.worklog_reads.get(), 1);
+    }
+
+    #[test]
+    fn deletion_selection_moves_to_the_following_row_or_previous_row() {
+        let alpha = task(1, "alpha");
+        let rows = vec![
+            history_worklog(13, alpha.id, 300),
+            history_worklog(12, alpha.id, 200),
+            history_worklog(11, alpha.id, 100),
+        ];
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(page(rows.clone(), None))];
+        service.authoritative_worklogs = rows.clone();
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::MoveDown);
+        app.handle(Command::OpenDeletion);
+        app.handle(Command::Confirm);
+        assert_eq!(
+            app.history()
+                .unwrap()
+                .worklogs
+                .iter()
+                .map(Worklog::id)
+                .collect::<Vec<_>>(),
+            vec![worklog_id(13), worklog_id(11)]
+        );
+        assert_eq!(app.history_selected_index(), Some(1));
+        assert_eq!(
+            app.application.tasks(TaskOrdering::RecentlyWorked)[0].latest_work_start,
+            Some(at(300))
+        );
+
+        app.handle(Command::OpenDeletion);
+        app.handle(Command::Confirm);
+        assert_eq!(app.history_selected_index(), Some(0));
+        assert_eq!(
+            app.application.tasks(TaskOrdering::RecentlyWorked)[0].latest_work_start,
+            Some(at(300))
+        );
+
+        app.handle(Command::OpenDeletion);
+        app.handle(Command::Confirm);
+        assert_eq!(app.history_selected_index(), None);
+        assert!(app.history().unwrap().worklogs.is_empty());
+        assert_eq!(
+            app.application.tasks(TaskOrdering::RecentlyWorked)[0].latest_work_start,
+            None
+        );
+    }
+
+    #[test]
+    fn repeated_successful_deletions_update_the_latest_work_aggregate() {
+        let alpha = task(1, "alpha");
+        let rows = vec![
+            history_worklog(13, alpha.id, 300),
+            history_worklog(12, alpha.id, 200),
+            history_worklog(11, alpha.id, 100),
+        ];
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(page(rows.clone(), None))];
+        service.authoritative_worklogs = rows;
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        for expected in [Some(at(200)), Some(at(100)), None] {
+            app.handle(Command::OpenDeletion);
+            app.handle(Command::Confirm);
+            assert_eq!(
+                app.application.tasks(TaskOrdering::RecentlyWorked)[0].latest_work_start,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_deletion_uses_authoritative_worklogs_and_validates_the_snapshot() {
+        let alpha = task(1, "alpha");
+        let beta = task(2, "beta");
+        let target = history_worklog(10, alpha.id, 300);
+        let older = history_worklog(11, alpha.id, 200);
+        let active = Worklog::begin(worklog_id(12), alpha.id, at(100));
+        let mut service = TestService::with_tasks(vec![alpha.clone(), beta.clone()]);
+        service.authoritative_worklogs = vec![target.clone(), older.clone(), active.clone()];
+
+        assert_eq!(
+            service.delete_completed_worklog(worklog_id(99), alpha.id, target.times()),
+            Err(ApplicationError::WorklogDeletionWrite {
+                write: RepositoryError::WorklogNotFound { id: worklog_id(99) }
+            })
+        );
+        assert_eq!(
+            service.delete_completed_worklog(active.id(), alpha.id, active.times()),
+            Err(ApplicationError::WorklogDeletionWrite {
+                write: RepositoryError::WorklogIsActive { id: active.id() }
+            })
+        );
+        assert_eq!(
+            service.delete_completed_worklog(target.id(), beta.id, target.times()),
+            Err(ApplicationError::WorklogDeletionWrite {
+                write: RepositoryError::WorklogChanged { id: target.id() }
+            })
+        );
+        assert_eq!(
+            service.delete_completed_worklog(
+                target.id(),
+                alpha.id,
+                WorklogTimes::new(at(301), Some(at(361)))
+            ),
+            Err(ApplicationError::WorklogDeletionWrite {
+                write: RepositoryError::WorklogChanged { id: target.id() }
+            })
+        );
+
+        let outcome = service
+            .delete_completed_worklog(target.id(), alpha.id, target.times())
+            .unwrap();
+        assert!(matches!(
+            outcome,
+            DeleteCompletedWorklogOutcome::Deleted { .. }
+        ));
+        assert_eq!(service.authoritative_worklogs, vec![older, active]);
+        assert_eq!(
+            service
+                .latest_work_starts
+                .iter()
+                .find(|(task_id, _)| *task_id == alpha.id)
+                .map(|(_, start)| *start),
+            Some(at(200))
+        );
+    }
+
+    #[test]
+    fn deleting_the_loaded_newest_row_uses_an_unloaded_older_row_for_latest_work() {
+        let alpha = task(1, "alpha");
+        let newest = history_worklog(10, alpha.id, 300);
+        let older = history_worklog(11, alpha.id, 200);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.latest_work_starts = vec![(alpha.id, newest.start())];
+        service.worklog_pages = vec![Ok(page(vec![newest.clone()], Some(cursor(300, 10))))];
+        service.authoritative_worklogs = vec![newest.clone(), older.clone()];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenDeletion);
+        app.handle(Command::Confirm);
+
+        assert!(app.history().unwrap().worklogs.is_empty());
+        assert_eq!(app.history().unwrap().next_cursor, Some(cursor(300, 10)));
+        assert_eq!(
+            app.application.tasks(TaskOrdering::RecentlyWorked)[0].latest_work_start,
+            Some(older.start())
+        );
+    }
+
+    #[test]
+    fn active_history_rows_are_not_deletable_and_archived_rows_are() {
+        let alpha = task(1, "alpha");
+        let active = Worklog::begin(worklog_id(10), alpha.id, at(300));
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(page(vec![active.clone()], None))];
+        service.authoritative_worklogs = vec![active.clone()];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenDeletion);
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(
+            app.status(),
+            &Status::Error(ACTIVE_WORKLOG_DELETE_MESSAGE.to_owned())
+        );
+        assert!(app.application.deletion_calls.is_empty());
+
+        let archived = archived_task(2, "archived");
+        let completed = history_worklog(11, archived.id, 100);
+        let mut service = TestService::with_tasks(vec![archived.clone()]);
+        service.worklog_pages = vec![Ok(page(vec![completed.clone()], None))];
+        service.authoritative_worklogs = vec![completed.clone()];
+        let mut app = App::load(service);
+        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenDeletion);
+        assert_eq!(app.deletion(), Some(&completed));
+    }
+
+    #[test]
+    fn deletion_cancel_and_ordinary_failure_keep_the_snapshot() {
+        let alpha = task(1, "alpha");
+        let target = history_worklog(10, alpha.id, 100);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(page(vec![target.clone()], None))];
+        service.authoritative_worklogs = vec![target.clone()];
+        service.deletion_error = Some(ApplicationError::WorklogDeletionWrite {
+            write: RepositoryError::Backend {
+                message: "private backend detail".to_owned(),
+            },
+        });
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenDeletion);
+        app.handle(Command::Confirm);
+        assert_eq!(app.deletion(), Some(&target));
+        assert_eq!(text(app.status()), "Storage error");
+        assert!(!text(app.status()).contains("private backend detail"));
+        app.handle(Command::Cancel);
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(app.status(), &Status::Info("Deletion cancelled".to_owned()));
+    }
+
+    #[test]
+    fn deletion_recovery_failure_keeps_the_snapshot_without_refreshing_history() {
+        let alpha = task(1, "alpha");
+        let target = history_worklog(10, alpha.id, 100);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![Ok(page(vec![target.clone()], None))];
+        service.authoritative_worklogs = vec![target.clone()];
+        service.deletion_error = Some(ApplicationError::WorklogDeletionRecovery {
+            write: RepositoryError::WorklogChanged { id: target.id() },
+            recovery: RepositoryError::Backend {
+                message: "recovery secret".to_owned(),
+            },
+        });
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenDeletion);
+        app.handle(Command::Confirm);
+
+        assert_eq!(app.deletion(), Some(&target));
+        assert_eq!(app.history().unwrap().worklogs, vec![target]);
+        assert_eq!(app.application.worklog_reads.get(), 1);
+        assert_eq!(
+            text(app.status()),
+            "Deletion failed: Worklog changed in another client. State recovery failed: Storage error."
+        );
+        assert!(!text(app.status()).contains("recovery secret"));
+    }
+
+    #[test]
+    fn stale_deletion_refreshes_and_requires_confirmation_again() {
+        let alpha = task(1, "alpha");
+        let target = history_worklog(10, alpha.id, 100);
+        let newest = history_worklog(10, alpha.id, 120);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![
+            Ok(page(vec![target.clone()], Some(cursor(100, 10)))),
+            Ok(page(vec![newest.clone()], None)),
+        ];
+        service.authoritative_worklogs = vec![target.clone()];
+        service.deletion_error = Some(ApplicationError::WorklogDeletionWrite {
+            write: RepositoryError::WorklogNotFound { id: target.id() },
+        });
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenDeletion);
+        app.handle(Command::Confirm);
+
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(app.history().unwrap().worklogs, vec![newest]);
+        assert_eq!(app.history_selected_index(), Some(0));
+        assert_eq!(
+            text(app.status()),
+            "Worklog was not found. Press d to confirm deletion again."
+        );
+        assert_eq!(app.application.worklog_reads.get(), 2);
+    }
+
+    #[test]
+    fn changed_deletion_of_a_missing_row_reports_a_refresh() {
+        let alpha = task(1, "alpha");
+        let target = history_worklog(10, alpha.id, 100);
+        let replacement = history_worklog(11, alpha.id, 200);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![
+            Ok(page(vec![target.clone()], None)),
+            Ok(page(vec![replacement], None)),
+        ];
+        service.authoritative_worklogs = vec![target.clone()];
+        service.deletion_error = Some(ApplicationError::WorklogDeletionWrite {
+            write: RepositoryError::WorklogChanged { id: target.id() },
+        });
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenDeletion);
+        app.handle(Command::Confirm);
+
+        assert_eq!(
+            text(app.status()),
+            "Worklog changed. History was refreshed."
+        );
+    }
+
+    #[test]
+    fn failed_stale_refresh_discards_rows_and_marks_history_unavailable() {
+        let alpha = task(1, "alpha");
+        let target = history_worklog(10, alpha.id, 100);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![
+            Ok(page(vec![target.clone()], None)),
+            Err(TestService::failure()),
+        ];
+        service.authoritative_worklogs = vec![target.clone()];
+        service.deletion_error = Some(ApplicationError::WorklogDeletionWrite {
+            write: RepositoryError::WorklogNotFound { id: target.id() },
+        });
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenDeletion);
+        app.handle(Command::Confirm);
+
+        let history = app.history().unwrap();
+        assert_eq!(history.availability, HistoryAvailability::Unavailable);
+        assert!(history.worklogs.is_empty());
+        assert_eq!(history.next_cursor, None);
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(
+            text(app.status()),
+            "Worklog changed, but history refresh failed: Storage error"
+        );
+        assert!(!text(app.status()).contains("private backend detail"));
+        app.handle(Command::OpenDeletion);
+        assert_eq!(app.mode(), &Mode::Normal);
+    }
+
+    #[test]
+    fn deleting_loaded_pages_then_loading_older_selects_the_first_appended_row() {
+        let alpha = task(1, "alpha");
+        let loaded = (1..=50)
+            .map(|tag| history_worklog(tag, alpha.id, 2_000 - tag as i64))
+            .collect::<Vec<_>>();
+        let older = history_worklog(51, alpha.id, 1_900);
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![
+            Ok(page(loaded.clone(), Some(cursor(1_950, 50)))),
+            Ok(page(vec![older.clone()], None)),
+        ];
+        service.authoritative_worklogs = loaded.clone();
+        service.authoritative_worklogs.push(older.clone());
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+
+        for _ in 0..50 {
+            app.handle(Command::OpenDeletion);
+            app.handle(Command::Confirm);
+        }
+
+        let history = app.history().unwrap();
+        assert!(history.worklogs.is_empty());
+        assert_eq!(history.next_cursor, Some(cursor(1_950, 50)));
+        assert_eq!(app.history_selected_index(), None);
+
+        app.handle(Command::LoadOlderWorklogs);
+
+        let history = app.history().unwrap();
+        assert_eq!(history.worklogs, vec![older]);
+        assert_eq!(history.next_cursor, None);
+        assert_eq!(app.history_selected_index(), Some(0));
+    }
+
+    #[test]
+    fn active_race_refreshes_history_and_keeps_confirmation_closed() {
+        let alpha = task(1, "alpha");
+        let completed = history_worklog(10, alpha.id, 100);
+        let active = Worklog::begin(completed.id(), alpha.id, at(100));
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.worklog_pages = vec![
+            Ok(page(vec![completed.clone()], None)),
+            Ok(page(vec![active.clone()], None)),
+        ];
+        service.authoritative_worklogs = vec![completed];
+        service.deletion_error = Some(ApplicationError::WorklogDeletionWrite {
+            write: RepositoryError::WorklogIsActive { id: active.id() },
+        });
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::OpenDeletion);
+        app.handle(Command::Confirm);
+
+        assert_eq!(app.mode(), &Mode::Normal);
+        assert_eq!(app.history().unwrap().worklogs, vec![active]);
+        assert_eq!(text(app.status()), ACTIVE_WORKLOG_DELETE_MESSAGE);
+    }
+
+    #[test]
+    fn successful_deletion_does_not_reanchor_an_unrelated_timer() {
+        let alpha = task(1, "alpha");
+        let target = history_worklog(10, alpha.id, 100);
+        let active = Worklog::begin(worklog_id(11), alpha.id, at(300));
+        let mut service = TestService::with_tasks(vec![alpha.clone()]);
+        service.tracking = TrackingState::Running {
+            worklog: ActiveWorklog::begin(active.id(), alpha.id, active.start()),
+        };
+        service.worklog_pages = vec![Ok(page_with_active(
+            vec![active.clone(), target.clone()],
+            Some(active.clone()),
+            None,
+        ))];
+        service.authoritative_worklogs = vec![active.clone(), target];
+        let mut app = App::load(service);
+        app.handle(Command::OpenHistory);
+        app.handle(Command::MoveDown);
+        app.freeze_elapsed_for_tests(Duration::from_secs(600));
+        let before = app.elapsed().unwrap();
+        app.handle(Command::OpenDeletion);
+        app.handle(Command::Confirm);
+        assert!(app.elapsed().unwrap() >= before);
     }
 
     #[test]
@@ -4511,6 +5225,36 @@ mod tests {
     }
 
     #[test]
+    fn deletion_statuses_use_stable_sanitized_text() {
+        let active = ApplicationError::WorklogDeletionWrite {
+            write: RepositoryError::WorklogIsActive { id: worklog_id(2) },
+        };
+        assert_eq!(deletion_error_text(&active), ACTIVE_WORKLOG_DELETE_MESSAGE);
+        let active_recovery = ApplicationError::WorklogDeletionRecovery {
+            write: RepositoryError::WorklogIsActive { id: worklog_id(2) },
+            recovery: RepositoryError::Backend {
+                message: "recovery secret".to_owned(),
+            },
+        };
+        assert_eq!(
+            deletion_error_text(&active_recovery),
+            "Deletion failed: Running worklogs cannot be deleted. State recovery failed: Storage error."
+        );
+        let recovery = ApplicationError::WorklogDeletionRecovery {
+            write: RepositoryError::Backend {
+                message: "write secret".to_owned(),
+            },
+            recovery: RepositoryError::Backend {
+                message: "recovery secret".to_owned(),
+            },
+        };
+        assert_eq!(
+            deletion_error_text(&recovery),
+            "Deletion failed: Storage error. State recovery failed: Storage error."
+        );
+    }
+
+    #[test]
     fn repository_statuses_hide_backend_secrets_and_corrupt_data_fields() {
         let secret = "postgres://user:secret@host/tracker";
         let backend = RepositoryError::Backend {
@@ -4530,6 +5274,15 @@ mod tests {
             ApplicationError::WorklogCorrectionRecovery {
                 write: backend.clone(),
                 recovery: corrupt,
+            },
+            ApplicationError::WorklogDeletionWrite {
+                write: backend.clone(),
+            },
+            ApplicationError::WorklogDeletionRecovery {
+                write: backend.clone(),
+                recovery: RepositoryError::CorruptData {
+                    field: "account token",
+                },
             },
         ];
         for error in ordinary {
