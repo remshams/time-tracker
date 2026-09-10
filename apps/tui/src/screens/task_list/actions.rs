@@ -43,7 +43,7 @@ impl<S: TrackerApplicationService> App<S> {
 
     /// The tasks of the view currently shown.
     pub fn tasks(&self) -> &[Task] {
-        self.task_list().tasks_in(self.view())
+        self.task_list().tasks()
     }
 
     pub fn view(&self) -> TaskView {
@@ -56,7 +56,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     pub fn ordering_label(&self) -> &'static str {
-        ordering_label(self.task_list().ordering)
+        self.task_list().ordering_label()
     }
 
     pub fn selected(&self) -> Option<usize> {
@@ -436,14 +436,6 @@ fn next_ordering(ordering: TaskOrdering) -> TaskOrdering {
         TaskOrdering::RecentlyWorked => TaskOrdering::RecentlyUpdated,
         TaskOrdering::RecentlyUpdated => TaskOrdering::RecentlyCreated,
         TaskOrdering::RecentlyCreated => TaskOrdering::RecentlyWorked,
-    }
-}
-
-fn ordering_label(ordering: TaskOrdering) -> &'static str {
-    match ordering {
-        TaskOrdering::RecentlyWorked => "recently worked",
-        TaskOrdering::RecentlyUpdated => "recently updated",
-        TaskOrdering::RecentlyCreated => "recently created",
     }
 }
 

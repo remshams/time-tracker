@@ -3,6 +3,7 @@ pub mod correction;
 mod deletion;
 mod keymap;
 mod state;
+pub(crate) mod view;
 
 pub use correction::{CorrectionDraft, CorrectionField};
 pub(crate) use keymap::{footer_hints, map};

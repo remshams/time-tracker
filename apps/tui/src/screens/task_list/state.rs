@@ -68,6 +68,23 @@ impl TaskListState {
         &self.mode
     }
 
+    pub(crate) fn tasks(&self) -> &[Task] {
+        self.tasks_in(self.view)
+    }
+
+    pub(crate) fn selected_index(&self) -> Option<usize> {
+        let id = self.selection()?;
+        self.tasks().iter().position(|task| task.id() == id)
+    }
+
+    pub(crate) fn ordering_label(&self) -> &'static str {
+        match self.ordering {
+            TaskOrdering::RecentlyWorked => "recently worked",
+            TaskOrdering::RecentlyUpdated => "recently updated",
+            TaskOrdering::RecentlyCreated => "recently created",
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn set_mode_for_test(&mut self, mode: TaskListMode) {
         self.mode = mode;

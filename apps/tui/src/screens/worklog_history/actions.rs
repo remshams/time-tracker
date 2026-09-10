@@ -9,6 +9,7 @@ use crate::command::Command;
 use crate::screens::{Screen, ScreenState};
 use crate::support::clock::ElapsedClock;
 use crate::support::errors::application_error_text;
+use crate::support::timestamps::local_time;
 
 use super::{History, HistoryAvailability, WorklogHistoryMode, active_worklog_for_task};
 
@@ -65,6 +66,7 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
+    #[cfg(test)]
     pub fn history_selected_index(&self) -> Option<usize> {
         self.history()?.selected_index()
     }
@@ -75,8 +77,8 @@ impl<S: TrackerApplicationService> App<S> {
 
     pub fn local_time(&self, at: DateTime<Utc>) -> String {
         match self.frozen_offset {
-            Some(offset) => crate::ui::local_time(at, &offset),
-            None => crate::ui::local_time(at, &self.timezone),
+            Some(offset) => local_time(at, &offset),
+            None => local_time(at, &self.timezone),
         }
     }
 

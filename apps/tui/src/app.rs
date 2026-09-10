@@ -12,11 +12,11 @@ use crate::support::clock::ElapsedClock;
 use crate::support::errors::application_error_text;
 use crate::support::timestamps::startup_timezone;
 
+#[cfg(test)]
 pub use crate::screens::worklog_history::{CorrectionField, HistoryAvailability};
-pub use crate::screens::{
-    CorrectionDraft, History, InputPurpose, Screen, ScreenState, TaskListState, TaskView,
-    WorklogHistoryState,
-};
+#[cfg(test)]
+pub use crate::screens::{CorrectionDraft, InputPurpose, TaskView};
+pub use crate::screens::{History, Screen, ScreenState, TaskListState, WorklogHistoryState};
 #[cfg(test)]
 pub use crate::screens::{TaskListMode, WorklogHistoryMode};
 pub use crate::support::timestamps::TimestampInput;

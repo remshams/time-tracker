@@ -97,6 +97,18 @@ pub(crate) fn is_timestamp_character(character: char) -> bool {
     character.is_ascii_digit() || matches!(character, '+' | '-' | ':' | ' ')
 }
 
+/// Formats an instant in `timezone` as a local minute timestamp.
+pub(crate) fn local_time<Tz>(at: DateTime<Utc>, timezone: &Tz) -> String
+where
+    Tz: TimeZone,
+{
+    let offset = timezone.offset_from_utc_datetime(&at.naive_utc()).fix();
+    at.naive_utc()
+        .checked_add_offset(offset)
+        .map(|local| local.format(CORRECTION_FORMAT).to_string())
+        .unwrap_or_else(|| "outside local range".to_owned())
+}
+
 pub(crate) const CORRECTION_FORMAT: &str = "%Y-%m-%d %H:%M";
 pub(crate) const OUTSIDE_EDITABLE_RANGE: &str = "Timestamp is outside editable range";
 
@@ -238,4 +250,123 @@ where
         return Err("Adjustment cannot be represented as a local minute");
     }
     Ok((text, adjusted))
+}
+
+#[cfg(test)]
+mod rendering_tests {
+    use super::*;
+    use chrono::{DateTime, FixedOffset, MappedLocalTime, NaiveDate, TimeZone, Utc};
+
+    #[test]
+    fn local_times_render_as_local_minutes() {
+        let plus_two = FixedOffset::east_opt(2 * 3600).unwrap();
+        assert_eq!(
+            local_time(DateTime::<Utc>::from_timestamp(0, 0).unwrap(), &plus_two),
+            "1970-01-01 02:00"
+        );
+        assert_eq!(
+            local_time(
+                DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
+                &FixedOffset::west_opt(5 * 3600 + 1800).unwrap()
+            ),
+            "1969-12-31 18:30"
+        );
+        assert_eq!(
+            local_time(
+                DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
+                &FixedOffset::east_opt(0).unwrap()
+            ),
+            "1970-01-01 00:00"
+        );
+    }
+
+    #[test]
+    fn local_times_render_chrono_signed_expanded_years() {
+        for (year, expected) in [
+            (-1, "-0001-01-02 03:04"),
+            (0, "0000-01-02 03:04"),
+            (9999, "9999-01-02 03:04"),
+            (10000, "+10000-01-02 03:04"),
+        ] {
+            let instant = Utc.with_ymd_and_hms(year, 1, 2, 3, 4, 0).single().unwrap();
+            assert_eq!(local_time(instant, &Utc), expected);
+        }
+    }
+
+    #[test]
+    fn local_times_outside_chrono_range_render_a_safe_marker() {
+        assert_eq!(
+            local_time(DateTime::<Utc>::MIN_UTC, &FixedOffset::west_opt(1).unwrap()),
+            "outside local range"
+        );
+        assert_eq!(
+            local_time(DateTime::<Utc>::MAX_UTC, &FixedOffset::east_opt(1).unwrap()),
+            "outside local range"
+        );
+    }
+
+    /// A zone that jumps from UTC+01:00 to UTC+02:00 at a fixed UTC instant.
+    #[derive(Clone, Copy, Debug)]
+    struct SwitchingZone {
+        switch: i64,
+    }
+
+    impl SwitchingZone {
+        fn pick(&self, utc_seconds: i64) -> FixedOffset {
+            if utc_seconds < self.switch {
+                FixedOffset::east_opt(3600).unwrap()
+            } else {
+                FixedOffset::east_opt(2 * 3600).unwrap()
+            }
+        }
+    }
+
+    impl TimeZone for SwitchingZone {
+        type Offset = FixedOffset;
+
+        fn from_offset(_offset: &FixedOffset) -> Self {
+            unimplemented!("the formatter never recovers the zone")
+        }
+
+        fn offset_from_local_date(&self, local: &NaiveDate) -> MappedLocalTime<FixedOffset> {
+            self.offset_from_local_datetime(
+                &local
+                    .and_hms_opt(0, 0, 0)
+                    .expect("midnight exists on every date"),
+            )
+        }
+
+        fn offset_from_local_datetime(
+            &self,
+            local: &NaiveDateTime,
+        ) -> MappedLocalTime<FixedOffset> {
+            MappedLocalTime::Single(self.pick(local.and_utc().timestamp()))
+        }
+
+        fn offset_from_utc_date(&self, utc: &NaiveDate) -> FixedOffset {
+            self.pick(
+                utc.and_hms_opt(0, 0, 0)
+                    .expect("midnight exists on every date")
+                    .and_utc()
+                    .timestamp(),
+            )
+        }
+
+        fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> FixedOffset {
+            self.pick(utc.and_utc().timestamp())
+        }
+    }
+
+    #[test]
+    fn local_times_use_the_offset_valid_at_each_instant() {
+        let zone = SwitchingZone { switch: 3600 };
+        assert_eq!(
+            local_time(DateTime::<Utc>::from_timestamp(3599, 0).unwrap(), &zone),
+            "1970-01-01 01:59"
+        );
+        assert_eq!(
+            local_time(DateTime::<Utc>::from_timestamp(3600, 0).unwrap(), &zone),
+            "1970-01-01 03:00"
+        );
+    }
 }

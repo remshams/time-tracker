@@ -6,11 +6,14 @@
 
 mod app;
 mod command;
+mod components;
 mod screens;
 mod styles;
 mod support;
 mod terminal;
 mod ui;
+#[cfg(test)]
+mod ui_tests;
 
 use std::error::Error;
 use std::io;

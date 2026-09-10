@@ -4,8 +4,12 @@ pub mod worklog_history;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::command::Command;
-pub use task_list::{InputPurpose, TaskListMode, TaskListState, TaskView};
-pub use worklog_history::{CorrectionDraft, History, WorklogHistoryMode, WorklogHistoryState};
+#[cfg(test)]
+pub use task_list::{InputPurpose, TaskView};
+pub use task_list::{TaskListMode, TaskListState};
+#[cfg(test)]
+pub use worklog_history::CorrectionDraft;
+pub use worklog_history::{History, WorklogHistoryMode, WorklogHistoryState};
 
 /// Which screen the interface currently shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

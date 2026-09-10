@@ -62,7 +62,7 @@ fn history_uses_the_session_timezone_snapshot() {
     for seconds in [0, 1_700_000_000] {
         assert_eq!(
             app.local_time(at(seconds)),
-            crate::ui::local_time(at(seconds), &chrono_tz::Europe::London)
+            crate::support::timestamps::local_time(at(seconds), &chrono_tz::Europe::London)
         );
     }
     app.freeze_offset_for_tests(FixedOffset::east_opt(2 * 3600).unwrap());
