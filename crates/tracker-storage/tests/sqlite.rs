@@ -6,15 +6,15 @@
 //! task-list read model with its latest-work aggregate.
 
 use std::sync::{
-    Arc, Barrier,
+    Arc, Barrier, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
-    mpsc::{Receiver, SyncSender, sync_channel},
+    mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel},
 };
 use std::thread;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use std::ffi::{CStr, c_char, c_int, c_void};
+use std::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use tempfile::TempDir;
 use tracker_application::{
     ApplicationError, ClearActiveTaskOutcome, RepositoryError, SetActiveTaskOutcome, TaskListItem,
@@ -30,6 +30,74 @@ use tracker_storage::{SqliteRepository, StorageError};
 
 fn at(seconds: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(seconds, 0).unwrap()
+}
+
+struct WritePause {
+    action: c_int,
+    paused: AtomicBool,
+    reached: SyncSender<()>,
+    release: Mutex<Receiver<()>>,
+}
+
+unsafe extern "C" fn pause_worklog_write(
+    context: *mut c_void,
+    action: c_int,
+    table: *const c_char,
+    _: *const c_char,
+    _: *const c_char,
+    _: *const c_char,
+) -> c_int {
+    let pause = unsafe { &*(context.cast::<WritePause>()) };
+    let is_target = action == pause.action
+        && unsafe { CStr::from_ptr(table) }.to_bytes() == b"worklogs"
+        && !pause.paused.swap(true, Ordering::SeqCst);
+    if is_target
+        && (pause.reached.send(()).is_err()
+            || pause
+                .release
+                .lock()
+                .map_or(true, |release| release.recv().is_err()))
+    {
+        return rusqlite::ffi::SQLITE_DENY;
+    }
+    rusqlite::ffi::SQLITE_OK
+}
+
+struct BusyObservation {
+    observed: AtomicBool,
+    reached: SyncSender<()>,
+}
+
+unsafe extern "C" fn observe_busy(context: *mut c_void, previous_attempts: c_int) -> c_int {
+    let observation = unsafe { &*(context.cast::<BusyObservation>()) };
+    if !observation.observed.swap(true, Ordering::SeqCst) {
+        let _ = observation.reached.try_send(());
+    }
+    thread::sleep(Duration::from_millis(1));
+    c_int::from(previous_attempts < 2_000)
+}
+
+struct AggregateObservation {
+    completed: SyncSender<()>,
+}
+
+unsafe extern "C" fn observe_aggregate(
+    event: c_uint,
+    context: *mut c_void,
+    statement: *mut c_void,
+    _: *mut c_void,
+) -> c_int {
+    if event == rusqlite::ffi::SQLITE_TRACE_PROFILE {
+        let sql = unsafe { rusqlite::ffi::sqlite3_sql(statement.cast()) };
+        if !sql.is_null()
+            && unsafe { CStr::from_ptr(sql) }.to_bytes()
+                == b"SELECT MAX(start_us) FROM worklogs WHERE task_id = ?1"
+        {
+            let observation = unsafe { &*(context.cast::<AggregateObservation>()) };
+            let _ = observation.completed.try_send(());
+        }
+    }
+    rusqlite::ffi::SQLITE_OK
 }
 
 unsafe extern "C" fn count_worklog_start_reads(
@@ -288,6 +356,17 @@ impl WorklogRepository for SynchronizingRepository {
             .map_err(Into::into)
     }
 
+    fn compare_and_delete_completed_worklog(
+        &self,
+        id: WorklogId,
+        expected_task_id: TaskId,
+        expected: WorklogTimes,
+    ) -> Result<tracker_application::WorklogDeletion, RepositoryError> {
+        self.repository
+            .compare_and_delete_completed_worklog(id, expected_task_id, expected)
+            .map_err(Into::into)
+    }
+
     fn worklog_page(
         &self,
         task_id: TaskId,
@@ -383,7 +462,7 @@ fn migrations_create_the_schema_triggers_and_are_idempotent() {
     }
     // Reopening applies no migration again and keeps the data.
     let reopened = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&reopened), 4);
+    assert_eq!(user_version(&reopened), 5);
     let tasks = reopened.list_tasks().unwrap();
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0].name().as_str(), "first");
@@ -409,6 +488,21 @@ fn migrations_create_the_schema_triggers_and_are_idempotent() {
         "worklogs_reject_same_task_overlap_update".to_owned(),
         "trigger".to_owned()
     )));
+    assert!(objects.contains(&(
+        "worklogs_reject_active_delete".to_owned(),
+        "trigger".to_owned()
+    )));
+    let active_delete_trigger: String = reopened
+        .connection()
+        .query_row(
+            "SELECT sql FROM sqlite_master
+             WHERE type = 'trigger' AND name = 'worklogs_reject_active_delete'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(active_delete_trigger.contains("BEFORE DELETE ON worklogs"));
+    assert!(active_delete_trigger.contains("OLD.end_us IS NULL"));
     let revision_trigger: String = reopened
         .connection()
         .query_row(
@@ -424,7 +518,7 @@ fn migrations_create_the_schema_triggers_and_are_idempotent() {
 }
 
 #[test]
-fn a_version_1_database_migrates_to_version_4_and_keeps_every_record() {
+fn a_version_1_database_migrates_to_version_5_and_keeps_every_record() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tracker.db");
     create_v1_database(&path);
@@ -433,7 +527,7 @@ fn a_version_1_database_migrates_to_version_4_and_keeps_every_record() {
     let before = Utc::now();
     let repository = SqliteRepository::open(&path).unwrap();
     let after = Utc::now();
-    assert_eq!(user_version(&repository), 4);
+    assert_eq!(user_version(&repository), 5);
     let backfill = repository.list_tasks().unwrap()[0].created_at();
 
     // Every task id, name, and archive flag survived.
@@ -510,7 +604,7 @@ fn version_2_migration_preserves_identity_and_timestamp_values_exactly() {
 
     let repository = SqliteRepository::open(&path).unwrap();
 
-    assert_eq!(user_version(&repository), 4);
+    assert_eq!(user_version(&repository), 5);
     let task_values: (String, i64, i64) = repository
         .connection()
         .query_row(
@@ -610,7 +704,7 @@ fn a_migration_is_not_applied_twice() {
     drop(first);
 
     let second = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&second), 4);
+    assert_eq!(user_version(&second), 5);
     assert_eq!(second.find_task(task_id(1)).unwrap(), Some(task));
 }
 
@@ -694,7 +788,7 @@ fn a_database_from_a_newer_version_is_rejected_without_changes() {
     match error {
         StorageError::DatabaseTooNew { found, latest } => {
             assert_eq!(found, 99);
-            assert_eq!(latest, 4);
+            assert_eq!(latest, 5);
             assert!(error.to_string().contains("newer"));
         }
         other => panic!("expected DatabaseTooNew, got {other:?}"),
@@ -726,7 +820,7 @@ fn simultaneous_first_opens_of_one_database_all_complete() {
         handle.join().unwrap().expect("every first open completes");
     }
     let repository = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&repository), 4, "migrations ran exactly once");
+    assert_eq!(user_version(&repository), 5, "migrations ran exactly once");
     assert_eq!(repository.list_tasks().unwrap().len(), 8);
 }
 
@@ -2139,6 +2233,627 @@ fn two_clients_cannot_apply_corrections_from_the_same_expected_values() {
 }
 
 #[test]
+fn completed_deletion_returns_the_deleted_row_and_latest_task_aggregate() {
+    let repository = repo();
+    let task = named_task(1, "history");
+    repository.create_task(task.clone()).unwrap();
+    let earlier = Worklog::new(worklog_id(1), task.id, at(100), Some(at(150))).unwrap();
+    let latest = Worklog::new(worklog_id(2), task.id, at(300), Some(at(350))).unwrap();
+    repository.insert_worklog(&earlier).unwrap();
+    repository.insert_worklog(&latest).unwrap();
+
+    let deletion = repository
+        .compare_and_delete_completed_worklog(latest.id(), task.id, latest.times())
+        .unwrap();
+
+    assert_eq!(deletion.worklog, latest);
+    assert_eq!(deletion.task_latest_work_start, Some(at(100)));
+    assert_eq!(repository.list_worklogs(task.id).unwrap(), [earlier]);
+    assert_eq!(repository.active_worklog().unwrap(), None);
+}
+
+#[test]
+fn active_deletion_is_rejected_by_the_repository_and_direct_sql() {
+    let repository = repo();
+    let task = named_task(1, "running");
+    repository.create_task(task.clone()).unwrap();
+    let completed = Worklog::new(worklog_id(1), task.id, at(50), Some(at(75))).unwrap();
+    let active = Worklog::begin(worklog_id(2), task.id, at(100));
+    repository.insert_worklog(&completed).unwrap();
+    repository.insert_worklog(&active).unwrap();
+
+    assert!(matches!(
+        repository.compare_and_delete_completed_worklog(
+            active.id(),
+            active.task_id(),
+            active.times(),
+        ),
+        Err(StorageError::WorklogIsActive { id }) if id == active.id()
+    ));
+    let error = repository
+        .connection()
+        .execute(
+            "DELETE FROM worklogs WHERE id = ?1",
+            [active.id().to_string()],
+        )
+        .expect_err("the schema must preserve the active row");
+    assert!(matches!(
+        error,
+        rusqlite::Error::SqliteFailure(_, Some(message))
+            if message == "active worklog cannot be deleted"
+    ));
+
+    repository
+        .connection()
+        .execute(
+            "DELETE FROM worklogs WHERE id = ?1",
+            [completed.id().to_string()],
+        )
+        .unwrap();
+    assert_eq!(repository.find_worklog(completed.id()).unwrap(), None);
+    assert_eq!(repository.find_worklog(active.id()).unwrap(), Some(active));
+}
+
+#[test]
+fn completed_deletion_distinguishes_missing_stale_and_moved_rows() {
+    let repository = repo();
+    let alpha = named_task(1, "alpha");
+    let beta = named_task(2, "beta");
+    repository.create_task(alpha.clone()).unwrap();
+    repository.create_task(beta.clone()).unwrap();
+    let target = Worklog::new(worklog_id(1), alpha.id, at(100), Some(at(150))).unwrap();
+    repository.insert_worklog(&target).unwrap();
+
+    assert!(matches!(
+        repository.compare_and_delete_completed_worklog(
+            worklog_id(99),
+            alpha.id,
+            target.times(),
+        ),
+        Err(StorageError::WorklogNotFound { id }) if id == worklog_id(99)
+    ));
+    for expected in [
+        WorklogTimes::new(at(99), Some(at(150))),
+        WorklogTimes::new(at(100), Some(at(151))),
+        WorklogTimes::new(at(100), None),
+    ] {
+        assert!(matches!(
+            repository.compare_and_delete_completed_worklog(target.id(), alpha.id, expected),
+            Err(StorageError::WorklogChanged { id }) if id == target.id()
+        ));
+    }
+
+    repository
+        .connection()
+        .execute(
+            "UPDATE worklogs SET task_id = ?1 WHERE id = ?2",
+            [beta.id.to_string(), target.id().to_string()],
+        )
+        .unwrap();
+    assert!(matches!(
+        repository.compare_and_delete_completed_worklog(
+            target.id(),
+            alpha.id,
+            target.times(),
+        ),
+        Err(StorageError::WorklogChanged { id }) if id == target.id()
+    ));
+    assert!(repository.find_worklog(target.id()).unwrap().is_some());
+}
+
+#[test]
+fn completed_worklogs_on_archived_tasks_can_be_deleted() {
+    let repository = repo();
+    let task = named_task(1, "archived");
+    repository.create_task(task.clone()).unwrap();
+    let target = Worklog::new(worklog_id(1), task.id, at(100), Some(at(150))).unwrap();
+    repository.insert_worklog(&target).unwrap();
+    repository.archive_task(task.id, at(200)).unwrap();
+
+    let deletion = repository
+        .compare_and_delete_completed_worklog(target.id(), task.id, target.times())
+        .unwrap();
+
+    assert_eq!(deletion.task_latest_work_start, None);
+    assert!(
+        repository
+            .find_task(task.id)
+            .unwrap()
+            .unwrap()
+            .is_archived()
+    );
+    assert!(repository.list_worklogs(task.id).unwrap().is_empty());
+}
+
+#[test]
+fn completed_deletion_persists_after_reopen() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let task = named_task(1, "persistent");
+    let target = Worklog::new(worklog_id(1), task.id, at(100), Some(at(150))).unwrap();
+    {
+        let repository = SqliteRepository::open(&path).unwrap();
+        repository.create_task(task.clone()).unwrap();
+        repository.insert_worklog(&target).unwrap();
+        repository
+            .compare_and_delete_completed_worklog(target.id(), task.id, target.times())
+            .unwrap();
+    }
+
+    let reopened = SqliteRepository::open(&path).unwrap();
+    assert_eq!(reopened.find_worklog(target.id()).unwrap(), None);
+    assert!(reopened.list_worklogs(task.id).unwrap().is_empty());
+}
+
+#[test]
+fn a_version_4_database_gains_the_active_delete_guard() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let task = named_task(1, "migrated");
+    let completed = Worklog::new(worklog_id(1), task.id, at(50), Some(at(75))).unwrap();
+    let active = Worklog::begin(worklog_id(2), task.id, at(100));
+    {
+        let repository = SqliteRepository::open(&path).unwrap();
+        repository.create_task(task.clone()).unwrap();
+        repository.insert_worklog(&completed).unwrap();
+        repository.insert_worklog(&active).unwrap();
+        repository
+            .connection()
+            .execute_batch(
+                "DROP TRIGGER worklogs_reject_active_delete;
+                 PRAGMA user_version = 4;",
+            )
+            .unwrap();
+    }
+
+    let migrated = SqliteRepository::open(&path).unwrap();
+    assert_eq!(user_version(&migrated), 5);
+    assert!(
+        migrated
+            .connection()
+            .execute(
+                "DELETE FROM worklogs WHERE id = ?1",
+                [active.id().to_string()],
+            )
+            .is_err()
+    );
+    migrated
+        .connection()
+        .execute(
+            "DELETE FROM worklogs WHERE id = ?1",
+            [completed.id().to_string()],
+        )
+        .unwrap();
+    assert_eq!(migrated.find_worklog(active.id()).unwrap(), Some(active));
+}
+
+#[test]
+fn deletion_preserves_existing_history_cursors_and_revisions() {
+    let repository = repo();
+    let task = named_task(1, "history");
+    repository.create_task(task.clone()).unwrap();
+    insert_numbered_worklogs(&repository, &task, 55);
+    let first = repository.worklog_page(task.id, None).unwrap();
+    let cursor = first.next_cursor.unwrap();
+    let target = repository.find_worklog(cursor.id).unwrap().unwrap();
+    let revision = history_revision(&repository, task.id);
+
+    repository
+        .compare_and_delete_completed_worklog(target.id(), task.id, target.times())
+        .unwrap();
+
+    assert_eq!(history_revision(&repository, task.id), revision);
+    let continuation = repository.worklog_page(task.id, Some(&cursor)).unwrap();
+    assert_eq!(
+        continuation
+            .worklogs
+            .iter()
+            .map(Worklog::id)
+            .collect::<Vec<_>>(),
+        (1..=5).rev().map(worklog_id).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn a_failed_post_delete_aggregate_read_rolls_back_the_deletion() {
+    let repository = repo();
+    let task = named_task(1, "rollback");
+    repository.create_task(task.clone()).unwrap();
+    let target = Worklog::new(worklog_id(1), task.id, at(100), Some(at(150))).unwrap();
+    repository.insert_worklog(&target).unwrap();
+    repository
+        .connection()
+        .execute(
+            "INSERT INTO worklogs (id, task_id, start_us, end_us)
+             VALUES (?1, ?2, ?3, ?3)",
+            rusqlite::params![worklog_id(2).to_string(), task.id.to_string(), i64::MAX,],
+        )
+        .unwrap();
+
+    assert!(matches!(
+        repository.compare_and_delete_completed_worklog(target.id(), task.id, target.times()),
+        Err(StorageError::CorruptData("timestamp"))
+    ));
+    let target_count: i64 = repository
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM worklogs WHERE id = ?1",
+            [target.id().to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(target_count, 1, "the transaction restored the target row");
+}
+
+#[test]
+fn a_failed_delete_commit_rolls_back_the_completed_worklog() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let setup = SqliteRepository::open(&path).unwrap();
+    let journal_mode: String = setup
+        .connection()
+        .query_row("PRAGMA journal_mode = DELETE", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(journal_mode, "delete");
+    let task = named_task(1, "rollback");
+    let target = Worklog::new(worklog_id(1), task.id, at(100), Some(at(150))).unwrap();
+    setup.create_task(task.clone()).unwrap();
+    setup.insert_worklog(&target).unwrap();
+    drop(setup);
+
+    let deleting_repository = SqliteRepository::open(&path).unwrap();
+    deleting_repository
+        .connection()
+        .busy_timeout(Duration::from_millis(100))
+        .unwrap();
+    let reading_repository = SqliteRepository::open(&path).unwrap();
+    let (delete_reached_tx, delete_reached_rx) = sync_channel(0);
+    let (delete_release_tx, delete_release_rx) = sync_channel(0);
+    let (aggregate_completed_tx, aggregate_completed_rx) = sync_channel(1);
+    let (result_tx, result_rx) = sync_channel(1);
+    let delete_target = target.clone();
+    let delete = thread::spawn(move || {
+        let repository = deleting_repository;
+        let write_pause = Box::new(WritePause {
+            action: rusqlite::ffi::SQLITE_DELETE,
+            paused: AtomicBool::new(false),
+            reached: delete_reached_tx,
+            release: Mutex::new(delete_release_rx),
+        });
+        assert_eq!(
+            unsafe {
+                rusqlite::ffi::sqlite3_set_authorizer(
+                    repository.connection().handle(),
+                    Some(pause_worklog_write),
+                    (&*write_pause as *const WritePause).cast_mut().cast(),
+                )
+            },
+            rusqlite::ffi::SQLITE_OK
+        );
+        let aggregate_observation = Box::new(AggregateObservation {
+            completed: aggregate_completed_tx,
+        });
+        let aggregate_observation_ptr = (&*aggregate_observation as *const AggregateObservation)
+            .cast_mut()
+            .cast();
+        assert_eq!(
+            unsafe {
+                rusqlite::ffi::sqlite3_trace_v2(
+                    repository.connection().handle(),
+                    rusqlite::ffi::SQLITE_TRACE_PROFILE,
+                    Some(observe_aggregate),
+                    aggregate_observation_ptr,
+                )
+            },
+            rusqlite::ffi::SQLITE_OK
+        );
+        let result = repository.compare_and_delete_completed_worklog(
+            delete_target.id(),
+            delete_target.task_id(),
+            delete_target.times(),
+        );
+        unsafe {
+            rusqlite::ffi::sqlite3_set_authorizer(
+                repository.connection().handle(),
+                None,
+                std::ptr::null_mut(),
+            );
+        }
+        assert_eq!(
+            unsafe {
+                rusqlite::ffi::sqlite3_trace_v2(
+                    repository.connection().handle(),
+                    0,
+                    None,
+                    std::ptr::null_mut(),
+                )
+            },
+            rusqlite::ffi::SQLITE_OK
+        );
+        result_tx.send(result).unwrap();
+    });
+    delete_reached_rx
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap();
+
+    reading_repository
+        .connection()
+        .execute_batch("BEGIN DEFERRED")
+        .unwrap();
+    assert_eq!(
+        reading_repository.find_worklog(target.id()).unwrap(),
+        Some(target.clone()),
+        "the reader sees the pre-delete snapshot"
+    );
+    delete_release_tx.send(()).unwrap();
+    aggregate_completed_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the post-delete aggregate query must complete before commit");
+
+    let error = result_rx
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .expect_err("the held read lock must make commit fail");
+    assert!(
+        matches!(
+            &error,
+            StorageError::Sql(error)
+                if error.sqlite_error_code() == Some(rusqlite::ErrorCode::DatabaseBusy)
+        ),
+        "expected a busy commit error, got {error:?}"
+    );
+    reading_repository
+        .connection()
+        .execute_batch("ROLLBACK")
+        .unwrap();
+    delete.join().unwrap();
+
+    let reopened = SqliteRepository::open(&path).unwrap();
+    assert_eq!(reopened.find_worklog(target.id()).unwrap(), Some(target));
+}
+
+#[test]
+fn delete_wins_a_two_connection_race_against_correction() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let setup = SqliteRepository::open(&path).unwrap();
+    let task = named_task(1, "shared");
+    let target = Worklog::new(worklog_id(1), task.id, at(100), Some(at(150))).unwrap();
+    setup.create_task(task.clone()).unwrap();
+    setup.insert_worklog(&target).unwrap();
+    drop(setup);
+
+    let deleting_repository = SqliteRepository::open(&path).unwrap();
+    let correcting_repository = SqliteRepository::open(&path).unwrap();
+    let (reached_tx, reached_rx) = sync_channel(0);
+    let (release_tx, release_rx) = sync_channel(0);
+    let (delete_result_tx, delete_result_rx) = sync_channel(1);
+    let delete_target = target.clone();
+    let delete = thread::spawn(move || {
+        let repository = deleting_repository;
+        let pause = Box::new(WritePause {
+            action: rusqlite::ffi::SQLITE_DELETE,
+            paused: AtomicBool::new(false),
+            reached: reached_tx,
+            release: Mutex::new(release_rx),
+        });
+        assert_eq!(
+            unsafe {
+                rusqlite::ffi::sqlite3_set_authorizer(
+                    repository.connection().handle(),
+                    Some(pause_worklog_write),
+                    (&*pause as *const WritePause).cast_mut().cast(),
+                )
+            },
+            rusqlite::ffi::SQLITE_OK
+        );
+        let result = repository.compare_and_delete_completed_worklog(
+            delete_target.id(),
+            delete_target.task_id(),
+            delete_target.times(),
+        );
+        unsafe {
+            rusqlite::ffi::sqlite3_set_authorizer(
+                repository.connection().handle(),
+                None,
+                std::ptr::null_mut(),
+            );
+        }
+        delete_result_tx.send(result).unwrap();
+    });
+    reached_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+
+    let (contended_tx, contended_rx) = sync_channel(1);
+    let (correction_result_tx, correction_result_rx) = sync_channel(1);
+    let correction_target = target.clone();
+    let correction = thread::spawn(move || {
+        let repository = correcting_repository;
+        let observation = Box::new(BusyObservation {
+            observed: AtomicBool::new(false),
+            reached: contended_tx,
+        });
+        let observation_ptr = (&*observation as *const BusyObservation).cast_mut().cast();
+        assert_eq!(
+            unsafe {
+                rusqlite::ffi::sqlite3_busy_handler(
+                    repository.connection().handle(),
+                    Some(observe_busy),
+                    observation_ptr,
+                )
+            },
+            rusqlite::ffi::SQLITE_OK
+        );
+        let result = repository.compare_and_set_worklog_times(
+            correction_target.id(),
+            correction_target.times(),
+            WorklogTimes::new(at(110), Some(at(160))),
+        );
+        assert_eq!(
+            unsafe {
+                rusqlite::ffi::sqlite3_busy_handler(
+                    repository.connection().handle(),
+                    None,
+                    std::ptr::null_mut(),
+                )
+            },
+            rusqlite::ffi::SQLITE_OK
+        );
+        correction_result_tx.send(result).unwrap();
+    });
+    contended_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the correction must encounter the delete transaction's lock");
+    assert!(
+        matches!(
+            correction_result_rx.recv_timeout(Duration::from_millis(100)),
+            Err(RecvTimeoutError::Timeout)
+        ),
+        "the correction completed while the delete transaction was paused"
+    );
+    release_tx.send(()).unwrap();
+
+    assert_eq!(
+        delete_result_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap()
+            .worklog,
+        target
+    );
+    assert!(matches!(
+        correction_result_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap(),
+        Err(StorageError::WorklogNotFound { id }) if id == target.id()
+    ));
+    delete.join().unwrap();
+    correction.join().unwrap();
+}
+
+#[test]
+fn correction_wins_a_two_connection_race_against_delete() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let setup = SqliteRepository::open(&path).unwrap();
+    let task = named_task(1, "shared");
+    let target = Worklog::new(worklog_id(1), task.id, at(100), Some(at(150))).unwrap();
+    setup.create_task(task.clone()).unwrap();
+    setup.insert_worklog(&target).unwrap();
+    drop(setup);
+
+    let correcting_repository = SqliteRepository::open(&path).unwrap();
+    let deleting_repository = SqliteRepository::open(&path).unwrap();
+    let (reached_tx, reached_rx) = sync_channel(0);
+    let (release_tx, release_rx) = sync_channel(0);
+    let (correction_result_tx, correction_result_rx) = sync_channel(1);
+    let correction_target = target.clone();
+    let correction = thread::spawn(move || {
+        let repository = correcting_repository;
+        let pause = Box::new(WritePause {
+            action: rusqlite::ffi::SQLITE_UPDATE,
+            paused: AtomicBool::new(false),
+            reached: reached_tx,
+            release: Mutex::new(release_rx),
+        });
+        assert_eq!(
+            unsafe {
+                rusqlite::ffi::sqlite3_set_authorizer(
+                    repository.connection().handle(),
+                    Some(pause_worklog_write),
+                    (&*pause as *const WritePause).cast_mut().cast(),
+                )
+            },
+            rusqlite::ffi::SQLITE_OK
+        );
+        let result = repository.compare_and_set_worklog_times(
+            correction_target.id(),
+            correction_target.times(),
+            WorklogTimes::new(at(110), Some(at(160))),
+        );
+        unsafe {
+            rusqlite::ffi::sqlite3_set_authorizer(
+                repository.connection().handle(),
+                None,
+                std::ptr::null_mut(),
+            );
+        }
+        correction_result_tx.send(result).unwrap();
+    });
+    reached_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+
+    let (contended_tx, contended_rx) = sync_channel(1);
+    let (delete_result_tx, delete_result_rx) = sync_channel(1);
+    let delete_target = target.clone();
+    let delete = thread::spawn(move || {
+        let repository = deleting_repository;
+        let observation = Box::new(BusyObservation {
+            observed: AtomicBool::new(false),
+            reached: contended_tx,
+        });
+        let observation_ptr = (&*observation as *const BusyObservation).cast_mut().cast();
+        assert_eq!(
+            unsafe {
+                rusqlite::ffi::sqlite3_busy_handler(
+                    repository.connection().handle(),
+                    Some(observe_busy),
+                    observation_ptr,
+                )
+            },
+            rusqlite::ffi::SQLITE_OK
+        );
+        let result = repository.compare_and_delete_completed_worklog(
+            delete_target.id(),
+            delete_target.task_id(),
+            delete_target.times(),
+        );
+        assert_eq!(
+            unsafe {
+                rusqlite::ffi::sqlite3_busy_handler(
+                    repository.connection().handle(),
+                    None,
+                    std::ptr::null_mut(),
+                )
+            },
+            rusqlite::ffi::SQLITE_OK
+        );
+        delete_result_tx.send(result).unwrap();
+    });
+    contended_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the delete must encounter the correction transaction's lock");
+    assert!(
+        matches!(
+            delete_result_rx.recv_timeout(Duration::from_millis(100)),
+            Err(RecvTimeoutError::Timeout)
+        ),
+        "the delete completed while the correction transaction was paused"
+    );
+    release_tx.send(()).unwrap();
+
+    let corrected = correction_result_rx
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .unwrap()
+        .worklog;
+    assert_eq!(corrected.start(), at(110));
+    assert!(matches!(
+        delete_result_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap(),
+        Err(StorageError::WorklogChanged { id }) if id == target.id()
+    ));
+    correction.join().unwrap();
+    delete.join().unwrap();
+    assert_eq!(
+        SqliteRepository::open(&path)
+            .unwrap()
+            .find_worklog(target.id())
+            .unwrap(),
+        Some(corrected)
+    );
+}
+
+#[test]
 fn an_archived_task_rejects_worklogs_at_the_database_level() {
     let repository = repo();
     let task = named_task(1, "done");
@@ -3497,7 +4212,7 @@ fn overlap_migration_uses_an_ordered_indexed_sweep_for_large_valid_history() {
     create_v2_database(&path, &rows);
 
     let repository = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&repository), 4);
+    assert_eq!(user_version(&repository), 5);
     let plan: Vec<String> = repository
         .connection()
         .prepare("EXPLAIN QUERY PLAN SELECT id FROM worklogs WHERE task_id = ?1 ORDER BY start_us DESC, id")
@@ -3513,7 +4228,7 @@ fn overlap_migration_uses_an_ordered_indexed_sweep_for_large_valid_history() {
 }
 
 #[test]
-fn version_3_migration_rejects_direct_moves_to_archived_tasks_but_allows_archived_time_changes() {
+fn version_3_database_gets_indexed_overlap_and_active_delete_guards() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tracker.db");
     create_v2_database(&path, &[(1, 100, None)]);
@@ -3559,7 +4274,7 @@ fn version_3_migration_rejects_direct_moves_to_archived_tasks_but_allows_archive
     drop(connection);
 
     let repository = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&repository), 4);
+    assert_eq!(user_version(&repository), 5);
     let active_id = worklog_id(1);
     let error = repository
         .connection()

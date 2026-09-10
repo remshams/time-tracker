@@ -15,9 +15,12 @@ pub enum StorageError {
     /// The worklog already has an end time and cannot be stopped again.
     #[error("worklog {id} is already stopped")]
     WorklogAlreadyStopped { id: WorklogId },
-    /// The stored timestamps no longer match the caller's expected values.
+    /// The stored task or timestamps no longer match the caller's expected values.
     #[error("worklog {id} changed since it was read")]
     WorklogChanged { id: WorklogId },
+    /// The worklog is active and cannot be deleted.
+    #[error("worklog {id} is active and cannot be deleted")]
+    WorklogIsActive { id: WorklogId },
     /// A continuation cursor no longer matches the task's history order.
     #[error("worklog history for task {task_id} changed since this page was read")]
     WorklogHistoryChanged { task_id: TaskId },
@@ -88,6 +91,7 @@ impl From<StorageError> for RepositoryError {
             StorageError::WorklogNotFound { id } => Self::WorklogNotFound { id },
             StorageError::WorklogAlreadyStopped { id } => Self::WorklogAlreadyStopped { id },
             StorageError::WorklogChanged { id } => Self::WorklogChanged { id },
+            StorageError::WorklogIsActive { id } => Self::WorklogIsActive { id },
             StorageError::WorklogHistoryChanged { task_id } => {
                 Self::WorklogHistoryChanged { task_id }
             }
@@ -172,6 +176,17 @@ pub(crate) fn update_worklog_error(error: rusqlite::Error, id: WorklogId) -> Sto
         && failure_message(&error) == Some(crate::migrate::TRIGGER_WORKLOG_OVERLAP)
     {
         StorageError::SameTaskWorklogOverlap { id }
+    } else {
+        classify_write_error(error)
+    }
+}
+
+/// Maps an error raised while deleting a worklog.
+pub(crate) fn delete_worklog_error(error: rusqlite::Error, id: WorklogId) -> StorageError {
+    if is_trigger_violation(&error)
+        && failure_message(&error) == Some(crate::migrate::TRIGGER_WORKLOG_ACTIVE_DELETE)
+    {
+        StorageError::WorklogIsActive { id }
     } else {
         classify_write_error(error)
     }
@@ -447,6 +462,32 @@ mod tests {
     }
 
     #[test]
+    fn delete_worklog_errors_map_only_the_active_delete_trigger() {
+        let id = WorklogId::from_uuid(uuid::Uuid::from_u128(2));
+        assert!(matches!(
+            delete_worklog_error(
+                failure(
+                    rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER,
+                    Some(crate::migrate::TRIGGER_WORKLOG_ACTIVE_DELETE)
+                ),
+                id
+            ),
+            StorageError::WorklogIsActive { id: existing } if existing == id
+        ));
+        assert!(matches!(
+            delete_worklog_error(
+                failure(rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER, Some("other")),
+                id
+            ),
+            StorageError::Sql(_)
+        ));
+        assert!(matches!(
+            delete_worklog_error(rusqlite::Error::InvalidQuery, id),
+            StorageError::Sql(_)
+        ));
+    }
+
+    #[test]
     fn archive_task_errors_map_the_active_task_trigger() {
         let id = TaskId::from_uuid(uuid::Uuid::from_u128(2));
         assert!(matches!(
@@ -498,6 +539,10 @@ mod tests {
         assert_eq!(
             RepositoryError::from(StorageError::WorklogChanged { id: worklog_id }),
             RepositoryError::WorklogChanged { id: worklog_id }
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::WorklogIsActive { id: worklog_id }),
+            RepositoryError::WorklogIsActive { id: worklog_id }
         );
         assert_eq!(
             RepositoryError::from(StorageError::SameTaskWorklogOverlap { id: worklog_id }),

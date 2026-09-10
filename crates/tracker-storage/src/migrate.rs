@@ -26,6 +26,9 @@ pub(crate) const TRIGGER_TASK_ACTIVE: &str = "task is active";
 /// The message the same-task overlap triggers abort with.
 pub(crate) const TRIGGER_WORKLOG_OVERLAP: &str = "same-task worklog overlap";
 
+/// The message the active-worklog deletion trigger aborts with.
+pub(crate) const TRIGGER_WORKLOG_ACTIVE_DELETE: &str = "active worklog cannot be deleted";
+
 /// The version 2 tasks table, before history ordering revisions existed.
 const TASKS_TABLE_V2: &str = "CREATE TABLE tasks (
         id TEXT PRIMARY KEY NOT NULL,
@@ -266,6 +269,18 @@ fn apply_indexed_worklog_predecessor(transaction: &Transaction<'_>) -> Result<()
     Ok(())
 }
 
+/// Prevents every SQL client from deleting an active worklog. Completed rows
+/// remain deletable, and deletion does not change history ordering revisions.
+fn apply_active_worklog_delete_guard(transaction: &Transaction<'_>) -> Result<(), StorageError> {
+    transaction.execute_batch(
+        "CREATE TRIGGER worklogs_reject_active_delete
+         BEFORE DELETE ON worklogs
+         WHEN OLD.end_us IS NULL
+         BEGIN SELECT RAISE(ABORT, 'active worklog cannot be deleted'); END;",
+    )?;
+    Ok(())
+}
+
 type Migration = fn(&Transaction<'_>) -> Result<(), StorageError>;
 
 /// The migrations in order; index plus one is the version each one produces.
@@ -274,6 +289,7 @@ const MIGRATIONS: &[Migration] = &[
     apply_task_timestamps,
     apply_worklog_overlap,
     apply_indexed_worklog_predecessor,
+    apply_active_worklog_delete_guard,
 ];
 
 /// The newest schema version this build understands.
@@ -309,7 +325,7 @@ mod tests {
 
     #[test]
     fn latest_version_counts_the_scripts() {
-        assert_eq!(LATEST_VERSION, 4);
+        assert_eq!(LATEST_VERSION, 5);
     }
 
     #[test]
@@ -320,6 +336,19 @@ mod tests {
         }
         assert!(WORKLOG_OVERLAP_TRIGGERS_V3.contains(&format!("'{TRIGGER_WORKLOG_OVERLAP}'")));
         assert!(WORKLOG_TRIGGERS_V4.contains(&format!("'{TRIGGER_WORKLOG_OVERLAP}'")));
+
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(BASELINE_V1).unwrap();
+        let transaction = connection.unchecked_transaction().unwrap();
+        apply_active_worklog_delete_guard(&transaction).unwrap();
+        let trigger: String = transaction
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE name = 'worklogs_reject_active_delete'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(trigger.contains(&format!("'{TRIGGER_WORKLOG_ACTIVE_DELETE}'")));
     }
 
     #[test]

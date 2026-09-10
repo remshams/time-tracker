@@ -21,8 +21,8 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior};
 use tracker_application::{
     RepositoryError, TaskListItem, TaskRepository, TrackerSnapshot, TrackingRepository,
-    WORKLOG_PAGE_SIZE, WorklogCorrection, WorklogCursor, WorklogPage, WorklogPageSnapshot,
-    WorklogRepository,
+    WORKLOG_PAGE_SIZE, WorklogCorrection, WorklogCursor, WorklogDeletion, WorklogPage,
+    WorklogPageSnapshot, WorklogRepository,
 };
 use tracker_domain::{
     Task, TaskError, TaskId, TaskName, Worklog, WorklogError, WorklogId, WorklogTimes,
@@ -551,6 +551,59 @@ impl SqliteRepository {
         }
     }
 
+    /// Deletes a completed worklog only when every selected value still
+    /// matches, then reads the affected task's latest-work aggregate before
+    /// committing.
+    pub fn compare_and_delete_completed_worklog(
+        &self,
+        id: WorklogId,
+        expected_task_id: TaskId,
+        expected: WorklogTimes,
+    ) -> Result<WorklogDeletion, StorageError> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let deleted_raw = {
+            let mut statement = transaction.prepare(
+                "DELETE FROM worklogs
+                 WHERE id = ?1
+                   AND task_id = ?2
+                   AND start_us = ?3
+                   AND end_us = ?4
+                   AND end_us IS NOT NULL
+                 RETURNING id, task_id, start_us, end_us",
+            )?;
+            match statement
+                .query_row(
+                    rusqlite::params![
+                        id.to_string(),
+                        expected_task_id.to_string(),
+                        timestamp_to_us(expected.start()),
+                        expected.end().map(timestamp_to_us),
+                    ],
+                    raw_worklog,
+                )
+                .optional()
+            {
+                Ok(raw) => raw,
+                Err(error) => return Err(error::delete_worklog_error(error, id)),
+            }
+        };
+
+        let Some(raw) = deleted_raw else {
+            return match worklog_by_id_on(&transaction, id)? {
+                None => Err(StorageError::WorklogNotFound { id }),
+                Some(worklog) if worklog.is_active() => Err(StorageError::WorklogIsActive { id }),
+                Some(_) => Err(StorageError::WorklogChanged { id }),
+            };
+        };
+        let worklog = worklog_from_raw(raw)?;
+        let task_latest_work_start = latest_work_start_on(&transaction, worklog.task_id())?;
+        transaction.commit()?;
+        Ok(WorklogDeletion {
+            worklog,
+            task_latest_work_start,
+        })
+    }
+
     pub fn stop_worklog(
         &self,
         id: WorklogId,
@@ -838,6 +891,16 @@ impl WorklogRepository for SqliteRepository {
         replacement: WorklogTimes,
     ) -> Result<WorklogCorrection, RepositoryError> {
         SqliteRepository::compare_and_set_worklog_times(self, id, expected, replacement)
+            .map_err(Into::into)
+    }
+
+    fn compare_and_delete_completed_worklog(
+        &self,
+        id: WorklogId,
+        expected_task_id: TaskId,
+        expected: WorklogTimes,
+    ) -> Result<WorklogDeletion, RepositoryError> {
+        SqliteRepository::compare_and_delete_completed_worklog(self, id, expected_task_id, expected)
             .map_err(Into::into)
     }
 
