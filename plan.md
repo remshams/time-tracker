@@ -90,7 +90,7 @@ The exact text is easy to replace once the intended demo is clear.
 
 ## Current architecture
 
-The domain, application, and SQLite adapter have been reorganized in wave one without changing observable behavior. The TUI state, screens, and components are left for a separate wave two refactor.
+Both architecture refactor waves are complete without observable behavior changes. Wave one reorganized the domain, application, and SQLite adapter. Wave two reorganized the TUI around screen-owned state and colocated screen behavior.
 
 Responsibilities and current module boundaries:
 
@@ -98,8 +98,11 @@ Responsibilities and current module boundaries:
 - `tracker-application` is split into `error`, `model`, `repository`, and task, tracking, and worklog service modules. Presentation consumes semantic application failure classifications instead of matching repository errors. Successful commands return exact domain values when there is no alternative outcome.
 - Application repository ports expose only the queries and writes used by application workflows. SQLite may retain additional diagnostic queries.
 - `tracker-storage` keeps its SQLite adapter in `mapping`, `tasks`, `tracking`, and `worklogs` modules. `SqliteRepository` still owns one `Connection`, and transaction-aware helpers continue to accept an explicit `&Connection`.
-- Large application and SQLite test files are split by concern.
-- `app.rs` owns TUI presentation state and converts semantic input into application operations. `ui.rs` renders TUI state, while `terminal.rs` owns terminal lifecycle. `main.rs` wires the adapter and application service.
+- Large application and SQLite tests are split by concern.
+- `apps/tui/src/app.rs` owns shared presentation state, process lifecycle, and transitions between screens. Its stored `ScreenState` contains either `TaskListState` or `WorklogHistoryState`; each screen has its own valid modes.
+- Each folder under `apps/tui/src/screens` contains that screen's state, actions, keymap, rendering, and tests. Worklog history retains the task-list state it must restore on return.
+- Shared stateless rendering functions live under `components`. Clock, timestamp, and error-presentation helpers live under `support`. `ui.rs` only composes a frame from narrow screen data.
+- `terminal.rs` owns terminal lifecycle. `main.rs` wires the SQLite adapter, application service, event loop, and TUI.
 
 ## Threat and invariant review
 
