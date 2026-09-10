@@ -15,11 +15,15 @@ fn deletion_opening_requires_normal_history_mode() {
     app.handle(Command::BackToTaskList);
     app.handle(Command::OpenArchiveConfirm);
     app.handle(Command::OpenDeletion);
-    assert!(matches!(app.mode(), Mode::ConfirmArchive { .. }));
+    assert!(
+        matches!(&app.screen, ScreenState::TaskList(state) if matches!(state.mode(), TaskListMode::ConfirmArchive { .. }))
+    );
 
     app.handle(Command::Cancel);
     app.handle(Command::OpenDeletion);
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::TaskList(state) if matches!(state.mode(), TaskListMode::Normal))
+    );
 }
 #[test]
 fn completed_deletion_uses_the_snapshot_and_preserves_the_cursor() {
@@ -49,7 +53,9 @@ fn completed_deletion_uses_the_snapshot_and_preserves_the_cursor() {
     assert_eq!(history.worklogs, vec![following.clone()]);
     assert_eq!(history.next_cursor, Some(cursor));
     assert_eq!(app.history_selected_index(), Some(0));
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    );
     assert_eq!(app.status(), &Status::Info("Deleted worklog".to_owned()));
     assert_eq!(
         app.application.tasks(TaskOrdering::RecentlyWorked)[0].latest_work_start,
@@ -204,7 +210,9 @@ fn active_history_rows_are_not_deletable_and_archived_rows_are() {
     let mut app = App::load(service);
     app.handle(Command::OpenHistory);
     app.handle(Command::OpenDeletion);
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    );
     assert_eq!(
         app.status(),
         &Status::Error(ACTIVE_WORKLOG_DELETE_MESSAGE.to_owned())
@@ -238,7 +246,9 @@ fn deletion_cancel_and_ordinary_failure_keep_the_snapshot() {
     assert_eq!(text(app.status()), "Storage error");
     assert!(!text(app.status()).contains("private backend detail"));
     app.handle(Command::Cancel);
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    );
     assert_eq!(app.status(), &Status::Info("Deletion cancelled".to_owned()));
 }
 #[test]
@@ -283,7 +293,9 @@ fn stale_deletion_refreshes_and_requires_confirmation_again() {
     app.handle(Command::OpenDeletion);
     app.handle(Command::Confirm);
 
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    );
     assert_eq!(app.history().unwrap().worklogs, vec![newest]);
     assert_eq!(app.history_selected_index(), Some(0));
     assert_eq!(
@@ -334,14 +346,18 @@ fn failed_stale_refresh_discards_rows_and_marks_history_unavailable() {
     assert_eq!(history.availability, HistoryAvailability::Unavailable);
     assert!(history.worklogs.is_empty());
     assert_eq!(history.next_cursor, None);
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    );
     assert_eq!(
         text(app.status()),
         "Worklog changed, but history refresh failed: Storage error"
     );
     assert!(!text(app.status()).contains("private backend detail"));
     app.handle(Command::OpenDeletion);
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    );
 }
 #[test]
 fn deleting_loaded_pages_then_loading_older_selects_the_first_appended_row() {
@@ -394,7 +410,9 @@ fn active_race_refreshes_history_and_keeps_confirmation_closed() {
     app.handle(Command::OpenDeletion);
     app.handle(Command::Confirm);
 
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    );
     assert_eq!(app.history().unwrap().worklogs, vec![active]);
     assert_eq!(text(app.status()), ACTIVE_WORKLOG_DELETE_MESSAGE);
 }
@@ -1074,7 +1092,9 @@ fn task_list_commands_do_not_act_on_the_history_screen() {
     app.handle(Command::Cancel);
 
     assert_eq!(app.screen(), Screen::WorklogHistory);
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    );
     assert_eq!(app.history().unwrap(), &before);
     assert_eq!(app.view(), TaskView::Active);
     assert_eq!(app.ordering(), TaskOrdering::RecentlyWorked);
@@ -1108,14 +1128,18 @@ fn opening_a_history_requires_normal_mode() {
     let mut app = App::load(TestService::with_tasks(vec![task(1, "alpha")]));
     app.handle(Command::OpenAdd);
     app.handle(Command::OpenHistory);
-    assert!(matches!(app.mode(), Mode::Input { .. }));
+    assert!(
+        matches!(&app.screen, ScreenState::TaskList(state) if matches!(state.mode(), TaskListMode::Input { .. }))
+    );
     assert_eq!(app.screen(), Screen::TaskList);
     assert_eq!(app.application.worklog_reads.get(), 0);
 
     app.handle(Command::Cancel);
     app.handle(Command::OpenArchiveConfirm);
     app.handle(Command::OpenHistory);
-    assert!(matches!(app.mode(), Mode::ConfirmArchive { .. }));
+    assert!(
+        matches!(&app.screen, ScreenState::TaskList(state) if matches!(state.mode(), TaskListMode::ConfirmArchive { .. }))
+    );
     assert_eq!(app.screen(), Screen::TaskList);
     assert_eq!(app.application.worklog_reads.get(), 0);
 }

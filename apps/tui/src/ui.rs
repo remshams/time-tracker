@@ -9,10 +9,9 @@ use chrono::{DateTime, Offset, TimeZone, Utc};
 use tracker_application::TrackerApplicationService;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{
-    App, CorrectionDraft, CorrectionField, History, InputPurpose, Mode, Screen, Status, TaskView,
-};
-use crate::{keymap, styles};
+use crate::app::{App, CorrectionDraft, CorrectionField, InputPurpose, Screen, Status, TaskView};
+use crate::screens::{TaskListMode, WorklogHistoryMode};
+use crate::styles;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
@@ -118,7 +117,7 @@ fn render_tasks<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app
     };
     let block = Block::bordered()
         .title(format!("{view_title} · {}", app.ordering_label()))
-        .border_style(if app.mode() == Mode::Normal {
+        .border_style(if matches!(&app.screen, crate::app::ScreenState::TaskList(state) if matches!(state.mode(), TaskListMode::Normal)) {
             styles::focused_border()
         } else {
             Style::default()
@@ -164,7 +163,7 @@ fn render_history<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, a
     let name = app.history_task_name().unwrap_or("unknown task");
     let block = Block::bordered()
         .title(format!("Worklog history · {name}"))
-        .border_style(if app.mode() == Mode::Normal {
+        .border_style(if matches!(&app.screen, crate::app::ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal)) {
             styles::focused_border()
         } else {
             Style::default()
@@ -239,26 +238,26 @@ fn render_status<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, ap
 
 /// Renders the context-sensitive key help for the current mode.
 fn render_footer<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app: &App<S>) {
-    frame.render_widget(
-        Paragraph::new(keymap::footer_hints(
-            &app.mode(),
-            app.view(),
-            app.screen(),
-            app.history().is_some_and(History::is_available),
-            area.width,
-        )),
-        area,
-    );
+    frame.render_widget(Paragraph::new(app.screen.footer_hints(area.width)), area);
 }
 
 /// Renders the modal dialog of the current mode, if any.
 fn render_modal<S: TrackerApplicationService>(frame: &mut Frame, area: Rect, app: &App<S>) {
-    match app.mode() {
-        Mode::Input { purpose, buffer } => render_input_modal(frame, area, purpose, &buffer),
-        Mode::ConfirmArchive { name, .. } => render_confirm_modal(frame, area, &name),
-        Mode::ConfirmDeletion { worklog } => render_delete_modal(frame, area, app, &worklog),
-        Mode::Correction(draft) => render_correction_modal(frame, area, &draft),
-        Mode::Normal => {}
+    match &app.screen {
+        crate::app::ScreenState::TaskList(state) => match state.mode() {
+            TaskListMode::Input { purpose, buffer } => {
+                render_input_modal(frame, area, *purpose, buffer)
+            }
+            TaskListMode::ConfirmArchive { name, .. } => render_confirm_modal(frame, area, name),
+            TaskListMode::Normal => {}
+        },
+        crate::app::ScreenState::WorklogHistory(state) => match state.mode() {
+            WorklogHistoryMode::ConfirmDeletion { worklog } => {
+                render_delete_modal(frame, area, app, worklog)
+            }
+            WorklogHistoryMode::Correction(draft) => render_correction_modal(frame, area, draft),
+            WorklogHistoryMode::Normal => {}
+        },
     }
 }
 

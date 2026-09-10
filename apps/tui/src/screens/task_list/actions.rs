@@ -9,7 +9,6 @@ use tracker_domain::{Task, TaskId, TaskName, TaskNameError, TrackingState, Workl
 
 use crate::app::{App, Status};
 use crate::command::Command;
-use crate::screens::Mode;
 use crate::support::clock::{ElapsedClock, tracking_timestamp};
 use crate::support::errors::application_error_text;
 
@@ -84,6 +83,10 @@ impl<S: TrackerApplicationService> App<S> {
         self.tasks().get(self.selected()?)
     }
 
+    pub(crate) fn task_list_is_normal(&self) -> bool {
+        matches!(&self.screen, crate::screens::ScreenState::TaskList(state) if matches!(state.mode(), TaskListMode::Normal))
+    }
+
     fn selection_id(&self) -> Option<TaskId> {
         self.task_list().selection()
     }
@@ -93,7 +96,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn move_task_up(&mut self) {
-        if self.mode() != Mode::Normal {
+        if !self.task_list_is_normal() {
             return;
         }
         let index = match self.selected() {
@@ -108,7 +111,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn move_task_down(&mut self) {
-        if self.mode() != Mode::Normal {
+        if !self.task_list_is_normal() {
             return;
         }
         if self.tasks().is_empty() {
@@ -124,7 +127,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn show_tasks(&mut self, target: TaskView) {
-        if self.mode() != Mode::Normal || self.view() == target {
+        if !self.task_list_is_normal() || self.view() == target {
             return;
         }
         let first = self.task_list().tasks_in(target).first().map(Task::id);
@@ -136,7 +139,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn cycle_ordering(&mut self) {
-        if self.mode() != Mode::Normal {
+        if !self.task_list_is_normal() {
             return;
         }
         self.task_list_mut().ordering = next_ordering(self.task_list().ordering);
@@ -209,7 +212,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn accepts_active_actions(&self) -> bool {
-        self.mode() == Mode::Normal && self.view() == TaskView::Active
+        self.task_list_is_normal() && self.view() == TaskView::Active
     }
 
     fn insert_task_name(&mut self, character: char) {
@@ -231,15 +234,15 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn confirm_task_list(&mut self) {
-        match self.mode() {
-            Mode::Input { .. } => self.confirm_input(),
-            Mode::ConfirmArchive { .. } => self.confirm_archive(),
+        match self.task_list().mode() {
+            TaskListMode::Input { .. } => self.confirm_input(),
+            TaskListMode::ConfirmArchive { .. } => self.confirm_archive(),
             _ => {}
         }
     }
 
     fn confirm_input(&mut self) {
-        let Mode::Input { purpose, buffer } = self.mode() else {
+        let TaskListMode::Input { purpose, buffer } = self.task_list().mode().clone() else {
             return;
         };
         let name = match TaskName::new(&buffer) {
@@ -273,7 +276,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn confirm_archive(&mut self) {
-        let Mode::ConfirmArchive { task_id, .. } = self.mode() else {
+        let TaskListMode::ConfirmArchive { task_id, .. } = self.task_list().mode().clone() else {
             return;
         };
         match self.application.archive_task(task_id, Utc::now()) {
@@ -297,7 +300,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn unarchive_selected(&mut self) {
-        if self.mode() != Mode::Normal || self.view() != TaskView::Archived {
+        if !self.task_list_is_normal() || self.view() != TaskView::Archived {
             return;
         }
         let Some(task) = self.selected_task().cloned() else {
@@ -328,7 +331,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn toggle_tracking(&mut self) {
-        if self.mode() != Mode::Normal || self.view() != TaskView::Active {
+        if !self.task_list_is_normal() || self.view() != TaskView::Active {
             return;
         }
         let Some(task) = self.selected_task().cloned() else {

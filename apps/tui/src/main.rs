@@ -1,4 +1,4 @@
-//! The `tt` binary: wires the app, keymap, terminal, and UI together.
+//! The `tt` binary: wires the app, terminal, and UI together.
 //!
 //! Startup failures print one concise line to stderr and exit nonzero.
 //! Runtime storage failures stay in the status line; terminal failures
@@ -6,7 +6,6 @@
 
 mod app;
 mod command;
-mod keymap;
 mod screens;
 mod styles;
 mod support;
@@ -83,7 +82,7 @@ fn run<S: TrackerApplicationService>(
         guard.draw(|frame| ui::render(frame, app))?;
         if crossterm::event::poll(TICK)?
             && let Event::Key(key) = crossterm::event::read()?
-            && let Some(command) = keymap::map(&app.mode(), app.view(), app.screen(), key)
+            && let Some(command) = screens::map_key(&app.screen, key)
             && command_is_allowed(command, crossterm::terminal::size()?.0)
         {
             app.handle(command);

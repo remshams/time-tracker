@@ -124,7 +124,9 @@ fn escape_cancels_correction_without_writing() {
     let mut app = correction_app(worklog.clone(), vec![worklog]);
     app.handle(Command::Insert('2'));
     app.handle(Command::Cancel);
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    );
     assert_eq!(
         app.status(),
         &Status::Info("Correction cancelled".to_owned())
@@ -226,7 +228,9 @@ fn successful_correction_discards_older_pages_and_resolves_selection() {
     let newest = history_worklog(11, task_id, 300);
     let mut app = correction_app(corrected.clone(), vec![newest.clone(), corrected.clone()]);
     app.handle(Command::Confirm);
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    );
     assert_eq!(app.history().unwrap().worklogs.len(), 2);
     assert_eq!(app.history().unwrap().next_cursor, None);
     assert_eq!(app.history_selected_index(), Some(1));
@@ -252,7 +256,9 @@ fn correction_and_history_commands_require_their_own_screen_and_mode() {
     app.handle(Command::OpenHistory);
     app.handle(Command::BackToTaskList);
     app.handle(Command::OpenCorrection);
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::TaskList(state) if matches!(state.mode(), TaskListMode::Normal))
+    );
     assert_eq!(app.screen(), Screen::TaskList);
 
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
@@ -301,7 +307,9 @@ fn saved_correction_marks_history_unavailable_until_retry_succeeds() {
     assert_eq!(history.next_cursor, None);
     assert_eq!(history.selected, Some(original.id()));
     assert_eq!(app.history_selected_index(), None);
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    );
     assert_eq!(
         app.status(),
         &Status::Error("Correction saved, but history refresh failed".to_owned())
@@ -394,7 +402,9 @@ fn correction_is_available_from_archived_history() {
     app.handle(Command::OpenCorrection);
     assert!(app.correction().is_some());
     app.handle(Command::Confirm);
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(
+        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    );
     assert_eq!(app.view(), TaskView::Archived);
 }
 #[test]

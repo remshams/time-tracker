@@ -35,7 +35,7 @@ fn adding_a_task_updates_the_list_and_selection() {
         app.handle(Command::Insert(character));
     }
     app.handle(Command::Confirm);
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(matches!(app.task_list().mode(), TaskListMode::Normal));
     assert_eq!(app.selected(), Some(0));
     assert_eq!(
         app.tasks()[app.selected().unwrap()].name().as_str(),
@@ -109,8 +109,8 @@ fn failed_writes_keep_the_active_modal_and_input_buffer() {
     }
     app.handle(Command::Confirm);
     assert!(matches!(
-        app.mode(),
-        Mode::Input {
+        app.task_list().mode(),
+        TaskListMode::Input {
             purpose: InputPurpose::Add,
             buffer,
         } if buffer == "blocked"
@@ -121,8 +121,8 @@ fn failed_writes_keep_the_active_modal_and_input_buffer() {
     app.handle(Command::OpenRename);
     app.handle(Command::Confirm);
     assert!(matches!(
-        app.mode(),
-        Mode::Input {
+        app.task_list().mode(),
+        TaskListMode::Input {
             purpose: InputPurpose::Rename { .. },
             buffer,
         } if buffer == "one"
@@ -132,7 +132,10 @@ fn failed_writes_keep_the_active_modal_and_input_buffer() {
 
     app.handle(Command::OpenArchiveConfirm);
     app.handle(Command::Confirm);
-    assert!(matches!(app.mode(), Mode::ConfirmArchive { .. }));
+    assert!(matches!(
+        app.task_list().mode(),
+        TaskListMode::ConfirmArchive { .. }
+    ));
     assert_eq!(app.status(), &Status::Error("Storage error".to_owned()));
 }
 #[test]
@@ -140,7 +143,7 @@ fn invalid_input_keeps_the_dialog_and_reports_the_same_text() {
     let mut app = app_with(&["one"]);
     app.handle(Command::OpenAdd);
     app.handle(Command::Confirm);
-    assert!(matches!(app.mode(), Mode::Input { .. }));
+    assert!(matches!(app.task_list().mode(), TaskListMode::Input { .. }));
     assert_eq!(
         app.status(),
         &Status::Error("The task name must not be empty".to_owned())
@@ -243,13 +246,16 @@ fn input_and_confirmation_modes_block_sorting() {
     app.handle(Command::OpenAdd);
     app.handle(Command::CycleOrdering);
     assert_eq!(app.ordering(), TaskOrdering::RecentlyWorked);
-    assert!(matches!(app.mode(), Mode::Input { .. }));
+    assert!(matches!(app.task_list().mode(), TaskListMode::Input { .. }));
 
     app.handle(Command::Cancel);
     app.handle(Command::OpenArchiveConfirm);
     app.handle(Command::CycleOrdering);
     assert_eq!(app.ordering(), TaskOrdering::RecentlyWorked);
-    assert!(matches!(app.mode(), Mode::ConfirmArchive { .. }));
+    assert!(matches!(
+        app.task_list().mode(),
+        TaskListMode::ConfirmArchive { .. }
+    ));
 }
 #[test]
 fn rename_reorders_recently_updated_and_keeps_the_task_selected() {
@@ -373,7 +379,7 @@ fn the_archived_view_refuses_active_actions_in_command_handling() {
     app.handle(Command::OpenRename);
     app.handle(Command::OpenArchiveConfirm);
 
-    assert_eq!(app.mode(), Mode::Normal);
+    assert!(matches!(app.task_list().mode(), TaskListMode::Normal));
     assert_eq!(app.view(), TaskView::Archived);
     assert_eq!(app.active_task_id(), None, "no tracking was started");
 
@@ -411,7 +417,7 @@ fn a_modal_in_the_archived_view_refuses_unarchiving() {
     };
     app.handle(Command::UnarchiveSelected);
 
-    assert!(matches!(app.mode(), Mode::Input { .. }));
+    assert!(matches!(app.task_list().mode(), TaskListMode::Input { .. }));
     assert_eq!(app.view(), TaskView::Archived);
     assert_eq!(app.tasks().len(), 1, "nothing was unarchived");
     assert_eq!(app.status(), &Status::Info("Ready".to_owned()));
@@ -434,14 +440,17 @@ fn modals_block_view_switching_and_unarchiving() {
     assert_eq!(app.view(), TaskView::Active);
 
     app.handle(Command::UnarchiveSelected);
-    assert!(matches!(app.mode(), Mode::Input { .. }));
+    assert!(matches!(app.task_list().mode(), TaskListMode::Input { .. }));
     assert_eq!(app.view(), TaskView::Active);
-    assert!(matches!(app.mode(), Mode::Input { buffer, .. } if buffer == "x"));
+    assert!(matches!(app.task_list().mode(), TaskListMode::Input { buffer, .. } if buffer == "x"));
 
     app.handle(Command::Cancel);
     app.handle(Command::OpenArchiveConfirm);
     app.handle(Command::UnarchiveSelected);
-    assert!(matches!(app.mode(), Mode::ConfirmArchive { .. }));
+    assert!(matches!(
+        app.task_list().mode(),
+        TaskListMode::ConfirmArchive { .. }
+    ));
     assert_eq!(app.view(), TaskView::Active);
 }
 #[test]

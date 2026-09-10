@@ -42,7 +42,7 @@ pub struct TaskListState {
 }
 
 impl TaskListState {
-    pub(super) fn new(tasks: Vec<Task>, archived_tasks: Vec<Task>, ordering: TaskOrdering) -> Self {
+    pub(crate) fn new(tasks: Vec<Task>, archived_tasks: Vec<Task>, ordering: TaskOrdering) -> Self {
         let active_selection = tasks.first().map(Task::id);
         Self {
             tasks,
@@ -59,8 +59,18 @@ impl TaskListState {
         self.view
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_view_for_test(&mut self, view: TaskView) {
+        self.view = view;
+    }
+
     pub fn mode(&self) -> &TaskListMode {
         &self.mode
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_mode_for_test(&mut self, mode: TaskListMode) {
+        self.mode = mode;
     }
 
     pub(super) fn tasks_in(&self, view: TaskView) -> &[Task] {

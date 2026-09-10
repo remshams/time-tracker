@@ -396,7 +396,9 @@ fn out_of_range_local_timestamps_cannot_open_correction() {
 
         app.handle(Command::OpenCorrection);
 
-        assert_eq!(app.mode(), Mode::Normal);
+        assert!(
+            matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+        );
         assert_eq!(text(app.status()), OUTSIDE_EDITABLE_RANGE);
         assert!(app.application.correction_calls.is_empty());
     }

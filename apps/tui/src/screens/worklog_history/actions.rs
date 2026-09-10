@@ -6,13 +6,23 @@ use tracker_domain::{TaskId, TrackingState, Worklog, WorklogId};
 
 use crate::app::{App, Status};
 use crate::command::Command;
-use crate::screens::{Mode, Screen, ScreenState};
+use crate::screens::{Screen, ScreenState};
 use crate::support::clock::ElapsedClock;
 use crate::support::errors::application_error_text;
 
 use super::{History, HistoryAvailability, WorklogHistoryMode, active_worklog_for_task};
 
 impl<S: TrackerApplicationService> App<S> {
+    pub(crate) fn history_is_normal(&self) -> bool {
+        matches!(&self.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+    }
+
+    pub(crate) fn history_state(&self) -> &crate::screens::WorklogHistoryState {
+        match &self.screen {
+            ScreenState::WorklogHistory(state) => state,
+            ScreenState::TaskList(_) => unreachable!("history state is required"),
+        }
+    }
     pub(crate) fn handle_worklog_history_command(&mut self, command: Command) {
         match command {
             Command::MoveUp => self.move_history_up(),
@@ -31,9 +41,9 @@ impl<S: TrackerApplicationService> App<S> {
             Command::OpenDeletion => self.open_deletion(),
             Command::Insert(character) => self.insert_correction_character(character),
             Command::Backspace => self.backspace_correction_character(),
-            Command::Confirm => match self.mode() {
-                Mode::ConfirmDeletion { .. } => self.confirm_deletion(),
-                Mode::Correction(_) => self.confirm_correction(),
+            Command::Confirm => match self.history_state().mode() {
+                WorklogHistoryMode::ConfirmDeletion { .. } => self.confirm_deletion(),
+                WorklogHistoryMode::Correction(_) => self.confirm_correction(),
                 _ => {}
             },
             Command::Cancel => self.cancel_history_mode(),
@@ -84,7 +94,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn move_history_up(&mut self) {
-        if self.mode() != Mode::Normal {
+        if !self.history_is_normal() {
             return;
         }
         let Some(history) = self.history_mut() else {
@@ -104,7 +114,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn move_history_down(&mut self) {
-        if self.mode() != Mode::Normal {
+        if !self.history_is_normal() {
             return;
         }
         let Some(history) = self.history_mut() else {
@@ -143,7 +153,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn load_older_worklogs(&mut self) {
-        if self.mode() != Mode::Normal {
+        if !self.history_is_normal() {
             return;
         }
         let Some(task_id) = self
@@ -198,7 +208,7 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn refresh_worklogs(&mut self) {
-        if self.mode() != Mode::Normal || self.screen() != Screen::WorklogHistory {
+        if !self.history_is_normal() || self.screen() != Screen::WorklogHistory {
             return;
         }
         let Some(task_id) = self.history().map(|history| history.task_id) else {

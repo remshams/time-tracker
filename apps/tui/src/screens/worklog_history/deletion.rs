@@ -2,7 +2,7 @@ use tracker_application::{ApplicationError, TrackerApplicationService};
 use tracker_domain::{Worklog, WorklogId};
 
 use crate::app::{App, Status};
-use crate::screens::{Mode, ScreenState, WorklogHistoryMode};
+use crate::screens::{ScreenState, WorklogHistoryMode};
 use crate::support::errors::{
     ACTIVE_WORKLOG_DELETE_MESSAGE, application_error_text, deletion_conflict,
     matches_worklog_active, matches_worklog_not_found,
@@ -10,7 +10,7 @@ use crate::support::errors::{
 
 impl<S: TrackerApplicationService> App<S> {
     pub(super) fn open_deletion(&mut self) {
-        if self.mode() != Mode::Normal {
+        if !self.history_is_normal() {
             return;
         }
         let Some(worklog) = self
@@ -45,7 +45,8 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     pub(super) fn confirm_deletion(&mut self) {
-        let Mode::ConfirmDeletion { worklog } = self.mode() else {
+        let WorklogHistoryMode::ConfirmDeletion { worklog } = self.history_state().mode().clone()
+        else {
             return;
         };
         let target_id = worklog.id();

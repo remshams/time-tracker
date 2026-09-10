@@ -14,7 +14,7 @@ use crate::support::timestamps::startup_timezone;
 
 pub use crate::screens::worklog_history::{CorrectionField, HistoryAvailability};
 pub use crate::screens::{
-    CorrectionDraft, History, InputPurpose, Mode, Screen, ScreenState, TaskListState, TaskView,
+    CorrectionDraft, History, InputPurpose, Screen, ScreenState, TaskListState, TaskView,
     WorklogHistoryState,
 };
 #[cfg(test)]
@@ -92,10 +92,6 @@ impl<S: TrackerApplicationService> App<S> {
         self.lifecycle == Lifecycle::Running
     }
 
-    pub fn mode(&self) -> Mode {
-        self.screen.mode()
-    }
-
     pub fn status(&self) -> &Status {
         &self.status
     }
@@ -117,7 +113,8 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn open_history(&mut self) {
-        if self.mode() != Mode::Normal || self.screen() != Screen::TaskList {
+        if !matches!(&self.screen, ScreenState::TaskList(state) if matches!(state.mode(), crate::screens::TaskListMode::Normal))
+        {
             return;
         }
         let Some(task) = self.selected_task().cloned() else {
@@ -140,7 +137,8 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn back_to_task_list(&mut self) {
-        if self.mode() != Mode::Normal {
+        if !matches!(&self.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), crate::screens::WorklogHistoryMode::Normal))
+        {
             return;
         }
         let ScreenState::WorklogHistory(state) = &self.screen else {

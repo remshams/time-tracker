@@ -4,7 +4,7 @@ use tracker_domain::{WorklogId, WorklogTimes};
 
 use crate::app::{App, Status};
 use crate::command::Command;
-use crate::screens::{Mode, ScreenState, WorklogHistoryMode};
+use crate::screens::{ScreenState, WorklogHistoryMode};
 use crate::support::errors::correction_error_text;
 use crate::support::timestamps::{
     OUTSIDE_EDITABLE_RANGE, TimestampInput, adjusted_correction_timestamp, correction_timestamp,
@@ -152,7 +152,7 @@ impl<S: TrackerApplicationService> App<S> {
     where
         Tz: TimeZone,
     {
-        if self.mode() != Mode::Normal {
+        if !self.history_is_normal() {
             return;
         }
         let Some(worklog) = self
@@ -250,7 +250,7 @@ impl<S: TrackerApplicationService> App<S> {
     where
         Tz: TimeZone,
     {
-        let Mode::Correction(draft) = self.mode() else {
+        let WorklogHistoryMode::Correction(draft) = self.history_state().mode().clone() else {
             return;
         };
         let start = match resolve_correction_timestamp(&draft.start, timezone, draft.original_start)

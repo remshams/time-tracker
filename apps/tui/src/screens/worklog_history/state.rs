@@ -46,6 +46,11 @@ impl History {
         self.availability == HistoryAvailability::Available
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_unavailable_for_test(&mut self) {
+        self.availability = HistoryAvailability::Unavailable;
+    }
+
     pub(super) fn selected_index(&self) -> Option<usize> {
         let id = self.selected?;
         self.is_available()
@@ -91,12 +96,22 @@ impl WorklogHistoryState {
         &self.mode
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_mode_for_test(&mut self, mode: WorklogHistoryMode) {
+        self.mode = mode;
+    }
+
     pub(crate) fn task_list_clone(&self) -> TaskListState {
         self.task_list.clone()
     }
 
     pub(crate) fn task_list_mut(&mut self) -> &mut TaskListState {
         &mut self.task_list
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_history_unavailable_for_test(&mut self) {
+        self.history.set_unavailable_for_test();
     }
 
     #[cfg(test)]
