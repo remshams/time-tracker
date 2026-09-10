@@ -472,15 +472,6 @@ fn matches_worklog_not_found(error: &ApplicationError) -> bool {
     )
 }
 
-fn deletion_error_text(error: &ApplicationError) -> String {
-    match error {
-        ApplicationError::WorklogDeletionWrite {
-            write: RepositoryError::WorklogIsActive { .. },
-        } => ACTIVE_WORKLOG_DELETE_MESSAGE.to_owned(),
-        _ => application_error_text(error),
-    }
-}
-
 fn correction_error_text(error: &ApplicationError) -> String {
     match error {
         ApplicationError::WorklogCorrectionWrite {
@@ -1464,7 +1455,7 @@ impl<S: TrackerApplicationService> App<S> {
                 let loaded = page.worklogs.len();
                 let next_cursor = page.next_cursor;
                 if let Some(history) = &mut self.history {
-                    let select_first = history.worklogs.is_empty() && history.selected.is_none();
+                    let select_first = history.worklogs.is_empty();
                     history.worklogs.extend(page.worklogs);
                     history.next_cursor = next_cursor;
                     if select_first {
@@ -1622,7 +1613,7 @@ impl<S: TrackerApplicationService> App<S> {
             }
             Err(error) => {
                 self.sync_from_application(false);
-                self.status = Status::Error(deletion_error_text(&error));
+                self.status = Status::Error(application_error_text(&error));
             }
         }
     }
@@ -5229,7 +5220,10 @@ mod tests {
         let active = ApplicationError::WorklogDeletionWrite {
             write: RepositoryError::WorklogIsActive { id: worklog_id(2) },
         };
-        assert_eq!(deletion_error_text(&active), ACTIVE_WORKLOG_DELETE_MESSAGE);
+        assert_eq!(
+            application_error_text(&active),
+            ACTIVE_WORKLOG_DELETE_MESSAGE
+        );
         let active_recovery = ApplicationError::WorklogDeletionRecovery {
             write: RepositoryError::WorklogIsActive { id: worklog_id(2) },
             recovery: RepositoryError::Backend {
@@ -5237,7 +5231,7 @@ mod tests {
             },
         };
         assert_eq!(
-            deletion_error_text(&active_recovery),
+            application_error_text(&active_recovery),
             "Deletion failed: Running worklogs cannot be deleted. State recovery failed: Storage error."
         );
         let recovery = ApplicationError::WorklogDeletionRecovery {
@@ -5249,7 +5243,7 @@ mod tests {
             },
         };
         assert_eq!(
-            deletion_error_text(&recovery),
+            application_error_text(&recovery),
             "Deletion failed: Storage error. State recovery failed: Storage error."
         );
     }
