@@ -1,0 +1,276 @@
+//! Application failures and presentation-safe classification.
+
+use tracker_domain::{TaskId, TrackingError, WorklogCorrectionError, WorklogId};
+
+use crate::RepositoryError;
+
+/// A semantic failure category exposed to application clients.
+///
+/// Clients can branch on the few categories that change their recovery flow.
+/// All other failures remain [`ApplicationFailureCategory::General`] and use
+/// the sanitized message supplied by [`ApplicationFailure`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApplicationFailureCategory {
+    General,
+    WorklogNotFound,
+    WorklogChanged,
+    ActiveWorklog,
+    WorklogHistoryChanged,
+    WorklogOverlap,
+    ActiveTask,
+}
+
+/// A presentation-safe view of an [`ApplicationError`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApplicationFailure {
+    category: ApplicationFailureCategory,
+    message: String,
+    recovery: Option<(ApplicationFailureCategory, &'static str)>,
+}
+
+impl ApplicationFailure {
+    /// Returns the primary semantic failure category.
+    pub fn category(&self) -> ApplicationFailureCategory {
+        self.category
+    }
+
+    /// Returns a message that does not expose backend details.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// Whether authoritative state recovery also failed.
+    pub fn recovery_failed(&self) -> bool {
+        self.recovery.is_some()
+    }
+
+    /// Returns the recovery failure category when state recovery also failed.
+    pub fn recovery_category(&self) -> Option<ApplicationFailureCategory> {
+        self.recovery.map(|(category, _)| category)
+    }
+
+    /// Returns the sanitized recovery failure message when recovery also failed.
+    pub fn recovery_message(&self) -> Option<&'static str> {
+        self.recovery.map(|(_, message)| message)
+    }
+}
+
+/// Why an application operation failed.
+///
+/// The original repository errors remain attached for diagnostics. Clients
+/// should use [`ApplicationError::failure`] rather than inspect repository
+/// variants.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ApplicationError {
+    #[error(transparent)]
+    Domain(#[from] TrackingError),
+    #[error(transparent)]
+    InvalidWorklogCorrection(#[from] WorklogCorrectionError),
+    #[error(transparent)]
+    Repository(#[from] RepositoryError),
+    #[error("tracking write failed: {0}")]
+    TrackingWrite(#[source] RepositoryError),
+    #[error("tracking state could not be recovered: {0}")]
+    TrackingRecovery(#[source] RepositoryError),
+    #[error("task state could not be recovered: {0}")]
+    TaskRecovery(#[source] RepositoryError),
+    #[error("worklog correction write failed: {write}")]
+    WorklogCorrectionWrite {
+        #[source]
+        write: RepositoryError,
+    },
+    #[error("worklog correction write failed: {write}; state recovery failed: {recovery}")]
+    WorklogCorrectionRecovery {
+        #[source]
+        write: RepositoryError,
+        recovery: RepositoryError,
+    },
+    #[error("worklog deletion write failed: {write}")]
+    WorklogDeletionWrite {
+        #[source]
+        write: RepositoryError,
+    },
+    #[error("worklog deletion write failed: {write}; state recovery failed: {recovery}")]
+    WorklogDeletionRecovery {
+        #[source]
+        write: RepositoryError,
+        recovery: RepositoryError,
+    },
+    #[error("tracking state changed in another client")]
+    TrackingStateChanged,
+}
+
+impl ApplicationError {
+    /// Builds a backend failure while keeping its diagnostic text out of the
+    /// presentation-safe classification.
+    pub fn storage_failure(message: impl Into<String>) -> Self {
+        RepositoryError::Backend {
+            message: message.into(),
+        }
+        .into()
+    }
+
+    /// Builds a semantic missing-worklog failure.
+    pub fn worklog_not_found(id: WorklogId) -> Self {
+        RepositoryError::WorklogNotFound { id }.into()
+    }
+
+    /// Builds a semantic stale-worklog failure.
+    pub fn worklog_changed(id: WorklogId) -> Self {
+        RepositoryError::WorklogChanged { id }.into()
+    }
+
+    /// Builds a failure for a worklog that must remain active.
+    pub fn active_worklog(id: WorklogId) -> Self {
+        RepositoryError::WorklogIsActive { id }.into()
+    }
+
+    /// Builds a failure for an invalidated history cursor.
+    pub fn worklog_history_changed(task_id: TaskId) -> Self {
+        RepositoryError::WorklogHistoryChanged { task_id }.into()
+    }
+
+    /// Builds a same-task overlap failure.
+    pub fn worklog_overlap(id: WorklogId) -> Self {
+        RepositoryError::SameTaskWorklogOverlap { id }.into()
+    }
+
+    /// Builds a stale correction failure whose state recovery also failed.
+    pub fn correction_changed_with_recovery_failure(
+        id: WorklogId,
+        recovery_message: impl Into<String>,
+    ) -> Self {
+        Self::WorklogCorrectionRecovery {
+            write: RepositoryError::WorklogChanged { id },
+            recovery: RepositoryError::Backend {
+                message: recovery_message.into(),
+            },
+        }
+    }
+
+    /// Builds an overlap correction failure whose state recovery also failed.
+    pub fn correction_overlap_with_recovery_failure(
+        id: WorklogId,
+        recovery_message: impl Into<String>,
+    ) -> Self {
+        Self::WorklogCorrectionRecovery {
+            write: RepositoryError::SameTaskWorklogOverlap { id },
+            recovery: RepositoryError::Backend {
+                message: recovery_message.into(),
+            },
+        }
+    }
+
+    /// Builds a stale deletion failure whose state recovery also failed.
+    pub fn deletion_changed_with_recovery_failure(
+        id: WorklogId,
+        recovery_message: impl Into<String>,
+    ) -> Self {
+        Self::WorklogDeletionRecovery {
+            write: RepositoryError::WorklogChanged { id },
+            recovery: RepositoryError::Backend {
+                message: recovery_message.into(),
+            },
+        }
+    }
+
+    /// Classifies this error without exposing repository-specific failures or
+    /// unsanitized backend messages.
+    pub fn failure(&self) -> ApplicationFailure {
+        match self {
+            Self::Domain(error) => ApplicationFailure {
+                category: match error {
+                    TrackingError::TaskIsActive { .. } => ApplicationFailureCategory::ActiveTask,
+                    _ => ApplicationFailureCategory::General,
+                },
+                message: error.to_string(),
+                recovery: None,
+            },
+            Self::InvalidWorklogCorrection(error) => ApplicationFailure {
+                category: ApplicationFailureCategory::General,
+                message: error.to_string(),
+                recovery: None,
+            },
+            Self::Repository(error)
+            | Self::TrackingWrite(error)
+            | Self::TrackingRecovery(error)
+            | Self::TaskRecovery(error) => repository_failure(error),
+            Self::WorklogCorrectionWrite { write } | Self::WorklogDeletionWrite { write } => {
+                repository_failure(write)
+            }
+            Self::WorklogCorrectionRecovery { write, recovery } => {
+                failure_with_recovery("Correction", write, recovery)
+            }
+            Self::WorklogDeletionRecovery { write, recovery } => {
+                failure_with_recovery("Deletion", write, recovery)
+            }
+            Self::TrackingStateChanged => ApplicationFailure {
+                category: ApplicationFailureCategory::General,
+                message: "Tracking state changed in another client. Refreshed state.".to_owned(),
+                recovery: None,
+            },
+        }
+    }
+}
+
+fn failure_with_recovery(
+    operation: &str,
+    primary: &RepositoryError,
+    recovery: &RepositoryError,
+) -> ApplicationFailure {
+    let mut failure = repository_failure(primary);
+    let recovery_category = repository_error_category(recovery);
+    let recovery_message = repository_error_message(recovery);
+    failure.message = format!(
+        "{operation} failed: {}. State recovery failed: {recovery_message}.",
+        failure.message
+    );
+    failure.recovery = Some((recovery_category, recovery_message));
+    failure
+}
+
+fn repository_failure(error: &RepositoryError) -> ApplicationFailure {
+    ApplicationFailure {
+        category: repository_error_category(error),
+        message: repository_error_message(error).to_owned(),
+        recovery: None,
+    }
+}
+
+fn repository_error_category(error: &RepositoryError) -> ApplicationFailureCategory {
+    match error {
+        RepositoryError::WorklogNotFound { .. } => ApplicationFailureCategory::WorklogNotFound,
+        RepositoryError::WorklogChanged { .. } => ApplicationFailureCategory::WorklogChanged,
+        RepositoryError::WorklogIsActive { .. } => ApplicationFailureCategory::ActiveWorklog,
+        RepositoryError::WorklogHistoryChanged { .. } => {
+            ApplicationFailureCategory::WorklogHistoryChanged
+        }
+        RepositoryError::SameTaskWorklogOverlap { .. } => {
+            ApplicationFailureCategory::WorklogOverlap
+        }
+        RepositoryError::TaskIsActive { .. } => ApplicationFailureCategory::ActiveTask,
+        _ => ApplicationFailureCategory::General,
+    }
+}
+
+fn repository_error_message(error: &RepositoryError) -> &'static str {
+    match error {
+        RepositoryError::TaskNotFound { .. } => "Task not found",
+        RepositoryError::WorklogNotFound { .. } => "Worklog not found",
+        RepositoryError::WorklogAlreadyStopped { .. } => "Worklog is already stopped",
+        RepositoryError::WorklogChanged { .. } => "Worklog changed in another client",
+        RepositoryError::WorklogIsActive { .. } => "Running worklogs cannot be deleted",
+        RepositoryError::WorklogHistoryChanged { .. } => {
+            "Worklog history changed. Press r to refresh"
+        }
+        RepositoryError::SameTaskWorklogOverlap { .. } => "The worklog overlaps another worklog",
+        RepositoryError::WorklogAlreadyExists { .. } => "Worklog already exists",
+        RepositoryError::TaskAlreadyExists { .. } => "Task already exists",
+        RepositoryError::ActiveWorklogExists => "Another worklog is active",
+        RepositoryError::TaskArchived { .. } => "Task is archived",
+        RepositoryError::TaskIsActive { .. } => "Task has active work",
+        RepositoryError::Constraint { .. } => "Storage rejected the change",
+        RepositoryError::CorruptData { .. } => "Stored data is invalid",
+        RepositoryError::Backend { .. } => "Storage error",
+    }
+}

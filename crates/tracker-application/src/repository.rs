@@ -89,11 +89,6 @@ pub struct WorklogDeletion {
 /// Persistence needed by task use cases.
 pub trait TaskRepository {
     fn create_task(&self, task: Task) -> Result<(), RepositoryError>;
-    fn find_task(&self, id: TaskId) -> Result<Option<Task>, RepositoryError>;
-
-    /// Lists every task with its latest worklog start, or `None` for tasks
-    /// without worklogs. The result does not include worklog histories.
-    fn list_task_items(&self) -> Result<Vec<TaskListItem>, RepositoryError>;
 
     /// Reads task-list aggregates and global active tracking in one coherent
     /// backend snapshot.
@@ -157,7 +152,6 @@ pub trait TrackingRepository {
         expected_start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Worklog, RepositoryError>;
-    fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError>;
     /// Stops the active worklog only when its stored start still matches
     /// `expected_start`, then creates `next` in the same transaction.
     fn switch_worklog(

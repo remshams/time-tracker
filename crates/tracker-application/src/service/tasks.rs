@@ -1,0 +1,102 @@
+//! Task queries and commands.
+
+use chrono::{DateTime, Utc};
+use tracker_domain::{Task, TaskId, TaskName, TrackingError};
+
+use super::{TaskOperations, TaskQueries, TrackerApplication, canonical_timestamp};
+use crate::{ApplicationError, RepositoryError, TaskListItem, TaskOrdering, TrackerRepository};
+
+impl<R: TrackerRepository> TaskQueries for TrackerApplication<R> {
+    fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
+        let mut items = self.tasks.clone();
+        ordering.sort_items(&mut items);
+        items
+    }
+
+    fn task(&self, id: TaskId) -> Option<&Task> {
+        self.tasks
+            .iter()
+            .find(|item| item.task.id() == id)
+            .map(|TaskListItem { task, .. }| task)
+    }
+}
+
+impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
+    fn create_task(
+        &mut self,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        let occurred_at = canonical_timestamp(occurred_at);
+        let task = Task::create(TaskId::generate(), name, occurred_at);
+        self.repository.create_task(task.clone())?;
+        self.replace_task(task.clone());
+        Ok(task)
+    }
+
+    fn rename_task(
+        &mut self,
+        id: TaskId,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        let occurred_at = canonical_timestamp(occurred_at);
+        // The port changes only the name and its metadata timestamp, so a
+        // concurrent archive state survives the write.
+        let task = self.repository.rename_task(id, name, occurred_at)?;
+        self.replace_task(task.clone());
+        Ok(task)
+    }
+
+    fn archive_task(
+        &mut self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        let occurred_at = canonical_timestamp(occurred_at);
+        self.refresh_tracking()?;
+        self.tracker.ensure_archivable(id)?;
+        // The operation preserves unrelated metadata, so a concurrent rename
+        // survives the archive.
+        match self.repository.archive_task(id, occurred_at) {
+            Ok(task) => {
+                self.replace_task(task.clone());
+                self.refresh_after_task_operation()?;
+                Ok(task)
+            }
+            Err(error) => {
+                self.refresh_after_task_operation()?;
+                match error {
+                    RepositoryError::TaskIsActive { id } => {
+                        Err(TrackingError::TaskIsActive { id }.into())
+                    }
+                    error => Err(error.into()),
+                }
+            }
+        }
+    }
+
+    fn unarchive_task(
+        &mut self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        let occurred_at = canonical_timestamp(occurred_at);
+        // Another client may have restored this task and started tracking it
+        // since our last load. Refresh before the write so a read failure
+        // prevents the unarchive and Idle is never reported over an active
+        // worklog that survived the call.
+        self.refresh_tracking()?;
+        match self.repository.unarchive_task(id, occurred_at) {
+            Ok(task) => {
+                self.replace_task(task.clone());
+                self.refresh_after_task_operation()?;
+                Ok(task)
+            }
+            Err(error) => {
+                self.refresh_after_task_operation()?;
+                Err(error.into())
+            }
+        }
+    }
+}
