@@ -90,7 +90,7 @@ pub(crate) fn footer_hints(state: &TaskListState, width: u16) -> &'static str {
 }
 
 #[cfg(test)]
-mod restored_keymap_tests {
+mod tests {
     use crate::command::Command;
     use crate::screens::keymap_test_support::*;
     use crate::screens::{TaskListMode, TaskView, WorklogHistoryMode};

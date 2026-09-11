@@ -117,7 +117,7 @@ pub(crate) fn footer_hints(state: &WorklogHistoryState, width: u16) -> &'static 
 }
 
 #[cfg(test)]
-mod restored_keymap_tests {
+mod tests {
     use crate::command::Command;
     use crate::screens::WorklogHistoryMode;
     use crate::screens::keymap_test_support::*;

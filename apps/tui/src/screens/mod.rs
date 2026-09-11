@@ -194,7 +194,7 @@ pub(crate) fn map_key(state: &ScreenState, key: KeyEvent) -> Option<Command> {
 }
 
 #[cfg(test)]
-mod restored_keymap_tests {
+mod tests {
     use super::*;
     use crate::screens::keymap_test_support::{ctrl, valid_screen_states};
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
