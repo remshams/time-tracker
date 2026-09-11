@@ -1,5 +1,4 @@
-use tracker_application::TaskOrdering;
-use tracker_domain::{Task, TaskId};
+use tracker_domain::TaskId;
 
 /// What a confirmed task-name input does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,12 +28,9 @@ pub enum TaskView {
     Archived,
 }
 
-/// Task-list data, navigation, and modal state.
+/// Task-list navigation and modal state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskListState {
-    pub(super) tasks: Vec<Task>,
-    pub(super) archived_tasks: Vec<Task>,
-    pub(super) ordering: TaskOrdering,
     pub(super) view: TaskView,
     pub(super) active_selection: Option<TaskId>,
     pub(super) archived_selection: Option<TaskId>,
@@ -42,12 +38,8 @@ pub struct TaskListState {
 }
 
 impl TaskListState {
-    pub(crate) fn new(tasks: Vec<Task>, archived_tasks: Vec<Task>, ordering: TaskOrdering) -> Self {
-        let active_selection = tasks.first().map(Task::id);
+    pub(crate) fn new(active_selection: Option<TaskId>) -> Self {
         Self {
-            tasks,
-            archived_tasks,
-            ordering,
             view: TaskView::Active,
             active_selection,
             archived_selection: None,
@@ -68,33 +60,9 @@ impl TaskListState {
         &self.mode
     }
 
-    pub(crate) fn tasks(&self) -> &[Task] {
-        self.tasks_in(self.view)
-    }
-
-    pub(crate) fn selected_index(&self) -> Option<usize> {
-        let id = self.selection()?;
-        self.tasks().iter().position(|task| task.id() == id)
-    }
-
-    pub(crate) fn ordering_label(&self) -> &'static str {
-        match self.ordering {
-            TaskOrdering::RecentlyWorked => "recently worked",
-            TaskOrdering::RecentlyUpdated => "recently updated",
-            TaskOrdering::RecentlyCreated => "recently created",
-        }
-    }
-
     #[cfg(test)]
     pub(crate) fn set_mode_for_test(&mut self, mode: TaskListMode) {
         self.mode = mode;
-    }
-
-    pub(super) fn tasks_in(&self, view: TaskView) -> &[Task] {
-        match view {
-            TaskView::Active => &self.tasks,
-            TaskView::Archived => &self.archived_tasks,
-        }
     }
 
     pub(super) fn selection(&self) -> Option<TaskId> {

@@ -3,7 +3,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
-use tracker_domain::TaskId;
+use tracker_domain::{Task, TaskId};
 
 use crate::components::{dialogs, text};
 use crate::screens::task_list::{InputPurpose, TaskListMode, TaskListState, TaskView};
@@ -14,9 +14,11 @@ pub(crate) fn render(
     frame: &mut Frame,
     area: Rect,
     state: &TaskListState,
+    tasks: &[Task],
+    ordering_label: &str,
     active_task_id: Option<TaskId>,
 ) {
-    render_body(frame, area, state, active_task_id);
+    render_body(frame, area, state, tasks, ordering_label, active_task_id);
     match state.mode() {
         TaskListMode::Input { purpose, buffer } => {
             let prompt = match purpose {
@@ -41,6 +43,8 @@ fn render_body(
     frame: &mut Frame,
     area: Rect,
     state: &TaskListState,
+    tasks: &[Task],
+    ordering_label: &str,
     active_task_id: Option<TaskId>,
 ) {
     let (view_title, empty_text) = match state.view() {
@@ -48,13 +52,12 @@ fn render_body(
         TaskView::Archived => ("Archived tasks", "No archived tasks."),
     };
     let block = Block::bordered()
-        .title(format!("{view_title} · {}", state.ordering_label()))
+        .title(format!("{view_title} · {ordering_label}"))
         .border_style(if matches!(state.mode(), TaskListMode::Normal) {
             styles::focused_border()
         } else {
             Style::default()
         });
-    let tasks = state.tasks();
     if tasks.is_empty() {
         frame.render_widget(Paragraph::new(empty_text).block(block), area);
         return;
@@ -78,7 +81,10 @@ fn render_body(
     let list = List::new(items)
         .block(block)
         .highlight_style(styles::selected());
-    let mut list_state = ListState::default().with_selected(state.selected_index());
+    let selected = state
+        .selection()
+        .and_then(|id| tasks.iter().position(|task| task.id() == id));
+    let mut list_state = ListState::default().with_selected(selected);
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 

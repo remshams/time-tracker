@@ -60,6 +60,7 @@ struct TestService {
     set_returns_already_active: bool,
     set_timestamp: Option<DateTime<Utc>>,
     latest_work_starts: Vec<(TaskId, DateTime<Utc>)>,
+    tasks_after_next_worklog_read: Option<Vec<Task>>,
     worklog_pages: Vec<Result<WorklogPage, ApplicationError>>,
     worklog_reads: Cell<usize>,
     correction_error: Option<ApplicationError>,
@@ -84,6 +85,7 @@ impl TestService {
             set_returns_already_active: false,
             set_timestamp: None,
             latest_work_starts: Vec::new(),
+            tasks_after_next_worklog_read: None,
             worklog_pages: Vec::new(),
             worklog_reads: Cell::new(0),
             correction_error: None,
@@ -365,6 +367,9 @@ impl WorklogQueries for TestService {
         _task_id: TaskId,
         _after: Option<&WorklogCursor>,
     ) -> Result<WorklogPage, ApplicationError> {
+        if let Some(tasks) = self.tasks_after_next_worklog_read.take() {
+            self.tasks = tasks;
+        }
         // Each read consumes the next queued page, so one service can
         // answer an initial load, several older pages, and failures.
         let read = self.worklog_reads.get();

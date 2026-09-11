@@ -93,112 +93,62 @@ pub(crate) fn footer_hints(state: &TaskListState, width: u16) -> &'static str {
 mod restored_keymap_tests {
     use crate::command::Command;
     use crate::screens::keymap_test_support::*;
-    use crate::screens::{Screen, TaskView};
+    use crate::screens::{TaskListMode, TaskView, WorklogHistoryMode};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
     fn active_mode_maps_movement_actions_and_view_switching() {
         let view = TaskView::Active;
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('j'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('j'))),
             Some(Command::MoveDown)
         );
         assert_eq!(
-            map_legacy(&Mode::Normal, view, Screen::TaskList, key(KeyCode::Down)),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Down)),
             Some(Command::MoveDown)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('k'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('k'))),
             Some(Command::MoveUp)
         );
         assert_eq!(
-            map_legacy(&Mode::Normal, view, Screen::TaskList, key(KeyCode::Up)),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Up)),
             Some(Command::MoveUp)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('h'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('h'))),
             Some(Command::ShowActiveTasks)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('l'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('l'))),
             Some(Command::ShowArchivedTasks)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('s'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('s'))),
             Some(Command::CycleOrdering)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char(' '))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char(' '))),
             Some(Command::ToggleTracking)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('a'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('a'))),
             Some(Command::OpenAdd)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('e'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('e'))),
             Some(Command::OpenRename)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('d'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('d'))),
             Some(Command::OpenArchiveConfirm)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('q'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('q'))),
             Some(Command::Quit)
         );
         assert_eq!(
-            map_legacy(&Mode::Normal, view, Screen::TaskList, key(KeyCode::Esc)),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Esc)),
             Some(Command::Quit)
         );
     }
@@ -207,78 +157,43 @@ mod restored_keymap_tests {
     fn archived_mode_maps_movement_unarchive_and_view_switching() {
         let view = TaskView::Archived;
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('j'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('j'))),
             Some(Command::MoveDown)
         );
         assert_eq!(
-            map_legacy(&Mode::Normal, view, Screen::TaskList, key(KeyCode::Down)),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Down)),
             Some(Command::MoveDown)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('k'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('k'))),
             Some(Command::MoveUp)
         );
         assert_eq!(
-            map_legacy(&Mode::Normal, view, Screen::TaskList, key(KeyCode::Up)),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Up)),
             Some(Command::MoveUp)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('h'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('h'))),
             Some(Command::ShowActiveTasks)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('l'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('l'))),
             Some(Command::ShowArchivedTasks)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('s'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('s'))),
             Some(Command::CycleOrdering)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('u'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('u'))),
             Some(Command::UnarchiveSelected)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                view,
-                Screen::TaskList,
-                key(KeyCode::Char('q'))
-            ),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('q'))),
             Some(Command::Quit)
         );
         assert_eq!(
-            map_legacy(&Mode::Normal, view, Screen::TaskList, key(KeyCode::Esc)),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Esc)),
             Some(Command::Quit)
         );
     }
@@ -295,7 +210,7 @@ mod restored_keymap_tests {
             KeyCode::Backspace,
         ] {
             assert_eq!(
-                map_legacy(&Mode::Normal, view, Screen::TaskList, key(code)),
+                map_task_list(TaskListMode::Normal, view, key(code)),
                 None,
                 "archived mode must not map {code:?}"
             );
@@ -303,7 +218,7 @@ mod restored_keymap_tests {
         // Enter is the one key both task views share. It opens history
         // instead of acting on the task.
         assert_eq!(
-            map_legacy(&Mode::Normal, view, Screen::TaskList, key(KeyCode::Enter)),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Enter)),
             Some(Command::OpenHistory)
         );
     }
@@ -312,33 +227,26 @@ mod restored_keymap_tests {
     fn normal_mode_ignores_unmapped_keys() {
         for view in [TaskView::Active, TaskView::Archived] {
             assert_eq!(
-                map_legacy(
-                    &Mode::Normal,
-                    view,
-                    Screen::TaskList,
-                    key(KeyCode::Char('x'))
-                ),
+                map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('x'))),
                 None
             );
             assert_eq!(
-                map_legacy(&Mode::Normal, view, Screen::TaskList, key(KeyCode::Left)),
+                map_task_list(TaskListMode::Normal, view, key(KeyCode::Left)),
                 None
             );
         }
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
+            map_task_list(
+                TaskListMode::Normal,
                 TaskView::Archived,
-                Screen::TaskList,
                 key(KeyCode::Backspace)
             ),
             None
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
+            map_task_list(
+                TaskListMode::Normal,
                 TaskView::Active,
-                Screen::TaskList,
                 key(KeyCode::Char('u'))
             ),
             None
@@ -349,38 +257,23 @@ mod restored_keymap_tests {
     fn sort_is_normal_mode_only() {
         for view in [TaskView::Active, TaskView::Archived] {
             assert_eq!(
-                map_legacy(
-                    &Mode::Normal,
-                    view,
-                    Screen::TaskList,
-                    key(KeyCode::Char('s'))
-                ),
+                map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('s'))),
                 Some(Command::CycleOrdering)
             );
         }
         assert_eq!(
-            map_legacy(
-                &input(),
-                TaskView::Active,
-                Screen::TaskList,
-                key(KeyCode::Char('s'))
-            ),
+            map_task_list(input(), TaskView::Active, key(KeyCode::Char('s'))),
             Some(Command::Insert('s'))
         );
         assert_eq!(
-            map_legacy(
-                &confirm(),
-                TaskView::Active,
-                Screen::TaskList,
-                key(KeyCode::Char('s'))
-            ),
+            map_task_list(confirm(), TaskView::Active, key(KeyCode::Char('s'))),
             None
         );
     }
 
     #[test]
     fn modified_action_keys_do_nothing_in_normal_mode() {
-        for (view, _) in normal_modes() {
+        for view in [TaskView::Active, TaskView::Archived] {
             for key in [
                 ctrl('a'),
                 ctrl('d'),
@@ -396,7 +289,7 @@ mod restored_keymap_tests {
                 with_modifier('d', KeyModifiers::CONTROL | KeyModifiers::ALT),
             ] {
                 assert_eq!(
-                    map_legacy(&Mode::Normal, view, Screen::TaskList, key),
+                    map_task_list(TaskListMode::Normal, view, key),
                     None,
                     "modified {key:?} must not act"
                 );
@@ -415,7 +308,7 @@ mod restored_keymap_tests {
             with_modifier('n', KeyModifiers::SHIFT),
         ] {
             assert_eq!(
-                map_legacy(&confirm(), TaskView::Active, Screen::TaskList, key),
+                map_task_list(confirm(), TaskView::Active, key),
                 None,
                 "modified {key:?} must not act"
             );
@@ -426,60 +319,41 @@ mod restored_keymap_tests {
     fn input_mode_edits_confirms_and_cancels() {
         let view = TaskView::Active;
         assert_eq!(
-            map_legacy(&input(), view, Screen::TaskList, key(KeyCode::Char('x'))),
+            map_task_list(input(), view, key(KeyCode::Char('x'))),
             Some(Command::Insert('x'))
         );
         // Space is ordinary input while typing.
         assert_eq!(
-            map_legacy(&input(), view, Screen::TaskList, key(KeyCode::Char(' '))),
+            map_task_list(input(), view, key(KeyCode::Char(' '))),
             Some(Command::Insert(' '))
         );
         assert_eq!(
-            map_legacy(&input(), view, Screen::TaskList, key(KeyCode::Backspace)),
+            map_task_list(input(), view, key(KeyCode::Backspace)),
             Some(Command::Backspace)
         );
         assert_eq!(
-            map_legacy(&input(), view, Screen::TaskList, key(KeyCode::Enter)),
+            map_task_list(input(), view, key(KeyCode::Enter)),
             Some(Command::Confirm)
         );
         assert_eq!(
-            map_legacy(&input(), view, Screen::TaskList, key(KeyCode::Esc)),
+            map_task_list(input(), view, key(KeyCode::Esc)),
             Some(Command::Cancel)
         );
     }
 
     #[test]
     fn input_mode_ignores_modifier_chords_and_other_keys() {
-        assert_eq!(
-            map_legacy(&input(), TaskView::Active, Screen::TaskList, ctrl('a')),
-            None
-        );
+        assert_eq!(map_task_list(input(), TaskView::Active, ctrl('a')), None);
         let alt = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::ALT);
-        assert_eq!(
-            map_legacy(&input(), TaskView::Active, Screen::TaskList, alt),
-            None
-        );
+        assert_eq!(map_task_list(input(), TaskView::Active, alt), None);
         let hyper = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::HYPER);
+        assert_eq!(map_task_list(input(), TaskView::Active, hyper), None);
         assert_eq!(
-            map_legacy(&input(), TaskView::Active, Screen::TaskList, hyper),
+            map_task_list(input(), TaskView::Active, key(KeyCode::Up)),
             None
         );
         assert_eq!(
-            map_legacy(
-                &input(),
-                TaskView::Active,
-                Screen::TaskList,
-                key(KeyCode::Up)
-            ),
-            None
-        );
-        assert_eq!(
-            map_legacy(
-                &input(),
-                TaskView::Active,
-                Screen::TaskList,
-                key(KeyCode::Tab)
-            ),
+            map_task_list(input(), TaskView::Active, key(KeyCode::Tab)),
             None
         );
     }
@@ -488,7 +362,7 @@ mod restored_keymap_tests {
     fn shift_is_not_a_chord_so_capitals_are_typed() {
         let capital = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT);
         assert_eq!(
-            map_legacy(&input(), TaskView::Active, Screen::TaskList, capital),
+            map_task_list(input(), TaskView::Active, capital),
             Some(Command::Insert('A'))
         );
     }
@@ -497,23 +371,23 @@ mod restored_keymap_tests {
     fn confirm_mode_accepts_and_cancels() {
         let view = TaskView::Active;
         assert_eq!(
-            map_legacy(&confirm(), view, Screen::TaskList, key(KeyCode::Enter)),
+            map_task_list(confirm(), view, key(KeyCode::Enter)),
             Some(Command::Confirm)
         );
         assert_eq!(
-            map_legacy(&confirm(), view, Screen::TaskList, key(KeyCode::Char('y'))),
+            map_task_list(confirm(), view, key(KeyCode::Char('y'))),
             Some(Command::Confirm)
         );
         assert_eq!(
-            map_legacy(&confirm(), view, Screen::TaskList, key(KeyCode::Char('n'))),
+            map_task_list(confirm(), view, key(KeyCode::Char('n'))),
             Some(Command::Cancel)
         );
         assert_eq!(
-            map_legacy(&confirm(), view, Screen::TaskList, key(KeyCode::Esc)),
+            map_task_list(confirm(), view, key(KeyCode::Esc)),
             Some(Command::Cancel)
         );
         assert_eq!(
-            map_legacy(&confirm(), view, Screen::TaskList, key(KeyCode::Char('x'))),
+            map_task_list(confirm(), view, key(KeyCode::Char('x'))),
             None
         );
     }
@@ -522,35 +396,24 @@ mod restored_keymap_tests {
     fn enter_opens_the_history_in_both_task_views() {
         for view in [TaskView::Active, TaskView::Archived] {
             assert_eq!(
-                map_legacy(&Mode::Normal, view, Screen::TaskList, key(KeyCode::Enter)),
+                map_task_list(TaskListMode::Normal, view, key(KeyCode::Enter)),
                 Some(Command::OpenHistory)
             );
         }
         // The modal modes keep their Enter meaning.
         assert_eq!(
-            map_legacy(
-                &input(),
-                TaskView::Active,
-                Screen::TaskList,
-                key(KeyCode::Enter)
-            ),
+            map_task_list(input(), TaskView::Active, key(KeyCode::Enter)),
             Some(Command::Confirm)
         );
         assert_eq!(
-            map_legacy(
-                &confirm(),
-                TaskView::Active,
-                Screen::TaskList,
-                key(KeyCode::Enter)
-            ),
+            map_task_list(confirm(), TaskView::Active, key(KeyCode::Enter)),
             Some(Command::Confirm)
         );
     }
 
     #[test]
     fn every_accepted_key_is_listed_in_the_footer() {
-        let active_keys =
-            footer_hints_legacy(&Mode::Normal, TaskView::Active, Screen::TaskList, true, 80);
+        let active_keys = task_list_footer(TaskListMode::Normal, TaskView::Active, 80);
         for hint in [
             "j/k/↑/↓",
             "h/l",
@@ -565,13 +428,7 @@ mod restored_keymap_tests {
             assert!(active_keys.contains(hint), "active footer misses {hint:?}");
         }
         assert!(active_keys.contains("s sort"));
-        let archived_keys = footer_hints_legacy(
-            &Mode::Normal,
-            TaskView::Archived,
-            Screen::TaskList,
-            true,
-            80,
-        );
+        let archived_keys = task_list_footer(TaskListMode::Normal, TaskView::Archived, 80);
         for hint in [
             "j/k/↑/↓",
             "h/l",
@@ -586,26 +443,18 @@ mod restored_keymap_tests {
                 "archived footer misses {hint:?}"
             );
         }
-        let input_keys =
-            footer_hints_legacy(&input(), TaskView::Active, Screen::TaskList, true, 80);
+        let input_keys = task_list_footer(input(), TaskView::Active, 80);
         for hint in ["type", "backspace", "enter", "esc", "ctrl+c"] {
             assert!(input_keys.contains(hint), "input footer misses {hint:?}");
         }
-        let confirm_keys =
-            footer_hints_legacy(&confirm(), TaskView::Active, Screen::TaskList, true, 80);
+        let confirm_keys = task_list_footer(confirm(), TaskView::Active, 80);
         for hint in ["y/enter", "n/esc", "ctrl+c"] {
             assert!(
                 confirm_keys.contains(hint),
                 "confirm footer misses {hint:?}"
             );
         }
-        let history_keys = footer_hints_legacy(
-            &Mode::Normal,
-            TaskView::Active,
-            Screen::WorklogHistory,
-            true,
-            80,
-        );
+        let history_keys = history_footer(WorklogHistoryMode::Normal, true, 80);
         for hint in [
             "j/k/↑/↓ move",
             "e edit",
@@ -636,8 +485,7 @@ mod restored_keymap_tests {
     fn normal_task_list_footers_explain_how_to_open_worklogs() {
         for width in [60, 80] {
             for view in [TaskView::Active, TaskView::Archived] {
-                let footer =
-                    footer_hints_legacy(&Mode::Normal, view, Screen::TaskList, true, width);
+                let footer = task_list_footer(TaskListMode::Normal, view, width);
                 assert!(
                     footer.contains("enter history"),
                     "task-list footer misses the history hint at width {width}: {footer:?}"
@@ -649,23 +497,11 @@ mod restored_keymap_tests {
     #[test]
     fn compact_footers_keep_every_key_visible_at_sixty_columns() {
         let footers = [
-            footer_hints_legacy(&Mode::Normal, TaskView::Active, Screen::TaskList, true, 60),
-            footer_hints_legacy(
-                &Mode::Normal,
-                TaskView::Archived,
-                Screen::TaskList,
-                true,
-                60,
-            ),
-            footer_hints_legacy(&input(), TaskView::Active, Screen::TaskList, true, 60),
-            footer_hints_legacy(&confirm(), TaskView::Active, Screen::TaskList, true, 60),
-            footer_hints_legacy(
-                &Mode::Normal,
-                TaskView::Active,
-                Screen::WorklogHistory,
-                true,
-                60,
-            ),
+            task_list_footer(TaskListMode::Normal, TaskView::Active, 60),
+            task_list_footer(TaskListMode::Normal, TaskView::Archived, 60),
+            task_list_footer(input(), TaskView::Active, 60),
+            task_list_footer(confirm(), TaskView::Active, 60),
+            history_footer(WorklogHistoryMode::Normal, true, 60),
         ];
         for footer in footers {
             assert!(footer.chars().count() <= 60, "footer too wide: {footer:?}");

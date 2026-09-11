@@ -39,7 +39,14 @@ pub fn render<S: TrackerApplicationService>(frame: &mut Frame, app: &App<S>) {
     );
     match &app.screen {
         ScreenState::TaskList(state) => {
-            screens::task_list::view::render(frame, body, state, app.active_task_id());
+            screens::task_list::view::render(
+                frame,
+                body,
+                state,
+                app.tasks(),
+                app.ordering_label(),
+                app.active_task_id(),
+            );
         }
         ScreenState::WorklogHistory(state) => {
             let history = state.history();

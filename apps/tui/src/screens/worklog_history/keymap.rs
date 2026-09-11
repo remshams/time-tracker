@@ -119,32 +119,21 @@ pub(crate) fn footer_hints(state: &WorklogHistoryState, width: u16) -> &'static 
 #[cfg(test)]
 mod restored_keymap_tests {
     use crate::command::Command;
+    use crate::screens::WorklogHistoryMode;
     use crate::screens::keymap_test_support::*;
-    use crate::screens::{Screen, TaskView};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
     fn deletion_mode_accepts_and_cancels_without_other_commands() {
         let mode = deletion();
         for code in [KeyCode::Enter, KeyCode::Char('d'), KeyCode::Char('y')] {
-            assert_eq!(
-                map_legacy(&mode, TaskView::Active, Screen::WorklogHistory, key(code)),
-                Some(Command::Confirm)
-            );
+            assert_eq!(map_history(&mode, key(code)), Some(Command::Confirm));
         }
         for code in [KeyCode::Esc, KeyCode::Char('n')] {
-            assert_eq!(
-                map_legacy(&mode, TaskView::Active, Screen::WorklogHistory, key(code)),
-                Some(Command::Cancel)
-            );
+            assert_eq!(map_history(&mode, key(code)), Some(Command::Cancel));
         }
         assert_eq!(
-            map_legacy(
-                &mode,
-                TaskView::Active,
-                Screen::WorklogHistory,
-                with_modifier('d', KeyModifiers::SHIFT),
-            ),
+            map_history(&mode, with_modifier('d', KeyModifiers::SHIFT)),
             None
         );
         for code in [
@@ -153,89 +142,50 @@ mod restored_keymap_tests {
             KeyCode::Char('r'),
             KeyCode::Char('j'),
         ] {
-            assert_eq!(
-                map_legacy(&mode, TaskView::Active, Screen::WorklogHistory, key(code)),
-                None
-            );
+            assert_eq!(map_history(&mode, key(code)), None);
         }
     }
 
     #[test]
     fn the_history_maps_movement_paging_refresh_and_back() {
-        let history = Screen::WorklogHistory;
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                TaskView::Active,
-                history,
-                key(KeyCode::Char('j'))
-            ),
+            map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('j'))),
             Some(Command::MoveDown)
         );
         assert_eq!(
-            map_legacy(&Mode::Normal, TaskView::Active, history, key(KeyCode::Down)),
+            map_history(&WorklogHistoryMode::Normal, key(KeyCode::Down)),
             Some(Command::MoveDown)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                TaskView::Active,
-                history,
-                key(KeyCode::Char('k'))
-            ),
+            map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('k'))),
             Some(Command::MoveUp)
         );
         assert_eq!(
-            map_legacy(&Mode::Normal, TaskView::Active, history, key(KeyCode::Up)),
+            map_history(&WorklogHistoryMode::Normal, key(KeyCode::Up)),
             Some(Command::MoveUp)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                TaskView::Active,
-                history,
-                key(KeyCode::Char('e'))
-            ),
+            map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('e'))),
             Some(Command::OpenCorrection)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                TaskView::Active,
-                history,
-                key(KeyCode::Char('d'))
-            ),
+            map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('d'))),
             Some(Command::OpenDeletion)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                TaskView::Active,
-                history,
-                key(KeyCode::Char('o'))
-            ),
+            map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('o'))),
             Some(Command::LoadOlderWorklogs)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                TaskView::Active,
-                history,
-                key(KeyCode::Char('r'))
-            ),
+            map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('r'))),
             Some(Command::RefreshWorklogs)
         );
         assert_eq!(
-            map_legacy(&Mode::Normal, TaskView::Active, history, key(KeyCode::Esc)),
+            map_history(&WorklogHistoryMode::Normal, key(KeyCode::Esc)),
             Some(Command::BackToTaskList)
         );
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                TaskView::Active,
-                history,
-                key(KeyCode::Char('q'))
-            ),
+            map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('q'))),
             Some(Command::Quit)
         );
     }
@@ -254,24 +204,14 @@ mod restored_keymap_tests {
             KeyCode::Char('x'),
         ] {
             assert_eq!(
-                map_legacy(
-                    &Mode::Normal,
-                    TaskView::Active,
-                    Screen::WorklogHistory,
-                    key(code)
-                ),
+                map_history(&WorklogHistoryMode::Normal, key(code)),
                 None,
                 "the history must not map {code:?}"
             );
         }
         for modified in [ctrl('o'), with_modifier('r', KeyModifiers::ALT)] {
             assert_eq!(
-                map_legacy(
-                    &Mode::Normal,
-                    TaskView::Active,
-                    Screen::WorklogHistory,
-                    modified
-                ),
+                map_history(&WorklogHistoryMode::Normal, modified),
                 None,
                 "modified {modified:?} must not act"
             );
@@ -281,12 +221,7 @@ mod restored_keymap_tests {
     #[test]
     fn ctrl_c_quits_from_the_history() {
         assert_eq!(
-            map_legacy(
-                &Mode::Normal,
-                TaskView::Active,
-                Screen::WorklogHistory,
-                ctrl('c')
-            ),
+            map_history(&WorklogHistoryMode::Normal, ctrl('c')),
             Some(Command::Quit)
         );
     }
@@ -294,7 +229,6 @@ mod restored_keymap_tests {
     #[test]
     fn correction_maps_editing_switching_adjustment_and_exit_commands() {
         let mode = correction();
-        let screen = Screen::WorklogHistory;
         let cases = [
             (key(KeyCode::Tab), Command::SwitchCorrectionField),
             (key(KeyCode::BackTab), Command::SwitchCorrectionField),
@@ -313,25 +247,21 @@ mod restored_keymap_tests {
         ];
         for (key, expected) in cases {
             assert_eq!(
-                map_legacy(&mode, TaskView::Active, screen, key),
+                map_history(&mode, key),
                 Some(expected),
                 "wrong command for {key:?}"
             );
         }
         assert_eq!(
-            map_legacy(
+            map_history(
                 &mode,
-                TaskView::Active,
-                screen,
                 KeyEvent::new(KeyCode::Char('J'), KeyModifiers::SHIFT)
             ),
             Some(Command::AdjustForwardOneHour)
         );
         assert_eq!(
-            map_legacy(
+            map_history(
                 &mode,
-                TaskView::Active,
-                screen,
                 KeyEvent::new(KeyCode::Char('K'), KeyModifiers::SHIFT)
             ),
             Some(Command::AdjustBackwardOneHour)
@@ -346,27 +276,18 @@ mod restored_keymap_tests {
             key(KeyCode::Char('x')),
         ] {
             assert_eq!(
-                map_legacy(&mode, TaskView::Active, screen, key),
+                map_history(&mode, key),
                 None,
                 "modified or invalid correction key must not act: {key:?}"
             );
         }
-        assert_eq!(
-            map_legacy(&mode, TaskView::Active, screen, key(KeyCode::Up)),
-            None
-        );
+        assert_eq!(map_history(&mode, key(KeyCode::Up)), None);
     }
 
     #[test]
     fn correction_footers_fit_and_advertise_every_accepted_key() {
         for width in [60, 80] {
-            let footer = footer_hints_legacy(
-                &correction(),
-                TaskView::Active,
-                Screen::WorklogHistory,
-                true,
-                width,
-            );
+            let footer = history_footer(correction(), true, width);
             assert!(footer.chars().count() <= width as usize, "{footer:?}");
             for hint in [
                 "type",
@@ -392,13 +313,7 @@ mod restored_keymap_tests {
             (60, "r retry esc back q/ctrl+c quit"),
             (80, "r retry · esc back · q/ctrl+c quit"),
         ] {
-            let footer = footer_hints_legacy(
-                &Mode::Normal,
-                TaskView::Active,
-                Screen::WorklogHistory,
-                false,
-                width,
-            );
+            let footer = history_footer(WorklogHistoryMode::Normal, false, width);
             assert_eq!(footer, expected);
             assert!(footer.chars().count() <= width as usize, "{footer:?}");
             for unavailable in ["j/k", "e edit", "o older"] {
@@ -413,21 +328,9 @@ mod restored_keymap_tests {
             (60, "d delete", "d/y/enter delete"),
             (80, "d delete", "d/y/enter delete"),
         ] {
-            let history = footer_hints_legacy(
-                &Mode::Normal,
-                TaskView::Active,
-                Screen::WorklogHistory,
-                true,
-                width,
-            );
+            let history = history_footer(WorklogHistoryMode::Normal, true, width);
             assert!(history.contains(delete_hint), "{history:?}");
-            let confirmation = footer_hints_legacy(
-                &deletion(),
-                TaskView::Active,
-                Screen::WorklogHistory,
-                true,
-                width,
-            );
+            let confirmation = history_footer(deletion(), true, width);
             assert!(history.chars().count() <= width as usize, "{history:?}");
             assert!(confirmation.contains(confirm_hint), "{confirmation:?}");
             assert!(
@@ -440,20 +343,8 @@ mod restored_keymap_tests {
 
     #[test]
     fn deletion_footer_switches_to_the_full_variant_at_eighty_columns() {
-        let compact = footer_hints_legacy(
-            &Mode::Normal,
-            TaskView::Active,
-            Screen::WorklogHistory,
-            true,
-            79,
-        );
-        let full = footer_hints_legacy(
-            &Mode::Normal,
-            TaskView::Active,
-            Screen::WorklogHistory,
-            true,
-            80,
-        );
+        let compact = history_footer(WorklogHistoryMode::Normal, true, 79);
+        let full = history_footer(WorklogHistoryMode::Normal, true, 80);
         assert_eq!(
             compact,
             "j/k/↑/↓ e edit d delete o older r refresh esc back q ctrl+c"
@@ -463,23 +354,11 @@ mod restored_keymap_tests {
             "j/k/↑/↓ move e edit d delete o older r refresh esc back q/ctrl+c quit"
         );
         assert_eq!(
-            footer_hints_legacy(
-                &deletion(),
-                TaskView::Active,
-                Screen::WorklogHistory,
-                true,
-                79,
-            ),
+            history_footer(deletion(), true, 79),
             "d/y/enter delete n/esc cancel ctrl+c quit"
         );
         assert_eq!(
-            footer_hints_legacy(
-                &deletion(),
-                TaskView::Active,
-                Screen::WorklogHistory,
-                true,
-                80,
-            ),
+            history_footer(deletion(), true, 80),
             "d/y/enter delete · n/esc cancel · ctrl+c quit"
         );
     }
@@ -487,23 +366,11 @@ mod restored_keymap_tests {
     #[test]
     fn correction_footer_switches_to_the_full_variant_at_eighty_columns() {
         assert_eq!(
-            footer_hints_legacy(
-                &correction(),
-                TaskView::Active,
-                Screen::WorklogHistory,
-                true,
-                79
-            ),
+            history_footer(correction(), true, 79),
             "type ←/→ bs/del tab/S-tab j/k ±5m J/K ±1h enter esc ctrl+c"
         );
         assert_eq!(
-            footer_hints_legacy(
-                &correction(),
-                TaskView::Active,
-                Screen::WorklogHistory,
-                true,
-                80
-            ),
+            history_footer(correction(), true, 80),
             "type · ←/→ · bs/del · tab/S-tab · j/k ±5m · J/K ±1h · enter · esc · ctrl+c"
         );
     }
@@ -516,15 +383,12 @@ mod restored_keymap_tests {
             (KeyCode::Char('q'), Command::Quit),
         ] {
             assert_eq!(
-                map_unavailable(TaskView::Active, KeyEvent::new(code, KeyModifiers::NONE)),
+                map_unavailable(KeyEvent::new(code, KeyModifiers::NONE)),
                 Some(expected)
             );
         }
         assert_eq!(
-            map_unavailable(
-                TaskView::Active,
-                KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE)
-            ),
+            map_unavailable(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE)),
             None
         );
     }

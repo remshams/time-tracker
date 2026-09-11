@@ -2,11 +2,11 @@
 
 use chrono::FixedOffset;
 use chrono_tz::Tz;
-use tracker_application::TrackerApplicationService;
-use tracker_domain::{TaskId, TrackingState};
+use tracker_application::{TaskOrdering, TrackerApplicationService};
+use tracker_domain::{Task, TaskId, TrackingState};
 
 use crate::command::Command;
-use crate::screens::task_list::load_state;
+use crate::screens::task_list::load_tasks;
 use crate::screens::worklog_history::active_worklog_for_task;
 use crate::support::clock::ElapsedClock;
 use crate::support::errors::application_error_text;
@@ -38,6 +38,9 @@ enum Lifecycle {
 /// Shared application state around one exclusively owned screen state.
 pub struct App<S: TrackerApplicationService> {
     pub(crate) application: S,
+    pub(crate) active_tasks: Vec<Task>,
+    pub(crate) archived_tasks: Vec<Task>,
+    pub(crate) ordering: TaskOrdering,
     pub(crate) tracking: TrackingState,
     pub(crate) clock: Option<ElapsedClock>,
     pub(crate) timezone: Tz,
@@ -50,7 +53,9 @@ pub struct App<S: TrackerApplicationService> {
 impl<S: TrackerApplicationService> App<S> {
     /// Builds presentation state from an already loaded application service.
     pub fn load(application: S) -> Self {
-        let task_list = load_state(&application);
+        let ordering = TaskOrdering::default();
+        let (active_tasks, archived_tasks) = load_tasks(&application, ordering);
+        let task_list = TaskListState::new(active_tasks.first().map(Task::id));
         let tracking = application.current_tracking().clone();
         let clock = match &tracking {
             TrackingState::Idle => None,
@@ -66,6 +71,9 @@ impl<S: TrackerApplicationService> App<S> {
         };
         Self {
             application,
+            active_tasks,
+            archived_tasks,
+            ordering,
             tracking,
             clock,
             timezone,
@@ -144,7 +152,7 @@ impl<S: TrackerApplicationService> App<S> {
         let ScreenState::WorklogHistory(state) = &self.screen else {
             return;
         };
-        self.screen = ScreenState::TaskList(state.task_list_clone());
+        self.screen = ScreenState::TaskList(state.task_list().clone());
     }
 
     #[cfg(test)]

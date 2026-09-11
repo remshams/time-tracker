@@ -67,7 +67,7 @@ pub enum WorklogHistoryMode {
     Correction(CorrectionDraft),
 }
 
-/// History state and the exact task-list state restored on return.
+/// History state and the exact task-list navigation restored on return.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorklogHistoryState {
     pub(super) task_list: TaskListState,
@@ -99,10 +99,6 @@ impl WorklogHistoryState {
     #[cfg(test)]
     pub(crate) fn set_mode_for_test(&mut self, mode: WorklogHistoryMode) {
         self.mode = mode;
-    }
-
-    pub(crate) fn task_list_clone(&self) -> TaskListState {
-        self.task_list.clone()
     }
 
     pub(crate) fn task_list_mut(&mut self) -> &mut TaskListState {

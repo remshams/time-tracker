@@ -12,12 +12,13 @@ use crate::command::Command;
 use crate::support::clock::{ElapsedClock, tracking_timestamp};
 use crate::support::errors::application_error_text;
 
-use super::{InputPurpose, TaskListMode, TaskListState, TaskView};
+use super::{InputPurpose, TaskListMode, TaskView};
 
-pub(crate) fn load_state<S: TrackerApplicationService>(application: &S) -> TaskListState {
-    let ordering = TaskOrdering::default();
-    let (tasks, archived_tasks) = task_lists(application, ordering);
-    TaskListState::new(tasks, archived_tasks, ordering)
+pub(crate) fn load_tasks<S: TrackerApplicationService>(
+    application: &S,
+    ordering: TaskOrdering,
+) -> (Vec<Task>, Vec<Task>) {
+    task_lists(application, ordering)
 }
 
 impl<S: TrackerApplicationService> App<S> {
@@ -43,7 +44,7 @@ impl<S: TrackerApplicationService> App<S> {
 
     /// The tasks of the view currently shown.
     pub fn tasks(&self) -> &[Task] {
-        self.task_list().tasks()
+        self.tasks_in(self.view())
     }
 
     pub fn view(&self) -> TaskView {
@@ -52,11 +53,15 @@ impl<S: TrackerApplicationService> App<S> {
 
     #[cfg(test)]
     pub fn ordering(&self) -> TaskOrdering {
-        self.task_list().ordering
+        self.ordering
     }
 
     pub fn ordering_label(&self) -> &'static str {
-        self.task_list().ordering_label()
+        match self.ordering {
+            TaskOrdering::RecentlyWorked => "recently worked",
+            TaskOrdering::RecentlyUpdated => "recently updated",
+            TaskOrdering::RecentlyCreated => "recently created",
+        }
     }
 
     pub fn selected(&self) -> Option<usize> {
@@ -85,6 +90,13 @@ impl<S: TrackerApplicationService> App<S> {
 
     pub(crate) fn task_list_is_normal(&self) -> bool {
         matches!(&self.screen, crate::screens::ScreenState::TaskList(state) if matches!(state.mode(), TaskListMode::Normal))
+    }
+
+    fn tasks_in(&self, view: TaskView) -> &[Task] {
+        match view {
+            TaskView::Active => &self.active_tasks,
+            TaskView::Archived => &self.archived_tasks,
+        }
     }
 
     fn selection_id(&self) -> Option<TaskId> {
@@ -130,7 +142,7 @@ impl<S: TrackerApplicationService> App<S> {
         if !self.task_list_is_normal() || self.view() == target {
             return;
         }
-        let first = self.task_list().tasks_in(target).first().map(Task::id);
+        let first = self.tasks_in(target).first().map(Task::id);
         let state = self.task_list_mut();
         state.view = target;
         if state.selection().is_none() {
@@ -142,7 +154,7 @@ impl<S: TrackerApplicationService> App<S> {
         if !self.task_list_is_normal() {
             return;
         }
-        self.task_list_mut().ordering = next_ordering(self.task_list().ordering);
+        self.ordering = next_ordering(self.ordering);
         self.sync_tasks_from_application();
         self.status = Status::Info(format!("Sorted by {}", self.ordering_label()));
     }
@@ -155,13 +167,9 @@ impl<S: TrackerApplicationService> App<S> {
     pub(crate) fn sync_tasks_from_application(&mut self) {
         let previous_index = self.selected();
         let preferred = self.selection_id();
-        let ordering = self.task_list().ordering;
-        let (tasks, archived_tasks) = task_lists(&self.application, ordering);
-        {
-            let state = self.task_list_mut();
-            state.tasks = tasks;
-            state.archived_tasks = archived_tasks;
-        }
+        let (active_tasks, archived_tasks) = task_lists(&self.application, self.ordering);
+        self.active_tasks = active_tasks;
+        self.archived_tasks = archived_tasks;
         let visible = self.tasks();
         let resolved = preferred
             .and_then(|id| visible.iter().position(|task| task.id() == id))
