@@ -1,4 +1,4 @@
-include!("support.rs");
+use crate::screens::test_support::*;
 
 mod actions;
 mod correction;

@@ -1,4 +1,6 @@
 pub mod task_list;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod worklog_history;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};

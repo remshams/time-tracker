@@ -1,27 +1,34 @@
-// App test support shared by this screen's test modules.
+// Shared test support for screen modules.
 
 use std::cell::Cell;
-use std::time::Duration;
+pub(crate) use std::time::{Duration, Instant};
 
-use chrono::{DateTime, TimeDelta, Utc};
-use tracker_application::{
-    ApplicationError, ClearActiveTaskOutcome, SetActiveTaskOutcome, TaskListItem, TaskOperations,
-    TaskOrdering, TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor,
-    WorklogOperations, WorklogPage, WorklogPageSnapshot, WorklogQueries,
+pub(crate) use chrono::{
+    DateTime, FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, TimeDelta, TimeZone, Utc,
 };
-use tracker_domain::{
-    ActiveWorklog, Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes,
+pub(crate) use tracker_application::{
+    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, SetActiveTaskOutcome,
+    TaskListItem, TaskOperations, TaskOrdering, TaskQueries, TrackerApplication,
+    TrackingOperations, WorklogCursor, WorklogOperations, WorklogPage, WorklogPageSnapshot,
+    WorklogQueries,
 };
-use tracker_storage::SqliteRepository;
+pub(crate) use tracker_domain::{
+    ActiveWorklog, Task, TaskId, TaskName, TrackingState, Worklog, WorklogCorrectionError,
+    WorklogId, WorklogTimes,
+};
+pub(crate) use tracker_storage::SqliteRepository;
 
-use crate::app::*;
-use crate::command::Command;
+pub(crate) use crate::app::*;
+pub(crate) use crate::command::Command;
+pub(crate) use crate::support::clock::{ElapsedClock, tracking_timestamp};
+pub(crate) use crate::support::errors::ACTIVE_WORKLOG_DELETE_MESSAGE;
+pub(crate) use crate::support::timestamps::*;
 
-fn at(seconds: i64) -> DateTime<Utc> {
+pub(crate) fn at(seconds: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(seconds, 0).unwrap()
 }
 
-fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
+pub(crate) fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
     let repository = SqliteRepository::open_in_memory().unwrap();
     for name in names {
         repository
@@ -35,36 +42,37 @@ fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
     App::load(TrackerApplication::load(repository).unwrap())
 }
 
-fn text(status: &Status) -> &str {
+pub(crate) fn text(status: &Status) -> &str {
     match status {
         Status::Info(text) | Status::Error(text) => text,
     }
 }
 
-struct TestService {
-    tasks: Vec<Task>,
-    tracking: TrackingState,
-    fail_create: bool,
-    fail_rename: bool,
-    fail_archive: bool,
-    fail_unarchive: bool,
-    archive_activates: Option<DateTime<Utc>>,
-    unarchive_activates: Option<DateTime<Utc>>,
-    set_returns_already_active: bool,
-    set_timestamp: Option<DateTime<Utc>>,
-    latest_work_starts: Vec<(TaskId, DateTime<Utc>)>,
-    worklog_pages: Vec<Result<WorklogPage, ApplicationError>>,
-    worklog_reads: Cell<usize>,
-    correction_error: Option<ApplicationError>,
-    correction_calls: Vec<(WorklogId, WorklogTimes, WorklogTimes, DateTime<Utc>)>,
-    deletion_error: Option<ApplicationError>,
-    deletion_calls: Vec<(WorklogId, TaskId, WorklogTimes)>,
-    authoritative_worklogs: Vec<Worklog>,
-    clear_calls: Vec<(WorklogId, DateTime<Utc>)>,
+pub(crate) struct TestService {
+    pub(crate) tasks: Vec<Task>,
+    pub(crate) tracking: TrackingState,
+    pub(crate) fail_create: bool,
+    pub(crate) fail_rename: bool,
+    pub(crate) fail_archive: bool,
+    pub(crate) fail_unarchive: bool,
+    pub(crate) archive_activates: Option<DateTime<Utc>>,
+    pub(crate) unarchive_activates: Option<DateTime<Utc>>,
+    pub(crate) set_returns_already_active: bool,
+    pub(crate) set_timestamp: Option<DateTime<Utc>>,
+    pub(crate) latest_work_starts: Vec<(TaskId, DateTime<Utc>)>,
+    pub(crate) tasks_after_next_worklog_read: Option<Vec<Task>>,
+    pub(crate) worklog_pages: Vec<Result<WorklogPage, ApplicationError>>,
+    pub(crate) worklog_reads: Cell<usize>,
+    pub(crate) correction_error: Option<ApplicationError>,
+    pub(crate) correction_calls: Vec<(WorklogId, WorklogTimes, WorklogTimes, DateTime<Utc>)>,
+    pub(crate) deletion_error: Option<ApplicationError>,
+    pub(crate) deletion_calls: Vec<(WorklogId, TaskId, WorklogTimes)>,
+    pub(crate) authoritative_worklogs: Vec<Worklog>,
+    pub(crate) clear_calls: Vec<(WorklogId, DateTime<Utc>)>,
 }
 
 impl TestService {
-    fn with_tasks(tasks: Vec<Task>) -> Self {
+    pub(crate) fn with_tasks(tasks: Vec<Task>) -> Self {
         Self {
             tasks,
             tracking: TrackingState::Idle,
@@ -77,6 +85,7 @@ impl TestService {
             set_returns_already_active: false,
             set_timestamp: None,
             latest_work_starts: Vec::new(),
+            tasks_after_next_worklog_read: None,
             worklog_pages: Vec::new(),
             worklog_reads: Cell::new(0),
             correction_error: None,
@@ -88,7 +97,7 @@ impl TestService {
         }
     }
 
-    fn failure() -> ApplicationError {
+    pub(crate) fn failure() -> ApplicationError {
         ApplicationError::storage_failure("write failed")
     }
 
@@ -358,6 +367,9 @@ impl WorklogQueries for TestService {
         _task_id: TaskId,
         _after: Option<&WorklogCursor>,
     ) -> Result<WorklogPage, ApplicationError> {
+        if let Some(tasks) = self.tasks_after_next_worklog_read.take() {
+            self.tasks = tasks;
+        }
         // Each read consumes the next queued page, so one service can
         // answer an initial load, several older pages, and failures.
         let read = self.worklog_reads.get();
@@ -385,7 +397,7 @@ impl WorklogQueries for TestService {
     }
 }
 
-fn task(tag: u128, name: &str) -> Task {
+pub(crate) fn task(tag: u128, name: &str) -> Task {
     Task::create(
         TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
         TaskName::new(name).unwrap(),
@@ -393,13 +405,212 @@ fn task(tag: u128, name: &str) -> Task {
     )
 }
 
-fn archived_task(tag: u128, name: &str) -> Task {
+pub(crate) fn archived_task(tag: u128, name: &str) -> Task {
     let mut task = task(tag, name);
     assert!(task.archive(at(100)));
     task
 }
 
-fn stamped_task(tag: u128, name: &str, archived: bool, created_at: i64, updated_at: i64) -> Task {
+pub(crate) fn worklog_id(tag: u128) -> WorklogId {
+    WorklogId::from_uuid(uuid::Uuid::from_u128(tag))
+}
+
+/// A stopped worklog for the task, started at `start` and running one
+/// minute.
+pub(crate) fn history_worklog(tag: u128, task_id: TaskId, start: i64) -> Worklog {
+    Worklog::new(worklog_id(tag), task_id, at(start), Some(at(start + 60))).unwrap()
+}
+
+pub(crate) fn cursor(start: i64, tag: u128) -> WorklogCursor {
+    WorklogCursor {
+        task_id: TaskId::from_uuid(uuid::Uuid::from_u128(1)),
+        start: at(start),
+        id: worklog_id(tag),
+        revision: 0,
+    }
+}
+
+pub(crate) fn page(worklogs: Vec<Worklog>, next_cursor: Option<WorklogCursor>) -> WorklogPage {
+    let requested_task_latest_work_start = worklogs.iter().map(Worklog::start).max();
+    let active_worklog = worklogs.iter().find(|worklog| worklog.is_active()).cloned();
+    WorklogPage {
+        snapshot: WorklogPageSnapshot {
+            requested_task_latest_work_start,
+            active_task_latest_work_start: active_worklog.as_ref().map(Worklog::start),
+            active_worklog,
+        },
+        worklogs,
+        next_cursor,
+    }
+}
+
+pub(crate) fn page_with_active(
+    worklogs: Vec<Worklog>,
+    active_worklog: Option<Worklog>,
+    next_cursor: Option<WorklogCursor>,
+) -> WorklogPage {
+    let requested_task_latest_work_start = worklogs.iter().map(Worklog::start).max();
+    WorklogPage {
+        snapshot: WorklogPageSnapshot {
+            requested_task_latest_work_start,
+            active_task_latest_work_start: active_worklog.as_ref().map(Worklog::start),
+            active_worklog,
+        },
+        worklogs,
+        next_cursor,
+    }
+}
+
+pub(crate) fn correction_history_app(initial: Worklog, reload: Vec<Worklog>) -> App<TestService> {
+    let task = task(1, "alpha");
+    let mut service = TestService::with_tasks(vec![task]);
+    service.worklog_pages = vec![
+        Ok(page(vec![initial], Some(cursor(50, 50)))),
+        Ok(page(reload, None)),
+    ];
+    let mut app = App::load(service);
+    app.handle(Command::OpenHistory);
+    app
+}
+
+pub(crate) fn correction_app(initial: Worklog, reload: Vec<Worklog>) -> App<TestService> {
+    let mut app = correction_history_app(initial, reload);
+    app.freeze_offset_for_tests(FixedOffset::east_opt(2 * 3600).unwrap());
+    app.handle(Command::OpenCorrection);
+    app
+}
+
+pub(crate) fn correction_app_in<Tz>(
+    initial: Worklog,
+    reload: Vec<Worklog>,
+    timezone: &Tz,
+) -> App<TestService>
+where
+    Tz: TimeZone,
+    Tz::Offset: std::fmt::Display,
+{
+    let mut app = correction_history_app(initial, reload);
+    app.open_correction_in(timezone);
+    app
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CorrectionTestZone;
+
+impl CorrectionTestZone {
+    fn offset(seconds: i64) -> FixedOffset {
+        let offset = if seconds < 3_600 {
+            3_600
+        } else if seconds < 18_000 {
+            7_200
+        } else if seconds < 100_000 {
+            3_600
+        } else {
+            10_800
+        };
+        FixedOffset::east_opt(offset).unwrap()
+    }
+}
+
+fn early_local_offset(seconds: i64) -> MappedLocalTime<FixedOffset> {
+    if seconds < 7_200 {
+        MappedLocalTime::Single(FixedOffset::east_opt(3_600).unwrap())
+    } else if seconds < 10_800 {
+        MappedLocalTime::None
+    } else {
+        MappedLocalTime::Single(FixedOffset::east_opt(7_200).unwrap())
+    }
+}
+
+fn late_local_offset(seconds: i64) -> MappedLocalTime<FixedOffset> {
+    if seconds < 25_200 {
+        MappedLocalTime::Ambiguous(
+            FixedOffset::east_opt(7_200).unwrap(),
+            FixedOffset::east_opt(3_600).unwrap(),
+        )
+    } else if seconds < 103_600 {
+        MappedLocalTime::Single(FixedOffset::east_opt(3_600).unwrap())
+    } else if seconds < 110_800 {
+        MappedLocalTime::None
+    } else {
+        MappedLocalTime::Single(FixedOffset::east_opt(10_800).unwrap())
+    }
+}
+
+impl TimeZone for CorrectionTestZone {
+    type Offset = FixedOffset;
+
+    fn from_offset(_offset: &Self::Offset) -> Self {
+        Self
+    }
+
+    fn offset_from_local_date(&self, local: &NaiveDate) -> MappedLocalTime<Self::Offset> {
+        self.offset_from_local_datetime(&local.and_hms_opt(0, 0, 0).unwrap())
+    }
+
+    fn offset_from_local_datetime(&self, local: &NaiveDateTime) -> MappedLocalTime<Self::Offset> {
+        let seconds = local.and_utc().timestamp();
+        if seconds < 21_600 {
+            early_local_offset(seconds)
+        } else {
+            late_local_offset(seconds)
+        }
+    }
+
+    fn offset_from_utc_date(&self, utc: &NaiveDate) -> Self::Offset {
+        Self::offset(utc.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp())
+    }
+
+    fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> Self::Offset {
+        Self::offset(utc.and_utc().timestamp())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SubminuteTransitionZone;
+
+impl TimeZone for SubminuteTransitionZone {
+    type Offset = FixedOffset;
+
+    fn from_offset(_offset: &Self::Offset) -> Self {
+        Self
+    }
+
+    fn offset_from_local_date(&self, local: &NaiveDate) -> MappedLocalTime<Self::Offset> {
+        self.offset_from_local_datetime(&local.and_hms_opt(0, 0, 0).unwrap())
+    }
+
+    fn offset_from_local_datetime(&self, local: &NaiveDateTime) -> MappedLocalTime<Self::Offset> {
+        let seconds = local.and_utc().timestamp();
+        if seconds < 330 {
+            MappedLocalTime::Single(FixedOffset::east_opt(30).unwrap())
+        } else if seconds < 360 {
+            MappedLocalTime::None
+        } else {
+            MappedLocalTime::Single(FixedOffset::east_opt(60).unwrap())
+        }
+    }
+
+    fn offset_from_utc_date(&self, utc: &NaiveDate) -> Self::Offset {
+        self.offset_from_utc_datetime(&utc.and_hms_opt(0, 0, 0).unwrap())
+    }
+
+    fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> Self::Offset {
+        if utc.and_utc().timestamp() < 300 {
+            FixedOffset::east_opt(30).unwrap()
+        } else {
+            FixedOffset::east_opt(60).unwrap()
+        }
+    }
+}
+
+pub(crate) fn stamped_task(
+    tag: u128,
+    name: &str,
+    archived: bool,
+    created_at: i64,
+    updated_at: i64,
+) -> Task {
     Task::rehydrate(
         TaskId::from_uuid(uuid::Uuid::from_u128(tag)),
         TaskName::new(name).unwrap(),
