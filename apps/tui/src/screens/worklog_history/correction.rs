@@ -276,10 +276,11 @@ impl<S: TrackerApplicationService> App<S> {
             }
             None => None,
         };
+        let occurred_at = Utc::now();
         let replacement = WorklogTimes::new(start, end);
         match self
             .application
-            .correct_worklog(draft.id, draft.expected, replacement, Utc::now())
+            .correct_worklog(draft.id, draft.expected, replacement, occurred_at)
         {
             Ok(worklog) => {
                 let task_id = self
