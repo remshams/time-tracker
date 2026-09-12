@@ -90,7 +90,7 @@ The exact text is easy to replace once the intended demo is clear.
 
 ## Current architecture
 
-Both architecture refactor waves are complete without observable behavior changes. Wave one reorganized the domain, application, and SQLite adapter. Wave two reorganized the TUI around screen-owned state and colocated screen behavior.
+The architecture refactors are complete without observable behavior changes. The domain, application, and SQLite adapter remain separate. The TUI now splits global presentation state into task, tracking, and shell owners behind one App controller and immutable render projection.
 
 Responsibilities and current module boundaries:
 
@@ -99,9 +99,10 @@ Responsibilities and current module boundaries:
 - Application repository ports expose only the queries and writes used by application workflows. SQLite may retain additional diagnostic queries.
 - `tracker-storage` keeps its SQLite adapter in `mapping`, `tasks`, `tracking`, and `worklogs` modules. `SqliteRepository` still owns one `Connection`, and transaction-aware helpers continue to accept an explicit `&Connection`.
 - Large application and SQLite tests are split by concern.
-- `apps/tui/src/app.rs` owns shared presentation state, process lifecycle, and transitions between screens. Its stored `ScreenState` contains either `TaskListState` or `WorklogHistoryState`; each screen has its own valid modes.
-- Each folder under `apps/tui/src/screens` contains that screen's state, actions, keymap, rendering, and tests. Worklog history retains the task-list state it must restore on return.
-- Shared stateless rendering functions live under `components`. Clock, timestamp, and error-presentation helpers live under `support`. `ui.rs` only composes a frame from narrow screen data.
+- `apps/tui/src/app.rs` is the global presentation controller. Its four private fields are the application service, `TaskCatalog`, `TrackingSession`, and `ShellState`; only App orchestration calls the service.
+- `TaskCatalog` owns both task collections, ordering, and lookup. `TrackingSession` keeps `TrackingState` and its clock together. `ShellState` owns the exclusive `ScreenState`, status, lifecycle, and one startup `chrono_tz::Tz`.
+- The folders under `apps/tui/src/screens` contain screen state, keymaps, rendering, and tests. `ScreenState` owns `TaskListState`. Worklog history moves and retains that exact return state, while `TaskCatalog` keeps task data separate from it.
+- Shared stateless rendering functions live under `components`. Clock, timestamp, and error-presentation helpers live under `support`. `ui.rs` composes a frame from immutable `AppView` data and has no application-service dependency.
 - `terminal.rs` owns terminal lifecycle. `main.rs` wires the SQLite adapter, application service, event loop, and TUI.
 
 ## Threat and invariant review
