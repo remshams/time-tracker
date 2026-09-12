@@ -10,14 +10,6 @@ pub(crate) struct ElapsedClock {
 }
 
 impl ElapsedClock {
-    pub(crate) fn since(start: DateTime<Utc>) -> Self {
-        Self::anchored(Self::base_since(start, Utc::now()))
-    }
-
-    pub(crate) fn anchored(base: Duration) -> Self {
-        Self::at_anchor(base, Instant::now())
-    }
-
     pub(crate) fn at_anchor(base: Duration, anchor: Instant) -> Self {
         Self { anchor, base }
     }
@@ -30,8 +22,8 @@ impl ElapsedClock {
         self.base + since_anchor
     }
 
-    pub(crate) fn elapsed(&self) -> Duration {
-        self.at(self.anchor.elapsed())
+    pub(crate) fn elapsed_at(&self, now: Instant) -> Duration {
+        self.at(now.saturating_duration_since(self.anchor))
     }
 }
 

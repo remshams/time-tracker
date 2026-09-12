@@ -1,29 +1,13 @@
-use std::time::{Duration, Instant};
-
-use chrono::{DateTime, Utc};
 use tracker_application::{ApplicationFailureCategory, TrackerApplicationService, WorklogPage};
-use tracker_domain::{TaskId, TrackingState, Worklog, WorklogId};
+use tracker_domain::{TaskId, WorklogId};
 
-use crate::app::{App, Status};
+use crate::app::App;
 use crate::command::Command;
-use crate::screens::{Screen, ScreenState};
-use crate::support::clock::ElapsedClock;
+use crate::screens::worklog_history::active_worklog_for_task;
+use crate::screens::{History, Screen, WorklogHistoryMode};
 use crate::support::errors::application_error_text;
-use crate::support::timestamps::local_time;
-
-use super::{History, HistoryAvailability, WorklogHistoryMode, active_worklog_for_task};
 
 impl<S: TrackerApplicationService> App<S> {
-    pub(crate) fn history_is_normal(&self) -> bool {
-        matches!(&self.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
-    }
-
-    pub(crate) fn history_state(&self) -> &crate::screens::WorklogHistoryState {
-        match &self.screen {
-            ScreenState::WorklogHistory(state) => state,
-            ScreenState::TaskList(_) => unreachable!("history state is required"),
-        }
-    }
     pub(crate) fn handle_worklog_history_command(&mut self, command: Command) {
         match command {
             Command::MoveUp => self.move_history_up(),
@@ -42,9 +26,9 @@ impl<S: TrackerApplicationService> App<S> {
             Command::OpenDeletion => self.open_deletion(),
             Command::Insert(character) => self.insert_correction_character(character),
             Command::Backspace => self.backspace_correction_character(),
-            Command::Confirm => match self.history_state().mode() {
-                WorklogHistoryMode::ConfirmDeletion { .. } => self.confirm_deletion(),
-                WorklogHistoryMode::Correction(_) => self.confirm_correction(),
+            Command::Confirm => match self.history_state().map(|state| state.mode()) {
+                Some(WorklogHistoryMode::ConfirmDeletion { .. }) => self.confirm_deletion(),
+                Some(WorklogHistoryMode::Correction(_)) => self.confirm_correction(),
                 _ => {}
             },
             Command::Cancel => self.cancel_history_mode(),
@@ -52,105 +36,99 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
-    pub fn history(&self) -> Option<&History> {
-        match &self.screen {
-            ScreenState::WorklogHistory(state) => Some(state.history()),
-            ScreenState::TaskList(_) => None,
+    pub(crate) fn open_history(&mut self) {
+        if self.shell().screen() != Screen::TaskList
+            || !matches!(
+                self.shell().task_list().mode(),
+                crate::screens::task_list::TaskListMode::Normal
+            )
+        {
+            return;
         }
+        let list = self.shell().task_list();
+        let Some(task) = list
+            .selection()
+            .and_then(|id| {
+                self.catalog()
+                    .tasks(list.view())
+                    .iter()
+                    .find(|task| task.id() == id)
+            })
+            .cloned()
+        else {
+            return;
+        };
+        let result = self.application_mut().worklogs_for_task(task.id(), None);
+        self.sync_from_application(false);
+        match result {
+            Ok(page) => {
+                let baseline = active_worklog_for_task(&page.snapshot.active_worklog, task.id());
+                self.shell_mut().open_history(History::new(
+                    task.id(),
+                    page.worklogs,
+                    page.next_cursor,
+                    baseline,
+                ));
+                self.shell_mut()
+                    .info(format!("History of \"{}\"", task.name()));
+            }
+            Err(error) => self.shell_mut().error(application_error_text(&error)),
+        }
+    }
+
+    pub(crate) fn back_to_task_list(&mut self) {
+        if self.history_is_normal() {
+            self.shell_mut().back_to_task_list();
+        }
+    }
+
+    pub(super) fn history_state(&self) -> Option<&crate::screens::WorklogHistoryState> {
+        self.shell().history()
+    }
+
+    pub(super) fn history_state_mut(&mut self) -> Option<&mut crate::screens::WorklogHistoryState> {
+        self.shell_mut().history_mut()
+    }
+
+    pub(super) fn history(&self) -> Option<&History> {
+        self.history_state()
+            .map(crate::screens::WorklogHistoryState::history)
     }
 
     pub(super) fn history_mut(&mut self) -> Option<&mut History> {
-        match &mut self.screen {
-            ScreenState::WorklogHistory(state) => Some(&mut state.history),
-            ScreenState::TaskList(_) => None,
-        }
+        self.history_state_mut()
+            .map(crate::screens::WorklogHistoryState::history_mut)
     }
 
-    #[cfg(test)]
-    pub fn history_selected_index(&self) -> Option<usize> {
-        self.history()?.selected_index()
-    }
-
-    pub fn history_task_name(&self) -> Option<&str> {
-        self.task_name_for(self.history()?.task_id)
-    }
-
-    pub fn local_time(&self, at: DateTime<Utc>) -> String {
-        match self.frozen_offset {
-            Some(offset) => local_time(at, &offset),
-            None => local_time(at, &self.timezone),
-        }
-    }
-
-    pub fn history_row_duration(&self, worklog: &Worklog) -> Duration {
-        let Some(end) = worklog.end() else {
-            return if self.active_worklog_id() == Some(worklog.id()) {
-                self.clock
-                    .as_ref()
-                    .map_or(Duration::ZERO, ElapsedClock::elapsed)
-            } else {
-                Duration::ZERO
-            };
-        };
-        (end - worklog.start()).to_std().unwrap_or(Duration::ZERO)
+    pub(super) fn history_is_normal(&self) -> bool {
+        self.history_state()
+            .is_some_and(crate::screens::WorklogHistoryState::is_normal)
     }
 
     fn move_history_up(&mut self) {
-        if !self.history_is_normal() {
-            return;
+        if self.history_is_normal() {
+            self.history_mut().expect("history is open").move_up();
         }
-        let Some(history) = self.history_mut() else {
-            return;
-        };
-        if !history.is_available() {
-            return;
-        }
-        let index = match history.selected_index() {
-            None => history.worklogs.len().checked_sub(1),
-            Some(0) => Some(0),
-            Some(index) => Some(index - 1),
-        };
-        history.selected = index
-            .and_then(|index| history.worklogs.get(index))
-            .map(Worklog::id);
     }
 
     fn move_history_down(&mut self) {
-        if !self.history_is_normal() {
-            return;
+        if self.history_is_normal() {
+            self.history_mut().expect("history is open").move_down();
         }
-        let Some(history) = self.history_mut() else {
-            return;
-        };
-        if !history.is_available() {
-            return;
-        }
-        if history.worklogs.is_empty() {
-            history.selected = None;
-            return;
-        }
-        let last = history.worklogs.len() - 1;
-        let index = match history.selected_index() {
-            None => 0,
-            Some(index) => index.saturating_add(1).min(last),
-        };
-        history.selected = Some(history.worklogs[index].id());
     }
 
     fn cancel_history_mode(&mut self) {
-        let ScreenState::WorklogHistory(state) = &mut self.screen else {
+        let Some(state) = self.history_state_mut() else {
             return;
         };
-        match state.mode {
-            WorklogHistoryMode::Correction(_) => {
-                state.mode = WorklogHistoryMode::Normal;
-                self.status = Status::Info("Correction cancelled".to_owned());
-            }
-            WorklogHistoryMode::ConfirmDeletion { .. } => {
-                state.mode = WorklogHistoryMode::Normal;
-                self.status = Status::Info("Deletion cancelled".to_owned());
-            }
-            WorklogHistoryMode::Normal => {}
+        let message = match state.mode() {
+            WorklogHistoryMode::Correction(_) => Some("Correction cancelled"),
+            WorklogHistoryMode::ConfirmDeletion { .. } => Some("Deletion cancelled"),
+            WorklogHistoryMode::Normal => None,
+        };
+        if let Some(message) = message {
+            state.close_mode();
+            self.shell_mut().info(message);
         }
     }
 
@@ -161,18 +139,19 @@ impl<S: TrackerApplicationService> App<S> {
         let Some(task_id) = self
             .history()
             .filter(|history| history.is_available())
-            .map(|history| history.task_id)
+            .map(History::task_id)
         else {
             return;
         };
-        let Some(cursor) = self.history().and_then(|history| history.next_cursor) else {
-            self.status = Status::Info("No older worklogs".to_owned());
+        let Some(cursor) = self.history().and_then(History::next_cursor) else {
+            self.shell_mut().info("No older worklogs");
             return;
         };
-        let baseline = self
-            .history()
-            .and_then(|history| history.active_worklog_baseline);
-        match self.application.worklogs_for_task(task_id, Some(&cursor)) {
+        let baseline = self.history().and_then(History::active_worklog_baseline);
+        match self
+            .application_mut()
+            .worklogs_for_task(task_id, Some(&cursor))
+        {
             Ok(page) => {
                 let active = active_worklog_for_task(&page.snapshot.active_worklog, task_id);
                 if active != baseline {
@@ -180,21 +159,16 @@ impl<S: TrackerApplicationService> App<S> {
                     return;
                 }
                 let loaded = page.worklogs.len();
-                let next_cursor = page.next_cursor;
-                if let Some(history) = self.history_mut() {
-                    let select_first = history.worklogs.is_empty();
-                    history.worklogs.extend(page.worklogs);
-                    history.next_cursor = next_cursor;
-                    if select_first {
-                        history.selected = history.worklogs.first().map(Worklog::id);
-                    }
-                }
+                self.history_mut()
+                    .expect("history is open")
+                    .append(page.worklogs, page.next_cursor);
                 self.sync_from_application(false);
-                self.status = if loaded == 0 {
-                    Status::Info("No older worklogs".to_owned())
+                if loaded == 0 {
+                    self.shell_mut().info("No older worklogs");
                 } else {
-                    Status::Info(format!("Loaded {loaded} older worklogs"))
-                };
+                    self.shell_mut()
+                        .info(format!("Loaded {loaded} older worklogs"));
+                }
             }
             Err(error)
                 if error.failure().category()
@@ -204,42 +178,42 @@ impl<S: TrackerApplicationService> App<S> {
             }
             Err(error) => {
                 self.sync_from_application(false);
-                self.status = Status::Error(application_error_text(&error));
+                self.shell_mut().error(application_error_text(&error));
             }
         }
     }
 
     fn refresh_worklogs(&mut self) {
-        if !self.history_is_normal() || self.screen() != Screen::WorklogHistory {
+        if !self.history_is_normal() {
             return;
         }
-        let Some(task_id) = self.history().map(|history| history.task_id) else {
+        let Some(task_id) = self.history().map(History::task_id) else {
             return;
         };
-        let keep = self.history().and_then(|history| history.selected);
-        let result = self.application.worklogs_for_task(task_id, None);
+        let keep = self.history().and_then(History::selected_id);
+        let result = self.application_mut().worklogs_for_task(task_id, None);
         self.sync_from_application(false);
         match result {
             Ok(page) => {
                 self.replace_history_with_newest_page(task_id, keep, page);
-                self.status = Status::Info("Refreshed".to_owned());
+                self.shell_mut().info("Refreshed");
             }
-            Err(error) => self.status = Status::Error(application_error_text(&error)),
+            Err(error) => self.shell_mut().error(application_error_text(&error)),
         }
     }
 
     pub(super) fn reload_newest_history_after_change(&mut self, task_id: TaskId) {
-        let keep = self.history().and_then(|history| history.selected);
-        match self.application.worklogs_for_task(task_id, None) {
+        let keep = self.history().and_then(History::selected_id);
+        match self.application_mut().worklogs_for_task(task_id, None) {
             Ok(page) => {
                 self.replace_history_with_newest_page(task_id, keep, page);
                 self.sync_from_application(false);
-                self.status = Status::Info("History changed and was refreshed".to_owned());
+                self.shell_mut().info("History changed and was refreshed");
             }
             Err(error) => {
                 self.mark_history_unavailable();
                 self.sync_from_application(false);
-                self.status = Status::Error(format!(
+                self.shell_mut().error(format!(
                     "History changed, but refresh failed: {}",
                     application_error_text(&error)
                 ));
@@ -253,58 +227,21 @@ impl<S: TrackerApplicationService> App<S> {
         keep: Option<WorklogId>,
         page: WorklogPage,
     ) {
-        let selected = keep
-            .filter(|id| page.worklogs.iter().any(|worklog| worklog.id() == *id))
-            .or_else(|| page.worklogs.first().map(Worklog::id));
         let baseline = active_worklog_for_task(&page.snapshot.active_worklog, task_id);
         let Some(history) = self.history_mut() else {
             return;
         };
-        *history = History {
-            task_id,
-            availability: HistoryAvailability::Available,
-            worklogs: page.worklogs,
-            next_cursor: page.next_cursor,
-            active_worklog_baseline: baseline,
-            selected,
-        };
+        history.replace(task_id, page.worklogs, page.next_cursor, baseline, keep);
     }
 
     pub(super) fn mark_history_unavailable(&mut self) {
-        let Some(history) = self.history_mut() else {
-            return;
-        };
-        history.availability = HistoryAvailability::Unavailable;
-        history.worklogs.clear();
-        history.next_cursor = None;
+        if let Some(history) = self.history_mut() {
+            history.mark_unavailable();
+        }
     }
 
     pub(super) fn sync_tracking_after_history_reload(&mut self) {
-        self.sync_tracking_after_history_reload_at(Utc::now(), Instant::now());
-    }
-
-    pub(crate) fn sync_tracking_after_history_reload_at(
-        &mut self,
-        wall_clock: DateTime<Utc>,
-        monotonic_clock: Instant,
-    ) {
-        let tracking = self.application.current_tracking().clone();
-        match (&self.tracking, &tracking) {
-            (
-                TrackingState::Running { worklog: current },
-                TrackingState::Running {
-                    worklog: final_worklog,
-                },
-            ) if current.id() == final_worklog.id() && current.start() == final_worklog.start() => {
-            }
-            (_, TrackingState::Idle) => self.clock = None,
-            (_, TrackingState::Running { worklog }) => {
-                self.clock = Some(ElapsedClock::at_anchor(
-                    ElapsedClock::base_since(worklog.start(), wall_clock),
-                    monotonic_clock,
-                ));
-            }
-        }
-        self.tracking = tracking;
+        let tracking = self.application_mut().current_tracking().clone();
+        self.tracking_mut().sync_after_history_reload(tracking);
     }
 }

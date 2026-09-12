@@ -4,22 +4,32 @@ use super::*;
 
 #[test]
 fn switching_uses_one_monotonic_timestamp_for_both_worklogs() {
-    let mut app = app_with(&["alpha", "beta"]);
-    let alpha = app.tasks()[0].id();
-    let beta = app.tasks()[1].id();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("tracker.db");
+    let repository = SqliteRepository::open(&path).unwrap();
+    let alpha = task(1, "alpha");
+    let beta = task(2, "beta");
+    repository.create_task(alpha.clone()).unwrap();
+    repository.create_task(beta.clone()).unwrap();
+    let (mut app, clock) = app_with_test_clock(
+        TrackerApplication::load(repository).unwrap(),
+        chrono_tz::UTC,
+        Utc::now(),
+    );
+    let alpha = alpha.id();
+    let beta = beta.id();
     app.handle(Command::ToggleTracking);
-    app.freeze_elapsed_for_tests(Duration::from_secs(125));
+    clock.advance_monotonic(Duration::from_secs(125));
     app.handle(Command::MoveDown);
     app.handle(Command::ToggleTracking);
-    let alpha_worklog = app
-        .application
+    let mut verifier = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
+    let alpha_worklog = verifier
         .worklogs_for_task(alpha, None)
         .unwrap()
         .worklogs
         .pop()
         .unwrap();
-    let beta_worklog = app
-        .application
+    let beta_worklog = verifier
         .worklogs_for_task(beta, None)
         .unwrap()
         .worklogs
@@ -29,7 +39,7 @@ fn switching_uses_one_monotonic_timestamp_for_both_worklogs() {
 }
 #[test]
 fn elapsed_clock_and_client_timestamp_share_one_duration() {
-    let clock = ElapsedClock::anchored(Duration::from_secs(100));
+    let clock = ElapsedClock::at_anchor(Duration::from_secs(100), Instant::now());
     assert_eq!(clock.at(Duration::from_secs(5)), Duration::from_secs(105));
     let start = DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
         .unwrap()
@@ -57,16 +67,24 @@ fn future_clock_anchors_at_zero_and_timestamp_overflow_saturates() {
 }
 #[test]
 fn history_uses_the_session_timezone_snapshot() {
-    let mut app = App::load(TestService::with_tasks(vec![task(1, "alpha")]));
-    app.set_timezone_for_tests(chrono_tz::Europe::London);
+    let london = app_in_timezone(
+        TestService::with_tasks(vec![task(1, "alpha")]),
+        chrono_tz::Europe::London,
+    );
     for seconds in [0, 1_700_000_000] {
         assert_eq!(
-            app.local_time(at(seconds)),
+            london.app_view().local_time(at(seconds)),
             crate::support::timestamps::local_time(at(seconds), &chrono_tz::Europe::London)
         );
     }
-    app.freeze_offset_for_tests(FixedOffset::east_opt(2 * 3600).unwrap());
-    assert_eq!(app.local_time(at(0)), "1970-01-01 02:00");
+    let johannesburg = app_in_timezone(
+        TestService::with_tasks(vec![task(1, "alpha")]),
+        chrono_tz::Africa::Johannesburg,
+    );
+    assert_eq!(
+        johannesburg.app_view().local_time(at(0)),
+        "1970-01-01 02:00"
+    );
 }
 #[test]
 fn timezone_resolution_accepts_common_tz_forms_and_reports_the_utc_fallback() {
@@ -139,20 +157,38 @@ fn correction_commands_adjust_and_edit_the_focused_timestamp() {
     let mut app = correction_app(worklog.clone(), vec![worklog.clone()]);
 
     app.handle(Command::AdjustForwardOneHour);
-    assert_eq!(app.correction().unwrap().start().text(), "1970-01-01 03:01");
+    assert_eq!(
+        app.app_view().correction().unwrap().start().text(),
+        "1970-01-01 03:01"
+    );
 
     let mut app = correction_app(worklog.clone(), vec![worklog]);
-    let original = app.correction().unwrap().start().text().to_owned();
+    let original = app
+        .app_view()
+        .correction()
+        .unwrap()
+        .start()
+        .text()
+        .to_owned();
     app.handle(Command::Backspace);
     assert_eq!(
-        app.correction().unwrap().start().text(),
+        app.app_view().correction().unwrap().start().text(),
         &original[..original.len() - 1]
     );
     app.handle(Command::Insert('1'));
-    assert_eq!(app.correction().unwrap().start().text(), original);
     assert_eq!(
-        app.correction().unwrap().start().cursor(),
-        app.correction().unwrap().start().text().chars().count()
+        app.app_view().correction().unwrap().start().text(),
+        original
+    );
+    assert_eq!(
+        app.app_view().correction().unwrap().start().cursor(),
+        app.app_view()
+            .correction()
+            .unwrap()
+            .start()
+            .text()
+            .chars()
+            .count()
     );
 }
 #[test]
@@ -263,49 +299,67 @@ fn subminute_offset_transition_rejects_an_unrepresentable_absolute_adjustment() 
         "local wall-clock second 00 can map to nonzero UTC seconds",
     );
 
-    let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
-    let worklog = Worklog::begin(worklog_id(10), task_id, at(30));
-    let mut app = correction_app_in(worklog.clone(), vec![worklog], &SubminuteTransitionZone);
-    let before = app.correction().unwrap().clone();
-
-    app.adjust_correction_in(TimeDelta::minutes(5), &SubminuteTransitionZone);
-
-    assert_eq!(app.correction().unwrap(), &before);
+    let input = TimestampInput::new("1970-01-01 00:01".to_owned());
     assert_eq!(
-        text(app.status()),
-        "Adjustment cannot be represented as a local minute"
+        adjusted_correction_timestamp(
+            &input,
+            TimeDelta::minutes(5),
+            &SubminuteTransitionZone,
+            at(30),
+        ),
+        Err("Adjustment cannot be represented as a local minute")
     );
-    assert!(app.application.correction_calls.is_empty());
 }
 #[test]
 fn fallback_adjustment_keeps_the_resolved_occurrence_when_the_text_repeats() {
-    let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let original_start = DateTime::from_timestamp(16_230, 123_456_000).unwrap();
-    let worklog = Worklog::begin(worklog_id(10), task_id, original_start);
-    let mut app = correction_app_in(worklog.clone(), vec![worklog], &CorrectionTestZone);
+    let opening = correction_timestamp(original_start, &CorrectionTestZone).unwrap();
+    let mut input = TimestampInput::new(opening);
+    let (text, instant) = adjusted_correction_timestamp(
+        &input,
+        TimeDelta::hours(1),
+        &CorrectionTestZone,
+        original_start,
+    )
+    .unwrap();
+    input.replace_with_adjustment(text, instant);
 
-    app.adjust_correction_in(TimeDelta::hours(1), &CorrectionTestZone);
-
-    assert_eq!(app.correction().unwrap().start().text(), "1970-01-01 06:30");
-    app.confirm_correction_in(&CorrectionTestZone);
-    let replacement = app.application.correction_calls[0].2;
-    assert_eq!(replacement.start(), at(19_800));
-    assert_eq!(replacement.end(), None);
+    assert_eq!(input.text(), "1970-01-01 06:30");
+    assert_eq!(
+        resolve_correction_timestamp(&input, &CorrectionTestZone, original_start),
+        Ok(at(19_800))
+    );
 }
 #[test]
 fn changed_gap_input_is_rejected_without_calling_the_application() {
-    let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
-    let worklog = Worklog::begin(worklog_id(10), task_id, at(0));
-    let mut app = correction_app_in(worklog.clone(), vec![worklog], &CorrectionTestZone);
-    app.correction_mut_for_tests()
-        .start
-        .replace("1970-01-01 02:30".to_owned());
+    let task = task(1, "alpha");
+    let start = Utc
+        .with_ymd_and_hms(2025, 3, 30, 0, 30, 0)
+        .single()
+        .expect("the UTC timestamp is valid");
+    let end = Utc
+        .with_ymd_and_hms(2025, 3, 30, 1, 30, 0)
+        .single()
+        .expect("the UTC timestamp is valid");
+    let worklog = Worklog::new(worklog_id(10), task.id(), start, Some(end)).unwrap();
+    let mut service = TestService::with_tasks(vec![task]);
+    service.worklog_pages = vec![
+        Ok(page(vec![worklog.clone()], None)),
+        Ok(page(vec![worklog], None)),
+    ];
+    let spy = service.spy();
+    let mut app = app_in_timezone(service, chrono_tz::Europe::Berlin);
+    app.handle(Command::OpenHistory);
+    app.handle(Command::OpenCorrection);
 
-    app.confirm_correction_in(&CorrectionTestZone);
+    replace_start(&mut app, "2025-03-30 02:30");
+    app.handle(Command::Confirm);
 
-    assert_eq!(text(app.status()), "Start: Local time does not exist");
-    assert!(app.application.correction_calls.is_empty());
-    assert!(app.correction().is_some());
+    assert!(spy.correction_calls().is_empty());
+    assert_eq!(
+        text(app.app_view().status()),
+        "Start: Local time does not exist"
+    );
 }
 #[test]
 fn changed_and_unchanged_fields_keep_their_independent_precision() {
@@ -314,24 +368,18 @@ fn changed_and_unchanged_fields_keep_their_independent_precision() {
     let end = DateTime::from_timestamp(200, 654_321_000).unwrap();
     let worklog = Worklog::new(worklog_id(10), task_id, start, Some(end)).unwrap();
 
-    let mut app = correction_app(worklog.clone(), vec![worklog.clone()]);
-    app.correction_mut_for_tests()
-        .start
-        .replace("1970-01-01 02:02".to_owned());
+    let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog.clone()]);
+    replace_start(&mut app, "1970-01-01 02:02".to_owned());
     app.handle(Command::Confirm);
-    let replacement = app.application.correction_calls[0].2;
+    let replacement = spy.correction_calls()[0].2;
     assert_eq!(replacement.start(), at(120));
     assert_eq!(replacement.end(), Some(end));
 
-    let mut app = correction_app(worklog.clone(), vec![worklog]);
+    let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
     app.handle(Command::SwitchCorrectionField);
-    app.correction_mut_for_tests()
-        .end
-        .as_mut()
-        .unwrap()
-        .replace("1970-01-01 02:04".to_owned());
+    replace_end(&mut app, "1970-01-01 02:04".to_owned());
     app.handle(Command::Confirm);
-    let replacement = app.application.correction_calls[0].2;
+    let replacement = spy.correction_calls()[0].2;
     assert_eq!(replacement.start(), start);
     assert_eq!(replacement.end(), Some(at(240)));
 }
@@ -341,12 +389,12 @@ fn untouched_fields_preserve_exact_utc_when_the_timezone_is_stable() {
     let start = DateTime::from_timestamp(100, 123_456_000).unwrap();
     let end = DateTime::from_timestamp(200, 654_321_000).unwrap();
     let worklog = Worklog::new(worklog_id(10), task_id, start, Some(end)).unwrap();
-    let mut app = correction_app(worklog.clone(), vec![worklog]);
+    let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
 
     app.handle(Command::Confirm);
 
     assert_eq!(
-        app.application.correction_calls[0].2,
+        spy.correction_calls()[0].2,
         WorklogTimes::new(start, Some(end))
     );
 }
@@ -358,12 +406,10 @@ fn a_timezone_snapshot_keeps_utc_rules_when_london_changes_later() {
         .single()
         .unwrap();
     let worklog = Worklog::begin(worklog_id(10), task_id, original);
-    let mut app = correction_history_app(worklog.clone(), vec![worklog]);
-    app.set_timezone_for_tests(chrono_tz::UTC);
+    let (mut app, spy) =
+        correction_history_app_with_spy_in(worklog.clone(), vec![worklog], chrono_tz::UTC);
     app.handle(Command::OpenCorrection);
-    app.correction_mut_for_tests()
-        .start
-        .replace("2025-07-01 10:00".to_owned());
+    replace_start(&mut app, "2025-07-01 10:00".to_owned());
 
     let london = chrono_tz::Europe::London;
     assert_eq!(
@@ -374,33 +420,28 @@ fn a_timezone_snapshot_keeps_utc_rules_when_london_changes_later() {
     app.handle(Command::Confirm);
 
     assert_eq!(
-        app.application.correction_calls[0].2.start(),
+        spy.correction_calls()[0].2.start(),
         Utc.with_ymd_and_hms(2025, 7, 1, 10, 0, 0).single().unwrap()
     );
 }
 #[test]
 fn out_of_range_local_timestamps_cannot_open_correction() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
-    for (timestamp, offset) in [
-        (DateTime::<Utc>::MIN_UTC, FixedOffset::west_opt(1).unwrap()),
-        (DateTime::<Utc>::MAX_UTC, FixedOffset::east_opt(1).unwrap()),
+    for (tag, timestamp, timezone) in [
+        (1, DateTime::<Utc>::MIN_UTC, chrono_tz::America::New_York),
+        (2, DateTime::<Utc>::MAX_UTC, chrono_tz::Asia::Tokyo),
     ] {
-        assert_eq!(correction_timestamp(timestamp, &offset), None);
-        let worklog = Worklog::begin(
-            worklog_id(offset.local_minus_utc() as u128),
-            task_id,
-            timestamp,
-        );
-        let mut app = correction_history_app(worklog, Vec::new());
-        app.freeze_offset_for_tests(offset);
+        assert_eq!(correction_timestamp(timestamp, &timezone), None);
+        let worklog = Worklog::begin(worklog_id(tag), task_id, timestamp);
+        let (mut app, spy) = correction_history_app_with_spy_in(worklog, Vec::new(), timezone);
 
         app.handle(Command::OpenCorrection);
 
         assert!(
-            matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+            matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
         );
-        assert_eq!(text(app.status()), OUTSIDE_EDITABLE_RANGE);
-        assert!(app.application.correction_calls.is_empty());
+        assert_eq!(text(app.app_view().status()), OUTSIDE_EDITABLE_RANGE);
+        assert!(spy.correction_calls().is_empty());
     }
 }
 
@@ -409,11 +450,11 @@ fn text_edited_back_to_its_opening_value_preserves_the_original_instant() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let start = DateTime::from_timestamp(100, 123_456_000).unwrap();
     let worklog = Worklog::begin(worklog_id(10), task_id, start);
-    let mut app = correction_app(worklog.clone(), vec![worklog]);
+    let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
 
     app.handle(Command::Backspace);
     app.handle(Command::Insert('1'));
     app.handle(Command::Confirm);
 
-    assert_eq!(app.application.correction_calls[0].2.start(), start);
+    assert_eq!(spy.correction_calls()[0].2.start(), start);
 }

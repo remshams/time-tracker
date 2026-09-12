@@ -58,7 +58,7 @@ mod tests {
         let app = app_with(&["alpha"]);
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal
-            .draw(|frame| crate::ui::render(frame, &app))
+            .draw(|frame| crate::ui::render(frame, app.app_view()))
             .unwrap();
         let header = row(&terminal, 0);
         assert!(header.contains("Time Tracker"));

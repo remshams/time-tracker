@@ -101,6 +101,7 @@ mod tests {
 
     use crate::app::App;
     use crate::command::Command;
+    use crate::test_support::app_with_test_clock;
 
     const WIDTH: u16 = 80;
     const HEIGHT: u16 = 24;
@@ -118,6 +119,29 @@ mod tests {
         App::load(TrackerApplication::load(repository).unwrap())
     }
 
+    fn app_with_test_clock_for_view(
+        names: &[&str],
+    ) -> (
+        App<TrackerApplication<SqliteRepository>>,
+        crate::app::TestClock,
+    ) {
+        let repository = SqliteRepository::open_in_memory().unwrap();
+        for name in names {
+            repository
+                .create_task(Task::create(
+                    TaskId::generate(),
+                    TaskName::new(name).unwrap(),
+                    DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
+                ))
+                .unwrap();
+        }
+        app_with_test_clock(
+            TrackerApplication::load(repository).unwrap(),
+            chrono_tz::UTC,
+            Utc::now(),
+        )
+    }
+
     fn draw(app: &App<TrackerApplication<SqliteRepository>>) -> Terminal<TestBackend> {
         draw_at(app, WIDTH, HEIGHT)
     }
@@ -129,7 +153,7 @@ mod tests {
     ) -> Terminal<TestBackend> {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|frame| crate::ui::render(frame, app))
+            .draw(|frame| crate::ui::render(frame, app.app_view()))
             .unwrap();
         terminal
     }
@@ -194,9 +218,9 @@ mod tests {
 
     #[test]
     fn the_active_task_shows_a_marker_and_the_live_elapsed_time() {
-        let mut app = app_with(&["alpha", "beta"]);
+        let (mut app, clock) = app_with_test_clock_for_view(&["alpha", "beta"]);
         app.handle(Command::ToggleTracking);
-        app.freeze_elapsed_for_tests(Duration::from_secs(125));
+        clock.advance_monotonic(Duration::from_secs(125));
         app.handle(Command::MoveDown);
         let terminal = draw(&app);
         let rows = rows(&terminal);
@@ -343,13 +367,13 @@ mod tests {
 
     #[test]
     fn the_archived_view_keeps_the_timer_header_and_selection() {
-        let mut app = app_with(&["alpha", "beta"]);
+        let (mut app, clock) = app_with_test_clock_for_view(&["alpha", "beta"]);
         app.handle(Command::ToggleTracking);
         app.handle(Command::MoveDown);
         app.handle(Command::OpenArchiveConfirm);
         app.handle(Command::Confirm);
         app.handle(Command::ShowArchivedTasks);
-        app.freeze_elapsed_for_tests(Duration::from_secs(61));
+        clock.advance_monotonic(Duration::from_secs(61));
         let terminal = draw(&app);
         let rows = rows(&terminal);
 

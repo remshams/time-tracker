@@ -1,4 +1,4 @@
-use crate::screens::test_support::*;
+use crate::test_support::*;
 
 mod actions;
 mod state;

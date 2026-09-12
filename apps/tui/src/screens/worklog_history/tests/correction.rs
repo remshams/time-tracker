@@ -9,15 +9,18 @@ fn correction_prefills_local_minutes() {
     let end = DateTime::from_timestamp(200, 654_321_000).unwrap();
     let completed = Worklog::new(worklog_id(10), task_id, start, Some(end)).unwrap();
     let app = correction_app(completed.clone(), vec![completed]);
-    let draft = app.correction().unwrap();
+    let draft = app.app_view().correction().unwrap();
     assert_eq!(draft.start().text(), "1970-01-01 02:01");
     assert_eq!(draft.end().unwrap().text(), "1970-01-01 02:03");
 
     let active = Worklog::begin(worklog_id(11), task_id, start);
     let mut app = correction_app(active.clone(), vec![active]);
-    assert!(app.correction().unwrap().end().is_none());
+    assert!(app.app_view().correction().unwrap().end().is_none());
     app.handle(Command::SwitchCorrectionField);
-    assert_eq!(app.correction().unwrap().focused(), CorrectionField::Start);
+    assert_eq!(
+        app.app_view().correction().unwrap().focused(),
+        CorrectionField::Start
+    );
 }
 #[test]
 fn correction_switches_fields_and_edits_at_a_bounded_character_cursor() {
@@ -25,33 +28,56 @@ fn correction_switches_fields_and_edits_at_a_bounded_character_cursor() {
     let worklog = history_worklog(10, task_id, 100);
     let mut app = correction_app(worklog.clone(), vec![worklog]);
     app.handle(Command::SwitchCorrectionField);
-    assert_eq!(app.correction().unwrap().focused(), CorrectionField::End);
-    let original = app.correction().unwrap().end().unwrap().text().to_owned();
+    assert_eq!(
+        app.app_view().correction().unwrap().focused(),
+        CorrectionField::End
+    );
+    let original = app
+        .app_view()
+        .correction()
+        .unwrap()
+        .end()
+        .unwrap()
+        .text()
+        .to_owned();
     let original_len = original.chars().count();
     app.handle(Command::MoveCursorLeft);
     assert_eq!(
-        app.correction().unwrap().end().unwrap().cursor(),
+        app.app_view().correction().unwrap().end().unwrap().cursor(),
         original_len - 1
     );
     app.handle(Command::Backspace);
     app.handle(Command::Insert('9'));
-    assert_ne!(app.correction().unwrap().end().unwrap().text(), original);
+    assert_ne!(
+        app.app_view().correction().unwrap().end().unwrap().text(),
+        original
+    );
 
-    let cursor = app.correction().unwrap().end().unwrap().cursor();
+    let cursor = app.app_view().correction().unwrap().end().unwrap().cursor();
     app.handle(Command::MoveCursorRight);
     assert_eq!(
-        app.correction().unwrap().end().unwrap().cursor(),
+        app.app_view().correction().unwrap().end().unwrap().cursor(),
         cursor + 1
     );
     app.handle(Command::MoveCursorLeft);
-    let before_delete = app.correction().unwrap().end().unwrap().text().to_owned();
+    let before_delete = app
+        .app_view()
+        .correction()
+        .unwrap()
+        .end()
+        .unwrap()
+        .text()
+        .to_owned();
     app.handle(Command::Delete);
     assert_ne!(
-        app.correction().unwrap().end().unwrap().text(),
+        app.app_view().correction().unwrap().end().unwrap().text(),
         before_delete
     );
     app.handle(Command::SwitchCorrectionField);
-    assert_eq!(app.correction().unwrap().focused(), CorrectionField::Start);
+    assert_eq!(
+        app.app_view().correction().unwrap().focused(),
+        CorrectionField::Start
+    );
 
     let mut input = TimestampInput::new("1🕒".to_owned());
     input.backspace();
@@ -109,60 +135,60 @@ fn an_unparseable_adjustment_keeps_the_draft() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let worklog = history_worklog(10, task_id, 100);
     let mut app = correction_app(worklog.clone(), vec![worklog]);
-    app.correction_mut_for_tests()
-        .start
-        .replace("bad".to_owned());
-    let before = app.correction().unwrap().clone();
+    replace_start(&mut app, "bad".to_owned());
+    let before = app.app_view().correction().unwrap().clone();
     app.handle(Command::AdjustForwardFiveMinutes);
-    assert_eq!(app.correction().unwrap(), &before);
-    assert_eq!(text(app.status()), "Use YYYY-MM-DD HH:MM");
+    assert_eq!(app.app_view().correction().unwrap(), &before);
+    assert_eq!(text(app.app_view().status()), "Use YYYY-MM-DD HH:MM");
 }
 #[test]
 fn escape_cancels_correction_without_writing() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let worklog = history_worklog(10, task_id, 100);
-    let mut app = correction_app(worklog.clone(), vec![worklog]);
+    let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
     app.handle(Command::Insert('2'));
     app.handle(Command::Cancel);
     assert!(
-        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+        matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
     );
     assert_eq!(
-        app.status(),
+        app.app_view().status(),
         &Status::Info("Correction cancelled".to_owned())
     );
-    assert!(app.application.correction_calls.is_empty());
+    assert!(spy.correction_calls().is_empty());
 }
 #[test]
 fn correction_failure_reports_write_and_recovery_causes() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let worklog = history_worklog(10, task_id, 100);
-    let mut app = correction_app(worklog.clone(), vec![worklog]);
-    app.application.correction_error = Some(
-        ApplicationError::correction_changed_with_recovery_failure(worklog_id(10), "reload failed"),
-    );
+    let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
+    spy.set_correction_error(ApplicationError::correction_changed_with_recovery_failure(
+        worklog_id(10),
+        "reload failed",
+    ));
 
     app.handle(Command::Confirm);
 
     assert_eq!(
-        text(app.status()),
+        text(app.app_view().status()),
         "Worklog changed. State recovery also failed: Storage error. Cancel and press r to refresh."
     );
-    assert!(app.correction().is_some());
+    assert!(app.app_view().correction().is_some());
 }
 #[test]
 fn overlap_recovery_failure_keeps_the_overlap_error_text() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let worklog = history_worklog(10, task_id, 100);
-    let mut app = correction_app(worklog.clone(), vec![worklog]);
-    app.application.correction_error = Some(
-        ApplicationError::correction_overlap_with_recovery_failure(worklog_id(10), "reload failed"),
-    );
+    let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
+    spy.set_correction_error(ApplicationError::correction_overlap_with_recovery_failure(
+        worklog_id(10),
+        "reload failed",
+    ));
 
     app.handle(Command::Confirm);
 
     assert_eq!(
-        text(app.status()),
+        text(app.app_view().status()),
         "The corrected time overlaps another worklog. State recovery also failed: Storage error."
     );
 }
@@ -170,11 +196,11 @@ fn overlap_recovery_failure_keeps_the_overlap_error_text() {
 fn quitting_from_correction_does_not_write() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let worklog = history_worklog(10, task_id, 100);
-    let mut app = correction_app(worklog.clone(), vec![worklog]);
+    let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
     app.handle(Command::Quit);
     assert!(!app.is_running());
-    assert!(app.application.correction_calls.is_empty());
-    assert!(app.correction().is_some());
+    assert!(spy.correction_calls().is_empty());
+    assert!(app.app_view().correction().is_some());
 }
 #[test]
 fn every_correction_failure_keeps_the_full_draft_open() {
@@ -188,12 +214,12 @@ fn every_correction_failure_keeps_the_full_draft_open() {
         ApplicationError::worklog_changed(worklog.id()),
     ];
     for failure in failures {
-        let mut app = correction_app(worklog.clone(), vec![worklog.clone()]);
-        app.application.correction_error = Some(failure.clone());
-        let before = app.correction().unwrap().clone();
+        let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog.clone()]);
+        spy.set_correction_error(failure.clone());
+        let before = app.app_view().correction().unwrap().clone();
         app.handle(Command::Confirm);
         assert_eq!(
-            app.correction().unwrap(),
+            app.app_view().correction().unwrap(),
             &before,
             "draft changed for {failure:?}"
         );
@@ -202,7 +228,7 @@ fn every_correction_failure_keeps_the_full_draft_open() {
             && !classified.recovery_failed()
         {
             assert_eq!(
-                text(app.status()),
+                text(app.app_view().status()),
                 "Worklog changed. Cancel and press r to refresh."
             );
         }
@@ -212,30 +238,29 @@ fn every_correction_failure_keeps_the_full_draft_open() {
 fn parse_failures_keep_both_drafts_and_skip_the_application() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let worklog = history_worklog(10, task_id, 100);
-    let mut app = correction_app(worklog.clone(), vec![worklog]);
-    app.correction_mut_for_tests()
-        .start
-        .replace("bad".to_owned());
-    let before = app.correction().unwrap().clone();
+    let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
+    replace_start(&mut app, "bad".to_owned());
+    let before = app.app_view().correction().unwrap().clone();
     app.handle(Command::Confirm);
-    assert_eq!(app.correction().unwrap(), &before);
-    assert!(app.application.correction_calls.is_empty());
+    assert_eq!(app.app_view().correction().unwrap(), &before);
+    assert!(spy.correction_calls().is_empty());
 }
 #[test]
 fn successful_correction_discards_older_pages_and_resolves_selection() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let corrected = history_worklog(10, task_id, 100);
     let newest = history_worklog(11, task_id, 300);
-    let mut app = correction_app(corrected.clone(), vec![newest.clone(), corrected.clone()]);
+    let (mut app, spy) =
+        correction_app_with_spy(corrected.clone(), vec![newest.clone(), corrected.clone()]);
     app.handle(Command::Confirm);
     assert!(
-        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+        matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
     );
-    assert_eq!(app.history().unwrap().worklogs.len(), 2);
-    assert_eq!(app.history().unwrap().next_cursor, None);
-    assert_eq!(app.history_selected_index(), Some(1));
-    assert_eq!(app.application.worklog_reads.get(), 2);
-    let (id, expected, replacement, occurred_at) = app.application.correction_calls[0];
+    assert_eq!(app.app_view().history().unwrap().worklogs().len(), 2);
+    assert_eq!(app.app_view().history().unwrap().next_cursor(), None);
+    assert_eq!(app.app_view().history_selected_index(), Some(1));
+    assert_eq!(spy.worklog_reads(), 2);
+    let (id, expected, replacement, occurred_at) = spy.correction_calls()[0];
     assert_eq!(id, corrected.id());
     assert_eq!(expected, corrected.times());
     assert_eq!(replacement, corrected.times());
@@ -243,8 +268,11 @@ fn successful_correction_discards_older_pages_and_resolves_selection() {
 
     let mut app = correction_app(corrected.clone(), vec![newest.clone()]);
     app.handle(Command::Confirm);
-    assert_eq!(app.history().unwrap().selected, Some(newest.id()));
-    assert_eq!(app.history_selected_index(), Some(0));
+    assert_eq!(
+        app.app_view().history().unwrap().selected_id(),
+        Some(newest.id())
+    );
+    assert_eq!(app.app_view().history_selected_index(), Some(0));
 }
 #[test]
 fn correction_and_history_commands_require_their_own_screen_and_mode() {
@@ -257,21 +285,22 @@ fn correction_and_history_commands_require_their_own_screen_and_mode() {
     app.handle(Command::BackToTaskList);
     app.handle(Command::OpenCorrection);
     assert!(
-        matches!(&app.screen, ScreenState::TaskList(state) if matches!(state.mode(), TaskListMode::Normal))
+        app.app_view().screen() == Screen::TaskList
+            && matches!(app.app_view().task_list().mode(), TaskListMode::Normal)
     );
-    assert_eq!(app.screen(), Screen::TaskList);
+    assert_eq!(app.app_view().screen(), Screen::TaskList);
 
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let worklog = history_worklog(10, task_id, 100);
-    let mut app = correction_app(worklog.clone(), vec![worklog]);
-    let reads = app.application.worklog_reads.get();
+    let (mut app, second_spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
+    let reads = second_spy.worklog_reads();
     app.handle(Command::LoadOlderWorklogs);
-    assert_eq!(app.application.worklog_reads.get(), reads);
+    assert_eq!(second_spy.worklog_reads(), reads);
     app.handle(Command::RefreshWorklogs);
-    assert_eq!(app.application.worklog_reads.get(), reads);
+    assert_eq!(second_spy.worklog_reads(), reads);
     app.handle(Command::BackToTaskList);
-    assert_eq!(app.screen(), Screen::WorklogHistory);
-    assert!(app.correction().is_some());
+    assert_eq!(app.app_view().screen(), Screen::WorklogHistory);
+    assert!(app.app_view().correction().is_some());
 }
 #[test]
 fn saved_correction_marks_history_unavailable_until_retry_succeeds() {
@@ -284,53 +313,52 @@ fn saved_correction_marks_history_unavailable_until_retry_succeeds() {
         Err(TestService::failure()),
         Ok(page(vec![corrected.clone()], None)),
     ];
-    let mut app = App::load(service);
-    app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
+    let spy = service.spy();
+    let mut app = app_in_timezone(service, chrono_tz::UTC);
     app.handle(Command::OpenHistory);
     app.handle(Command::OpenCorrection);
-    {
-        let draft = app.correction_mut_for_tests();
-        draft.start.replace("1970-01-01 00:01".to_owned());
-        draft
-            .end
-            .as_mut()
-            .unwrap()
-            .replace("1970-01-01 00:02".to_owned());
-    }
+    replace_start(&mut app, "1970-01-01 00:01".to_owned());
+    replace_end(&mut app, "1970-01-01 00:02".to_owned());
 
     app.handle(Command::Confirm);
 
-    let history = app.history().unwrap();
-    assert_eq!(history.availability, HistoryAvailability::Unavailable);
+    let history = app.app_view().history().unwrap();
+    assert_eq!(history.availability(), HistoryAvailability::Unavailable);
     assert!(!history.is_available());
-    assert!(history.worklogs.is_empty());
-    assert_eq!(history.next_cursor, None);
-    assert_eq!(history.selected, Some(original.id()));
-    assert_eq!(app.history_selected_index(), None);
+    assert!(history.worklogs().is_empty());
+    assert_eq!(history.next_cursor(), None);
+    assert_eq!(history.selected_id(), Some(original.id()));
+    assert_eq!(app.app_view().history_selected_index(), None);
     assert!(
-        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+        matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
     );
     assert_eq!(
-        app.status(),
+        app.app_view().status(),
         &Status::Error("Correction saved, but history refresh failed".to_owned())
     );
 
     app.handle(Command::MoveDown);
     app.handle(Command::MoveUp);
-    assert_eq!(app.history().unwrap().selected, Some(original.id()));
+    assert_eq!(
+        app.app_view().history().unwrap().selected_id(),
+        Some(original.id())
+    );
 
     app.handle(Command::OpenCorrection);
     app.handle(Command::LoadOlderWorklogs);
-    assert_eq!(app.application.worklog_reads.get(), 2);
-    assert!(app.correction().is_none());
+    assert_eq!(spy.worklog_reads(), 2);
+    assert!(app.app_view().correction().is_none());
 
     app.handle(Command::RefreshWorklogs);
-    let history = app.history().unwrap();
-    assert_eq!(history.availability, HistoryAvailability::Available);
-    assert_eq!(history.worklogs, vec![corrected]);
-    assert_eq!(history.next_cursor, None);
-    assert_eq!(app.history_selected_index(), Some(0));
-    assert_eq!(app.status(), &Status::Info("Refreshed".to_owned()));
+    let history = app.app_view().history().unwrap();
+    assert_eq!(history.availability(), HistoryAvailability::Available);
+    assert_eq!(history.worklogs(), vec![corrected]);
+    assert_eq!(history.next_cursor(), None);
+    assert_eq!(app.app_view().history_selected_index(), Some(0));
+    assert_eq!(
+        app.app_view().status(),
+        &Status::Info("Refreshed".to_owned())
+    );
 }
 #[test]
 fn failed_post_save_reload_keeps_the_externally_corrected_active_aggregate() {
@@ -351,38 +379,23 @@ fn failed_post_save_reload_keeps_the_externally_corrected_active_aggregate() {
         )),
         Err(TestService::failure()),
     ];
-    let mut app = App::load(service);
-    app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
+    let spy = service.spy();
+    let mut app = app_in_timezone(service, chrono_tz::UTC);
     app.handle(Command::MoveDown);
     app.handle(Command::OpenHistory);
     app.handle(Command::OpenCorrection);
-    app.application.latest_work_starts[0].1 = at(540);
-    app.application.tracking = TrackingState::Running {
+    spy.set_latest_work_start(active_task.id(), at(540));
+    spy.set_external_tracking(TrackingState::Running {
         worklog: ActiveWorklog::begin(active.id(), active.task_id(), at(540)),
-    };
-    {
-        let draft = app.correction_mut_for_tests();
-        draft.start.replace("1970-01-01 00:07".to_owned());
-        draft
-            .end
-            .as_mut()
-            .unwrap()
-            .replace("1970-01-01 00:08".to_owned());
-    }
+    });
+    replace_start(&mut app, "1970-01-01 00:07".to_owned());
+    replace_end(&mut app, "1970-01-01 00:08".to_owned());
 
     app.handle(Command::Confirm);
 
+    assert_eq!(spy.latest_work_start(active_task.id()), Some(at(540)));
     assert_eq!(
-        app.application
-            .tasks(TaskOrdering::RecentlyWorked)
-            .into_iter()
-            .find(|item| item.task.id() == active_task.id())
-            .unwrap()
-            .latest_work_start,
-        Some(at(540))
-    );
-    assert_eq!(
-        app.status(),
+        app.app_view().status(),
         &Status::Error("Correction saved, but history refresh failed".to_owned())
     );
 }
@@ -400,12 +413,12 @@ fn correction_is_available_from_archived_history() {
     app.handle(Command::ShowArchivedTasks);
     app.handle(Command::OpenHistory);
     app.handle(Command::OpenCorrection);
-    assert!(app.correction().is_some());
+    assert!(app.app_view().correction().is_some());
     app.handle(Command::Confirm);
     assert!(
-        matches!(&app.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
+        matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
     );
-    assert_eq!(app.view(), TaskView::Archived);
+    assert_eq!(app.app_view().view(), TaskView::Archived);
 }
 #[test]
 fn successful_correction_refreshes_recently_worked_ordering() {
@@ -420,23 +433,18 @@ fn successful_correction_refreshes_recently_worked_ordering() {
     repository
         .insert_worklog(&history_worklog(11, beta.id(), 300))
         .unwrap();
-    let mut app = App::load(TrackerApplication::load(repository).unwrap());
-    app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
-    assert_eq!(app.tasks()[0].id(), beta.id());
+    let mut app = app_in_timezone(
+        TrackerApplication::load(repository).unwrap(),
+        chrono_tz::UTC,
+    );
+    assert_eq!(app.app_view().tasks()[0].id(), beta.id());
     app.handle(Command::OpenHistory);
     app.handle(Command::OpenCorrection);
-    {
-        let draft = app.correction_mut_for_tests();
-        draft.start.replace("1970-01-01 00:01".to_owned());
-        draft
-            .end
-            .as_mut()
-            .unwrap()
-            .replace("1970-01-01 00:02".to_owned());
-    }
+    replace_start(&mut app, "1970-01-01 00:01".to_owned());
+    replace_end(&mut app, "1970-01-01 00:02".to_owned());
     app.handle(Command::Confirm);
-    assert_eq!(app.tasks()[0].id(), alpha.id());
-    assert_eq!(app.tasks()[1].id(), beta.id());
+    assert_eq!(app.app_view().tasks()[0].id(), alpha.id());
+    assert_eq!(app.app_view().tasks()[1].id(), beta.id());
 }
 #[test]
 fn correction_reload_uses_the_final_active_start_for_elapsed_and_stopping() {
@@ -455,23 +463,28 @@ fn correction_reload_uses_the_final_active_start_for_elapsed_and_stopping() {
             None,
         )),
     ];
-    let mut app = App::load(service);
-    app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
+    let spy = service.spy();
+    let (mut app, clock) = app_with_test_clock(service, chrono_tz::UTC, final_start);
     app.handle(Command::OpenHistory);
     app.handle(Command::OpenCorrection);
-    app.correction_mut_for_tests().start.replace(
-        correction_timestamp(correction_start, &FixedOffset::east_opt(0).unwrap())
+    replace_start(
+        &mut app,
+        correction_timestamp(correction_start, &chrono_tz::UTC)
             .expect("the test timestamp is representable"),
     );
 
     app.handle(Command::Confirm);
 
-    app.freeze_elapsed_for_tests(Duration::from_secs(180));
-    assert!(app.elapsed().unwrap() >= Duration::from_secs(180));
-    assert_eq!(app.history_row_duration(&final_active).as_secs(), 180);
+    assert_eq!(app.app_view().elapsed(), Some(Duration::ZERO));
+    clock.advance_monotonic(Duration::from_secs(180));
+    assert!(app.app_view().elapsed().unwrap() >= Duration::from_secs(180));
+    assert_eq!(
+        app.app_view().history_row_duration(&final_active).as_secs(),
+        180
+    );
     app.handle(Command::BackToTaskList);
     app.handle(Command::ToggleTracking);
-    let (_, stopped_at) = app.application.clear_calls[0];
+    let (_, stopped_at) = spy.clear_calls()[0];
     assert!(stopped_at >= final_start + TimeDelta::seconds(180));
     assert!(stopped_at < final_start + TimeDelta::seconds(181));
 }
@@ -493,19 +506,21 @@ fn completed_correction_preserves_a_frozen_timer_across_a_wall_clock_jump() {
             None,
         )),
     ];
-    let mut app = App::load(service);
-    app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
+    let spy = service.spy();
+    let (mut app, clock) = app_with_test_clock(service, chrono_tz::UTC, active.start());
     app.handle(Command::OpenHistory);
     app.handle(Command::MoveDown);
     app.handle(Command::OpenCorrection);
-    app.freeze_elapsed_for_tests(Duration::from_secs(600));
+    clock.advance_monotonic(Duration::from_secs(600));
+    assert_eq!(app.app_view().elapsed(), Some(Duration::from_secs(600)));
+    clock.set_wall_clock(at(10_000));
 
     app.handle(Command::Confirm);
-    app.sync_tracking_after_history_reload_at(at(10_000), Instant::now());
 
+    assert_eq!(app.app_view().elapsed(), Some(Duration::from_secs(600)));
     app.handle(Command::BackToTaskList);
     app.handle(Command::ToggleTracking);
-    let (_, stopped_at) = app.application.clear_calls[0];
+    let (_, stopped_at) = spy.clear_calls()[0];
     assert!(stopped_at >= at(700));
     assert!(stopped_at < at(701));
 }
@@ -525,20 +540,20 @@ fn correcting_active_start_reanchors_header_and_running_row_without_negatives() 
         Ok(page(vec![original], None)),
         Ok(page(vec![corrected.clone()], None)),
     ];
-    let mut app = App::load(service);
-    app.freeze_offset_for_tests(FixedOffset::east_opt(0).unwrap());
+    let mut app = app_in_timezone(service, chrono_tz::UTC);
     app.handle(Command::OpenHistory);
     app.handle(Command::OpenCorrection);
-    app.correction_mut_for_tests().start.replace(
-        correction_timestamp(corrected_start, &FixedOffset::east_opt(0).unwrap())
+    replace_start(
+        &mut app,
+        correction_timestamp(corrected_start, &chrono_tz::UTC)
             .expect("the test timestamp is representable"),
     );
     app.handle(Command::Confirm);
 
-    let header = app.elapsed().unwrap();
-    let row = app.history_row_duration(&corrected);
+    let header = app.app_view().elapsed().unwrap();
+    let row = app.app_view().history_row_duration(&corrected);
     assert!(header >= Duration::from_secs(59) && header < Duration::from_secs(62));
     assert!(row >= Duration::from_secs(59) && row < Duration::from_secs(62));
 
-    assert!(app.elapsed().unwrap() >= Duration::from_secs(59));
+    assert!(app.app_view().elapsed().unwrap() >= Duration::from_secs(59));
 }

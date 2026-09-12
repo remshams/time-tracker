@@ -13,18 +13,22 @@ fn history_owns_the_exact_task_list_state_it_will_restore() {
     ))];
     let mut app = App::load(service);
     app.handle(Command::ShowArchivedTasks);
-    let expected = app.screen.task_list().clone();
+    let expected = app.app_view().task_list().clone();
 
     app.handle(Command::OpenHistory);
 
-    let ScreenState::WorklogHistory(history) = &app.screen else {
+    let ScreenState::WorklogHistory(history) = app.app_view().screen_state() else {
         panic!("history should be open");
     };
-    assert_eq!(history.task_list, expected);
-    assert_eq!(history.mode, WorklogHistoryMode::Normal);
+    assert_eq!(history.mode(), &WorklogHistoryMode::Normal);
+    assert_eq!(app.app_view().task_list(), &expected);
 
     app.handle(Command::BackToTaskList);
-    assert_eq!(app.screen, ScreenState::TaskList(expected));
+    assert!(matches!(
+        app.app_view().screen_state(),
+        ScreenState::TaskList(_)
+    ));
+    assert_eq!(app.app_view().task_list(), &expected);
 }
 
 #[test]
@@ -37,27 +41,44 @@ fn history_keeps_task_navigation_after_its_read_changes_membership() {
     service.worklog_pages = vec![Ok(page(vec![history_worklog(10, beta.id(), 100)], None))];
     let mut app = App::load(service);
     app.handle(Command::MoveDown);
-    assert_eq!(app.tasks()[app.selected().unwrap()].id(), beta.id());
-    assert_eq!(app.selected(), Some(1));
+    assert_eq!(
+        app.app_view().tasks()[app.app_view().selected().unwrap()].id(),
+        beta.id()
+    );
+    assert_eq!(app.app_view().selected(), Some(1));
 
     app.handle(Command::OpenHistory);
 
-    assert_eq!(app.screen(), Screen::WorklogHistory);
-    assert_eq!(app.tasks().len(), 2, "the history read removed alpha");
+    assert_eq!(app.app_view().screen(), Screen::WorklogHistory);
     assert_eq!(
-        app.selected(),
+        app.app_view().tasks().len(),
+        2,
+        "the history read removed alpha"
+    );
+    assert_eq!(
+        app.app_view().selected(),
         Some(0),
         "selection followed beta's stable id"
     );
-    assert_eq!(app.tasks()[app.selected().unwrap()].id(), beta.id());
-    let expected = app.task_list().clone();
-    let ScreenState::WorklogHistory(history) = &app.screen else {
-        panic!("history should be open");
-    };
-    assert_eq!(history.task_list(), &expected);
+    assert_eq!(
+        app.app_view().tasks()[app.app_view().selected().unwrap()].id(),
+        beta.id()
+    );
+    let expected = app.app_view().task_list().clone();
+    assert!(matches!(
+        app.app_view().screen_state(),
+        ScreenState::WorklogHistory(_)
+    ));
 
     app.handle(Command::BackToTaskList);
 
-    assert_eq!(app.screen, ScreenState::TaskList(expected));
-    assert_eq!(app.tasks()[app.selected().unwrap()].id(), beta.id());
+    assert!(matches!(
+        app.app_view().screen_state(),
+        ScreenState::TaskList(_)
+    ));
+    assert_eq!(app.app_view().task_list(), &expected);
+    assert_eq!(
+        app.app_view().tasks()[app.app_view().selected().unwrap()].id(),
+        beta.id()
+    );
 }

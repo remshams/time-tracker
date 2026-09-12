@@ -1,6 +1,9 @@
-// Shared test support for screen modules.
+// Shared fixtures and service spies for TUI unit tests.
 
-use std::cell::Cell;
+pub(crate) mod keymap;
+
+use std::cell::RefCell;
+use std::rc::Rc;
 pub(crate) use std::time::{Duration, Instant};
 
 pub(crate) use chrono::{
@@ -9,8 +12,8 @@ pub(crate) use chrono::{
 pub(crate) use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, SetActiveTaskOutcome,
     TaskListItem, TaskOperations, TaskOrdering, TaskQueries, TrackerApplication,
-    TrackingOperations, WorklogCursor, WorklogOperations, WorklogPage, WorklogPageSnapshot,
-    WorklogQueries,
+    TrackerApplicationService, TrackingOperations, WorklogCursor, WorklogOperations, WorklogPage,
+    WorklogPageSnapshot, WorklogQueries,
 };
 pub(crate) use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, TrackingState, Worklog, WorklogCorrectionError,
@@ -18,8 +21,11 @@ pub(crate) use tracker_domain::{
 };
 pub(crate) use tracker_storage::SqliteRepository;
 
-pub(crate) use crate::app::*;
+pub(crate) use crate::app::{App, Status, TestClock};
 pub(crate) use crate::command::Command;
+pub(crate) use crate::screens::task_list::{InputPurpose, TaskListMode, TaskView};
+pub(crate) use crate::screens::worklog_history::{CorrectionField, HistoryAvailability};
+pub(crate) use crate::screens::{Screen, ScreenState, WorklogHistoryMode};
 pub(crate) use crate::support::clock::{ElapsedClock, tracking_timestamp};
 pub(crate) use crate::support::errors::ACTIVE_WORKLOG_DELETE_MESSAGE;
 pub(crate) use crate::support::timestamps::*;
@@ -42,13 +48,146 @@ pub(crate) fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepositor
     App::load(TrackerApplication::load(repository).unwrap())
 }
 
+pub(crate) fn app_in_timezone<S: TrackerApplicationService>(
+    application: S,
+    timezone: chrono_tz::Tz,
+) -> App<S> {
+    App::load_in_timezone(application, timezone)
+}
+
+pub(crate) fn app_with_test_clock<S: TrackerApplicationService>(
+    application: S,
+    timezone: chrono_tz::Tz,
+    wall_clock: DateTime<Utc>,
+) -> (App<S>, TestClock) {
+    App::load_with_test_clock(application, timezone, wall_clock)
+}
+
+pub(crate) fn replace_start<S: TrackerApplicationService>(
+    app: &mut App<S>,
+    text: impl Into<String>,
+) {
+    replace_timestamp(app, text.into());
+}
+
+pub(crate) fn replace_end<S: TrackerApplicationService>(app: &mut App<S>, text: impl Into<String>) {
+    if app
+        .app_view()
+        .correction()
+        .expect("correction must be open")
+        .focused()
+        == CorrectionField::Start
+    {
+        app.handle(Command::SwitchCorrectionField);
+    }
+    replace_timestamp(app, text.into());
+}
+
+fn replace_timestamp<S: TrackerApplicationService>(app: &mut App<S>, text: String) {
+    let count = app
+        .app_view()
+        .correction()
+        .expect("correction must be open")
+        .focused_input_for_test()
+        .text()
+        .chars()
+        .count();
+    for _ in 0..count {
+        app.handle(Command::Backspace);
+    }
+    for character in text.chars() {
+        app.handle(Command::Insert(character));
+    }
+}
+
 pub(crate) fn text(status: &Status) -> &str {
     match status {
         Status::Info(text) | Status::Error(text) => text,
     }
 }
 
+#[derive(Default)]
+struct SpyState {
+    worklog_reads: usize,
+    correction_calls: Vec<(WorklogId, WorklogTimes, WorklogTimes, DateTime<Utc>)>,
+    deletion_calls: Vec<(WorklogId, TaskId, WorklogTimes)>,
+    clear_calls: Vec<(WorklogId, DateTime<Utc>)>,
+    correction_error: Option<ApplicationError>,
+    external_tracking: Option<TrackingState>,
+    latest_work_overrides: Vec<(TaskId, DateTime<Utc>)>,
+    latest_work_starts: Vec<(TaskId, Option<DateTime<Utc>>)>,
+}
+
+#[derive(Clone)]
+pub(crate) struct TestServiceSpy {
+    state: Rc<RefCell<SpyState>>,
+}
+
+impl TestServiceSpy {
+    pub(crate) fn worklog_reads(&self) -> usize {
+        self.state.borrow().worklog_reads
+    }
+
+    pub(crate) fn correction_calls(
+        &self,
+    ) -> Vec<(WorklogId, WorklogTimes, WorklogTimes, DateTime<Utc>)> {
+        self.state.borrow().correction_calls.clone()
+    }
+
+    pub(crate) fn deletion_calls(&self) -> Vec<(WorklogId, TaskId, WorklogTimes)> {
+        self.state.borrow().deletion_calls.clone()
+    }
+
+    pub(crate) fn clear_calls(&self) -> Vec<(WorklogId, DateTime<Utc>)> {
+        self.state.borrow().clear_calls.clone()
+    }
+
+    pub(crate) fn set_correction_error(&self, error: ApplicationError) {
+        self.state.borrow_mut().correction_error = Some(error);
+    }
+
+    pub(crate) fn set_external_tracking(&self, tracking: TrackingState) {
+        self.state.borrow_mut().external_tracking = Some(tracking);
+    }
+
+    pub(crate) fn set_latest_work_start(&self, task_id: TaskId, start: DateTime<Utc>) {
+        let mut state = self.state.borrow_mut();
+        upsert_latest(&mut state.latest_work_overrides, task_id, start);
+        record_latest(&mut state.latest_work_starts, task_id, Some(start));
+    }
+
+    pub(crate) fn latest_work_start(&self, task_id: TaskId) -> Option<DateTime<Utc>> {
+        self.state
+            .borrow()
+            .latest_work_starts
+            .iter()
+            .find(|(id, _)| *id == task_id)
+            .and_then(|(_, start)| *start)
+    }
+}
+
+fn record_latest(
+    values: &mut Vec<(TaskId, Option<DateTime<Utc>>)>,
+    task_id: TaskId,
+    start: Option<DateTime<Utc>>,
+) {
+    if let Some((_, existing)) = values.iter_mut().find(|(id, _)| *id == task_id) {
+        *existing = start;
+    } else {
+        values.push((task_id, start));
+    }
+}
+
+fn upsert_latest(values: &mut Vec<(TaskId, DateTime<Utc>)>, task_id: TaskId, start: DateTime<Utc>) {
+    if let Some((_, existing)) = values.iter_mut().find(|(id, _)| *id == task_id) {
+        *existing = start;
+    } else {
+        values.push((task_id, start));
+    }
+}
+
 pub(crate) struct TestService {
+    spy: TestServiceSpy,
     pub(crate) tasks: Vec<Task>,
     pub(crate) tracking: TrackingState,
     pub(crate) fail_create: bool,
@@ -58,22 +197,22 @@ pub(crate) struct TestService {
     pub(crate) archive_activates: Option<DateTime<Utc>>,
     pub(crate) unarchive_activates: Option<DateTime<Utc>>,
     pub(crate) set_returns_already_active: bool,
+    pub(crate) set_returns_switched: bool,
     pub(crate) set_timestamp: Option<DateTime<Utc>>,
     pub(crate) latest_work_starts: Vec<(TaskId, DateTime<Utc>)>,
     pub(crate) tasks_after_next_worklog_read: Option<Vec<Task>>,
     pub(crate) worklog_pages: Vec<Result<WorklogPage, ApplicationError>>,
-    pub(crate) worklog_reads: Cell<usize>,
     pub(crate) correction_error: Option<ApplicationError>,
-    pub(crate) correction_calls: Vec<(WorklogId, WorklogTimes, WorklogTimes, DateTime<Utc>)>,
     pub(crate) deletion_error: Option<ApplicationError>,
-    pub(crate) deletion_calls: Vec<(WorklogId, TaskId, WorklogTimes)>,
     pub(crate) authoritative_worklogs: Vec<Worklog>,
-    pub(crate) clear_calls: Vec<(WorklogId, DateTime<Utc>)>,
 }
 
 impl TestService {
     pub(crate) fn with_tasks(tasks: Vec<Task>) -> Self {
         Self {
+            spy: TestServiceSpy {
+                state: Rc::new(RefCell::new(SpyState::default())),
+            },
             tasks,
             tracking: TrackingState::Idle,
             fail_create: false,
@@ -83,22 +222,47 @@ impl TestService {
             archive_activates: None,
             unarchive_activates: None,
             set_returns_already_active: false,
+            set_returns_switched: false,
             set_timestamp: None,
             latest_work_starts: Vec::new(),
             tasks_after_next_worklog_read: None,
             worklog_pages: Vec::new(),
-            worklog_reads: Cell::new(0),
             correction_error: None,
-            correction_calls: Vec::new(),
             deletion_error: None,
-            deletion_calls: Vec::new(),
             authoritative_worklogs: Vec::new(),
-            clear_calls: Vec::new(),
         }
     }
 
     pub(crate) fn failure() -> ApplicationError {
         ApplicationError::storage_failure("write failed")
+    }
+
+    pub(crate) fn spy(&self) -> TestServiceSpy {
+        {
+            let mut state = self.spy.state.borrow_mut();
+            for (task_id, start) in &self.latest_work_starts {
+                record_latest(&mut state.latest_work_starts, *task_id, Some(*start));
+            }
+        }
+        self.spy.clone()
+    }
+
+    fn apply_external_state(&mut self) {
+        let mut state = self.spy.state.borrow_mut();
+        if let Some(tracking) = state.external_tracking.take() {
+            self.tracking = tracking;
+        }
+        for (task_id, start) in state.latest_work_overrides.drain(..) {
+            if let Some((_, existing)) = self
+                .latest_work_starts
+                .iter_mut()
+                .find(|(id, _)| *id == task_id)
+            {
+                *existing = start;
+            } else {
+                self.latest_work_starts.push((task_id, start));
+            }
+        }
     }
 
     fn deletion_target_index(&self, id: WorklogId) -> Result<usize, ApplicationError> {
@@ -142,6 +306,11 @@ impl TestService {
             (None, Some(latest)) => self.latest_work_starts.push((task_id, latest)),
             (None, None) => {}
         }
+        record_latest(
+            &mut self.spy.state.borrow_mut().latest_work_starts,
+            task_id,
+            latest,
+        );
     }
 }
 
@@ -210,6 +379,7 @@ impl TaskOperations for TestService {
         id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
+        self.apply_external_state();
         if self.fail_archive {
             return Err(Self::failure());
         }
@@ -238,6 +408,7 @@ impl TaskOperations for TestService {
         id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
+        self.apply_external_state();
         if self.fail_unarchive {
             return Err(Self::failure());
         }
@@ -272,6 +443,7 @@ impl TrackingOperations for TestService {
         task_id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+        self.apply_external_state();
         let started_at = self.set_timestamp.unwrap_or(occurred_at);
         if let Some((_, latest)) = self
             .latest_work_starts
@@ -288,11 +460,27 @@ impl TrackingOperations for TestService {
             started_at,
         );
         let active = ActiveWorklog::begin(worklog.id(), task_id, started_at);
+        let previous = self.tracking.clone();
         self.tracking = TrackingState::Running {
             worklog: active.clone(),
         };
         if self.set_returns_already_active {
             Ok(SetActiveTaskOutcome::AlreadyActive { worklog: active })
+        } else if self.set_returns_switched {
+            let TrackingState::Running { worklog: previous } = previous else {
+                panic!("a switched outcome requires an active worklog");
+            };
+            let stopped = Worklog::new(
+                previous.id(),
+                previous.task_id(),
+                previous.start(),
+                Some(started_at),
+            )
+            .expect("the replacement task starts after the active worklog");
+            Ok(SetActiveTaskOutcome::Switched {
+                stopped,
+                started: worklog,
+            })
         } else {
             Ok(SetActiveTaskOutcome::Started { worklog })
         }
@@ -303,7 +491,12 @@ impl TrackingOperations for TestService {
         expected_active: WorklogId,
         occurred_at: DateTime<Utc>,
     ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
-        self.clear_calls.push((expected_active, occurred_at));
+        self.apply_external_state();
+        self.spy
+            .state
+            .borrow_mut()
+            .clear_calls
+            .push((expected_active, occurred_at));
         self.tracking = TrackingState::Idle;
         Ok(ClearActiveTaskOutcome::AlreadyIdle)
     }
@@ -317,9 +510,20 @@ impl WorklogOperations for TestService {
         replacement: WorklogTimes,
         occurred_at: DateTime<Utc>,
     ) -> Result<Worklog, ApplicationError> {
-        self.correction_calls
+        self.apply_external_state();
+        self.spy
+            .state
+            .borrow_mut()
+            .correction_calls
             .push((id, expected, replacement, occurred_at));
-        if let Some(error) = self.correction_error.clone() {
+        let correction_error = self
+            .spy
+            .state
+            .borrow()
+            .correction_error
+            .clone()
+            .or_else(|| self.correction_error.clone());
+        if let Some(error) = correction_error {
             return Err(error);
         }
         let original = self
@@ -349,7 +553,12 @@ impl WorklogOperations for TestService {
         task_id: TaskId,
         expected: WorklogTimes,
     ) -> Result<Worklog, ApplicationError> {
-        self.deletion_calls.push((id, task_id, expected));
+        self.apply_external_state();
+        self.spy
+            .state
+            .borrow_mut()
+            .deletion_calls
+            .push((id, task_id, expected));
         let index = self.deletion_target_index(id)?;
         Self::validate_deletion_target(&self.authoritative_worklogs[index], id, task_id, expected)?;
         if let Some(error) = self.deletion_error.clone() {
@@ -367,13 +576,14 @@ impl WorklogQueries for TestService {
         _task_id: TaskId,
         _after: Option<&WorklogCursor>,
     ) -> Result<WorklogPage, ApplicationError> {
+        self.apply_external_state();
         if let Some(tasks) = self.tasks_after_next_worklog_read.take() {
             self.tasks = tasks;
         }
         // Each read consumes the next queued page, so one service can
         // answer an initial load, several older pages, and failures.
-        let read = self.worklog_reads.get();
-        self.worklog_reads.set(read + 1);
+        let read = self.spy.state.borrow().worklog_reads;
+        self.spy.state.borrow_mut().worklog_reads = read + 1;
         let result = self.worklog_pages.get(read).cloned().unwrap_or_else(|| {
             Ok(WorklogPage {
                 worklogs: Vec::new(),
@@ -461,37 +671,35 @@ pub(crate) fn page_with_active(
     }
 }
 
-pub(crate) fn correction_history_app(initial: Worklog, reload: Vec<Worklog>) -> App<TestService> {
+pub(crate) fn correction_history_app_with_spy_in(
+    initial: Worklog,
+    reload: Vec<Worklog>,
+    timezone: chrono_tz::Tz,
+) -> (App<TestService>, TestServiceSpy) {
     let task = task(1, "alpha");
     let mut service = TestService::with_tasks(vec![task]);
     service.worklog_pages = vec![
         Ok(page(vec![initial], Some(cursor(50, 50)))),
         Ok(page(reload, None)),
     ];
-    let mut app = App::load(service);
+    let spy = service.spy();
+    let mut app = app_in_timezone(service, timezone);
     app.handle(Command::OpenHistory);
-    app
+    (app, spy)
 }
 
 pub(crate) fn correction_app(initial: Worklog, reload: Vec<Worklog>) -> App<TestService> {
-    let mut app = correction_history_app(initial, reload);
-    app.freeze_offset_for_tests(FixedOffset::east_opt(2 * 3600).unwrap());
-    app.handle(Command::OpenCorrection);
-    app
+    correction_app_with_spy(initial, reload).0
 }
 
-pub(crate) fn correction_app_in<Tz>(
+pub(crate) fn correction_app_with_spy(
     initial: Worklog,
     reload: Vec<Worklog>,
-    timezone: &Tz,
-) -> App<TestService>
-where
-    Tz: TimeZone,
-    Tz::Offset: std::fmt::Display,
-{
-    let mut app = correction_history_app(initial, reload);
-    app.open_correction_in(timezone);
-    app
+) -> (App<TestService>, TestServiceSpy) {
+    let (mut app, spy) =
+        correction_history_app_with_spy_in(initial, reload, chrono_tz::Africa::Johannesburg);
+    app.handle(Command::OpenCorrection);
+    (app, spy)
 }
 
 #[derive(Clone, Copy, Debug)]

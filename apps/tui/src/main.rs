@@ -11,6 +11,8 @@ mod screens;
 mod styles;
 mod support;
 mod terminal;
+#[cfg(test)]
+mod test_support;
 mod ui;
 #[cfg(test)]
 mod ui_tests;
@@ -82,10 +84,10 @@ fn run<S: TrackerApplicationService>(
     app: &mut App<S>,
 ) -> io::Result<()> {
     while app.is_running() {
-        guard.draw(|frame| ui::render(frame, app))?;
+        guard.draw(|frame| ui::render(frame, app.app_view()))?;
         if crossterm::event::poll(TICK)?
             && let Event::Key(key) = crossterm::event::read()?
-            && let Some(command) = screens::map_key(&app.screen, key)
+            && let Some(command) = app.command_for(key)
             && command_is_allowed(command, crossterm::terminal::size()?.0)
         {
             app.handle(command);

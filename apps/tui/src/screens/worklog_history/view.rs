@@ -9,6 +9,7 @@ use crate::screens::worklog_history::{
     CorrectionDraft, CorrectionField, HistoryAvailability, WorklogHistoryMode, WorklogHistoryState,
 };
 use crate::styles;
+use crate::support::timestamps::TimestampInput;
 
 /// The immutable text needed to render one history row.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,15 +62,15 @@ fn render_body(
         } else {
             Style::default()
         });
-    if history.availability == HistoryAvailability::Unavailable {
+    if history.availability() == HistoryAvailability::Unavailable {
         frame.render_widget(
             Paragraph::new("History unavailable. Press r to retry.").block(block),
             area,
         );
         return;
     }
-    if history.worklogs.is_empty() {
-        let message = if history.next_cursor.is_some() {
+    if history.worklogs().is_empty() {
+        let message = if history.next_cursor().is_some() {
             "No loaded worklogs. Older worklogs remain. Press o to load them."
         } else {
             "No worklogs yet."
@@ -126,7 +127,7 @@ fn render_correction_modal(frame: &mut Frame, area: Rect, draft: &CorrectionDraf
 
 fn correction_field_line<'a>(
     label: &'static str,
-    input: &'a crate::app::TimestampInput,
+    input: &'a TimestampInput,
     focused: bool,
 ) -> Line<'a> {
     let label = format!("{label:<5}: ");
@@ -160,15 +161,16 @@ fn render_delete_modal(frame: &mut Frame, area: Rect, deletion: &Deletion) {
 mod tests {
     use std::time::Duration;
 
-    use chrono::{DateTime, FixedOffset, Utc};
+    use chrono::{DateTime, Utc};
     use ratatui::style::{Modifier, Style};
     use ratatui::{Terminal, backend::TestBackend};
-    use tracker_application::{TrackerApplication, WorklogCursor};
+    use tracker_application::TrackerApplication;
     use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId};
     use tracker_storage::SqliteRepository;
 
     use crate::app::App;
     use crate::command::Command;
+    use crate::test_support::{app_in_timezone, app_with_test_clock};
 
     const WIDTH: u16 = 80;
     const HEIGHT: u16 = 24;
@@ -191,8 +193,10 @@ mod tests {
             .unwrap();
             repository.insert_worklog(&worklog).unwrap();
         }
-        let mut app = App::load(TrackerApplication::load(repository).unwrap());
-        app.freeze_offset_for_tests(FixedOffset::east_opt(2 * 3600).unwrap());
+        let mut app = app_in_timezone(
+            TrackerApplication::load(repository).unwrap(),
+            chrono_tz::Africa::Johannesburg,
+        );
         app.handle(Command::OpenHistory);
         app
     }
@@ -210,6 +214,29 @@ mod tests {
         App::load(TrackerApplication::load(repository).unwrap())
     }
 
+    fn app_with_test_clock_for_view(
+        names: &[&str],
+    ) -> (
+        App<TrackerApplication<SqliteRepository>>,
+        crate::app::TestClock,
+    ) {
+        let repository = SqliteRepository::open_in_memory().unwrap();
+        for name in names {
+            repository
+                .create_task(Task::create(
+                    TaskId::generate(),
+                    TaskName::new(name).unwrap(),
+                    DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
+                ))
+                .unwrap();
+        }
+        app_with_test_clock(
+            TrackerApplication::load(repository).unwrap(),
+            chrono_tz::UTC,
+            Utc::now(),
+        )
+    }
+
     fn draw(app: &App<TrackerApplication<SqliteRepository>>) -> Terminal<TestBackend> {
         draw_at(app, WIDTH, HEIGHT)
     }
@@ -221,7 +248,7 @@ mod tests {
     ) -> Terminal<TestBackend> {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|frame| crate::ui::render(frame, app))
+            .draw(|frame| crate::ui::render(frame, app.app_view()))
             .unwrap();
         terminal
     }
@@ -329,9 +356,9 @@ mod tests {
 
     #[test]
     fn the_running_row_shows_running_and_the_headers_elapsed_time() {
-        let mut app = app_with(&["alpha"]);
+        let (mut app, clock) = app_with_test_clock_for_view(&["alpha"]);
         app.handle(Command::ToggleTracking);
-        app.freeze_elapsed_for_tests(Duration::from_secs(125));
+        clock.advance_monotonic(Duration::from_secs(125));
         app.handle(Command::OpenHistory);
         let terminal = draw(&app);
         let rows = rows(&terminal);
@@ -362,19 +389,22 @@ mod tests {
 
     #[test]
     fn an_empty_loaded_history_prompts_for_older_worklogs() {
-        let mut app = history_app(&[(3600, 3615)]);
-        let task_id = app.history().unwrap().task_id;
-        app.set_history_next_cursor_for_tests(WorklogCursor {
-            task_id,
-            start: DateTime::<Utc>::from_timestamp(3600, 0).unwrap(),
-            id: WorklogId::from_uuid(uuid::Uuid::from_u128(1)),
-            revision: 0,
-        });
-        app.handle(Command::OpenDeletion);
-        app.handle(Command::Confirm);
+        let entries: Vec<(i64, i64)> = (0..51)
+            .map(|index| (3_600 + index * 60, 3_615 + index * 60))
+            .collect();
+        let mut app = history_app(&entries);
+        for _ in 0..50 {
+            app.handle(Command::OpenDeletion);
+            app.handle(Command::Confirm);
+        }
 
+        assert!(app.app_view().history().unwrap().worklogs().is_empty());
+        assert!(app.app_view().history().unwrap().next_cursor().is_some());
         let terminal = draw(&app);
-        assert!(row(&terminal, 2).contains("Older worklogs remain. Press o to load them."));
+        assert_eq!(
+            row(&terminal, 2).trim_matches(['│', ' ']),
+            "No loaded worklogs. Older worklogs remain. Press o to load them."
+        );
     }
 
     #[test]

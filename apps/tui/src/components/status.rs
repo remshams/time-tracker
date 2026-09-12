@@ -61,7 +61,7 @@ mod tests {
         app.handle(Command::Confirm);
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal
-            .draw(|frame| crate::ui::render(frame, &app))
+            .draw(|frame| crate::ui::render(frame, app.app_view()))
             .unwrap();
         assert!(row(&terminal, 22).contains("Error: The task name must not be empty"));
         let label = cell(&terminal, 0, 22);
@@ -77,7 +77,7 @@ mod tests {
         let app = app_with(&["alpha"]);
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal
-            .draw(|frame| crate::ui::render(frame, &app))
+            .draw(|frame| crate::ui::render(frame, app.app_view()))
             .unwrap();
         let style = cell(&terminal, 0, 22);
         assert_eq!(style.fg, Some(Color::Reset));

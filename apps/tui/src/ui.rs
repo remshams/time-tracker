@@ -1,10 +1,8 @@
 //! Root frame composition for the terminal interface.
 
-use tracker_application::TrackerApplicationService;
-
-use crate::app::{App, ScreenState};
+use crate::app::AppView;
 use crate::components::{header, status, text};
-use crate::screens::{self, worklog_history};
+use crate::screens::{self, ScreenState, worklog_history};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::widgets::Paragraph;
@@ -13,7 +11,7 @@ use ratatui::widgets::Paragraph;
 pub(crate) const MIN_TERMINAL_WIDTH: u16 = 60;
 
 /// Renders one frame of the interface.
-pub fn render<S: TrackerApplicationService>(frame: &mut Frame, app: &App<S>) {
+pub fn render(frame: &mut Frame, app: AppView<'_>) {
     if frame.area().width < MIN_TERMINAL_WIDTH {
         frame.render_widget(
             Paragraph::new("Time Tracker needs at least 60 columns."),
@@ -37,12 +35,12 @@ pub fn render<S: TrackerApplicationService>(frame: &mut Frame, app: &App<S>) {
         app.active_task_name(),
         elapsed.as_deref(),
     );
-    match &app.screen {
-        ScreenState::TaskList(state) => {
+    match app.screen_state() {
+        ScreenState::TaskList(_) => {
             screens::task_list::view::render(
                 frame,
                 body,
-                state,
+                app.task_list(),
                 app.tasks(),
                 app.ordering_label(),
                 app.active_task_id(),
@@ -51,7 +49,7 @@ pub fn render<S: TrackerApplicationService>(frame: &mut Frame, app: &App<S>) {
         ScreenState::WorklogHistory(state) => {
             let history = state.history();
             let rows: Vec<worklog_history::view::Row> = history
-                .worklogs
+                .worklogs()
                 .iter()
                 .map(|worklog| worklog_history::view::Row {
                     start: app.local_time(worklog.start()),
@@ -82,8 +80,5 @@ pub fn render<S: TrackerApplicationService>(frame: &mut Frame, app: &App<S>) {
         }
     }
     status::render(frame, status_area, app.status());
-    frame.render_widget(
-        Paragraph::new(app.screen.footer_hints(footer.width)),
-        footer,
-    );
+    frame.render_widget(Paragraph::new(app.footer_hints(footer.width)), footer);
 }

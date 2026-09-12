@@ -2,24 +2,16 @@ use std::time::Duration;
 
 use chrono::Utc;
 use tracker_application::{
-    ApplicationFailureCategory, ClearActiveTaskOutcome, SetActiveTaskOutcome, TaskOrdering,
+    ApplicationFailureCategory, ClearActiveTaskOutcome, SetActiveTaskOutcome,
     TrackerApplicationService,
 };
-use tracker_domain::{Task, TaskId, TaskName, TaskNameError, TrackingState, WorklogId};
+use tracker_domain::{ActiveWorklog, Task, TaskName, TaskNameError};
 
-use crate::app::{App, Status};
+use crate::app::App;
 use crate::command::Command;
-use crate::support::clock::{ElapsedClock, tracking_timestamp};
+use crate::screens::task_list::{InputPurpose, TaskListMode, TaskView};
+use crate::support::clock::tracking_timestamp;
 use crate::support::errors::application_error_text;
-
-use super::{InputPurpose, TaskListMode, TaskView};
-
-pub(crate) fn load_tasks<S: TrackerApplicationService>(
-    application: &S,
-    ordering: TaskOrdering,
-) -> (Vec<Task>, Vec<Task>) {
-    task_lists(application, ordering)
-}
 
 impl<S: TrackerApplicationService> App<S> {
     pub(crate) fn handle_task_list_command(&mut self, command: Command) {
@@ -34,336 +26,261 @@ impl<S: TrackerApplicationService> App<S> {
             Command::OpenAdd => self.open_add(),
             Command::OpenRename => self.open_rename(),
             Command::OpenArchiveConfirm => self.open_archive_confirm(),
-            Command::Insert(character) => self.insert_task_name(character),
-            Command::Backspace => self.backspace_task_name(),
+            Command::Insert(character) => self
+                .shell_mut()
+                .task_list_mut()
+                .insert_name(character, TaskName::MAX_LEN),
+            Command::Backspace => self.shell_mut().task_list_mut().backspace_name(),
             Command::Confirm => self.confirm_task_list(),
-            Command::Cancel => self.cancel_task_list(),
+            Command::Cancel => self.shell_mut().task_list_mut().close_mode(),
             _ => {}
         }
     }
 
-    /// The tasks of the view currently shown.
-    pub fn tasks(&self) -> &[Task] {
-        self.tasks_in(self.view())
+    fn task_list_is_normal(&self) -> bool {
+        self.shell().screen() == crate::screens::Screen::TaskList
+            && matches!(self.shell().task_list().mode(), TaskListMode::Normal)
     }
 
-    pub fn view(&self) -> TaskView {
-        self.task_list().view()
+    fn selected_task(&self) -> Option<&Task> {
+        let list = self.shell().task_list();
+        let selected = list.selection()?;
+        self.catalog()
+            .tasks(list.view())
+            .iter()
+            .find(|task| task.id() == selected)
     }
 
-    #[cfg(test)]
-    pub fn ordering(&self) -> TaskOrdering {
-        self.ordering
-    }
-
-    pub fn ordering_label(&self) -> &'static str {
-        match self.ordering {
-            TaskOrdering::RecentlyWorked => "recently worked",
-            TaskOrdering::RecentlyUpdated => "recently updated",
-            TaskOrdering::RecentlyCreated => "recently created",
-        }
-    }
-
-    pub fn selected(&self) -> Option<usize> {
-        let id = self.selection_id()?;
-        self.tasks().iter().position(|task| task.id() == id)
-    }
-
-    pub fn active_task_id(&self) -> Option<TaskId> {
-        match &self.tracking {
-            TrackingState::Idle => None,
-            TrackingState::Running { worklog } => Some(worklog.task_id()),
-        }
-    }
-
-    pub fn active_task_name(&self) -> Option<&str> {
-        self.task_name_for(self.active_task_id()?)
-    }
-
-    pub fn elapsed(&self) -> Option<Duration> {
-        self.clock.as_ref().map(ElapsedClock::elapsed)
-    }
-
-    pub(crate) fn selected_task(&self) -> Option<&Task> {
-        self.tasks().get(self.selected()?)
-    }
-
-    pub(crate) fn task_list_is_normal(&self) -> bool {
-        matches!(&self.screen, crate::screens::ScreenState::TaskList(state) if matches!(state.mode(), TaskListMode::Normal))
-    }
-
-    fn tasks_in(&self, view: TaskView) -> &[Task] {
-        match view {
-            TaskView::Active => &self.active_tasks,
-            TaskView::Archived => &self.archived_tasks,
-        }
-    }
-
-    fn selection_id(&self) -> Option<TaskId> {
-        self.task_list().selection()
-    }
-
-    fn set_selection_id(&mut self, id: Option<TaskId>) {
-        self.task_list_mut().set_selection(id);
+    fn selected_index(&self) -> Option<usize> {
+        let list = self.shell().task_list();
+        let selected = list.selection()?;
+        self.catalog()
+            .tasks(list.view())
+            .iter()
+            .position(|task| task.id() == selected)
     }
 
     fn move_task_up(&mut self) {
         if !self.task_list_is_normal() {
             return;
         }
-        let index = match self.selected() {
-            None => self.tasks().len().checked_sub(1),
+        let index = match self.selected_index() {
+            None => self
+                .catalog()
+                .tasks(self.shell().task_list().view())
+                .len()
+                .checked_sub(1),
             Some(0) => Some(0),
             Some(index) => Some(index - 1),
         };
-        let id = index
-            .and_then(|index| self.tasks().get(index))
-            .map(Task::id);
-        self.set_selection_id(id);
+        let id = index.and_then(|index| {
+            self.catalog()
+                .tasks(self.shell().task_list().view())
+                .get(index)
+                .map(Task::id)
+        });
+        self.shell_mut().task_list_mut().set_selection(id);
     }
 
     fn move_task_down(&mut self) {
         if !self.task_list_is_normal() {
             return;
         }
-        if self.tasks().is_empty() {
-            self.set_selection_id(None);
-            return;
-        }
-        let last = self.tasks().len() - 1;
-        let index = match self.selected() {
-            None => 0,
-            Some(index) => index.saturating_add(1).min(last),
+        let view = self.shell().task_list().view();
+        let tasks = self.catalog().tasks(view);
+        let id = if tasks.is_empty() {
+            None
+        } else {
+            let index = self
+                .selected_index()
+                .map_or(0, |index| index.saturating_add(1).min(tasks.len() - 1));
+            Some(tasks[index].id())
         };
-        self.set_selection_id(Some(self.tasks()[index].id()));
+        self.shell_mut().task_list_mut().set_selection(id);
     }
 
     fn show_tasks(&mut self, target: TaskView) {
-        if !self.task_list_is_normal() || self.view() == target {
+        if !self.task_list_is_normal() {
             return;
         }
-        let first = self.tasks_in(target).first().map(Task::id);
-        let state = self.task_list_mut();
-        state.view = target;
-        if state.selection().is_none() {
-            state.set_selection(first);
-        }
+        let first = self.catalog().tasks(target).first().map(Task::id);
+        self.shell_mut().task_list_mut().show(target, first);
     }
 
     fn cycle_ordering(&mut self) {
         if !self.task_list_is_normal() {
             return;
         }
-        self.ordering = next_ordering(self.ordering);
-        self.sync_tasks_from_application();
-        self.status = Status::Info(format!("Sorted by {}", self.ordering_label()));
+        self.catalog_mut().cycle_ordering();
+        self.reload_tasks();
+        let label = self.catalog().ordering_label();
+        self.shell_mut().info(format!("Sorted by {label}"));
     }
 
-    pub(crate) fn sync_from_application(&mut self, fresh_active: bool) {
-        self.sync_tasks_from_application();
-        self.sync_tracking_from_application(fresh_active);
-    }
-
-    pub(crate) fn sync_tasks_from_application(&mut self) {
-        let previous_index = self.selected();
-        let preferred = self.selection_id();
-        let (active_tasks, archived_tasks) = task_lists(&self.application, self.ordering);
-        self.active_tasks = active_tasks;
-        self.archived_tasks = archived_tasks;
-        let visible = self.tasks();
-        let resolved = preferred
-            .and_then(|id| visible.iter().position(|task| task.id() == id))
-            .or_else(|| {
-                previous_index
-                    .filter(|_| !visible.is_empty())
-                    .map(|index| index.min(visible.len() - 1))
-            });
-        let id = resolved.and_then(|index| visible.get(index)).map(Task::id);
-        self.set_selection_id(id);
+    fn accepts_active_actions(&self) -> bool {
+        self.task_list_is_normal() && self.shell().task_list().view() == TaskView::Active
     }
 
     fn open_add(&mut self) {
-        if !self.accepts_active_actions() {
-            return;
+        if self.accepts_active_actions() {
+            self.shell_mut()
+                .task_list_mut()
+                .open_input(InputPurpose::Add, String::new());
         }
-        self.task_list_mut().mode = TaskListMode::Input {
-            purpose: InputPurpose::Add,
-            buffer: String::new(),
-        };
     }
 
     fn open_rename(&mut self) {
         if !self.accepts_active_actions() {
             return;
         }
-        let Some(task) = self.selected_task() else {
+        let Some((task_id, name)) = self
+            .selected_task()
+            .map(|task| (task.id(), task.name().to_string()))
+        else {
             return;
         };
-        let task_id = task.id();
-        let buffer = task.name().to_string();
-        self.task_list_mut().mode = TaskListMode::Input {
-            purpose: InputPurpose::Rename { task_id },
-            buffer,
-        };
+        self.shell_mut()
+            .task_list_mut()
+            .open_input(InputPurpose::Rename { task_id }, name);
     }
 
     fn open_archive_confirm(&mut self) {
         if !self.accepts_active_actions() {
             return;
         }
-        let Some(task) = self.selected_task() else {
+        let Some((task_id, name)) = self
+            .selected_task()
+            .map(|task| (task.id(), task.name().to_string()))
+        else {
             return;
         };
-        let task_id = task.id();
-        let name = task.name().to_string();
-        self.task_list_mut().mode = TaskListMode::ConfirmArchive { task_id, name };
-    }
-
-    fn accepts_active_actions(&self) -> bool {
-        self.task_list_is_normal() && self.view() == TaskView::Active
-    }
-
-    fn insert_task_name(&mut self, character: char) {
-        if let TaskListMode::Input { buffer, .. } = &mut self.task_list_mut().mode
-            && buffer.chars().count() < TaskName::MAX_LEN
-        {
-            buffer.push(character);
-        }
-    }
-
-    fn backspace_task_name(&mut self) {
-        if let TaskListMode::Input { buffer, .. } = &mut self.task_list_mut().mode {
-            buffer.pop();
-        }
-    }
-
-    fn cancel_task_list(&mut self) {
-        self.task_list_mut().mode = TaskListMode::Normal;
+        self.shell_mut()
+            .task_list_mut()
+            .open_archive_confirmation(task_id, name);
     }
 
     fn confirm_task_list(&mut self) {
-        match self.task_list().mode() {
+        match self.shell().task_list().mode() {
             TaskListMode::Input { .. } => self.confirm_input(),
             TaskListMode::ConfirmArchive { .. } => self.confirm_archive(),
-            _ => {}
+            TaskListMode::Normal => {}
         }
     }
 
     fn confirm_input(&mut self) {
-        let TaskListMode::Input { purpose, buffer } = self.task_list().mode().clone() else {
+        let TaskListMode::Input { purpose, buffer } = self.shell().task_list().mode().clone()
+        else {
             return;
         };
         let name = match TaskName::new(&buffer) {
             Ok(name) => name,
             Err(error) => {
-                self.status = Status::Error(task_name_error_text(error));
+                self.shell_mut().error(task_name_error_text(error));
                 return;
             }
         };
-        let occurred_at = Utc::now();
         let result = match purpose {
-            InputPurpose::Add => self.application.create_task(name, occurred_at),
+            InputPurpose::Add => self.application_mut().create_task(name, Utc::now()),
             InputPurpose::Rename { task_id } => {
-                self.application.rename_task(task_id, name, occurred_at)
+                self.application_mut()
+                    .rename_task(task_id, name, Utc::now())
             }
         };
         match (purpose, result) {
             (InputPurpose::Add, Ok(task)) => {
-                self.sync_tasks_from_application();
-                self.set_selection_id(Some(task.id()));
-                self.task_list_mut().mode = TaskListMode::Normal;
-                self.status = Status::Info(format!("Added \"{}\"", task.name()));
+                self.reload_tasks();
+                self.shell_mut()
+                    .task_list_mut()
+                    .set_selection(Some(task.id()));
+                self.shell_mut().task_list_mut().close_mode();
+                self.shell_mut().info(format!("Added \"{}\"", task.name()));
             }
             (InputPurpose::Rename { .. }, Ok(task)) => {
-                self.sync_tasks_from_application();
-                self.task_list_mut().mode = TaskListMode::Normal;
-                self.status = Status::Info(format!("Renamed to \"{}\"", task.name()));
+                self.reload_tasks();
+                self.shell_mut().task_list_mut().close_mode();
+                self.shell_mut()
+                    .info(format!("Renamed to \"{}\"", task.name()));
             }
-            (_, Err(error)) => self.status = Status::Error(application_error_text(&error)),
+            (_, Err(error)) => self.shell_mut().error(application_error_text(&error)),
         }
     }
 
     fn confirm_archive(&mut self) {
-        let TaskListMode::ConfirmArchive { task_id, .. } = self.task_list().mode().clone() else {
+        let TaskListMode::ConfirmArchive { task_id, .. } = self.shell().task_list().mode().clone()
+        else {
             return;
         };
-        match self.application.archive_task(task_id, Utc::now()) {
+        match self.application_mut().archive_task(task_id, Utc::now()) {
             Ok(task) => {
                 self.sync_from_application(false);
-                let state = self.task_list_mut();
-                state.archived_selection = Some(task.id());
-                state.mode = TaskListMode::Normal;
-                self.status = Status::Info(format!("Archived \"{}\"", task.name()));
+                self.shell_mut()
+                    .task_list_mut()
+                    .remember(TaskView::Archived, Some(task.id()));
+                self.shell_mut().task_list_mut().close_mode();
+                self.shell_mut()
+                    .info(format!("Archived \"{}\"", task.name()));
             }
             Err(error) if error.failure().category() == ApplicationFailureCategory::ActiveTask => {
                 self.sync_from_application(false);
-                self.task_list_mut().mode = TaskListMode::Normal;
-                self.status = Status::Error("The active task cannot be archived".to_owned());
+                self.shell_mut().task_list_mut().close_mode();
+                self.shell_mut().error("The active task cannot be archived");
             }
             Err(error) => {
                 self.sync_from_application(false);
-                self.status = Status::Error(application_error_text(&error));
+                self.shell_mut().error(application_error_text(&error));
             }
         }
     }
 
     fn unarchive_selected(&mut self) {
-        if !self.task_list_is_normal() || self.view() != TaskView::Archived {
+        if self.shell().screen() != crate::screens::Screen::TaskList
+            || !self.shell().task_list().accepts_unarchiving()
+        {
             return;
         }
         let Some(task) = self.selected_task().cloned() else {
             return;
         };
-        match self.application.unarchive_task(task.id(), Utc::now()) {
+        match self.application_mut().unarchive_task(task.id(), Utc::now()) {
             Ok(restored) => {
-                self.task_list_mut().active_selection = Some(restored.id());
+                self.shell_mut()
+                    .task_list_mut()
+                    .remember(TaskView::Active, Some(restored.id()));
                 self.sync_from_application(false);
-                self.status = Status::Info(format!("Restored \"{}\"", restored.name()));
+                self.shell_mut()
+                    .info(format!("Restored \"{}\"", restored.name()));
             }
             Err(error) => {
                 self.sync_from_application(false);
-                self.status = Status::Error(application_error_text(&error));
+                self.shell_mut().error(application_error_text(&error));
             }
         }
     }
 
-    pub(crate) fn active_worklog(&self) -> Option<&tracker_domain::ActiveWorklog> {
-        match &self.tracking {
-            TrackingState::Idle => None,
-            TrackingState::Running { worklog } => Some(worklog),
-        }
-    }
-
-    pub(crate) fn active_worklog_id(&self) -> Option<WorklogId> {
-        self.active_worklog().map(|worklog| worklog.id())
-    }
-
     fn toggle_tracking(&mut self) {
-        if !self.task_list_is_normal() || self.view() != TaskView::Active {
+        if !self.accepts_active_actions() {
             return;
         }
         let Some(task) = self.selected_task().cloned() else {
             return;
         };
-        let active = self.active_worklog().cloned();
-        let was_active = active.as_ref().map(|worklog| worklog.task_id());
+        let active = self.tracking().active_worklog().cloned();
+        let was_active = active.as_ref().map(ActiveWorklog::task_id);
         let occurred_at = active.as_ref().map_or_else(Utc::now, |worklog| {
-            let elapsed = self
-                .clock
-                .as_ref()
-                .map_or(Duration::ZERO, ElapsedClock::elapsed);
-            tracking_timestamp(worklog.start(), elapsed)
+            tracking_timestamp(
+                worklog.start(),
+                self.tracking().elapsed().unwrap_or(Duration::ZERO),
+            )
         });
-
         let result = if was_active == Some(task.id()) {
-            self.application
+            self.application_mut()
                 .clear_active_task(active.expect("active task has a worklog").id(), occurred_at)
                 .map(|outcome| match outcome {
                     ClearActiveTaskOutcome::Stopped { .. }
                     | ClearActiveTaskOutcome::AlreadyIdle => ("stopped", false),
                 })
         } else {
-            self.application
+            self.application_mut()
                 .set_active_task(task.id(), occurred_at)
                 .map(|outcome| match outcome {
                     SetActiveTaskOutcome::Started { .. } => ("started", true),
@@ -374,57 +291,21 @@ impl<S: TrackerApplicationService> App<S> {
                     SetActiveTaskOutcome::AlreadyActive { .. } => ("started", false),
                 })
         };
-
         match result {
             Ok((action, fresh_active)) => {
                 self.sync_from_application(fresh_active);
-                self.status = match action {
-                    "started" => Status::Info(format!("Started \"{}\"", task.name())),
-                    "switched" => Status::Info(format!("Switched to \"{}\"", task.name())),
-                    _ => Status::Info(format!("Stopped \"{}\"", task.name())),
+                let message = match action {
+                    "started" => format!("Started \"{}\"", task.name()),
+                    "switched" => format!("Switched to \"{}\"", task.name()),
+                    _ => format!("Stopped \"{}\"", task.name()),
                 };
+                self.shell_mut().info(message);
             }
             Err(error) => {
                 self.sync_from_application(false);
-                self.status = Status::Error(application_error_text(&error));
+                self.shell_mut().error(application_error_text(&error));
             }
         }
-    }
-
-    pub(crate) fn sync_tracking_from_application(&mut self, fresh_active: bool) {
-        let tracking = self.application.current_tracking().clone();
-        let unchanged = tracking == self.tracking;
-        if fresh_active {
-            self.clock = match &tracking {
-                TrackingState::Idle => None,
-                TrackingState::Running { .. } => Some(ElapsedClock::anchored(Duration::ZERO)),
-            };
-        } else if !unchanged {
-            self.clock = match &tracking {
-                TrackingState::Idle => None,
-                TrackingState::Running { worklog } => Some(ElapsedClock::since(worklog.start())),
-            };
-        }
-        self.tracking = tracking;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_timezone_for_tests(&mut self, timezone: chrono_tz::Tz) {
-        self.timezone = timezone;
-        self.frozen_offset = None;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn freeze_elapsed_for_tests(&mut self, base: Duration) {
-        let anchor = std::time::Instant::now()
-            .checked_add(Duration::from_secs(86_400))
-            .expect("a test clock can advance one day");
-        self.clock = Some(ElapsedClock::at_anchor(base, anchor));
-    }
-
-    #[cfg(test)]
-    pub(crate) fn freeze_offset_for_tests(&mut self, offset: chrono::FixedOffset) {
-        self.frozen_offset = Some(offset);
     }
 }
 
@@ -437,23 +318,4 @@ fn task_name_error_text(error: TaskNameError) -> String {
             TaskName::MAX_LEN
         ),
     }
-}
-
-fn next_ordering(ordering: TaskOrdering) -> TaskOrdering {
-    match ordering {
-        TaskOrdering::RecentlyWorked => TaskOrdering::RecentlyUpdated,
-        TaskOrdering::RecentlyUpdated => TaskOrdering::RecentlyCreated,
-        TaskOrdering::RecentlyCreated => TaskOrdering::RecentlyWorked,
-    }
-}
-
-fn task_lists<S: TrackerApplicationService>(
-    application: &S,
-    ordering: TaskOrdering,
-) -> (Vec<Task>, Vec<Task>) {
-    application
-        .tasks(ordering)
-        .into_iter()
-        .map(|item| item.task)
-        .partition(|task| !task.is_archived())
 }

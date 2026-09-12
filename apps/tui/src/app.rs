@@ -1,26 +1,25 @@
-//! Global TUI state, semantic command routing, and screen transitions.
+//! Global TUI presentation controller.
 
-use chrono::FixedOffset;
+mod shell_state;
+mod task_catalog;
+mod tracking_session;
+mod view;
+
 use chrono_tz::Tz;
+use crossterm::event::KeyEvent;
 use tracker_application::{TaskOrdering, TrackerApplicationService};
-use tracker_domain::{Task, TaskId, TrackingState};
 
 use crate::command::Command;
-use crate::screens::task_list::load_tasks;
-use crate::screens::worklog_history::active_worklog_for_task;
-use crate::support::clock::ElapsedClock;
-use crate::support::errors::application_error_text;
+use crate::screens::Screen;
+use crate::screens::task_list::TaskListState;
 use crate::support::timestamps::startup_timezone;
 
+use self::shell_state::ShellState;
+use self::task_catalog::TaskCatalog;
 #[cfg(test)]
-pub use crate::screens::worklog_history::{CorrectionField, HistoryAvailability};
-#[cfg(test)]
-pub use crate::screens::{CorrectionDraft, InputPurpose, TaskView};
-pub use crate::screens::{History, Screen, ScreenState, TaskListState, WorklogHistoryState};
-#[cfg(test)]
-pub use crate::screens::{TaskListMode, WorklogHistoryMode};
-pub use crate::support::timestamps::TimestampInput;
-pub(crate) use crate::support::timestamps::is_timestamp_character;
+pub(crate) use self::tracking_session::TestClock;
+use self::tracking_session::TrackingSession;
+pub(crate) use self::view::AppView;
 
 /// The most recent message shown in the status line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,67 +28,81 @@ pub enum Status {
     Error(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Lifecycle {
-    Running,
-    Quitting,
-}
-
-/// Shared application state around one exclusively owned screen state.
+/// Coordinates service calls and the presentation state owners.
 pub struct App<S: TrackerApplicationService> {
-    pub(crate) application: S,
-    pub(crate) active_tasks: Vec<Task>,
-    pub(crate) archived_tasks: Vec<Task>,
-    pub(crate) ordering: TaskOrdering,
-    pub(crate) tracking: TrackingState,
-    pub(crate) clock: Option<ElapsedClock>,
-    pub(crate) timezone: Tz,
-    pub(crate) frozen_offset: Option<FixedOffset>,
-    pub(crate) status: Status,
-    lifecycle: Lifecycle,
-    pub(crate) screen: ScreenState,
+    application: S,
+    catalog: TaskCatalog,
+    tracking: TrackingSession,
+    shell: ShellState,
 }
 
 impl<S: TrackerApplicationService> App<S> {
     /// Builds presentation state from an already loaded application service.
     pub fn load(application: S) -> Self {
-        let ordering = TaskOrdering::default();
-        let (active_tasks, archived_tasks) = load_tasks(&application, ordering);
-        let task_list = TaskListState::new(active_tasks.first().map(Task::id));
-        let tracking = application.current_tracking().clone();
-        let clock = match &tracking {
-            TrackingState::Idle => None,
-            TrackingState::Running { worklog } => Some(ElapsedClock::since(worklog.start())),
-        };
         let (timezone, timezone_status) = startup_timezone();
+        Self::load_with_timezone(application, timezone, timezone_status)
+    }
+
+    fn load_with_timezone(application: S, timezone: Tz, timezone_status: Option<&str>) -> Self {
+        let catalog = TaskCatalog::new(application.tasks(TaskOrdering::default()));
+        let tracking = TrackingSession::new(application.current_tracking().clone());
+        Self::assemble(application, catalog, tracking, timezone, timezone_status)
+    }
+
+    fn assemble(
+        application: S,
+        catalog: TaskCatalog,
+        tracking: TrackingSession,
+        timezone: Tz,
+        timezone_status: Option<&str>,
+    ) -> Self {
+        let task_list = TaskListState::new(
+            catalog
+                .tasks(crate::screens::TaskView::Active)
+                .first()
+                .map(|task| task.id()),
+        );
         let status = match timezone_status {
             Some(message) => Status::Error(message.to_owned()),
-            None if clock.is_some() => {
+            None if tracking.elapsed().is_some() => {
                 Status::Info("Recovered the previous active timer".to_owned())
             }
             None => Status::Info("Ready".to_owned()),
         };
         Self {
             application,
-            active_tasks,
-            archived_tasks,
-            ordering,
+            catalog,
             tracking,
-            clock,
-            timezone,
-            frozen_offset: None,
-            status,
-            lifecycle: Lifecycle::Running,
-            screen: ScreenState::TaskList(task_list),
+            shell: ShellState::new(status, task_list, timezone),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn load_in_timezone(application: S, timezone: Tz) -> Self {
+        Self::load_with_timezone(application, timezone, None)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn load_with_test_clock(
+        application: S,
+        timezone: Tz,
+        wall_clock: chrono::DateTime<chrono::Utc>,
+    ) -> (Self, TestClock) {
+        let catalog = TaskCatalog::new(application.tasks(TaskOrdering::default()));
+        let (tracking, clock) =
+            TrackingSession::with_test_clock(application.current_tracking().clone(), wall_clock);
+        (
+            Self::assemble(application, catalog, tracking, timezone, None),
+            clock,
+        )
     }
 
     pub fn handle(&mut self, command: Command) {
         match command {
-            Command::Quit => self.lifecycle = Lifecycle::Quitting,
+            Command::Quit => self.shell.quit(),
             Command::OpenHistory => self.open_history(),
             Command::BackToTaskList => self.back_to_task_list(),
-            command => match self.screen() {
+            command => match self.shell.screen() {
                 Screen::TaskList => self.handle_task_list_command(command),
                 Screen::WorklogHistory => self.handle_worklog_history_command(command),
             },
@@ -97,71 +110,56 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     pub fn is_running(&self) -> bool {
-        self.lifecycle == Lifecycle::Running
+        self.shell.is_running()
     }
 
-    pub fn status(&self) -> &Status {
-        &self.status
+    pub(crate) fn app_view(&self) -> AppView<'_> {
+        AppView::new(&self.catalog, &self.tracking, &self.shell)
     }
 
-    pub fn screen(&self) -> Screen {
-        self.screen.screen()
+    pub(crate) fn command_for(&self, key: KeyEvent) -> Option<Command> {
+        crate::screens::map_key(self.shell.input_state(), key)
     }
 
-    pub(crate) fn task_list(&self) -> &TaskListState {
-        self.screen.task_list()
+    pub(crate) fn application_mut(&mut self) -> &mut S {
+        &mut self.application
     }
 
-    pub(crate) fn task_list_mut(&mut self) -> &mut TaskListState {
-        self.screen.task_list_mut()
+    pub(crate) fn catalog(&self) -> &TaskCatalog {
+        &self.catalog
     }
 
-    pub(crate) fn task_name_for(&self, task_id: TaskId) -> Option<&str> {
-        Some(self.application.task(task_id)?.name().as_str())
+    pub(crate) fn catalog_mut(&mut self) -> &mut TaskCatalog {
+        &mut self.catalog
     }
 
-    fn open_history(&mut self) {
-        if !matches!(&self.screen, ScreenState::TaskList(state) if matches!(state.mode(), crate::screens::TaskListMode::Normal))
-        {
-            return;
-        }
-        let Some(task) = self.selected_task().cloned() else {
-            return;
-        };
-        let result = self.application.worklogs_for_task(task.id(), None);
-        self.sync_from_application(false);
-        match result {
-            Ok(page) => {
-                let baseline = active_worklog_for_task(&page.snapshot.active_worklog, task.id());
-                let history = History::new(task.id(), page.worklogs, page.next_cursor, baseline);
-                let task_list = self.task_list().clone();
-                self.screen = ScreenState::WorklogHistory(Box::new(WorklogHistoryState::new(
-                    task_list, history,
-                )));
-                self.status = Status::Info(format!("History of \"{}\"", task.name()));
-            }
-            Err(error) => self.status = Status::Error(application_error_text(&error)),
-        }
+    pub(crate) fn tracking(&self) -> &TrackingSession {
+        &self.tracking
     }
 
-    fn back_to_task_list(&mut self) {
-        if !matches!(&self.screen, ScreenState::WorklogHistory(state) if matches!(state.mode(), crate::screens::WorklogHistoryMode::Normal))
-        {
-            return;
-        }
-        let ScreenState::WorklogHistory(state) = &self.screen else {
-            return;
-        };
-        self.screen = ScreenState::TaskList(state.task_list().clone());
+    pub(crate) fn tracking_mut(&mut self) -> &mut TrackingSession {
+        &mut self.tracking
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_history_next_cursor_for_tests(
-        &mut self,
-        cursor: tracker_application::WorklogCursor,
-    ) {
-        if let ScreenState::WorklogHistory(state) = &mut self.screen {
-            state.set_next_cursor(cursor);
-        }
+    pub(crate) fn shell(&self) -> &ShellState {
+        &self.shell
+    }
+
+    pub(crate) fn shell_mut(&mut self) -> &mut ShellState {
+        &mut self.shell
+    }
+
+    pub(crate) fn reload_tasks(&mut self) {
+        let view = self.shell.task_list().view();
+        let selected = self.shell.task_list().selection();
+        let items = self.application.tasks(self.catalog.ordering());
+        let resolved = self.catalog.reload(items, view, selected);
+        self.shell.task_list_mut().set_selection(resolved);
+    }
+
+    pub(crate) fn sync_from_application(&mut self, fresh_active: bool) {
+        self.reload_tasks();
+        self.tracking
+            .sync(self.application.current_tracking().clone(), fresh_active);
     }
 }

@@ -13,15 +13,15 @@ pub enum HistoryAvailability {
     Unavailable,
 }
 
-/// Worklog pages loaded for one task, newest first.
+/// One task's loaded worklog history and stable-ID selection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct History {
-    pub task_id: TaskId,
-    pub availability: HistoryAvailability,
-    pub worklogs: Vec<Worklog>,
-    pub next_cursor: Option<WorklogCursor>,
-    pub(super) active_worklog_baseline: Option<(WorklogId, DateTime<Utc>)>,
-    pub(super) selected: Option<WorklogId>,
+    task_id: TaskId,
+    availability: HistoryAvailability,
+    worklogs: Vec<Worklog>,
+    next_cursor: Option<WorklogCursor>,
+    active_worklog_baseline: Option<(WorklogId, DateTime<Utc>)>,
+    selected: Option<WorklogId>,
 }
 
 impl History {
@@ -42,20 +42,125 @@ impl History {
         }
     }
 
+    pub fn task_id(&self) -> TaskId {
+        self.task_id
+    }
+
+    pub fn availability(&self) -> HistoryAvailability {
+        self.availability
+    }
+
+    pub fn worklogs(&self) -> &[Worklog] {
+        &self.worklogs
+    }
+
+    pub fn next_cursor(&self) -> Option<WorklogCursor> {
+        self.next_cursor
+    }
+
     pub fn is_available(&self) -> bool {
         self.availability == HistoryAvailability::Available
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_unavailable_for_test(&mut self) {
-        self.availability = HistoryAvailability::Unavailable;
-    }
-
-    pub(super) fn selected_index(&self) -> Option<usize> {
+    pub(crate) fn selected_index(&self) -> Option<usize> {
         let id = self.selected?;
         self.is_available()
             .then(|| self.worklogs.iter().position(|worklog| worklog.id() == id))
             .flatten()
+    }
+
+    pub(crate) fn selected_id(&self) -> Option<WorklogId> {
+        self.selected
+    }
+
+    pub(crate) fn active_worklog_baseline(&self) -> Option<(WorklogId, DateTime<Utc>)> {
+        self.active_worklog_baseline
+    }
+
+    pub(crate) fn selected_worklog(&self) -> Option<&Worklog> {
+        self.selected_index().map(|index| &self.worklogs[index])
+    }
+
+    pub(crate) fn move_up(&mut self) {
+        if !self.is_available() {
+            return;
+        }
+        let index = match self.selected_index() {
+            None => self.worklogs.len().checked_sub(1),
+            Some(0) => Some(0),
+            Some(index) => Some(index - 1),
+        };
+        self.selected = index
+            .and_then(|index| self.worklogs.get(index))
+            .map(Worklog::id);
+    }
+
+    pub(crate) fn move_down(&mut self) {
+        if !self.is_available() {
+            return;
+        }
+        if self.worklogs.is_empty() {
+            self.selected = None;
+            return;
+        }
+        let last = self.worklogs.len() - 1;
+        let index = match self.selected_index() {
+            None => 0,
+            Some(index) => index.saturating_add(1).min(last),
+        };
+        self.selected = Some(self.worklogs[index].id());
+    }
+
+    pub(crate) fn append(&mut self, worklogs: Vec<Worklog>, next_cursor: Option<WorklogCursor>) {
+        let select_first = self.worklogs.is_empty();
+        self.worklogs.extend(worklogs);
+        self.next_cursor = next_cursor;
+        if select_first {
+            self.selected = self.worklogs.first().map(Worklog::id);
+        }
+    }
+
+    pub(crate) fn replace(
+        &mut self,
+        task_id: TaskId,
+        worklogs: Vec<Worklog>,
+        next_cursor: Option<WorklogCursor>,
+        active_worklog_baseline: Option<(WorklogId, DateTime<Utc>)>,
+        preferred: Option<WorklogId>,
+    ) {
+        let selected = preferred
+            .filter(|id| worklogs.iter().any(|worklog| worklog.id() == *id))
+            .or_else(|| worklogs.first().map(Worklog::id));
+        *self = Self {
+            task_id,
+            availability: HistoryAvailability::Available,
+            worklogs,
+            next_cursor,
+            active_worklog_baseline,
+            selected,
+        };
+    }
+
+    pub(crate) fn mark_unavailable(&mut self) {
+        self.availability = HistoryAvailability::Unavailable;
+        self.worklogs.clear();
+        self.next_cursor = None;
+    }
+
+    pub(crate) fn remove(&mut self, deleted_id: WorklogId) {
+        let Some(index) = self
+            .worklogs
+            .iter()
+            .position(|worklog| worklog.id() == deleted_id)
+        else {
+            self.selected = None;
+            return;
+        };
+        self.worklogs.remove(index);
+        self.selected = self
+            .worklogs
+            .get(index.min(self.worklogs.len().saturating_sub(1)))
+            .map(Worklog::id);
     }
 }
 
@@ -70,9 +175,19 @@ pub enum WorklogHistoryMode {
 /// History state and the exact task-list navigation restored on return.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorklogHistoryState {
-    pub(super) task_list: TaskListState,
-    pub(super) history: History,
-    pub(super) mode: WorklogHistoryMode,
+    task_list: TaskListState,
+    history: History,
+    mode: WorklogHistoryMode,
+}
+
+pub(crate) fn active_worklog_for_task(
+    active_worklog: &Option<Worklog>,
+    task_id: TaskId,
+) -> Option<(WorklogId, DateTime<Utc>)> {
+    active_worklog
+        .as_ref()
+        .filter(|worklog| worklog.task_id() == task_id)
+        .map(|worklog| (worklog.id(), worklog.start()))
 }
 
 impl WorklogHistoryState {
@@ -96,32 +211,45 @@ impl WorklogHistoryState {
         &self.mode
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_mode_for_test(&mut self, mode: WorklogHistoryMode) {
-        self.mode = mode;
-    }
-
     pub(crate) fn task_list_mut(&mut self) -> &mut TaskListState {
         &mut self.task_list
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_history_unavailable_for_test(&mut self) {
-        self.history.set_unavailable_for_test();
+    pub(crate) fn history_mut(&mut self) -> &mut History {
+        &mut self.history
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_next_cursor(&mut self, cursor: WorklogCursor) {
-        self.history.next_cursor = Some(cursor);
+    pub(crate) fn is_normal(&self) -> bool {
+        matches!(self.mode, WorklogHistoryMode::Normal)
     }
-}
 
-pub(crate) fn active_worklog_for_task(
-    active_worklog: &Option<Worklog>,
-    task_id: TaskId,
-) -> Option<(WorklogId, DateTime<Utc>)> {
-    active_worklog
-        .as_ref()
-        .filter(|worklog| worklog.task_id() == task_id)
-        .map(|worklog| (worklog.id(), worklog.start()))
+    pub(crate) fn open_deletion(&mut self, worklog: Worklog) {
+        self.mode = WorklogHistoryMode::ConfirmDeletion { worklog };
+    }
+
+    pub(crate) fn open_correction(&mut self, draft: CorrectionDraft) {
+        self.mode = WorklogHistoryMode::Correction(draft);
+    }
+
+    pub(crate) fn correction(&self) -> Option<&CorrectionDraft> {
+        match &self.mode {
+            WorklogHistoryMode::Correction(draft) => Some(draft),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn correction_mut(&mut self) -> Option<&mut CorrectionDraft> {
+        match &mut self.mode {
+            WorklogHistoryMode::Correction(draft) => Some(draft),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn close_mode(&mut self) {
+        self.mode = WorklogHistoryMode::Normal;
+    }
+
+    pub(crate) fn into_task_list(self) -> TaskListState {
+        self.task_list
+    }
 }

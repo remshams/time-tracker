@@ -29,7 +29,7 @@ fn draw_at(
 ) -> Terminal<TestBackend> {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
-        .draw(|frame| crate::ui::render(frame, app))
+        .draw(|frame| crate::ui::render(frame, app.app_view()))
         .unwrap();
     terminal
 }

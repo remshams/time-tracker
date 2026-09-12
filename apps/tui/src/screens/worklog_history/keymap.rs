@@ -3,6 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::command::Command;
+use crate::support::timestamps::is_timestamp_character;
 
 use super::{WorklogHistoryMode, WorklogHistoryState};
 
@@ -75,7 +76,7 @@ fn map_correction(key: KeyEvent) -> Option<Command> {
         }
         (KeyCode::Char(character), modifiers)
             if modifiers - KeyModifiers::SHIFT == KeyModifiers::NONE
-                && crate::app::is_timestamp_character(character) =>
+                && is_timestamp_character(character) =>
         {
             Some(Command::Insert(character))
         }
@@ -120,7 +121,7 @@ pub(crate) fn footer_hints(state: &WorklogHistoryState, width: u16) -> &'static 
 mod tests {
     use crate::command::Command;
     use crate::screens::WorklogHistoryMode;
-    use crate::screens::keymap_test_support::*;
+    use crate::test_support::keymap::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]

@@ -92,8 +92,9 @@ pub(crate) fn footer_hints(state: &TaskListState, width: u16) -> &'static str {
 #[cfg(test)]
 mod tests {
     use crate::command::Command;
-    use crate::screens::keymap_test_support::*;
-    use crate::screens::{TaskListMode, TaskView, WorklogHistoryMode};
+    use crate::screens::WorklogHistoryMode;
+    use crate::screens::task_list::{TaskListMode, TaskView};
+    use crate::test_support::keymap::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]

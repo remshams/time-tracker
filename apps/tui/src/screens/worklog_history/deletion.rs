@@ -1,107 +1,77 @@
 use tracker_application::{ApplicationError, TrackerApplicationService};
-use tracker_domain::{Worklog, WorklogId};
+use tracker_domain::{TaskId, WorklogId};
 
-use crate::app::{App, Status};
-use crate::screens::{ScreenState, WorklogHistoryMode};
+use crate::app::App;
+use crate::screens::WorklogHistoryMode;
 use crate::support::errors::{
     ACTIVE_WORKLOG_DELETE_MESSAGE, application_error_text, deletion_conflict,
     matches_worklog_active, matches_worklog_not_found,
 };
 
 impl<S: TrackerApplicationService> App<S> {
-    pub(super) fn open_deletion(&mut self) {
+    pub(crate) fn open_deletion(&mut self) {
         if !self.history_is_normal() {
             return;
         }
         let Some(worklog) = self
             .history()
             .filter(|history| history.is_available())
-            .and_then(|history| {
-                history
-                    .selected_index()
-                    .map(|index| history.worklogs[index].clone())
-            })
+            .and_then(|history| history.selected_worklog())
+            .cloned()
         else {
             return;
         };
         if worklog.is_active() {
-            self.status = Status::Error(ACTIVE_WORKLOG_DELETE_MESSAGE.to_owned());
+            self.shell_mut().error(ACTIVE_WORKLOG_DELETE_MESSAGE);
             return;
         }
-        if let ScreenState::WorklogHistory(state) = &mut self.screen {
-            state.mode = WorklogHistoryMode::ConfirmDeletion { worklog };
-        }
+        self.history_state_mut()
+            .expect("history is open")
+            .open_deletion(worklog);
     }
 
-    #[cfg(test)]
-    pub fn deletion(&self) -> Option<&Worklog> {
-        let ScreenState::WorklogHistory(state) = &self.screen else {
-            return None;
-        };
-        match state.mode() {
-            WorklogHistoryMode::ConfirmDeletion { worklog } => Some(worklog),
-            _ => None,
-        }
-    }
-
-    pub(super) fn confirm_deletion(&mut self) {
-        let WorklogHistoryMode::ConfirmDeletion { worklog } = self.history_state().mode().clone()
+    pub(crate) fn confirm_deletion(&mut self) {
+        let Some(WorklogHistoryMode::ConfirmDeletion { worklog }) =
+            self.history_state().map(|state| state.mode().clone())
         else {
             return;
         };
         let target_id = worklog.id();
         let task_id = worklog.task_id();
-        let result = self
-            .application
-            .delete_completed_worklog(target_id, task_id, worklog.times());
-        match result {
+        match self
+            .application_mut()
+            .delete_completed_worklog(target_id, task_id, worklog.times())
+        {
             Ok(_) => {
-                self.remove_deleted_worklog(target_id);
-                self.sync_tasks_from_application();
-                if let ScreenState::WorklogHistory(state) = &mut self.screen {
-                    state.mode = WorklogHistoryMode::Normal;
-                }
-                self.status = Status::Info("Deleted worklog".to_owned());
+                self.history_mut()
+                    .expect("history is open")
+                    .remove(target_id);
+                self.reload_tasks();
+                self.history_state_mut()
+                    .expect("history is open")
+                    .close_mode();
+                self.shell_mut().info("Deleted worklog");
             }
             Err(error) if deletion_conflict(&error) => {
-                if let ScreenState::WorklogHistory(state) = &mut self.screen {
-                    state.mode = WorklogHistoryMode::Normal;
-                }
+                self.history_state_mut()
+                    .expect("history is open")
+                    .close_mode();
                 self.reload_newest_history_after_deletion(task_id, target_id, &error);
             }
             Err(error) => {
                 self.sync_from_application(false);
-                self.status = Status::Error(application_error_text(&error));
+                self.shell_mut().error(application_error_text(&error));
             }
         }
     }
 
-    fn remove_deleted_worklog(&mut self, deleted_id: WorklogId) {
-        let Some(history) = self.history_mut() else {
-            return;
-        };
-        let Some(index) = history
-            .worklogs
-            .iter()
-            .position(|worklog| worklog.id() == deleted_id)
-        else {
-            history.selected = None;
-            return;
-        };
-        history.worklogs.remove(index);
-        history.selected = history
-            .worklogs
-            .get(index.min(history.worklogs.len().saturating_sub(1)))
-            .map(Worklog::id);
-    }
-
     fn reload_newest_history_after_deletion(
         &mut self,
-        task_id: tracker_domain::TaskId,
+        task_id: TaskId,
         target_id: WorklogId,
         error: &ApplicationError,
     ) {
-        match self.application.worklogs_for_task(task_id, None) {
+        match self.application_mut().worklogs_for_task(task_id, None) {
             Ok(page) => {
                 let target_is_present = page
                     .worklogs
@@ -109,33 +79,33 @@ impl<S: TrackerApplicationService> App<S> {
                     .any(|worklog| worklog.id() == target_id);
                 self.replace_history_with_newest_page(task_id, Some(target_id), page);
                 self.sync_from_application(false);
-                self.status = if matches_worklog_active(error) {
-                    Status::Error(ACTIVE_WORKLOG_DELETE_MESSAGE.to_owned())
+                if matches_worklog_active(error) {
+                    self.shell_mut().error(ACTIVE_WORKLOG_DELETE_MESSAGE);
                 } else if matches_worklog_not_found(error) {
-                    if target_is_present {
-                        Status::Error(
-                            "Worklog was not found. Press d to confirm deletion again.".to_owned(),
-                        )
+                    self.shell_mut().error(if target_is_present {
+                        "Worklog was not found. Press d to confirm deletion again."
                     } else {
-                        Status::Error("Worklog was not found. History was refreshed.".to_owned())
-                    }
+                        "Worklog was not found. History was refreshed."
+                    });
                 } else if target_is_present {
-                    Status::Error("Worklog changed. Press d to confirm deletion again.".to_owned())
+                    self.shell_mut()
+                        .error("Worklog changed. Press d to confirm deletion again.");
                 } else {
-                    Status::Error("Worklog changed. History was refreshed.".to_owned())
-                };
+                    self.shell_mut()
+                        .error("Worklog changed. History was refreshed.");
+                }
             }
             Err(refresh_error) => {
                 self.mark_history_unavailable();
                 self.sync_from_application(false);
-                self.status = if matches_worklog_active(error) {
-                    Status::Error(ACTIVE_WORKLOG_DELETE_MESSAGE.to_owned())
+                if matches_worklog_active(error) {
+                    self.shell_mut().error(ACTIVE_WORKLOG_DELETE_MESSAGE);
                 } else {
-                    Status::Error(format!(
+                    self.shell_mut().error(format!(
                         "Worklog changed, but history refresh failed: {}",
                         application_error_text(&refresh_error)
-                    ))
-                };
+                    ));
+                }
             }
         }
     }

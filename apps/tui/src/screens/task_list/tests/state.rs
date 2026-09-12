@@ -8,6 +8,9 @@ fn cancel_commands_preserve_expected_state() {
     app.handle(Command::OpenAdd);
     app.handle(Command::Insert('x'));
     app.handle(Command::Cancel);
-    assert!(matches!(app.task_list().mode(), TaskListMode::Normal));
-    assert_eq!(app.tasks().len(), 1);
+    assert!(matches!(
+        app.app_view().task_list().mode(),
+        TaskListMode::Normal
+    ));
+    assert_eq!(app.app_view().tasks().len(), 1);
 }

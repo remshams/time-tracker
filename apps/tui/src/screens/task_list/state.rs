@@ -31,10 +31,10 @@ pub enum TaskView {
 /// Task-list navigation and modal state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskListState {
-    pub(super) view: TaskView,
-    pub(super) active_selection: Option<TaskId>,
-    pub(super) archived_selection: Option<TaskId>,
-    pub(super) mode: TaskListMode,
+    view: TaskView,
+    active_selection: Option<TaskId>,
+    archived_selection: Option<TaskId>,
+    mode: TaskListMode,
 }
 
 impl TaskListState {
@@ -51,31 +51,65 @@ impl TaskListState {
         self.view
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_view_for_test(&mut self, view: TaskView) {
-        self.view = view;
-    }
-
     pub fn mode(&self) -> &TaskListMode {
         &self.mode
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_mode_for_test(&mut self, mode: TaskListMode) {
-        self.mode = mode;
+    pub(crate) fn accepts_unarchiving(&self) -> bool {
+        self.view == TaskView::Archived && matches!(self.mode, TaskListMode::Normal)
     }
 
-    pub(super) fn selection(&self) -> Option<TaskId> {
+    pub(crate) fn selection(&self) -> Option<TaskId> {
         match self.view {
             TaskView::Active => self.active_selection,
             TaskView::Archived => self.archived_selection,
         }
     }
 
-    pub(super) fn set_selection(&mut self, selected: Option<TaskId>) {
-        match self.view {
+    pub(crate) fn set_selection(&mut self, selected: Option<TaskId>) {
+        self.remember(self.view, selected);
+    }
+
+    pub(crate) fn remember(&mut self, view: TaskView, selected: Option<TaskId>) {
+        match view {
             TaskView::Active => self.active_selection = selected,
             TaskView::Archived => self.archived_selection = selected,
         }
+    }
+
+    pub(crate) fn show(&mut self, view: TaskView, initial_selection: Option<TaskId>) {
+        if self.view == view {
+            return;
+        }
+        self.view = view;
+        if self.selection().is_none() {
+            self.set_selection(initial_selection);
+        }
+    }
+
+    pub(crate) fn open_input(&mut self, purpose: InputPurpose, buffer: String) {
+        self.mode = TaskListMode::Input { purpose, buffer };
+    }
+
+    pub(crate) fn open_archive_confirmation(&mut self, task_id: TaskId, name: String) {
+        self.mode = TaskListMode::ConfirmArchive { task_id, name };
+    }
+
+    pub(crate) fn insert_name(&mut self, character: char, limit: usize) {
+        if let TaskListMode::Input { buffer, .. } = &mut self.mode
+            && buffer.chars().count() < limit
+        {
+            buffer.push(character);
+        }
+    }
+
+    pub(crate) fn backspace_name(&mut self) {
+        if let TaskListMode::Input { buffer, .. } = &mut self.mode {
+            buffer.pop();
+        }
+    }
+
+    pub(crate) fn close_mode(&mut self) {
+        self.mode = TaskListMode::Normal;
     }
 }
