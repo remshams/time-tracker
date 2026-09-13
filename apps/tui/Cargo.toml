@@ -24,4 +24,5 @@ unicode-width = { workspace = true }
 libc = { workspace = true }
 tempfile = { workspace = true }
 termlens = { version = "0.8.0", default-features = false }
+tracker-storage = { path = "../../crates/tracker-storage", features = ["test-support"] }
 uuid = { workspace = true }

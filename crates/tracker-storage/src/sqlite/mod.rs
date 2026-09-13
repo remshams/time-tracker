@@ -62,12 +62,16 @@ impl SqliteRepository {
         Ok(Self { conn })
     }
 
-    /// Gives direct access to the SQLite connection for diagnostics and
-    /// schema-level tests.
+    /// Gives test support direct access to the SQLite connection.
     ///
-    /// This is not part of the application repository ports. Callers that
-    /// only use those ports never need it.
+    /// This is not part of the application repository ports.
+    #[cfg(feature = "test-support")]
     pub fn connection(&self) -> &Connection {
+        &self.conn
+    }
+
+    #[cfg(all(test, not(feature = "test-support")))]
+    fn connection(&self) -> &Connection {
         &self.conn
     }
 }
@@ -168,7 +172,10 @@ impl WorklogRepository for SqliteRepository {
 }
 
 #[cfg(test)]
-mod tests {
+mod tests;
+
+#[cfg(test)]
+mod unit_tests {
     use super::mapping::{
         task_from_stored, task_id_from_stored, timestamp_to_us, us_to_timestamp,
         worklog_from_stored, worklog_id_from_stored,

@@ -41,6 +41,22 @@ fn latest_work_start_on(
     .transpose()
 }
 
+#[cfg(any(test, feature = "test-support"))]
+fn list_worklogs_on(conn: &Connection, task_id: TaskId) -> Result<Vec<Worklog>, StorageError> {
+    let mut statement = conn.prepare(
+        "SELECT id, task_id, start_us, end_us FROM worklogs
+         WHERE task_id = ?1
+         ORDER BY start_us, id",
+    )?;
+    let mut rows = statement.query([task_id.to_string()])?;
+    let mut worklogs = Vec::new();
+    while let Some(row) = rows.next()? {
+        let raw = raw_worklog(row)?;
+        worklogs.push(worklog_from_raw(raw)?);
+    }
+    Ok(worklogs)
+}
+
 impl SqliteRepository {
     pub(crate) fn worklog_by_id(&self, id: WorklogId) -> Result<Option<Worklog>, StorageError> {
         worklog_by_id_on(&self.conn, id)
@@ -287,22 +303,15 @@ impl SqliteRepository {
 
     /// Lists every worklog of the task, oldest first.
     ///
-    /// Storage-only helper for tests and diagnostics that need the whole
-    /// list at once. Application worklog history does not go through this
-    /// method; it reads bounded pages through the
-    /// [`tracker_application::WorklogRepository::worklog_page`] port.
+    /// This test-support query is not part of the application repository
+    /// ports. Application history reads bounded pages instead.
+    #[cfg(feature = "test-support")]
     pub fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, StorageError> {
-        let mut statement = self.conn.prepare(
-            "SELECT id, task_id, start_us, end_us FROM worklogs
-             WHERE task_id = ?1
-             ORDER BY start_us, id",
-        )?;
-        let mut rows = statement.query([task_id.to_string()])?;
-        let mut worklogs = Vec::new();
-        while let Some(row) = rows.next()? {
-            let raw = raw_worklog(row)?;
-            worklogs.push(worklog_from_raw(raw)?);
-        }
-        Ok(worklogs)
+        list_worklogs_on(&self.conn, task_id)
+    }
+
+    #[cfg(all(test, not(feature = "test-support")))]
+    pub(super) fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, StorageError> {
+        list_worklogs_on(&self.conn, task_id)
     }
 }

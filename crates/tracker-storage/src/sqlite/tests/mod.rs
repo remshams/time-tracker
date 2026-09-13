@@ -13,6 +13,7 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
+use crate::{SqliteRepository, StorageError};
 use chrono::{DateTime, Utc};
 use std::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use tempfile::TempDir;
@@ -26,7 +27,6 @@ use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingError, TrackingOutcome, TrackingState,
     Worklog, WorklogId, WorklogTimes,
 };
-use tracker_storage::{SqliteRepository, StorageError};
 
 fn at(seconds: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(seconds, 0).unwrap()
@@ -437,17 +437,10 @@ fn insert_numbered_worklogs(repository: &SqliteRepository, task: &Task, worklogs
     }
 }
 
-#[path = "sqlite/concurrency.rs"]
 mod concurrency;
-#[path = "sqlite/correction.rs"]
 mod correction;
-#[path = "sqlite/deletion.rs"]
 mod deletion;
-#[path = "sqlite/history.rs"]
 mod history;
-#[path = "sqlite/migrations.rs"]
 mod migrations;
-#[path = "sqlite/tasks.rs"]
 mod tasks;
-#[path = "sqlite/tracking.rs"]
 mod tracking;
