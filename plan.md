@@ -2,7 +2,7 @@
 
 ## Status
 
-Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, task browsing and ordering, read-only worklog history, worklog correction, and completed-worklog deletion are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, orders both task views, and loads one task's worklogs in bounded pages. The timestamp and ordering rules live in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds, [ADR 0004](docs/adr/0004-paginated-worklog-history.md) records pagination, [ADR 0006](docs/adr/0006-local-minute-tui-timestamps.md) records local-minute history and correction behavior, and [ADR 0007](docs/adr/0007-completed-worklog-deletion.md) records completed-worklog deletion.
+Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, task browsing and ordering, read-only worklog history, worklog correction, completed-worklog deletion, and the screen-scoped TUI command refactor are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, orders both task views, and loads one task's worklogs in bounded pages. The timestamp and ordering rules live in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds, [ADR 0004](docs/adr/0004-paginated-worklog-history.md) records pagination, [ADR 0006](docs/adr/0006-local-minute-tui-timestamps.md) records local-minute history and correction behavior, and [ADR 0007](docs/adr/0007-completed-worklog-deletion.md) records completed-worklog deletion.
 
 The required Rust, Python, mutation, coverage, CRAP, and Linux PTY checks pass. Detailed counts belong in each feature handoff rather than this long-lived plan. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred. A real macOS run remains necessary because this Linux host has no Apple SDK.
 
@@ -42,7 +42,7 @@ The same `tt` binary will provide the TUI and server process modes, while shared
 - Use `ratatui` for widgets and deterministic test rendering.
 - Use `crossterm` for terminal input, alternate-screen handling, and raw mode.
 - Keep the current synchronous event loop during the domain/application refactor. Do not add Tokio or networking in that checkpoint.
-- Keep the central semantic command map so keybindings, footer help, and tests remain consistent.
+- Keep semantic command mapping centralized per screen so keybindings, footer help, and tests remain consistent. The event loop receives a global wrapper around those screen-owned payloads.
 
 The domain/application split gives the future server and clients reusable use cases without moving presentation or infrastructure into the domain. Keep one time-tracking bounded context; separate crates for individual entities would add no useful boundary.
 
@@ -101,7 +101,8 @@ Responsibilities and current module boundaries:
 - Large application and SQLite tests are split by concern.
 - `apps/tui/src/app.rs` is the global presentation controller. Its four private fields are the application service, `TaskCatalog`, `TrackingSession`, and `ShellState`; only App orchestration calls the service.
 - `TaskCatalog` owns both task collections, ordering, and lookup. `TrackingSession` keeps `TrackingState` and its clock together. `ShellState` owns the exclusive `ScreenState`, status, lifecycle, and one startup `chrono_tz::Tz`.
-- The folders under `apps/tui/src/screens` contain screen state, keymaps, rendering, and tests. `ScreenState` owns `TaskListState`. Worklog history moves and retains that exact return state, while `TaskCatalog` keeps task data separate from it.
+- The folders under `apps/tui/src/screens` contain screen state, commands, keymaps, rendering, and tests. `ScreenState` owns `TaskListState`. Worklog history moves and retains that exact return state, while `TaskCatalog` keeps task data separate from it.
+- Each screen owns its semantic command enum. The event loop sees only `Command::TaskList(TaskListCommand)`, `Command::WorklogHistory(WorklogHistoryCommand)`, or global `Command::Quit`. Screen keymaps return a typed local payload or a mode-sensitive quit request. Shared key handling filters event kinds, handles Ctrl+C, applies the screen tag, and normalizes quit. `App::handle` has one mismatch guard that leaves dormant state untouched and never calls the application service.
 - Shared stateless rendering functions live under `components`. Clock, timestamp, and error-presentation helpers live under `support`. `ui.rs` composes a frame from immutable `AppView` data and has no application-service dependency.
 - `terminal.rs` owns terminal lifecycle. `main.rs` wires the SQLite adapter, application service, event loop, and TUI.
 
@@ -276,6 +277,15 @@ The correction decisions are recorded in [ADR 0005](docs/adr/0005-worklog-correc
 - [x] Use compare-and-set correction writes and reload authoritative task and tracking state after stale writes.
 - [x] Keep worklog corrections separate from task `updated_at`; refresh recently-worked ordering after a changed start.
 - [x] Defer manual worklog creation and deletion unless they receive separate approval.
+
+### Interim checkpoint: screen-scoped TUI commands
+
+- [x] Replace the flat event-loop command enum with screen-tagged task-list and worklog-history payloads plus global quit.
+- [x] Move semantic command enums into their owning screen modules and make both screen handlers exhaustive.
+- [x] Keep event-kind filtering and Ctrl+C in shared key handling while screen keymaps retain mode-sensitive quit and cancel behavior.
+- [x] Dispatch task-list and history transitions from their owning typed handlers.
+- [x] Keep one `App::handle` mismatch guard so a command tagged for the dormant screen cannot mutate state or call the application service.
+- [x] Preserve all keybindings, modes, status text, transitions, timer behavior, narrow-terminal behavior, and test names without changing E2E tests.
 
 ### Milestone 3: exclusive local or remote storage
 
