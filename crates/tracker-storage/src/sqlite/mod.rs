@@ -65,13 +65,8 @@ impl SqliteRepository {
     /// Gives test support direct access to the SQLite connection.
     ///
     /// This is not part of the application repository ports.
-    #[cfg(feature = "test-support")]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn connection(&self) -> &Connection {
-        &self.conn
-    }
-
-    #[cfg(all(test, not(feature = "test-support")))]
-    fn connection(&self) -> &Connection {
         &self.conn
     }
 }

@@ -305,13 +305,8 @@ impl SqliteRepository {
     ///
     /// This test-support query is not part of the application repository
     /// ports. Application history reads bounded pages instead.
-    #[cfg(feature = "test-support")]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, StorageError> {
-        list_worklogs_on(&self.conn, task_id)
-    }
-
-    #[cfg(all(test, not(feature = "test-support")))]
-    pub(super) fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, StorageError> {
         list_worklogs_on(&self.conn, task_id)
     }
 }

@@ -629,14 +629,17 @@ fn concurrent_clients_cannot_insert_overlapping_worklogs_for_one_task() {
     setup.create_task(task.clone()).unwrap();
     drop(setup);
 
+    let repositories = [
+        SqliteRepository::open(&path).unwrap(),
+        SqliteRepository::open(&path).unwrap(),
+    ];
     let barrier = Arc::new(Barrier::new(3));
-    let handles: Vec<_> = [(1, 100, 200), (2, 150, 250)]
+    let handles: Vec<_> = repositories
         .into_iter()
-        .map(|(tag, start, end)| {
-            let path = path.clone();
+        .zip([(1, 100, 200), (2, 150, 250)])
+        .map(|(repository, (tag, start, end))| {
             let barrier = barrier.clone();
             thread::spawn(move || {
-                let repository = SqliteRepository::open(path).unwrap();
                 let worklog =
                     Worklog::new(worklog_id(tag), task_id, at(start), Some(at(end))).unwrap();
                 barrier.wait();
@@ -1000,15 +1003,18 @@ fn concurrent_corrections_use_two_connections_and_one_stale_loser() {
     setup.insert_worklog(&original).unwrap();
     drop(setup);
 
+    let repositories = [
+        SqliteRepository::open(&path).unwrap(),
+        SqliteRepository::open(&path).unwrap(),
+    ];
     let barrier = Arc::new(Barrier::new(3));
-    let handles: Vec<_> = [at(110), at(120)]
+    let handles: Vec<_> = repositories
         .into_iter()
-        .map(|start| {
+        .zip([at(110), at(120)])
+        .map(|(repository, start)| {
             let barrier = barrier.clone();
-            let path = path.clone();
             let original = original.clone();
             thread::spawn(move || {
-                let repository = SqliteRepository::open(path).unwrap();
                 barrier.wait();
                 repository.compare_and_set_worklog_times(
                     original.id(),

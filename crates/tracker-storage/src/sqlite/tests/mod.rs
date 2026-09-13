@@ -53,10 +53,9 @@ unsafe extern "C" fn pause_worklog_write(
         && !pause.paused.swap(true, Ordering::SeqCst);
     if is_target
         && (pause.reached.send(()).is_err()
-            || pause
-                .release
-                .lock()
-                .map_or(true, |release| release.recv().is_err()))
+            || pause.release.lock().map_or(true, |release| {
+                release.recv_timeout(Duration::from_secs(5)).is_err()
+            }))
     {
         return rusqlite::ffi::SQLITE_DENY;
     }
