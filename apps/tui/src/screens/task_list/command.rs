@@ -1,0 +1,36 @@
+//! Semantic commands owned by the task-list screen.
+
+/// An action interpreted by the task-list screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TaskListCommand {
+    /// Move the task selection up one row.
+    MoveUp,
+    /// Move the task selection down one row.
+    MoveDown,
+    /// Show the list of active tasks.
+    ShowActiveTasks,
+    /// Show the list of archived tasks.
+    ShowArchivedTasks,
+    /// Open the worklog history of the selected task.
+    OpenHistory,
+    /// Cycle the shared task-list ordering.
+    CycleOrdering,
+    /// Restore the selected archived task to the active list.
+    UnarchiveSelected,
+    /// Start, stop, or switch tracking for the selected task.
+    ToggleTracking,
+    /// Open the text input to add a task.
+    OpenAdd,
+    /// Open the text input to rename the selected task.
+    OpenRename,
+    /// Ask for confirmation before archiving the selected task.
+    OpenArchiveConfirm,
+    /// Confirm the pending input or archive dialog.
+    Confirm,
+    /// Dismiss the pending input or archive dialog.
+    Cancel,
+    /// Type a character into the open text input.
+    Insert(char),
+    /// Delete the character before the cursor in the open input.
+    Backspace,
+}

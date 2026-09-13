@@ -16,7 +16,9 @@ fn correction_prefills_local_minutes() {
     let active = Worklog::begin(worklog_id(11), task_id, start);
     let mut app = correction_app(active.clone(), vec![active]);
     assert!(app.app_view().correction().unwrap().end().is_none());
-    app.handle(Command::SwitchCorrectionField);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::SwitchCorrectionField,
+    ));
     assert_eq!(
         app.app_view().correction().unwrap().focused(),
         CorrectionField::Start
@@ -27,7 +29,9 @@ fn correction_switches_fields_and_edits_at_a_bounded_character_cursor() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let worklog = history_worklog(10, task_id, 100);
     let mut app = correction_app(worklog.clone(), vec![worklog]);
-    app.handle(Command::SwitchCorrectionField);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::SwitchCorrectionField,
+    ));
     assert_eq!(
         app.app_view().correction().unwrap().focused(),
         CorrectionField::End
@@ -41,25 +45,31 @@ fn correction_switches_fields_and_edits_at_a_bounded_character_cursor() {
         .text()
         .to_owned();
     let original_len = original.chars().count();
-    app.handle(Command::MoveCursorLeft);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::MoveCursorLeft,
+    ));
     assert_eq!(
         app.app_view().correction().unwrap().end().unwrap().cursor(),
         original_len - 1
     );
-    app.handle(Command::Backspace);
-    app.handle(Command::Insert('9'));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Backspace));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Insert('9')));
     assert_ne!(
         app.app_view().correction().unwrap().end().unwrap().text(),
         original
     );
 
     let cursor = app.app_view().correction().unwrap().end().unwrap().cursor();
-    app.handle(Command::MoveCursorRight);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::MoveCursorRight,
+    ));
     assert_eq!(
         app.app_view().correction().unwrap().end().unwrap().cursor(),
         cursor + 1
     );
-    app.handle(Command::MoveCursorLeft);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::MoveCursorLeft,
+    ));
     let before_delete = app
         .app_view()
         .correction()
@@ -68,12 +78,14 @@ fn correction_switches_fields_and_edits_at_a_bounded_character_cursor() {
         .unwrap()
         .text()
         .to_owned();
-    app.handle(Command::Delete);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Delete));
     assert_ne!(
         app.app_view().correction().unwrap().end().unwrap().text(),
         before_delete
     );
-    app.handle(Command::SwitchCorrectionField);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::SwitchCorrectionField,
+    ));
     assert_eq!(
         app.app_view().correction().unwrap().focused(),
         CorrectionField::Start
@@ -137,7 +149,9 @@ fn an_unparseable_adjustment_keeps_the_draft() {
     let mut app = correction_app(worklog.clone(), vec![worklog]);
     replace_start(&mut app, "bad".to_owned());
     let before = app.app_view().correction().unwrap().clone();
-    app.handle(Command::AdjustForwardFiveMinutes);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::AdjustForwardFiveMinutes,
+    ));
     assert_eq!(app.app_view().correction().unwrap(), &before);
     assert_eq!(text(app.app_view().status()), "Use YYYY-MM-DD HH:MM");
 }
@@ -146,8 +160,8 @@ fn escape_cancels_correction_without_writing() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let worklog = history_worklog(10, task_id, 100);
     let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
-    app.handle(Command::Insert('2'));
-    app.handle(Command::Cancel);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Insert('2')));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Cancel));
     assert!(
         matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
     );
@@ -167,7 +181,7 @@ fn correction_failure_reports_write_and_recovery_causes() {
         "reload failed",
     ));
 
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert_eq!(
         text(app.app_view().status()),
@@ -185,7 +199,7 @@ fn overlap_recovery_failure_keeps_the_overlap_error_text() {
         "reload failed",
     ));
 
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert_eq!(
         text(app.app_view().status()),
@@ -217,7 +231,7 @@ fn every_correction_failure_keeps_the_full_draft_open() {
         let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog.clone()]);
         spy.set_correction_error(failure.clone());
         let before = app.app_view().correction().unwrap().clone();
-        app.handle(Command::Confirm);
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
         assert_eq!(
             app.app_view().correction().unwrap(),
             &before,
@@ -241,7 +255,7 @@ fn parse_failures_keep_both_drafts_and_skip_the_application() {
     let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
     replace_start(&mut app, "bad".to_owned());
     let before = app.app_view().correction().unwrap().clone();
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     assert_eq!(app.app_view().correction().unwrap(), &before);
     assert!(spy.correction_calls().is_empty());
 }
@@ -252,7 +266,7 @@ fn successful_correction_discards_older_pages_and_resolves_selection() {
     let newest = history_worklog(11, task_id, 300);
     let (mut app, spy) =
         correction_app_with_spy(corrected.clone(), vec![newest.clone(), corrected.clone()]);
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     assert!(
         matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
     );
@@ -267,7 +281,7 @@ fn successful_correction_discards_older_pages_and_resolves_selection() {
     assert!(occurred_at <= Utc::now());
 
     let mut app = correction_app(corrected.clone(), vec![newest.clone()]);
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     assert_eq!(
         app.app_view().history().unwrap().selected_id(),
         Some(newest.id())
@@ -281,9 +295,13 @@ fn correction_and_history_commands_require_their_own_screen_and_mode() {
     let mut service = TestService::with_tasks(vec![task]);
     service.worklog_pages = vec![Ok(page(vec![worklog], None))];
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::BackToTaskList);
-    app.handle(Command::OpenCorrection);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::BackToTaskList,
+    ));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
     assert!(
         app.app_view().screen() == Screen::TaskList
             && matches!(app.app_view().task_list().mode(), TaskListMode::Normal)
@@ -294,11 +312,17 @@ fn correction_and_history_commands_require_their_own_screen_and_mode() {
     let worklog = history_worklog(10, task_id, 100);
     let (mut app, second_spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
     let reads = second_spy.worklog_reads();
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
     assert_eq!(second_spy.worklog_reads(), reads);
-    app.handle(Command::RefreshWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::RefreshWorklogs,
+    ));
     assert_eq!(second_spy.worklog_reads(), reads);
-    app.handle(Command::BackToTaskList);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::BackToTaskList,
+    ));
     assert_eq!(app.app_view().screen(), Screen::WorklogHistory);
     assert!(app.app_view().correction().is_some());
 }
@@ -315,12 +339,14 @@ fn saved_correction_marks_history_unavailable_until_retry_succeeds() {
     ];
     let spy = service.spy();
     let mut app = app_in_timezone(service, chrono_tz::UTC);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenCorrection);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
     replace_start(&mut app, "1970-01-01 00:01".to_owned());
     replace_end(&mut app, "1970-01-01 00:02".to_owned());
 
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     let history = app.app_view().history().unwrap();
     assert_eq!(history.availability(), HistoryAvailability::Unavailable);
@@ -337,19 +363,25 @@ fn saved_correction_marks_history_unavailable_until_retry_succeeds() {
         &Status::Error("Correction saved, but history refresh failed".to_owned())
     );
 
-    app.handle(Command::MoveDown);
-    app.handle(Command::MoveUp);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveUp));
     assert_eq!(
         app.app_view().history().unwrap().selected_id(),
         Some(original.id())
     );
 
-    app.handle(Command::OpenCorrection);
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
     assert_eq!(spy.worklog_reads(), 2);
     assert!(app.app_view().correction().is_none());
 
-    app.handle(Command::RefreshWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::RefreshWorklogs,
+    ));
     let history = app.app_view().history().unwrap();
     assert_eq!(history.availability(), HistoryAvailability::Available);
     assert_eq!(history.worklogs(), vec![corrected]);
@@ -381,9 +413,11 @@ fn failed_post_save_reload_keeps_the_externally_corrected_active_aggregate() {
     ];
     let spy = service.spy();
     let mut app = app_in_timezone(service, chrono_tz::UTC);
-    app.handle(Command::MoveDown);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenCorrection);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
     spy.set_latest_work_start(active_task.id(), at(540));
     spy.set_external_tracking(TrackingState::Running {
         worklog: ActiveWorklog::begin(active.id(), active.task_id(), at(540)),
@@ -391,7 +425,7 @@ fn failed_post_save_reload_keeps_the_externally_corrected_active_aggregate() {
     replace_start(&mut app, "1970-01-01 00:07".to_owned());
     replace_end(&mut app, "1970-01-01 00:08".to_owned());
 
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert_eq!(spy.latest_work_start(active_task.id()), Some(at(540)));
     assert_eq!(
@@ -410,11 +444,13 @@ fn correction_is_available_from_archived_history() {
         Ok(page(vec![worklog], None)),
     ];
     let mut app = App::load(service);
-    app.handle(Command::ShowArchivedTasks);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenCorrection);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
     assert!(app.app_view().correction().is_some());
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     assert!(
         matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
     );
@@ -438,11 +474,13 @@ fn successful_correction_refreshes_recently_worked_ordering() {
         chrono_tz::UTC,
     );
     assert_eq!(app.app_view().tasks()[0].id(), beta.id());
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenCorrection);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
     replace_start(&mut app, "1970-01-01 00:01".to_owned());
     replace_end(&mut app, "1970-01-01 00:02".to_owned());
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     assert_eq!(app.app_view().tasks()[0].id(), alpha.id());
     assert_eq!(app.app_view().tasks()[1].id(), beta.id());
 }
@@ -465,15 +503,17 @@ fn correction_reload_uses_the_final_active_start_for_elapsed_and_stopping() {
     ];
     let spy = service.spy();
     let (mut app, clock) = app_with_test_clock(service, chrono_tz::UTC, final_start);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenCorrection);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
     replace_start(
         &mut app,
         correction_timestamp(correction_start, &chrono_tz::UTC)
             .expect("the test timestamp is representable"),
     );
 
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert_eq!(app.app_view().elapsed(), Some(Duration::ZERO));
     clock.advance_monotonic(Duration::from_secs(180));
@@ -482,8 +522,10 @@ fn correction_reload_uses_the_final_active_start_for_elapsed_and_stopping() {
         app.app_view().history_row_duration(&final_active).as_secs(),
         180
     );
-    app.handle(Command::BackToTaskList);
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::BackToTaskList,
+    ));
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     let (_, stopped_at) = spy.clear_calls()[0];
     assert!(stopped_at >= final_start + TimeDelta::seconds(180));
     assert!(stopped_at < final_start + TimeDelta::seconds(181));
@@ -508,18 +550,22 @@ fn completed_correction_preserves_a_frozen_timer_across_a_wall_clock_jump() {
     ];
     let spy = service.spy();
     let (mut app, clock) = app_with_test_clock(service, chrono_tz::UTC, active.start());
-    app.handle(Command::OpenHistory);
-    app.handle(Command::MoveDown);
-    app.handle(Command::OpenCorrection);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
     clock.advance_monotonic(Duration::from_secs(600));
     assert_eq!(app.app_view().elapsed(), Some(Duration::from_secs(600)));
     clock.set_wall_clock(at(10_000));
 
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert_eq!(app.app_view().elapsed(), Some(Duration::from_secs(600)));
-    app.handle(Command::BackToTaskList);
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::BackToTaskList,
+    ));
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     let (_, stopped_at) = spy.clear_calls()[0];
     assert!(stopped_at >= at(700));
     assert!(stopped_at < at(701));
@@ -541,14 +587,16 @@ fn correcting_active_start_reanchors_header_and_running_row_without_negatives() 
         Ok(page(vec![corrected.clone()], None)),
     ];
     let mut app = app_in_timezone(service, chrono_tz::UTC);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenCorrection);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
     replace_start(
         &mut app,
         correction_timestamp(corrected_start, &chrono_tz::UTC)
             .expect("the test timestamp is representable"),
     );
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     let header = app.app_view().elapsed().unwrap();
     let row = app.app_view().history_row_duration(&corrected);

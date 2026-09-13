@@ -2,11 +2,11 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::command::Command;
+use crate::screens::KeymapCommand;
 
-use super::{TaskListMode, TaskListState, TaskView};
+use super::{TaskListCommand, TaskListMode, TaskListState, TaskView};
 
-pub(crate) fn map(state: &TaskListState, key: KeyEvent) -> Option<Command> {
+pub(crate) fn map(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
     match state.mode() {
         TaskListMode::Normal => map_normal(state.view(), key),
         TaskListMode::Input { .. } => map_input(key),
@@ -14,48 +14,51 @@ pub(crate) fn map(state: &TaskListState, key: KeyEvent) -> Option<Command> {
     }
 }
 
-fn map_normal(view: TaskView, key: KeyEvent) -> Option<Command> {
+fn map_normal(view: TaskView, key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
     if key.modifiers != KeyModifiers::NONE {
         return None;
     }
-    match key.code {
-        KeyCode::Char('j') | KeyCode::Down => Some(Command::MoveDown),
-        KeyCode::Char('k') | KeyCode::Up => Some(Command::MoveUp),
-        KeyCode::Char('h') => Some(Command::ShowActiveTasks),
-        KeyCode::Char('l') => Some(Command::ShowArchivedTasks),
-        KeyCode::Char('s') => Some(Command::CycleOrdering),
-        KeyCode::Char(' ') if view == TaskView::Active => Some(Command::ToggleTracking),
-        KeyCode::Char('a') if view == TaskView::Active => Some(Command::OpenAdd),
-        KeyCode::Char('e') if view == TaskView::Active => Some(Command::OpenRename),
-        KeyCode::Char('d') if view == TaskView::Active => Some(Command::OpenArchiveConfirm),
-        KeyCode::Char('u') if view == TaskView::Archived => Some(Command::UnarchiveSelected),
-        KeyCode::Enter => Some(Command::OpenHistory),
-        KeyCode::Char('q') | KeyCode::Esc => Some(Command::Quit),
-        _ => None,
-    }
+    let command = match key.code {
+        KeyCode::Char('j') | KeyCode::Down => TaskListCommand::MoveDown,
+        KeyCode::Char('k') | KeyCode::Up => TaskListCommand::MoveUp,
+        KeyCode::Char('h') => TaskListCommand::ShowActiveTasks,
+        KeyCode::Char('l') => TaskListCommand::ShowArchivedTasks,
+        KeyCode::Char('s') => TaskListCommand::CycleOrdering,
+        KeyCode::Char(' ') if view == TaskView::Active => TaskListCommand::ToggleTracking,
+        KeyCode::Char('a') if view == TaskView::Active => TaskListCommand::OpenAdd,
+        KeyCode::Char('e') if view == TaskView::Active => TaskListCommand::OpenRename,
+        KeyCode::Char('d') if view == TaskView::Active => TaskListCommand::OpenArchiveConfirm,
+        KeyCode::Char('u') if view == TaskView::Archived => TaskListCommand::UnarchiveSelected,
+        KeyCode::Enter => TaskListCommand::OpenHistory,
+        KeyCode::Char('q') | KeyCode::Esc => return Some(KeymapCommand::Quit),
+        _ => return None,
+    };
+    Some(KeymapCommand::Local(command))
 }
 
-fn map_input(key: KeyEvent) -> Option<Command> {
-    match key.code {
-        KeyCode::Enter => Some(Command::Confirm),
-        KeyCode::Esc => Some(Command::Cancel),
-        KeyCode::Backspace => Some(Command::Backspace),
+fn map_input(key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
+    let command = match key.code {
+        KeyCode::Enter => TaskListCommand::Confirm,
+        KeyCode::Esc => TaskListCommand::Cancel,
+        KeyCode::Backspace => TaskListCommand::Backspace,
         KeyCode::Char(character) if key.modifiers - KeyModifiers::SHIFT == KeyModifiers::NONE => {
-            Some(Command::Insert(character))
+            TaskListCommand::Insert(character)
         }
-        _ => None,
-    }
+        _ => return None,
+    };
+    Some(KeymapCommand::Local(command))
 }
 
-fn map_confirm(key: KeyEvent) -> Option<Command> {
+fn map_confirm(key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
     if key.modifiers != KeyModifiers::NONE {
         return None;
     }
-    match key.code {
-        KeyCode::Enter | KeyCode::Char('y') => Some(Command::Confirm),
-        KeyCode::Esc | KeyCode::Char('n') => Some(Command::Cancel),
-        _ => None,
-    }
+    let command = match key.code {
+        KeyCode::Enter | KeyCode::Char('y') => TaskListCommand::Confirm,
+        KeyCode::Esc | KeyCode::Char('n') => TaskListCommand::Cancel,
+        _ => return None,
+    };
+    Some(KeymapCommand::Local(command))
 }
 
 pub(crate) fn footer_hints(state: &TaskListState, width: u16) -> &'static str {
@@ -93,7 +96,7 @@ pub(crate) fn footer_hints(state: &TaskListState, width: u16) -> &'static str {
 mod tests {
     use crate::command::Command;
     use crate::screens::WorklogHistoryMode;
-    use crate::screens::task_list::{TaskListMode, TaskView};
+    use crate::screens::task_list::{TaskListCommand, TaskListMode, TaskView};
     use crate::test_support::keymap::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -102,47 +105,47 @@ mod tests {
         let view = TaskView::Active;
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('j'))),
-            Some(Command::MoveDown)
+            Some(Command::TaskList(TaskListCommand::MoveDown))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Down)),
-            Some(Command::MoveDown)
+            Some(Command::TaskList(TaskListCommand::MoveDown))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('k'))),
-            Some(Command::MoveUp)
+            Some(Command::TaskList(TaskListCommand::MoveUp))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Up)),
-            Some(Command::MoveUp)
+            Some(Command::TaskList(TaskListCommand::MoveUp))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('h'))),
-            Some(Command::ShowActiveTasks)
+            Some(Command::TaskList(TaskListCommand::ShowActiveTasks))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('l'))),
-            Some(Command::ShowArchivedTasks)
+            Some(Command::TaskList(TaskListCommand::ShowArchivedTasks))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('s'))),
-            Some(Command::CycleOrdering)
+            Some(Command::TaskList(TaskListCommand::CycleOrdering))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char(' '))),
-            Some(Command::ToggleTracking)
+            Some(Command::TaskList(TaskListCommand::ToggleTracking))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('a'))),
-            Some(Command::OpenAdd)
+            Some(Command::TaskList(TaskListCommand::OpenAdd))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('e'))),
-            Some(Command::OpenRename)
+            Some(Command::TaskList(TaskListCommand::OpenRename))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('d'))),
-            Some(Command::OpenArchiveConfirm)
+            Some(Command::TaskList(TaskListCommand::OpenArchiveConfirm))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('q'))),
@@ -159,35 +162,35 @@ mod tests {
         let view = TaskView::Archived;
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('j'))),
-            Some(Command::MoveDown)
+            Some(Command::TaskList(TaskListCommand::MoveDown))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Down)),
-            Some(Command::MoveDown)
+            Some(Command::TaskList(TaskListCommand::MoveDown))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('k'))),
-            Some(Command::MoveUp)
+            Some(Command::TaskList(TaskListCommand::MoveUp))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Up)),
-            Some(Command::MoveUp)
+            Some(Command::TaskList(TaskListCommand::MoveUp))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('h'))),
-            Some(Command::ShowActiveTasks)
+            Some(Command::TaskList(TaskListCommand::ShowActiveTasks))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('l'))),
-            Some(Command::ShowArchivedTasks)
+            Some(Command::TaskList(TaskListCommand::ShowArchivedTasks))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('s'))),
-            Some(Command::CycleOrdering)
+            Some(Command::TaskList(TaskListCommand::CycleOrdering))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('u'))),
-            Some(Command::UnarchiveSelected)
+            Some(Command::TaskList(TaskListCommand::UnarchiveSelected))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('q'))),
@@ -220,7 +223,7 @@ mod tests {
         // instead of acting on the task.
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Enter)),
-            Some(Command::OpenHistory)
+            Some(Command::TaskList(TaskListCommand::OpenHistory))
         );
     }
 
@@ -259,12 +262,12 @@ mod tests {
         for view in [TaskView::Active, TaskView::Archived] {
             assert_eq!(
                 map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('s'))),
-                Some(Command::CycleOrdering)
+                Some(Command::TaskList(TaskListCommand::CycleOrdering))
             );
         }
         assert_eq!(
             map_task_list(input(), TaskView::Active, key(KeyCode::Char('s'))),
-            Some(Command::Insert('s'))
+            Some(Command::TaskList(TaskListCommand::Insert('s')))
         );
         assert_eq!(
             map_task_list(confirm(), TaskView::Active, key(KeyCode::Char('s'))),
@@ -321,24 +324,24 @@ mod tests {
         let view = TaskView::Active;
         assert_eq!(
             map_task_list(input(), view, key(KeyCode::Char('x'))),
-            Some(Command::Insert('x'))
+            Some(Command::TaskList(TaskListCommand::Insert('x')))
         );
         // Space is ordinary input while typing.
         assert_eq!(
             map_task_list(input(), view, key(KeyCode::Char(' '))),
-            Some(Command::Insert(' '))
+            Some(Command::TaskList(TaskListCommand::Insert(' ')))
         );
         assert_eq!(
             map_task_list(input(), view, key(KeyCode::Backspace)),
-            Some(Command::Backspace)
+            Some(Command::TaskList(TaskListCommand::Backspace))
         );
         assert_eq!(
             map_task_list(input(), view, key(KeyCode::Enter)),
-            Some(Command::Confirm)
+            Some(Command::TaskList(TaskListCommand::Confirm))
         );
         assert_eq!(
             map_task_list(input(), view, key(KeyCode::Esc)),
-            Some(Command::Cancel)
+            Some(Command::TaskList(TaskListCommand::Cancel))
         );
     }
 
@@ -364,7 +367,7 @@ mod tests {
         let capital = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT);
         assert_eq!(
             map_task_list(input(), TaskView::Active, capital),
-            Some(Command::Insert('A'))
+            Some(Command::TaskList(TaskListCommand::Insert('A')))
         );
     }
 
@@ -373,19 +376,19 @@ mod tests {
         let view = TaskView::Active;
         assert_eq!(
             map_task_list(confirm(), view, key(KeyCode::Enter)),
-            Some(Command::Confirm)
+            Some(Command::TaskList(TaskListCommand::Confirm))
         );
         assert_eq!(
             map_task_list(confirm(), view, key(KeyCode::Char('y'))),
-            Some(Command::Confirm)
+            Some(Command::TaskList(TaskListCommand::Confirm))
         );
         assert_eq!(
             map_task_list(confirm(), view, key(KeyCode::Char('n'))),
-            Some(Command::Cancel)
+            Some(Command::TaskList(TaskListCommand::Cancel))
         );
         assert_eq!(
             map_task_list(confirm(), view, key(KeyCode::Esc)),
-            Some(Command::Cancel)
+            Some(Command::TaskList(TaskListCommand::Cancel))
         );
         assert_eq!(
             map_task_list(confirm(), view, key(KeyCode::Char('x'))),
@@ -398,17 +401,17 @@ mod tests {
         for view in [TaskView::Active, TaskView::Archived] {
             assert_eq!(
                 map_task_list(TaskListMode::Normal, view, key(KeyCode::Enter)),
-                Some(Command::OpenHistory)
+                Some(Command::TaskList(TaskListCommand::OpenHistory))
             );
         }
         // The modal modes keep their Enter meaning.
         assert_eq!(
             map_task_list(input(), TaskView::Active, key(KeyCode::Enter)),
-            Some(Command::Confirm)
+            Some(Command::TaskList(TaskListCommand::Confirm))
         );
         assert_eq!(
             map_task_list(confirm(), TaskView::Active, key(KeyCode::Enter)),
-            Some(Command::Confirm)
+            Some(Command::TaskList(TaskListCommand::Confirm))
         );
     }
 

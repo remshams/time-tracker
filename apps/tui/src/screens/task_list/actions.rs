@@ -8,32 +8,31 @@ use tracker_application::{
 use tracker_domain::{ActiveWorklog, Task, TaskName, TaskNameError};
 
 use crate::app::App;
-use crate::command::Command;
-use crate::screens::task_list::{InputPurpose, TaskListMode, TaskView};
+use crate::screens::task_list::{InputPurpose, TaskListCommand, TaskListMode, TaskView};
 use crate::support::clock::tracking_timestamp;
 use crate::support::errors::application_error_text;
 
 impl<S: TrackerApplicationService> App<S> {
-    pub(crate) fn handle_task_list_command(&mut self, command: Command) {
+    pub(crate) fn handle_task_list_command(&mut self, command: TaskListCommand) {
         match command {
-            Command::MoveUp => self.move_task_up(),
-            Command::MoveDown => self.move_task_down(),
-            Command::ShowActiveTasks => self.show_tasks(TaskView::Active),
-            Command::ShowArchivedTasks => self.show_tasks(TaskView::Archived),
-            Command::CycleOrdering => self.cycle_ordering(),
-            Command::UnarchiveSelected => self.unarchive_selected(),
-            Command::ToggleTracking => self.toggle_tracking(),
-            Command::OpenAdd => self.open_add(),
-            Command::OpenRename => self.open_rename(),
-            Command::OpenArchiveConfirm => self.open_archive_confirm(),
-            Command::Insert(character) => self
+            TaskListCommand::MoveUp => self.move_task_up(),
+            TaskListCommand::MoveDown => self.move_task_down(),
+            TaskListCommand::ShowActiveTasks => self.show_tasks(TaskView::Active),
+            TaskListCommand::ShowArchivedTasks => self.show_tasks(TaskView::Archived),
+            TaskListCommand::CycleOrdering => self.cycle_ordering(),
+            TaskListCommand::UnarchiveSelected => self.unarchive_selected(),
+            TaskListCommand::ToggleTracking => self.toggle_tracking(),
+            TaskListCommand::OpenAdd => self.open_add(),
+            TaskListCommand::OpenRename => self.open_rename(),
+            TaskListCommand::OpenArchiveConfirm => self.open_archive_confirm(),
+            TaskListCommand::Insert(character) => self
                 .shell_mut()
                 .task_list_mut()
                 .insert_name(character, TaskName::MAX_LEN),
-            Command::Backspace => self.shell_mut().task_list_mut().backspace_name(),
-            Command::Confirm => self.confirm_task_list(),
-            Command::Cancel => self.shell_mut().task_list_mut().close_mode(),
-            _ => {}
+            TaskListCommand::Backspace => self.shell_mut().task_list_mut().backspace_name(),
+            TaskListCommand::Confirm => self.confirm_task_list(),
+            TaskListCommand::Cancel => self.shell_mut().task_list_mut().close_mode(),
+            TaskListCommand::OpenHistory => self.open_history(),
         }
     }
 

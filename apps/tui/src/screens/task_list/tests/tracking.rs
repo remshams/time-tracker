@@ -33,8 +33,8 @@ fn a_successful_archive_copies_tracking_refreshed_by_the_application() {
     service.archive_activates = Some(at(200));
     let mut app = App::load(service);
 
-    app.handle(Command::OpenArchiveConfirm);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
 
     assert_eq!(app.app_view().active_task_id(), Some(beta.id()));
     assert_eq!(app.app_view().active_task_name(), Some("beta"));
@@ -46,10 +46,10 @@ fn a_successful_archive_copies_tracking_refreshed_by_the_application() {
 #[test]
 fn archiving_the_active_task_keeps_the_timer() {
     let mut app = app_with(&["alpha"]);
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     let active = app.app_view().active_task_id();
-    app.handle(Command::OpenArchiveConfirm);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
     assert_eq!(app.app_view().active_task_id(), active);
     assert_eq!(app.app_view().tasks().len(), 1);
     assert_eq!(
@@ -60,10 +60,10 @@ fn archiving_the_active_task_keeps_the_timer() {
 #[test]
 fn space_switches_to_another_task() {
     let mut app = app_with(&["alpha", "beta"]);
-    app.handle(Command::ToggleTracking);
-    app.handle(Command::MoveDown);
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
     let beta = app.app_view().tasks()[1].id();
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     assert_eq!(app.app_view().active_task_id(), Some(beta));
     assert_eq!(
         app.app_view().status(),
@@ -84,7 +84,7 @@ fn tracking_outcomes_choose_the_right_status_and_clock_anchor() {
     let mut started_service = TestService::with_tasks(vec![task(1, "alpha")]);
     started_service.set_timestamp = Some(old);
     let mut started = App::load(started_service);
-    started.handle(Command::ToggleTracking);
+    started.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     assert_eq!(
         started.app_view().status(),
         &Status::Info("Started \"alpha\"".to_owned())
@@ -95,7 +95,7 @@ fn tracking_outcomes_choose_the_right_status_and_clock_anchor() {
     existing_service.set_returns_already_active = true;
     existing_service.set_timestamp = Some(old);
     let mut existing = App::load(existing_service);
-    existing.handle(Command::ToggleTracking);
+    existing.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     assert_eq!(
         existing.app_view().status(),
         &Status::Info("Started \"alpha\"".to_owned())
@@ -115,8 +115,8 @@ fn tracking_outcomes_choose_the_right_status_and_clock_anchor() {
     concurrent_service.set_returns_already_active = true;
     concurrent_service.set_timestamp = Some(old + TimeDelta::minutes(1));
     let mut concurrent = App::load(concurrent_service);
-    concurrent.handle(Command::MoveDown);
-    concurrent.handle(Command::ToggleTracking);
+    concurrent.handle(Command::TaskList(TaskListCommand::MoveDown));
+    concurrent.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     assert_eq!(
         concurrent.app_view().status(),
         &Status::Info("Switched to \"beta\"".to_owned())
@@ -134,8 +134,8 @@ fn tracking_outcomes_choose_the_right_status_and_clock_anchor() {
     switched_service.set_timestamp = Some(old + TimeDelta::minutes(1));
     let (mut switched, clock) = app_with_test_clock(switched_service, chrono_tz::UTC, old);
     clock.advance_monotonic(Duration::from_secs(60));
-    switched.handle(Command::MoveDown);
-    switched.handle(Command::ToggleTracking);
+    switched.handle(Command::TaskList(TaskListCommand::MoveDown));
+    switched.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     assert_eq!(
         switched.app_view().status(),
         &Status::Info("Switched to \"beta\"".to_owned())
@@ -156,7 +156,7 @@ fn a_backward_wall_clock_jump_persists_a_nonnegative_duration() {
         .unwrap();
     let mut app = App::load(TrackerApplication::load(repository).unwrap());
 
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
 
     let mut verifier = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
     let stored = verifier
@@ -188,7 +188,7 @@ fn a_forward_wall_clock_jump_persists_the_displayed_duration() {
     clock.advance_monotonic(Duration::from_secs(5));
     let shown = app.app_view().elapsed().unwrap();
 
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
 
     let mut verifier = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
     let stored = verifier
@@ -213,8 +213,8 @@ fn a_forward_wall_clock_jump_persists_the_displayed_duration() {
 #[test]
 fn quitting_in_a_dialog_does_not_stop_tracking() {
     let mut app = app_with(&["alpha"]);
-    app.handle(Command::ToggleTracking);
-    app.handle(Command::OpenAdd);
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
+    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
     app.handle(Command::Quit);
     assert!(!app.is_running());
     assert!(app.app_view().active_task_id().is_some());
@@ -223,9 +223,9 @@ fn quitting_in_a_dialog_does_not_stop_tracking() {
 fn quitting_from_every_mode_leaves_tracking_active() {
     for command in [
         None,
-        Some(Command::OpenAdd),
-        Some(Command::OpenRename),
-        Some(Command::OpenArchiveConfirm),
+        Some(Command::TaskList(TaskListCommand::OpenAdd)),
+        Some(Command::TaskList(TaskListCommand::OpenRename)),
+        Some(Command::TaskList(TaskListCommand::OpenArchiveConfirm)),
     ] {
         let task = Task::create(
             TaskId::from_uuid(uuid::Uuid::from_u128(1)),
@@ -267,23 +267,23 @@ fn start_switch_and_stop_keep_selection_on_the_operated_task() {
         .unwrap()
         .id();
 
-    app.handle(Command::MoveDown);
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     assert_eq!(app.app_view().tasks()[0].id(), beta);
     assert_eq!(
         app.app_view().tasks()[app.app_view().selected().unwrap()].id(),
         beta
     );
 
-    app.handle(Command::MoveDown);
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     assert_eq!(app.app_view().tasks()[0].id(), alpha);
     assert_eq!(
         app.app_view().tasks()[app.app_view().selected().unwrap()].id(),
         alpha
     );
 
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     assert_eq!(
         app.app_view().tasks()[0].id(),
         alpha,
@@ -299,8 +299,8 @@ fn unarchiving_refreshes_a_timer_another_client_started() {
     let mut service = TestService::with_tasks(vec![task(1, "alpha"), archived_task(3, "gone")]);
     service.unarchive_activates = Some(DateTime::from_timestamp(100, 0).unwrap());
     let mut app = App::load(service);
-    app.handle(Command::ShowArchivedTasks);
-    app.handle(Command::UnarchiveSelected);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
+    app.handle(Command::TaskList(TaskListCommand::UnarchiveSelected));
 
     assert_eq!(app.app_view().view(), TaskView::Archived);
     assert_eq!(
@@ -323,7 +323,7 @@ fn unarchiving_refreshes_a_timer_another_client_started() {
         0,
         "the restored task left the list"
     );
-    app.handle(Command::ShowActiveTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowActiveTasks));
     assert_eq!(
         app.app_view().selected(),
         Some(1),
@@ -346,7 +346,7 @@ fn the_timer_header_resolves_the_active_task_outside_the_visible_list() {
         ),
     };
     let mut app = App::load(service);
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
 
     assert_eq!(app.app_view().view(), TaskView::Archived);
     assert_eq!(
@@ -366,14 +366,14 @@ fn space_starts_stops_and_restarts_with_separate_worklogs() {
     repository.create_task(task.clone()).unwrap();
     let mut app = App::load(TrackerApplication::load(repository).unwrap());
     let task_id = task.id();
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     assert_eq!(app.app_view().active_task_id(), Some(task_id));
     assert_eq!(text(app.app_view().status()), "Started \"alpha\"");
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     assert_eq!(app.app_view().active_task_id(), None);
     assert_eq!(app.app_view().elapsed(), None);
     assert_eq!(text(app.app_view().status()), "Stopped \"alpha\"");
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     let mut verifier = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
     let worklogs = verifier.worklogs_for_task(task_id, None).unwrap().worklogs;
     assert_eq!(worklogs.len(), 2);

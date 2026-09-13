@@ -9,7 +9,7 @@ use crate::support::errors::{
 };
 
 impl<S: TrackerApplicationService> App<S> {
-    pub(crate) fn open_deletion(&mut self) {
+    pub(super) fn open_deletion(&mut self) {
         if !self.history_is_normal() {
             return;
         }
@@ -30,7 +30,7 @@ impl<S: TrackerApplicationService> App<S> {
             .open_deletion(worklog);
     }
 
-    pub(crate) fn confirm_deletion(&mut self) {
+    pub(super) fn confirm_deletion(&mut self) {
         let Some(WorklogHistoryMode::ConfirmDeletion { worklog }) =
             self.history_state().map(|state| state.mode().clone())
         else {

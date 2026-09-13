@@ -23,8 +23,10 @@ pub(crate) use tracker_storage::SqliteRepository;
 
 pub(crate) use crate::app::{App, Status, TestClock};
 pub(crate) use crate::command::Command;
-pub(crate) use crate::screens::task_list::{InputPurpose, TaskListMode, TaskView};
-pub(crate) use crate::screens::worklog_history::{CorrectionField, HistoryAvailability};
+pub(crate) use crate::screens::task_list::{InputPurpose, TaskListCommand, TaskListMode, TaskView};
+pub(crate) use crate::screens::worklog_history::{
+    CorrectionField, HistoryAvailability, WorklogHistoryCommand,
+};
 pub(crate) use crate::screens::{Screen, ScreenState, WorklogHistoryMode};
 pub(crate) use crate::support::clock::{ElapsedClock, tracking_timestamp};
 pub(crate) use crate::support::errors::ACTIVE_WORKLOG_DELETE_MESSAGE;
@@ -78,7 +80,9 @@ pub(crate) fn replace_end<S: TrackerApplicationService>(app: &mut App<S>, text: 
         .focused()
         == CorrectionField::Start
     {
-        app.handle(Command::SwitchCorrectionField);
+        app.handle(Command::WorklogHistory(
+            WorklogHistoryCommand::SwitchCorrectionField,
+        ));
     }
     replace_timestamp(app, text.into());
 }
@@ -98,10 +102,12 @@ fn replace_timestamp<S: TrackerApplicationService>(app: &mut App<S>, text: Strin
             .count(),
     };
     for _ in 0..count {
-        app.handle(Command::Backspace);
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::Backspace));
     }
     for character in text.chars() {
-        app.handle(Command::Insert(character));
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::Insert(
+            character,
+        )));
     }
 }
 
@@ -689,7 +695,7 @@ pub(crate) fn correction_history_app_with_spy_in(
     ];
     let spy = service.spy();
     let mut app = app_in_timezone(service, timezone);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
     (app, spy)
 }
 
@@ -703,7 +709,9 @@ pub(crate) fn correction_app_with_spy(
 ) -> (App<TestService>, TestServiceSpy) {
     let (mut app, spy) =
         correction_history_app_with_spy_in(initial, reload, chrono_tz::Africa::Johannesburg);
-    app.handle(Command::OpenCorrection);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
     (app, spy)
 }
 

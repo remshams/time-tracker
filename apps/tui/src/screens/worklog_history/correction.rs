@@ -3,7 +3,6 @@ use tracker_application::TrackerApplicationService;
 use tracker_domain::WorklogTimes;
 
 use crate::app::App;
-use crate::command::Command;
 use crate::screens::WorklogHistoryMode;
 use crate::support::errors::correction_error_text;
 use crate::support::timestamps::{
@@ -98,26 +97,7 @@ impl CorrectionDraft {
 }
 
 impl<S: TrackerApplicationService> App<S> {
-    pub(crate) fn handle_correction_command(&mut self, command: Command) {
-        match command {
-            Command::OpenCorrection => self.open_correction(),
-            Command::SwitchCorrectionField => self.edit_correction(CorrectionDraft::switch_field),
-            Command::MoveCursorLeft => {
-                self.edit_correction(|draft| draft.focused_mut().move_left())
-            }
-            Command::MoveCursorRight => {
-                self.edit_correction(|draft| draft.focused_mut().move_right())
-            }
-            Command::Delete => self.edit_correction(|draft| draft.focused_mut().delete()),
-            Command::AdjustForwardFiveMinutes => self.adjust_correction(TimeDelta::minutes(5)),
-            Command::AdjustBackwardFiveMinutes => self.adjust_correction(TimeDelta::minutes(-5)),
-            Command::AdjustForwardOneHour => self.adjust_correction(TimeDelta::hours(1)),
-            Command::AdjustBackwardOneHour => self.adjust_correction(TimeDelta::hours(-1)),
-            _ => {}
-        }
-    }
-
-    fn open_correction(&mut self) {
+    pub(super) fn open_correction(&mut self) {
         if !self.history_is_normal() {
             return;
         }
@@ -156,6 +136,22 @@ impl<S: TrackerApplicationService> App<S> {
         self.shell_mut().info("Edit the worklog timestamps");
     }
 
+    pub(super) fn switch_correction_field(&mut self) {
+        self.edit_correction(CorrectionDraft::switch_field);
+    }
+
+    pub(super) fn move_correction_cursor_left(&mut self) {
+        self.edit_correction(|draft| draft.focused_mut().move_left());
+    }
+
+    pub(super) fn move_correction_cursor_right(&mut self) {
+        self.edit_correction(|draft| draft.focused_mut().move_right());
+    }
+
+    pub(super) fn delete_correction_character(&mut self) {
+        self.edit_correction(|draft| draft.focused_mut().delete());
+    }
+
     fn edit_correction(&mut self, edit: impl FnOnce(&mut CorrectionDraft)) {
         if let Some(draft) = self
             .history_state_mut()
@@ -165,15 +161,15 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
-    pub(crate) fn insert_correction_character(&mut self, character: char) {
+    pub(super) fn insert_correction_character(&mut self, character: char) {
         self.edit_correction(|draft| draft.focused_mut().insert(character));
     }
 
-    pub(crate) fn backspace_correction_character(&mut self) {
+    pub(super) fn backspace_correction_character(&mut self) {
         self.edit_correction(|draft| draft.focused_mut().backspace());
     }
 
-    fn adjust_correction(&mut self, delta: TimeDelta) {
+    pub(super) fn adjust_correction(&mut self, delta: TimeDelta) {
         let Some(draft) = self.history_state().and_then(|state| state.correction()) else {
             return;
         };
@@ -194,7 +190,7 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
-    pub(crate) fn confirm_correction(&mut self) {
+    pub(super) fn confirm_correction(&mut self) {
         let Some(WorklogHistoryMode::Correction(draft)) =
             self.history_state().map(|state| state.mode().clone())
         else {

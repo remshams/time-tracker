@@ -30,6 +30,8 @@ use tracker_storage::{SqliteRepository, StorageError, default_database_path, ens
 
 use crate::app::App;
 use crate::command::Command;
+#[cfg(test)]
+use crate::screens::{TaskListCommand, WorklogHistoryCommand};
 use crate::terminal::{Restoration, TerminalGuard};
 
 /// The tasks a brand-new database is seeded with, in order.
@@ -185,13 +187,34 @@ mod tests {
     #[test]
     fn a_too_narrow_terminal_allows_only_quitting() {
         assert!(command_is_allowed(Command::Quit, 1));
-        assert!(!command_is_allowed(Command::OpenAdd, 59));
-        assert!(!command_is_allowed(Command::CycleOrdering, 59));
-        assert!(!command_is_allowed(Command::OpenHistory, 59));
-        assert!(!command_is_allowed(Command::LoadOlderWorklogs, 59));
-        assert!(!command_is_allowed(Command::RefreshWorklogs, 59));
-        assert!(command_is_allowed(Command::OpenAdd, 60));
-        assert!(command_is_allowed(Command::OpenHistory, 60));
+        assert!(!command_is_allowed(
+            Command::TaskList(TaskListCommand::OpenAdd),
+            59
+        ));
+        assert!(!command_is_allowed(
+            Command::TaskList(TaskListCommand::CycleOrdering),
+            59
+        ));
+        assert!(!command_is_allowed(
+            Command::TaskList(TaskListCommand::OpenHistory),
+            59
+        ));
+        assert!(!command_is_allowed(
+            Command::WorklogHistory(WorklogHistoryCommand::LoadOlderWorklogs),
+            59
+        ));
+        assert!(!command_is_allowed(
+            Command::WorklogHistory(WorklogHistoryCommand::RefreshWorklogs),
+            59
+        ));
+        assert!(command_is_allowed(
+            Command::TaskList(TaskListCommand::OpenAdd),
+            60
+        ));
+        assert!(command_is_allowed(
+            Command::TaskList(TaskListCommand::OpenHistory),
+            60
+        ));
     }
 
     #[test]

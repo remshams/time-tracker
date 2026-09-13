@@ -18,10 +18,10 @@ fn switching_uses_one_monotonic_timestamp_for_both_worklogs() {
     );
     let alpha = alpha.id();
     let beta = beta.id();
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     clock.advance_monotonic(Duration::from_secs(125));
-    app.handle(Command::MoveDown);
-    app.handle(Command::ToggleTracking);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     let mut verifier = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
     let alpha_worklog = verifier
         .worklogs_for_task(alpha, None)
@@ -156,7 +156,9 @@ fn correction_commands_adjust_and_edit_the_focused_timestamp() {
     let worklog = history_worklog(10, task_id, 100);
     let mut app = correction_app(worklog.clone(), vec![worklog.clone()]);
 
-    app.handle(Command::AdjustForwardOneHour);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::AdjustForwardOneHour,
+    ));
     assert_eq!(
         app.app_view().correction().unwrap().start().text(),
         "1970-01-01 03:01"
@@ -170,12 +172,12 @@ fn correction_commands_adjust_and_edit_the_focused_timestamp() {
         .start()
         .text()
         .to_owned();
-    app.handle(Command::Backspace);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Backspace));
     assert_eq!(
         app.app_view().correction().unwrap().start().text(),
         &original[..original.len() - 1]
     );
-    app.handle(Command::Insert('1'));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Insert('1')));
     assert_eq!(
         app.app_view().correction().unwrap().start().text(),
         original
@@ -354,11 +356,13 @@ fn changed_gap_input_is_rejected_without_calling_the_application() {
     ];
     let spy = service.spy();
     let mut app = app_in_timezone(service, chrono_tz::Europe::Berlin);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenCorrection);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
 
     replace_start(&mut app, "2025-03-30 02:30");
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert!(spy.correction_calls().is_empty());
     assert_eq!(
@@ -375,15 +379,17 @@ fn changed_and_unchanged_fields_keep_their_independent_precision() {
 
     let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog.clone()]);
     replace_start(&mut app, "1970-01-01 02:02".to_owned());
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     let replacement = spy.correction_calls()[0].2;
     assert_eq!(replacement.start(), at(120));
     assert_eq!(replacement.end(), Some(end));
 
     let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
-    app.handle(Command::SwitchCorrectionField);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::SwitchCorrectionField,
+    ));
     replace_end(&mut app, "1970-01-01 02:04".to_owned());
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     let replacement = spy.correction_calls()[0].2;
     assert_eq!(replacement.start(), start);
     assert_eq!(replacement.end(), Some(at(240)));
@@ -396,7 +402,7 @@ fn untouched_fields_preserve_exact_utc_when_the_timezone_is_stable() {
     let worklog = Worklog::new(worklog_id(10), task_id, start, Some(end)).unwrap();
     let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
 
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert_eq!(
         spy.correction_calls()[0].2,
@@ -413,7 +419,9 @@ fn a_timezone_snapshot_keeps_utc_rules_when_london_changes_later() {
     let worklog = Worklog::begin(worklog_id(10), task_id, original);
     let (mut app, spy) =
         correction_history_app_with_spy_in(worklog.clone(), vec![worklog], chrono_tz::UTC);
-    app.handle(Command::OpenCorrection);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
     replace_start(&mut app, "2025-07-01 10:00".to_owned());
 
     let london = chrono_tz::Europe::London;
@@ -422,7 +430,7 @@ fn a_timezone_snapshot_keeps_utc_rules_when_london_changes_later() {
         Ok(Utc.with_ymd_and_hms(2025, 7, 1, 9, 0, 0).single().unwrap())
     );
 
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert_eq!(
         spy.correction_calls()[0].2.start(),
@@ -440,7 +448,9 @@ fn out_of_range_local_timestamps_cannot_open_correction() {
         let worklog = Worklog::begin(worklog_id(tag), task_id, timestamp);
         let (mut app, spy) = correction_history_app_with_spy_in(worklog, Vec::new(), timezone);
 
-        app.handle(Command::OpenCorrection);
+        app.handle(Command::WorklogHistory(
+            WorklogHistoryCommand::OpenCorrection,
+        ));
 
         assert!(
             matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
@@ -457,9 +467,9 @@ fn text_edited_back_to_its_opening_value_preserves_the_original_instant() {
     let worklog = Worklog::begin(worklog_id(10), task_id, start);
     let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog]);
 
-    app.handle(Command::Backspace);
-    app.handle(Command::Insert('1'));
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Backspace));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Insert('1')));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert_eq!(spy.correction_calls()[0].2.start(), start);
 }

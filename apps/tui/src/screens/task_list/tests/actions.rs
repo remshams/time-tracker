@@ -9,32 +9,32 @@ fn fresh_and_empty_apps_have_safe_selection() {
     assert_eq!(app.app_view().selected(), Some(0));
     assert_eq!(app.app_view().status(), &Status::Info("Ready".to_owned()));
     let mut empty = app_with(&[]);
-    empty.handle(Command::MoveDown);
-    empty.handle(Command::MoveUp);
+    empty.handle(Command::TaskList(TaskListCommand::MoveDown));
+    empty.handle(Command::TaskList(TaskListCommand::MoveUp));
     assert_eq!(empty.app_view().selected(), None);
 }
 #[test]
 fn selection_movement_stays_inside_the_task_list() {
     let mut app = app_with(&["one", "two", "three"]);
-    app.handle(Command::MoveUp);
+    app.handle(Command::TaskList(TaskListCommand::MoveUp));
     assert_eq!(app.app_view().selected(), Some(0));
     for _ in 0..5 {
-        app.handle(Command::MoveDown);
+        app.handle(Command::TaskList(TaskListCommand::MoveDown));
     }
     assert_eq!(app.app_view().selected(), Some(2));
-    app.handle(Command::MoveUp);
+    app.handle(Command::TaskList(TaskListCommand::MoveUp));
     assert_eq!(app.app_view().selected(), Some(1));
-    app.handle(Command::MoveUp);
+    app.handle(Command::TaskList(TaskListCommand::MoveUp));
     assert_eq!(app.app_view().selected(), Some(0));
 }
 #[test]
 fn adding_a_task_updates_the_list_and_selection() {
     let mut app = app_with(&["one"]);
-    app.handle(Command::OpenAdd);
+    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
     for character in "new task".chars() {
-        app.handle(Command::Insert(character));
+        app.handle(Command::TaskList(TaskListCommand::Insert(character)));
     }
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
     assert!(matches!(
         app.app_view().task_list().mode(),
         TaskListMode::Normal
@@ -64,10 +64,10 @@ fn adding_in_the_middle_selects_the_new_task() {
         task(1, "one"),
         task(3, "three"),
     ]));
-    app.handle(Command::MoveDown);
-    app.handle(Command::OpenAdd);
-    app.handle(Command::Insert('t'));
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
+    app.handle(Command::TaskList(TaskListCommand::Insert('t')));
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
     assert_eq!(
         app.app_view()
             .tasks()
@@ -90,11 +90,11 @@ fn refreshing_tasks_preserves_the_selected_task_after_reordering() {
         first.clone(),
         selected.clone(),
     ]));
-    app.handle(Command::MoveDown);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
     assert_eq!(app.app_view().selected(), Some(1));
     assert_eq!(app.app_view().tasks()[1].id(), selected.id());
 
-    app.handle(Command::CycleOrdering);
+    app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
 
     assert_eq!(app.app_view().selected(), Some(0));
     assert_eq!(app.app_view().tasks()[0].id(), selected.id());
@@ -112,11 +112,11 @@ fn failed_writes_keep_the_active_modal_and_input_buffer() {
     service.fail_archive = true;
     let mut app = App::load(service);
 
-    app.handle(Command::OpenAdd);
+    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
     for character in "blocked".chars() {
-        app.handle(Command::Insert(character));
+        app.handle(Command::TaskList(TaskListCommand::Insert(character)));
     }
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
     assert!(matches!(
         app.app_view().task_list().mode(),
         TaskListMode::Input {
@@ -128,10 +128,10 @@ fn failed_writes_keep_the_active_modal_and_input_buffer() {
         app.app_view().status(),
         &Status::Error("Storage error".to_owned())
     );
-    app.handle(Command::Cancel);
+    app.handle(Command::TaskList(TaskListCommand::Cancel));
 
-    app.handle(Command::OpenRename);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenRename));
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
     assert!(matches!(
         app.app_view().task_list().mode(),
         TaskListMode::Input {
@@ -143,10 +143,10 @@ fn failed_writes_keep_the_active_modal_and_input_buffer() {
         app.app_view().status(),
         &Status::Error("Storage error".to_owned())
     );
-    app.handle(Command::Cancel);
+    app.handle(Command::TaskList(TaskListCommand::Cancel));
 
-    app.handle(Command::OpenArchiveConfirm);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
     assert!(matches!(
         app.app_view().task_list().mode(),
         TaskListMode::ConfirmArchive { .. }
@@ -159,8 +159,8 @@ fn failed_writes_keep_the_active_modal_and_input_buffer() {
 #[test]
 fn invalid_input_keeps_the_dialog_and_reports_the_same_text() {
     let mut app = app_with(&["one"]);
-    app.handle(Command::OpenAdd);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
     assert!(matches!(
         app.app_view().task_list().mode(),
         TaskListMode::Input { .. }
@@ -173,14 +173,14 @@ fn invalid_input_keeps_the_dialog_and_reports_the_same_text() {
 #[test]
 fn renaming_a_task_keeps_its_row_selected() {
     let mut app = app_with(&["old"]);
-    app.handle(Command::OpenRename);
+    app.handle(Command::TaskList(TaskListCommand::OpenRename));
     for _ in 0..3 {
-        app.handle(Command::Backspace);
+        app.handle(Command::TaskList(TaskListCommand::Backspace));
     }
     for character in "new".chars() {
-        app.handle(Command::Insert(character));
+        app.handle(Command::TaskList(TaskListCommand::Insert(character)));
     }
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
     assert_eq!(app.app_view().tasks()[0].name().as_str(), "new");
     assert_eq!(app.app_view().selected(), Some(0));
     assert_eq!(
@@ -197,8 +197,8 @@ fn archiving_hides_the_task_and_clamps_selection() {
         task(3, "gamma"),
     ]));
 
-    app.handle(Command::OpenArchiveConfirm);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
 
     assert_eq!(app.app_view().tasks().len(), 2);
     assert_eq!(app.app_view().tasks()[0].id(), beta.id());
@@ -211,11 +211,11 @@ fn archiving_hides_the_task_and_clamps_selection() {
 #[test]
 fn input_is_bounded_to_the_domain_limit() {
     let mut app = app_with(&[]);
-    app.handle(Command::OpenAdd);
+    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
     for character in "x".repeat(TaskName::MAX_LEN + 10).chars() {
-        app.handle(Command::Insert(character));
+        app.handle(Command::TaskList(TaskListCommand::Insert(character)));
     }
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
     assert_eq!(
         app.app_view().tasks()[0].name().as_str().chars().count(),
         TaskName::MAX_LEN
@@ -235,20 +235,20 @@ fn ordering_defaults_cycles_and_is_shared_by_both_views() {
 
     assert_eq!(app.app_view().ordering(), TaskOrdering::RecentlyWorked);
     assert_eq!(app.app_view().tasks()[0].name().as_str(), "newer active");
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
     assert_eq!(app.app_view().tasks()[0].name().as_str(), "older archived");
-    app.handle(Command::ShowActiveTasks);
-    app.handle(Command::CycleOrdering);
+    app.handle(Command::TaskList(TaskListCommand::ShowActiveTasks));
+    app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
     assert_eq!(app.app_view().ordering(), TaskOrdering::RecentlyUpdated);
     assert_eq!(app.app_view().tasks()[0].name().as_str(), "older active");
 
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
     assert_eq!(app.app_view().ordering(), TaskOrdering::RecentlyUpdated);
     assert_eq!(app.app_view().tasks()[0].name().as_str(), "older archived");
-    app.handle(Command::CycleOrdering);
+    app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
     assert_eq!(app.app_view().ordering(), TaskOrdering::RecentlyCreated);
     assert_eq!(app.app_view().tasks()[0].name().as_str(), "newer archived");
-    app.handle(Command::CycleOrdering);
+    app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
     assert_eq!(app.app_view().ordering(), TaskOrdering::RecentlyWorked);
 }
 #[test]
@@ -262,24 +262,24 @@ fn sorting_preserves_each_views_selected_task_id() {
         stamped_task(4, "new archived", true, 800, 800),
     ]));
 
-    app.handle(Command::MoveDown);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
     assert_eq!(
         app.app_view().tasks()[app.app_view().selected().unwrap()].id(),
         active.id()
     );
-    app.handle(Command::ShowArchivedTasks);
-    app.handle(Command::MoveDown);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
     assert_eq!(
         app.app_view().tasks()[app.app_view().selected().unwrap()].id(),
         archived.id()
     );
 
-    app.handle(Command::CycleOrdering);
+    app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
     assert_eq!(
         app.app_view().tasks()[app.app_view().selected().unwrap()].id(),
         archived.id()
     );
-    app.handle(Command::ShowActiveTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowActiveTasks));
     assert_eq!(
         app.app_view().tasks()[app.app_view().selected().unwrap()].id(),
         active.id()
@@ -288,17 +288,17 @@ fn sorting_preserves_each_views_selected_task_id() {
 #[test]
 fn input_and_confirmation_modes_block_sorting() {
     let mut app = App::load(TestService::with_tasks(vec![task(1, "alpha")]));
-    app.handle(Command::OpenAdd);
-    app.handle(Command::CycleOrdering);
+    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
+    app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
     assert_eq!(app.app_view().ordering(), TaskOrdering::RecentlyWorked);
     assert!(matches!(
         app.app_view().task_list().mode(),
         TaskListMode::Input { .. }
     ));
 
-    app.handle(Command::Cancel);
-    app.handle(Command::OpenArchiveConfirm);
-    app.handle(Command::CycleOrdering);
+    app.handle(Command::TaskList(TaskListCommand::Cancel));
+    app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+    app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
     assert_eq!(app.app_view().ordering(), TaskOrdering::RecentlyWorked);
     assert!(matches!(
         app.app_view().task_list().mode(),
@@ -310,12 +310,12 @@ fn rename_reorders_recently_updated_and_keeps_the_task_selected() {
     let alpha = task(1, "alpha");
     let beta = task(2, "beta");
     let mut app = App::load(TestService::with_tasks(vec![alpha, beta.clone()]));
-    app.handle(Command::CycleOrdering);
-    app.handle(Command::MoveDown);
-    app.handle(Command::OpenRename);
-    app.handle(Command::Backspace);
-    app.handle(Command::Insert('x'));
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::OpenRename));
+    app.handle(Command::TaskList(TaskListCommand::Backspace));
+    app.handle(Command::TaskList(TaskListCommand::Insert('x')));
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
 
     assert_eq!(app.app_view().ordering(), TaskOrdering::RecentlyUpdated);
     assert_eq!(app.app_view().tasks()[0].id(), beta.id());
@@ -337,19 +337,19 @@ fn the_app_starts_in_the_active_view_and_switches_directionally() {
         "the archived task is not visible"
     );
 
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
     assert_eq!(app.app_view().view(), TaskView::Archived);
     assert_eq!(app.app_view().tasks().len(), 1);
 
     // l on the archived view is idempotent.
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
     assert_eq!(app.app_view().view(), TaskView::Archived);
 
-    app.handle(Command::ShowActiveTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowActiveTasks));
     assert_eq!(app.app_view().view(), TaskView::Active);
 
     // h on the active view is idempotent.
-    app.handle(Command::ShowActiveTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowActiveTasks));
     assert_eq!(app.app_view().view(), TaskView::Active);
 }
 #[test]
@@ -369,15 +369,15 @@ fn each_view_remembers_its_selection_across_switches() {
         task(2, "beta"),
         archived_task(3, "gone"),
     ]));
-    app.handle(Command::MoveDown);
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
     assert_eq!(
         app.app_view().selected(),
         Some(0),
         "a fresh view starts on its first row"
     );
 
-    app.handle(Command::ShowActiveTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowActiveTasks));
     assert_eq!(
         app.app_view().selected(),
         Some(1),
@@ -388,7 +388,7 @@ fn each_view_remembers_its_selection_across_switches() {
         TaskId::from_uuid(uuid::Uuid::from_u128(2))
     );
 
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
     assert_eq!(
         app.app_view().selected(),
         Some(0),
@@ -402,22 +402,22 @@ fn archived_movement_stays_inside_the_archived_list() {
         archived_task(3, "gone"),
         archived_task(4, "also gone"),
     ]));
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
     assert_eq!(app.app_view().selected(), Some(0));
-    app.handle(Command::MoveDown);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
     assert_eq!(app.app_view().selected(), Some(1));
-    app.handle(Command::MoveDown);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
     assert_eq!(app.app_view().selected(), Some(1));
-    app.handle(Command::MoveUp);
+    app.handle(Command::TaskList(TaskListCommand::MoveUp));
     assert_eq!(app.app_view().selected(), Some(0));
 }
 #[test]
 fn an_empty_view_has_no_selection() {
     let mut app = App::load(TestService::with_tasks(vec![task(1, "alpha")]));
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
     assert_eq!(app.app_view().selected(), None);
-    app.handle(Command::MoveDown);
-    app.handle(Command::MoveUp);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::MoveUp));
     assert_eq!(app.app_view().selected(), None);
 }
 #[test]
@@ -426,12 +426,12 @@ fn the_archived_view_refuses_active_actions_in_command_handling() {
         task(1, "alpha"),
         archived_task(3, "gone"),
     ]));
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
 
-    app.handle(Command::ToggleTracking);
-    app.handle(Command::OpenAdd);
-    app.handle(Command::OpenRename);
-    app.handle(Command::OpenArchiveConfirm);
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
+    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
+    app.handle(Command::TaskList(TaskListCommand::OpenRename));
+    app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
 
     assert!(matches!(
         app.app_view().task_list().mode(),
@@ -445,10 +445,10 @@ fn the_archived_view_refuses_active_actions_in_command_handling() {
     );
 
     // Movement still works after the refused actions.
-    app.handle(Command::ShowActiveTasks);
-    app.handle(Command::ShowArchivedTasks);
-    app.handle(Command::MoveDown);
-    app.handle(Command::MoveUp);
+    app.handle(Command::TaskList(TaskListCommand::ShowActiveTasks));
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::MoveUp));
     assert_eq!(app.app_view().selected(), Some(0));
 }
 #[test]
@@ -457,7 +457,7 @@ fn the_active_view_refuses_unarchiving() {
         task(1, "alpha"),
         archived_task(3, "gone"),
     ]));
-    app.handle(Command::UnarchiveSelected);
+    app.handle(Command::TaskList(TaskListCommand::UnarchiveSelected));
 
     assert_eq!(app.app_view().view(), TaskView::Active);
     assert_eq!(app.app_view().status(), &Status::Info("Ready".to_owned()));
@@ -481,22 +481,22 @@ fn modals_block_view_switching_and_unarchiving() {
         task(1, "alpha"),
         archived_task(3, "gone"),
     ]));
-    app.handle(Command::OpenAdd);
-    app.handle(Command::Insert('x'));
+    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
+    app.handle(Command::TaskList(TaskListCommand::Insert('x')));
 
     // Each switch is asserted immediately, so a guard that only blocks
     // one of the two commands cannot cancel the other out.
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
     assert_eq!(
         app.app_view().view(),
         TaskView::Active,
         "the modal blocks the switch"
     );
 
-    app.handle(Command::ShowActiveTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowActiveTasks));
     assert_eq!(app.app_view().view(), TaskView::Active);
 
-    app.handle(Command::UnarchiveSelected);
+    app.handle(Command::TaskList(TaskListCommand::UnarchiveSelected));
     assert!(matches!(
         app.app_view().task_list().mode(),
         TaskListMode::Input { .. }
@@ -506,9 +506,9 @@ fn modals_block_view_switching_and_unarchiving() {
         matches!(app.app_view().task_list().mode(), TaskListMode::Input { buffer, .. } if buffer == "x")
     );
 
-    app.handle(Command::Cancel);
-    app.handle(Command::OpenArchiveConfirm);
-    app.handle(Command::UnarchiveSelected);
+    app.handle(Command::TaskList(TaskListCommand::Cancel));
+    app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+    app.handle(Command::TaskList(TaskListCommand::UnarchiveSelected));
     assert!(matches!(
         app.app_view().task_list().mode(),
         TaskListMode::ConfirmArchive { .. }
@@ -523,9 +523,9 @@ fn archiving_remembers_the_task_in_the_archived_view_and_clamps() {
         task(3, "beta"),
         task(4, "gamma"),
     ]));
-    app.handle(Command::MoveDown);
-    app.handle(Command::OpenArchiveConfirm);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
 
     assert_eq!(app.app_view().view(), TaskView::Active);
     assert_eq!(
@@ -534,7 +534,7 @@ fn archiving_remembers_the_task_in_the_archived_view_and_clamps() {
         "the selection clamped to gamma"
     );
 
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
     assert_eq!(app.app_view().selected(), Some(1));
     assert_eq!(
         app.app_view().tasks()[1].id(),
@@ -547,9 +547,9 @@ fn archiving_the_last_row_clamps_to_the_previous_row() {
         task(1, "alpha"),
         task(2, "beta"),
     ]));
-    app.handle(Command::MoveDown);
-    app.handle(Command::OpenArchiveConfirm);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+    app.handle(Command::TaskList(TaskListCommand::Confirm));
     assert_eq!(app.app_view().tasks().len(), 1);
     assert_eq!(app.app_view().selected(), Some(0));
     assert_eq!(
@@ -564,8 +564,8 @@ fn unarchiving_stays_in_the_archived_view_and_reports_restored() {
         task(2, "beta"),
         archived_task(3, "gone"),
     ]));
-    app.handle(Command::ShowArchivedTasks);
-    app.handle(Command::UnarchiveSelected);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
+    app.handle(Command::TaskList(TaskListCommand::UnarchiveSelected));
 
     assert_eq!(app.app_view().view(), TaskView::Archived);
     assert_eq!(
@@ -583,7 +583,7 @@ fn unarchiving_stays_in_the_archived_view_and_reports_restored() {
         "the archived list is empty now"
     );
 
-    app.handle(Command::ShowActiveTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowActiveTasks));
     assert_eq!(app.app_view().tasks().len(), 3);
     assert_eq!(
         app.app_view().selected(),
@@ -602,9 +602,9 @@ fn unarchiving_clamps_the_archived_selection_to_the_nearest_row() {
         archived_task(3, "gone"),
         archived_task(4, "also gone"),
     ]));
-    app.handle(Command::ShowArchivedTasks);
-    app.handle(Command::MoveDown);
-    app.handle(Command::UnarchiveSelected);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::UnarchiveSelected));
 
     assert_eq!(app.app_view().view(), TaskView::Archived);
     assert_eq!(app.app_view().tasks().len(), 1);
@@ -629,8 +629,8 @@ fn a_failed_unarchive_keeps_the_view_selection_and_reports_the_error() {
             DateTime::from_timestamp(100, 0).unwrap(),
         ),
     });
-    app.handle(Command::ShowArchivedTasks);
-    app.handle(Command::UnarchiveSelected);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
+    app.handle(Command::TaskList(TaskListCommand::UnarchiveSelected));
 
     assert_eq!(app.app_view().view(), TaskView::Archived);
     assert_eq!(app.app_view().selected(), Some(0));
@@ -654,7 +654,7 @@ fn enter_on_an_empty_task_list_is_a_no_op() {
     let spy = service.spy();
     let mut app = App::load(service);
 
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
     assert_eq!(app.app_view().screen(), Screen::TaskList);
     assert_eq!(app.app_view().history(), None);

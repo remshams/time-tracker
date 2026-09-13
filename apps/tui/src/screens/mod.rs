@@ -4,9 +4,11 @@ pub mod worklog_history;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::command::Command;
+pub(crate) use task_list::TaskListCommand;
 pub use task_list::{TaskListState, TaskView};
 #[cfg(test)]
 pub use worklog_history::CorrectionDraft;
+pub(crate) use worklog_history::WorklogHistoryCommand;
 pub use worklog_history::{History, WorklogHistoryMode, WorklogHistoryState};
 
 /// Which screen the interface currently shows.
@@ -48,7 +50,16 @@ impl InputState<'_> {
     }
 }
 
-/// Applies global event filtering and dispatches the event to the active screen.
+/// A screen keymap result before the event-loop command is tagged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KeymapCommand<C> {
+    /// A command owned by the active screen.
+    Local(C),
+    /// A mode-sensitive request for the global quit command.
+    Quit,
+}
+
+/// Applies global event filtering and tags commands from the active screen.
 pub(crate) fn map_key(state: InputState<'_>, key: KeyEvent) -> Option<Command> {
     if key.kind != KeyEventKind::Press {
         return None;
@@ -57,8 +68,16 @@ pub(crate) fn map_key(state: InputState<'_>, key: KeyEvent) -> Option<Command> {
         return Some(Command::Quit);
     }
     match state {
-        InputState::TaskList(state) => task_list::map(state, key),
-        InputState::WorklogHistory(state) => worklog_history::map(state, key),
+        InputState::TaskList(state) => task_list::map(state, key).map(|command| match command {
+            KeymapCommand::Local(command) => Command::TaskList(command),
+            KeymapCommand::Quit => Command::Quit,
+        }),
+        InputState::WorklogHistory(state) => {
+            worklog_history::map(state, key).map(|command| match command {
+                KeymapCommand::Local(command) => Command::WorklogHistory(command),
+                KeymapCommand::Quit => Command::Quit,
+            })
+        }
     }
 }
 

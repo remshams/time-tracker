@@ -101,6 +101,7 @@ mod tests {
 
     use crate::app::App;
     use crate::command::Command;
+    use crate::screens::TaskListCommand;
     use crate::test_support::app_with_test_clock;
 
     const WIDTH: u16 = 80;
@@ -206,7 +207,7 @@ mod tests {
         assert!(selected.add_modifier.contains(Modifier::REVERSED));
         assert!(cell(&terminal, 1, 3).add_modifier.is_empty());
 
-        app.handle(crate::command::Command::MoveDown);
+        app.handle(crate::command::Command::TaskList(TaskListCommand::MoveDown));
         let terminal = draw(&app);
         assert!(
             cell(&terminal, 1, 3)
@@ -219,9 +220,9 @@ mod tests {
     #[test]
     fn the_active_task_shows_a_marker_and_the_live_elapsed_time() {
         let (mut app, clock) = app_with_test_clock_for_view(&["alpha", "beta"]);
-        app.handle(Command::ToggleTracking);
+        app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
         clock.advance_monotonic(Duration::from_secs(125));
-        app.handle(Command::MoveDown);
+        app.handle(Command::TaskList(TaskListCommand::MoveDown));
         let terminal = draw(&app);
         let rows = rows(&terminal);
 
@@ -238,7 +239,7 @@ mod tests {
     #[test]
     fn a_selected_running_task_keeps_selection_colors_over_its_marker() {
         let mut app = app_with(&["alpha"]);
-        app.handle(Command::ToggleTracking);
+        app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
         let terminal = draw(&app);
 
         let marker = cell(&terminal, 1, 2);
@@ -254,13 +255,13 @@ mod tests {
         let terminal = draw(&app);
         assert_eq!(cell(&terminal, 0, 1).fg, Some(Color::Blue));
 
-        app.handle(Command::OpenAdd);
+        app.handle(Command::TaskList(TaskListCommand::OpenAdd));
         let terminal = draw(&app);
         assert_eq!(cell(&terminal, 0, 1).fg, Some(Color::Reset));
         assert_eq!(cell(&terminal, 12, 10).fg, Some(Color::Blue));
 
-        app.handle(Command::Cancel);
-        app.handle(Command::OpenArchiveConfirm);
+        app.handle(Command::TaskList(TaskListCommand::Cancel));
+        app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
         let terminal = draw(&app);
         assert_eq!(cell(&terminal, 0, 1).fg, Some(Color::Reset));
         assert_eq!(cell(&terminal, 12, 10).fg, Some(Color::Blue));
@@ -274,12 +275,12 @@ mod tests {
         assert!(row(&terminal, 23).contains("space track"));
         assert!(row(&terminal, 23).contains("enter history"));
 
-        app.handle(Command::OpenAdd);
+        app.handle(Command::TaskList(TaskListCommand::OpenAdd));
         let terminal = draw(&app);
         assert!(row(&terminal, 23).contains("enter save"));
 
-        app.handle(Command::Cancel);
-        app.handle(Command::OpenArchiveConfirm);
+        app.handle(Command::TaskList(TaskListCommand::Cancel));
+        app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
         let terminal = draw(&app);
         assert!(row(&terminal, 23).contains("y/enter confirm"));
     }
@@ -294,8 +295,8 @@ mod tests {
         assert!(footer.contains("s sort"), "got {footer:?}");
         assert!(footer.contains("q/esc/ctrl+c quit"), "got {footer:?}");
 
-        app.handle(Command::ShowArchivedTasks);
-        app.handle(Command::CycleOrdering);
+        app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
+        app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
         let terminal = draw_at(&app, 60, 20);
         assert!(row(&terminal, 1).contains("Archived tasks · recently updated"));
         let footer = row(&terminal, 19);
@@ -308,7 +309,7 @@ mod tests {
     #[test]
     fn task_panel_titles_show_the_shared_ordering_in_both_views() {
         let mut app = app_with(&["alpha"]);
-        app.handle(Command::CycleOrdering);
+        app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
         let terminal = draw(&app);
         assert!(
             row(&terminal, 1).contains("Active tasks · recently updated"),
@@ -316,7 +317,7 @@ mod tests {
             row(&terminal, 1)
         );
 
-        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
         let terminal = draw(&app);
         assert!(
             row(&terminal, 1).contains("Archived tasks · recently updated"),
@@ -338,9 +339,9 @@ mod tests {
     #[test]
     fn the_archived_view_renders_its_title_rows_and_footer() {
         let mut app = app_with(&["alpha", "beta"]);
-        app.handle(Command::OpenArchiveConfirm);
-        app.handle(Command::Confirm);
-        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+        app.handle(Command::TaskList(TaskListCommand::Confirm));
+        app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
         let terminal = draw(&app);
         let rows = rows(&terminal);
 
@@ -359,7 +360,7 @@ mod tests {
     #[test]
     fn an_empty_archived_view_renders_its_own_empty_text() {
         let mut app = app_with(&["alpha"]);
-        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
         let terminal = draw(&app);
         assert!(row(&terminal, 2).contains("No archived tasks."));
         assert!(row(&terminal, 1).contains("Archived tasks"));
@@ -368,11 +369,11 @@ mod tests {
     #[test]
     fn the_archived_view_keeps_the_timer_header_and_selection() {
         let (mut app, clock) = app_with_test_clock_for_view(&["alpha", "beta"]);
-        app.handle(Command::ToggleTracking);
-        app.handle(Command::MoveDown);
-        app.handle(Command::OpenArchiveConfirm);
-        app.handle(Command::Confirm);
-        app.handle(Command::ShowArchivedTasks);
+        app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
+        app.handle(Command::TaskList(TaskListCommand::MoveDown));
+        app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+        app.handle(Command::TaskList(TaskListCommand::Confirm));
+        app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
         clock.advance_monotonic(Duration::from_secs(61));
         let terminal = draw(&app);
         let rows = rows(&terminal);
@@ -393,9 +394,9 @@ mod tests {
     #[test]
     fn the_input_modal_shows_the_prompt_buffer_and_cursor() {
         let mut app = app_with(&["alpha"]);
-        app.handle(Command::OpenAdd);
-        app.handle(Command::Insert('a'));
-        app.handle(Command::Insert('b'));
+        app.handle(Command::TaskList(TaskListCommand::OpenAdd));
+        app.handle(Command::TaskList(TaskListCommand::Insert('a')));
+        app.handle(Command::TaskList(TaskListCommand::Insert('b')));
         let terminal = draw(&app);
         let rows = rows(&terminal);
         let modal_row = rows
@@ -419,10 +420,10 @@ mod tests {
     #[test]
     fn a_long_input_scrolls_so_the_tail_and_cursor_stay_visible() {
         let mut app = app_with(&["alpha"]);
-        app.handle(Command::OpenAdd);
+        app.handle(Command::TaskList(TaskListCommand::OpenAdd));
         // Longer than the visible budget: the head scrolls out of view.
         for character in "a".repeat(80).chars() {
-            app.handle(Command::Insert(character));
+            app.handle(Command::TaskList(TaskListCommand::Insert(character)));
         }
         let terminal = draw(&app);
         let row_text = row(&terminal, 11);
@@ -435,10 +436,10 @@ mod tests {
     #[test]
     fn wide_characters_scroll_on_whole_characters() {
         let mut app = app_with(&["alpha"]);
-        app.handle(Command::OpenAdd);
+        app.handle(Command::TaskList(TaskListCommand::OpenAdd));
         // 30 clock symbols are 60 columns, wider than the budget of 38.
         for character in "🕒".repeat(30).chars() {
-            app.handle(Command::Insert(character));
+            app.handle(Command::TaskList(TaskListCommand::Insert(character)));
         }
         let terminal = draw(&app);
         let row_text = row(&terminal, 11);
@@ -479,7 +480,7 @@ mod tests {
     #[test]
     fn the_rename_modal_shows_the_rename_prompt() {
         let mut app = app_with(&["alpha"]);
-        app.handle(Command::OpenRename);
+        app.handle(Command::TaskList(TaskListCommand::OpenRename));
         let terminal = draw(&app);
         assert!(row(&terminal, 11).contains("Rename task: alpha"));
     }
@@ -487,7 +488,7 @@ mod tests {
     #[test]
     fn the_confirm_modal_shows_the_task_name() {
         let mut app = app_with(&["alpha"]);
-        app.handle(Command::OpenArchiveConfirm);
+        app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
         let terminal = draw(&app);
         let row = row(&terminal, 11);
         assert!(row.contains("Archive \"alpha\"?"), "got {row:?}");

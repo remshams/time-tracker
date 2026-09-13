@@ -1,10 +1,12 @@
 mod actions;
+mod command;
 pub mod correction;
 mod deletion;
 mod keymap;
 mod state;
 pub(crate) mod view;
 
+pub(crate) use command::WorklogHistoryCommand;
 pub use correction::{CorrectionDraft, CorrectionField};
 pub(crate) use keymap::{footer_hints, map};
 pub(crate) use state::active_worklog_for_task;

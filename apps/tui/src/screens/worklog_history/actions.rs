@@ -1,38 +1,50 @@
+use chrono::TimeDelta;
 use tracker_application::{ApplicationFailureCategory, TrackerApplicationService, WorklogPage};
 use tracker_domain::{TaskId, WorklogId};
 
 use crate::app::App;
-use crate::command::Command;
 use crate::screens::worklog_history::active_worklog_for_task;
-use crate::screens::{History, Screen, WorklogHistoryMode};
+use crate::screens::{History, Screen, WorklogHistoryCommand, WorklogHistoryMode};
 use crate::support::errors::application_error_text;
 
 impl<S: TrackerApplicationService> App<S> {
-    pub(crate) fn handle_worklog_history_command(&mut self, command: Command) {
+    pub(crate) fn handle_worklog_history_command(&mut self, command: WorklogHistoryCommand) {
         match command {
-            Command::MoveUp => self.move_history_up(),
-            Command::MoveDown => self.move_history_down(),
-            Command::LoadOlderWorklogs => self.load_older_worklogs(),
-            Command::RefreshWorklogs => self.refresh_worklogs(),
-            Command::OpenCorrection
-            | Command::SwitchCorrectionField
-            | Command::MoveCursorLeft
-            | Command::MoveCursorRight
-            | Command::Delete
-            | Command::AdjustForwardFiveMinutes
-            | Command::AdjustBackwardFiveMinutes
-            | Command::AdjustForwardOneHour
-            | Command::AdjustBackwardOneHour => self.handle_correction_command(command),
-            Command::OpenDeletion => self.open_deletion(),
-            Command::Insert(character) => self.insert_correction_character(character),
-            Command::Backspace => self.backspace_correction_character(),
-            Command::Confirm => match self.history_state().map(|state| state.mode()) {
-                Some(WorklogHistoryMode::ConfirmDeletion { .. }) => self.confirm_deletion(),
-                Some(WorklogHistoryMode::Correction(_)) => self.confirm_correction(),
-                _ => {}
-            },
-            Command::Cancel => self.cancel_history_mode(),
-            _ => {}
+            WorklogHistoryCommand::MoveUp => self.move_history_up(),
+            WorklogHistoryCommand::MoveDown => self.move_history_down(),
+            WorklogHistoryCommand::OpenCorrection => self.open_correction(),
+            WorklogHistoryCommand::OpenDeletion => self.open_deletion(),
+            WorklogHistoryCommand::SwitchCorrectionField => self.switch_correction_field(),
+            WorklogHistoryCommand::MoveCursorLeft => self.move_correction_cursor_left(),
+            WorklogHistoryCommand::MoveCursorRight => self.move_correction_cursor_right(),
+            WorklogHistoryCommand::Delete => self.delete_correction_character(),
+            WorklogHistoryCommand::AdjustForwardFiveMinutes => {
+                self.adjust_correction(TimeDelta::minutes(5));
+            }
+            WorklogHistoryCommand::AdjustBackwardFiveMinutes => {
+                self.adjust_correction(TimeDelta::minutes(-5));
+            }
+            WorklogHistoryCommand::AdjustForwardOneHour => {
+                self.adjust_correction(TimeDelta::hours(1));
+            }
+            WorklogHistoryCommand::AdjustBackwardOneHour => {
+                self.adjust_correction(TimeDelta::hours(-1));
+            }
+            WorklogHistoryCommand::LoadOlderWorklogs => self.load_older_worklogs(),
+            WorklogHistoryCommand::RefreshWorklogs => self.refresh_worklogs(),
+            WorklogHistoryCommand::BackToTaskList => self.back_to_task_list(),
+            WorklogHistoryCommand::Confirm => {
+                match self.history_state().map(|state| state.mode()) {
+                    Some(WorklogHistoryMode::ConfirmDeletion { .. }) => self.confirm_deletion(),
+                    Some(WorklogHistoryMode::Correction(_)) => self.confirm_correction(),
+                    Some(WorklogHistoryMode::Normal) | None => {}
+                }
+            }
+            WorklogHistoryCommand::Cancel => self.cancel_history_mode(),
+            WorklogHistoryCommand::Insert(character) => {
+                self.insert_correction_character(character);
+            }
+            WorklogHistoryCommand::Backspace => self.backspace_correction_character(),
         }
     }
 

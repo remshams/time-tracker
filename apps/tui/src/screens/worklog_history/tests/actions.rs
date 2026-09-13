@@ -10,16 +10,20 @@ fn deletion_opening_requires_normal_history_mode() {
     service.worklog_pages = vec![Ok(page(vec![target.clone()], None))];
     service.authoritative_worklogs = vec![target];
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenCorrection);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
     let correction = app.app_view().correction().cloned();
-    app.handle(Command::OpenDeletion);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
     assert_eq!(app.app_view().correction(), correction.as_ref());
-    app.handle(Command::Cancel);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Cancel));
 
-    app.handle(Command::BackToTaskList);
-    app.handle(Command::OpenArchiveConfirm);
-    app.handle(Command::OpenDeletion);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::BackToTaskList,
+    ));
+    app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
     assert!(
         app.app_view().screen() == Screen::TaskList
             && matches!(
@@ -28,8 +32,8 @@ fn deletion_opening_requires_normal_history_mode() {
             )
     );
 
-    app.handle(Command::Cancel);
-    app.handle(Command::OpenDeletion);
+    app.handle(Command::TaskList(TaskListCommand::Cancel));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
     assert!(
         app.app_view().screen() == Screen::TaskList
             && matches!(app.app_view().task_list().mode(), TaskListMode::Normal)
@@ -50,11 +54,11 @@ fn completed_deletion_uses_the_snapshot_and_preserves_the_cursor() {
     service.authoritative_worklogs = vec![target.clone(), following.clone()];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenDeletion);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
 
     assert_eq!(app.app_view().deletion(), Some(&target));
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert_eq!(
         spy.deletion_calls(),
@@ -87,10 +91,10 @@ fn deletion_selection_moves_to_the_following_row_or_previous_row() {
     service.authoritative_worklogs = rows.clone();
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::MoveDown);
-    app.handle(Command::OpenDeletion);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     assert_eq!(
         app.app_view()
             .history()
@@ -104,13 +108,13 @@ fn deletion_selection_moves_to_the_following_row_or_previous_row() {
     assert_eq!(app.app_view().history_selected_index(), Some(1));
     assert_eq!(spy.latest_work_start(alpha.id()), Some(at(300)));
 
-    app.handle(Command::OpenDeletion);
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     assert_eq!(app.app_view().history_selected_index(), Some(0));
     assert_eq!(spy.latest_work_start(alpha.id()), Some(at(300)));
 
-    app.handle(Command::OpenDeletion);
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     assert_eq!(app.app_view().history_selected_index(), None);
     assert!(app.app_view().history().unwrap().worklogs().is_empty());
     assert_eq!(spy.latest_work_start(alpha.id()), None);
@@ -128,11 +132,11 @@ fn repeated_successful_deletions_update_the_latest_work_aggregate() {
     service.authoritative_worklogs = rows;
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
     for expected in [Some(at(200)), Some(at(100)), None] {
-        app.handle(Command::OpenDeletion);
-        app.handle(Command::Confirm);
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
         assert_eq!(spy.latest_work_start(alpha.id()), expected);
     }
 }
@@ -192,9 +196,9 @@ fn deleting_the_loaded_newest_row_uses_an_unloaded_older_row_for_latest_work() {
     service.authoritative_worklogs = vec![newest.clone(), older.clone()];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenDeletion);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert!(app.app_view().history().unwrap().worklogs().is_empty());
     assert_eq!(
@@ -212,8 +216,8 @@ fn active_history_rows_are_not_deletable_and_archived_rows_are() {
     service.authoritative_worklogs = vec![active.clone()];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenDeletion);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
     assert!(
         matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
     );
@@ -229,9 +233,9 @@ fn active_history_rows_are_not_deletable_and_archived_rows_are() {
     service.worklog_pages = vec![Ok(page(vec![completed.clone()], None))];
     service.authoritative_worklogs = vec![completed.clone()];
     let mut app = App::load(service);
-    app.handle(Command::ShowArchivedTasks);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenDeletion);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
     assert_eq!(app.app_view().deletion(), Some(&completed));
 }
 #[test]
@@ -243,13 +247,13 @@ fn deletion_cancel_and_ordinary_failure_keep_the_snapshot() {
     service.authoritative_worklogs = vec![target.clone()];
     service.deletion_error = Some(ApplicationError::storage_failure("private backend detail"));
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenDeletion);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     assert_eq!(app.app_view().deletion(), Some(&target));
     assert_eq!(text(app.app_view().status()), "Storage error");
     assert!(!text(app.app_view().status()).contains("private backend detail"));
-    app.handle(Command::Cancel);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Cancel));
     assert!(
         matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
     );
@@ -271,9 +275,9 @@ fn deletion_recovery_failure_keeps_the_snapshot_without_refreshing_history() {
     ));
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenDeletion);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert_eq!(app.app_view().deletion(), Some(&target));
     assert_eq!(app.app_view().history().unwrap().worklogs(), vec![target]);
@@ -298,9 +302,9 @@ fn stale_deletion_refreshes_and_requires_confirmation_again() {
     service.deletion_error = Some(ApplicationError::worklog_not_found(target.id()));
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenDeletion);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert!(
         matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
@@ -326,9 +330,9 @@ fn changed_deletion_of_a_missing_row_reports_a_refresh() {
     service.authoritative_worklogs = vec![target.clone()];
     service.deletion_error = Some(ApplicationError::worklog_changed(target.id()));
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenDeletion);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert_eq!(
         text(app.app_view().status()),
@@ -347,9 +351,9 @@ fn failed_stale_refresh_discards_rows_and_marks_history_unavailable() {
     service.authoritative_worklogs = vec![target.clone()];
     service.deletion_error = Some(ApplicationError::worklog_not_found(target.id()));
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenDeletion);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     let history = app.app_view().history().unwrap();
     assert_eq!(history.availability(), HistoryAvailability::Unavailable);
@@ -363,7 +367,7 @@ fn failed_stale_refresh_discards_rows_and_marks_history_unavailable() {
         "Worklog changed, but history refresh failed: Storage error"
     );
     assert!(!text(app.app_view().status()).contains("private backend detail"));
-    app.handle(Command::OpenDeletion);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
     assert!(
         matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
     );
@@ -383,11 +387,11 @@ fn deleting_loaded_pages_then_loading_older_selects_the_first_appended_row() {
     service.authoritative_worklogs = loaded.clone();
     service.authoritative_worklogs.push(older.clone());
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
     for _ in 0..50 {
-        app.handle(Command::OpenDeletion);
-        app.handle(Command::Confirm);
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     }
 
     let history = app.app_view().history().unwrap();
@@ -395,7 +399,9 @@ fn deleting_loaded_pages_then_loading_older_selects_the_first_appended_row() {
     assert_eq!(history.next_cursor(), Some(cursor(1_950, 50)));
     assert_eq!(app.app_view().history_selected_index(), None);
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     let history = app.app_view().history().unwrap();
     assert_eq!(history.worklogs(), vec![older]);
@@ -415,9 +421,9 @@ fn active_race_refreshes_history_and_keeps_confirmation_closed() {
     service.authoritative_worklogs = vec![completed];
     service.deletion_error = Some(ApplicationError::active_worklog(active.id()));
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenDeletion);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
     assert!(
         matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
@@ -441,12 +447,12 @@ fn successful_deletion_does_not_reanchor_an_unrelated_timer() {
     ))];
     service.authoritative_worklogs = vec![active.clone(), target];
     let (mut app, clock) = app_with_test_clock(service, chrono_tz::UTC, active.start());
-    app.handle(Command::OpenHistory);
-    app.handle(Command::MoveDown);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
     clock.advance_monotonic(Duration::from_secs(600));
     let before = app.app_view().elapsed().unwrap();
-    app.handle(Command::OpenDeletion);
-    app.handle(Command::Confirm);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     assert!(app.app_view().elapsed().unwrap() >= before);
 }
 #[test]
@@ -464,7 +470,7 @@ fn enter_opens_the_selected_tasks_history_and_escape_returns_to_it() {
     service.worklog_pages = vec![Ok(first.clone()), Ok(second.clone())];
     let mut app = App::load(service);
 
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
     assert_eq!(app.app_view().screen(), Screen::WorklogHistory);
     let history = app.app_view().history().expect("the history is open");
@@ -483,14 +489,16 @@ fn enter_opens_the_selected_tasks_history_and_escape_returns_to_it() {
 
     // The task-list selection was never touched, so Escape returns to
     // the same task, and reopening loads the newest page afresh.
-    app.handle(Command::MoveDown);
-    app.handle(Command::BackToTaskList);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::BackToTaskList,
+    ));
     assert_eq!(app.app_view().screen(), Screen::TaskList);
     assert_eq!(app.app_view().history(), None);
     assert_eq!(app.app_view().selected(), Some(0));
     assert_eq!(app.app_view().tasks()[0].id(), alpha.id());
 
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
     assert_eq!(
         app.app_view().history().unwrap().worklogs(),
         second.worklogs
@@ -502,14 +510,16 @@ fn enter_opens_the_history_from_the_archived_view() {
     let mut service = TestService::with_tasks(vec![task(1, "alpha"), gone.clone()]);
     service.worklog_pages = vec![Ok(page(vec![history_worklog(5, gone.id(), 100)], None))];
     let mut app = App::load(service);
-    app.handle(Command::ShowArchivedTasks);
+    app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
 
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
     assert_eq!(app.app_view().screen(), Screen::WorklogHistory);
     assert_eq!(app.app_view().history().unwrap().task_id(), gone.id());
 
-    app.handle(Command::BackToTaskList);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::BackToTaskList,
+    ));
     assert_eq!(app.app_view().view(), TaskView::Archived);
     assert_eq!(
         app.app_view().selected(),
@@ -523,7 +533,7 @@ fn a_failed_history_load_keeps_the_task_list_and_reports_the_error() {
     service.worklog_pages = vec![Err(TestService::failure())];
     let mut app = App::load(service);
 
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
     assert_eq!(app.app_view().screen(), Screen::TaskList);
     assert_eq!(app.app_view().history(), None);
@@ -545,23 +555,23 @@ fn history_movement_clamps_without_wrapping() {
         None,
     ))];
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
-    app.handle(Command::MoveUp);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveUp));
     assert_eq!(
         app.app_view().history_selected_index(),
         Some(0),
         "no wrap to the end"
     );
     for _ in 0..5 {
-        app.handle(Command::MoveDown);
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
     }
     assert_eq!(
         app.app_view().history_selected_index(),
         Some(2),
         "no wrap to the start"
     );
-    app.handle(Command::MoveUp);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveUp));
     assert_eq!(app.app_view().history_selected_index(), Some(1));
 }
 #[test]
@@ -569,11 +579,11 @@ fn an_empty_history_has_no_selection_and_movement_does_nothing() {
     let mut service = TestService::with_tasks(vec![task(1, "alpha")]);
     service.worklog_pages = vec![Ok(page(Vec::new(), None))];
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
     assert_eq!(app.app_view().history_selected_index(), None);
-    app.handle(Command::MoveDown);
-    app.handle(Command::MoveUp);
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveUp));
     assert_eq!(app.app_view().history_selected_index(), None);
 }
 #[test]
@@ -596,11 +606,13 @@ fn loading_older_appends_the_page_and_keeps_the_selection() {
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![Ok(first), Ok(older)];
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::MoveDown);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
     assert_eq!(app.app_view().history_selected_index(), Some(1));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     let history = app.app_view().history().expect("the history is still open");
     assert_eq!(history.worklogs().len(), 4, "the older page was appended");
@@ -640,9 +652,11 @@ fn loading_older_reloads_newest_when_the_loaded_active_worklog_stopped() {
     service.worklog_pages = vec![Ok(first), Ok(continuation), Ok(newest)];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     assert_eq!(
         app.app_view()
@@ -675,9 +689,11 @@ fn loading_older_appends_when_the_active_worklog_is_unchanged() {
     service.worklog_pages = vec![Ok(first), Ok(continuation)];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     assert_eq!(
         app.app_view()
@@ -717,16 +733,20 @@ fn loading_older_appends_an_unchanged_active_worklog_after_a_full_newest_page() 
     service.worklog_pages = vec![Ok(first), Ok(continuation), Ok(older)];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     let history = app.app_view().history().unwrap();
     assert_eq!(history.worklogs().len(), 52);
     assert_eq!(history.worklogs()[50].id(), worklog_id(51));
     assert_eq!(history.next_cursor(), Some(cursor(400, 52)));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     let history = app.app_view().history().unwrap();
     assert_eq!(history.worklogs().len(), 53);
@@ -752,9 +772,11 @@ fn loading_older_reloads_newest_when_the_active_worklog_start_changes() {
     service.worklog_pages = vec![Ok(first), Ok(continuation), Ok(newest)];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     assert_eq!(
         app.app_view()
@@ -797,9 +819,11 @@ fn loading_older_reloads_newest_when_active_work_starts_for_the_open_task() {
     service.worklog_pages = vec![Ok(first), Ok(continuation), Ok(newest)];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     assert_eq!(
         app.app_view()
@@ -837,9 +861,11 @@ fn loading_older_ignores_active_work_for_another_task() {
     service.worklog_pages = vec![Ok(first), Ok(continuation)];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     assert_eq!(
         app.app_view()
@@ -867,9 +893,11 @@ fn a_failed_active_row_reload_marks_history_unavailable() {
     service.worklog_pages = vec![Ok(first), Ok(continuation), Err(TestService::failure())];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     let history = app.app_view().history().unwrap();
     assert_eq!(history.availability(), HistoryAvailability::Unavailable);
@@ -883,9 +911,11 @@ fn loading_older_at_the_end_of_the_history_changes_nothing() {
     service.worklog_pages = vec![Ok(page(vec![history_worklog(20, alpha.id(), 200)], None))];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     assert_eq!(app.app_view().history().unwrap().worklogs().len(), 1);
     assert_eq!(app.app_view().history_selected_index(), Some(0));
@@ -912,10 +942,12 @@ fn a_failed_load_older_preserves_the_displayed_history() {
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![Ok(first), Err(TestService::failure())];
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::MoveDown);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     let history = app.app_view().history().expect("the history is still open");
     assert_eq!(history.worklogs().len(), 2, "no row was lost");
@@ -959,10 +991,12 @@ fn history_change_while_loading_older_resets_to_the_newest_page() {
     ];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::MoveDown);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     let history = app.app_view().history().unwrap();
     assert_eq!(
@@ -998,10 +1032,12 @@ fn failed_reset_after_history_change_marks_history_unavailable() {
         Err(TestService::failure()),
     ];
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::MoveDown);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
 
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
 
     let history = app.app_view().history().unwrap();
     assert_eq!(history.availability(), HistoryAvailability::Unavailable);
@@ -1034,10 +1070,12 @@ fn refresh_reloads_the_newest_page_and_keeps_the_selection_by_id() {
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![Ok(first), Ok(newest)];
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::MoveDown);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
 
-    app.handle(Command::RefreshWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::RefreshWorklogs,
+    ));
 
     let history = app.app_view().history().expect("the history is still open");
     assert_eq!(
@@ -1078,14 +1116,18 @@ fn refresh_falls_back_to_the_newest_row_when_the_selection_left_the_page() {
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![Ok(first), Ok(older), Ok(newest)];
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::LoadOlderWorklogs);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::LoadOlderWorklogs,
+    ));
     for _ in 0..3 {
-        app.handle(Command::MoveDown);
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::MoveDown));
     }
     assert_eq!(app.app_view().history_selected_index(), Some(3));
 
-    app.handle(Command::RefreshWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::RefreshWorklogs,
+    ));
 
     assert_eq!(app.app_view().history().unwrap().worklogs().len(), 1);
     assert_eq!(app.app_view().history_selected_index(), Some(0));
@@ -1100,9 +1142,11 @@ fn a_failed_refresh_preserves_the_displayed_history() {
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![Ok(first), Err(TestService::failure())];
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
-    app.handle(Command::RefreshWorklogs);
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::RefreshWorklogs,
+    ));
 
     let history = app.app_view().history().expect("the history is still open");
     assert_eq!(
@@ -1135,73 +1179,90 @@ fn task_list_commands_do_not_act_on_the_history_screen() {
     service.worklog_pages = vec![Ok(first)];
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    let before = app
-        .app_view()
-        .history()
-        .expect("the history is open")
-        .clone();
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    let screen_before = app.app_view().screen_state().clone();
+    let status_before = app.app_view().status().clone();
     let tasks_before = app.app_view().tasks().to_vec();
 
-    app.handle(Command::ToggleTracking);
-    app.handle(Command::CycleOrdering);
-    app.handle(Command::ShowArchivedTasks);
-    app.handle(Command::ShowActiveTasks);
-    app.handle(Command::OpenAdd);
-    app.handle(Command::OpenRename);
-    app.handle(Command::OpenArchiveConfirm);
-    app.handle(Command::UnarchiveSelected);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::Insert('x'));
-    app.handle(Command::Backspace);
-    app.handle(Command::Confirm);
-    app.handle(Command::Cancel);
+    for command in [
+        TaskListCommand::MoveUp,
+        TaskListCommand::MoveDown,
+        TaskListCommand::ShowActiveTasks,
+        TaskListCommand::ShowArchivedTasks,
+        TaskListCommand::OpenHistory,
+        TaskListCommand::CycleOrdering,
+        TaskListCommand::UnarchiveSelected,
+        TaskListCommand::ToggleTracking,
+        TaskListCommand::OpenAdd,
+        TaskListCommand::OpenRename,
+        TaskListCommand::OpenArchiveConfirm,
+        TaskListCommand::Confirm,
+        TaskListCommand::Cancel,
+        TaskListCommand::Insert('x'),
+        TaskListCommand::Backspace,
+    ] {
+        app.handle(Command::TaskList(command));
+    }
 
-    assert_eq!(app.app_view().screen(), Screen::WorklogHistory);
-    assert!(
-        matches!(app.app_view().screen_state(), ScreenState::WorklogHistory(state) if matches!(state.mode(), WorklogHistoryMode::Normal))
-    );
-    assert_eq!(app.app_view().history().unwrap(), &before);
-    assert_eq!(app.app_view().view(), TaskView::Active);
+    assert_eq!(app.app_view().screen_state(), &screen_before);
+    assert_eq!(app.app_view().status(), &status_before);
     assert_eq!(app.app_view().ordering(), TaskOrdering::RecentlyWorked);
     assert_eq!(app.app_view().tasks(), tasks_before.as_slice());
-    assert_eq!(
-        app.app_view().active_task_id(),
-        None,
-        "no tracking was started"
-    );
-    assert_eq!(
-        spy.worklog_reads(),
-        1,
-        "the open history was not read again"
-    );
+    assert_eq!(app.app_view().active_task_id(), None);
+    assert_eq!(spy.worklog_reads(), 1);
+    assert!(spy.correction_calls().is_empty());
+    assert!(spy.deletion_calls().is_empty());
+    assert!(spy.clear_calls().is_empty());
 }
 #[test]
 fn history_commands_do_not_act_on_the_task_list() {
     let service = TestService::with_tasks(vec![task(1, "alpha")]);
     let spy = service.spy();
     let mut app = App::load(service);
+    let screen_before = app.app_view().screen_state().clone();
+    let status_before = app.app_view().status().clone();
+    let tasks_before = app.app_view().tasks().to_vec();
 
-    app.handle(Command::LoadOlderWorklogs);
-    app.handle(Command::RefreshWorklogs);
-    app.handle(Command::BackToTaskList);
+    for command in [
+        WorklogHistoryCommand::MoveUp,
+        WorklogHistoryCommand::MoveDown,
+        WorklogHistoryCommand::OpenCorrection,
+        WorklogHistoryCommand::OpenDeletion,
+        WorklogHistoryCommand::SwitchCorrectionField,
+        WorklogHistoryCommand::MoveCursorLeft,
+        WorklogHistoryCommand::MoveCursorRight,
+        WorklogHistoryCommand::Delete,
+        WorklogHistoryCommand::AdjustForwardFiveMinutes,
+        WorklogHistoryCommand::AdjustBackwardFiveMinutes,
+        WorklogHistoryCommand::AdjustForwardOneHour,
+        WorklogHistoryCommand::AdjustBackwardOneHour,
+        WorklogHistoryCommand::LoadOlderWorklogs,
+        WorklogHistoryCommand::RefreshWorklogs,
+        WorklogHistoryCommand::BackToTaskList,
+        WorklogHistoryCommand::Confirm,
+        WorklogHistoryCommand::Cancel,
+        WorklogHistoryCommand::Insert('x'),
+        WorklogHistoryCommand::Backspace,
+    ] {
+        app.handle(Command::WorklogHistory(command));
+    }
 
-    assert_eq!(app.app_view().screen(), Screen::TaskList);
-    assert_eq!(app.app_view().history(), None);
-    assert_eq!(app.app_view().status(), &Status::Info("Ready".to_owned()));
-    assert_eq!(
-        spy.worklog_reads(),
-        0,
-        "no history is open, so nothing was read"
-    );
+    assert_eq!(app.app_view().screen_state(), &screen_before);
+    assert_eq!(app.app_view().status(), &status_before);
+    assert_eq!(app.app_view().tasks(), tasks_before.as_slice());
+    assert_eq!(app.app_view().active_task_id(), None);
+    assert_eq!(spy.worklog_reads(), 0);
+    assert!(spy.correction_calls().is_empty());
+    assert!(spy.deletion_calls().is_empty());
+    assert!(spy.clear_calls().is_empty());
 }
 #[test]
 fn opening_a_history_requires_normal_mode() {
     let service = TestService::with_tasks(vec![task(1, "alpha")]);
     let spy = service.spy();
     let mut app = App::load(service);
-    app.handle(Command::OpenAdd);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
     assert!(
         app.app_view().screen() == Screen::TaskList
             && matches!(
@@ -1212,9 +1273,9 @@ fn opening_a_history_requires_normal_mode() {
     assert_eq!(app.app_view().screen(), Screen::TaskList);
     assert_eq!(spy.worklog_reads(), 0);
 
-    app.handle(Command::Cancel);
-    app.handle(Command::OpenArchiveConfirm);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::Cancel));
+    app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
     assert!(
         app.app_view().screen() == Screen::TaskList
             && matches!(
@@ -1237,7 +1298,7 @@ fn quitting_from_the_history_leaves_tracking_active() {
         None,
     ))];
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
     app.handle(Command::Quit);
 
@@ -1253,7 +1314,7 @@ fn opening_history_adopts_an_active_worklog_that_another_client_started() {
     let (mut app, clock) = app_with_test_clock(service, chrono_tz::UTC, active.start());
     assert_eq!(app.app_view().active_task_id(), None);
 
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
 
     assert_eq!(app.app_view().active_task_id(), Some(task.id()));
     assert_eq!(app.app_view().active_worklog_id(), Some(active.id()));
@@ -1279,7 +1340,7 @@ fn history_row_durations_use_the_monotonic_clock_for_the_running_worklog() {
         None,
     ))];
     let (mut app, clock) = app_with_test_clock(service, chrono_tz::UTC, at(100));
-    app.handle(Command::OpenHistory);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
     clock.advance_monotonic(Duration::from_secs(125));
 
     let rows = app
@@ -1320,9 +1381,11 @@ fn unavailable_history_renders_its_retry_message_with_the_focused_border() {
     let mut service = TestService::with_tasks(vec![task(1, "alpha")]);
     service.worklog_pages = vec![Ok(page(vec![worklog], None)), Err(TestService::failure())];
     let mut app = App::load(service);
-    app.handle(Command::OpenHistory);
-    app.handle(Command::OpenCorrection);
-    app.handle(Command::Confirm);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::OpenCorrection,
+    ));
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal
         .draw(|frame| crate::ui::render(frame, app.app_view()))

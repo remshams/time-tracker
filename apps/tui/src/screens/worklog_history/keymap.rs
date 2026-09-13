@@ -2,12 +2,15 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::command::Command;
+use crate::screens::KeymapCommand;
 use crate::support::timestamps::is_timestamp_character;
 
-use super::{WorklogHistoryMode, WorklogHistoryState};
+use super::{WorklogHistoryCommand, WorklogHistoryMode, WorklogHistoryState};
 
-pub(crate) fn map(state: &WorklogHistoryState, key: KeyEvent) -> Option<Command> {
+pub(crate) fn map(
+    state: &WorklogHistoryState,
+    key: KeyEvent,
+) -> Option<KeymapCommand<WorklogHistoryCommand>> {
     match state.mode() {
         WorklogHistoryMode::Normal => map_normal(state, key),
         WorklogHistoryMode::ConfirmDeletion { .. } => map_confirm_deletion(key),
@@ -15,73 +18,85 @@ pub(crate) fn map(state: &WorklogHistoryState, key: KeyEvent) -> Option<Command>
     }
 }
 
-fn map_normal(state: &WorklogHistoryState, key: KeyEvent) -> Option<Command> {
+fn map_normal(
+    state: &WorklogHistoryState,
+    key: KeyEvent,
+) -> Option<KeymapCommand<WorklogHistoryCommand>> {
     if !state.history().is_available() || key.modifiers != KeyModifiers::NONE {
         if !state.history().is_available() {
             return match (key.code, key.modifiers) {
-                (KeyCode::Char('r'), KeyModifiers::NONE) => Some(Command::RefreshWorklogs),
-                (KeyCode::Esc, KeyModifiers::NONE) => Some(Command::BackToTaskList),
-                (KeyCode::Char('q'), KeyModifiers::NONE) => Some(Command::Quit),
+                (KeyCode::Char('r'), KeyModifiers::NONE) => {
+                    Some(KeymapCommand::Local(WorklogHistoryCommand::RefreshWorklogs))
+                }
+                (KeyCode::Esc, KeyModifiers::NONE) => {
+                    Some(KeymapCommand::Local(WorklogHistoryCommand::BackToTaskList))
+                }
+                (KeyCode::Char('q'), KeyModifiers::NONE) => Some(KeymapCommand::Quit),
                 _ => None,
             };
         }
         return None;
     }
-    match key.code {
-        KeyCode::Char('j') | KeyCode::Down => Some(Command::MoveDown),
-        KeyCode::Char('k') | KeyCode::Up => Some(Command::MoveUp),
-        KeyCode::Char('e') => Some(Command::OpenCorrection),
-        KeyCode::Char('d') => Some(Command::OpenDeletion),
-        KeyCode::Char('o') => Some(Command::LoadOlderWorklogs),
-        KeyCode::Char('r') => Some(Command::RefreshWorklogs),
-        KeyCode::Esc => Some(Command::BackToTaskList),
-        KeyCode::Char('q') => Some(Command::Quit),
-        _ => None,
-    }
+    let command = match key.code {
+        KeyCode::Char('j') | KeyCode::Down => WorklogHistoryCommand::MoveDown,
+        KeyCode::Char('k') | KeyCode::Up => WorklogHistoryCommand::MoveUp,
+        KeyCode::Char('e') => WorklogHistoryCommand::OpenCorrection,
+        KeyCode::Char('d') => WorklogHistoryCommand::OpenDeletion,
+        KeyCode::Char('o') => WorklogHistoryCommand::LoadOlderWorklogs,
+        KeyCode::Char('r') => WorklogHistoryCommand::RefreshWorklogs,
+        KeyCode::Esc => WorklogHistoryCommand::BackToTaskList,
+        KeyCode::Char('q') => return Some(KeymapCommand::Quit),
+        _ => return None,
+    };
+    Some(KeymapCommand::Local(command))
 }
 
-fn map_confirm_deletion(key: KeyEvent) -> Option<Command> {
+fn map_confirm_deletion(key: KeyEvent) -> Option<KeymapCommand<WorklogHistoryCommand>> {
     if key.modifiers != KeyModifiers::NONE {
         return None;
     }
-    match key.code {
-        KeyCode::Enter | KeyCode::Char('d') | KeyCode::Char('y') => Some(Command::Confirm),
-        KeyCode::Esc | KeyCode::Char('n') => Some(Command::Cancel),
-        _ => None,
-    }
+    let command = match key.code {
+        KeyCode::Enter | KeyCode::Char('d') | KeyCode::Char('y') => WorklogHistoryCommand::Confirm,
+        KeyCode::Esc | KeyCode::Char('n') => WorklogHistoryCommand::Cancel,
+        _ => return None,
+    };
+    Some(KeymapCommand::Local(command))
 }
 
-fn map_correction(key: KeyEvent) -> Option<Command> {
-    match (key.code, key.modifiers) {
-        (KeyCode::Enter, KeyModifiers::NONE) => Some(Command::Confirm),
-        (KeyCode::Esc, KeyModifiers::NONE) => Some(Command::Cancel),
+fn map_correction(key: KeyEvent) -> Option<KeymapCommand<WorklogHistoryCommand>> {
+    let command = match (key.code, key.modifiers) {
+        (KeyCode::Enter, KeyModifiers::NONE) => WorklogHistoryCommand::Confirm,
+        (KeyCode::Esc, KeyModifiers::NONE) => WorklogHistoryCommand::Cancel,
         (KeyCode::Tab, KeyModifiers::NONE)
         | (KeyCode::BackTab, KeyModifiers::SHIFT)
-        | (KeyCode::BackTab, KeyModifiers::NONE) => Some(Command::SwitchCorrectionField),
-        (KeyCode::Left, KeyModifiers::NONE) => Some(Command::MoveCursorLeft),
-        (KeyCode::Right, KeyModifiers::NONE) => Some(Command::MoveCursorRight),
-        (KeyCode::Backspace, KeyModifiers::NONE) => Some(Command::Backspace),
-        (KeyCode::Delete, KeyModifiers::NONE) => Some(Command::Delete),
-        (KeyCode::Char('j'), KeyModifiers::NONE) => Some(Command::AdjustForwardFiveMinutes),
-        (KeyCode::Char('k'), KeyModifiers::NONE) => Some(Command::AdjustBackwardFiveMinutes),
+        | (KeyCode::BackTab, KeyModifiers::NONE) => WorklogHistoryCommand::SwitchCorrectionField,
+        (KeyCode::Left, KeyModifiers::NONE) => WorklogHistoryCommand::MoveCursorLeft,
+        (KeyCode::Right, KeyModifiers::NONE) => WorklogHistoryCommand::MoveCursorRight,
+        (KeyCode::Backspace, KeyModifiers::NONE) => WorklogHistoryCommand::Backspace,
+        (KeyCode::Delete, KeyModifiers::NONE) => WorklogHistoryCommand::Delete,
+        (KeyCode::Char('j'), KeyModifiers::NONE) => WorklogHistoryCommand::AdjustForwardFiveMinutes,
+        (KeyCode::Char('k'), KeyModifiers::NONE) => {
+            WorklogHistoryCommand::AdjustBackwardFiveMinutes
+        }
         (KeyCode::Char('J'), modifiers)
             if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT =>
         {
-            Some(Command::AdjustForwardOneHour)
+            WorklogHistoryCommand::AdjustForwardOneHour
         }
         (KeyCode::Char('K'), modifiers)
             if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT =>
         {
-            Some(Command::AdjustBackwardOneHour)
+            WorklogHistoryCommand::AdjustBackwardOneHour
         }
         (KeyCode::Char(character), modifiers)
             if modifiers - KeyModifiers::SHIFT == KeyModifiers::NONE
                 && is_timestamp_character(character) =>
         {
-            Some(Command::Insert(character))
+            WorklogHistoryCommand::Insert(character)
         }
-        _ => None,
-    }
+        _ => return None,
+    };
+    Some(KeymapCommand::Local(command))
 }
 
 pub(crate) fn footer_hints(state: &WorklogHistoryState, width: u16) -> &'static str {
@@ -120,7 +135,7 @@ pub(crate) fn footer_hints(state: &WorklogHistoryState, width: u16) -> &'static 
 #[cfg(test)]
 mod tests {
     use crate::command::Command;
-    use crate::screens::WorklogHistoryMode;
+    use crate::screens::{WorklogHistoryCommand, WorklogHistoryMode};
     use crate::test_support::keymap::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -128,10 +143,16 @@ mod tests {
     fn deletion_mode_accepts_and_cancels_without_other_commands() {
         let mode = deletion();
         for code in [KeyCode::Enter, KeyCode::Char('d'), KeyCode::Char('y')] {
-            assert_eq!(map_history(&mode, key(code)), Some(Command::Confirm));
+            assert_eq!(
+                map_history(&mode, key(code)),
+                Some(Command::WorklogHistory(WorklogHistoryCommand::Confirm))
+            );
         }
         for code in [KeyCode::Esc, KeyCode::Char('n')] {
-            assert_eq!(map_history(&mode, key(code)), Some(Command::Cancel));
+            assert_eq!(
+                map_history(&mode, key(code)),
+                Some(Command::WorklogHistory(WorklogHistoryCommand::Cancel))
+            );
         }
         assert_eq!(
             map_history(&mode, with_modifier('d', KeyModifiers::SHIFT)),
@@ -151,39 +172,47 @@ mod tests {
     fn the_history_maps_movement_paging_refresh_and_back() {
         assert_eq!(
             map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('j'))),
-            Some(Command::MoveDown)
+            Some(Command::WorklogHistory(WorklogHistoryCommand::MoveDown))
         );
         assert_eq!(
             map_history(&WorklogHistoryMode::Normal, key(KeyCode::Down)),
-            Some(Command::MoveDown)
+            Some(Command::WorklogHistory(WorklogHistoryCommand::MoveDown))
         );
         assert_eq!(
             map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('k'))),
-            Some(Command::MoveUp)
+            Some(Command::WorklogHistory(WorklogHistoryCommand::MoveUp))
         );
         assert_eq!(
             map_history(&WorklogHistoryMode::Normal, key(KeyCode::Up)),
-            Some(Command::MoveUp)
+            Some(Command::WorklogHistory(WorklogHistoryCommand::MoveUp))
         );
         assert_eq!(
             map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('e'))),
-            Some(Command::OpenCorrection)
+            Some(Command::WorklogHistory(
+                WorklogHistoryCommand::OpenCorrection
+            ))
         );
         assert_eq!(
             map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('d'))),
-            Some(Command::OpenDeletion)
+            Some(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion))
         );
         assert_eq!(
             map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('o'))),
-            Some(Command::LoadOlderWorklogs)
+            Some(Command::WorklogHistory(
+                WorklogHistoryCommand::LoadOlderWorklogs
+            ))
         );
         assert_eq!(
             map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('r'))),
-            Some(Command::RefreshWorklogs)
+            Some(Command::WorklogHistory(
+                WorklogHistoryCommand::RefreshWorklogs
+            ))
         );
         assert_eq!(
             map_history(&WorklogHistoryMode::Normal, key(KeyCode::Esc)),
-            Some(Command::BackToTaskList)
+            Some(Command::WorklogHistory(
+                WorklogHistoryCommand::BackToTaskList
+            ))
         );
         assert_eq!(
             map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('q'))),
@@ -231,19 +260,58 @@ mod tests {
     fn correction_maps_editing_switching_adjustment_and_exit_commands() {
         let mode = correction();
         let cases = [
-            (key(KeyCode::Tab), Command::SwitchCorrectionField),
-            (key(KeyCode::BackTab), Command::SwitchCorrectionField),
-            (key(KeyCode::Left), Command::MoveCursorLeft),
-            (key(KeyCode::Right), Command::MoveCursorRight),
-            (key(KeyCode::Backspace), Command::Backspace),
-            (key(KeyCode::Delete), Command::Delete),
-            (key(KeyCode::Char('j')), Command::AdjustForwardFiveMinutes),
-            (key(KeyCode::Char('k')), Command::AdjustBackwardFiveMinutes),
-            (key(KeyCode::Char('J')), Command::AdjustForwardOneHour),
-            (key(KeyCode::Char('K')), Command::AdjustBackwardOneHour),
-            (key(KeyCode::Char('2')), Command::Insert('2')),
-            (key(KeyCode::Enter), Command::Confirm),
-            (key(KeyCode::Esc), Command::Cancel),
+            (
+                key(KeyCode::Tab),
+                Command::WorklogHistory(WorklogHistoryCommand::SwitchCorrectionField),
+            ),
+            (
+                key(KeyCode::BackTab),
+                Command::WorklogHistory(WorklogHistoryCommand::SwitchCorrectionField),
+            ),
+            (
+                key(KeyCode::Left),
+                Command::WorklogHistory(WorklogHistoryCommand::MoveCursorLeft),
+            ),
+            (
+                key(KeyCode::Right),
+                Command::WorklogHistory(WorklogHistoryCommand::MoveCursorRight),
+            ),
+            (
+                key(KeyCode::Backspace),
+                Command::WorklogHistory(WorklogHistoryCommand::Backspace),
+            ),
+            (
+                key(KeyCode::Delete),
+                Command::WorklogHistory(WorklogHistoryCommand::Delete),
+            ),
+            (
+                key(KeyCode::Char('j')),
+                Command::WorklogHistory(WorklogHistoryCommand::AdjustForwardFiveMinutes),
+            ),
+            (
+                key(KeyCode::Char('k')),
+                Command::WorklogHistory(WorklogHistoryCommand::AdjustBackwardFiveMinutes),
+            ),
+            (
+                key(KeyCode::Char('J')),
+                Command::WorklogHistory(WorklogHistoryCommand::AdjustForwardOneHour),
+            ),
+            (
+                key(KeyCode::Char('K')),
+                Command::WorklogHistory(WorklogHistoryCommand::AdjustBackwardOneHour),
+            ),
+            (
+                key(KeyCode::Char('2')),
+                Command::WorklogHistory(WorklogHistoryCommand::Insert('2')),
+            ),
+            (
+                key(KeyCode::Enter),
+                Command::WorklogHistory(WorklogHistoryCommand::Confirm),
+            ),
+            (
+                key(KeyCode::Esc),
+                Command::WorklogHistory(WorklogHistoryCommand::Cancel),
+            ),
             (ctrl('c'), Command::Quit),
         ];
         for (key, expected) in cases {
@@ -258,14 +326,18 @@ mod tests {
                 &mode,
                 KeyEvent::new(KeyCode::Char('J'), KeyModifiers::SHIFT)
             ),
-            Some(Command::AdjustForwardOneHour)
+            Some(Command::WorklogHistory(
+                WorklogHistoryCommand::AdjustForwardOneHour
+            ))
         );
         assert_eq!(
             map_history(
                 &mode,
                 KeyEvent::new(KeyCode::Char('K'), KeyModifiers::SHIFT)
             ),
-            Some(Command::AdjustBackwardOneHour)
+            Some(Command::WorklogHistory(
+                WorklogHistoryCommand::AdjustBackwardOneHour
+            ))
         );
         for key in [
             ctrl('j'),
@@ -379,8 +451,14 @@ mod tests {
     #[test]
     fn unavailable_history_maps_only_retry_back_and_quit() {
         for (code, expected) in [
-            (KeyCode::Char('r'), Command::RefreshWorklogs),
-            (KeyCode::Esc, Command::BackToTaskList),
+            (
+                KeyCode::Char('r'),
+                Command::WorklogHistory(WorklogHistoryCommand::RefreshWorklogs),
+            ),
+            (
+                KeyCode::Esc,
+                Command::WorklogHistory(WorklogHistoryCommand::BackToTaskList),
+            ),
             (KeyCode::Char('q'), Command::Quit),
         ] {
             assert_eq!(

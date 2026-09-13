@@ -97,15 +97,17 @@ impl<S: TrackerApplicationService> App<S> {
         )
     }
 
-    pub fn handle(&mut self, command: Command) {
-        match command {
-            Command::Quit => self.shell.quit(),
-            Command::OpenHistory => self.open_history(),
-            Command::BackToTaskList => self.back_to_task_list(),
-            command => match self.shell.screen() {
-                Screen::TaskList => self.handle_task_list_command(command),
-                Screen::WorklogHistory => self.handle_worklog_history_command(command),
-            },
+    pub(crate) fn handle(&mut self, command: Command) {
+        match (self.shell.screen(), command) {
+            (_, Command::Quit) => self.shell.quit(),
+            (Screen::TaskList, Command::TaskList(command)) => {
+                self.handle_task_list_command(command);
+            }
+            (Screen::WorklogHistory, Command::WorklogHistory(command)) => {
+                self.handle_worklog_history_command(command);
+            }
+            (Screen::TaskList, Command::WorklogHistory(_))
+            | (Screen::WorklogHistory, Command::TaskList(_)) => {}
         }
     }
 

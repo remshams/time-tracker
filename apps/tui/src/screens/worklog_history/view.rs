@@ -170,6 +170,7 @@ mod tests {
 
     use crate::app::App;
     use crate::command::Command;
+    use crate::screens::{TaskListCommand, WorklogHistoryCommand};
     use crate::test_support::{app_in_timezone, app_with_test_clock};
 
     const WIDTH: u16 = 80;
@@ -197,7 +198,7 @@ mod tests {
             TrackerApplication::load(repository).unwrap(),
             chrono_tz::Africa::Johannesburg,
         );
-        app.handle(Command::OpenHistory);
+        app.handle(Command::TaskList(TaskListCommand::OpenHistory));
         app
     }
 
@@ -275,7 +276,7 @@ mod tests {
     #[test]
     fn the_deletion_modal_shows_local_times_and_permanence_at_sixty_columns() {
         let mut app = history_app(&[(3_600, 3_615)]);
-        app.handle(Command::OpenDeletion);
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
         let terminal = draw_at(&app, 60, 20);
         let screen = rows(&terminal).join("\n");
         assert!(screen.contains("Delete worklog"), "got {screen:?}");
@@ -357,9 +358,9 @@ mod tests {
     #[test]
     fn the_running_row_shows_running_and_the_headers_elapsed_time() {
         let (mut app, clock) = app_with_test_clock_for_view(&["alpha"]);
-        app.handle(Command::ToggleTracking);
+        app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
         clock.advance_monotonic(Duration::from_secs(125));
-        app.handle(Command::OpenHistory);
+        app.handle(Command::TaskList(TaskListCommand::OpenHistory));
         let terminal = draw(&app);
         let rows = rows(&terminal);
 
@@ -377,7 +378,7 @@ mod tests {
     #[test]
     fn an_empty_history_renders_its_own_message() {
         let mut app = app_with(&["alpha"]);
-        app.handle(Command::OpenHistory);
+        app.handle(Command::TaskList(TaskListCommand::OpenHistory));
         let terminal = draw(&app);
         assert!(
             row(&terminal, 2).contains("No worklogs yet."),
@@ -394,8 +395,8 @@ mod tests {
             .collect();
         let mut app = history_app(&entries);
         for _ in 0..50 {
-            app.handle(Command::OpenDeletion);
-            app.handle(Command::Confirm);
+            app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion));
+            app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
         }
 
         assert!(app.app_view().history().unwrap().worklogs().is_empty());
@@ -410,7 +411,9 @@ mod tests {
     #[test]
     fn correction_modal_marks_focus_shows_the_cursor_and_fits_sixty_columns() {
         let mut app = history_app(&[(3600, 3615)]);
-        app.handle(Command::OpenCorrection);
+        app.handle(Command::WorklogHistory(
+            WorklogHistoryCommand::OpenCorrection,
+        ));
         let terminal = draw_at(&app, 60, 20);
         let screen_rows = rows(&terminal);
         let start_row = screen_rows
@@ -436,7 +439,9 @@ mod tests {
             assert!(footer.contains(hint), "footer misses {hint:?}: {footer:?}");
         }
 
-        app.handle(Command::SwitchCorrectionField);
+        app.handle(Command::WorklogHistory(
+            WorklogHistoryCommand::SwitchCorrectionField,
+        ));
         let terminal = draw_at(&app, 60, 20);
         let rows = rows(&terminal);
         let end_row = rows.iter().position(|row| row.contains("End  : ")).unwrap() as u16;

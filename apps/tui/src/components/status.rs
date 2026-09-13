@@ -29,6 +29,7 @@ mod tests {
 
     use crate::app::App;
     use crate::command::Command;
+    use crate::screens::TaskListCommand;
 
     fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
         let repository = SqliteRepository::open_in_memory().unwrap();
@@ -57,8 +58,8 @@ mod tests {
     #[test]
     fn the_status_line_labels_errors_and_uses_default_colors() {
         let mut app = app_with(&["alpha"]);
-        app.handle(Command::OpenAdd);
-        app.handle(Command::Confirm);
+        app.handle(Command::TaskList(TaskListCommand::OpenAdd));
+        app.handle(Command::TaskList(TaskListCommand::Confirm));
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal
             .draw(|frame| crate::ui::render(frame, app.app_view()))

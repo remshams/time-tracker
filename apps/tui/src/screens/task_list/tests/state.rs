@@ -5,9 +5,9 @@ use super::*;
 #[test]
 fn cancel_commands_preserve_expected_state() {
     let mut app = app_with(&["one"]);
-    app.handle(Command::OpenAdd);
-    app.handle(Command::Insert('x'));
-    app.handle(Command::Cancel);
+    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
+    app.handle(Command::TaskList(TaskListCommand::Insert('x')));
+    app.handle(Command::TaskList(TaskListCommand::Cancel));
     assert!(matches!(
         app.app_view().task_list().mode(),
         TaskListMode::Normal
