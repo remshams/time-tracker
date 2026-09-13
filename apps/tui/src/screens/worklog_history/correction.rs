@@ -58,11 +58,6 @@ impl CorrectionDraft {
         self.focused
     }
 
-    #[cfg(test)]
-    pub(crate) fn focused_input_for_test(&self) -> &crate::support::timestamps::TimestampInput {
-        self.focused_input()
-    }
-
     pub(crate) fn original(&self, field: CorrectionField) -> chrono::DateTime<chrono::Utc> {
         match field {
             CorrectionField::Start => self.original_start,

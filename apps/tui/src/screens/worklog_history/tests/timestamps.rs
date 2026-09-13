@@ -239,7 +239,12 @@ fn timestamp_input_accepts_every_supported_year_shape_up_to_chrono_limit() {
 fn changed_ambiguous_input_uses_the_original_offset_or_is_rejected() {
     let zone = CorrectionTestZone;
     let mut input = TimestampInput::new("1970-01-01 00:00".to_owned());
-    input.replace("1970-01-01 06:30".to_owned());
+    for _ in 0..input.text().chars().count() {
+        input.backspace();
+    }
+    for character in "1970-01-01 06:30".chars() {
+        input.insert(character);
+    }
 
     assert_eq!(
         resolve_correction_timestamp(&input, &zone, at(10_000)).unwrap(),

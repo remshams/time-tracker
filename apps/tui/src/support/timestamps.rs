@@ -69,13 +69,6 @@ impl TimestampInput {
         self.cursor = self.cursor.saturating_add(1).min(self.text.chars().count());
     }
 
-    #[cfg(test)]
-    pub(crate) fn replace(&mut self, text: String) {
-        self.cursor = text.chars().count();
-        self.text = text;
-        self.adjusted_instant = None;
-    }
-
     pub(crate) fn replace_with_adjustment(&mut self, text: String, instant: DateTime<Utc>) {
         self.cursor = text.chars().count();
         self.text = text;

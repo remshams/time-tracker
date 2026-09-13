@@ -84,14 +84,19 @@ pub(crate) fn replace_end<S: TrackerApplicationService>(app: &mut App<S>, text: 
 }
 
 fn replace_timestamp<S: TrackerApplicationService>(app: &mut App<S>, text: String) {
-    let count = app
+    let draft = app
         .app_view()
         .correction()
-        .expect("correction must be open")
-        .focused_input_for_test()
-        .text()
-        .chars()
-        .count();
+        .expect("correction must be open");
+    let count = match draft.focused() {
+        CorrectionField::Start => draft.start().text().chars().count(),
+        CorrectionField::End => draft
+            .end()
+            .expect("the focused end input must exist")
+            .text()
+            .chars()
+            .count(),
+    };
     for _ in 0..count {
         app.handle(Command::Backspace);
     }
