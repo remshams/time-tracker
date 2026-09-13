@@ -2,6 +2,6 @@ threshold = 30.0
 fail-above = true
 missing = "pessimistic"
 sort = "file"
-# Unit-test support under `src/tests` is test code, equivalent to Cargo's
-# default-excluded top-level `tests` directory. Production code remains gated.
-exclude = ["**/src/tests/**"]
+# Unit-test support under any `src/**/tests` directory is test code, equivalent
+# to Cargo's default-excluded top-level `tests` directory.
+exclude = ["**/src/**/tests/**"]
