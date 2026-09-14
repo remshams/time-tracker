@@ -47,36 +47,7 @@ pub fn render(frame: &mut Frame, app: AppView<'_>) {
             );
         }
         ScreenState::WorklogHistory(state) => {
-            let history = state.history();
-            let rows: Vec<worklog_history::view::Row> = history
-                .worklogs()
-                .iter()
-                .map(|worklog| worklog_history::view::Row {
-                    start: app.local_time(worklog.start()),
-                    end: worklog.end().map(|end| app.local_time(end)),
-                    duration: text::format_elapsed(app.history_row_duration(worklog)),
-                })
-                .collect();
-            let deletion = match state.mode() {
-                worklog_history::WorklogHistoryMode::ConfirmDeletion { worklog } => {
-                    Some(worklog_history::view::Deletion {
-                        start: app.local_time(worklog.start()),
-                        end: worklog
-                            .end()
-                            .map(|end| app.local_time(end))
-                            .unwrap_or_else(|| "Running".to_owned()),
-                    })
-                }
-                _ => None,
-            };
-            worklog_history::view::render(
-                frame,
-                body,
-                state,
-                app.history_task_name().unwrap_or("unknown task"),
-                &rows,
-                deletion.as_ref(),
-            );
+            worklog_history::view::render(frame, body, app, state);
         }
     }
     status::render(frame, status_area, app.status());

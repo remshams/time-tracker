@@ -4,7 +4,8 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 
-use crate::components::dialogs;
+use crate::app::AppView;
+use crate::components::{dialogs, text};
 use crate::screens::worklog_history::{
     CorrectionDraft, CorrectionField, HistoryAvailability, WorklogHistoryMode, WorklogHistoryState,
 };
@@ -13,33 +14,53 @@ use crate::support::timestamps::TimestampInput;
 
 /// The immutable text needed to render one history row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Row {
-    pub(crate) start: String,
-    pub(crate) end: Option<String>,
-    pub(crate) duration: String,
+struct Row {
+    start: String,
+    end: Option<String>,
+    duration: String,
 }
 
 /// The immutable text needed by the deletion dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Deletion {
-    pub(crate) start: String,
-    pub(crate) end: String,
+struct Deletion {
+    start: String,
+    end: String,
 }
 
 /// Renders history rows and the modal owned by its current mode.
-pub(crate) fn render(
-    frame: &mut Frame,
-    area: Rect,
-    state: &WorklogHistoryState,
-    task_name: &str,
-    rows: &[Row],
-    deletion: Option<&Deletion>,
-) {
-    render_body(frame, area, state, task_name, rows);
+pub(crate) fn render(frame: &mut Frame, area: Rect, app: AppView<'_>, state: &WorklogHistoryState) {
+    let rows: Vec<Row> = state
+        .history()
+        .worklogs()
+        .iter()
+        .map(|worklog| Row {
+            start: app.local_time(worklog.start()),
+            end: worklog.end().map(|end| app.local_time(end)),
+            duration: text::format_elapsed(app.history_row_duration(worklog)),
+        })
+        .collect();
+    let deletion = match state.mode() {
+        WorklogHistoryMode::ConfirmDeletion { worklog } => Some(Deletion {
+            start: app.local_time(worklog.start()),
+            end: worklog
+                .end()
+                .map(|end| app.local_time(end))
+                .unwrap_or_else(|| "Running".to_owned()),
+        }),
+        _ => None,
+    };
+
+    render_body(
+        frame,
+        area,
+        state,
+        app.history_task_name().unwrap_or("unknown task"),
+        &rows,
+    );
     match state.mode() {
         WorklogHistoryMode::Correction(draft) => render_correction_modal(frame, area, draft),
         WorklogHistoryMode::ConfirmDeletion { .. } => {
-            if let Some(deletion) = deletion {
+            if let Some(deletion) = deletion.as_ref() {
                 render_delete_modal(frame, area, deletion);
             }
         }
