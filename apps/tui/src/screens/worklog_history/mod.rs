@@ -3,6 +3,7 @@ mod command;
 pub mod correction;
 mod deletion;
 mod keymap;
+mod move_actions;
 mod move_worklog;
 mod state;
 pub(crate) mod view;
