@@ -302,24 +302,27 @@ mod tests {
     }
 
     fn move_history_app() -> App<TrackerApplication<SqliteRepository>> {
+        move_history_app_with_destinations(&["Beta reports", "Gamma planning"])
+    }
+
+    fn move_history_app_with_destinations(
+        destination_names: &[&str],
+    ) -> App<TrackerApplication<SqliteRepository>> {
         let repository = SqliteRepository::open_in_memory().unwrap();
         let source = Task::create(
             TaskId::from_uuid(uuid::Uuid::from_u128(1)),
             TaskName::new("alpha").unwrap(),
             DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
         );
-        let beta = Task::create(
-            TaskId::from_uuid(uuid::Uuid::from_u128(2)),
-            TaskName::new("Beta reports").unwrap(),
-            DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
-        );
-        let gamma = Task::create(
-            TaskId::from_uuid(uuid::Uuid::from_u128(3)),
-            TaskName::new("Gamma planning").unwrap(),
-            DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
-        );
-        for task in [&source, &beta, &gamma] {
-            repository.create_task(task.clone()).unwrap();
+        repository.create_task(source.clone()).unwrap();
+        for (index, name) in destination_names.iter().enumerate() {
+            repository
+                .create_task(Task::create(
+                    TaskId::from_uuid(uuid::Uuid::from_u128(index as u128 + 2)),
+                    TaskName::new(name).unwrap(),
+                    DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
+                ))
+                .unwrap();
         }
         repository
             .insert_worklog(
@@ -611,6 +614,25 @@ mod tests {
         );
         assert!(screen.iter().any(|row| row.contains("Beta reports")));
         assert!(screen.iter().any(|row| row.contains("Gamma planning")));
+        let beta_row = screen
+            .iter()
+            .position(|row| row.contains("› Beta reports"))
+            .expect("the selected destination is visible") as u16;
+        assert!(
+            !cell(&terminal, 2, beta_row)
+                .add_modifier
+                .contains(Modifier::REVERSED),
+            "search focus must not style the selected result"
+        );
+        let title_row = screen
+            .iter()
+            .position(|row| row.contains("Move worklog"))
+            .expect("the move title is visible");
+        assert!(
+            screen[title_row + 5].contains('└'),
+            "two results use the exact six-row dialog: {:?}",
+            screen[title_row + 5]
+        );
         assert!(screen[19].contains("type"));
         assert!(screen[19].contains("enter"));
 
@@ -628,6 +650,34 @@ mod tests {
                 .contains(Modifier::REVERSED),
             "the selected result marks results focus"
         );
+    }
+
+    #[test]
+    fn move_modal_scrolls_six_results_and_marks_the_selected_row() {
+        let mut app = move_history_app_with_destinations(&[
+            "task one",
+            "task two",
+            "task three",
+            "task four",
+            "task five",
+            "task six",
+            "task seven",
+            "task eight",
+        ]);
+        for _ in 0..7 {
+            app.handle(Command::WorklogHistory(
+                WorklogHistoryCommand::MoveDestinationDown,
+            ));
+        }
+        app.handle(Command::WorklogHistory(
+            WorklogHistoryCommand::ToggleMoveFocus,
+        ));
+
+        let terminal = draw_at(&app, 60, 20);
+        let screen = rows(&terminal).join("\n");
+        assert!(!screen.contains("task one"), "got {screen:?}");
+        assert!(!screen.contains("task two"), "got {screen:?}");
+        assert!(screen.contains("› task eight"), "got {screen:?}");
     }
 
     #[test]

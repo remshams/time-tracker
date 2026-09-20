@@ -20,6 +20,7 @@ struct Data {
     fail_reads_after_task_write: bool,
     hide_next_active_read: bool,
     list_reads: usize,
+    move_writes: usize,
     deletion_writes: usize,
     history_revisions: Vec<(TaskId, i64)>,
 }
@@ -269,6 +270,7 @@ impl WorklogRepository for MemoryRepository {
         expected: WorklogTimes,
         destination_task_id: TaskId,
     ) -> Result<WorklogMove, RepositoryError> {
+        self.0.borrow_mut().move_writes += 1;
         if let Some(error) = self.take_write_failure() {
             return Err(error);
         }

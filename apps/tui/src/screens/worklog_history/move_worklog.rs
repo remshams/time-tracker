@@ -90,18 +90,15 @@ impl MoveDraft {
     }
 
     pub(crate) fn move_up(&mut self) {
-        self.selected = match self.selected {
-            Some(index) => Some(index.saturating_sub(1)),
-            None => self.results.len().checked_sub(1),
-        };
+        if let Some(index) = self.selected {
+            self.selected = Some(index.saturating_sub(1));
+        }
     }
 
     pub(crate) fn move_down(&mut self) {
-        self.selected = match self.selected {
-            Some(index) => Some((index + 1).min(self.results.len().saturating_sub(1))),
-            None if !self.results.is_empty() => Some(0),
-            None => None,
-        };
+        if let Some(index) = self.selected {
+            self.selected = Some((index + 1).min(self.results.len() - 1));
+        }
     }
 
     pub(crate) fn insert(&mut self, character: char) {
@@ -206,6 +203,9 @@ mod tests {
         assert!(fuzzy_score("Build release", "BSE").is_some());
         assert!(fuzzy_score("Build release", "BX").is_none());
         assert!(fuzzy_score("release build", "bu") > fuzzy_score("blue sky", "bu"));
+        assert_eq!(fuzzy_score("ab", "ab"), Some((1, 1)));
+        assert_eq!(fuzzy_score("a b", "ab"), Some((0, 2)));
+        assert_eq!(fuzzy_score("-?", "-?"), Some((1, 2)));
     }
 
     #[test]
@@ -235,6 +235,8 @@ mod tests {
         draft.move_up();
         draft.move_down();
         assert_eq!(draft.selected_task_id(), None);
+        assert_eq!(draft.selected_result_index(), None);
+        assert_eq!(draft.result_count(), 0);
         assert_eq!(
             draft.worklog().times(),
             WorklogTimes::new(
@@ -242,6 +244,26 @@ mod tests {
                 Some(DateTime::<Utc>::from_timestamp(60, 0).unwrap()),
             )
         );
+    }
+
+    #[test]
+    fn result_navigation_moves_and_clamps_the_selected_index() {
+        let mut draft = MoveDraft::new(
+            worklog(),
+            vec![candidate("alpha"), candidate("beta"), candidate("gamma")],
+        );
+        assert_eq!(draft.result_count(), 3);
+        assert_eq!(draft.selected_result_index(), Some(0));
+        draft.move_down();
+        assert_eq!(draft.selected_result_index(), Some(1));
+        draft.move_down();
+        draft.move_down();
+        assert_eq!(draft.selected_result_index(), Some(2));
+        draft.move_up();
+        assert_eq!(draft.selected_result_index(), Some(1));
+        draft.move_up();
+        draft.move_up();
+        assert_eq!(draft.selected_result_index(), Some(0));
     }
 
     #[test]

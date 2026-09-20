@@ -108,16 +108,11 @@ impl SqliteRepository {
                 let destination_task_latest_work_start =
                     latest_work_start_on(&transaction, destination_task_id)?;
                 let active_worklog = active_worklog_on(&transaction)?;
-                let active_task_latest_work_start = match active_worklog.as_ref() {
-                    Some(active) if active.task_id() == expected_source_task_id => {
-                        source_task_latest_work_start
-                    }
-                    Some(active) if active.task_id() == destination_task_id => {
-                        destination_task_latest_work_start
-                    }
-                    Some(active) => latest_work_start_on(&transaction, active.task_id())?,
-                    None => None,
-                };
+                let active_task_latest_work_start = active_worklog
+                    .as_ref()
+                    .map(|active| latest_work_start_on(&transaction, active.task_id()))
+                    .transpose()?
+                    .flatten();
                 transaction.commit()?;
                 Ok(WorklogMove {
                     worklog: moved,

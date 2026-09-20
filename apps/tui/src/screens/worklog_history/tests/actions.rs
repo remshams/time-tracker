@@ -3,6 +3,23 @@
 use super::*;
 
 #[test]
+fn confirm_is_ignored_in_normal_history_mode() {
+    let alpha = task(1, "alpha");
+    let target = history_worklog(10, alpha.id(), 100);
+    let mut service = TestService::with_tasks(vec![alpha]);
+    service.worklog_pages = vec![Ok(page(vec![target], None))];
+    let mut app = App::load(service);
+    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+    let screen_before = app.app_view().screen_state().clone();
+    let status_before = app.app_view().status().clone();
+
+    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
+
+    assert_eq!(app.app_view().screen_state(), &screen_before);
+    assert_eq!(app.app_view().status(), &status_before);
+}
+
+#[test]
 fn deletion_opening_requires_normal_history_mode() {
     let alpha = task(1, "alpha");
     let target = history_worklog(10, alpha.id(), 100);

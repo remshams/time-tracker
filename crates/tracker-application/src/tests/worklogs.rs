@@ -941,6 +941,30 @@ fn move_rejects_the_current_task_without_writing() {
 }
 
 #[test]
+fn move_rejects_each_stale_source_value_before_writing() {
+    let alpha = task(1, "alpha");
+    let beta = task(2, "beta");
+    let original = completed_worklog(10, alpha.id(), 100, 110);
+
+    for (source_task_id, expected) in [
+        (beta.id(), original.times()),
+        (alpha.id(), WorklogTimes::new(at(101), Some(at(110)))),
+    ] {
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+        repository.insert_worklog(&original).unwrap();
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+
+        assert_eq!(
+            application.move_worklog(original.id(), source_task_id, expected, beta.id()),
+            Err(ApplicationError::WorklogMoveWrite {
+                write: RepositoryError::WorklogChanged { id: original.id() },
+            })
+        );
+        assert_eq!(repository.0.borrow().move_writes, 0);
+    }
+}
+
+#[test]
 fn failed_move_recovers_authoritative_tracking_state() {
     let alpha = task(1, "alpha");
     let beta = task(2, "beta");

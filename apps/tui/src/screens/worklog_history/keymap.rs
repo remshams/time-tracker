@@ -534,6 +534,14 @@ mod tests {
             assert!(!results_footer.contains("type"));
             assert!(!results_footer.contains("bs"));
         }
+        assert_eq!(
+            history_footer(move_dialog(), true, 79),
+            "type/bs tab/S-tab ↑/↓ choose enter move esc cancel ctrl+c"
+        );
+        assert_eq!(
+            history_footer(move_dialog(), true, 80),
+            "type/bs · tab/S-tab · ↑/↓ choose · enter move · esc cancel · ctrl+c quit"
+        );
         assert!(history_footer(WorklogHistoryMode::Normal, true, 80).contains("m move"));
     }
 

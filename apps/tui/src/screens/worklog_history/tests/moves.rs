@@ -107,6 +107,37 @@ fn move_search_filters_fuzzily_and_keeps_search_editing_separate_from_results_na
 }
 
 #[test]
+fn move_destination_commands_change_and_clamp_the_selected_result() {
+    let (mut app, _, _, beta, gamma, _) = move_app(false);
+    assert_eq!(
+        app.app_view().move_draft().unwrap().selected_task_id(),
+        Some(beta.id())
+    );
+
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::MoveDestinationDown,
+    ));
+    assert_eq!(
+        app.app_view().move_draft().unwrap().selected_task_id(),
+        Some(gamma.id())
+    );
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::MoveDestinationDown,
+    ));
+    assert_eq!(
+        app.app_view().move_draft().unwrap().selected_task_id(),
+        Some(gamma.id())
+    );
+    app.handle(Command::WorklogHistory(
+        WorklogHistoryCommand::MoveDestinationUp,
+    ));
+    assert_eq!(
+        app.app_view().move_draft().unwrap().selected_task_id(),
+        Some(beta.id())
+    );
+}
+
+#[test]
 fn move_with_no_matches_keeps_the_dialog_open_and_does_not_write() {
     let (mut app, spy, _, _, _, _) = move_app(false);
     for character in "zzz".chars() {
