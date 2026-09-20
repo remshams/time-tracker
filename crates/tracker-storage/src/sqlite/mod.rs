@@ -42,10 +42,9 @@ impl SqliteRepository {
     /// must already exist; use [`crate::ensure_app_data_dir`] for the standard
     /// database location.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
-        let path = path.as_ref();
-        paths::prepare_database_file(path)?;
+        let path = paths::prepare_database_file(path.as_ref())?;
         let flags = OpenFlags::SQLITE_OPEN_READ_WRITE.union(OpenFlags::SQLITE_OPEN_NOFOLLOW);
-        let conn = Connection::open_with_flags(path, flags)?;
+        let conn = Connection::open_with_flags(&path, flags)?;
         Self::prepare(conn)
     }
 
@@ -176,6 +175,21 @@ mod unit_tests {
         worklog_from_stored, worklog_id_from_stored,
     };
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_database_below_a_symlinked_ancestor_opens_through_a_physical_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let real = temp.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let repository = SqliteRepository::open(link.join("tracker.db")).unwrap();
+
+        assert!(repository.list_tasks().unwrap().is_empty());
+        assert!(real.join("tracker.db").is_file());
+    }
 
     #[test]
     fn a_history_page_reports_the_active_tasks_authoritative_aggregate() {

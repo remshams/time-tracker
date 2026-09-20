@@ -83,24 +83,41 @@ fn validate_dir(path: &Path) -> Result<(), StorageError> {
     Ok(())
 }
 
-/// Prepares the database file at `path` for opening.
+/// Prepares the database file at `path` for opening and returns a path with
+/// its parent directory resolved to its physical location.
 ///
 /// A missing file is created with owner-only permissions. An existing file
 /// must be a regular file owned by the current user; its permissions are
-/// repaired to owner-only. A symbolic link at the path is rejected.
-pub(crate) fn prepare_database_file(path: &Path) -> Result<(), StorageError> {
-    match create_exclusive(path) {
+/// repaired to owner-only. A symbolic link at the path is rejected. Resolving
+/// only the parent permits system aliases such as macOS `/var` while leaving
+/// the final component available for the symlink check.
+pub(crate) fn prepare_database_file(path: &Path) -> Result<PathBuf, StorageError> {
+    let path = std::path::absolute(path)?;
+    let file_name = path.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "database path has no file name",
+        )
+    })?;
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "database path has no parent directory",
+        )
+    })?;
+    let path = fs::canonicalize(parent)?.join(file_name);
+    match create_exclusive(&path) {
         Ok(()) => {
             // The mode given to the OS is filtered by the umask, so verify
             // and repair after creation.
             #[cfg(unix)]
-            repair_mode(path, FILE_MODE)?;
+            repair_mode(&path, FILE_MODE)?;
         }
         // The file exists, or creating it failed for a reason that
         // validation reports more precisely.
-        Err(_) => validate_file(path)?,
+        Err(_) => validate_file(&path)?,
     }
-    Ok(())
+    Ok(path)
 }
 
 /// Creates the database file, failing if it already exists.
@@ -318,9 +335,38 @@ mod tests {
     fn prepare_database_file_creates_the_file_owner_only() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("tt.db");
-        prepare_database_file(&path).unwrap();
+        let prepared = prepare_database_file(&path).unwrap();
         assert!(path.is_file());
         assert_eq!(mode_of(&path), 0o600);
+        assert_eq!(prepared.file_name().unwrap(), "tt.db");
+        assert_eq!(
+            prepared.parent().unwrap(),
+            temp.path().canonicalize().unwrap()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prepare_database_file_resolves_a_symlinked_ancestor() {
+        let temp = tempfile::tempdir().unwrap();
+        let real = temp.path().join("real");
+        fs::create_dir(&real).unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let prepared = prepare_database_file(&link.join("tt.db")).unwrap();
+
+        assert_eq!(prepared, real.canonicalize().unwrap().join("tt.db"));
+        assert!(prepared.is_file());
+    }
+
+    #[test]
+    fn prepare_database_file_rejects_a_path_without_a_file_name() {
+        let error = prepare_database_file(Path::new("/"))
+            .expect_err("the filesystem root cannot name a database");
+        assert!(
+            matches!(error, StorageError::Io(error) if error.kind() == io::ErrorKind::InvalidInput)
+        );
     }
 
     #[cfg(unix)]

@@ -174,8 +174,8 @@ fn baseline_termios() -> libc::termios {
             &mut master,
             &mut slave,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            std::ptr::null(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         )
     };
     assert_eq!(
@@ -217,11 +217,15 @@ fn spawn_pty(home: &Path, baseline: &libc::termios) -> PtyChild {
 
     unsafe {
         let mut master: libc::c_int = -1;
+        // Apple's declarations take mutable pointers while Linux declares
+        // these inputs const. A private copy satisfies both signatures and
+        // keeps the baseline used by the restoration assertion unchanged.
+        let mut child_termios = *baseline;
         let pid = libc::forkpty(
             &mut master,
             std::ptr::null_mut(),
-            baseline,
-            std::ptr::null(),
+            &mut child_termios,
+            std::ptr::null_mut(),
         );
         if pid == 0 {
             // The child only executes async-signal-safe calls after fork.
