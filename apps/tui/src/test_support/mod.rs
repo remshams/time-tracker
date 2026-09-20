@@ -10,10 +10,10 @@ pub(crate) use chrono::{
     DateTime, FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, TimeDelta, TimeZone, Utc,
 };
 pub(crate) use tracker_application::{
-    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, SetActiveTaskOutcome,
-    TaskListItem, TaskOperations, TaskOrdering, TaskQueries, TrackerApplication,
-    TrackerApplicationService, TrackingOperations, WorklogCursor, WorklogOperations, WorklogPage,
-    WorklogPageSnapshot, WorklogQueries,
+    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, RepositoryError,
+    SetActiveTaskOutcome, TaskListItem, TaskOperations, TaskOrdering, TaskQueries,
+    TrackerApplication, TrackerApplicationService, TrackingOperations, WorklogCursor,
+    WorklogOperations, WorklogPage, WorklogPageSnapshot, WorklogQueries,
 };
 pub(crate) use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, TrackingState, Worklog, WorklogCorrectionError,
@@ -121,9 +121,11 @@ pub(crate) fn text(status: &Status) -> &str {
 struct SpyState {
     worklog_reads: usize,
     correction_calls: Vec<(WorklogId, WorklogTimes, WorklogTimes, DateTime<Utc>)>,
+    move_calls: Vec<(WorklogId, TaskId, WorklogTimes, TaskId)>,
     deletion_calls: Vec<(WorklogId, TaskId, WorklogTimes)>,
     clear_calls: Vec<(WorklogId, DateTime<Utc>)>,
     correction_error: Option<ApplicationError>,
+    move_error: Option<ApplicationError>,
     external_tracking: Option<TrackingState>,
     latest_work_overrides: Vec<(TaskId, DateTime<Utc>)>,
     latest_work_starts: Vec<(TaskId, Option<DateTime<Utc>>)>,
@@ -145,6 +147,10 @@ impl TestServiceSpy {
         self.state.borrow().correction_calls.clone()
     }
 
+    pub(crate) fn move_calls(&self) -> Vec<(WorklogId, TaskId, WorklogTimes, TaskId)> {
+        self.state.borrow().move_calls.clone()
+    }
+
     pub(crate) fn deletion_calls(&self) -> Vec<(WorklogId, TaskId, WorklogTimes)> {
         self.state.borrow().deletion_calls.clone()
     }
@@ -155,6 +161,10 @@ impl TestServiceSpy {
 
     pub(crate) fn set_correction_error(&self, error: ApplicationError) {
         self.state.borrow_mut().correction_error = Some(error);
+    }
+
+    pub(crate) fn set_move_error(&self, error: ApplicationError) {
+        self.state.borrow_mut().move_error = Some(error);
     }
 
     pub(crate) fn set_external_tracking(&self, tracking: TrackingState) {
@@ -214,6 +224,7 @@ pub(crate) struct TestService {
     pub(crate) tasks_after_next_worklog_read: Option<Vec<Task>>,
     pub(crate) worklog_pages: Vec<Result<WorklogPage, ApplicationError>>,
     pub(crate) correction_error: Option<ApplicationError>,
+    pub(crate) move_error: Option<ApplicationError>,
     pub(crate) deletion_error: Option<ApplicationError>,
     pub(crate) authoritative_worklogs: Vec<Worklog>,
 }
@@ -239,6 +250,7 @@ impl TestService {
             tasks_after_next_worklog_read: None,
             worklog_pages: Vec::new(),
             correction_error: None,
+            move_error: None,
             deletion_error: None,
             authoritative_worklogs: Vec::new(),
         }
@@ -276,7 +288,7 @@ impl TestService {
         }
     }
 
-    fn deletion_target_index(&self, id: WorklogId) -> Result<usize, ApplicationError> {
+    fn authoritative_worklog_index(&self, id: WorklogId) -> Result<usize, ApplicationError> {
         self.authoritative_worklogs
             .iter()
             .position(|worklog| worklog.id() == id)
@@ -514,6 +526,63 @@ impl TrackingOperations for TestService {
 }
 
 impl WorklogOperations for TestService {
+    fn move_worklog(
+        &mut self,
+        id: WorklogId,
+        source_task_id: TaskId,
+        expected: WorklogTimes,
+        destination_task_id: TaskId,
+    ) -> Result<Worklog, ApplicationError> {
+        self.apply_external_state();
+        self.spy.state.borrow_mut().move_calls.push((
+            id,
+            source_task_id,
+            expected,
+            destination_task_id,
+        ));
+        let move_error = self
+            .spy
+            .state
+            .borrow()
+            .move_error
+            .clone()
+            .or_else(|| self.move_error.clone());
+        if let Some(error) = move_error {
+            return Err(error);
+        }
+        let index = self.authoritative_worklog_index(id)?;
+        let stored = &self.authoritative_worklogs[index];
+        if stored.task_id() != source_task_id || stored.times() != expected {
+            return Err(ApplicationError::worklog_changed(id));
+        }
+        let destination = self
+            .tasks
+            .iter()
+            .find(|task| task.id() == destination_task_id)
+            .ok_or(ApplicationError::Repository(
+                RepositoryError::TaskNotFound {
+                    id: destination_task_id,
+                },
+            ))?;
+        if destination.is_archived() {
+            return Err(ApplicationError::Repository(
+                RepositoryError::TaskArchived {
+                    id: destination_task_id,
+                },
+            ));
+        }
+        let moved = stored.moved_to(destination_task_id)?;
+        self.authoritative_worklogs[index] = moved.clone();
+        if moved.is_active() {
+            self.tracking = TrackingState::Running {
+                worklog: ActiveWorklog::begin(moved.id(), moved.task_id(), moved.start()),
+            };
+        }
+        self.update_latest_work_start(source_task_id);
+        self.update_latest_work_start(destination_task_id);
+        Ok(moved)
+    }
+
     fn correct_worklog(
         &mut self,
         id: WorklogId,
@@ -570,7 +639,7 @@ impl WorklogOperations for TestService {
             .borrow_mut()
             .deletion_calls
             .push((id, task_id, expected));
-        let index = self.deletion_target_index(id)?;
+        let index = self.authoritative_worklog_index(id)?;
         Self::validate_deletion_target(&self.authoritative_worklogs[index], id, task_id, expected)?;
         if let Some(error) = self.deletion_error.clone() {
             return Err(error);

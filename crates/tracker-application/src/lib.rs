@@ -12,7 +12,7 @@ pub use model::{
 };
 pub use repository::{
     RepositoryError, TaskRepository, TrackerRepository, TrackerSnapshot, TrackingRepository,
-    WorklogCorrection, WorklogDeletion, WorklogRepository,
+    WorklogCorrection, WorklogDeletion, WorklogMove, WorklogRepository,
 };
 pub use service::{
     TaskOperations, TaskQueries, TrackerApplication, TrackerApplicationService, TrackingOperations,

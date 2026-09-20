@@ -175,6 +175,11 @@ impl TimeTrackerPage {
         CorrectionDialog::find(&self.screen)
     }
 
+    /// The worklog destination picker, if one is open.
+    pub(crate) fn move_worklog_dialog(&self) -> Option<MoveWorklogDialog> {
+        MoveWorklogDialog::find(&self.screen)
+    }
+
     /// The read-only worklog history, however the screen looks. The
     /// components answer whether the history is shown at all; a task list
     /// snapshot reports `false` there.
@@ -573,6 +578,7 @@ impl Footer {
         let has_q = text.contains(" q ") || text.contains("q/");
         text.contains("o older")
             && text.contains("r refresh")
+            && text.contains("m move")
             && text.contains("d delete")
             && text.contains("esc back")
             && has_q
@@ -898,6 +904,101 @@ pub(crate) struct CorrectionDialog {
     screen: Screen,
     top: u16,
     height: u16,
+}
+
+/// The worklog destination picker over history.
+pub(crate) struct MoveWorklogDialog {
+    screen: Screen,
+    left: u16,
+    top: u16,
+    bottom: u16,
+}
+
+impl MoveWorklogDialog {
+    fn find(screen: &Screen) -> Option<Self> {
+        let (top, title_col) = screen.find("Move worklog")?;
+        let left = title_col.saturating_sub(1);
+        let right = left + 57;
+        let (cols, rows) = screen.size();
+        if top + 2 >= rows || right >= cols {
+            return None;
+        }
+        let bottom = ((top + 1)..rows).find(|row| {
+            screen
+                .cell(*row, left)
+                .is_some_and(|cell| cell.contents() == "└")
+                && screen
+                    .cell(*row, right)
+                    .is_some_and(|cell| cell.contents() == "┘")
+        })?;
+        let borders = [
+            (top, left, "┌"),
+            (top, right, "┐"),
+            (top + 1, left, "│"),
+            (top + 1, right, "│"),
+        ];
+        borders
+            .iter()
+            .all(|(row, col, glyph)| {
+                screen
+                    .cell(*row, *col)
+                    .is_some_and(|cell| cell.contents() == *glyph)
+            })
+            .then_some(Self {
+                screen: screen.clone(),
+                left,
+                top,
+                bottom,
+            })
+    }
+
+    pub(crate) fn source(&self) -> String {
+        self.line(1)
+    }
+
+    pub(crate) fn query(&self) -> String {
+        self.line(2)
+            .strip_prefix("Search: ")
+            .unwrap_or_default()
+            .trim_end_matches('▏')
+            .trim_end()
+            .to_owned()
+    }
+
+    pub(crate) fn results(&self) -> Vec<String> {
+        ((self.top + 3)..self.bottom)
+            .map(|row| {
+                self.screen
+                    .rect_text(self.left + 1..self.left + 57, row..row + 1)
+                    .trim_end()
+                    .trim_start_matches("› ")
+                    .trim_start()
+                    .to_owned()
+            })
+            .filter(|line| !line.is_empty() && line != "No matching active tasks.")
+            .collect()
+    }
+
+    pub(crate) fn selected_result(&self) -> Option<String> {
+        ((self.top + 3)..self.bottom).find_map(|row| {
+            let text = self
+                .screen
+                .rect_text(self.left + 1..self.left + 57, row..row + 1)
+                .trim_end()
+                .to_owned();
+            text.strip_prefix("› ").map(ToOwned::to_owned)
+        })
+    }
+
+    fn line(&self, offset: u16) -> String {
+        self.screen
+            .rect_text(
+                self.left + 1..self.left + 57,
+                self.top + offset..self.top + offset + 1,
+            )
+            .trim_end()
+            .to_owned()
+    }
 }
 
 impl CorrectionDialog {

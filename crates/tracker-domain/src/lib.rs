@@ -11,4 +11,6 @@ mod worklog;
 pub use ids::{TaskId, WorklogId};
 pub use task::{Task, TaskError, TaskName, TaskNameError};
 pub use tracking::{SwitchedWorklogs, Tracker, TrackingError, TrackingOutcome, TrackingState};
-pub use worklog::{ActiveWorklog, Worklog, WorklogCorrectionError, WorklogError, WorklogTimes};
+pub use worklog::{
+    ActiveWorklog, Worklog, WorklogCorrectionError, WorklogError, WorklogMoveError, WorklogTimes,
+};

@@ -7,7 +7,8 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 use crate::app::AppView;
 use crate::components::{dialogs, text};
 use crate::screens::worklog_history::{
-    CorrectionDraft, CorrectionField, HistoryAvailability, WorklogHistoryMode, WorklogHistoryState,
+    CorrectionDraft, CorrectionField, HistoryAvailability, MoveDraft, MoveFocus,
+    WorklogHistoryMode, WorklogHistoryState,
 };
 use crate::styles;
 use crate::support::timestamps::TimestampInput;
@@ -59,12 +60,89 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: AppView<'_>, state: &Wo
     );
     match state.mode() {
         WorklogHistoryMode::Correction(draft) => render_correction_modal(frame, area, draft),
+        WorklogHistoryMode::Move(draft) => render_move_modal(frame, area, app, draft),
         WorklogHistoryMode::ConfirmDeletion { .. } => {
             if let Some(deletion) = deletion.as_ref() {
                 render_delete_modal(frame, area, deletion);
             }
         }
         WorklogHistoryMode::Normal => {}
+    }
+}
+
+fn render_move_modal(frame: &mut Frame, area: Rect, app: AppView<'_>, draft: &MoveDraft) {
+    const VISIBLE_RESULTS: usize = 6;
+    let result_count = draft.result_count();
+    let selected = draft.selected_result_index();
+    let first = selected
+        .unwrap_or(0)
+        .saturating_sub(VISIBLE_RESULTS.saturating_sub(1))
+        .min(result_count.saturating_sub(VISIBLE_RESULTS));
+    let source = draft.worklog();
+    let source_end = source
+        .end()
+        .map(|end| app.local_time(end))
+        .unwrap_or_else(|| "Running".to_owned());
+    let mut lines = vec![
+        Line::from(format!(
+            "Source: {} · {} → {}",
+            app.history_task_name().unwrap_or("unknown task"),
+            app.local_time(source.start()),
+            source_end
+        )),
+        move_search_line(draft, 56),
+    ];
+    if result_count == 0 {
+        lines.push(Line::from("No matching active tasks."));
+    } else {
+        lines.extend(
+            draft
+                .results()
+                .skip(first)
+                .take(VISIBLE_RESULTS)
+                .enumerate()
+                .map(|(offset, candidate)| {
+                    let index = first + offset;
+                    let marker = if selected == Some(index) {
+                        "› "
+                    } else {
+                        "  "
+                    };
+                    let name = format!("{marker}{}", candidate.name());
+                    if draft.focus() == MoveFocus::Results && selected == Some(index) {
+                        Line::from(Span::styled(name, styles::selected()))
+                    } else {
+                        Line::from(name)
+                    }
+                }),
+        );
+    }
+    let height = (lines.len() as u16 + 2).min(10);
+    let modal = dialogs::centered(58, height, area);
+    frame.render_widget(ratatui::widgets::Clear, modal);
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::bordered()
+                .title("Move worklog")
+                .border_style(styles::focused_border()),
+        ),
+        modal,
+    );
+}
+
+fn move_search_line(draft: &MoveDraft, inner_width: usize) -> Line<'_> {
+    const LABEL: &str = "Search: ";
+    let cursor_width = usize::from(draft.focus() == MoveFocus::Search);
+    let query_width = inner_width.saturating_sub(LABEL.len() + cursor_width);
+    let visible_query = text::fit_suffix(draft.query(), query_width);
+    if draft.focus() == MoveFocus::Search {
+        Line::from(vec![
+            Span::styled(LABEL, styles::selected()),
+            Span::raw(visible_query),
+            Span::styled("▏", styles::input_cursor()),
+        ])
+    } else {
+        Line::from(vec![Span::raw(LABEL), Span::raw(visible_query)])
     }
 }
 
@@ -220,6 +298,46 @@ mod tests {
             chrono_tz::Africa::Johannesburg,
         );
         app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+        app
+    }
+
+    fn move_history_app() -> App<TrackerApplication<SqliteRepository>> {
+        let repository = SqliteRepository::open_in_memory().unwrap();
+        let source = Task::create(
+            TaskId::from_uuid(uuid::Uuid::from_u128(1)),
+            TaskName::new("alpha").unwrap(),
+            DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
+        );
+        let beta = Task::create(
+            TaskId::from_uuid(uuid::Uuid::from_u128(2)),
+            TaskName::new("Beta reports").unwrap(),
+            DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
+        );
+        let gamma = Task::create(
+            TaskId::from_uuid(uuid::Uuid::from_u128(3)),
+            TaskName::new("Gamma planning").unwrap(),
+            DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
+        );
+        for task in [&source, &beta, &gamma] {
+            repository.create_task(task.clone()).unwrap();
+        }
+        repository
+            .insert_worklog(
+                &Worklog::new(
+                    WorklogId::from_uuid(uuid::Uuid::from_u128(10)),
+                    source.id(),
+                    DateTime::<Utc>::from_timestamp(3_600, 0).unwrap(),
+                    Some(DateTime::<Utc>::from_timestamp(3_615, 0).unwrap()),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let mut app = app_in_timezone(
+            TrackerApplication::load(repository).unwrap(),
+            chrono_tz::Africa::Johannesburg,
+        );
+        app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenMove));
         app
     }
 
@@ -471,6 +589,65 @@ mod tests {
             cell(&terminal, 2, end_row)
                 .add_modifier
                 .contains(Modifier::REVERSED)
+        );
+    }
+
+    #[test]
+    fn move_modal_renders_source_search_results_and_focus_at_sixty_columns() {
+        let mut app = move_history_app();
+        let terminal = draw_at(&app, 60, 20);
+        let screen = rows(&terminal);
+        assert!(screen.iter().any(|row| row.contains("Move worklog")));
+        assert!(screen.iter().any(|row| row.contains("Source: alpha")));
+        let search_row = screen
+            .iter()
+            .position(|row| row.contains("Search: ▏"))
+            .expect("search input is visible") as u16;
+        assert!(
+            cell(&terminal, 2, search_row)
+                .add_modifier
+                .contains(Modifier::REVERSED),
+            "the search label marks the focused part of the dialog"
+        );
+        assert!(screen.iter().any(|row| row.contains("Beta reports")));
+        assert!(screen.iter().any(|row| row.contains("Gamma planning")));
+        assert!(screen[19].contains("type"));
+        assert!(screen[19].contains("enter"));
+
+        app.handle(Command::WorklogHistory(
+            WorklogHistoryCommand::ToggleMoveFocus,
+        ));
+        let terminal = draw_at(&app, 60, 20);
+        let result_row = rows(&terminal)
+            .iter()
+            .position(|row| row.contains("› Beta reports"))
+            .expect("the selected destination is visible") as u16;
+        assert!(
+            cell(&terminal, 2, result_row)
+                .add_modifier
+                .contains(Modifier::REVERSED),
+            "the selected result marks results focus"
+        );
+    }
+
+    #[test]
+    fn move_search_keeps_the_query_tail_and_cursor_visible_at_sixty_columns() {
+        let mut app = move_history_app();
+        for character in "a".repeat(100).chars() {
+            app.handle(Command::WorklogHistory(
+                WorklogHistoryCommand::InsertMoveQuery(character),
+            ));
+        }
+
+        let terminal = draw_at(&app, 60, 20);
+        let search = rows(&terminal)
+            .into_iter()
+            .find(|row| row.contains("Search:"))
+            .expect("the search row is visible");
+        assert!(search.contains("Search: aaaaaaaaaa"), "got {search:?}");
+        assert!(
+            search.contains("▏│"),
+            "the cursor and border survived: {search:?}"
         );
     }
 }

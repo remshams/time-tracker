@@ -10,15 +10,7 @@ use crate::support::errors::{
 
 impl<S: TrackerApplicationService> App<S> {
     pub(super) fn open_deletion(&mut self) {
-        if !self.history_is_normal() {
-            return;
-        }
-        let Some(worklog) = self
-            .history()
-            .filter(|history| history.is_available())
-            .and_then(|history| history.selected_worklog())
-            .cloned()
-        else {
+        let Some(worklog) = self.selected_history_worklog() else {
             return;
         };
         if worklog.is_active() {

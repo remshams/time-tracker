@@ -849,3 +849,154 @@ fn correction_preserves_write_and_recovery_errors() {
         })
     );
 }
+
+#[test]
+fn completed_move_updates_both_task_aggregates_without_a_follow_up_read() {
+    let alpha = task(1, "alpha");
+    let beta = task(2, "beta");
+    let earlier_alpha = completed_worklog(10, alpha.id(), 100, 110);
+    let moved = completed_worklog(11, alpha.id(), 300, 310);
+    let beta_work = completed_worklog(12, beta.id(), 200, 210);
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+    for worklog in [&earlier_alpha, &moved, &beta_work] {
+        repository.insert_worklog(worklog).unwrap();
+    }
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let list_reads = repository.0.borrow().list_reads;
+
+    let result = application
+        .move_worklog(moved.id(), alpha.id(), moved.times(), beta.id())
+        .unwrap();
+
+    assert_eq!(result.id(), moved.id());
+    assert_eq!(result.task_id(), beta.id());
+    assert_eq!(result.times(), moved.times());
+    assert_eq!(
+        ordered_names(&application, TaskOrdering::RecentlyWorked),
+        ["beta".to_owned(), "alpha".to_owned()]
+    );
+    for (task_id, latest_work_start) in [(alpha.id(), Some(at(100))), (beta.id(), Some(at(300)))] {
+        let item = application
+            .tasks(TaskOrdering::RecentlyWorked)
+            .into_iter()
+            .find(|item| item.task.id() == task_id)
+            .unwrap();
+        assert_eq!(item.latest_work_start, latest_work_start);
+    }
+    assert_eq!(repository.0.borrow().list_reads, list_reads);
+}
+
+#[test]
+fn active_move_keeps_tracking_on_the_destination_task() {
+    let alpha = task(1, "alpha");
+    let beta = task(2, "beta");
+    let earlier_alpha = completed_worklog(10, alpha.id(), 100, 110);
+    let beta_work = completed_worklog(11, beta.id(), 200, 210);
+    let active = worklog(12, alpha.id(), 300);
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+    for worklog in [&earlier_alpha, &beta_work, &active] {
+        repository.insert_worklog(worklog).unwrap();
+    }
+    let mut application = TrackerApplication::load(repository).unwrap();
+
+    let result = application
+        .move_worklog(active.id(), alpha.id(), active.times(), beta.id())
+        .unwrap();
+
+    assert_eq!(result.id(), active.id());
+    assert_eq!(result.task_id(), beta.id());
+    assert!(matches!(
+        application.current_tracking(),
+        TrackingState::Running { worklog }
+            if worklog.id() == active.id() && worklog.task_id() == beta.id()
+    ));
+    for (task_id, latest_work_start) in [(alpha.id(), Some(at(100))), (beta.id(), Some(at(300)))] {
+        let item = application
+            .tasks(TaskOrdering::RecentlyWorked)
+            .into_iter()
+            .find(|item| item.task.id() == task_id)
+            .unwrap();
+        assert_eq!(item.latest_work_start, latest_work_start);
+    }
+}
+
+#[test]
+fn move_rejects_the_current_task_without_writing() {
+    let alpha = task(1, "alpha");
+    let original = completed_worklog(10, alpha.id(), 100, 110);
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+    repository.insert_worklog(&original).unwrap();
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+
+    assert_eq!(
+        application.move_worklog(original.id(), alpha.id(), original.times(), alpha.id()),
+        Err(ApplicationError::InvalidWorklogMove(
+            tracker_domain::WorklogMoveError::DestinationUnchanged
+        ))
+    );
+    assert_eq!(
+        repository.find_worklog(original.id()).unwrap(),
+        Some(original)
+    );
+}
+
+#[test]
+fn failed_move_recovers_authoritative_tracking_state() {
+    let alpha = task(1, "alpha");
+    let beta = task(2, "beta");
+    let original = completed_worklog(10, alpha.id(), 100, 110);
+    let replacement_active = worklog(11, beta.id(), 200);
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+    repository.insert_worklog(&original).unwrap();
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let write = RepositoryError::Backend {
+        message: "write failed".to_owned(),
+    };
+    repository.fail_next_write(write.clone(), Some(replacement_active.clone()));
+
+    assert_eq!(
+        application.move_worklog(original.id(), alpha.id(), original.times(), beta.id()),
+        Err(ApplicationError::WorklogMoveWrite { write })
+    );
+    assert!(matches!(
+        application.current_tracking(),
+        TrackingState::Running { worklog }
+            if worklog.id() == replacement_active.id()
+                && worklog.task_id() == replacement_active.task_id()
+                && worklog.start() == replacement_active.start()
+    ));
+    assert_eq!(
+        application
+            .tasks(TaskOrdering::RecentlyWorked)
+            .into_iter()
+            .find(|item| item.task.id() == beta.id())
+            .unwrap()
+            .latest_work_start,
+        Some(at(200))
+    );
+}
+
+#[test]
+fn move_preserves_write_and_recovery_errors() {
+    let alpha = task(1, "alpha");
+    let beta = task(2, "beta");
+    let original = completed_worklog(10, alpha.id(), 100, 110);
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+    repository.insert_worklog(&original).unwrap();
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let write = RepositoryError::Backend {
+        message: "write failed".to_owned(),
+    };
+    repository.fail_next_write(write.clone(), None);
+    repository.fail_recovery_after_next_write();
+
+    assert_eq!(
+        application.move_worklog(original.id(), alpha.id(), original.times(), beta.id()),
+        Err(ApplicationError::WorklogMoveRecovery {
+            write,
+            recovery: RepositoryError::Backend {
+                message: "read failed".to_owned(),
+            },
+        })
+    );
+}

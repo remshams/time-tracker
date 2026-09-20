@@ -1,6 +1,6 @@
 //! Application failures and presentation-safe classification.
 
-use tracker_domain::{TaskId, TrackingError, WorklogCorrectionError, WorklogId};
+use tracker_domain::{TaskId, TrackingError, WorklogCorrectionError, WorklogId, WorklogMoveError};
 
 use crate::RepositoryError;
 
@@ -67,6 +67,8 @@ pub enum ApplicationError {
     #[error(transparent)]
     InvalidWorklogCorrection(#[from] WorklogCorrectionError),
     #[error(transparent)]
+    InvalidWorklogMove(#[from] WorklogMoveError),
+    #[error(transparent)]
     Repository(#[from] RepositoryError),
     #[error("tracking write failed: {0}")]
     TrackingWrite(#[source] RepositoryError),
@@ -81,6 +83,17 @@ pub enum ApplicationError {
     },
     #[error("worklog correction write failed: {write}; state recovery failed: {recovery}")]
     WorklogCorrectionRecovery {
+        #[source]
+        write: RepositoryError,
+        recovery: RepositoryError,
+    },
+    #[error("worklog move write failed: {write}")]
+    WorklogMoveWrite {
+        #[source]
+        write: RepositoryError,
+    },
+    #[error("worklog move write failed: {write}; state recovery failed: {recovery}")]
+    WorklogMoveRecovery {
         #[source]
         write: RepositoryError,
         recovery: RepositoryError,
@@ -191,15 +204,23 @@ impl ApplicationError {
                 message: error.to_string(),
                 recovery: None,
             },
+            Self::InvalidWorklogMove(error) => ApplicationFailure {
+                category: ApplicationFailureCategory::General,
+                message: error.to_string(),
+                recovery: None,
+            },
             Self::Repository(error)
             | Self::TrackingWrite(error)
             | Self::TrackingRecovery(error)
             | Self::TaskRecovery(error) => repository_failure(error),
-            Self::WorklogCorrectionWrite { write } | Self::WorklogDeletionWrite { write } => {
-                repository_failure(write)
-            }
+            Self::WorklogCorrectionWrite { write }
+            | Self::WorklogMoveWrite { write }
+            | Self::WorklogDeletionWrite { write } => repository_failure(write),
             Self::WorklogCorrectionRecovery { write, recovery } => {
                 failure_with_recovery("Correction", write, recovery)
+            }
+            Self::WorklogMoveRecovery { write, recovery } => {
+                failure_with_recovery("Move", write, recovery)
             }
             Self::WorklogDeletionRecovery { write, recovery } => {
                 failure_with_recovery("Deletion", write, recovery)

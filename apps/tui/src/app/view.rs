@@ -133,6 +133,14 @@ impl<'a> AppView<'a> {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn move_draft(self) -> Option<&'a crate::screens::MoveDraft> {
+        match self.history_state()?.mode() {
+            WorklogHistoryMode::Move(draft) => Some(draft),
+            _ => None,
+        }
+    }
+
     pub(crate) fn history_task_name(self) -> Option<&'a str> {
         self.catalog
             .task(self.history()?.task_id())

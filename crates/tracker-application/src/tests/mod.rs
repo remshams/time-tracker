@@ -262,6 +262,96 @@ impl WorklogRepository for MemoryRepository {
             .cloned())
     }
 
+    fn compare_and_move_worklog(
+        &self,
+        id: WorklogId,
+        expected_source_task_id: TaskId,
+        expected: WorklogTimes,
+        destination_task_id: TaskId,
+    ) -> Result<WorklogMove, RepositoryError> {
+        if let Some(error) = self.take_write_failure() {
+            return Err(error);
+        }
+        let mut data = self.0.borrow_mut();
+        let index = data
+            .worklogs
+            .iter()
+            .position(|worklog| worklog.id() == id)
+            .ok_or(RepositoryError::WorklogNotFound { id })?;
+        let stored = data.worklogs[index].clone();
+        if stored.task_id() != expected_source_task_id || stored.times() != expected {
+            return Err(RepositoryError::WorklogChanged { id });
+        }
+        if destination_task_id == expected_source_task_id {
+            return Err(RepositoryError::Constraint {
+                message: "a worklog must move to a different task".to_owned(),
+            });
+        }
+        let destination = data
+            .tasks
+            .iter()
+            .find(|item| item.task.id() == destination_task_id)
+            .ok_or(RepositoryError::TaskNotFound {
+                id: destination_task_id,
+            })?;
+        if destination.task.is_archived() {
+            return Err(RepositoryError::TaskArchived {
+                id: destination_task_id,
+            });
+        }
+        let moved =
+            stored
+                .moved_to(destination_task_id)
+                .map_err(|error| RepositoryError::Constraint {
+                    message: error.to_string(),
+                })?;
+        if has_same_task_overlap(&data.worklogs, &moved, Some(id)) {
+            return Err(RepositoryError::SameTaskWorklogOverlap { id });
+        }
+        data.worklogs[index] = moved.clone();
+        Self::bump_revision(&mut data, expected_source_task_id);
+        Self::bump_revision(&mut data, destination_task_id);
+        let source_task_latest_work_start = data
+            .worklogs
+            .iter()
+            .filter(|worklog| worklog.task_id() == expected_source_task_id)
+            .map(Worklog::start)
+            .max();
+        let destination_task_latest_work_start = data
+            .worklogs
+            .iter()
+            .filter(|worklog| worklog.task_id() == destination_task_id)
+            .map(Worklog::start)
+            .max();
+        let active_worklog = data
+            .worklogs
+            .iter()
+            .find(|worklog| worklog.is_active())
+            .cloned();
+        let active_task_latest_work_start = match active_worklog.as_ref() {
+            Some(active) if active.task_id() == expected_source_task_id => {
+                source_task_latest_work_start
+            }
+            Some(active) if active.task_id() == destination_task_id => {
+                destination_task_latest_work_start
+            }
+            Some(active) => data
+                .worklogs
+                .iter()
+                .filter(|worklog| worklog.task_id() == active.task_id())
+                .map(Worklog::start)
+                .max(),
+            None => None,
+        };
+        Ok(WorklogMove {
+            worklog: moved,
+            source_task_latest_work_start,
+            destination_task_latest_work_start,
+            active_worklog,
+            active_task_latest_work_start,
+        })
+    }
+
     fn compare_and_set_worklog_times(
         &self,
         id: WorklogId,

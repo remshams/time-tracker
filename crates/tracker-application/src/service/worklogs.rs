@@ -22,6 +22,40 @@ impl<R: TrackerRepository> WorklogQueries for TrackerApplication<R> {
 }
 
 impl<R: TrackerRepository> WorklogOperations for TrackerApplication<R> {
+    fn move_worklog(
+        &mut self,
+        id: WorklogId,
+        expected_source_task_id: TaskId,
+        expected: WorklogTimes,
+        destination_task_id: TaskId,
+    ) -> Result<Worklog, ApplicationError> {
+        let expected = canonical_worklog_times(expected);
+        let current = match self.repository.find_worklog(id) {
+            Ok(Some(worklog)) => worklog,
+            Ok(None) => {
+                return Err(
+                    self.recover_after_worklog_move(RepositoryError::WorklogNotFound { id })
+                );
+            }
+            Err(error) => return Err(self.recover_after_worklog_move(error)),
+        };
+        if current.task_id() != expected_source_task_id || current.times() != expected {
+            return Err(self.recover_after_worklog_move(RepositoryError::WorklogChanged { id }));
+        }
+        current.moved_to(destination_task_id)?;
+
+        let movement = match self.repository.compare_and_move_worklog(
+            id,
+            expected_source_task_id,
+            expected,
+            destination_task_id,
+        ) {
+            Ok(movement) => movement,
+            Err(error) => return Err(self.recover_after_worklog_move(error)),
+        };
+        self.adopt_worklog_move(expected_source_task_id, movement)
+    }
+
     fn correct_worklog(
         &mut self,
         id: WorklogId,

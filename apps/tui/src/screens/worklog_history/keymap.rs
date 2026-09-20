@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::screens::KeymapCommand;
 use crate::support::timestamps::is_timestamp_character;
 
-use super::{WorklogHistoryCommand, WorklogHistoryMode, WorklogHistoryState};
+use super::{MoveFocus, WorklogHistoryCommand, WorklogHistoryMode, WorklogHistoryState};
 
 pub(crate) fn map(
     state: &WorklogHistoryState,
@@ -15,6 +15,7 @@ pub(crate) fn map(
         WorklogHistoryMode::Normal => map_normal(state, key),
         WorklogHistoryMode::ConfirmDeletion { .. } => map_confirm_deletion(key),
         WorklogHistoryMode::Correction(_) => map_correction(key),
+        WorklogHistoryMode::Move(draft) => map_move(draft.focus(), key),
     }
 }
 
@@ -42,10 +43,41 @@ fn map_normal(
         KeyCode::Char('k') | KeyCode::Up => WorklogHistoryCommand::MoveUp,
         KeyCode::Char('e') => WorklogHistoryCommand::OpenCorrection,
         KeyCode::Char('d') => WorklogHistoryCommand::OpenDeletion,
+        KeyCode::Char('m') => WorklogHistoryCommand::OpenMove,
         KeyCode::Char('o') => WorklogHistoryCommand::LoadOlderWorklogs,
         KeyCode::Char('r') => WorklogHistoryCommand::RefreshWorklogs,
         KeyCode::Esc => WorklogHistoryCommand::BackToTaskList,
         KeyCode::Char('q') => return Some(KeymapCommand::Quit),
+        _ => return None,
+    };
+    Some(KeymapCommand::Local(command))
+}
+
+fn map_move(focus: MoveFocus, key: KeyEvent) -> Option<KeymapCommand<WorklogHistoryCommand>> {
+    let command = match (key.code, key.modifiers) {
+        (KeyCode::Enter, KeyModifiers::NONE) => WorklogHistoryCommand::Confirm,
+        (KeyCode::Esc, KeyModifiers::NONE) => WorklogHistoryCommand::Cancel,
+        (KeyCode::Tab, KeyModifiers::NONE | KeyModifiers::SHIFT)
+        | (KeyCode::BackTab, KeyModifiers::NONE)
+        | (KeyCode::BackTab, KeyModifiers::SHIFT) => WorklogHistoryCommand::ToggleMoveFocus,
+        (KeyCode::Up, KeyModifiers::NONE) => WorklogHistoryCommand::MoveDestinationUp,
+        (KeyCode::Down, KeyModifiers::NONE) => WorklogHistoryCommand::MoveDestinationDown,
+        (KeyCode::Char('j'), KeyModifiers::NONE) if focus == MoveFocus::Results => {
+            WorklogHistoryCommand::MoveDestinationDown
+        }
+        (KeyCode::Char('k'), KeyModifiers::NONE) if focus == MoveFocus::Results => {
+            WorklogHistoryCommand::MoveDestinationUp
+        }
+        (KeyCode::Backspace, KeyModifiers::NONE) if focus == MoveFocus::Search => {
+            WorklogHistoryCommand::BackspaceMoveQuery
+        }
+        (KeyCode::Char(character), modifiers)
+            if focus == MoveFocus::Search
+                && modifiers - KeyModifiers::SHIFT == KeyModifiers::NONE
+                && !character.is_control() =>
+        {
+            WorklogHistoryCommand::InsertMoveQuery(character)
+        }
         _ => return None,
     };
     Some(KeymapCommand::Local(command))
@@ -108,6 +140,18 @@ pub(crate) fn footer_hints(state: &WorklogHistoryState, width: u16) -> &'static 
                 "type · ←/→ · bs/del · tab/S-tab · j/k ±5m · J/K ±1h · enter · esc · ctrl+c"
             }
         }
+        WorklogHistoryMode::Move(draft) => match (draft.focus(), width < 80) {
+            (MoveFocus::Search, true) => {
+                "type/bs tab/S-tab ↑/↓ choose enter move esc cancel ctrl+c"
+            }
+            (MoveFocus::Search, false) => {
+                "type/bs · tab/S-tab · ↑/↓ choose · enter move · esc cancel · ctrl+c quit"
+            }
+            (MoveFocus::Results, true) => "j/k/↑/↓ choose tab/S-tab enter move esc cancel ctrl+c",
+            (MoveFocus::Results, false) => {
+                "j/k/↑/↓ choose · tab/S-tab · enter move · esc cancel · ctrl+c quit"
+            }
+        },
         WorklogHistoryMode::ConfirmDeletion { .. } => {
             if width < 80 {
                 "d/y/enter delete n/esc cancel ctrl+c quit"
@@ -124,9 +168,9 @@ pub(crate) fn footer_hints(state: &WorklogHistoryState, width: u16) -> &'static 
         }
         WorklogHistoryMode::Normal => {
             if width < 80 {
-                "j/k/↑/↓ e edit d delete o older r refresh esc back q ctrl+c"
+                "j/k/↑/↓ e m move d del o older r refresh esc back q ctrl+c"
             } else {
-                "j/k/↑/↓ move e edit d delete o older r refresh esc back q/ctrl+c quit"
+                "j/k/↑/↓ move e edit m move d delete o older r refresh esc back q/ctrl+c quit"
             }
         }
     }
@@ -195,6 +239,10 @@ mod tests {
         assert_eq!(
             map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('d'))),
             Some(Command::WorklogHistory(WorklogHistoryCommand::OpenDeletion))
+        );
+        assert_eq!(
+            map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('m'))),
+            Some(Command::WorklogHistory(WorklogHistoryCommand::OpenMove))
         );
         assert_eq!(
             map_history(&WorklogHistoryMode::Normal, key(KeyCode::Char('o'))),
@@ -381,6 +429,115 @@ mod tests {
     }
 
     #[test]
+    fn move_dialog_maps_search_and_results_keys_without_leaking_history_navigation() {
+        let search = move_dialog();
+        for (key, expected) in [
+            (
+                key(KeyCode::Char('j')),
+                WorklogHistoryCommand::InsertMoveQuery('j'),
+            ),
+            (
+                key(KeyCode::Char('k')),
+                WorklogHistoryCommand::InsertMoveQuery('k'),
+            ),
+            (
+                key(KeyCode::Backspace),
+                WorklogHistoryCommand::BackspaceMoveQuery,
+            ),
+            (key(KeyCode::Up), WorklogHistoryCommand::MoveDestinationUp),
+            (
+                key(KeyCode::Down),
+                WorklogHistoryCommand::MoveDestinationDown,
+            ),
+            (key(KeyCode::Tab), WorklogHistoryCommand::ToggleMoveFocus),
+            (
+                KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT),
+                WorklogHistoryCommand::ToggleMoveFocus,
+            ),
+            (
+                key(KeyCode::BackTab),
+                WorklogHistoryCommand::ToggleMoveFocus,
+            ),
+            (key(KeyCode::Enter), WorklogHistoryCommand::Confirm),
+            (key(KeyCode::Esc), WorklogHistoryCommand::Cancel),
+        ] {
+            assert_eq!(
+                map_history(&search, key),
+                Some(Command::WorklogHistory(expected)),
+                "wrong search command for {key:?}"
+            );
+        }
+
+        let mut results = move_dialog();
+        let WorklogHistoryMode::Move(draft) = &mut results else {
+            unreachable!("move fixture opens the move dialog");
+        };
+        draft.toggle_focus();
+        for (key, expected) in [
+            (
+                key(KeyCode::Char('j')),
+                WorklogHistoryCommand::MoveDestinationDown,
+            ),
+            (
+                key(KeyCode::Char('k')),
+                WorklogHistoryCommand::MoveDestinationUp,
+            ),
+            (key(KeyCode::Up), WorklogHistoryCommand::MoveDestinationUp),
+            (
+                key(KeyCode::Down),
+                WorklogHistoryCommand::MoveDestinationDown,
+            ),
+        ] {
+            assert_eq!(
+                map_history(&results, key),
+                Some(Command::WorklogHistory(expected)),
+                "wrong results command for {key:?}"
+            );
+        }
+        assert_eq!(map_history(&results, key(KeyCode::Backspace)), None);
+        assert_eq!(map_history(&results, key(KeyCode::Char('x'))), None);
+        assert_eq!(map_history(&results, ctrl('c')), Some(Command::Quit));
+    }
+
+    #[test]
+    fn move_footer_fits_and_names_only_the_focused_controls() {
+        for width in [60, 80] {
+            let search_footer = history_footer(move_dialog(), true, width);
+            assert!(
+                search_footer.chars().count() <= width as usize,
+                "{search_footer:?}"
+            );
+            for hint in ["type", "bs", "tab", "↑/↓", "enter", "esc", "ctrl+c"] {
+                assert!(
+                    search_footer.contains(hint),
+                    "search footer misses {hint:?}: {search_footer:?}"
+                );
+            }
+            assert!(!search_footer.contains("j/k"));
+
+            let mut results = move_dialog();
+            let WorklogHistoryMode::Move(draft) = &mut results else {
+                unreachable!("move fixture opens the move dialog");
+            };
+            draft.toggle_focus();
+            let results_footer = history_footer(results, true, width);
+            assert!(
+                results_footer.chars().count() <= width as usize,
+                "{results_footer:?}"
+            );
+            for hint in ["j/k", "tab", "↑/↓", "enter", "esc", "ctrl+c"] {
+                assert!(
+                    results_footer.contains(hint),
+                    "results footer misses {hint:?}: {results_footer:?}"
+                );
+            }
+            assert!(!results_footer.contains("type"));
+            assert!(!results_footer.contains("bs"));
+        }
+        assert!(history_footer(WorklogHistoryMode::Normal, true, 80).contains("m move"));
+    }
+
+    #[test]
     fn unavailable_history_footers_advertise_only_working_commands() {
         for (width, expected) in [
             (60, "r retry esc back q/ctrl+c quit"),
@@ -398,7 +555,7 @@ mod tests {
     #[test]
     fn deletion_footers_advertise_delete_and_confirmation_keys_at_both_widths() {
         for (width, delete_hint, confirm_hint) in [
-            (60, "d delete", "d/y/enter delete"),
+            (60, "d del", "d/y/enter delete"),
             (80, "d delete", "d/y/enter delete"),
         ] {
             let history = history_footer(WorklogHistoryMode::Normal, true, width);
@@ -420,11 +577,11 @@ mod tests {
         let full = history_footer(WorklogHistoryMode::Normal, true, 80);
         assert_eq!(
             compact,
-            "j/k/↑/↓ e edit d delete o older r refresh esc back q ctrl+c"
+            "j/k/↑/↓ e m move d del o older r refresh esc back q ctrl+c"
         );
         assert_eq!(
             full,
-            "j/k/↑/↓ move e edit d delete o older r refresh esc back q/ctrl+c quit"
+            "j/k/↑/↓ move e edit m move d delete o older r refresh esc back q/ctrl+c quit"
         );
         assert_eq!(
             history_footer(deletion(), true, 79),

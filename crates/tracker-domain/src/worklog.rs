@@ -79,6 +79,14 @@ pub enum WorklogCorrectionError {
     EndAfterOccurredAt,
 }
 
+/// Why a worklog move was rejected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum WorklogMoveError {
+    /// The destination already owns the worklog.
+    #[error("a worklog must move to a different task")]
+    DestinationUnchanged,
+}
+
 impl Worklog {
     /// Builds a worklog from stored values, rejecting an end before the start.
     pub fn new(
@@ -185,6 +193,23 @@ impl Worklog {
             task_id: self.task_id,
             start: replacement.start(),
             end: replacement.end(),
+        })
+    }
+
+    /// Returns a copy assigned to a different task.
+    ///
+    /// A move preserves the worklog's identity and timestamps, including
+    /// whether it is active. Repository implementations enforce that the
+    /// destination task exists and accepts worklogs.
+    pub fn moved_to(&self, destination_task_id: TaskId) -> Result<Self, WorklogMoveError> {
+        if destination_task_id == self.task_id {
+            return Err(WorklogMoveError::DestinationUnchanged);
+        }
+        Ok(Self {
+            id: self.id,
+            task_id: destination_task_id,
+            start: self.start,
+            end: self.end,
         })
     }
 
@@ -381,6 +406,32 @@ mod tests {
         assert_eq!(corrected.task_id(), original.task_id());
         assert_eq!(corrected.start(), at(120));
         assert_eq!(corrected.end(), None);
+    }
+
+    #[test]
+    fn move_preserves_identity_timestamps_and_completion_state() {
+        let completed = Worklog::new(worklog_id(1), task_id(1), at(100), Some(at(200))).unwrap();
+        let moved_completed = completed.moved_to(task_id(2)).unwrap();
+        assert_eq!(moved_completed.id(), completed.id());
+        assert_eq!(moved_completed.task_id(), task_id(2));
+        assert_eq!(moved_completed.times(), completed.times());
+        assert!(!moved_completed.is_active());
+
+        let active = Worklog::begin(worklog_id(2), task_id(1), at(300));
+        let moved_active = active.moved_to(task_id(2)).unwrap();
+        assert_eq!(moved_active.id(), active.id());
+        assert_eq!(moved_active.task_id(), task_id(2));
+        assert_eq!(moved_active.times(), active.times());
+        assert!(moved_active.is_active());
+    }
+
+    #[test]
+    fn move_rejects_the_current_task() {
+        let worklog = Worklog::begin(worklog_id(1), task_id(1), at(100));
+        assert_eq!(
+            worklog.moved_to(task_id(1)),
+            Err(WorklogMoveError::DestinationUnchanged)
+        );
     }
 
     #[test]

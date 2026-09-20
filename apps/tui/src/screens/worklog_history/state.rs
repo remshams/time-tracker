@@ -5,6 +5,7 @@ use tracker_domain::{TaskId, Worklog, WorklogId};
 use crate::screens::task_list::TaskListState;
 
 use super::correction::CorrectionDraft;
+use super::move_worklog::MoveDraft;
 
 /// Whether the open history holds a valid page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,6 +171,7 @@ pub enum WorklogHistoryMode {
     Normal,
     ConfirmDeletion { worklog: Worklog },
     Correction(CorrectionDraft),
+    Move(MoveDraft),
 }
 
 /// History state and the exact task-list navigation restored on return.
@@ -231,6 +233,10 @@ impl WorklogHistoryState {
         self.mode = WorklogHistoryMode::Correction(draft);
     }
 
+    pub(crate) fn open_move(&mut self, draft: MoveDraft) {
+        self.mode = WorklogHistoryMode::Move(draft);
+    }
+
     pub(crate) fn correction(&self) -> Option<&CorrectionDraft> {
         match &self.mode {
             WorklogHistoryMode::Correction(draft) => Some(draft),
@@ -241,6 +247,13 @@ impl WorklogHistoryState {
     pub(crate) fn correction_mut(&mut self) -> Option<&mut CorrectionDraft> {
         match &mut self.mode {
             WorklogHistoryMode::Correction(draft) => Some(draft),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn move_draft_mut(&mut self) -> Option<&mut MoveDraft> {
+        match &mut self.mode {
+            WorklogHistoryMode::Move(draft) => Some(draft),
             _ => None,
         }
     }

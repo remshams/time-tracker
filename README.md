@@ -71,6 +71,7 @@ Worklog history:
 - Enter opens the selected task's history from either task view.
 - `j` / `k` or Down / Up moves between loaded worklogs without wrapping.
 - `e` corrects the selected worklog. Completed worklogs expose start and end; active worklogs expose only start.
+- `m` opens the move dialog and keeps the user in the source history while they search for a destination. Search is fuzzy and excludes the source and archived tasks. Tab and Shift+Tab switch between search and results; Up and Down navigate destination results even while search has focus, while `j` and `k` navigate only in the result list. Enter moves the worklog, and Escape cancels.
 - `d` opens a permanent-deletion confirmation for a completed row. `y` or Enter confirms. A second `d` confirms the deletion, so `y` or Enter is not needed. `n` or Escape cancels. The dialog shows the interval and warns that the action cannot be undone. Running rows are never deletable, and archived-task history supports the same action. If deleting loaded rows exposes an older page, `o` loads it and selects its first row.
 - `o` loads the next batch of older worklogs when one exists.
 - `r` discards the loaded snapshot and reloads its newest batch.
@@ -84,6 +85,11 @@ Worklog correction:
 - Typing edits at the cursor. Left and Right move the cursor; Backspace and Delete remove characters.
 - Enter saves. Escape cancels without writing. Ctrl+C quits without writing or stopping active tracking.
 - Invalid, overlapping, and stale corrections keep the draft open. The app uses one timezone-rules snapshot for history, correction, parsing, ambiguity handling, and nudges. It first accepts a valid `TZ` IANA name, including common colon and zoneinfo-path forms, then asks Linux or macOS for the OS IANA timezone. If both fail, it uses UTC and shows an error status. A timestamp whose local conversion falls outside chrono's editable range cannot open correction. A successful correction reloads the newest history page because changing a start may reorder the rows. If that reload fails after the save commits, history is marked unavailable until `r` succeeds rather than showing rows from an obsolete ordering snapshot.
+
+Worklog move:
+
+- Moving is separate from correction. Correction preserves the task; move changes only the owning task.
+- A move preserves the worklog ID, timestamps, and active or completed state. It rejects archived destinations, same-task overlap, active-worklog conflicts, stale source data, and cancellation without changing storage. A successful move returns both task aggregates, increments both tasks' history revisions, leaves the UI in the source history, and reloads that history without changing either task's `updated_at`.
 
 For the rare valid year outside `0000` through `9999`, chrono uses a signed expanded year such as `-0001` or `+10000`; the month, day, hour, and minute layout stays the same.
 

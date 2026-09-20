@@ -1046,3 +1046,72 @@ fn concurrent_corrections_use_two_connections_and_one_stale_loser() {
     let winner = results.into_iter().find_map(Result::ok).unwrap().worklog;
     assert_eq!(stored, winner);
 }
+
+#[test]
+fn concurrent_moves_commit_once_and_leave_one_destination_with_revisions() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let setup = SqliteRepository::open(&path).unwrap();
+    let source = named_task(1, "source");
+    let first_destination = named_task(2, "first destination");
+    let second_destination = named_task(3, "second destination");
+    for task in [&source, &first_destination, &second_destination] {
+        setup.create_task(task.clone()).unwrap();
+    }
+    let original = Worklog::new(worklog_id(1), source.id(), at(100), Some(at(200))).unwrap();
+    setup.insert_worklog(&original).unwrap();
+    drop(setup);
+
+    let repositories = [
+        SqliteRepository::open(&path).unwrap(),
+        SqliteRepository::open(&path).unwrap(),
+    ];
+    let barrier = Arc::new(Barrier::new(3));
+    let handles: Vec<_> = repositories
+        .into_iter()
+        .zip([first_destination.id(), second_destination.id()])
+        .map(|(repository, destination_task_id)| {
+            let barrier = barrier.clone();
+            let original = original.clone();
+            thread::spawn(move || {
+                barrier.wait();
+                repository.compare_and_move_worklog(
+                    original.id(),
+                    original.task_id(),
+                    original.times(),
+                    destination_task_id,
+                )
+            })
+        })
+        .collect();
+    barrier.wait();
+    let results: Vec<_> = handles
+        .into_iter()
+        .map(|handle| handle.join().unwrap())
+        .collect();
+
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| matches!(result, Err(StorageError::WorklogChanged { .. })))
+            .count(),
+        1
+    );
+    let winner = results.into_iter().find_map(Result::ok).unwrap().worklog;
+    let stored = SqliteRepository::open(&path)
+        .unwrap()
+        .find_worklog(original.id())
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored, winner);
+    assert_eq!(
+        history_revision(&SqliteRepository::open(&path).unwrap(), source.id()),
+        1
+    );
+    let repository = SqliteRepository::open(&path).unwrap();
+    for task_id in [first_destination.id(), second_destination.id()] {
+        let expected_revision = if task_id == winner.task_id() { 1 } else { 0 };
+        assert_eq!(history_revision(&repository, task_id), expected_revision);
+    }
+}

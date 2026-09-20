@@ -462,6 +462,7 @@ mod tests {
         for hint in [
             "j/k/↑/↓ move",
             "e edit",
+            "m move",
             "o older",
             "r refresh",
             "esc back",

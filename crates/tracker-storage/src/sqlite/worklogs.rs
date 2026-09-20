@@ -1,9 +1,9 @@
-//! Worklog lookup, history, correction, and deletion persistence.
+//! Worklog lookup, history, move, correction, and deletion persistence.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 use tracker_application::{
-    WORKLOG_PAGE_SIZE, WorklogCorrection, WorklogCursor, WorklogDeletion, WorklogPage,
+    WORKLOG_PAGE_SIZE, WorklogCorrection, WorklogCursor, WorklogDeletion, WorklogMove, WorklogPage,
     WorklogPageSnapshot,
 };
 use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
@@ -64,6 +64,90 @@ impl SqliteRepository {
 
     pub fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, StorageError> {
         self.worklog_by_id(id)
+    }
+
+    /// Moves a worklog when its stored task and timestamps still match the
+    /// caller's selected row.
+    ///
+    /// The immediate transaction holds the write lock through the conditional
+    /// update and all returned aggregates. SQLite triggers reject archived
+    /// destinations, overlaps, and update both affected history revisions.
+    pub fn compare_and_move_worklog(
+        &self,
+        id: WorklogId,
+        expected_source_task_id: TaskId,
+        expected: WorklogTimes,
+        destination_task_id: TaskId,
+    ) -> Result<WorklogMove, StorageError> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let expected_start_us = timestamp_to_us(expected.start());
+        let expected_end_us = expected.end().map(timestamp_to_us);
+        let update = transaction.execute(
+            "UPDATE worklogs
+             SET task_id = ?1
+             WHERE id = ?2
+               AND task_id = ?3
+               AND start_us = ?4
+               AND end_us IS ?5
+               AND task_id <> ?1",
+            rusqlite::params![
+                destination_task_id.to_string(),
+                id.to_string(),
+                expected_source_task_id.to_string(),
+                expected_start_us,
+                expected_end_us,
+            ],
+        );
+
+        match update {
+            Ok(1) => {
+                let moved = worklog_by_id_on(&transaction, id)?
+                    .ok_or(StorageError::WorklogNotFound { id })?;
+                let source_task_latest_work_start =
+                    latest_work_start_on(&transaction, expected_source_task_id)?;
+                let destination_task_latest_work_start =
+                    latest_work_start_on(&transaction, destination_task_id)?;
+                let active_worklog = active_worklog_on(&transaction)?;
+                let active_task_latest_work_start = match active_worklog.as_ref() {
+                    Some(active) if active.task_id() == expected_source_task_id => {
+                        source_task_latest_work_start
+                    }
+                    Some(active) if active.task_id() == destination_task_id => {
+                        destination_task_latest_work_start
+                    }
+                    Some(active) => latest_work_start_on(&transaction, active.task_id())?,
+                    None => None,
+                };
+                transaction.commit()?;
+                Ok(WorklogMove {
+                    worklog: moved,
+                    source_task_latest_work_start,
+                    destination_task_latest_work_start,
+                    active_worklog,
+                    active_task_latest_work_start,
+                })
+            }
+            Ok(0) => {
+                let current = worklog_by_id_on(&transaction, id)?
+                    .ok_or(StorageError::WorklogNotFound { id })?;
+                let stored_expected = WorklogTimes::new(
+                    us_to_timestamp(expected_start_us)?,
+                    expected_end_us.map(us_to_timestamp).transpose()?,
+                );
+                if current.task_id() != expected_source_task_id
+                    || current.times() != stored_expected
+                {
+                    return Err(StorageError::WorklogChanged { id });
+                }
+                Err(error::constraint("a worklog must move to a different task"))
+            }
+            Ok(_) => Err(StorageError::CorruptData("worklog update count")),
+            Err(sql_error) => Err(error::move_worklog_error(
+                sql_error,
+                id,
+                destination_task_id,
+            )),
+        }
     }
 
     /// Replaces timestamps when the stored pair still matches `expected`.

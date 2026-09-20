@@ -337,6 +337,18 @@ impl WorklogRepository for SynchronizingRepository {
         self.repository.find_worklog(id).map_err(Into::into)
     }
 
+    fn compare_and_move_worklog(
+        &self,
+        id: WorklogId,
+        expected_source_task_id: TaskId,
+        expected: WorklogTimes,
+        destination_task_id: TaskId,
+    ) -> Result<tracker_application::WorklogMove, RepositoryError> {
+        self.repository
+            .compare_and_move_worklog(id, expected_source_task_id, expected, destination_task_id)
+            .map_err(Into::into)
+    }
+
     fn compare_and_set_worklog_times(
         &self,
         id: WorklogId,
@@ -441,5 +453,6 @@ mod correction;
 mod deletion;
 mod history;
 mod migrations;
+mod moves;
 mod tasks;
 mod tracking;

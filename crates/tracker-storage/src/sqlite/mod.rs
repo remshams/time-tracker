@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags};
 use tracker_application::{
     RepositoryError, TaskRepository, TrackerSnapshot, TrackingRepository, WorklogCorrection,
-    WorklogCursor, WorklogDeletion, WorklogPage, WorklogRepository,
+    WorklogCursor, WorklogDeletion, WorklogMove, WorklogPage, WorklogRepository,
 };
 use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
 
@@ -134,6 +134,23 @@ impl TrackingRepository for SqliteRepository {
 impl WorklogRepository for SqliteRepository {
     fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, RepositoryError> {
         SqliteRepository::find_worklog(self, id).map_err(Into::into)
+    }
+
+    fn compare_and_move_worklog(
+        &self,
+        id: WorklogId,
+        expected_source_task_id: TaskId,
+        expected: WorklogTimes,
+        destination_task_id: TaskId,
+    ) -> Result<WorklogMove, RepositoryError> {
+        SqliteRepository::compare_and_move_worklog(
+            self,
+            id,
+            expected_source_task_id,
+            expected,
+            destination_task_id,
+        )
+        .map_err(Into::into)
     }
 
     fn compare_and_set_worklog_times(

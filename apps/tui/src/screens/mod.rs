@@ -8,6 +8,8 @@ pub(crate) use task_list::TaskListCommand;
 pub use task_list::{TaskListState, TaskView};
 #[cfg(test)]
 pub use worklog_history::CorrectionDraft;
+#[cfg(test)]
+pub use worklog_history::MoveDraft;
 pub(crate) use worklog_history::WorklogHistoryCommand;
 pub use worklog_history::{History, WorklogHistoryMode, WorklogHistoryState};
 

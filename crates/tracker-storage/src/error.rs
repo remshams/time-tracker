@@ -181,6 +181,27 @@ pub(crate) fn update_worklog_error(error: rusqlite::Error, id: WorklogId) -> Sto
     }
 }
 
+/// Maps an error raised while moving a worklog to another task.
+pub(crate) fn move_worklog_error(
+    error: rusqlite::Error,
+    id: WorklogId,
+    destination_task_id: TaskId,
+) -> StorageError {
+    if is_trigger_violation(&error)
+        && failure_message(&error) == Some(crate::migrate::TRIGGER_TASK_ARCHIVED)
+    {
+        return StorageError::TaskArchived {
+            id: destination_task_id,
+        };
+    }
+    if is_foreign_key_violation(&error) {
+        return StorageError::TaskNotFound {
+            id: destination_task_id,
+        };
+    }
+    update_worklog_error(error, id)
+}
+
 /// Maps an error raised while deleting a worklog.
 pub(crate) fn delete_worklog_error(error: rusqlite::Error, id: WorklogId) -> StorageError {
     if is_trigger_violation(&error)

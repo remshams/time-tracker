@@ -11,9 +11,10 @@
 //! overlap nothing, and different tasks may overlap. Worklog corrections use
 //! exact timestamp compare-and-swap and preserve identity, task, and active or
 //! completed state. Completed worklog deletion uses an exact match on
-//! identity, task, start, and end; active worklogs cannot be deleted. The
-//! task-list read model carries each task's latest worklog start as a per-task
-//! `MAX(start)` aggregate, without loading full worklogs.
+//! identity, task, start, and end; active worklogs cannot be deleted. A move
+//! uses the same exact match and changes only the task. The task-list read
+//! model carries each task's latest worklog start as a per-task `MAX(start)`
+//! aggregate, without loading full worklogs.
 
 use chrono::{DateTime, Utc};
 use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
@@ -86,6 +87,20 @@ pub struct WorklogDeletion {
     pub task_latest_work_start: Option<DateTime<Utc>>,
 }
 
+/// The committed result of moving a worklog to another task.
+///
+/// The aggregate values and active row come from the move transaction. The
+/// application adopts them without a post-commit read, which would otherwise
+/// race another writer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorklogMove {
+    pub worklog: Worklog,
+    pub source_task_latest_work_start: Option<DateTime<Utc>>,
+    pub destination_task_latest_work_start: Option<DateTime<Utc>>,
+    pub active_worklog: Option<Worklog>,
+    pub active_task_latest_work_start: Option<DateTime<Utc>>,
+}
+
 /// Persistence needed by task use cases.
 pub trait TaskRepository {
     fn create_task(&self, task: Task) -> Result<(), RepositoryError>;
@@ -109,9 +124,19 @@ pub trait TaskRepository {
     ) -> Result<Task, RepositoryError>;
 }
 
-/// Persistence needed to read and correct worklog history.
+/// Persistence needed to read and change worklog history.
 pub trait WorklogRepository {
     fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, RepositoryError>;
+
+    /// Atomically moves a worklog when its task and timestamps exactly match
+    /// the caller's expected values.
+    fn compare_and_move_worklog(
+        &self,
+        id: WorklogId,
+        expected_source_task_id: TaskId,
+        expected: WorklogTimes,
+        destination_task_id: TaskId,
+    ) -> Result<WorklogMove, RepositoryError>;
 
     /// Atomically replaces a worklog's timestamps when its stored timestamps
     /// exactly match `expected`.

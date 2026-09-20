@@ -5,8 +5,8 @@ use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
 use crate::command::Command;
 use crate::screens::task_list::{InputPurpose, TaskListMode};
 use crate::screens::{
-    CorrectionDraft, InputState, TaskListState, TaskView, WorklogHistoryMode, WorklogHistoryState,
-    map_key,
+    CorrectionDraft, InputState, MoveDraft, TaskListState, TaskView, WorklogHistoryMode,
+    WorklogHistoryState, map_key,
 };
 
 pub(crate) fn key(code: KeyCode) -> KeyEvent {
@@ -66,6 +66,20 @@ pub(crate) fn correction() -> WorklogHistoryMode {
     ))
 }
 
+pub(crate) fn move_dialog() -> WorklogHistoryMode {
+    let at = DateTime::<Utc>::from_timestamp(0, 0).unwrap();
+    WorklogHistoryMode::Move(MoveDraft::new(
+        Worklog::new(
+            WorklogId::generate(),
+            TaskId::generate(),
+            at,
+            Some(DateTime::<Utc>::from_timestamp(60, 0).unwrap()),
+        )
+        .unwrap(),
+        Vec::new(),
+    ))
+}
+
 fn task_list_state(mode: TaskListMode, view: TaskView) -> TaskListState {
     let mut state = TaskListState::new(None);
     state.show(view, None);
@@ -86,6 +100,7 @@ fn history_state(mode: WorklogHistoryMode, available: bool) -> WorklogHistorySta
         WorklogHistoryMode::Normal => {}
         WorklogHistoryMode::ConfirmDeletion { worklog } => state.open_deletion(worklog),
         WorklogHistoryMode::Correction(draft) => state.open_correction(draft),
+        WorklogHistoryMode::Move(draft) => state.open_move(draft),
     }
     if !available {
         state.history_mut().mark_unavailable();
@@ -119,6 +134,7 @@ pub(crate) fn valid_input_states() -> Vec<TestInputState> {
         TestInputState::History(Box::new(history_state(WorklogHistoryMode::Normal, false))),
         TestInputState::History(Box::new(history_state(deletion(), true))),
         TestInputState::History(Box::new(history_state(correction(), true))),
+        TestInputState::History(Box::new(history_state(move_dialog(), true))),
     ]
 }
 

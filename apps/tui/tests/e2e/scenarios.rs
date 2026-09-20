@@ -8,6 +8,8 @@ mod correction;
 mod deletion;
 #[path = "scenarios/history.rs"]
 mod history;
+#[path = "scenarios/move_worklog.rs"]
+mod move_worklog;
 #[path = "scenarios/ordering.rs"]
 mod ordering;
 #[path = "scenarios/resize.rs"]

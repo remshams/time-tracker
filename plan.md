@@ -2,7 +2,7 @@
 
 ## Status
 
-Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, task browsing and ordering, read-only worklog history, worklog correction, completed-worklog deletion, and the screen-scoped TUI command refactor are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, orders both task views, and loads one task's worklogs in bounded pages. The timestamp and ordering rules live in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds, [ADR 0004](docs/adr/0004-paginated-worklog-history.md) records pagination, [ADR 0006](docs/adr/0006-local-minute-tui-timestamps.md) records local-minute history and correction behavior, and [ADR 0007](docs/adr/0007-completed-worklog-deletion.md) records completed-worklog deletion.
+Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, task browsing and ordering, read-only worklog history, worklog correction, completed-worklog deletion, worklog moves, and the screen-scoped TUI command refactor are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, orders both task views, and loads one task's worklogs in bounded pages. The timestamp and ordering rules live in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds, [ADR 0004](docs/adr/0004-paginated-worklog-history.md) records pagination, [ADR 0006](docs/adr/0006-local-minute-tui-timestamps.md) records local-minute history and correction behavior, [ADR 0007](docs/adr/0007-completed-worklog-deletion.md) records completed-worklog deletion, and [ADR 0008](docs/adr/0008-move-worklogs-between-tasks.md) records worklog moves.
 
 The required Rust, Python, mutation, coverage, CRAP, and Linux PTY checks pass. A native macOS run also passes the full validation suite, including the PTY lifecycle test and file-backed SQLite tests. Detailed counts belong in each feature handoff rather than this long-lived plan. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred.
 
@@ -286,6 +286,17 @@ The correction decisions are recorded in [ADR 0005](docs/adr/0005-worklog-correc
 - [x] Dispatch task-list and history transitions from their owning typed handlers.
 - [x] Keep one `App::handle` mismatch guard so a command tagged for the dormant screen cannot mutate state or call the application service.
 - [x] Preserve all keybindings, modes, status text, transitions, timer behavior, narrow-terminal behavior, and test names without changing E2E tests.
+
+### Completed checkpoint: move worklogs between tasks
+
+The move decisions are recorded in [ADR 0008](docs/adr/0008-move-worklogs-between-tasks.md). This is a separate command from timestamp correction. Correction preserves the worklog's task; move changes only its owning task.
+
+- [x] Move completed and active worklogs from their source history without changing the worklog ID, timestamps, or active state.
+- [x] Search destinations fuzzily while excluding the source task and all archived tasks.
+- [x] Keep search and result focus separate. Tab and Shift+Tab switch focus, Up and Down navigate destination results even while search has focus, and `j` / `k` navigate only in the result list.
+- [x] Commit the move atomically, return both task aggregates, reject same-task overlap and active-worklog conflicts, preserve the source history on failure or cancellation, and reload it after success.
+- [x] Increment both tasks' history revisions without changing either task's `updated_at`.
+- [x] Cover completed and active moves, filtering, focus-sensitive navigation, cancellation, stale state, overlap, and identity/timestamp preservation.
 
 ### Milestone 3: exclusive local or remote storage
 

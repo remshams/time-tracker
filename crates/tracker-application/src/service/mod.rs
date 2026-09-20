@@ -12,7 +12,7 @@ use tracker_domain::{
 use crate::{
     ApplicationError, ClearActiveTaskOutcome, RepositoryError, SetActiveTaskOutcome, TaskListItem,
     TaskOrdering, TrackerRepository, TrackerSnapshot, WorklogCorrection, WorklogCursor,
-    WorklogDeletion, WorklogPage, WorklogPageSnapshot,
+    WorklogDeletion, WorklogMove, WorklogPage, WorklogPageSnapshot,
 };
 
 fn canonical_timestamp(timestamp: DateTime<Utc>) -> DateTime<Utc> {
@@ -95,6 +95,20 @@ pub trait WorklogQueries {
 
 /// Commands that change existing worklog history.
 pub trait WorklogOperations {
+    /// Moves a worklog to a different task if its selected task and timestamps
+    /// still match the stored row.
+    ///
+    /// The operation canonicalizes timestamps to UTC microseconds. It
+    /// preserves the worklog's identity, timestamps, and active state. Stale
+    /// and failed writes reload authoritative state before returning an error.
+    fn move_worklog(
+        &mut self,
+        id: WorklogId,
+        expected_source_task_id: TaskId,
+        expected: WorklogTimes,
+        destination_task_id: TaskId,
+    ) -> Result<Worklog, ApplicationError>;
+
     /// Replaces a worklog's timestamps if the stored timestamps still match
     /// `expected`.
     ///
@@ -195,20 +209,31 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         }
     }
 
+    fn adopt_active_worklog_snapshot(
+        &mut self,
+        active_worklog: Option<Worklog>,
+        active_task_latest_work_start: Option<DateTime<Utc>>,
+    ) -> Result<(), ApplicationError> {
+        self.tracker = match active_worklog {
+            Some(worklog) => Tracker::resume(worklog)?,
+            None => Tracker::idle(),
+        };
+        if let Some(active) = self.tracker.active() {
+            self.set_latest_work_start(active.task_id(), active_task_latest_work_start);
+        }
+        Ok(())
+    }
+
     fn adopt_worklog_page_snapshot(
         &mut self,
         task_id: TaskId,
         snapshot: WorklogPageSnapshot,
     ) -> Result<(), ApplicationError> {
         self.set_latest_work_start(task_id, snapshot.requested_task_latest_work_start);
-        self.tracker = match snapshot.active_worklog {
-            Some(worklog) => Tracker::resume(worklog)?,
-            None => Tracker::idle(),
-        };
-        if let Some(active) = self.tracker.active() {
-            self.set_latest_work_start(active.task_id(), snapshot.active_task_latest_work_start);
-        }
-        Ok(())
+        self.adopt_active_worklog_snapshot(
+            snapshot.active_worklog,
+            snapshot.active_task_latest_work_start,
+        )
     }
 
     fn adopt_snapshot(&mut self, snapshot: TrackerSnapshot) -> Result<(), ApplicationError> {
@@ -247,6 +272,13 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         }
     }
 
+    fn recover_after_worklog_move(&mut self, write: RepositoryError) -> ApplicationError {
+        match self.reload_authoritative_state() {
+            Ok(()) => ApplicationError::WorklogMoveWrite { write },
+            Err(recovery) => ApplicationError::WorklogMoveRecovery { write, recovery },
+        }
+    }
+
     fn recover_after_worklog_deletion(&mut self, write: RepositoryError) -> ApplicationError {
         match self.reload_authoritative_state() {
             Ok(()) => ApplicationError::WorklogDeletionWrite { write },
@@ -263,13 +295,28 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             correction.task_latest_work_start,
         );
         let worklog = correction.worklog;
-        self.tracker = match correction.active_worklog {
-            Some(worklog) => Tracker::resume(worklog)?,
-            None => Tracker::idle(),
-        };
-        if let Some(active) = self.tracker.active() {
-            self.set_latest_work_start(active.task_id(), correction.active_task_latest_work_start);
-        }
+        self.adopt_active_worklog_snapshot(
+            correction.active_worklog,
+            correction.active_task_latest_work_start,
+        )?;
+        Ok(worklog)
+    }
+
+    fn adopt_worklog_move(
+        &mut self,
+        source_task_id: TaskId,
+        movement: WorklogMove,
+    ) -> Result<Worklog, ApplicationError> {
+        self.set_latest_work_start(source_task_id, movement.source_task_latest_work_start);
+        self.set_latest_work_start(
+            movement.worklog.task_id(),
+            movement.destination_task_latest_work_start,
+        );
+        let worklog = movement.worklog;
+        self.adopt_active_worklog_snapshot(
+            movement.active_worklog,
+            movement.active_task_latest_work_start,
+        )?;
         Ok(worklog)
     }
 
