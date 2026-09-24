@@ -90,6 +90,67 @@ fn choose_destination(
 }
 
 #[test]
+fn fuzzy_move_results_rank_latest_tracking_or_update_and_exclude_ineligible_tasks() {
+    let context = TestContext::new();
+    {
+        let database = context.database();
+        database.create_task("Build task source");
+        database.create_task_at("BT", at(6, 0), at(9, 0));
+        database.create_task_at("Book travel", at(6, 0), at(10, 0));
+        database.create_task_at("Build tools", at(6, 0), at(6, 0));
+        database.create_task("Bright team");
+        database.create_worklog("Build task source", at(8, 0), Some(at(8, 30)));
+        database.create_worklog("Build tools", at(11, 0), Some(at(11, 30)));
+        database.create_worklog("Bright team", at(12, 0), Some(at(12, 30)));
+        database.archive_task("Bright team");
+    }
+
+    let mut tt = context.launch();
+    open_history(&mut tt, "Build task source");
+    tt.press_and_wait(Key::Char('m'), "the move dialog", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .move_worklog_dialog()
+            .is_some()
+    });
+    tt.type_text("bT");
+    let expected = ["Build tools", "Book travel", "BT"].map(str::to_owned);
+    let page = tt.wait_for("the activity-ranked fuzzy destinations", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.move_worklog_dialog()
+            .is_some_and(|dialog| dialog.query() == "bT" && dialog.results() == expected)
+    });
+    assert_eq!(
+        page.move_worklog_dialog()
+            .expect("the move dialog remains open")
+            .results(),
+        expected
+    );
+    tt.press_and_wait(Key::Tab, "the newest destination selection", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .move_worklog_dialog()
+            .is_some_and(|dialog| {
+                !dialog.search_is_focused()
+                    && dialog.selected_result().as_deref() == Some("Build tools")
+            })
+    });
+    tt.press_and_wait(
+        Key::Char('j'),
+        "the updated destination selection",
+        |screen| {
+            TimeTrackerPage::new(screen.clone())
+                .move_worklog_dialog()
+                .is_some_and(|dialog| dialog.selected_result().as_deref() == Some("Book travel"))
+        },
+    );
+    tt.press_and_wait(Key::Esc, "the cancelled move", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .move_worklog_dialog()
+            .is_none()
+    });
+    tt.quit().assert_clean_exit();
+}
+
+#[test]
 fn completed_worklog_moves_to_a_fuzzy_active_destination_and_survives_restart() {
     let context = TestContext::new();
     let original = {
