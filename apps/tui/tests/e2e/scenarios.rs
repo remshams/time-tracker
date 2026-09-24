@@ -20,6 +20,8 @@ mod search;
 mod stale;
 #[path = "scenarios/startup.rs"]
 mod startup;
+#[path = "scenarios/tabs.rs"]
+mod tabs;
 #[path = "scenarios/tasks.rs"]
 mod tasks;
 #[path = "scenarios/tracking.rs"]
