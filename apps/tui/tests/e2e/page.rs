@@ -284,25 +284,39 @@ pub(crate) struct TaskPanel {
 }
 
 impl TaskPanel {
-    /// The block title of the panel, including its current ordering.
+    /// The block title of the panel, including tabs and current ordering.
     pub(crate) fn title(&self) -> String {
         panel_title(&self.screen)
     }
 
     /// Whether the active view's panel is shown.
     pub(crate) fn shows_active_tasks(&self) -> bool {
-        self.title().starts_with("Active tasks · ")
+        self.title().starts_with("Tasks · [Active]  Archived · ")
     }
 
     /// Whether the archived view's panel is shown.
     pub(crate) fn shows_archived_tasks(&self) -> bool {
-        self.title().starts_with("Archived tasks · ")
+        self.title().starts_with("Tasks · Active  [Archived] · ")
     }
 
-    /// Whether the panel names the given ordering after its view title.
+    /// Whether the current tab has the selection highlight.
+    pub(crate) fn selected_tab_is_highlighted(&self) -> bool {
+        let col = if self.shows_active_tasks() {
+            9
+        } else if self.shows_archived_tasks() {
+            17
+        } else {
+            return false;
+        };
+        self.screen
+            .cell(Layout::of(&self.screen).panel_top_row(), col)
+            .is_some_and(|cell| cell.style().reverse)
+    }
+
+    /// Whether the panel names the given ordering after the tabs.
     pub(crate) fn shows_ordering(&self, ordering: &str) -> bool {
         self.title()
-            .split_once(" · ")
+            .rsplit_once(" · ")
             .is_some_and(|(_, shown)| shown == ordering)
     }
 
@@ -614,7 +628,7 @@ impl Footer {
 /// The bordered read-only worklog history of one task.
 ///
 /// The history takes the task panel's place in the frame: the same
-/// bordered body area, with `Worklog history · <task>` as its block title.
+/// bordered body area, with `<source> › <task> › Worklogs` as its title.
 /// One worklog occupies two content lines, the interval line then the
 /// duration line, and the list scrolls in whole worklogs, so the first
 /// content line always begins a worklog and parsing can walk the rows
@@ -631,14 +645,28 @@ impl WorklogHistoryPanel {
 
     /// Whether the history screen is shown at all.
     pub(crate) fn is_shown(&self) -> bool {
-        self.title().starts_with("Worklog history · ")
+        self.source_view().is_some() && self.title().ends_with(" › Worklogs")
+    }
+
+    /// The task view from which this history was opened.
+    pub(crate) fn source_view(&self) -> Option<&'static str> {
+        let title = self.title();
+        if title.starts_with("Active › ") {
+            Some("Active")
+        } else if title.starts_with("Archived › ") {
+            Some("Archived")
+        } else {
+            None
+        }
     }
 
     /// The name of the task whose history is open.
     pub(crate) fn task_name(&self) -> String {
-        self.title()
-            .split_once(" · ")
-            .map_or_else(|| self.title(), |(_, name)| name.to_owned())
+        let title = self.title();
+        title
+            .split_once(" › ")
+            .and_then(|(_, rest)| rest.strip_suffix(" › Worklogs"))
+            .map_or_else(|| title.clone(), str::to_owned)
     }
 
     /// The empty-state hint shown instead of worklog rows, if the open
