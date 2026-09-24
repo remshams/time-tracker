@@ -37,11 +37,12 @@ pub fn render(frame: &mut Frame, app: AppView<'_>) {
     );
     match app.screen_state() {
         ScreenState::TaskList(_) => {
+            let tasks = app.visible_tasks();
             screens::task_list::view::render(
                 frame,
                 body,
                 app.task_list(),
-                app.tasks(),
+                &tasks,
                 app.ordering_label(),
                 app.active_task_id(),
             );

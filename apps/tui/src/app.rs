@@ -156,6 +156,11 @@ impl<S: TrackerApplicationService> App<S> {
         let selected = self.shell.task_list().selection();
         let items = self.application.tasks(self.catalog.ordering());
         let resolved = self.catalog.reload(items, view, selected);
+        let query = self.shell.task_list().search_query();
+        let visible = self.catalog.visible_tasks(view, query);
+        let resolved = resolved
+            .filter(|id| visible.iter().any(|task| task.id() == *id))
+            .or_else(|| visible.first().map(|task| task.id()));
         self.shell.task_list_mut().set_selection(resolved);
     }
 

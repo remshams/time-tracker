@@ -85,6 +85,7 @@ fn task_list_state(mode: TaskListMode, view: TaskView) -> TaskListState {
     state.show(view, None);
     match mode {
         TaskListMode::Normal => {}
+        TaskListMode::Search => state.open_search(),
         TaskListMode::Input { purpose, buffer } => state.open_input(purpose, buffer),
         TaskListMode::ConfirmArchive { task_id, name } => {
             state.open_archive_confirmation(task_id, name);

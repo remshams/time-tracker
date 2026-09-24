@@ -63,8 +63,14 @@ impl<'a> AppView<'a> {
         self.input_state().footer_hints(width)
     }
 
+    #[cfg(test)]
     pub(crate) fn tasks(self) -> &'a [Task] {
         self.catalog.tasks(self.task_list().view())
+    }
+
+    pub(crate) fn visible_tasks(self) -> Vec<&'a Task> {
+        self.catalog
+            .visible_tasks(self.task_list().view(), self.task_list().search_query())
     }
 
     #[cfg(test)]

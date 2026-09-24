@@ -8,13 +8,15 @@ use super::{TaskListCommand, TaskListMode, TaskListState, TaskView};
 
 pub(crate) fn map(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
     match state.mode() {
-        TaskListMode::Normal => map_normal(state.view(), key),
+        TaskListMode::Normal => map_normal(state, key),
+        TaskListMode::Search => map_search(key),
         TaskListMode::Input { .. } => map_input(key),
         TaskListMode::ConfirmArchive { .. } => map_confirm(key),
     }
 }
 
-fn map_normal(view: TaskView, key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
+fn map_normal(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
+    let view = state.view();
     if key.modifiers != KeyModifiers::NONE {
         return None;
     }
@@ -24,13 +26,33 @@ fn map_normal(view: TaskView, key: KeyEvent) -> Option<KeymapCommand<TaskListCom
         KeyCode::Char('h') => TaskListCommand::ShowActiveTasks,
         KeyCode::Char('l') => TaskListCommand::ShowArchivedTasks,
         KeyCode::Char('s') => TaskListCommand::CycleOrdering,
+        KeyCode::Char('/') => TaskListCommand::OpenSearch,
         KeyCode::Char(' ') if view == TaskView::Active => TaskListCommand::ToggleTracking,
         KeyCode::Char('a') if view == TaskView::Active => TaskListCommand::OpenAdd,
         KeyCode::Char('e') if view == TaskView::Active => TaskListCommand::OpenRename,
         KeyCode::Char('d') if view == TaskView::Active => TaskListCommand::OpenArchiveConfirm,
         KeyCode::Char('u') if view == TaskView::Archived => TaskListCommand::UnarchiveSelected,
         KeyCode::Enter => TaskListCommand::OpenHistory,
+        KeyCode::Esc if state.search_query().is_some() => TaskListCommand::ClearSearch,
         KeyCode::Char('q') | KeyCode::Esc => return Some(KeymapCommand::Quit),
+        _ => return None,
+    };
+    Some(KeymapCommand::Local(command))
+}
+
+fn map_search(key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
+    if key.modifiers != KeyModifiers::NONE
+        && !(matches!(key.code, KeyCode::Char(_)) && key.modifiers == KeyModifiers::SHIFT)
+    {
+        return None;
+    }
+    let command = match key.code {
+        KeyCode::Enter => TaskListCommand::CommitSearch,
+        KeyCode::Esc => TaskListCommand::CancelSearch,
+        KeyCode::Backspace => TaskListCommand::BackspaceSearch,
+        KeyCode::Up => TaskListCommand::MoveUp,
+        KeyCode::Down => TaskListCommand::MoveDown,
+        KeyCode::Char(character) => TaskListCommand::InsertSearch(character),
         _ => return None,
     };
     Some(KeymapCommand::Local(command))
@@ -62,14 +84,24 @@ fn map_confirm(key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
 }
 
 pub(crate) fn footer_hints(state: &TaskListState, width: u16) -> &'static str {
+    let filtered = state.search_query().is_some();
     if width < 80 {
         return match state.mode() {
-            TaskListMode::Normal => match state.view() {
-                TaskView::Active => "j/k/↑/↓ h/l spc enter history a/e/d s sort q/esc/ctrl+c quit",
-                TaskView::Archived => {
-                    "j/k/↑/↓ h/l enter history s sort u restore q/esc/ctrl+c quit"
+            TaskListMode::Normal => match (state.view(), filtered) {
+                (TaskView::Active, false) => {
+                    "j/k/↑/↓ h/l / ␣ enter history a/e/d s sort q/esc/ctrl+c quit"
+                }
+                (TaskView::Archived, false) => {
+                    "j/k h/l / enter history s sort u restore q/esc/ctrl+c quit"
+                }
+                (TaskView::Active, true) => {
+                    "j/k h/l / spc enter history a/e/d s sort esc clear q/ctrl+c"
+                }
+                (TaskView::Archived, true) => {
+                    "j/k h/l / enter history s sort u restore esc clear q/ctrl+c"
                 }
             },
+            TaskListMode::Search => "type · ↑/↓ select · enter keep · esc cancel · ctrl+c quit",
             TaskListMode::Input { .. } => {
                 "type · backspace · enter save · esc cancel · ctrl+c quit"
             }
@@ -77,14 +109,23 @@ pub(crate) fn footer_hints(state: &TaskListState, width: u16) -> &'static str {
         };
     }
     match state.mode() {
-        TaskListMode::Normal => match state.view() {
-            TaskView::Active => {
-                "j/k/↑/↓ h/l view space track enter history s sort a/e/d edit q/esc/ctrl+c quit"
+        TaskListMode::Normal => match (state.view(), filtered) {
+            (TaskView::Active, false) => {
+                "j/k/↑/↓ h/l view / space track enter history s sort a/e/d edit q/esc/ctrl+c quit"
             }
-            TaskView::Archived => {
-                "j/k/↑/↓ move h/l view enter history s sort u unarchive q/esc/ctrl+c quit"
+            (TaskView::Archived, false) => {
+                "j/k/↑/↓ h/l view / enter history s sort u unarchive q/esc ctrl+c quit"
+            }
+            (TaskView::Active, true) => {
+                "j/k/↑/↓ h/l /find spc track enter history s sort a/e/d edit esc clear q/ctrl+c"
+            }
+            (TaskView::Archived, true) => {
+                "j/k/↑/↓ h/l /find enter history s sort u restore esc clear q/ctrl+c"
             }
         },
+        TaskListMode::Search => {
+            "type · backspace · ↑/↓ select · enter keep · esc cancel · ctrl+c quit"
+        }
         TaskListMode::Input { .. } => {
             "type · backspace delete · enter save · esc cancel · ctrl+c quit"
         }
@@ -416,6 +457,52 @@ mod tests {
     }
 
     #[test]
+    fn search_mode_types_and_navigates_without_triggering_task_actions() {
+        let view = TaskView::Active;
+        assert_eq!(
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('/'))),
+            Some(Command::TaskList(TaskListCommand::OpenSearch))
+        );
+        for (key_code, expected) in [
+            (KeyCode::Char('j'), TaskListCommand::InsertSearch('j')),
+            (KeyCode::Down, TaskListCommand::MoveDown),
+            (KeyCode::Up, TaskListCommand::MoveUp),
+            (KeyCode::Backspace, TaskListCommand::BackspaceSearch),
+            (KeyCode::Enter, TaskListCommand::CommitSearch),
+            (KeyCode::Esc, TaskListCommand::CancelSearch),
+        ] {
+            assert_eq!(
+                map_task_list(TaskListMode::Search, view, key(key_code)),
+                Some(Command::TaskList(expected))
+            );
+        }
+        assert!(task_list_footer(TaskListMode::Search, view, 60).contains("enter keep"));
+        for code in [
+            KeyCode::Enter,
+            KeyCode::Esc,
+            KeyCode::Backspace,
+            KeyCode::Down,
+        ] {
+            assert_eq!(
+                map_task_list(
+                    TaskListMode::Search,
+                    view,
+                    KeyEvent::new(code, KeyModifiers::ALT)
+                ),
+                None
+            );
+        }
+        assert_eq!(
+            map_task_list(
+                TaskListMode::Search,
+                view,
+                KeyEvent::new(KeyCode::Char('x'), KeyModifiers::ALT)
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn every_accepted_key_is_listed_in_the_footer() {
         let active_keys = task_list_footer(TaskListMode::Normal, TaskView::Active, 80);
         for hint in [
@@ -517,7 +604,7 @@ mod tests {
         }
         assert!(footers[0].contains("j/k/↑/↓"));
         assert!(footers[0].contains("h/l"));
-        assert!(footers[0].contains("spc"));
+        assert!(footers[0].contains("␣"));
         assert!(footers[0].contains("a/e/d"));
         assert!(footers[0].contains("enter history"));
         assert!(footers[0].contains("s sort"));

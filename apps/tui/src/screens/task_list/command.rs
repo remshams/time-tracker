@@ -15,6 +15,18 @@ pub(crate) enum TaskListCommand {
     OpenHistory,
     /// Cycle the shared task-list ordering.
     CycleOrdering,
+    /// Start editing a task-name search.
+    OpenSearch,
+    /// Keep the current search and return to task actions.
+    CommitSearch,
+    /// Restore the query and selection from before editing.
+    CancelSearch,
+    /// Remove the current task-name filter.
+    ClearSearch,
+    /// Add one character to the search query.
+    InsertSearch(char),
+    /// Remove the final character from the search query.
+    BackspaceSearch,
     /// Restore the selected archived task to the active list.
     UnarchiveSelected,
     /// Start, stop, or switch tracking for the selected task.

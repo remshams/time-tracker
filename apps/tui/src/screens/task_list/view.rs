@@ -1,5 +1,5 @@
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Margin, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
@@ -14,7 +14,7 @@ pub(crate) fn render(
     frame: &mut Frame,
     area: Rect,
     state: &TaskListState,
-    tasks: &[Task],
+    tasks: &[&Task],
     ordering_label: &str,
     active_task_id: Option<TaskId>,
 ) {
@@ -35,7 +35,7 @@ pub(crate) fn render(
                 &format!("Archive \"{name}\"?"),
             );
         }
-        TaskListMode::Normal => {}
+        TaskListMode::Normal | TaskListMode::Search => {}
     }
 }
 
@@ -43,7 +43,7 @@ fn render_body(
     frame: &mut Frame,
     area: Rect,
     state: &TaskListState,
-    tasks: &[Task],
+    tasks: &[&Task],
     ordering_label: &str,
     active_task_id: Option<TaskId>,
 ) {
@@ -51,20 +51,58 @@ fn render_body(
         TaskView::Active => ("Active tasks", "No active tasks. Press a to add one."),
         TaskView::Archived => ("Archived tasks", "No archived tasks."),
     };
+    let displayed_order = if state.search_query().is_some() {
+        "latest activity"
+    } else {
+        ordering_label
+    };
     let block = Block::bordered()
-        .title(format!("{view_title} · {ordering_label}"))
-        .border_style(if matches!(state.mode(), TaskListMode::Normal) {
-            styles::focused_border()
-        } else {
-            Style::default()
+        .title(format!("{view_title} · {displayed_order}"))
+        .border_style(
+            if matches!(state.mode(), TaskListMode::Normal | TaskListMode::Search) {
+                styles::focused_border()
+            } else {
+                Style::default()
+            },
+        );
+    let list_area = if let Some(query) = state.search_query() {
+        frame.render_widget(&block, area);
+        let inner = area.inner(Margin {
+            horizontal: 1,
+            vertical: 1,
         });
+        let query_width = (inner.width as usize).saturating_sub(9);
+        let visible_query = text::fit_suffix(query, query_width);
+        let mut spans = vec![Span::raw("Search: "), Span::raw(visible_query.to_owned())];
+        if matches!(state.mode(), TaskListMode::Search) {
+            spans.push(Span::styled("▏", styles::input_cursor()));
+        }
+        frame.render_widget(Paragraph::new(Line::from(spans)), inner);
+        Rect {
+            y: inner.y.saturating_add(1),
+            height: inner.height.saturating_sub(1),
+            ..inner
+        }
+    } else {
+        area
+    };
     if tasks.is_empty() {
-        frame.render_widget(Paragraph::new(empty_text).block(block), area);
+        let message = if state.search_query().is_some() {
+            "No matching tasks."
+        } else {
+            empty_text
+        };
+        if state.search_query().is_some() {
+            frame.render_widget(Paragraph::new(message), list_area);
+        } else {
+            frame.render_widget(Paragraph::new(message).block(block), list_area);
+        }
         return;
     }
 
     // Two border cells and the two-cell marker leave this much for a name.
-    let name_budget = (area.width as usize).saturating_sub(4);
+    let name_budget = (list_area.width as usize)
+        .saturating_sub(if state.search_query().is_some() { 2 } else { 4 });
     let items: Vec<ListItem> = tasks
         .iter()
         .map(|task| {
@@ -78,14 +116,15 @@ fn render_body(
             ListItem::new(Line::from(vec![marker, Span::raw(name)]))
         })
         .collect();
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(styles::selected());
+    let mut list = List::new(items).highlight_style(styles::selected());
+    if state.search_query().is_none() {
+        list = list.block(block);
+    }
     let selected = state
         .selection()
         .and_then(|id| tasks.iter().position(|task| task.id() == id));
     let mut list_state = ListState::default().with_selected(selected);
-    frame.render_stateful_widget(list, area, &mut list_state);
+    frame.render_stateful_widget(list, list_area, &mut list_state);
 }
 
 #[cfg(test)]
@@ -304,6 +343,19 @@ mod tests {
         assert!(footer.contains("u restore"), "got {footer:?}");
         assert!(footer.contains("s sort"), "got {footer:?}");
         assert!(footer.contains("q/esc/ctrl+c quit"), "got {footer:?}");
+    }
+
+    #[test]
+    fn search_results_leave_the_bottom_border_intact_in_a_short_terminal() {
+        let mut app = app_with(&["First task", "Second task", "Third task", "Fourth task"]);
+        app.handle(Command::TaskList(TaskListCommand::OpenSearch));
+        let terminal = draw_at(&app, 60, 8);
+        assert!(row(&terminal, 2).contains("Search: "));
+        assert_eq!(
+            terminal.backend().buffer()[(3, 5)].symbol(),
+            "─",
+            "search results must stay inside the panel"
+        );
     }
 
     #[test]

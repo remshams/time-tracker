@@ -27,6 +27,74 @@ fn selection_movement_stays_inside_the_task_list() {
     app.handle(Command::TaskList(TaskListCommand::MoveUp));
     assert_eq!(app.app_view().selected(), Some(0));
 }
+
+#[test]
+fn reopening_a_search_keeps_the_selected_matching_task() {
+    let mut app = app_with(&["Build tools", "Book travel", "Other"]);
+    app.handle(Command::TaskList(TaskListCommand::OpenSearch));
+    app.handle(Command::TaskList(TaskListCommand::InsertSearch('b')));
+    app.handle(Command::TaskList(TaskListCommand::CommitSearch));
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    let selected = app.app_view().task_list().selection();
+
+    app.handle(Command::TaskList(TaskListCommand::OpenSearch));
+    assert_eq!(app.app_view().task_list().selection(), selected);
+    app.handle(Command::TaskList(TaskListCommand::BackspaceSearch));
+    assert_eq!(app.app_view().task_list().selection(), selected);
+    app.handle(Command::TaskList(TaskListCommand::CommitSearch));
+    assert_eq!(app.app_view().task_list().selection(), selected);
+    assert_eq!(app.app_view().task_list().search_query(), None);
+}
+
+#[test]
+fn a_cancel_command_restores_search_state() {
+    let mut app = app_with(&["Build tools"]);
+    let selected = app.app_view().task_list().selection();
+    app.handle(Command::TaskList(TaskListCommand::OpenSearch));
+    app.handle(Command::TaskList(TaskListCommand::InsertSearch('x')));
+    assert_eq!(app.app_view().task_list().selection(), None);
+    app.handle(Command::TaskList(TaskListCommand::Cancel));
+    assert_eq!(app.app_view().task_list().mode(), &TaskListMode::Normal);
+    assert_eq!(app.app_view().task_list().search_query(), None);
+    assert_eq!(app.app_view().task_list().selection(), selected);
+}
+
+#[test]
+fn search_replaces_a_selection_that_no_longer_matches() {
+    let mut app = app_with(&["Build tools", "Other task"]);
+    let other = app
+        .app_view()
+        .tasks()
+        .iter()
+        .find(|task| task.name().as_str() == "Other task")
+        .unwrap()
+        .id();
+    app.shell_mut().task_list_mut().set_selection(Some(other));
+
+    app.handle(Command::TaskList(TaskListCommand::OpenSearch));
+    app.handle(Command::TaskList(TaskListCommand::InsertSearch('b')));
+    let selected = app.app_view().task_list().selection().unwrap();
+    assert_ne!(selected, other);
+    assert_eq!(
+        app.catalog().task(selected).unwrap().name().as_str(),
+        "Build tools"
+    );
+}
+
+#[test]
+fn task_navigation_does_not_move_selection_while_a_name_dialog_is_open() {
+    let mut app = app_with(&["First task", "Second task"]);
+    let selected = app.app_view().task_list().selection();
+    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    assert_eq!(app.app_view().task_list().selection(), selected);
+    app.handle(Command::TaskList(TaskListCommand::MoveUp));
+    assert_eq!(app.app_view().task_list().selection(), selected);
+    assert!(matches!(
+        app.app_view().task_list().mode(),
+        TaskListMode::Input { .. }
+    ));
+}
 #[test]
 fn adding_a_task_updates_the_list_and_selection() {
     let mut app = app_with(&["one"]);

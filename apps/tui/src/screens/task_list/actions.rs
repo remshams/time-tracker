@@ -20,6 +20,16 @@ impl<S: TrackerApplicationService> App<S> {
             TaskListCommand::ShowActiveTasks => self.show_tasks(TaskView::Active),
             TaskListCommand::ShowArchivedTasks => self.show_tasks(TaskView::Archived),
             TaskListCommand::CycleOrdering => self.cycle_ordering(),
+            TaskListCommand::OpenSearch => self.open_task_search(),
+            TaskListCommand::CommitSearch => self.commit_task_search(),
+            TaskListCommand::CancelSearch => self.cancel_task_search(),
+            TaskListCommand::ClearSearch => self.clear_task_search(),
+            TaskListCommand::InsertSearch(character) => self.edit_task_search(|state| {
+                state.insert_search(character, TaskName::MAX_LEN);
+            }),
+            TaskListCommand::BackspaceSearch => {
+                self.edit_task_search(|state| state.backspace_search())
+            }
             TaskListCommand::UnarchiveSelected => self.unarchive_selected(),
             TaskListCommand::ToggleTracking => self.toggle_tracking(),
             TaskListCommand::OpenAdd => self.open_add(),
@@ -31,7 +41,13 @@ impl<S: TrackerApplicationService> App<S> {
                 .insert_name(character, TaskName::MAX_LEN),
             TaskListCommand::Backspace => self.shell_mut().task_list_mut().backspace_name(),
             TaskListCommand::Confirm => self.confirm_task_list(),
-            TaskListCommand::Cancel => self.shell_mut().task_list_mut().close_mode(),
+            TaskListCommand::Cancel => {
+                if matches!(self.shell().task_list().mode(), TaskListMode::Search) {
+                    self.cancel_task_search();
+                } else {
+                    self.shell_mut().task_list_mut().close_mode();
+                }
+            }
             TaskListCommand::OpenHistory => self.open_history(),
         }
     }
@@ -41,57 +57,103 @@ impl<S: TrackerApplicationService> App<S> {
             && matches!(self.shell().task_list().mode(), TaskListMode::Normal)
     }
 
+    fn task_list_is_navigable(&self) -> bool {
+        self.shell().screen() == crate::screens::Screen::TaskList
+            && matches!(
+                self.shell().task_list().mode(),
+                TaskListMode::Normal | TaskListMode::Search
+            )
+    }
+
+    fn open_task_search(&mut self) {
+        if !self.task_list_is_normal() {
+            return;
+        }
+        self.shell_mut().task_list_mut().open_search();
+        self.reconcile_search_selection();
+    }
+
+    fn edit_task_search(&mut self, edit: impl FnOnce(&mut crate::screens::TaskListState)) {
+        if !matches!(self.shell().task_list().mode(), TaskListMode::Search) {
+            return;
+        }
+        edit(self.shell_mut().task_list_mut());
+        self.reconcile_search_selection();
+    }
+
+    fn reconcile_search_selection(&mut self) {
+        let list = self.shell().task_list();
+        let visible = self
+            .catalog()
+            .visible_tasks(list.view(), list.search_query());
+        let selected = list
+            .selection()
+            .filter(|id| visible.iter().any(|task| task.id() == *id))
+            .or_else(|| visible.first().map(|task| task.id()));
+        self.shell_mut().task_list_mut().set_selection(selected);
+    }
+
+    fn commit_task_search(&mut self) {
+        if matches!(self.shell().task_list().mode(), TaskListMode::Search) {
+            self.shell_mut().task_list_mut().commit_search();
+        }
+    }
+
+    fn cancel_task_search(&mut self) {
+        if matches!(self.shell().task_list().mode(), TaskListMode::Search) {
+            self.shell_mut().task_list_mut().cancel_search();
+        }
+    }
+
+    fn clear_task_search(&mut self) {
+        if self.task_list_is_normal() {
+            self.shell_mut().task_list_mut().clear_search();
+        }
+    }
+
     fn selected_task(&self) -> Option<&Task> {
         let list = self.shell().task_list();
         let selected = list.selection()?;
         self.catalog()
-            .tasks(list.view())
-            .iter()
+            .visible_tasks(list.view(), list.search_query())
+            .into_iter()
             .find(|task| task.id() == selected)
     }
 
-    fn selected_index(&self) -> Option<usize> {
-        let list = self.shell().task_list();
-        let selected = list.selection()?;
-        self.catalog()
-            .tasks(list.view())
-            .iter()
-            .position(|task| task.id() == selected)
-    }
-
     fn move_task_up(&mut self) {
-        if !self.task_list_is_normal() {
+        if !self.task_list_is_navigable() {
             return;
         }
-        let index = match self.selected_index() {
-            None => self
-                .catalog()
-                .tasks(self.shell().task_list().view())
-                .len()
-                .checked_sub(1),
+        let list = self.shell().task_list();
+        let tasks = self
+            .catalog()
+            .visible_tasks(list.view(), list.search_query());
+        let selected = list
+            .selection()
+            .and_then(|id| tasks.iter().position(|task| task.id() == id));
+        let index = match selected {
+            None => tasks.len().checked_sub(1),
             Some(0) => Some(0),
             Some(index) => Some(index - 1),
         };
-        let id = index.and_then(|index| {
-            self.catalog()
-                .tasks(self.shell().task_list().view())
-                .get(index)
-                .map(Task::id)
-        });
+        let id = index.and_then(|index| tasks.get(index).map(|task| task.id()));
         self.shell_mut().task_list_mut().set_selection(id);
     }
 
     fn move_task_down(&mut self) {
-        if !self.task_list_is_normal() {
+        if !self.task_list_is_navigable() {
             return;
         }
-        let view = self.shell().task_list().view();
-        let tasks = self.catalog().tasks(view);
+        let list = self.shell().task_list();
+        let tasks = self
+            .catalog()
+            .visible_tasks(list.view(), list.search_query());
         let id = if tasks.is_empty() {
             None
         } else {
-            let index = self
-                .selected_index()
+            let index = list
+                .selection()
+                .and_then(|id| tasks.iter().position(|task| task.id() == id))
                 .map_or(0, |index| index.saturating_add(1).min(tasks.len() - 1));
             Some(tasks[index].id())
         };
@@ -162,7 +224,7 @@ impl<S: TrackerApplicationService> App<S> {
         match self.shell().task_list().mode() {
             TaskListMode::Input { .. } => self.confirm_input(),
             TaskListMode::ConfirmArchive { .. } => self.confirm_archive(),
-            TaskListMode::Normal => {}
+            TaskListMode::Normal | TaskListMode::Search => {}
         }
     }
 
