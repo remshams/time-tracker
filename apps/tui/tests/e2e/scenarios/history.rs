@@ -72,7 +72,7 @@ fn selected_task_history_lists_completed_worklogs_newest_first() {
             && page.footer().hints_history()
     });
     let panel = page.worklog_history_panel();
-    assert_eq!(panel.title(), "Worklog history · Customer migration");
+    assert_eq!(panel.title(), "Active › Customer migration › Worklogs");
     assert_eq!(panel.task_name(), "Customer migration");
     assert_eq!(panel.row_count(), 2);
     assert_eq!(panel.row(0).start_text(), "2025-06-20 14:30");
