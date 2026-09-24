@@ -14,6 +14,8 @@ mod move_worklog;
 mod ordering;
 #[path = "scenarios/resize.rs"]
 mod resize;
+#[path = "scenarios/search.rs"]
+mod search;
 #[path = "scenarios/stale.rs"]
 mod stale;
 #[path = "scenarios/startup.rs"]

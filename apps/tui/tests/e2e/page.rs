@@ -17,6 +17,7 @@ use termlens::{Color, Screen};
 /// The exact empty-state hints the two views render instead of task rows.
 const ACTIVE_EMPTY_HINT: &str = "No active tasks. Press a to add one.";
 const ARCHIVED_EMPTY_HINT: &str = "No archived tasks.";
+const SEARCH_NO_MATCH_HINT: &str = "No matching tasks.";
 
 /// The empty-state hint the worklog history renders instead of rows.
 const HISTORY_EMPTY_HINT: &str = "No worklogs yet.";
@@ -346,13 +347,26 @@ impl TaskPanel {
         ([ACTIVE_EMPTY_HINT, ARCHIVED_EMPTY_HINT].contains(&hint.as_str())).then_some(hint)
     }
 
+    /// The visible task-list query, including a committed filter.
+    pub(crate) fn search_query(&self) -> Option<String> {
+        self.content_row_text(Layout::of(&self.screen).panel_first_content_row())
+            .strip_prefix("Search: ")
+            .map(|query| query.trim_end_matches('▏').trim_end().to_owned())
+    }
+
+    /// Whether a search found no tasks in the current view.
+    pub(crate) fn search_has_no_matches(&self) -> bool {
+        self.search_query().is_some()
+            && self.content_row_text(self.first_task_row()) == SEARCH_NO_MATCH_HINT
+    }
+
     /// The names of the visible task rows, top to bottom.
     pub(crate) fn task_names(&self) -> Vec<String> {
-        if self.empty_hint().is_some() {
+        if self.empty_hint().is_some() || self.search_has_no_matches() {
             return Vec::new();
         }
         let layout = Layout::of(&self.screen);
-        (layout.panel_first_content_row()..=layout.panel_last_content_row())
+        (self.first_task_row()..=layout.panel_last_content_row())
             .map(|row| task_name_text(&self.screen, row))
             .take_while(|text| !text.is_empty())
             .collect()
@@ -369,7 +383,7 @@ impl TaskPanel {
         );
         TaskRow {
             screen: self.screen.clone(),
-            row: Layout::of(&self.screen).panel_first_content_row() + index as u16,
+            row: self.first_task_row() + index as u16,
         }
     }
 
@@ -408,6 +422,11 @@ impl TaskPanel {
     /// The text of one content row, without the border cells.
     fn content_row_text(&self, row: u16) -> String {
         panel_row_text(&self.screen, row)
+    }
+
+    fn first_task_row(&self) -> u16 {
+        Layout::of(&self.screen).panel_first_content_row()
+            + u16::from(self.search_query().is_some())
     }
 }
 
@@ -963,6 +982,10 @@ impl MoveWorklogDialog {
             .trim_end_matches('▏')
             .trim_end()
             .to_owned()
+    }
+
+    pub(crate) fn search_is_focused(&self) -> bool {
+        self.line(2).contains('▏')
     }
 
     pub(crate) fn results(&self) -> Vec<String> {
