@@ -8,6 +8,8 @@ The TUI works end to end. It stores tasks and worklogs in SQLite, seeds a new da
 
 Tasks carry creation and metadata-update timestamps. The default list order puts the most recently worked tasks first without loading their full worklog histories. Tasks without worklogs follow, newest first. The TUI can also order tasks by their latest metadata update or creation time. Starting or switching tracking updates that task's latest-work value and re-sorts the default view, while selection stays with the task.
 
+Both task views support fuzzy name search. Matching tasks appear in order of their latest activity, using the newer of the task's metadata update and latest worklog start. The worklog move dialog uses the same order for its fuzzy destination matches.
+
 Enter opens the selected task's worklog history from either task view. History loads newest first in bounded batches of 50 and includes the active worklog. Timestamps display in an IANA timezone resolved once when the process starts, as `YYYY-MM-DD HH:MM`, without seconds, fractions, or a visible offset. The active row shares the timer header's monotonic duration. A selected history row can be corrected without changing its identity, task, or active state. Completed rows can also be permanently deleted. Press `d` to open a confirmation, then press `y` or Enter. Pressing `d` again confirms too. Escape or `n` cancels. Running worklogs are rejected with the exact message `Running worklogs cannot be deleted`. Deletion works for archived-task history. After deletion, history selects the row now at the deleted index. If no row remains there, it selects the preceding final row. Only empty history has no selection.
 
 The database enforces the tracking rules itself, so a second `tt` process sees the same bounds: an archived task cannot receive new worklogs, a task with an active worklog cannot be archived, at most one worklog is active, and worklogs for the same task cannot overlap. Touching and zero-duration intervals are valid, and worklogs for different tasks may overlap. Deletion compares the exact worklog ID, task ID, start, and end before removing a completed row. The delete transaction also returns the task's latest worklog start, so task ordering does not rely on a second read. Seeding, switching, correction, and deletion compare-and-set writes run in transactions, so simultaneous processes neither double-seed a new database nor silently overwrite stale state.
@@ -52,6 +54,7 @@ Shared:
 - `h`: switch to the Active view. `l`: switch to the Archived view. Switching to the view already shown does nothing.
 - `j` / `k` or Down / Up: move the selection, with safe bounds at both ends.
 - `s`: cycle through Recently worked, Recently updated, and Recently created ordering. One session-only choice applies to both task views, and selection follows the same task when its row changes.
+- `/`: search names in the current task view. Matches update as you type and use latest-activity order even when another list sort is selected. Up and Down navigate results while typing; Enter keeps the filter and restores normal task actions. Escape cancels editing, or clears a committed filter. Switching views clears the filter. At 60 columns the footer uses `␣` for Space.
 - `q` or Escape: quit. An active timer keeps running and is recovered on the next start.
 - Only unmodified keys act in the task list and confirmation modes; modifier chords other than Ctrl+C are ignored.
 
@@ -71,7 +74,7 @@ Worklog history:
 - Enter opens the selected task's history from either task view.
 - `j` / `k` or Down / Up moves between loaded worklogs without wrapping.
 - `e` corrects the selected worklog. Completed worklogs expose start and end; active worklogs expose only start.
-- `m` opens the move dialog and keeps the user in the source history while they search for a destination. Search is fuzzy and excludes the source and archived tasks. Tab and Shift+Tab switch between search and results; Up and Down navigate destination results even while search has focus, while `j` and `k` navigate only in the result list. Enter moves the worklog, and Escape cancels.
+- `m` opens the move dialog and keeps the user in the source history while they search for a destination. Search is fuzzy, ranks matches by latest activity, and excludes the source and archived tasks. Tab and Shift+Tab switch between search and results; Up and Down navigate destination results even while search has focus, while `j` and `k` navigate only in the result list. Enter moves the worklog, and Escape cancels.
 - `d` opens a permanent-deletion confirmation for a completed row. `y` or Enter confirms. A second `d` confirms the deletion, so `y` or Enter is not needed. `n` or Escape cancels. The dialog shows the interval and warns that the action cannot be undone. Running rows are never deletable, and archived-task history supports the same action. If deleting loaded rows exposes an older page, `o` loads it and selects its first row.
 - `o` loads the next batch of older worklogs when one exists.
 - `r` discards the loaded snapshot and reloads its newest batch.

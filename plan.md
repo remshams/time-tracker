@@ -2,7 +2,7 @@
 
 ## Status
 
-Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, task browsing and ordering, read-only worklog history, worklog correction, completed-worklog deletion, worklog moves, and the screen-scoped TUI command refactor are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, orders both task views, and loads one task's worklogs in bounded pages. The timestamp and ordering rules live in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds, [ADR 0004](docs/adr/0004-paginated-worklog-history.md) records pagination, [ADR 0006](docs/adr/0006-local-minute-tui-timestamps.md) records local-minute history and correction behavior, [ADR 0007](docs/adr/0007-completed-worklog-deletion.md) records completed-worklog deletion, and [ADR 0008](docs/adr/0008-move-worklogs-between-tasks.md) records worklog moves.
+Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, task browsing and ordering, task search, read-only worklog history, worklog correction, completed-worklog deletion, worklog moves, and the screen-scoped TUI command refactor are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, orders and searches both task views, and loads one task's worklogs in bounded pages. The timestamp and ordering rules live in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds, [ADR 0004](docs/adr/0004-paginated-worklog-history.md) records pagination, [ADR 0006](docs/adr/0006-local-minute-tui-timestamps.md) records local-minute history and correction behavior, [ADR 0007](docs/adr/0007-completed-worklog-deletion.md) records completed-worklog deletion, [ADR 0008](docs/adr/0008-move-worklogs-between-tasks.md) records worklog moves, and [ADR 0009](docs/adr/0009-task-search.md) records task search.
 
 The required Rust, Python, mutation, coverage, CRAP, and Linux PTY checks pass. A native macOS run also passes the full validation suite, including the PTY lifecycle test and file-backed SQLite tests. Detailed counts belong in each feature handoff rather than this long-lived plan. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred.
 
@@ -297,6 +297,14 @@ The move decisions are recorded in [ADR 0008](docs/adr/0008-move-worklogs-betwee
 - [x] Commit the move atomically, return both task aggregates, reject same-task overlap and active-worklog conflicts, preserve the source history on failure or cancellation, and reload it after success.
 - [x] Increment both tasks' history revisions without changing either task's `updated_at`.
 - [x] Cover completed and active moves, filtering, focus-sensitive navigation, cancellation, stale state, overlap, and identity/timestamp preservation.
+
+### Completed checkpoint: task search
+
+- [x] Add fuzzy name search to active and archived task views with a filter that can be kept for normal task actions.
+- [x] Rank matching tasks by the newer of their metadata update and latest worklog start, regardless of the normal list ordering.
+- [x] Keep fuzzy matching and eligible-destination rules in the worklog move dialog while ranking its matches by the same activity rule.
+- [x] Preserve task selection by identifier and restore the unfiltered view when search is cleared or cancelled.
+- [x] Cover search, ranking, navigation, and destination restrictions in E2E tests.
 
 ### Milestone 3: exclusive local or remote storage
 

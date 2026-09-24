@@ -22,3 +22,4 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0006](0006-local-minute-tui-timestamps.md) | Local-minute TUI timestamps | Accepted |
 | [0007](0007-completed-worklog-deletion.md) | Delete completed worklogs | Accepted |
 | [0008](0008-move-worklogs-between-tasks.md) | Move worklogs between tasks | Accepted |
+| [0009](0009-task-search.md) | Search and rank tasks by recent activity | Accepted |
