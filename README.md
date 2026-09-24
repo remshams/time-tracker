@@ -47,7 +47,7 @@ A brand-new empty database is seeded once with three tasks: Write release notes,
 
 Navigation is keyboard-first. The footer always lists the keys available in the current mode.
 
-Two task views share the same list screen. The Active view is the default at startup. Both views support selection movement and quitting, remember their own selection, and show their own text when they have no tasks ("No active tasks." versus "No archived tasks."). The timer header keeps showing the running task's name and elapsed time in the Archived view too.
+The list panel shows Active and Archived as tabs; brackets mark the current view. Active opens by default. Each view remembers its selection and shows its own empty-state text. The timer header keeps showing the running task and elapsed time in the Archived view.
 
 Shared:
 
@@ -72,6 +72,7 @@ Archived view only:
 Worklog history:
 
 - Enter opens the selected task's history from either task view.
+- The panel title shows the path back to the source view, for example `Active › Build testing › Worklogs`. Long task names are shortened to keep `Worklogs` visible.
 - `j` / `k` or Down / Up moves between loaded worklogs without wrapping.
 - `e` corrects the selected worklog. Completed worklogs expose start and end; active worklogs expose only start.
 - `m` opens the move dialog and keeps the user in the source history while they search for a destination. Search is fuzzy, ranks matches by latest activity, and excludes the source and archived tasks. Tab and Shift+Tab switch between search and results; Up and Down navigate destination results even while search has focus, while `j` and `k` navigate only in the result list. Enter moves the worklog, and Escape cancels.
