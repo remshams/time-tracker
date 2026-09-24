@@ -6,6 +6,7 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 
 use crate::app::AppView;
 use crate::components::{dialogs, text};
+use crate::screens::TaskView;
 use crate::screens::worklog_history::{
     CorrectionDraft, CorrectionField, HistoryAvailability, MoveDraft, MoveFocus,
     WorklogHistoryMode, WorklogHistoryState,
@@ -155,7 +156,11 @@ fn render_body(
 ) {
     let history = state.history();
     let block = Block::bordered()
-        .title(format!("Worklog history · {task_name}"))
+        .title(history_title(
+            area.width,
+            state.task_list().view(),
+            task_name,
+        ))
         .border_style(if matches!(state.mode(), WorklogHistoryMode::Normal) {
             styles::focused_border()
         } else {
@@ -196,6 +201,25 @@ fn render_body(
         .highlight_style(styles::selected());
     let mut list_state = ListState::default().with_selected(history.selected_index());
     frame.render_stateful_widget(list, area, &mut list_state);
+}
+
+fn history_title(width: u16, view: TaskView, task_name: &str) -> String {
+    let source = match view {
+        TaskView::Active => "Active",
+        TaskView::Archived => "Archived",
+    };
+    let prefix = format!("{source} › ");
+    let suffix = " › Worklogs";
+    let name_width = (width as usize)
+        .saturating_sub(4)
+        .saturating_sub(prefix.chars().count() + suffix.chars().count());
+    let name = text::fit_prefix(task_name, name_width);
+    if name.len() == task_name.len() {
+        format!("{prefix}{name}{suffix}")
+    } else {
+        let name = text::fit_prefix(task_name, name_width.saturating_sub(1));
+        format!("{prefix}{name}…{suffix}")
+    }
 }
 
 fn render_correction_modal(frame: &mut Frame, area: Rect, draft: &CorrectionDraft) {
@@ -442,7 +466,7 @@ mod tests {
         let rows = rows(&terminal);
 
         assert!(
-            rows[1].contains("Worklog history · alpha"),
+            rows[1].contains("Active › alpha › Worklogs"),
             "got {:?}",
             rows[1]
         );
@@ -478,6 +502,38 @@ mod tests {
                 .contains(Modifier::REVERSED),
             "the second row is not selected"
         );
+    }
+
+    #[test]
+    fn archived_worklogs_show_their_source_view_in_the_breadcrumb() {
+        let mut app = history_app(&[]);
+        app.handle(Command::WorklogHistory(
+            WorklogHistoryCommand::BackToTaskList,
+        ));
+        app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));
+        app.handle(Command::TaskList(TaskListCommand::Confirm));
+        app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
+        app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+
+        let terminal = draw_at(&app, 60, 20);
+        assert!(row(&terminal, 1).contains("Archived › alpha › Worklogs"));
+        assert!(row(&terminal, 19).contains("esc back"));
+    }
+
+    #[test]
+    fn long_task_names_leave_worklogs_visible_at_sixty_columns() {
+        let name = "Long planning task ".repeat(5);
+        let mut app = app_with(&[&name]);
+        app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+
+        let terminal = draw_at(&app, 60, 20);
+        let title = row(&terminal, 1);
+        assert!(
+            title.contains("Active › Long planning task"),
+            "got {title:?}"
+        );
+        assert!(title.contains("… › Worklogs"), "got {title:?}");
+        assert!(title.ends_with('┐'), "got {title:?}");
     }
 
     #[test]
@@ -527,7 +583,7 @@ mod tests {
             "got {:?}",
             row(&terminal, 2)
         );
-        assert!(row(&terminal, 1).contains("Worklog history · alpha"));
+        assert!(row(&terminal, 1).contains("Active › alpha › Worklogs"));
     }
 
     #[test]
