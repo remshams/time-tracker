@@ -1,5 +1,7 @@
 use tracker_domain::{TaskId, TaskName, Worklog};
 
+use crate::support::task_search::{SearchRank, fuzzy_match};
+
 /// Which part of the move dialog receives keyboard input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoveFocus {
@@ -11,11 +13,12 @@ pub enum MoveFocus {
 pub(crate) struct MoveCandidate {
     id: TaskId,
     name: String,
+    rank: SearchRank,
 }
 
 impl MoveCandidate {
-    pub(crate) fn new(id: TaskId, name: String) -> Self {
-        Self { id, name }
+    pub(crate) fn new(id: TaskId, name: String, rank: SearchRank) -> Self {
+        Self { id, name, rank }
     }
 
     pub(crate) fn id(&self) -> TaskId {
@@ -120,61 +123,13 @@ impl MoveDraft {
             .iter()
             .enumerate()
             .filter_map(|(index, candidate)| {
-                fuzzy_score(&candidate.name, &self.query).map(|score| (index, score))
+                fuzzy_match(&candidate.name, &self.query).then_some(index)
             })
             .collect::<Vec<_>>();
-        results.sort_by(|(_, left), (_, right)| right.cmp(left));
-        self.results = results.into_iter().map(|(index, _)| index).collect();
+        results.sort_by_key(|index| self.candidates[*index].rank);
+        self.results = results;
         self.selected = (!self.results.is_empty()).then_some(0);
     }
-}
-
-/// Scores a non-contiguous case-insensitive match. The tuple sorts matches by
-/// adjacent characters first, then by character positions at word starts.
-fn fuzzy_score(candidate: &str, query: &str) -> Option<(usize, usize)> {
-    let query = query
-        .chars()
-        .flat_map(char::to_lowercase)
-        .collect::<Vec<_>>();
-    if query.is_empty() {
-        return Some((0, 0));
-    }
-    let candidate = candidate
-        .chars()
-        .flat_map(char::to_lowercase)
-        .collect::<Vec<_>>();
-    if query.len() > candidate.len() {
-        return None;
-    }
-    let word_start = |index: usize| index == 0 || !candidate[index - 1].is_alphanumeric();
-
-    let mut previous = vec![None; candidate.len()];
-    for (index, character) in candidate.iter().enumerate() {
-        if *character == query[0] {
-            previous[index] = Some((0, usize::from(word_start(index))));
-        }
-    }
-    for wanted in query.into_iter().skip(1) {
-        let mut next = vec![None; candidate.len()];
-        let mut best_before = None;
-        for (index, character) in candidate.iter().enumerate() {
-            if *character == wanted {
-                let word_start_bonus = usize::from(word_start(index));
-                let non_adjacent =
-                    best_before.map(|(adjacent, starts)| (adjacent, starts + word_start_bonus));
-                let adjacent = index.checked_sub(1).and_then(|previous_index| {
-                    previous[previous_index]
-                        .map(|(adjacent, starts)| (adjacent + 1, starts + word_start_bonus))
-                });
-                next[index] = non_adjacent.max(adjacent);
-            }
-            if let Some(score) = previous[index] {
-                best_before = best_before.max(Some(score));
-            }
-        }
-        previous = next;
-    }
-    previous.into_iter().flatten().max()
 }
 
 #[cfg(test)]
@@ -193,37 +148,50 @@ mod tests {
         .unwrap()
     }
 
-    fn candidate(name: &str) -> MoveCandidate {
-        MoveCandidate::new(TaskId::generate(), name.to_owned())
+    fn candidate(name: &str, created_seconds: i64, activity_seconds: i64) -> MoveCandidate {
+        let id = TaskId::generate();
+        MoveCandidate::new(
+            id,
+            name.to_owned(),
+            SearchRank::new(
+                id,
+                DateTime::<Utc>::from_timestamp(created_seconds, 0).unwrap(),
+                DateTime::<Utc>::from_timestamp(activity_seconds, 0).unwrap(),
+            ),
+        )
     }
 
     #[test]
-    fn fuzzy_matching_is_case_insensitive_non_contiguous_and_prefers_better_matches() {
-        assert!(fuzzy_score("Build release", "BR").is_some());
-        assert!(fuzzy_score("Build release", "BSE").is_some());
-        assert!(fuzzy_score("Build release", "BX").is_none());
-        assert!(fuzzy_score("release build", "bu") > fuzzy_score("blue sky", "bu"));
-        assert_eq!(fuzzy_score("ab", "ab"), Some((1, 1)));
-        assert_eq!(fuzzy_score("a b", "ab"), Some((0, 2)));
-        assert_eq!(fuzzy_score("-?", "-?"), Some((1, 2)));
+    fn fuzzy_search_keeps_non_contiguous_case_insensitive_matches() {
+        let build = candidate("Build release", 0, 1);
+        let blue = candidate("blue sky", 0, 2);
+        let mut draft = MoveDraft::new(worklog(), vec![build.clone(), blue.clone()]);
+        draft.insert('b');
+        draft.insert('u');
+        assert_eq!(
+            draft.results().map(MoveCandidate::id).collect::<Vec<_>>(),
+            vec![blue.id(), build.id()]
+        );
+        assert!(fuzzy_match("Build release", "BSE"));
+        assert!(!fuzzy_match("Build release", "BX"));
     }
 
     #[test]
-    fn filtering_uses_catalog_order_for_ties_and_resets_selection() {
-        let alpha = candidate("alpha");
-        let alpine = candidate("alpine");
-        let beta = candidate("beta");
+    fn filtering_ranks_by_recent_activity_then_creation() {
+        let alpha = candidate("alpha", 2, 2);
+        let alpine = candidate("alpine", 3, 2);
+        let beta = candidate("beta", 1, 1);
         let mut draft = MoveDraft::new(worklog(), vec![alpha.clone(), alpine.clone(), beta]);
-        assert_eq!(draft.selected_task_id(), Some(alpha.id()));
+        assert_eq!(draft.selected_task_id(), Some(alpine.id()));
         draft.move_down();
         draft.insert('a');
-        assert_eq!(draft.selected_task_id(), Some(alpha.id()));
+        assert_eq!(draft.selected_task_id(), Some(alpine.id()));
         draft.insert('l');
-        assert_eq!(draft.selected_task_id(), Some(alpha.id()));
+        assert_eq!(draft.selected_task_id(), Some(alpine.id()));
         draft.insert('z');
         assert_eq!(draft.selected_task_id(), None);
         draft.backspace();
-        assert_eq!(draft.selected_task_id(), Some(alpha.id()));
+        assert_eq!(draft.selected_task_id(), Some(alpine.id()));
     }
 
     #[test]
@@ -250,7 +218,11 @@ mod tests {
     fn result_navigation_moves_and_clamps_the_selected_index() {
         let mut draft = MoveDraft::new(
             worklog(),
-            vec![candidate("alpha"), candidate("beta"), candidate("gamma")],
+            vec![
+                candidate("alpha", 0, 1),
+                candidate("beta", 0, 2),
+                candidate("gamma", 0, 3),
+            ],
         );
         assert_eq!(draft.result_count(), 3);
         assert_eq!(draft.selected_result_index(), Some(0));
@@ -268,7 +240,7 @@ mod tests {
 
     #[test]
     fn search_input_is_bounded_to_the_task_name_limit() {
-        let mut draft = MoveDraft::new(worklog(), vec![candidate("alpha")]);
+        let mut draft = MoveDraft::new(worklog(), vec![candidate("alpha", 0, 1)]);
         for _ in 0..=TaskName::MAX_LEN {
             draft.insert('a');
         }
@@ -277,9 +249,9 @@ mod tests {
     }
 
     #[test]
-    fn fuzzy_matching_handles_the_maximum_query_in_linear_space() {
+    fn fuzzy_matching_handles_the_maximum_query() {
         let text = "a".repeat(TaskName::MAX_LEN);
-        assert_eq!(fuzzy_score(&text, &text), Some((TaskName::MAX_LEN - 1, 1)));
-        assert_eq!(fuzzy_score(&text, &format!("{text}a")), None);
+        assert!(fuzzy_match(&text, &text));
+        assert!(!fuzzy_match(&text, &format!("{text}a")));
     }
 }

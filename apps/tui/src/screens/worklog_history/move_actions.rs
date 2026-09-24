@@ -17,7 +17,13 @@ impl<S: TrackerApplicationService> App<S> {
             .tasks(TaskView::Active)
             .iter()
             .filter(|task| task.id() != worklog.task_id())
-            .map(|task| MoveCandidate::new(task.id(), task.name().to_string()))
+            .map(|task| {
+                MoveCandidate::new(
+                    task.id(),
+                    task.name().to_string(),
+                    self.catalog().search_rank(task.id()),
+                )
+            })
             .collect();
         self.history_state_mut()
             .expect("history is open")
