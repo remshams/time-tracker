@@ -284,40 +284,41 @@ pub(crate) struct TaskPanel {
 }
 
 impl TaskPanel {
-    /// The block title of the panel, including tabs and current ordering.
+    /// The tabs on the panel's top border.
     pub(crate) fn title(&self) -> String {
         panel_title(&self.screen)
     }
 
     /// Whether the active view's panel is shown.
     pub(crate) fn shows_active_tasks(&self) -> bool {
-        self.title().starts_with("Tasks · [Active]  Archived · ")
+        self.title() == "Active │ Archived"
+            && self.tab_is_highlighted(2)
+            && !self.tab_is_highlighted(11)
     }
 
     /// Whether the archived view's panel is shown.
     pub(crate) fn shows_archived_tasks(&self) -> bool {
-        self.title().starts_with("Tasks · Active  [Archived] · ")
+        self.title() == "Active │ Archived"
+            && !self.tab_is_highlighted(2)
+            && self.tab_is_highlighted(11)
     }
 
     /// Whether the current tab has the selection highlight.
     pub(crate) fn selected_tab_is_highlighted(&self) -> bool {
-        let col = if self.shows_active_tasks() {
-            9
-        } else if self.shows_archived_tasks() {
-            17
-        } else {
-            return false;
-        };
+        self.shows_active_tasks() || self.shows_archived_tasks()
+    }
+
+    fn tab_is_highlighted(&self, col: u16) -> bool {
         self.screen
             .cell(Layout::of(&self.screen).panel_top_row(), col)
             .is_some_and(|cell| cell.style().reverse)
     }
 
-    /// Whether the panel names the given ordering after the tabs.
+    /// Whether the bottom right border names the given ordering.
     pub(crate) fn shows_ordering(&self, ordering: &str) -> bool {
-        self.title()
-            .rsplit_once(" · ")
-            .is_some_and(|(_, shown)| shown == ordering)
+        self.screen
+            .row_text(Layout::of(&self.screen).panel_bottom_row())
+            .ends_with(&format!("Sort: {ordering} ┘"))
     }
 
     /// Whether the panel border carries the focused blue accent, which
