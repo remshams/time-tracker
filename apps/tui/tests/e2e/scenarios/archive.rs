@@ -38,7 +38,7 @@ fn tt_archives_restores_and_persists_the_round_trip() {
     );
 
     // Switch to the archived view and restore the task.
-    let page = tt.press_and_wait(Key::Char('l'), "the archived view", |screen| {
+    let page = tt.press_and_wait(Key::Tab, "the archived view", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_archived_tasks()
             && page.task_panel().task_names() == ["Write release notes".to_owned()]
@@ -141,7 +141,7 @@ fn tt_ignores_active_view_keys_in_the_archived_view() {
         screen.contains("Write release notes") && screen.contains("Ready")
     });
 
-    let page = tt.press_and_wait(Key::Char('l'), "the archived view", |screen| {
+    let page = tt.press_and_wait(Key::Tab, "the archived view", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_archived_tasks()
             && page.task_panel().empty_hint().as_deref() == Some("No archived tasks.")
@@ -159,7 +159,7 @@ fn tt_ignores_active_view_keys_in_the_archived_view() {
     // land in that modal instead, the archived view would never change,
     // and the wait below would fail.
     tt.type_text("a ed \"");
-    let page = tt.press_and_wait(Key::Char('h'), "the active view again", |screen| {
+    let page = tt.press_and_wait(Key::BackTab, "the active view again", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_active_tasks() && page.footer().hints_task_actions()
     });
