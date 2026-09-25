@@ -124,6 +124,19 @@ mod tests {
             ),
             Some(Command::Reports(ReportCommand::PresetDown))
         );
+        for (code, command) in [
+            (KeyCode::Up, ReportCommand::PresetUp),
+            (KeyCode::Enter, ReportCommand::ChoosePreset),
+            (KeyCode::Esc, ReportCommand::Cancel),
+        ] {
+            assert_eq!(
+                map_key(
+                    InputState::Reports(&state),
+                    KeyEvent::new(code, KeyModifiers::NONE)
+                ),
+                Some(Command::Reports(command))
+            );
+        }
         state.mode = ReportMode::Custom {
             from: String::new(),
             to: String::new(),
@@ -142,6 +155,55 @@ mod tests {
                 KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE)
             ),
             Some(Command::Reports(ReportCommand::Insert('2')))
+        );
+        for (code, command) in [
+            (KeyCode::Enter, ReportCommand::ConfirmCustom),
+            (KeyCode::Esc, ReportCommand::Cancel),
+            (KeyCode::Backspace, ReportCommand::Backspace),
+        ] {
+            assert_eq!(
+                map_key(
+                    InputState::Reports(&state),
+                    KeyEvent::new(code, KeyModifiers::NONE)
+                ),
+                Some(Command::Reports(command))
+            );
+        }
+        assert_eq!(
+            map_key(
+                InputState::Reports(&state),
+                KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)
+            ),
+            Some(Command::Reports(ReportCommand::SwitchField))
+        );
+        assert_eq!(
+            map_key(
+                InputState::Reports(&state),
+                KeyEvent::new(KeyCode::Char('-'), KeyModifiers::NONE)
+            ),
+            Some(Command::Reports(ReportCommand::Insert('-')))
+        );
+        for code in [
+            KeyCode::Tab,
+            KeyCode::Enter,
+            KeyCode::Esc,
+            KeyCode::Backspace,
+            KeyCode::Char('2'),
+        ] {
+            assert_eq!(
+                map_key(
+                    InputState::Reports(&state),
+                    KeyEvent::new(code, KeyModifiers::CONTROL)
+                ),
+                None
+            );
+        }
+        assert_eq!(
+            map_key(
+                InputState::Reports(&state),
+                KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)
+            ),
+            None
         );
     }
 
@@ -238,5 +300,21 @@ mod tests {
             ),
             Some(Command::Reports(ReportCommand::First))
         );
+    }
+
+    #[test]
+    fn footer_hints_reflect_width_and_dialog_mode() {
+        let mut state = ReportState::new(chrono::Utc::now(), chrono_tz::UTC);
+        assert!(footer_hints(&state, 79).contains("p preset"));
+        assert!(!footer_hints(&state, 79).contains("gg/G"));
+        assert!(footer_hints(&state, 80).contains("gg/G"));
+        state.mode = ReportMode::Presets { selected: 0 };
+        assert!(footer_hints(&state, 80).contains("esc cancel"));
+        state.mode = ReportMode::Custom {
+            from: String::new(),
+            to: String::new(),
+            focus_to: false,
+        };
+        assert!(footer_hints(&state, 80).contains("field"));
     }
 }

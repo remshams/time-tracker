@@ -17,21 +17,25 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     pub(crate) fn refresh_reports(&mut self) {
-        if self.shell().screen() == Screen::Reports {
-            let now = report_now();
-            let timezone = self.shell().timezone();
-            let rollover = self.shell().report().is_some_and(|report| {
-                report.follow_calendar
-                    && report.calendar_today != now.with_timezone(&timezone).date_naive()
-            });
-            let live = self
-                .shell()
-                .report()
-                .and_then(|report| report.range(timezone))
-                .is_some_and(|(start, end)| start <= now && now < end);
-            if rollover || live {
-                self.tick_reports_at(now);
-            }
+        self.refresh_reports_if_needed(report_now());
+    }
+
+    fn refresh_reports_if_needed(&mut self, now: DateTime<Utc>) {
+        if self.shell().screen() != Screen::Reports {
+            return;
+        }
+        let timezone = self.shell().timezone();
+        let rollover = self.shell().report().is_some_and(|report| {
+            report.follow_calendar
+                && report.calendar_today != now.with_timezone(&timezone).date_naive()
+        });
+        let live = self
+            .shell()
+            .report()
+            .and_then(|report| report.range(timezone))
+            .is_some_and(|(start, end)| start <= now && now < end);
+        if rollover || live {
+            self.tick_reports_at(now);
         }
     }
 
@@ -59,16 +63,6 @@ impl<S: TrackerApplicationService> App<S> {
             .report_mut()
             .expect("report is open")
             .follow_calendar_date(today);
-        if self
-            .shell()
-            .report()
-            .is_some_and(|report| report.loaded_dates != Some((report.from, report.to)))
-        {
-            self.shell_mut()
-                .report_mut()
-                .expect("report is open")
-                .clear_totals();
-        }
         let Some(state) = self.shell().report() else {
             return;
         };
@@ -399,6 +393,74 @@ mod tests {
     }
 
     #[test]
+    fn period_keys_move_back_and_forward_and_preset_keys_move_one_row() {
+        let service = TestService::with_tasks(vec![task(1, "period task")]);
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        app.handle(Command::TaskList(TaskListCommand::ShowReports));
+        let initial = app.shell().report().unwrap().from;
+        app.handle(Command::Reports(ReportCommand::PreviousPeriod));
+        assert_eq!(
+            app.shell().report().unwrap().from,
+            initial.pred_opt().unwrap()
+        );
+        app.handle(Command::Reports(ReportCommand::NextPeriod));
+        assert_eq!(app.shell().report().unwrap().from, initial);
+
+        app.handle(Command::Reports(ReportCommand::OpenPresets));
+        app.handle(Command::Reports(ReportCommand::PresetDown));
+        app.handle(Command::Reports(ReportCommand::PresetDown));
+        assert_eq!(
+            app.shell().report().unwrap().mode,
+            ReportMode::Presets { selected: 2 }
+        );
+        app.handle(Command::Reports(ReportCommand::PresetUp));
+        assert_eq!(
+            app.shell().report().unwrap().mode,
+            ReportMode::Presets { selected: 1 }
+        );
+        for _ in 0..10 {
+            app.handle(Command::Reports(ReportCommand::PresetDown));
+        }
+        assert_eq!(
+            app.shell().report().unwrap().mode,
+            ReportMode::Presets {
+                selected: ReportPreset::ALL.len() - 1
+            }
+        );
+    }
+
+    #[test]
+    fn automatic_refresh_uses_live_half_open_range_and_calendar_following() {
+        let service = TestService::with_tasks(vec![task(1, "daily task")]);
+        let spy = service.spy();
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        app.handle(Command::TaskList(TaskListCommand::ShowReports));
+        let initial_reads = spy.report_reads().len();
+        let day = chrono::NaiveDate::from_ymd_opt(2024, 5, 2).unwrap();
+        let midnight = day.and_hms_opt(0, 0, 0).unwrap().and_utc();
+        let report = app.shell_mut().report_mut().unwrap();
+        report.from = day;
+        report.to = day;
+        report.calendar_today = day;
+        report.follow_calendar = false;
+        report.last_refresh_second = None;
+
+        app.refresh_reports_if_needed(midnight - TimeDelta::seconds(1));
+        assert_eq!(spy.report_reads().len(), initial_reads);
+        app.refresh_reports_if_needed(midnight);
+        assert_eq!(spy.report_reads().len(), initial_reads + 1);
+        app.refresh_reports_if_needed(midnight + TimeDelta::days(1));
+        assert_eq!(spy.report_reads().len(), initial_reads + 1);
+        app.refresh_reports_if_needed(midnight + TimeDelta::days(2));
+        assert_eq!(spy.report_reads().len(), initial_reads + 1);
+
+        app.shell_mut().report_mut().unwrap().follow_calendar = true;
+        app.refresh_reports_if_needed(midnight + TimeDelta::days(2));
+        assert_eq!(spy.report_reads().len(), initial_reads + 2);
+        assert_eq!(app.shell().report().unwrap().from, day + TimeDelta::days(2));
+    }
+
+    #[test]
     fn failed_report_read_clears_rows_and_a_later_success_clears_the_error() {
         let selected = task(1, "selected task");
         let service = TestService::with_tasks(vec![selected.clone()]);
@@ -509,6 +571,8 @@ mod tests {
         assert_eq!(selected(&app), Some(11));
         app.handle(Command::Reports(ReportCommand::Last));
         assert_eq!(selected(&app), Some(24));
+        app.handle(Command::Reports(ReportCommand::MoveDown));
+        assert_eq!(selected(&app), Some(24));
         app.handle(Command::Reports(ReportCommand::PageDown));
         assert_eq!(selected(&app), Some(24));
         app.handle(Command::Reports(ReportCommand::PageUp));
@@ -520,6 +584,29 @@ mod tests {
         app.shell_mut().report_mut().unwrap().clear_totals();
         app.handle(Command::Reports(ReportCommand::MoveDown));
         assert_eq!(selected(&app), None);
+    }
+
+    #[test]
+    fn custom_date_input_stops_at_ten_characters() {
+        let service = TestService::with_tasks(vec![task(1, "date task")]);
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        app.handle(Command::TaskList(TaskListCommand::ShowReports));
+        app.shell_mut().report_mut().unwrap().mode = ReportMode::Custom {
+            from: String::new(),
+            to: String::new(),
+            focus_to: false,
+        };
+        for character in "2024-05-021".chars() {
+            app.handle(Command::Reports(ReportCommand::Insert(character)));
+        }
+        assert_eq!(
+            app.shell().report().unwrap().mode,
+            ReportMode::Custom {
+                from: "2024-05-02".to_owned(),
+                to: String::new(),
+                focus_to: false,
+            }
+        );
     }
 
     #[test]

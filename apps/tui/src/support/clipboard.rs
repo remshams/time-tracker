@@ -55,13 +55,16 @@ fn copy_with_program(program: &OsStr, value: &str, timeout: Duration) -> io::Res
             Ok(Some(status)) => {
                 return Err(io::Error::other(format!("clipboard exited with {status}")));
             }
-            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
             Ok(None) => {
-                terminate_and_reap(&mut child);
-                return Err(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "clipboard timed out",
-                ));
+                if Instant::now().checked_duration_since(deadline).is_none() {
+                    thread::sleep(Duration::from_millis(10));
+                } else {
+                    terminate_and_reap(&mut child);
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "clipboard timed out",
+                    ));
+                }
             }
             Err(error) => {
                 terminate_and_reap(&mut child);
@@ -114,5 +117,41 @@ mod tests {
         .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
         assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_helper_that_exits_unsuccessfully_reports_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let helper = directory.path().join("clipboard-helper");
+        fs::write(&helper, "#!/bin/sh\ncat >/dev/null\nexit 7\n").unwrap();
+        let mut permissions = fs::metadata(&helper).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&helper, permissions).unwrap();
+        let error =
+            copy_with_program(helper.as_os_str(), "hello", Duration::from_secs(2)).unwrap_err();
+        assert!(error.to_string().contains("exit status: 7"));
+    }
+
+    #[test]
+    fn a_timed_out_helper_cannot_continue_after_copy_returns() {
+        let directory = tempfile::tempdir().unwrap();
+        let helper = directory.path().join("clipboard-helper");
+        let marker = directory.path().join("late-write");
+        fs::write(
+            &helper,
+            format!(
+                "#!/bin/sh\ncat >/dev/null\nsleep 0.25\nprintf done > '{}'\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&helper).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&helper, permissions).unwrap();
+        let error =
+            copy_with_program(helper.as_os_str(), "hello", Duration::from_millis(50)).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        thread::sleep(Duration::from_millis(350));
+        assert!(!marker.exists());
     }
 }

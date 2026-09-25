@@ -59,7 +59,6 @@ pub struct ReportState {
     pub(crate) g_prefix: bool,
     pub(crate) follow_calendar: bool,
     pub(crate) calendar_today: NaiveDate,
-    pub(crate) loaded_dates: Option<(NaiveDate, NaiveDate)>,
     pub(crate) report_error: bool,
     pub(crate) last_refresh_second: Option<i64>,
 }
@@ -77,7 +76,6 @@ impl ReportState {
             g_prefix: false,
             follow_calendar: true,
             calendar_today: today,
-            loaded_dates: None,
             report_error: false,
             last_refresh_second: None,
         }
@@ -114,14 +112,12 @@ impl ReportState {
             .filter(|id| totals.rows.iter().any(|row| row.task.id() == *id))
             .or_else(|| totals.rows.first().map(|row| row.task.id()));
         self.totals = Some(totals);
-        self.loaded_dates = Some((self.from, self.to));
         self.report_error = false;
     }
 
     pub(crate) fn clear_totals(&mut self) {
         self.totals = None;
         self.selected = None;
-        self.loaded_dates = None;
     }
 
     pub(crate) fn period_label(&self) -> &'static str {
@@ -175,11 +171,11 @@ impl ReportState {
                     shift_days(self.to, direction as i64)?,
                 )),
                 ReportPreset::Week => Some((
-                    shift_days(self.from, 7 * direction as i64)?,
-                    shift_days(self.to, 7 * direction as i64)?,
+                    shift_days(self.from, direction as i64 * 7)?,
+                    shift_days(self.to, direction as i64 * 7)?,
                 )),
                 ReportPreset::Month => {
-                    let from = shift_months(self.from, direction)?;
+                    let from = shift_months(self.from, direction.is_negative())?;
                     let to = from.checked_add_months(Months::new(1))?.pred_opt()?;
                     Some((from, to))
                 }
@@ -192,8 +188,8 @@ impl ReportState {
                 ReportPreset::Custom => {
                     let days = (self.to - self.from).num_days().checked_add(1)?;
                     Some((
-                        shift_days(self.from, days * direction as i64)?,
-                        shift_days(self.to, days * direction as i64)?,
+                        shift_days(self.from, direction as i64 * days)?,
+                        shift_days(self.to, direction as i64 * days)?,
                     ))
                 }
             }
@@ -244,8 +240,8 @@ fn shift_days(date: NaiveDate, days: i64) -> Option<NaiveDate> {
     date.checked_add_signed(Duration::days(days))
 }
 
-fn shift_months(date: NaiveDate, direction: i32) -> Option<NaiveDate> {
-    if direction < 0 {
+fn shift_months(date: NaiveDate, backwards: bool) -> Option<NaiveDate> {
+    if backwards {
         date.checked_sub_months(Months::new(1))
     } else {
         date.checked_add_months(Months::new(1))
@@ -308,6 +304,9 @@ fn local_day_start(timezone: Tz, date: NaiveDate) -> Option<DateTime<Utc>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::task;
+    use chrono::TimeDelta;
+    use tracker_application::ReportRow;
 
     #[test]
     fn berlin_day_boundaries_follow_both_dst_changes() {
@@ -339,6 +338,24 @@ mod tests {
             focus_to: false,
         };
         assert_eq!(state.apply_custom(), Err("From must be on or before To"));
+        state.mode = ReportMode::Custom {
+            from: "2026-03-01".into(),
+            to: "2026-03-01".into(),
+            focus_to: false,
+        };
+        assert_eq!(state.apply_custom(), Ok(()));
+        assert_eq!(state.from, state.to);
+    }
+
+    #[test]
+    fn midnight_gap_starts_at_the_first_valid_local_minute() {
+        let date = NaiveDate::from_ymd_opt(2026, 9, 6).unwrap();
+        assert_eq!(
+            local_day_start(chrono_tz::America::Santiago, date)
+                .unwrap()
+                .to_rfc3339(),
+            "2026-09-06T04:00:00+00:00"
+        );
     }
 
     #[test]
@@ -359,6 +376,32 @@ mod tests {
                 .to_rfc3339(),
             "2026-04-05T22:00:00+00:00"
         );
+        assert!(state.step(-1));
+        assert_eq!(state.from.to_string(), "2026-03-23");
+        assert_eq!(state.to.to_string(), "2026-03-29");
+        assert!(state.step(1));
+        assert_eq!(state.from.to_string(), "2026-03-30");
+    }
+
+    #[test]
+    fn refreshed_totals_keep_a_matching_selection_and_fall_back_when_it_disappears() {
+        let first = task(1, "first");
+        let second = task(2, "second");
+        let report = |rows: Vec<_>| ReportTotals {
+            total: TimeDelta::seconds(rows.len() as i64),
+            rows,
+        };
+        let row = |task| ReportRow {
+            task,
+            duration: TimeDelta::seconds(1),
+        };
+        let mut state = ReportState::new(Utc::now(), chrono_tz::UTC);
+        state.set_totals(report(vec![row(first.clone()), row(second.clone())]));
+        state.select_index(1);
+        state.set_totals(report(vec![row(second.clone()), row(first.clone())]));
+        assert_eq!(state.selected, Some(second.id()));
+        state.set_totals(report(vec![row(first.clone())]));
+        assert_eq!(state.selected, Some(first.id()));
     }
 
     #[test]
@@ -416,5 +459,38 @@ mod tests {
             state.follow_calendar_date(NaiveDate::from_ymd_opt(2027, 2, 1).unwrap());
             assert_eq!(state.from, stepped);
         }
+    }
+
+    #[test]
+    fn stepped_months_preserve_calendar_boundaries() {
+        let today = NaiveDate::from_ymd_opt(2026, 3, 17).unwrap();
+        let mut state = ReportState::new(
+            today.and_hms_opt(12, 0, 0).unwrap().and_utc(),
+            chrono_tz::UTC,
+        );
+        assert!(state.choose(ReportPreset::Month, today));
+        assert!(state.step(-1));
+        assert_eq!(state.from.to_string(), "2026-02-01");
+        assert_eq!(state.to.to_string(), "2026-02-28");
+        assert!(state.step(1));
+        assert_eq!(state.from.to_string(), "2026-03-01");
+        assert_eq!(state.to.to_string(), "2026-03-31");
+    }
+
+    #[test]
+    fn stepped_custom_ranges_move_by_their_inclusive_length() {
+        let mut state = ReportState::new(Utc::now(), chrono_tz::UTC);
+        state.mode = ReportMode::Custom {
+            from: "2026-03-01".into(),
+            to: "2026-03-03".into(),
+            focus_to: false,
+        };
+        assert_eq!(state.apply_custom(), Ok(()));
+        assert!(state.step(-1));
+        assert_eq!(state.from.to_string(), "2026-02-26");
+        assert_eq!(state.to.to_string(), "2026-02-28");
+        assert!(state.step(1));
+        assert_eq!(state.from.to_string(), "2026-03-01");
+        assert_eq!(state.to.to_string(), "2026-03-03");
     }
 }

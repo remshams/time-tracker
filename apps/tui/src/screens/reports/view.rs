@@ -41,13 +41,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
         width: area.width.saturating_sub(2),
         height: area.height.saturating_sub(2),
     };
-    frame.render_widget(
-        Paragraph::new(title),
-        Rect {
-            height: 1,
-            ..content
-        },
-    );
+    frame.render_widget(Paragraph::new(title), content);
     let mut preset_spans = Vec::new();
     for (index, preset) in ReportPreset::ALL.iter().enumerate() {
         if index > 0 {
@@ -66,7 +60,6 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
         Paragraph::new(Line::from(preset_spans)),
         Rect {
             y: content.y.saturating_add(1),
-            height: 1,
             ..content
         },
     );
@@ -172,6 +165,7 @@ mod tests {
     use super::*;
     use crate::test_support::task;
     use chrono::{TimeDelta, Utc};
+    use ratatui::style::{Color, Modifier};
     use ratatui::{Terminal, backend::TestBackend};
     use tracker_application::{ReportRow, ReportTotals};
 
@@ -201,5 +195,39 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(duration_x(3), duration_x(4));
+        assert!(duration_x(3) >= 50);
+    }
+
+    #[test]
+    fn period_row_and_list_stay_inside_the_report_border() {
+        let mut state = ReportState::new(Utc::now(), chrono_tz::UTC);
+        state.set_totals(ReportTotals {
+            rows: (1..=20)
+                .map(|id| ReportRow {
+                    task: task(id, &format!("task {id}")),
+                    duration: TimeDelta::minutes(15),
+                })
+                .collect(),
+            total: TimeDelta::minutes(300),
+        });
+        let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();
+        terminal
+            .draw(|frame| render(frame, frame.area(), &state))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(1, 2)].symbol(), "T");
+        assert_eq!(
+            (1..59).filter(|&x| buffer[(x, 2)].symbol() == "│").count(),
+            5
+        );
+        assert!(buffer[(1, 2)].modifier.contains(Modifier::REVERSED));
+        assert_eq!(buffer[(0, 3)].fg, Color::Blue);
+        assert_eq!(buffer[(1, 9)].symbol(), "─");
+
+        state.mode = ReportMode::Presets { selected: 0 };
+        terminal
+            .draw(|frame| render(frame, frame.area(), &state))
+            .unwrap();
+        assert_ne!(terminal.backend().buffer()[(0, 3)].fg, Color::Blue);
     }
 }
