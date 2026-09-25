@@ -12,6 +12,8 @@ mod history;
 mod move_worklog;
 #[path = "scenarios/ordering.rs"]
 mod ordering;
+#[path = "scenarios/reports.rs"]
+mod reports;
 #[path = "scenarios/resize.rs"]
 mod resize;
 #[path = "scenarios/search.rs"]

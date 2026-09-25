@@ -132,6 +132,16 @@ impl TimeTrackerPage {
         self.screen.size()
     }
 
+    /// All visible row text in reading order, for short modal prompts.
+    pub(crate) fn visible_text(&self) -> String {
+        let (_, rows) = self.screen.size();
+        (0..rows)
+            .map(|row| trimmed_row(&self.screen, row))
+            .filter(|row| !row.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     pub(crate) fn header(&self) -> Header {
         Header {
             screen: self.screen.clone(),
@@ -188,6 +198,45 @@ impl TimeTrackerPage {
         WorklogHistoryPanel {
             screen: self.screen.clone(),
         }
+    }
+
+    /// The body of the Reports panel, with borders and blank rows removed.
+    pub(crate) fn reports_panel(&self) -> ReportsPanel {
+        ReportsPanel {
+            screen: self.screen.clone(),
+        }
+    }
+}
+
+/// The rendered report period, total, and task rows.
+pub(crate) struct ReportsPanel {
+    screen: Screen,
+}
+
+impl ReportsPanel {
+    /// Visible report content in reading order, without panel borders.
+    pub(crate) fn text(&self) -> String {
+        let layout = Layout::of(&self.screen);
+        let mut rows = vec![panel_title(&self.screen)];
+        rows.extend(
+            (layout.panel_first_content_row()..=layout.panel_last_content_row())
+                .map(|row| panel_row_text(&self.screen, row))
+                .filter(|row| !row.is_empty()),
+        );
+        rows.push(trimmed_row(&self.screen, layout.panel_bottom_row()));
+        rows.join("\n")
+    }
+
+    /// The selected visible report row, including its rendered duration.
+    pub(crate) fn selected_row_text(&self) -> Option<String> {
+        let layout = Layout::of(&self.screen);
+        (layout.panel_first_content_row() + 2..=layout.panel_last_content_row())
+            .find(|row| {
+                (1..layout.cols - 1).any(
+                    |col| matches!(self.screen.cell(*row, col), Some(cell) if cell.style().reverse),
+                )
+            })
+            .map(|row| panel_row_text(&self.screen, row))
     }
 }
 
@@ -291,26 +340,35 @@ impl TaskPanel {
 
     /// Whether the active view's panel is shown.
     pub(crate) fn shows_active_tasks(&self) -> bool {
-        self.title() == "Active │ Archived"
-            && self.tab_is_highlighted(2)
-            && !self.tab_is_highlighted(11)
+        self.has_task_tabs() && self.tab_is_highlighted("Active")
     }
 
     /// Whether the archived view's panel is shown.
     pub(crate) fn shows_archived_tasks(&self) -> bool {
-        self.title() == "Active │ Archived"
-            && !self.tab_is_highlighted(2)
-            && self.tab_is_highlighted(11)
+        self.has_task_tabs() && self.tab_is_highlighted("Archived")
+    }
+
+    /// Whether the Reports tab is selected.
+    pub(crate) fn shows_reports(&self) -> bool {
+        self.has_task_tabs() && self.tab_is_highlighted("Reports")
+    }
+
+    fn has_task_tabs(&self) -> bool {
+        self.title().contains("Active") && self.title().contains("Archived")
     }
 
     /// Whether the current tab has the selection highlight.
     pub(crate) fn selected_tab_is_highlighted(&self) -> bool {
-        self.shows_active_tasks() || self.shows_archived_tasks()
+        self.shows_active_tasks() || self.shows_archived_tasks() || self.shows_reports()
     }
 
-    fn tab_is_highlighted(&self, col: u16) -> bool {
+    fn tab_is_highlighted(&self, tab: &str) -> bool {
+        let row = Layout::of(&self.screen).panel_top_row();
+        let Some(col) = self.screen.row_text(row).find(tab) else {
+            return false;
+        };
         self.screen
-            .cell(Layout::of(&self.screen).panel_top_row(), col)
+            .cell(row, col as u16)
             .is_some_and(|cell| cell.style().reverse)
     }
 
@@ -656,6 +714,8 @@ impl WorklogHistoryPanel {
             Some("Active")
         } else if title.starts_with("Archived › ") {
             Some("Archived")
+        } else if title.starts_with("Reports › ") {
+            Some("Reports")
         } else {
             None
         }

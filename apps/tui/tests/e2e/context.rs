@@ -15,6 +15,8 @@ pub(crate) struct TestContext {
     _temp: TempDir,
     home: PathBuf,
     database_path: PathBuf,
+    clipboard_path: PathBuf,
+    fake_bin: PathBuf,
 }
 
 impl TestContext {
@@ -28,10 +30,28 @@ impl TestContext {
         let home = temp.path().join("home");
         std::fs::create_dir(&home).expect("the temporary home must be creatable");
         let database_path = database_in(&home);
+        let clipboard_path = temp.path().join("clipboard.txt");
+        let fake_bin = temp.path().join("bin");
+        std::fs::create_dir(&fake_bin).expect("the private command directory must be creatable");
+        let clipboard_command = if cfg!(target_os = "macos") {
+            "pbcopy"
+        } else {
+            "wl-copy"
+        };
+        let fake_clipboard = fake_bin.join(clipboard_command);
+        std::fs::write(
+            &fake_clipboard,
+            "#!/bin/sh\n/bin/cat > \"$TT_E2E_CLIPBOARD_FILE\"\n",
+        )
+        .expect("the fake clipboard command must be writable");
+        std::fs::set_permissions(&fake_clipboard, std::fs::Permissions::from_mode(0o700))
+            .expect("the fake clipboard command must be executable");
         Self {
             _temp: temp,
             home,
             database_path,
+            clipboard_path,
+            fake_bin,
         }
     }
 
@@ -44,6 +64,24 @@ impl TestContext {
     /// Launches `tt` with a specific IANA timezone for display assertions.
     pub(crate) fn launch_in_timezone(&self, timezone: &str) -> TuiDriver {
         TuiDriver::spawn_in_timezone(&self.home, timezone)
+    }
+
+    /// Launches `tt` with a fixed report clock and a clipboard file inside
+    /// this scenario's private temporary directory.
+    pub(crate) fn launch_for_reports(&self, now: &str) -> TuiDriver {
+        TuiDriver::spawn_with_report_clock(
+            &self.home,
+            "UTC",
+            Some(now),
+            Some(&self.fake_bin),
+            Some(&self.clipboard_path),
+        )
+    }
+
+    /// The private file where report copy actions record their value.
+    pub(crate) fn clipboard_text(&self) -> String {
+        std::fs::read_to_string(&self.clipboard_path)
+            .expect("the report copy action must write the private clipboard file")
     }
 
     /// Opens the context's database through the real SQLite adapter, as a
