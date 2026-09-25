@@ -17,8 +17,12 @@ pub(crate) fn map(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<
 
 fn map_normal(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
     let view = state.view();
+    let other_tab = match view {
+        TaskView::Active => TaskListCommand::ShowArchivedTasks,
+        TaskView::Archived => TaskListCommand::ShowActiveTasks,
+    };
     if key.modifiers == KeyModifiers::SHIFT && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
-        return Some(KeymapCommand::Local(TaskListCommand::ShowActiveTasks));
+        return Some(KeymapCommand::Local(other_tab));
     }
     if key.modifiers != KeyModifiers::NONE {
         return None;
@@ -26,8 +30,7 @@ fn map_normal(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<Task
     let command = match key.code {
         KeyCode::Char('j') | KeyCode::Down => TaskListCommand::MoveDown,
         KeyCode::Char('k') | KeyCode::Up => TaskListCommand::MoveUp,
-        KeyCode::BackTab => TaskListCommand::ShowActiveTasks,
-        KeyCode::Tab => TaskListCommand::ShowArchivedTasks,
+        KeyCode::BackTab | KeyCode::Tab => other_tab,
         KeyCode::Char('s') => TaskListCommand::CycleOrdering,
         KeyCode::Char('/') => TaskListCommand::OpenSearch,
         KeyCode::Char(' ') if view == TaskView::Active => TaskListCommand::ToggleTracking,
@@ -165,7 +168,7 @@ mod tests {
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::BackTab)),
-            Some(Command::TaskList(TaskListCommand::ShowActiveTasks))
+            Some(Command::TaskList(TaskListCommand::ShowArchivedTasks))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Tab)),
@@ -226,7 +229,7 @@ mod tests {
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Tab)),
-            Some(Command::TaskList(TaskListCommand::ShowArchivedTasks))
+            Some(Command::TaskList(TaskListCommand::ShowActiveTasks))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('s'))),
@@ -272,7 +275,7 @@ mod tests {
     }
 
     #[test]
-    fn shift_tab_goes_back_and_old_view_keys_do_nothing() {
+    fn shift_tab_wraps_and_old_view_keys_do_nothing() {
         for view in [TaskView::Active, TaskView::Archived] {
             for code in [KeyCode::Tab, KeyCode::BackTab] {
                 assert_eq!(
@@ -281,7 +284,10 @@ mod tests {
                         view,
                         KeyEvent::new(code, KeyModifiers::SHIFT)
                     ),
-                    Some(Command::TaskList(TaskListCommand::ShowActiveTasks))
+                    Some(Command::TaskList(match view {
+                        TaskView::Active => TaskListCommand::ShowArchivedTasks,
+                        TaskView::Archived => TaskListCommand::ShowActiveTasks,
+                    }))
                 );
             }
             for code in [KeyCode::Char('h'), KeyCode::Char('l')] {
