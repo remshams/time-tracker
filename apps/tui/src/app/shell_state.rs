@@ -77,7 +77,7 @@ impl ShellState {
             .copy_confirmation_deadline
             .is_some_and(|deadline| now >= deadline)
         {
-            self.status = Status::Info("Ready".to_owned());
+            self.status = Status::Empty;
             self.copy_confirmation_deadline = None;
         }
     }
@@ -224,11 +224,7 @@ mod copy_confirmation_tests {
     use super::*;
 
     fn shell() -> ShellState {
-        ShellState::new(
-            Status::Info("Ready".to_owned()),
-            TaskListState::new(None),
-            chrono_tz::UTC,
-        )
+        ShellState::new(Status::Empty, TaskListState::new(None), chrono_tz::UTC)
     }
 
     #[test]
@@ -242,7 +238,7 @@ mod copy_confirmation_tests {
             &Status::Info("Copied to clipboard".to_owned())
         );
         shell.expire_copy_confirmation_at(start + Duration::from_secs(3));
-        assert_eq!(shell.status(), &Status::Info("Ready".to_owned()));
+        assert_eq!(shell.status(), &Status::Empty);
     }
 
     #[test]
@@ -257,7 +253,7 @@ mod copy_confirmation_tests {
             &Status::Info("Copied to clipboard".to_owned())
         );
         shell.expire_copy_confirmation_at(start + Duration::from_secs(4));
-        assert_eq!(shell.status(), &Status::Info("Ready".to_owned()));
+        assert_eq!(shell.status(), &Status::Empty);
     }
 
     #[test]

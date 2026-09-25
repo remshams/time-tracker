@@ -113,6 +113,7 @@ fn replace_timestamp<S: TrackerApplicationService>(app: &mut App<S>, text: Strin
 
 pub(crate) fn text(status: &Status) -> &str {
     match status {
+        Status::Empty => "",
         Status::Info(text) | Status::Error(text) => text,
     }
 }
