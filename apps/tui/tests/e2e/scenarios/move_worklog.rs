@@ -305,7 +305,7 @@ fn archived_source_history_moves_a_completed_worklog_to_an_active_task() {
     };
 
     let mut tt = context.launch();
-    tt.press_and_wait(Key::Char('l'), "the archived task view", |screen| {
+    tt.press_and_wait(Key::Tab, "the archived task view", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_archived_tasks()
             && page.task_panel().task_names() == ["Archived source".to_owned()]
