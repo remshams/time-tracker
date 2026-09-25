@@ -144,8 +144,12 @@ pub(crate) fn footer_hints(state: &ReportState, width: u16) -> &'static str {
     match state.focus {
         ReportFocus::TopTabs if width < 80 => "Tab/⇧Tab tabs · Enter presets · q quit",
         ReportFocus::TopTabs => "Tab/⇧Tab switch tabs · Enter presets · q quit",
-        ReportFocus::Presets if width < 80 => "Tab/⇧Tab presets · Enter apply · j rows · Esc tabs",
-        ReportFocus::Presets => "Tab/⇧Tab or h/l presets · Enter apply · j rows · Esc tabs",
+        ReportFocus::Presets if width < 80 => {
+            "Tab/⇧Tab apply · Enter edit Custom · j rows · Esc tabs"
+        }
+        ReportFocus::Presets => {
+            "Tab/⇧Tab or h/l apply period · Enter edit Custom · j rows · Esc tabs"
+        }
         ReportFocus::Rows if width < 80 => {
             "j/k rows · h/l period · Enter logs · Tab presets · Esc tabs"
         }
@@ -415,9 +419,9 @@ mod tests {
             ),
             (
                 ReportFocus::Presets,
-                "Tab/⇧Tab presets · Enter apply · j rows · Esc tabs",
-                "Tab/⇧Tab or h/l presets · Enter apply · j rows · Esc tabs",
-                "Tab/⇧Tab or h/l presets · Enter apply · j rows · Esc tabs",
+                "Tab/⇧Tab apply · Enter edit Custom · j rows · Esc tabs",
+                "Tab/⇧Tab or h/l apply period · Enter edit Custom · j rows · Esc tabs",
+                "Tab/⇧Tab or h/l apply period · Enter edit Custom · j rows · Esc tabs",
             ),
             (
                 ReportFocus::Rows,
@@ -427,6 +431,7 @@ mod tests {
             ),
         ] {
             state.focus = focus;
+            assert!(footer_hints(&state, 60).chars().count() <= 60);
             for (width, expected) in [(79, narrow), (80, medium), (115, medium), (116, wide)] {
                 let hints = footer_hints(&state, width);
                 assert_eq!(hints, expected);

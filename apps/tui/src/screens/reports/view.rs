@@ -43,6 +43,15 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
         width: area.width.saturating_sub(2),
         height: area.height.saturating_sub(2),
     };
+    let content = if content.height >= 5 {
+        Rect {
+            y: content.y.saturating_add(1),
+            height: content.height - 1,
+            ..content
+        }
+    } else {
+        content
+    };
     let (show_title, preset_offset, list_offset) = match content.height {
         0 | 1 => (false, None, 0),
         2 => (false, Some(0), 1),
@@ -195,8 +204,8 @@ mod tests {
                 .find(|&x| terminal.backend().buffer()[(x, y)].symbol() == "1")
                 .unwrap()
         };
-        assert_eq!(duration_x(4), duration_x(5));
-        assert!(duration_x(4) >= 50);
+        assert_eq!(duration_x(5), duration_x(6));
+        assert!(duration_x(5) >= 50);
     }
 
     #[test]
@@ -216,13 +225,15 @@ mod tests {
             .draw(|frame| render(frame, frame.area(), &state))
             .unwrap();
         let buffer = terminal.backend().buffer();
-        assert_eq!(buffer[(1, 2)].symbol(), " ");
-        assert_eq!(buffer[(1, 3)].symbol(), "T");
+        assert_eq!(buffer[(1, 1)].symbol(), " ");
+        assert_eq!(buffer[(2, 2)].symbol(), "P");
+        assert_eq!(buffer[(1, 3)].symbol(), " ");
+        assert_eq!(buffer[(1, 4)].symbol(), "T");
         assert_eq!(
-            (1..59).filter(|&x| buffer[(x, 3)].symbol() == "│").count(),
+            (1..59).filter(|&x| buffer[(x, 4)].symbol() == "│").count(),
             5
         );
-        assert!(buffer[(1, 3)].modifier.contains(Modifier::UNDERLINED));
+        assert!(buffer[(1, 4)].modifier.contains(Modifier::UNDERLINED));
         assert_ne!(buffer[(0, 3)].fg, Color::Blue);
         assert_eq!(buffer[(1, 9)].symbol(), "─");
 
@@ -231,7 +242,7 @@ mod tests {
             .draw(|frame| render(frame, frame.area(), &state))
             .unwrap();
         assert!(
-            terminal.backend().buffer()[(1, 3)]
+            terminal.backend().buffer()[(1, 4)]
                 .modifier
                 .contains(Modifier::REVERSED | Modifier::UNDERLINED)
         );
@@ -240,10 +251,10 @@ mod tests {
             .draw(|frame| render(frame, frame.area(), &state))
             .unwrap();
         let buffer = terminal.backend().buffer();
-        assert!(buffer[(1, 3)].modifier.contains(Modifier::UNDERLINED));
-        assert!(!buffer[(1, 3)].modifier.contains(Modifier::REVERSED));
-        assert!(buffer[(9, 3)].modifier.contains(Modifier::REVERSED));
-        assert!(!buffer[(9, 3)].modifier.contains(Modifier::UNDERLINED));
+        assert!(buffer[(1, 4)].modifier.contains(Modifier::UNDERLINED));
+        assert!(!buffer[(1, 4)].modifier.contains(Modifier::REVERSED));
+        assert!(buffer[(9, 4)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(9, 4)].modifier.contains(Modifier::UNDERLINED));
 
         state.focus = ReportFocus::Rows;
         let mut compact = Terminal::new(TestBackend::new(60, 5)).unwrap();
@@ -263,6 +274,13 @@ mod tests {
             assert_eq!(cell.symbol(), "t");
             assert!(cell.modifier.contains(Modifier::REVERSED));
         }
+        for (height, selected_y) in [(6, 4), (7, 5)] {
+            let mut short = Terminal::new(TestBackend::new(60, height)).unwrap();
+            short
+                .draw(|frame| render(frame, frame.area(), &state))
+                .unwrap();
+            assert_eq!(short.backend().buffer()[(1, selected_y)].symbol(), "t");
+        }
     }
 
     #[test]
@@ -278,7 +296,7 @@ mod tests {
         terminal
             .draw(|frame| render(frame, frame.area(), &state))
             .unwrap();
-        let today = &terminal.backend().buffer()[(1, 3)];
+        let today = &terminal.backend().buffer()[(1, 4)];
         assert!(today.modifier.contains(Modifier::UNDERLINED));
         assert!(!today.modifier.contains(Modifier::REVERSED));
     }
