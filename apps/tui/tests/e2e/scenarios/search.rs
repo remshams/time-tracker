@@ -170,7 +170,7 @@ fn archived_search_only_shows_archived_matches_in_activity_order() {
             .task_names()
             == ["Bright project".to_owned()]
     });
-    tt.press_and_wait(Key::Char('l'), "the archived task list", |screen| {
+    tt.press_and_wait(Key::Tab, "the archived task list", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_archived_tasks() && page.task_panel().task_names().len() == 2
     });
