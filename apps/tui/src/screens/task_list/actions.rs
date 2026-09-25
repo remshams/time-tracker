@@ -422,3 +422,28 @@ fn task_name_error_text(error: TaskNameError) -> String {
         ),
     }
 }
+
+#[cfg(test)]
+mod navigation_tests {
+    use crate::command::Command;
+    use crate::screens::task_list::{TaskListCommand, TaskView};
+    use crate::test_support::{TestService, app_in_timezone, task};
+
+    #[test]
+    fn page_motion_uses_the_selected_task_as_its_start() {
+        let tasks = (1..=25).map(|id| task(id, &format!("task {id}"))).collect();
+        let service = TestService::with_tasks(tasks);
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        let ids: Vec<_> = app
+            .catalog()
+            .visible_tasks(TaskView::Active, None)
+            .iter()
+            .map(|task| task.id())
+            .collect();
+        app.shell_mut().task_list_mut().set_selection(Some(ids[12]));
+        app.handle(Command::TaskList(TaskListCommand::PageUp));
+        assert_eq!(app.shell().task_list().selection(), Some(ids[2]));
+        app.handle(Command::TaskList(TaskListCommand::PageDown));
+        assert_eq!(app.shell().task_list().selection(), Some(ids[12]));
+    }
+}
