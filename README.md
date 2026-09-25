@@ -47,7 +47,7 @@ A brand-new empty database is seeded once with three tasks: Write release notes,
 
 Navigation is keyboard-first. The footer always lists the keys available in the current mode.
 
-The list panel shows Active and Archived as tabs; brackets mark the current view. Active opens by default. Each view remembers its selection and shows its own empty-state text. The timer header keeps showing the running task and elapsed time in the Archived view.
+The list panel shows Active and Archived as tabs on its top border, with the current view highlighted. The bottom right border shows the current sort order. Active opens by default. Each view remembers its selection and shows its own empty-state text. The timer header keeps showing the running task and elapsed time in the Archived view.
 
 Shared:
 
