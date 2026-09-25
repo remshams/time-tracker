@@ -1,6 +1,6 @@
 use ratatui::Frame;
 use ratatui::layout::{Margin, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Tabs};
 use tracker_domain::{Task, TaskId};
@@ -19,7 +19,12 @@ pub(crate) fn render(
     active_task_id: Option<TaskId>,
 ) {
     render_body(frame, area, state, tasks, ordering_label, active_task_id);
-    render_tabs(frame, area, usize::from(state.view() == TaskView::Archived));
+    render_tabs(
+        frame,
+        area,
+        usize::from(state.view() == TaskView::Archived),
+        matches!(state.mode(), TaskListMode::Normal),
+    );
     match state.mode() {
         TaskListMode::Input { purpose, buffer } => {
             let prompt = match purpose {
@@ -40,11 +45,17 @@ pub(crate) fn render(
     }
 }
 
-pub(crate) fn render_tabs(frame: &mut Frame, area: Rect, selected: usize) {
+pub(crate) fn render_tabs(frame: &mut Frame, area: Rect, selected: usize, focused: bool) {
     const LABELS: [&str; 3] = ["Active", "Archived", "Reports"];
     let tabs = Tabs::new(LABELS)
         .select(selected)
-        .highlight_style(styles::selected())
+        .highlight_style(if focused {
+            styles::selected()
+        } else {
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+        })
         .divider("│");
     frame.render_widget(
         tabs,
