@@ -9,6 +9,7 @@ use crate::styles;
 /// Renders the current status message.
 pub(crate) fn render(frame: &mut Frame, area: Rect, status: &Status) {
     let paragraph = match status {
+        Status::Empty => Paragraph::new(""),
         Status::Info(text) => Paragraph::new(text.as_str()),
         Status::Error(text) => Paragraph::new(Line::from(vec![
             Span::styled("Error: ", styles::error_label()),
@@ -74,12 +75,13 @@ mod tests {
     }
 
     #[test]
-    fn the_status_line_shows_info_in_the_terminal_foreground() {
+    fn the_idle_status_line_is_empty() {
         let app = app_with(&["alpha"]);
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal
             .draw(|frame| crate::ui::render(frame, app.app_view()))
             .unwrap();
+        assert!(row(&terminal, 22).trim().is_empty());
         let style = cell(&terminal, 0, 22);
         assert_eq!(style.fg, Some(Color::Reset));
         assert!(style.add_modifier.is_empty());
