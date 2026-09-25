@@ -1,5 +1,5 @@
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
 use unicode_width::UnicodeWidthStr;
@@ -7,21 +7,9 @@ use unicode_width::UnicodeWidthStr;
 use crate::components::text::fit_suffix;
 use crate::styles;
 
-/// Shrinks `area` to `width` × `height`, centered inside it.
-pub(crate) fn centered(width: u16, height: u16, area: Rect) -> Rect {
-    let width = width.min(area.width);
-    let height = height.min(area.height);
-    Rect {
-        x: area.x + (area.width - width) / 2,
-        y: area.y + (area.height - height) / 2,
-        width,
-        height,
-    }
-}
-
 /// Renders a fixed-width one-line input dialog.
 pub(crate) fn render_input(frame: &mut Frame, area: Rect, prompt: &str, buffer: &str) {
-    let modal = centered(56, 3, area);
+    let modal = area.centered(Constraint::Length(56), Constraint::Length(3));
     frame.render_widget(Clear, modal);
     let budget = (modal.width as usize)
         .saturating_sub(2)
@@ -42,7 +30,7 @@ pub(crate) fn render_input(frame: &mut Frame, area: Rect, prompt: &str, buffer: 
 
 /// Renders a confirmation dialog with one message line.
 pub(crate) fn render_confirmation(frame: &mut Frame, area: Rect, title: &str, message: &str) {
-    let modal = centered(56, 3, area);
+    let modal = area.centered(Constraint::Length(56), Constraint::Length(3));
     frame.render_widget(Clear, modal);
     frame.render_widget(
         Paragraph::new(message.to_owned()).block(
@@ -63,7 +51,7 @@ pub(crate) fn render_lines<'a>(
     title: &str,
     lines: Vec<Line<'a>>,
 ) {
-    let modal = centered(width, height, area);
+    let modal = area.centered(Constraint::Length(width), Constraint::Length(height));
     frame.render_widget(Clear, modal);
     frame.render_widget(
         Paragraph::new(lines).block(
@@ -73,20 +61,4 @@ pub(crate) fn render_lines<'a>(
         ),
         modal,
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn centered_keeps_the_modal_inside_the_area() {
-        let area = Rect::new(0, 0, 80, 24);
-        assert_eq!(centered(56, 3, area), Rect::new(12, 10, 56, 3));
-        // A modal larger than the area is clamped, never overflows.
-        assert_eq!(centered(100, 50, area), area);
-        // Off-center areas keep the modal centered inside the area.
-        let offset = Rect::new(10, 5, 20, 9);
-        assert_eq!(centered(10, 3, offset), Rect::new(15, 8, 10, 3));
-    }
 }
