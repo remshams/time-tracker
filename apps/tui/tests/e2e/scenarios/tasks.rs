@@ -190,6 +190,32 @@ fn selection_moves_with_j_and_k_and_never_wraps_at_the_list_edges() {
     });
     assert_eq!(page.task_panel().row(1).name(), "Fix the coffee machine");
 
+    tt.press_and_wait(Key::Char('G'), "the last row with G", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .selected_index()
+            == Some(2)
+    });
+    tt.press(Key::Char('g'));
+    tt.press_and_wait(Key::Char('g'), "the first row with gg", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .selected_index()
+            == Some(0)
+    });
+    tt.press_and_wait(Key::Ctrl('d'), "the last row with Ctrl+d", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .selected_index()
+            == Some(2)
+    });
+    tt.press_and_wait(Key::Ctrl('u'), "the first row with Ctrl+u", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .selected_index()
+            == Some(0)
+    });
+
     tt.quit().assert_clean_exit();
 }
 
