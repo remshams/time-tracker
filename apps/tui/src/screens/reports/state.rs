@@ -38,14 +38,26 @@ impl ReportPreset {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReportMode {
     Normal,
-    Presets {
-        selected: usize,
-    },
     Custom {
         from: String,
         to: String,
         focus_to: bool,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReportFocus {
+    TopTabs,
+    Presets,
+    Rows,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DateShift {
+    PreviousDay,
+    NextDay,
+    PreviousMonth,
+    NextMonth,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +66,8 @@ pub struct ReportState {
     pub(crate) from: NaiveDate,
     pub(crate) to: NaiveDate,
     pub(crate) mode: ReportMode,
+    pub(crate) focus: ReportFocus,
+    pub(crate) preset_cursor: usize,
     pub(crate) totals: Option<ReportTotals>,
     pub(crate) selected: Option<TaskId>,
     pub(crate) g_prefix: bool,
@@ -71,6 +85,8 @@ impl ReportState {
             from: today,
             to: today,
             mode: ReportMode::Normal,
+            focus: ReportFocus::TopTabs,
+            preset_cursor: 0,
             totals: None,
             selected: None,
             g_prefix: false,
@@ -107,6 +123,9 @@ impl ReportState {
     }
 
     pub(crate) fn set_totals(&mut self, totals: ReportTotals) {
+        if totals.rows.is_empty() && self.focus == ReportFocus::Rows {
+            self.focus = ReportFocus::Presets;
+        }
         let previous = self.selected;
         self.selected = previous
             .filter(|id| totals.rows.iter().any(|row| row.task.id() == *id))
@@ -118,6 +137,9 @@ impl ReportState {
     pub(crate) fn clear_totals(&mut self) {
         self.totals = None;
         self.selected = None;
+        if self.focus == ReportFocus::Rows {
+            self.focus = ReportFocus::Presets;
+        }
     }
 
     pub(crate) fn period_label(&self) -> &'static str {
@@ -223,6 +245,31 @@ impl ReportState {
         self.follow_calendar = false;
         self.mode = ReportMode::Normal;
         Ok(())
+    }
+
+    pub(crate) fn shift_custom_date(&mut self, shift: DateShift) -> bool {
+        let ReportMode::Custom { from, to, focus_to } = &mut self.mode else {
+            return false;
+        };
+        let field = if *focus_to { to } else { from };
+        let Ok(date) = NaiveDate::parse_from_str(field, "%Y-%m-%d") else {
+            return false;
+        };
+        let shifted = match shift {
+            DateShift::PreviousDay => date.pred_opt(),
+            DateShift::NextDay => date.succ_opt(),
+            DateShift::PreviousMonth => date.checked_sub_months(Months::new(1)),
+            DateShift::NextMonth => date.checked_add_months(Months::new(1)),
+        };
+        let Some(shifted) = shifted else {
+            return false;
+        };
+        let text = shifted.format("%Y-%m-%d").to_string();
+        if text.len() != 10 {
+            return false;
+        }
+        *field = text;
+        true
     }
 
     pub(crate) fn follow_calendar_date(&mut self, today: NaiveDate) {
@@ -348,6 +395,33 @@ mod tests {
     }
 
     #[test]
+    fn custom_date_keys_edit_the_focused_field_across_month_boundaries() {
+        let mut state = ReportState::new(Utc::now(), chrono_tz::UTC);
+        state.mode = ReportMode::Custom {
+            from: "2024-01-31".into(),
+            to: "2024-02-29".into(),
+            focus_to: false,
+        };
+        assert!(state.shift_custom_date(DateShift::NextDay));
+        assert!(matches!(&state.mode, ReportMode::Custom { from, .. } if from == "2024-02-01"));
+        assert!(state.shift_custom_date(DateShift::PreviousDay));
+        assert!(state.shift_custom_date(DateShift::NextMonth));
+        assert!(matches!(&state.mode, ReportMode::Custom { from, .. } if from == "2024-02-29"));
+        if let ReportMode::Custom { focus_to, .. } = &mut state.mode {
+            *focus_to = true;
+        }
+        assert!(state.shift_custom_date(DateShift::PreviousMonth));
+        assert!(
+            matches!(&state.mode, ReportMode::Custom { from, to, .. } if from == "2024-02-29" && to == "2024-01-29")
+        );
+        if let ReportMode::Custom { to, .. } = &mut state.mode {
+            *to = "2024-01-".into();
+        }
+        assert!(!state.shift_custom_date(DateShift::NextDay));
+        assert!(matches!(&state.mode, ReportMode::Custom { to, .. } if to == "2024-01-"));
+    }
+
+    #[test]
     fn midnight_gap_starts_at_the_first_valid_local_minute() {
         let date = NaiveDate::from_ymd_opt(2026, 9, 6).unwrap();
         assert_eq!(
@@ -402,6 +476,27 @@ mod tests {
         assert_eq!(state.selected, Some(second.id()));
         state.set_totals(report(vec![row(first.clone())]));
         assert_eq!(state.selected, Some(first.id()));
+    }
+
+    #[test]
+    fn losing_all_report_rows_returns_focus_to_presets() {
+        let mut state = ReportState::new(Utc::now(), chrono_tz::UTC);
+        state.set_totals(ReportTotals {
+            rows: vec![ReportRow {
+                task: task(1, "tracked"),
+                duration: TimeDelta::minutes(1),
+            }],
+            total: TimeDelta::minutes(1),
+        });
+        state.focus = ReportFocus::Rows;
+        state.set_totals(ReportTotals {
+            rows: Vec::new(),
+            total: TimeDelta::zero(),
+        });
+        assert_eq!(state.focus, ReportFocus::Presets);
+        state.focus = ReportFocus::Rows;
+        state.clear_totals();
+        assert_eq!(state.focus, ReportFocus::Presets);
     }
 
     #[test]

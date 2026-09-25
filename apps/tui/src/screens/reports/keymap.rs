@@ -2,17 +2,55 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::screens::KeymapCommand;
 
-use super::{ReportCommand, ReportMode, ReportState};
+use super::{DateShift, ReportCommand, ReportFocus, ReportMode, ReportState};
 
 pub(crate) fn map(state: &ReportState, key: KeyEvent) -> Option<KeymapCommand<ReportCommand>> {
-    match &state.mode {
-        ReportMode::Normal => normal(state, key),
-        ReportMode::Presets { .. } => presets(key),
-        ReportMode::Custom { .. } => custom(key),
+    if matches!(state.mode, ReportMode::Custom { .. }) {
+        return custom(key);
+    }
+    match state.focus {
+        ReportFocus::TopTabs => top_tabs(key),
+        ReportFocus::Presets => presets(key),
+        ReportFocus::Rows => rows(state, key),
     }
 }
 
-fn normal(state: &ReportState, key: KeyEvent) -> Option<KeymapCommand<ReportCommand>> {
+fn top_tabs(key: KeyEvent) -> Option<KeymapCommand<ReportCommand>> {
+    if key.modifiers == KeyModifiers::SHIFT && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
+        return Some(KeymapCommand::Local(ReportCommand::ShowArchived));
+    }
+    if key.modifiers != KeyModifiers::NONE {
+        return None;
+    }
+    let command = match key.code {
+        KeyCode::Tab => ReportCommand::ShowActive,
+        KeyCode::BackTab => ReportCommand::ShowArchived,
+        KeyCode::Enter | KeyCode::Char('j') | KeyCode::Down => ReportCommand::FocusPresets,
+        KeyCode::Char('q') | KeyCode::Esc => return Some(KeymapCommand::Quit),
+        _ => return None,
+    };
+    Some(KeymapCommand::Local(command))
+}
+
+fn presets(key: KeyEvent) -> Option<KeymapCommand<ReportCommand>> {
+    if key.modifiers == KeyModifiers::SHIFT && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
+        return Some(KeymapCommand::Local(ReportCommand::PresetPrevious));
+    }
+    if key.modifiers != KeyModifiers::NONE {
+        return None;
+    }
+    let command = match key.code {
+        KeyCode::Tab | KeyCode::Char('l') | KeyCode::Right => ReportCommand::PresetNext,
+        KeyCode::BackTab | KeyCode::Char('h') | KeyCode::Left => ReportCommand::PresetPrevious,
+        KeyCode::Char('j') | KeyCode::Down => ReportCommand::FocusRows,
+        KeyCode::Enter => ReportCommand::ChoosePreset,
+        KeyCode::Esc | KeyCode::Char('k') | KeyCode::Up => ReportCommand::FocusTabs,
+        _ => return None,
+    };
+    Some(KeymapCommand::Local(command))
+}
+
+fn rows(state: &ReportState, key: KeyEvent) -> Option<KeymapCommand<ReportCommand>> {
     if key.code == KeyCode::Char('G') && key.modifiers == KeyModifiers::SHIFT {
         return Some(KeymapCommand::Local(ReportCommand::Last));
     }
@@ -24,14 +62,13 @@ fn normal(state: &ReportState, key: KeyEvent) -> Option<KeymapCommand<ReportComm
         };
     }
     if key.modifiers == KeyModifiers::SHIFT && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
-        return Some(KeymapCommand::Local(ReportCommand::ShowArchived));
+        return Some(KeymapCommand::Local(ReportCommand::FocusPresets));
     }
     if key.modifiers != KeyModifiers::NONE {
         return None;
     }
     let command = match key.code {
-        KeyCode::Tab => ReportCommand::ShowActive,
-        KeyCode::BackTab => ReportCommand::ShowArchived,
+        KeyCode::Tab | KeyCode::BackTab => ReportCommand::FocusPresets,
         KeyCode::Char('j') | KeyCode::Down => ReportCommand::MoveDown,
         KeyCode::Char('k') | KeyCode::Up => ReportCommand::MoveUp,
         KeyCode::Char('G') => ReportCommand::Last,
@@ -44,33 +81,22 @@ fn normal(state: &ReportState, key: KeyEvent) -> Option<KeymapCommand<ReportComm
         }
         KeyCode::Char('h') | KeyCode::Left => ReportCommand::PreviousPeriod,
         KeyCode::Char('l') | KeyCode::Right => ReportCommand::NextPeriod,
-        KeyCode::Char('p') => ReportCommand::OpenPresets,
         KeyCode::Char('r') => ReportCommand::Refresh,
         KeyCode::Char('c') => ReportCommand::CopyName,
         KeyCode::Char('t') => ReportCommand::CopyExact,
         KeyCode::Char('s') => ReportCommand::CopyRounded,
         KeyCode::Enter => ReportCommand::OpenHistory,
-        KeyCode::Char('q') | KeyCode::Esc => return Some(KeymapCommand::Quit),
-        _ => return None,
-    };
-    Some(KeymapCommand::Local(command))
-}
-
-fn presets(key: KeyEvent) -> Option<KeymapCommand<ReportCommand>> {
-    if key.modifiers != KeyModifiers::NONE {
-        return None;
-    }
-    let command = match key.code {
-        KeyCode::Char('j') | KeyCode::Down => ReportCommand::PresetDown,
-        KeyCode::Char('k') | KeyCode::Up => ReportCommand::PresetUp,
-        KeyCode::Enter => ReportCommand::ChoosePreset,
-        KeyCode::Esc => ReportCommand::Cancel,
+        KeyCode::Esc => ReportCommand::FocusTabs,
+        KeyCode::Char('q') => return Some(KeymapCommand::Quit),
         _ => return None,
     };
     Some(KeymapCommand::Local(command))
 }
 
 fn custom(key: KeyEvent) -> Option<KeymapCommand<ReportCommand>> {
+    if let Some(shift) = custom_date_shift(key) {
+        return Some(KeymapCommand::Local(ReportCommand::ShiftCustomDate(shift)));
+    }
     let command = match key.code {
         KeyCode::Tab | KeyCode::BackTab
             if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT =>
@@ -91,17 +117,39 @@ fn custom(key: KeyEvent) -> Option<KeymapCommand<ReportCommand>> {
     Some(KeymapCommand::Local(command))
 }
 
+fn custom_date_shift(key: KeyEvent) -> Option<DateShift> {
+    match (key.code, key.modifiers) {
+        (KeyCode::Char('h') | KeyCode::Left, KeyModifiers::NONE) => Some(DateShift::PreviousDay),
+        (KeyCode::Char('l') | KeyCode::Right, KeyModifiers::NONE) => Some(DateShift::NextDay),
+        (KeyCode::Char('H'), KeyModifiers::NONE | KeyModifiers::SHIFT)
+        | (KeyCode::Left, KeyModifiers::SHIFT) => Some(DateShift::PreviousMonth),
+        (KeyCode::Char('L'), KeyModifiers::NONE | KeyModifiers::SHIFT)
+        | (KeyCode::Right, KeyModifiers::SHIFT) => Some(DateShift::NextMonth),
+        _ => None,
+    }
+}
+
 pub(crate) fn footer_hints(state: &ReportState, width: u16) -> &'static str {
-    match state.mode {
-        ReportMode::Normal if width < 80 => {
-            "j/k h/l p preset r refresh enter log c/t/s copy tab/S-tab q"
+    if matches!(state.mode, ReportMode::Custom { .. }) {
+        return if width < 80 {
+            "h/l days · H/L months · Tab field · Enter apply · Esc cancel"
+        } else {
+            "YYYY-MM-DD · h/l day · H/L month · Tab/⇧Tab field · Enter apply · Esc cancel"
+        };
+    }
+    match state.focus {
+        ReportFocus::TopTabs if width < 80 => "Tab/⇧Tab tabs · Enter presets · q quit",
+        ReportFocus::TopTabs => "Tab/⇧Tab switch tabs · Enter presets · q quit",
+        ReportFocus::Presets if width < 80 => "Tab/⇧Tab presets · Enter apply · j rows · Esc tabs",
+        ReportFocus::Presets => "Tab/⇧Tab or h/l presets · Enter apply · j rows · Esc tabs",
+        ReportFocus::Rows if width < 80 => {
+            "j/k rows · h/l period · Enter logs · Tab presets · Esc tabs"
         }
-        ReportMode::Normal => {
-            "j/k gg/G Ctrl+d/u h/l p preset r refresh enter history c/t/s copy tab/S-tab q"
+        ReportFocus::Rows if width < 116 => {
+            "j/k rows · h/l period · Enter logs · c/t/s copy · Tab presets · Esc tabs"
         }
-        ReportMode::Presets { .. } => "j/k choose · enter select · esc cancel · ctrl+c quit",
-        ReportMode::Custom { .. } => {
-            "type date · tab/S-tab field · enter apply · esc cancel · ctrl+c quit"
+        ReportFocus::Rows => {
+            "j/k rows · gg/G ends · Ctrl+d/u page · h/l period · r refresh · Enter logs · c/t/s copy · Tab presets · Esc tabs"
         }
     }
 }
@@ -114,20 +162,17 @@ mod tests {
     use crate::screens::map_key;
 
     #[test]
-    fn dialogs_take_letters_and_tab_without_switching_screen() {
+    fn preset_keys_move_inline_cursor_without_switching_screen() {
         let mut state = ReportState::new(chrono::Utc::now(), chrono_tz::UTC);
-        state.mode = ReportMode::Presets { selected: 0 };
-        assert_eq!(
-            map_key(
-                InputState::Reports(&state),
-                KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE)
-            ),
-            Some(Command::Reports(ReportCommand::PresetDown))
-        );
+        state.focus = ReportFocus::Presets;
         for (code, command) in [
-            (KeyCode::Up, ReportCommand::PresetUp),
+            (KeyCode::Tab, ReportCommand::PresetNext),
+            (KeyCode::BackTab, ReportCommand::PresetPrevious),
+            (KeyCode::Char('h'), ReportCommand::PresetPrevious),
+            (KeyCode::Char('l'), ReportCommand::PresetNext),
+            (KeyCode::Char('j'), ReportCommand::FocusRows),
             (KeyCode::Enter, ReportCommand::ChoosePreset),
-            (KeyCode::Esc, ReportCommand::Cancel),
+            (KeyCode::Esc, ReportCommand::FocusTabs),
         ] {
             assert_eq!(
                 map_key(
@@ -137,6 +182,13 @@ mod tests {
                 Some(Command::Reports(command))
             );
         }
+        assert_eq!(
+            map_key(
+                InputState::Reports(&state),
+                KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)
+            ),
+            Some(Command::Reports(ReportCommand::PresetPrevious))
+        );
         state.mode = ReportMode::Custom {
             from: String::new(),
             to: String::new(),
@@ -183,6 +235,35 @@ mod tests {
             ),
             Some(Command::Reports(ReportCommand::Insert('-')))
         );
+        for (code, modifiers, shift) in [
+            (
+                KeyCode::Char('h'),
+                KeyModifiers::NONE,
+                DateShift::PreviousDay,
+            ),
+            (KeyCode::Char('l'), KeyModifiers::NONE, DateShift::NextDay),
+            (
+                KeyCode::Char('H'),
+                KeyModifiers::SHIFT,
+                DateShift::PreviousMonth,
+            ),
+            (
+                KeyCode::Char('L'),
+                KeyModifiers::SHIFT,
+                DateShift::NextMonth,
+            ),
+            (
+                KeyCode::Char('H'),
+                KeyModifiers::NONE,
+                DateShift::PreviousMonth,
+            ),
+            (KeyCode::Char('L'), KeyModifiers::NONE, DateShift::NextMonth),
+        ] {
+            assert_eq!(
+                map_key(InputState::Reports(&state), KeyEvent::new(code, modifiers)),
+                Some(Command::Reports(ReportCommand::ShiftCustomDate(shift)))
+            );
+        }
         for code in [
             KeyCode::Tab,
             KeyCode::Enter,
@@ -208,113 +289,77 @@ mod tests {
     }
 
     #[test]
-    fn normal_keys_select_rows_periods_and_copy_values() {
-        let state = ReportState::new(chrono::Utc::now(), chrono_tz::UTC);
-        let cases = [
-            (KeyCode::Tab, ReportCommand::ShowActive),
-            (KeyCode::BackTab, ReportCommand::ShowArchived),
-            (KeyCode::Char('j'), ReportCommand::MoveDown),
-            (KeyCode::Char('k'), ReportCommand::MoveUp),
-            (KeyCode::Char('h'), ReportCommand::PreviousPeriod),
-            (KeyCode::Char('l'), ReportCommand::NextPeriod),
-            (KeyCode::Char('p'), ReportCommand::OpenPresets),
-            (KeyCode::Char('r'), ReportCommand::Refresh),
-            (KeyCode::Char('g'), ReportCommand::GPrefix),
-            (KeyCode::Char('G'), ReportCommand::Last),
-            (KeyCode::Char('c'), ReportCommand::CopyName),
-            (KeyCode::Char('t'), ReportCommand::CopyExact),
-            (KeyCode::Char('s'), ReportCommand::CopyRounded),
-            (KeyCode::Enter, ReportCommand::OpenHistory),
-        ];
-        for (code, command) in cases {
-            assert_eq!(
-                map_key(
-                    InputState::Reports(&state),
-                    KeyEvent::new(code, KeyModifiers::NONE)
-                ),
-                Some(Command::Reports(command))
-            );
-        }
-        assert_eq!(
+    fn keymap_follows_the_focused_area() {
+        let mut state = ReportState::new(chrono::Utc::now(), chrono_tz::UTC);
+        let mapped = |state: &ReportState, code| {
             map_key(
-                InputState::Reports(&state),
-                KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL)
-            ),
-            Some(Command::Reports(ReportCommand::PageDown))
+                InputState::Reports(state),
+                KeyEvent::new(code, KeyModifiers::NONE),
+            )
+        };
+        assert_eq!(
+            mapped(&state, KeyCode::Enter),
+            Some(Command::Reports(ReportCommand::FocusPresets))
         );
         assert_eq!(
-            map_key(
-                InputState::Reports(&state),
-                KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL)
-            ),
-            Some(Command::Reports(ReportCommand::PageUp))
+            mapped(&state, KeyCode::Tab),
+            Some(Command::Reports(ReportCommand::ShowActive))
         );
         assert_eq!(
-            map_key(
-                InputState::Reports(&state),
-                KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT)
-            ),
-            Some(Command::Reports(ReportCommand::Last))
-        );
-        assert_eq!(
-            map_key(
-                InputState::Reports(&state),
-                KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT)
-            ),
+            mapped(&state, KeyCode::BackTab),
             Some(Command::Reports(ReportCommand::ShowArchived))
         );
+        state.focus = ReportFocus::Rows;
         assert_eq!(
-            map_key(
-                InputState::Reports(&state),
-                KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)
-            ),
-            Some(Command::Quit)
+            mapped(&state, KeyCode::Tab),
+            Some(Command::Reports(ReportCommand::FocusPresets))
         );
         assert_eq!(
-            map_key(
-                InputState::Reports(&state),
-                KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)
-            ),
-            None
+            mapped(&state, KeyCode::Char('h')),
+            Some(Command::Reports(ReportCommand::PreviousPeriod))
         );
         assert_eq!(
-            map_key(
-                InputState::Reports(&state),
-                KeyEvent::new(KeyCode::Char('j'), KeyModifiers::ALT)
-            ),
-            None
+            mapped(&state, KeyCode::Char('l')),
+            Some(Command::Reports(ReportCommand::NextPeriod))
         );
         assert_eq!(
-            map_key(
-                InputState::Reports(&state),
-                KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL)
-            ),
-            None
+            mapped(&state, KeyCode::Char('c')),
+            Some(Command::Reports(ReportCommand::CopyName))
         );
-        let mut pending = state;
-        pending.g_prefix = true;
         assert_eq!(
-            map_key(
-                InputState::Reports(&pending),
-                KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE)
-            ),
+            mapped(&state, KeyCode::Enter),
+            Some(Command::Reports(ReportCommand::OpenHistory))
+        );
+        assert_eq!(
+            mapped(&state, KeyCode::Esc),
+            Some(Command::Reports(ReportCommand::FocusTabs))
+        );
+        state.g_prefix = true;
+        assert_eq!(
+            mapped(&state, KeyCode::Char('g')),
             Some(Command::Reports(ReportCommand::First))
         );
     }
 
     #[test]
-    fn footer_hints_reflect_width_and_dialog_mode() {
+    fn footer_hints_follow_focus_and_fit_each_width() {
         let mut state = ReportState::new(chrono::Utc::now(), chrono_tz::UTC);
-        assert!(footer_hints(&state, 79).contains("p preset"));
-        assert!(!footer_hints(&state, 79).contains("gg/G"));
-        assert!(footer_hints(&state, 80).contains("gg/G"));
-        state.mode = ReportMode::Presets { selected: 0 };
-        assert!(footer_hints(&state, 80).contains("esc cancel"));
+        for focus in [
+            ReportFocus::TopTabs,
+            ReportFocus::Presets,
+            ReportFocus::Rows,
+        ] {
+            state.focus = focus;
+            for width in [60, 80, 116] {
+                assert!(footer_hints(&state, width).chars().count() <= width as usize);
+            }
+        }
+        assert!(footer_hints(&state, 80).contains("c/t/s copy"));
         state.mode = ReportMode::Custom {
             from: String::new(),
             to: String::new(),
             focus_to: false,
         };
-        assert!(footer_hints(&state, 80).contains("field"));
+        assert!(footer_hints(&state, 60).contains("H/L months"));
     }
 }

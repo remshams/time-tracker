@@ -1,12 +1,12 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
 use crate::components::text;
-use crate::screens::reports::{ReportMode, ReportPreset, ReportState};
+use crate::screens::reports::{ReportFocus, ReportMode, ReportPreset, ReportState};
 use crate::screens::task_list::view::render_tabs;
 use crate::styles;
 
@@ -25,11 +25,13 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
         .map_or_else(|| "loading".to_owned(), |totals| format_exact(totals.total));
     let block = Block::bordered()
         .title_bottom(Line::from(format!(" Total: {total} ")).right_aligned())
-        .border_style(if state.mode == ReportMode::Normal {
-            styles::focused_border()
-        } else {
-            Style::default()
-        });
+        .border_style(
+            if state.mode == ReportMode::Normal && state.focus == ReportFocus::Rows {
+                styles::focused_border()
+            } else {
+                Style::default()
+            },
+        );
     let rows = state
         .totals
         .as_ref()
@@ -41,31 +43,52 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
         width: area.width.saturating_sub(2),
         height: area.height.saturating_sub(2),
     };
-    frame.render_widget(Paragraph::new(title), content);
+    let (show_title, preset_offset, list_offset) = match content.height {
+        0 | 1 => (false, None, 0),
+        2 => (false, Some(0), 1),
+        3 => (true, Some(1), 2),
+        _ => (true, Some(2), 3),
+    };
+    if show_title {
+        frame.render_widget(
+            Paragraph::new(title),
+            Rect {
+                height: 1,
+                ..content
+            },
+        );
+    }
     let mut preset_spans = Vec::new();
     for (index, preset) in ReportPreset::ALL.iter().enumerate() {
         if index > 0 {
             preset_spans.push(Span::raw(" │ "));
         }
-        preset_spans.push(Span::styled(
-            preset.label(),
-            if Some(*preset) == state.highlighted_preset() {
-                styles::selected()
-            } else {
-                Style::default()
-            },
-        ));
+        let mut style = if state.mode == ReportMode::Normal
+            && state.focus == ReportFocus::Presets
+            && index == state.preset_cursor
+        {
+            styles::selected()
+        } else {
+            Style::default()
+        };
+        if Some(*preset) == state.highlighted_preset() {
+            style = style.add_modifier(Modifier::UNDERLINED);
+        }
+        preset_spans.push(Span::styled(preset.label(), style));
     }
-    frame.render_widget(
-        Paragraph::new(Line::from(preset_spans)),
-        Rect {
-            y: content.y.saturating_add(1),
-            ..content
-        },
-    );
+    if let Some(offset) = preset_offset {
+        frame.render_widget(
+            Paragraph::new(Line::from(preset_spans)),
+            Rect {
+                y: content.y.saturating_add(offset),
+                height: 1,
+                ..content
+            },
+        );
+    }
     let list_area = Rect {
-        y: content.y.saturating_add(2),
-        height: content.height.saturating_sub(2),
+        y: content.y.saturating_add(list_offset),
+        height: content.height.saturating_sub(list_offset),
         ..content
     };
     if rows.is_empty() {
@@ -92,35 +115,20 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
             })
             .collect();
         let list = List::new(items).highlight_style(styles::selected());
-        let mut selection = ListState::default().with_selected(state.selected_index());
+        let mut selection = ListState::default().with_selected(
+            (state.focus == ReportFocus::Rows)
+                .then(|| state.selected_index())
+                .flatten(),
+        );
         frame.render_stateful_widget(list, list_area, &mut selection);
     }
-    render_tabs(frame, area, 2);
+    render_tabs(frame, area, 2, state.focus == ReportFocus::TopTabs);
     match &state.mode {
-        ReportMode::Presets { selected } => render_presets(frame, area, *selected),
         ReportMode::Custom { from, to, focus_to } => {
             render_custom(frame, area, from, to, *focus_to)
         }
         ReportMode::Normal => {}
     }
-}
-
-fn render_presets(frame: &mut Frame, area: Rect, selected: usize) {
-    let modal = area.centered(Constraint::Length(32), Constraint::Length(8));
-    frame.render_widget(Clear, modal);
-    let items: Vec<ListItem> = ReportPreset::ALL
-        .iter()
-        .map(|preset| ListItem::new(preset.label()))
-        .collect();
-    let list = List::new(items)
-        .block(
-            Block::bordered()
-                .title("Choose period")
-                .border_style(styles::focused_border()),
-        )
-        .highlight_style(styles::selected());
-    let mut selection = ListState::default().with_selected(Some(selected));
-    frame.render_stateful_widget(list, modal, &mut selection);
 }
 
 fn render_custom(frame: &mut Frame, area: Rect, from: &str, to: &str, focus_to: bool) {
@@ -194,8 +202,8 @@ mod tests {
                 .find(|&x| terminal.backend().buffer()[(x, y)].symbol() == "1")
                 .unwrap()
         };
-        assert_eq!(duration_x(3), duration_x(4));
-        assert!(duration_x(3) >= 50);
+        assert_eq!(duration_x(4), duration_x(5));
+        assert!(duration_x(4) >= 50);
     }
 
     #[test]
@@ -215,19 +223,60 @@ mod tests {
             .draw(|frame| render(frame, frame.area(), &state))
             .unwrap();
         let buffer = terminal.backend().buffer();
-        assert_eq!(buffer[(1, 2)].symbol(), "T");
+        assert_eq!(buffer[(1, 2)].symbol(), " ");
+        assert_eq!(buffer[(1, 3)].symbol(), "T");
         assert_eq!(
-            (1..59).filter(|&x| buffer[(x, 2)].symbol() == "│").count(),
+            (1..59).filter(|&x| buffer[(x, 3)].symbol() == "│").count(),
             5
         );
-        assert!(buffer[(1, 2)].modifier.contains(Modifier::REVERSED));
-        assert_eq!(buffer[(0, 3)].fg, Color::Blue);
+        assert!(buffer[(1, 3)].modifier.contains(Modifier::UNDERLINED));
+        assert_ne!(buffer[(0, 3)].fg, Color::Blue);
         assert_eq!(buffer[(1, 9)].symbol(), "─");
 
-        state.mode = ReportMode::Presets { selected: 0 };
+        state.focus = ReportFocus::Presets;
         terminal
             .draw(|frame| render(frame, frame.area(), &state))
             .unwrap();
-        assert_ne!(terminal.backend().buffer()[(0, 3)].fg, Color::Blue);
+        assert!(
+            terminal.backend().buffer()[(1, 3)]
+                .modifier
+                .contains(Modifier::REVERSED | Modifier::UNDERLINED)
+        );
+        state.preset_cursor = 1;
+        terminal
+            .draw(|frame| render(frame, frame.area(), &state))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        assert!(buffer[(1, 3)].modifier.contains(Modifier::UNDERLINED));
+        assert!(!buffer[(1, 3)].modifier.contains(Modifier::REVERSED));
+        assert!(buffer[(9, 3)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(9, 3)].modifier.contains(Modifier::UNDERLINED));
+
+        state.focus = ReportFocus::Rows;
+        let mut compact = Terminal::new(TestBackend::new(60, 5)).unwrap();
+        compact
+            .draw(|frame| render(frame, frame.area(), &state))
+            .unwrap();
+        let compact_buffer = compact.backend().buffer();
+        assert_eq!(compact_buffer[(1, 3)].symbol(), "t");
+        assert!(compact_buffer[(1, 3)].modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn custom_date_dialog_owns_the_keyboard_focus() {
+        let mut state = ReportState::new(Utc::now(), chrono_tz::UTC);
+        state.focus = ReportFocus::Presets;
+        state.mode = ReportMode::Custom {
+            from: "2025-04-15".into(),
+            to: "2025-04-16".into(),
+            focus_to: false,
+        };
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+        terminal
+            .draw(|frame| render(frame, frame.area(), &state))
+            .unwrap();
+        let today = &terminal.backend().buffer()[(1, 3)];
+        assert!(today.modifier.contains(Modifier::UNDERLINED));
+        assert!(!today.modifier.contains(Modifier::REVERSED));
     }
 }

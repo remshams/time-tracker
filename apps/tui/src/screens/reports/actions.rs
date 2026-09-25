@@ -2,7 +2,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use tracker_application::TrackerApplicationService;
 
 use crate::app::App;
-use crate::screens::reports::{ReportMode, ReportPreset};
+use crate::screens::reports::{ReportFocus, ReportMode, ReportPreset};
 use crate::screens::{History, ReportCommand, Screen, TaskView};
 use crate::support::errors::application_error_text;
 
@@ -126,32 +126,32 @@ impl<S: TrackerApplicationService> App<S> {
                 }
             }
             ReportCommand::Refresh => self.refresh_reports_now(),
-            ReportCommand::OpenPresets => {
-                let report = self.shell_mut().report_mut().expect("report is open");
-                let highlighted = report.highlighted_preset().unwrap_or(report.preset);
-                let selected = ReportPreset::ALL
-                    .iter()
-                    .position(|preset| *preset == highlighted)
-                    .unwrap_or(0);
-                report.mode = ReportMode::Presets { selected };
+            ReportCommand::FocusPresets => {
+                self.shell_mut().report_mut().expect("report is open").focus = ReportFocus::Presets;
             }
-            ReportCommand::PresetUp | ReportCommand::PresetDown => {
-                let ReportMode::Presets { selected } =
-                    &mut self.shell_mut().report_mut().expect("report is open").mode
-                else {
-                    return;
-                };
-                *selected = if command == ReportCommand::PresetUp {
-                    selected.saturating_sub(1)
+            ReportCommand::FocusRows => {
+                let report = self.shell_mut().report_mut().expect("report is open");
+                if report
+                    .totals
+                    .as_ref()
+                    .is_some_and(|totals| !totals.rows.is_empty())
+                {
+                    report.focus = ReportFocus::Rows;
+                }
+            }
+            ReportCommand::FocusTabs => {
+                self.shell_mut().report_mut().expect("report is open").focus = ReportFocus::TopTabs;
+            }
+            ReportCommand::PresetPrevious | ReportCommand::PresetNext => {
+                let report = self.shell_mut().report_mut().expect("report is open");
+                report.preset_cursor = if command == ReportCommand::PresetPrevious {
+                    (report.preset_cursor + ReportPreset::ALL.len() - 1) % ReportPreset::ALL.len()
                 } else {
-                    (*selected + 1).min(ReportPreset::ALL.len() - 1)
+                    (report.preset_cursor + 1) % ReportPreset::ALL.len()
                 };
             }
             ReportCommand::ChoosePreset => {
-                let index = match self.shell().report().expect("report is open").mode {
-                    ReportMode::Presets { selected } => selected,
-                    _ => return,
-                };
+                let index = self.shell().report().expect("report is open").preset_cursor;
                 let today = report_now()
                     .with_timezone(&self.shell().timezone())
                     .date_naive();
@@ -170,6 +170,12 @@ impl<S: TrackerApplicationService> App<S> {
                 {
                     *focus_to = !*focus_to;
                 }
+            }
+            ReportCommand::ShiftCustomDate(shift) => {
+                self.shell_mut()
+                    .report_mut()
+                    .expect("report is open")
+                    .shift_custom_date(shift);
             }
             ReportCommand::Insert(character) => self.edit_custom(|field| {
                 if field.len() < 10 {
@@ -197,7 +203,13 @@ impl<S: TrackerApplicationService> App<S> {
                 }
             }
             ReportCommand::Cancel => {
-                self.shell_mut().report_mut().expect("report is open").mode = ReportMode::Normal
+                let report = self.shell_mut().report_mut().expect("report is open");
+                if matches!(report.mode, ReportMode::Custom { .. }) {
+                    report.mode = ReportMode::Normal;
+                    report.focus = ReportFocus::Presets;
+                } else {
+                    report.focus = ReportFocus::TopTabs;
+                }
             }
             ReportCommand::OpenHistory => self.open_report_history(),
             ReportCommand::CopyName | ReportCommand::CopyExact | ReportCommand::CopyRounded => {
@@ -239,7 +251,11 @@ impl<S: TrackerApplicationService> App<S> {
         }
         let index = report.selected_index().unwrap_or(0);
         let target = match command {
-            ReportCommand::MoveUp => index.saturating_sub(1),
+            ReportCommand::MoveUp if index == 0 => {
+                report.focus = ReportFocus::Presets;
+                return;
+            }
+            ReportCommand::MoveUp => index - 1,
             ReportCommand::MoveDown => (index + 1).min(len - 1),
             ReportCommand::First => 0,
             ReportCommand::Last => len - 1,
@@ -298,7 +314,7 @@ impl<S: TrackerApplicationService> App<S> {
 
     pub(crate) fn copy_text(&mut self, value: &str) {
         match crate::support::clipboard::copy(value) {
-            Ok(()) => self.shell_mut().info("Copied to clipboard"),
+            Ok(()) => self.shell_mut().copied_to_clipboard(),
             Err(error) => self.shell_mut().error(format!("Clipboard: {error}")),
         }
     }
@@ -393,40 +409,36 @@ mod tests {
     }
 
     #[test]
-    fn period_keys_move_back_and_forward_and_preset_keys_move_one_row() {
-        let service = TestService::with_tasks(vec![task(1, "period task")]);
+    fn preset_cursor_wraps_and_applies_without_changing_focus() {
+        let selected = task(1, "period task");
+        let service = TestService::with_tasks(vec![selected.clone()]);
+        service.spy().set_report_result(Ok(ReportTotals {
+            rows: vec![ReportRow {
+                task: selected,
+                duration: TimeDelta::minutes(15),
+            }],
+            total: TimeDelta::minutes(15),
+        }));
         let mut app = app_in_timezone(service, chrono_tz::UTC);
         app.handle(Command::TaskList(TaskListCommand::ShowReports));
-        let initial = app.shell().report().unwrap().from;
-        app.handle(Command::Reports(ReportCommand::PreviousPeriod));
-        assert_eq!(
-            app.shell().report().unwrap().from,
-            initial.pred_opt().unwrap()
-        );
-        app.handle(Command::Reports(ReportCommand::NextPeriod));
-        assert_eq!(app.shell().report().unwrap().from, initial);
-
-        app.handle(Command::Reports(ReportCommand::OpenPresets));
-        app.handle(Command::Reports(ReportCommand::PresetDown));
-        app.handle(Command::Reports(ReportCommand::PresetDown));
-        assert_eq!(
-            app.shell().report().unwrap().mode,
-            ReportMode::Presets { selected: 2 }
-        );
-        app.handle(Command::Reports(ReportCommand::PresetUp));
-        assert_eq!(
-            app.shell().report().unwrap().mode,
-            ReportMode::Presets { selected: 1 }
-        );
-        for _ in 0..10 {
-            app.handle(Command::Reports(ReportCommand::PresetDown));
-        }
-        assert_eq!(
-            app.shell().report().unwrap().mode,
-            ReportMode::Presets {
-                selected: ReportPreset::ALL.len() - 1
-            }
-        );
+        app.handle(Command::Reports(ReportCommand::FocusPresets));
+        assert_eq!(app.shell().report().unwrap().focus, ReportFocus::Presets);
+        app.handle(Command::Reports(ReportCommand::PresetPrevious));
+        assert_eq!(app.shell().report().unwrap().preset_cursor, 5);
+        app.handle(Command::Reports(ReportCommand::PresetNext));
+        assert_eq!(app.shell().report().unwrap().preset_cursor, 0);
+        app.handle(Command::Reports(ReportCommand::PresetNext));
+        app.handle(Command::Reports(ReportCommand::ChoosePreset));
+        let report = app.shell().report().unwrap();
+        assert_eq!(report.preset, ReportPreset::Yesterday);
+        assert_eq!(report.focus, ReportFocus::Presets);
+        app.handle(Command::Reports(ReportCommand::FocusRows));
+        assert_eq!(app.shell().report().unwrap().focus, ReportFocus::Rows);
+        app.handle(Command::Reports(ReportCommand::MoveUp));
+        assert_eq!(app.shell().report().unwrap().focus, ReportFocus::Presets);
+        app.handle(Command::Reports(ReportCommand::FocusRows));
+        app.handle(Command::Reports(ReportCommand::FocusTabs));
+        assert_eq!(app.shell().report().unwrap().focus, ReportFocus::TopTabs);
     }
 
     #[test]
