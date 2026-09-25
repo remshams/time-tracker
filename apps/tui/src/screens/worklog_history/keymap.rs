@@ -325,7 +325,11 @@ mod tests {
                 "the history must not map {code:?}"
             );
         }
-        for modified in [ctrl('o'), with_modifier('r', KeyModifiers::ALT)] {
+        for modified in [
+            ctrl('o'),
+            with_modifier('r', KeyModifiers::ALT),
+            with_modifier('X', KeyModifiers::SHIFT),
+        ] {
             assert_eq!(
                 map_history(&WorklogHistoryMode::Normal, modified),
                 None,

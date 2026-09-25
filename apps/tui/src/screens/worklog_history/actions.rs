@@ -315,3 +315,22 @@ impl<S: TrackerApplicationService> App<S> {
         self.tracking_mut().sync_after_history_reload(tracking);
     }
 }
+
+#[cfg(test)]
+mod navigation_tests {
+    use crate::command::Command;
+    use crate::screens::task_list::TaskListCommand;
+    use crate::screens::worklog_history::WorklogHistoryCommand;
+    use crate::test_support::app_with;
+
+    #[test]
+    fn paging_an_empty_history_keeps_it_unselected() {
+        let mut app = app_with(&["empty task"]);
+        app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::Last));
+        assert_eq!(
+            app.shell().history().unwrap().history().selected_index(),
+            None
+        );
+    }
+}
