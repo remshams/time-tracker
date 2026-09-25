@@ -65,6 +65,24 @@ fn task_tabs_and_worklog_breadcrumb_keep_the_source_view_visible() {
             && page.task_panel().selected_tab_is_highlighted()
             && page.task_panel().selected_index() == Some(0)
     });
+    tt.press_and_wait(
+        Key::Tab,
+        "the active tab after wrapping forward",
+        |screen| {
+            let page = TimeTrackerPage::new(screen.clone());
+            page.task_panel().shows_active_tasks()
+                && page.task_panel().selected_tab_is_highlighted()
+        },
+    );
+    tt.press_and_wait(
+        Key::BackTab,
+        "the archived tab after wrapping back",
+        |screen| {
+            let page = TimeTrackerPage::new(screen.clone());
+            page.task_panel().shows_archived_tasks()
+                && page.task_panel().selected_tab_is_highlighted()
+        },
+    );
     tt.press_and_wait(Key::BackTab, "the active tab again", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_active_tasks() && page.task_panel().selected_tab_is_highlighted()
