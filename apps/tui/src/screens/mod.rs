@@ -1,9 +1,12 @@
+pub mod reports;
 pub mod task_list;
 pub mod worklog_history;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::command::Command;
+pub(crate) use reports::ReportCommand;
+pub use reports::ReportState;
 pub(crate) use task_list::TaskListCommand;
 pub use task_list::{TaskListState, TaskView};
 #[cfg(test)]
@@ -18,6 +21,7 @@ pub use worklog_history::{History, WorklogHistoryMode, WorklogHistoryState};
 pub enum Screen {
     TaskList,
     WorklogHistory,
+    Reports,
 }
 
 /// The only valid stored screen states.
@@ -25,6 +29,7 @@ pub enum Screen {
 pub enum ScreenState {
     TaskList(TaskListState),
     WorklogHistory(Box<WorklogHistoryState>),
+    Reports(Box<ReportState>),
 }
 
 impl ScreenState {
@@ -32,6 +37,7 @@ impl ScreenState {
         match self {
             Self::TaskList(_) => Screen::TaskList,
             Self::WorklogHistory(_) => Screen::WorklogHistory,
+            Self::Reports(_) => Screen::Reports,
         }
     }
 }
@@ -41,6 +47,7 @@ impl ScreenState {
 pub(crate) enum InputState<'a> {
     TaskList(&'a TaskListState),
     WorklogHistory(&'a WorklogHistoryState),
+    Reports(&'a ReportState),
 }
 
 impl InputState<'_> {
@@ -48,6 +55,7 @@ impl InputState<'_> {
         match self {
             Self::TaskList(state) => task_list::footer_hints(state, width),
             Self::WorklogHistory(state) => worklog_history::footer_hints(state, width),
+            Self::Reports(state) => reports::footer_hints(state, width),
         }
     }
 }
@@ -80,6 +88,10 @@ pub(crate) fn map_key(state: InputState<'_>, key: KeyEvent) -> Option<Command> {
                 KeymapCommand::Quit => Command::Quit,
             })
         }
+        InputState::Reports(state) => reports::map(state, key).map(|command| match command {
+            KeymapCommand::Local(command) => Command::Reports(command),
+            KeymapCommand::Quit => Command::Quit,
+        }),
     }
 }
 

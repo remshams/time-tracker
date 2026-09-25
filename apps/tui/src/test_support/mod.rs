@@ -10,10 +10,10 @@ pub(crate) use chrono::{
     DateTime, FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, TimeDelta, TimeZone, Utc,
 };
 pub(crate) use tracker_application::{
-    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, RepositoryError,
-    SetActiveTaskOutcome, TaskListItem, TaskOperations, TaskOrdering, TaskQueries,
-    TrackerApplication, TrackerApplicationService, TrackingOperations, WorklogCursor,
-    WorklogOperations, WorklogPage, WorklogPageSnapshot, WorklogQueries,
+    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, ReportQueries,
+    ReportTotals, RepositoryError, SetActiveTaskOutcome, TaskListItem, TaskOperations,
+    TaskOrdering, TaskQueries, TrackerApplication, TrackerApplicationService, TrackingOperations,
+    WorklogCursor, WorklogOperations, WorklogPage, WorklogPageSnapshot, WorklogQueries,
 };
 pub(crate) use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, TrackingState, Worklog, WorklogCorrectionError,
@@ -120,6 +120,9 @@ pub(crate) fn text(status: &Status) -> &str {
 #[derive(Default)]
 struct SpyState {
     worklog_reads: usize,
+    report_reads: Vec<(DateTime<Utc>, DateTime<Utc>, DateTime<Utc>)>,
+    report_result: Option<Result<ReportTotals, ApplicationError>>,
+    report_tasks: Option<Vec<Task>>,
     correction_calls: Vec<(WorklogId, WorklogTimes, WorklogTimes, DateTime<Utc>)>,
     move_calls: Vec<(WorklogId, TaskId, WorklogTimes, TaskId)>,
     deletion_calls: Vec<(WorklogId, TaskId, WorklogTimes)>,
@@ -137,6 +140,18 @@ pub(crate) struct TestServiceSpy {
 }
 
 impl TestServiceSpy {
+    pub(crate) fn report_reads(&self) -> Vec<(DateTime<Utc>, DateTime<Utc>, DateTime<Utc>)> {
+        self.state.borrow().report_reads.clone()
+    }
+
+    pub(crate) fn set_report_result(&self, result: Result<ReportTotals, ApplicationError>) {
+        self.state.borrow_mut().report_result = Some(result);
+    }
+
+    pub(crate) fn set_report_tasks(&self, tasks: Vec<Task>) {
+        self.state.borrow_mut().report_tasks = Some(tasks);
+    }
+
     pub(crate) fn worklog_reads(&self) -> usize {
         self.state.borrow().worklog_reads
     }
@@ -682,6 +697,30 @@ impl WorklogQueries for TestService {
                 },
                 None => TrackingState::Idle,
             };
+        }
+        result
+    }
+}
+
+impl ReportQueries for TestService {
+    fn report_totals(
+        &mut self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportTotals, ApplicationError> {
+        let mut spy = self.spy.state.borrow_mut();
+        spy.report_reads.push((start, end, now));
+        let result = spy.report_result.clone().unwrap_or_else(|| {
+            Ok(ReportTotals {
+                rows: Vec::new(),
+                total: TimeDelta::zero(),
+            })
+        });
+        if result.is_ok()
+            && let Some(tasks) = spy.report_tasks.take()
+        {
+            self.tasks = tasks;
         }
         result
     }

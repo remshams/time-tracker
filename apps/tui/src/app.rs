@@ -106,7 +106,12 @@ impl<S: TrackerApplicationService> App<S> {
             (Screen::WorklogHistory, Command::WorklogHistory(command)) => {
                 self.handle_worklog_history_command(command);
             }
+            (Screen::Reports, Command::Reports(command)) => self.handle_report_command(command),
             (Screen::TaskList, Command::WorklogHistory(_))
+            | (Screen::TaskList, Command::Reports(_))
+            | (Screen::Reports, Command::TaskList(_))
+            | (Screen::Reports, Command::WorklogHistory(_))
+            | (Screen::WorklogHistory, Command::Reports(_))
             | (Screen::WorklogHistory, Command::TaskList(_)) => {}
         }
     }
@@ -166,6 +171,25 @@ impl<S: TrackerApplicationService> App<S> {
 
     pub(crate) fn sync_from_application(&mut self, fresh_active: bool) {
         self.reload_tasks();
+        if self.shell.screen() == Screen::Reports {
+            for view in [
+                crate::screens::TaskView::Active,
+                crate::screens::TaskView::Archived,
+            ] {
+                let list = self.shell.task_list();
+                let query = if list.view() == view {
+                    list.search_query()
+                } else {
+                    None
+                };
+                let visible = self.catalog.visible_tasks(view, query);
+                let saved = list.selection_for(view);
+                let selected = saved
+                    .filter(|id| visible.iter().any(|task| task.id() == *id))
+                    .or_else(|| visible.first().map(|task| task.id()));
+                self.shell.task_list_mut().remember(view, selected);
+            }
+        }
         self.tracking
             .sync(self.application.current_tracking().clone(), fresh_active);
     }

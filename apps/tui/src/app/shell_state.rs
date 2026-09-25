@@ -1,6 +1,8 @@
 use chrono_tz::Tz;
 
-use crate::screens::{InputState, Screen, ScreenState, TaskListState, WorklogHistoryState};
+use crate::screens::{
+    InputState, ReportState, Screen, ScreenState, TaskListState, TaskView, WorklogHistoryState,
+};
 
 use super::Status;
 
@@ -16,6 +18,8 @@ pub(crate) struct ShellState {
     status: Status,
     lifecycle: Lifecycle,
     timezone: Tz,
+    report_return: Option<ReportState>,
+    task_list_return: Option<TaskListState>,
 }
 
 impl ShellState {
@@ -25,6 +29,8 @@ impl ShellState {
             status,
             lifecycle: Lifecycle::Running,
             timezone,
+            report_return: None,
+            task_list_return: None,
         }
     }
 
@@ -60,6 +66,7 @@ impl ShellState {
         match &self.screen {
             ScreenState::TaskList(state) => state,
             ScreenState::WorklogHistory(state) => state.task_list(),
+            ScreenState::Reports(_) => self.task_list_return.as_ref().expect("task list is saved"),
         }
     }
 
@@ -67,6 +74,7 @@ impl ShellState {
         match &mut self.screen {
             ScreenState::TaskList(state) => state,
             ScreenState::WorklogHistory(state) => state.task_list_mut(),
+            ScreenState::Reports(_) => self.task_list_return.as_mut().expect("task list is saved"),
         }
     }
 
@@ -74,6 +82,7 @@ impl ShellState {
         match &self.screen {
             ScreenState::TaskList(state) => InputState::TaskList(state),
             ScreenState::WorklogHistory(state) => InputState::WorklogHistory(state),
+            ScreenState::Reports(state) => InputState::Reports(state),
         }
     }
 
@@ -81,6 +90,7 @@ impl ShellState {
         match &self.screen {
             ScreenState::TaskList(_) => None,
             ScreenState::WorklogHistory(state) => Some(state),
+            ScreenState::Reports(_) => None,
         }
     }
 
@@ -88,11 +98,61 @@ impl ShellState {
         match &mut self.screen {
             ScreenState::TaskList(_) => None,
             ScreenState::WorklogHistory(state) => Some(state),
+            ScreenState::Reports(_) => None,
         }
     }
 
     pub(crate) fn timezone(&self) -> Tz {
         self.timezone
+    }
+
+    pub(crate) fn report(&self) -> Option<&ReportState> {
+        match &self.screen {
+            ScreenState::Reports(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn report_mut(&mut self) -> Option<&mut ReportState> {
+        match &mut self.screen {
+            ScreenState::Reports(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn open_reports(&mut self, now: chrono::DateTime<chrono::Utc>) {
+        let previous = std::mem::replace(
+            &mut self.screen,
+            ScreenState::Reports(Box::new(ReportState::new(now, self.timezone))),
+        );
+        let ScreenState::TaskList(list) = previous else {
+            unreachable!("task list is open")
+        };
+        self.task_list_return = Some(list);
+    }
+
+    pub(crate) fn leave_reports(&mut self, view: TaskView, first: Option<tracker_domain::TaskId>) {
+        let mut list = self
+            .task_list_return
+            .take()
+            .unwrap_or_else(|| TaskListState::new(None));
+        list.show(view, first);
+        self.screen = ScreenState::TaskList(list);
+    }
+
+    pub(crate) fn open_report_history(&mut self, history: crate::screens::History) {
+        let old = std::mem::replace(
+            &mut self.screen,
+            ScreenState::TaskList(TaskListState::new(None)),
+        );
+        let ScreenState::Reports(report) = old else {
+            unreachable!("report is open")
+        };
+        self.report_return = Some(*report);
+        self.screen = ScreenState::WorklogHistory(Box::new(WorklogHistoryState::from_reports(
+            TaskListState::new(None),
+            history,
+        )));
     }
 
     pub(crate) fn open_history(&mut self, history: crate::screens::History) {
@@ -108,6 +168,10 @@ impl ShellState {
     }
 
     pub(crate) fn back_to_task_list(&mut self) {
+        if let Some(report) = self.report_return.take() {
+            self.screen = ScreenState::Reports(Box::new(report));
+            return;
+        }
         let screen = std::mem::replace(
             &mut self.screen,
             ScreenState::TaskList(TaskListState::new(None)),
