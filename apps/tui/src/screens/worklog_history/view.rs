@@ -1,5 +1,5 @@
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
@@ -119,7 +119,7 @@ fn render_move_modal(frame: &mut Frame, area: Rect, app: AppView<'_>, draft: &Mo
         );
     }
     let height = (lines.len() as u16 + 2).min(10);
-    let modal = dialogs::centered(58, height, area);
+    let modal = area.centered(Constraint::Length(58), Constraint::Length(height));
     frame.render_widget(ratatui::widgets::Clear, modal);
     frame.render_widget(
         Paragraph::new(lines).block(
@@ -224,7 +224,7 @@ fn history_title(width: u16, view: TaskView, task_name: &str) -> String {
 
 fn render_correction_modal(frame: &mut Frame, area: Rect, draft: &CorrectionDraft) {
     let height = if draft.end().is_some() { 4 } else { 3 };
-    let modal = dialogs::centered(58, height, area);
+    let modal = area.centered(Constraint::Length(58), Constraint::Length(height));
     frame.render_widget(ratatui::widgets::Clear, modal);
     let mut lines = vec![correction_field_line(
         "Start",
