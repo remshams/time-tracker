@@ -303,7 +303,7 @@ fn archived_history_allows_worklog_correction() {
             .empty_hint()
             .is_some()
     });
-    tt.press_and_wait(Key::Char('l'), "the archived task", |screen| {
+    tt.press_and_wait(Key::Tab, "the archived task", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().task_names() == ["Archived review".to_owned()]
     });
