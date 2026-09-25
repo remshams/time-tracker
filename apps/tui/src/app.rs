@@ -120,6 +120,10 @@ impl<S: TrackerApplicationService> App<S> {
         self.shell.is_running()
     }
 
+    pub(crate) fn expire_copy_confirmation(&mut self) {
+        self.shell.expire_copy_confirmation();
+    }
+
     pub(crate) fn app_view(&self) -> AppView<'_> {
         AppView::new(&self.catalog, &self.tracking, &self.shell)
     }

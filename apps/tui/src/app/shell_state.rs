@@ -1,4 +1,5 @@
 use chrono_tz::Tz;
+use std::time::{Duration, Instant};
 
 use crate::screens::{
     InputState, ReportState, Screen, ScreenState, TaskListState, TaskView, WorklogHistoryState,
@@ -16,6 +17,7 @@ enum Lifecycle {
 pub(crate) struct ShellState {
     screen: ScreenState,
     status: Status,
+    copy_confirmation_deadline: Option<Instant>,
     lifecycle: Lifecycle,
     timezone: Tz,
     report_return: Option<ReportState>,
@@ -27,6 +29,7 @@ impl ShellState {
         Self {
             screen: ScreenState::TaskList(task_list),
             status,
+            copy_confirmation_deadline: None,
             lifecycle: Lifecycle::Running,
             timezone,
             report_return: None,
@@ -48,10 +51,35 @@ impl ShellState {
 
     pub(crate) fn info(&mut self, message: impl Into<String>) {
         self.status = Status::Info(message.into());
+        self.copy_confirmation_deadline = None;
     }
 
     pub(crate) fn error(&mut self, message: impl Into<String>) {
         self.status = Status::Error(message.into());
+        self.copy_confirmation_deadline = None;
+    }
+
+    pub(crate) fn copied_to_clipboard(&mut self) {
+        self.copied_to_clipboard_at(Instant::now());
+    }
+
+    fn copied_to_clipboard_at(&mut self, now: Instant) {
+        self.status = Status::Info("Copied to clipboard".to_owned());
+        self.copy_confirmation_deadline = Some(now + copy_confirmation_duration());
+    }
+
+    pub(crate) fn expire_copy_confirmation(&mut self) {
+        self.expire_copy_confirmation_at(Instant::now());
+    }
+
+    fn expire_copy_confirmation_at(&mut self, now: Instant) {
+        if self
+            .copy_confirmation_deadline
+            .is_some_and(|deadline| now >= deadline)
+        {
+            self.status = Status::Info("Ready".to_owned());
+            self.copy_confirmation_deadline = None;
+        }
     }
 
     pub(crate) fn screen(&self) -> Screen {
@@ -180,5 +208,72 @@ impl ShellState {
             unreachable!("the task list is already open");
         };
         self.screen = ScreenState::TaskList(history.into_task_list());
+    }
+}
+
+fn copy_confirmation_duration() -> Duration {
+    #[cfg(debug_assertions)]
+    if std::env::var_os("TT_E2E_SHORT_COPY_NOTICE").is_some() {
+        return Duration::from_millis(750);
+    }
+    Duration::from_secs(3)
+}
+
+#[cfg(test)]
+mod copy_confirmation_tests {
+    use super::*;
+
+    fn shell() -> ShellState {
+        ShellState::new(
+            Status::Info("Ready".to_owned()),
+            TaskListState::new(None),
+            chrono_tz::UTC,
+        )
+    }
+
+    #[test]
+    fn copy_confirmation_expires_after_three_seconds() {
+        let mut shell = shell();
+        let start = Instant::now();
+        shell.copied_to_clipboard_at(start);
+        shell.expire_copy_confirmation_at(start + Duration::from_secs(3) - Duration::from_nanos(1));
+        assert_eq!(
+            shell.status(),
+            &Status::Info("Copied to clipboard".to_owned())
+        );
+        shell.expire_copy_confirmation_at(start + Duration::from_secs(3));
+        assert_eq!(shell.status(), &Status::Info("Ready".to_owned()));
+    }
+
+    #[test]
+    fn another_copy_restarts_the_timeout() {
+        let mut shell = shell();
+        let start = Instant::now();
+        shell.copied_to_clipboard_at(start);
+        shell.copied_to_clipboard_at(start + Duration::from_secs(1));
+        shell.expire_copy_confirmation_at(start + Duration::from_secs(3));
+        assert_eq!(
+            shell.status(),
+            &Status::Info("Copied to clipboard".to_owned())
+        );
+        shell.expire_copy_confirmation_at(start + Duration::from_secs(4));
+        assert_eq!(shell.status(), &Status::Info("Ready".to_owned()));
+    }
+
+    #[test]
+    fn another_status_cancels_the_copy_timeout() {
+        let mut shell = shell();
+        let start = Instant::now();
+        shell.copied_to_clipboard_at(start);
+        shell.error("Clipboard failed");
+        shell.expire_copy_confirmation_at(start + Duration::from_secs(3));
+        assert_eq!(
+            shell.status(),
+            &Status::Error("Clipboard failed".to_owned())
+        );
+        shell.copied_to_clipboard_at(start);
+        shell.info("Task started");
+        shell.expire_copy_confirmation_at(start + Duration::from_secs(3));
+        assert_eq!(shell.status(), &Status::Info("Task started".to_owned()));
     }
 }

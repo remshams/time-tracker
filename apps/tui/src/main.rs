@@ -86,6 +86,7 @@ fn run<S: TrackerApplicationService>(
     app: &mut App<S>,
 ) -> io::Result<()> {
     while app.is_running() {
+        app.expire_copy_confirmation();
         app.refresh_reports();
         guard.draw(|frame| ui::render(frame, app.app_view()))?;
         if crossterm::event::poll(TICK)?
