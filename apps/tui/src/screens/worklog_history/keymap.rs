@@ -23,6 +23,19 @@ fn map_normal(
     state: &WorklogHistoryState,
     key: KeyEvent,
 ) -> Option<KeymapCommand<WorklogHistoryCommand>> {
+    if state.history().is_available() && key.modifiers == KeyModifiers::CONTROL {
+        return match key.code {
+            KeyCode::Char('d') => Some(KeymapCommand::Local(WorklogHistoryCommand::PageDown)),
+            KeyCode::Char('u') => Some(KeymapCommand::Local(WorklogHistoryCommand::PageUp)),
+            _ => None,
+        };
+    }
+    if state.history().is_available()
+        && key.code == KeyCode::Char('G')
+        && key.modifiers == KeyModifiers::SHIFT
+    {
+        return Some(KeymapCommand::Local(WorklogHistoryCommand::Last));
+    }
     if !state.history().is_available() || key.modifiers != KeyModifiers::NONE {
         if !state.history().is_available() {
             return match (key.code, key.modifiers) {
@@ -41,6 +54,14 @@ fn map_normal(
     let command = match key.code {
         KeyCode::Char('j') | KeyCode::Down => WorklogHistoryCommand::MoveDown,
         KeyCode::Char('k') | KeyCode::Up => WorklogHistoryCommand::MoveUp,
+        KeyCode::Char('g') => {
+            if state.g_prefix() {
+                WorklogHistoryCommand::First
+            } else {
+                WorklogHistoryCommand::GPrefix
+            }
+        }
+        KeyCode::Char('G') => WorklogHistoryCommand::Last,
         KeyCode::Char('e') => WorklogHistoryCommand::OpenCorrection,
         KeyCode::Char('d') => WorklogHistoryCommand::OpenDeletion,
         KeyCode::Char('m') => WorklogHistoryCommand::OpenMove,
@@ -182,6 +203,23 @@ mod tests {
     use crate::screens::{WorklogHistoryCommand, WorklogHistoryMode};
     use crate::test_support::keymap::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    #[test]
+    fn vim_motions_apply_only_to_normal_available_history() {
+        for (key, command) in [
+            (key(KeyCode::Char('g')), WorklogHistoryCommand::GPrefix),
+            (key(KeyCode::Char('G')), WorklogHistoryCommand::Last),
+            (ctrl('d'), WorklogHistoryCommand::PageDown),
+            (ctrl('u'), WorklogHistoryCommand::PageUp),
+        ] {
+            assert_eq!(
+                map_history(&WorklogHistoryMode::Normal, key),
+                Some(Command::WorklogHistory(command))
+            );
+            assert_eq!(map_unavailable(key), None);
+        }
+        assert_eq!(map_history(&correction(), ctrl('d')), None);
+    }
 
     #[test]
     fn deletion_mode_accepts_and_cancels_without_other_commands() {

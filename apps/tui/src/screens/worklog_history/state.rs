@@ -112,6 +112,12 @@ impl History {
         self.selected = Some(self.worklogs[index].id());
     }
 
+    pub(crate) fn select_index(&mut self, index: usize) {
+        if self.is_available() {
+            self.selected = self.worklogs.get(index).map(Worklog::id);
+        }
+    }
+
     pub(crate) fn append(&mut self, worklogs: Vec<Worklog>, next_cursor: Option<WorklogCursor>) {
         let select_first = self.worklogs.is_empty();
         self.worklogs.extend(worklogs);
@@ -180,6 +186,8 @@ pub struct WorklogHistoryState {
     task_list: TaskListState,
     history: History,
     mode: WorklogHistoryMode,
+    from_reports: bool,
+    g_prefix: bool,
 }
 
 pub(crate) fn active_worklog_for_task(
@@ -198,7 +206,27 @@ impl WorklogHistoryState {
             task_list,
             history,
             mode: WorklogHistoryMode::Normal,
+            from_reports: false,
+            g_prefix: false,
         }
+    }
+
+    pub(crate) fn from_reports(task_list: TaskListState, history: History) -> Self {
+        let mut state = Self::new(task_list, history);
+        state.from_reports = true;
+        state
+    }
+
+    pub(crate) fn has_report_source(&self) -> bool {
+        self.from_reports
+    }
+
+    pub(crate) fn g_prefix(&self) -> bool {
+        self.g_prefix
+    }
+
+    pub(crate) fn set_g_prefix(&mut self, value: bool) {
+        self.g_prefix = value;
     }
 
     pub fn task_list(&self) -> &TaskListState {

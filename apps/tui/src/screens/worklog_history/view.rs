@@ -160,6 +160,7 @@ fn render_body(
             area.width,
             state.task_list().view(),
             task_name,
+            state.has_report_source(),
         ))
         .border_style(if matches!(state.mode(), WorklogHistoryMode::Normal) {
             styles::focused_border()
@@ -203,10 +204,14 @@ fn render_body(
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-fn history_title(width: u16, view: TaskView, task_name: &str) -> String {
-    let source = match view {
-        TaskView::Active => "Active",
-        TaskView::Archived => "Archived",
+fn history_title(width: u16, view: TaskView, task_name: &str, from_reports: bool) -> String {
+    let source = if from_reports {
+        "Reports"
+    } else {
+        match view {
+            TaskView::Active => "Active",
+            TaskView::Archived => "Archived",
+        }
     };
     let prefix = format!("{source} › ");
     let suffix = " › Worklogs";
