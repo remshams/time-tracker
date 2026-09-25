@@ -361,7 +361,7 @@ mod tests {
     fn the_footer_matches_each_mode() {
         let mut app = app_with(&["alpha"]);
         let terminal = draw(&app);
-        assert!(row(&terminal, 23).contains("h/l view"));
+        assert!(row(&terminal, 23).contains("tab/⇧tab"));
         assert!(row(&terminal, 23).contains("space track"));
         assert!(row(&terminal, 23).contains("enter history"));
 
@@ -384,7 +384,7 @@ mod tests {
         let footer = row(&terminal, 19);
         assert!(footer.contains("enter history"), "got {footer:?}");
         assert!(footer.contains("s sort"), "got {footer:?}");
-        assert!(footer.contains("q/esc/ctrl+c quit"), "got {footer:?}");
+        assert!(footer.contains("q/esc/ctrl+c"), "got {footer:?}");
 
         app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
         app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
@@ -395,7 +395,7 @@ mod tests {
         assert!(footer.contains("enter history"), "got {footer:?}");
         assert!(footer.contains("u restore"), "got {footer:?}");
         assert!(footer.contains("s sort"), "got {footer:?}");
-        assert!(footer.contains("q/esc/ctrl+c quit"), "got {footer:?}");
+        assert!(footer.contains("q/esc/ctrl+c"), "got {footer:?}");
     }
 
     #[test]
@@ -455,7 +455,7 @@ mod tests {
         assert!(rows[2].contains("alpha"), "got {:?}", rows[2]);
         assert!(!rows[3].contains("beta"), "beta is still active");
         assert!(rows[23].contains("u unarchive"), "got {:?}", rows[23]);
-        assert!(rows[23].contains("h/l view"));
+        assert!(rows[23].contains("tab/⇧tab"));
         assert!(rows[23].contains("enter history"));
         assert!(
             !rows[23].contains("a add"),

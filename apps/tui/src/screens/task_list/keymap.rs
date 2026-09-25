@@ -17,14 +17,17 @@ pub(crate) fn map(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<
 
 fn map_normal(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
     let view = state.view();
+    if key.modifiers == KeyModifiers::SHIFT && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
+        return Some(KeymapCommand::Local(TaskListCommand::ShowActiveTasks));
+    }
     if key.modifiers != KeyModifiers::NONE {
         return None;
     }
     let command = match key.code {
         KeyCode::Char('j') | KeyCode::Down => TaskListCommand::MoveDown,
         KeyCode::Char('k') | KeyCode::Up => TaskListCommand::MoveUp,
-        KeyCode::Char('h') => TaskListCommand::ShowActiveTasks,
-        KeyCode::Char('l') => TaskListCommand::ShowArchivedTasks,
+        KeyCode::BackTab => TaskListCommand::ShowActiveTasks,
+        KeyCode::Tab => TaskListCommand::ShowArchivedTasks,
         KeyCode::Char('s') => TaskListCommand::CycleOrdering,
         KeyCode::Char('/') => TaskListCommand::OpenSearch,
         KeyCode::Char(' ') if view == TaskView::Active => TaskListCommand::ToggleTracking,
@@ -89,16 +92,16 @@ pub(crate) fn footer_hints(state: &TaskListState, width: u16) -> &'static str {
         return match state.mode() {
             TaskListMode::Normal => match (state.view(), filtered) {
                 (TaskView::Active, false) => {
-                    "j/k/↑/↓ h/l / ␣ enter history a/e/d s sort q/esc/ctrl+c quit"
+                    "j/k tab/⇧tab / ␣ enter history a/e/d s sort q/esc/ctrl+c"
                 }
                 (TaskView::Archived, false) => {
-                    "j/k h/l / enter history s sort u restore q/esc/ctrl+c quit"
+                    "j/k tab/⇧tab / enter history s sort u restore q/esc/ctrl+c"
                 }
                 (TaskView::Active, true) => {
-                    "j/k h/l / spc enter history a/e/d s sort esc clear q/ctrl+c"
+                    "j/k tab/⇧tab / spc enter history a/e/d s sort esc q/ctrl+c"
                 }
                 (TaskView::Archived, true) => {
-                    "j/k h/l / enter history s sort u restore esc clear q/ctrl+c"
+                    "j/k tab/⇧tab / enter history s sort u restore esc q/ctrl+c"
                 }
             },
             TaskListMode::Search => "type · ↑/↓ select · enter keep · esc cancel · ctrl+c quit",
@@ -111,16 +114,16 @@ pub(crate) fn footer_hints(state: &TaskListState, width: u16) -> &'static str {
     match state.mode() {
         TaskListMode::Normal => match (state.view(), filtered) {
             (TaskView::Active, false) => {
-                "j/k/↑/↓ h/l view / space track enter history s sort a/e/d edit q/esc/ctrl+c quit"
+                "j/k/↑/↓ tab/⇧tab / space track enter history s sort a/e/d edit q/esc/ctrl+c quit"
             }
             (TaskView::Archived, false) => {
-                "j/k/↑/↓ h/l view / enter history s sort u unarchive q/esc ctrl+c quit"
+                "j/k/↑/↓ tab/⇧tab view / enter history s sort u unarchive q/esc ctrl+c quit"
             }
             (TaskView::Active, true) => {
-                "j/k/↑/↓ h/l /find spc track enter history s sort a/e/d edit esc clear q/ctrl+c"
+                "j/k tab/⇧tab /find spc track enter history s sort a/e/d edit esc clear q/ctrl+c"
             }
             (TaskView::Archived, true) => {
-                "j/k/↑/↓ h/l /find enter history s sort u restore esc clear q/ctrl+c"
+                "j/k/↑/↓ tab/⇧tab /find enter history s sort u restore esc clear q/ctrl+c"
             }
         },
         TaskListMode::Search => {
@@ -161,11 +164,11 @@ mod tests {
             Some(Command::TaskList(TaskListCommand::MoveUp))
         );
         assert_eq!(
-            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('h'))),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::BackTab)),
             Some(Command::TaskList(TaskListCommand::ShowActiveTasks))
         );
         assert_eq!(
-            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('l'))),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Tab)),
             Some(Command::TaskList(TaskListCommand::ShowArchivedTasks))
         );
         assert_eq!(
@@ -218,11 +221,11 @@ mod tests {
             Some(Command::TaskList(TaskListCommand::MoveUp))
         );
         assert_eq!(
-            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('h'))),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::BackTab)),
             Some(Command::TaskList(TaskListCommand::ShowActiveTasks))
         );
         assert_eq!(
-            map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('l'))),
+            map_task_list(TaskListMode::Normal, view, key(KeyCode::Tab)),
             Some(Command::TaskList(TaskListCommand::ShowArchivedTasks))
         );
         assert_eq!(
@@ -266,6 +269,25 @@ mod tests {
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Enter)),
             Some(Command::TaskList(TaskListCommand::OpenHistory))
         );
+    }
+
+    #[test]
+    fn shift_tab_goes_back_and_old_view_keys_do_nothing() {
+        for view in [TaskView::Active, TaskView::Archived] {
+            for code in [KeyCode::Tab, KeyCode::BackTab] {
+                assert_eq!(
+                    map_task_list(
+                        TaskListMode::Normal,
+                        view,
+                        KeyEvent::new(code, KeyModifiers::SHIFT)
+                    ),
+                    Some(Command::TaskList(TaskListCommand::ShowActiveTasks))
+                );
+            }
+            for code in [KeyCode::Char('h'), KeyCode::Char('l')] {
+                assert_eq!(map_task_list(TaskListMode::Normal, view, key(code)), None);
+            }
+        }
     }
 
     #[test]
@@ -507,7 +529,7 @@ mod tests {
         let active_keys = task_list_footer(TaskListMode::Normal, TaskView::Active, 80);
         for hint in [
             "j/k/↑/↓",
-            "h/l",
+            "tab/⇧tab",
             "space",
             "enter history",
             "s sort",
@@ -522,7 +544,7 @@ mod tests {
         let archived_keys = task_list_footer(TaskListMode::Normal, TaskView::Archived, 80);
         for hint in [
             "j/k/↑/↓",
-            "h/l",
+            "tab/⇧tab",
             "enter history",
             "s sort",
             "u ",
@@ -602,8 +624,8 @@ mod tests {
                 "footer misses ctrl+c: {footer:?}"
             );
         }
-        assert!(footers[0].contains("j/k/↑/↓"));
-        assert!(footers[0].contains("h/l"));
+        assert!(footers[0].contains("j/k"));
+        assert!(footers[0].contains("tab/⇧tab"));
         assert!(footers[0].contains("␣"));
         assert!(footers[0].contains("a/e/d"));
         assert!(footers[0].contains("enter history"));
