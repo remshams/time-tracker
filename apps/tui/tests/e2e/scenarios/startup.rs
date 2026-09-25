@@ -311,7 +311,7 @@ fn a_mixed_database_shows_active_and_archived_tasks_in_their_own_views() {
     });
     assert_eq!(page.task_panel().row(1).name(), "Review the budget");
 
-    let page = tt.press_and_wait(Key::Char('l'), "the archived view", |screen| {
+    let page = tt.press_and_wait(Key::Tab, "the archived view", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_archived_tasks()
             && page.task_panel().task_names() == ["Retire the old importer".to_owned()]
