@@ -46,7 +46,7 @@ fn task_tabs_and_worklog_breadcrumb_keep_the_source_view_visible() {
             && page.task_panel().selected_index() == Some(0)
     });
 
-    tt.press_and_wait(Key::Char('l'), "the archived tab", |screen| {
+    tt.press_and_wait(Key::Tab, "the archived tab", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_archived_tasks()
             && page.task_panel().selected_tab_is_highlighted()
@@ -65,7 +65,7 @@ fn task_tabs_and_worklog_breadcrumb_keep_the_source_view_visible() {
             && page.task_panel().selected_tab_is_highlighted()
             && page.task_panel().selected_index() == Some(0)
     });
-    tt.press_and_wait(Key::Char('h'), "the active tab again", |screen| {
+    tt.press_and_wait(Key::BackTab, "the active tab again", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_active_tasks() && page.task_panel().selected_tab_is_highlighted()
     });
