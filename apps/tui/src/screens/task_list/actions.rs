@@ -17,8 +17,19 @@ impl<S: TrackerApplicationService> App<S> {
         match command {
             TaskListCommand::MoveUp => self.move_task_up(),
             TaskListCommand::MoveDown => self.move_task_down(),
+            TaskListCommand::First
+            | TaskListCommand::Last
+            | TaskListCommand::PageUp
+            | TaskListCommand::PageDown => self.jump_task(command),
+            TaskListCommand::GPrefix => self.shell_mut().task_list_mut().set_g_prefix(true),
             TaskListCommand::ShowActiveTasks => self.show_tasks(TaskView::Active),
             TaskListCommand::ShowArchivedTasks => self.show_tasks(TaskView::Archived),
+            TaskListCommand::ShowReports => self.open_reports(),
+            TaskListCommand::CopySelectedName => {
+                if let Some(name) = self.selected_task().map(|task| task.name().to_string()) {
+                    self.copy_text(&name);
+                }
+            }
             TaskListCommand::CycleOrdering => self.cycle_ordering(),
             TaskListCommand::OpenSearch => self.open_task_search(),
             TaskListCommand::CommitSearch => self.commit_task_search(),
@@ -50,6 +61,37 @@ impl<S: TrackerApplicationService> App<S> {
             }
             TaskListCommand::OpenHistory => self.open_history(),
         }
+        if command != TaskListCommand::GPrefix {
+            self.shell_mut().task_list_mut().set_g_prefix(false);
+        }
+    }
+
+    fn jump_task(&mut self, command: TaskListCommand) {
+        if !self.task_list_is_normal() {
+            return;
+        }
+        let list = self.shell().task_list();
+        let visible = self
+            .catalog()
+            .visible_tasks(list.view(), list.search_query());
+        if visible.is_empty() {
+            return;
+        }
+        let index = list
+            .selection()
+            .and_then(|id| visible.iter().position(|task| task.id() == id))
+            .unwrap_or(0);
+        let target = match command {
+            TaskListCommand::First => 0,
+            TaskListCommand::Last => visible.len() - 1,
+            TaskListCommand::PageUp => index.saturating_sub(10),
+            TaskListCommand::PageDown => (index + 10).min(visible.len() - 1),
+            _ => return,
+        };
+        let selected = visible[target].id();
+        self.shell_mut()
+            .task_list_mut()
+            .set_selection(Some(selected));
     }
 
     fn task_list_is_normal(&self) -> bool {

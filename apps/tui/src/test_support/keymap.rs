@@ -113,6 +113,7 @@ fn history_state(mode: WorklogHistoryMode, available: bool) -> WorklogHistorySta
 pub(crate) enum TestInputState {
     TaskList(TaskListState),
     History(Box<WorklogHistoryState>),
+    Reports(crate::screens::ReportState),
 }
 
 impl TestInputState {
@@ -120,6 +121,7 @@ impl TestInputState {
         match self {
             Self::TaskList(state) => InputState::TaskList(state),
             Self::History(state) => InputState::WorklogHistory(state),
+            Self::Reports(state) => InputState::Reports(state),
         }
     }
 }
@@ -136,6 +138,7 @@ pub(crate) fn valid_input_states() -> Vec<TestInputState> {
         TestInputState::History(Box::new(history_state(deletion(), true))),
         TestInputState::History(Box::new(history_state(correction(), true))),
         TestInputState::History(Box::new(history_state(move_dialog(), true))),
+        TestInputState::Reports(crate::screens::ReportState::new(Utc::now(), chrono_tz::UTC)),
     ]
 }
 

@@ -19,7 +19,7 @@ pub(crate) fn render(
     active_task_id: Option<TaskId>,
 ) {
     render_body(frame, area, state, tasks, ordering_label, active_task_id);
-    render_tabs(frame, area, state.view());
+    render_tabs(frame, area, usize::from(state.view() == TaskView::Archived));
     match state.mode() {
         TaskListMode::Input { purpose, buffer } => {
             let prompt = match purpose {
@@ -40,10 +40,10 @@ pub(crate) fn render(
     }
 }
 
-fn render_tabs(frame: &mut Frame, area: Rect, view: TaskView) {
-    const LABELS: [&str; 2] = ["Active", "Archived"];
+pub(crate) fn render_tabs(frame: &mut Frame, area: Rect, selected: usize) {
+    const LABELS: [&str; 3] = ["Active", "Archived", "Reports"];
     let tabs = Tabs::new(LABELS)
-        .select(usize::from(view == TaskView::Archived))
+        .select(selected)
         .highlight_style(styles::selected())
         .divider("│");
     frame.render_widget(
@@ -260,7 +260,7 @@ mod tests {
         let mut app = app_with(&["alpha"]);
         let terminal = draw_at(&app, 60, 20);
         assert!(row(&terminal, 1).contains(" Active │ Archived "));
-        assert_eq!(terminal.backend().buffer()[(20, 1)].symbol(), "─");
+        assert_eq!(terminal.backend().buffer()[(31, 1)].symbol(), "─");
         assert!(
             cell(&terminal, 2, 1)
                 .add_modifier

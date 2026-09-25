@@ -16,21 +16,58 @@ pub(crate) fn map(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<
 }
 
 fn map_normal(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
-    let view = state.view();
-    let other_tab = match view {
-        TaskView::Active => TaskListCommand::ShowArchivedTasks,
-        TaskView::Archived => TaskListCommand::ShowActiveTasks,
-    };
+    if key.modifiers == KeyModifiers::CONTROL {
+        return match key.code {
+            KeyCode::Char('d') => Some(KeymapCommand::Local(TaskListCommand::PageDown)),
+            KeyCode::Char('u') => Some(KeymapCommand::Local(TaskListCommand::PageUp)),
+            _ => None,
+        };
+    }
+    if key.code == KeyCode::Char('G') && key.modifiers == KeyModifiers::SHIFT {
+        return Some(KeymapCommand::Local(TaskListCommand::Last));
+    }
     if key.modifiers == KeyModifiers::SHIFT && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
-        return Some(KeymapCommand::Local(other_tab));
+        return Some(KeymapCommand::Local(previous_tab(state.view())));
     }
     if key.modifiers != KeyModifiers::NONE {
         return None;
     }
-    let command = match key.code {
+    map_normal_plain(state, key.code)
+}
+
+fn next_tab(view: TaskView) -> TaskListCommand {
+    match view {
+        TaskView::Active => TaskListCommand::ShowArchivedTasks,
+        TaskView::Archived => TaskListCommand::ShowReports,
+    }
+}
+
+fn previous_tab(view: TaskView) -> TaskListCommand {
+    match view {
+        TaskView::Active => TaskListCommand::ShowReports,
+        TaskView::Archived => TaskListCommand::ShowActiveTasks,
+    }
+}
+
+fn map_normal_plain(
+    state: &TaskListState,
+    code: KeyCode,
+) -> Option<KeymapCommand<TaskListCommand>> {
+    let view = state.view();
+    let command = match code {
         KeyCode::Char('j') | KeyCode::Down => TaskListCommand::MoveDown,
         KeyCode::Char('k') | KeyCode::Up => TaskListCommand::MoveUp,
-        KeyCode::BackTab | KeyCode::Tab => other_tab,
+        KeyCode::Char('g') => {
+            if state.g_prefix() {
+                TaskListCommand::First
+            } else {
+                TaskListCommand::GPrefix
+            }
+        }
+        KeyCode::Char('G') => TaskListCommand::Last,
+        KeyCode::Tab => next_tab(view),
+        KeyCode::BackTab => previous_tab(view),
+        KeyCode::Char('c') => TaskListCommand::CopySelectedName,
         KeyCode::Char('s') => TaskListCommand::CycleOrdering,
         KeyCode::Char('/') => TaskListCommand::OpenSearch,
         KeyCode::Char(' ') if view == TaskView::Active => TaskListCommand::ToggleTracking,
@@ -168,7 +205,7 @@ mod tests {
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::BackTab)),
-            Some(Command::TaskList(TaskListCommand::ShowArchivedTasks))
+            Some(Command::TaskList(TaskListCommand::ShowReports))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Tab)),
@@ -229,7 +266,7 @@ mod tests {
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Tab)),
-            Some(Command::TaskList(TaskListCommand::ShowActiveTasks))
+            Some(Command::TaskList(TaskListCommand::ShowReports))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Char('s'))),
@@ -285,7 +322,7 @@ mod tests {
                         KeyEvent::new(code, KeyModifiers::SHIFT)
                     ),
                     Some(Command::TaskList(match view {
-                        TaskView::Active => TaskListCommand::ShowArchivedTasks,
+                        TaskView::Active => TaskListCommand::ShowReports,
                         TaskView::Archived => TaskListCommand::ShowActiveTasks,
                     }))
                 );
@@ -349,8 +386,6 @@ mod tests {
         for view in [TaskView::Active, TaskView::Archived] {
             for key in [
                 ctrl('a'),
-                ctrl('d'),
-                ctrl('u'),
                 ctrl('y'),
                 ctrl('j'),
                 ctrl('q'),
@@ -368,6 +403,28 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn vim_list_motions_map_only_in_normal_mode() {
+        for view in [TaskView::Active, TaskView::Archived] {
+            for (key, command) in [
+                (key(KeyCode::Char('g')), TaskListCommand::GPrefix),
+                (key(KeyCode::Char('G')), TaskListCommand::Last),
+                (ctrl('d'), TaskListCommand::PageDown),
+                (ctrl('u'), TaskListCommand::PageUp),
+            ] {
+                assert_eq!(
+                    map_task_list(TaskListMode::Normal, view, key),
+                    Some(Command::TaskList(command))
+                );
+            }
+        }
+        assert_eq!(
+            map_task_list(input(), TaskView::Active, key(KeyCode::Char('g'))),
+            Some(Command::TaskList(TaskListCommand::Insert('g')))
+        );
+        assert_eq!(map_task_list(input(), TaskView::Active, ctrl('d')), None);
     }
 
     #[test]
