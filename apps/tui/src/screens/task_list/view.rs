@@ -54,7 +54,8 @@ pub(crate) fn render_tabs(frame: &mut Frame, area: Rect, selected: usize, focuse
         } else {
             Style::default()
                 .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::UNDERLINED)
         })
         .divider("│");
     frame.render_widget(
