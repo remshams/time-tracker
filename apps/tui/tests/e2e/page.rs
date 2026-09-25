@@ -215,10 +215,16 @@ pub(crate) struct ReportsPanel {
 }
 
 impl ReportsPanel {
+    /// Whether the top tabs and period heading have a blank row between them.
+    pub(crate) fn separates_tabs_from_period(&self) -> bool {
+        let layout = Layout::of(&self.screen);
+        panel_row_text(&self.screen, layout.panel_first_content_row()).is_empty()
+    }
+
     /// Whether the applied period and visible presets have a blank row between them.
     pub(crate) fn separates_applied_period_from_presets(&self) -> bool {
         let layout = Layout::of(&self.screen);
-        panel_row_text(&self.screen, layout.panel_first_content_row() + 1).is_empty()
+        panel_row_text(&self.screen, layout.panel_first_content_row() + 2).is_empty()
     }
 
     /// Whether a preset label carries the keyboard cursor's reverse style.
@@ -269,7 +275,7 @@ impl ReportsPanel {
     /// The selected visible report row, including its rendered duration.
     pub(crate) fn selected_row_text(&self) -> Option<String> {
         let layout = Layout::of(&self.screen);
-        (layout.panel_first_content_row() + 3..=layout.panel_last_content_row())
+        (layout.panel_first_content_row() + 4..=layout.panel_last_content_row())
             .find(|row| {
                 (1..layout.cols - 1).any(
                     |col| matches!(self.screen.cell(*row, col), Some(cell) if cell.style().reverse),

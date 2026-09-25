@@ -71,6 +71,7 @@ fn reports_choose_presets_clip_day_boundaries_and_validate_custom_dates() {
             .reports_panel()
             .separates_applied_period_from_presets()
     );
+    assert!(tt.page().reports_panel().separates_tabs_from_period());
     assert!(tt.page().reports_panel().preset_is_applied("Today"));
     let footer = tt.page().footer().text();
     assert!(
@@ -115,19 +116,13 @@ fn reports_choose_presets_clip_day_boundaries_and_validate_custom_dates() {
             .reports_panel()
             .preset_is_focused("Today")
     });
-    tt.press(Key::Tab);
-    tt.press_and_wait(Key::Esc, "the Reports top tab focus", |screen| {
+    tt.press_and_wait(Key::Tab, "yesterday's report", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
-        page.task_panel().shows_reports() && page.task_panel().selected_tab_is_highlighted()
-    });
-    tt.press(Key::Enter);
-    tt.press_and_wait(Key::Enter, "yesterday's report", |screen| {
-        let page = TimeTrackerPage::new(screen.clone());
-        page.task_panel().shows_reports()
-            && page
-                .reports_panel()
-                .text()
-                .contains("Period: Yesterday · 2025-04-15")
+        page.reports_panel()
+            .text()
+            .contains("Period: Yesterday · 2025-04-15")
+            && page.reports_panel().preset_is_focused("Yesterday")
+            && page.reports_panel().preset_is_applied("Yesterday")
     });
     let yesterday = tt.page().reports_panel().text();
     assert!(yesterday.contains("Total: 30m 0s"), "{yesterday}");
@@ -136,50 +131,50 @@ fn reports_choose_presets_clip_day_boundaries_and_validate_custom_dates() {
         "{yesterday}"
     );
 
-    tt.press(Key::Esc);
+    tt.press_and_wait(Key::Esc, "the Reports top tab focus", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_panel().shows_reports() && page.task_panel().selected_tab_is_highlighted()
+    });
     tt.press(Key::Enter);
-    tt.press(Key::Tab);
-    tt.press_and_wait(Key::Enter, "the weekly report", |screen| {
+    tt.press_and_wait(Key::Tab, "the weekly report", |screen| {
         TimeTrackerPage::new(screen.clone())
             .reports_panel()
             .text()
             .contains("Period: Week · 2025-04-14 to 2025-04-20")
     });
 
-    tt.press(Key::Esc);
-    tt.press(Key::Enter);
-    tt.press(Key::Tab);
-    tt.press_and_wait(Key::Enter, "the monthly report", |screen| {
+    tt.press_and_wait(Key::Tab, "the monthly report", |screen| {
         TimeTrackerPage::new(screen.clone())
             .reports_panel()
             .text()
             .contains("Period: Month · 2025-04-01 to 2025-04-30")
     });
 
-    tt.press(Key::Esc);
-    tt.press(Key::Enter);
-    tt.press(Key::Tab);
-    tt.press_and_wait(Key::Enter, "the yearly report", |screen| {
+    tt.press_and_wait(Key::Tab, "the yearly report", |screen| {
         TimeTrackerPage::new(screen.clone())
             .reports_panel()
             .text()
             .contains("Period: Year · 2025-01-01 to 2025-12-31")
     });
 
-    tt.press(Key::Esc);
-    tt.press(Key::Enter);
-    tt.press(Key::Tab);
-    tt.press(Key::Tab);
-    tt.press_and_wait(Key::Enter, "today's report again", |screen| {
+    tt.press_and_wait(Key::Tab, "Custom focused without opening dates", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.reports_panel().preset_is_focused("Custom")
+            && page.reports_panel().text().contains("Period: Year")
+            && !page.visible_text().contains("Custom period")
+    });
+    tt.press_and_wait(Key::Tab, "today's report again", |screen| {
         TimeTrackerPage::new(screen.clone())
             .reports_panel()
             .text()
             .contains("Period: Today · 2025-04-16")
     });
-
-    tt.press(Key::Esc);
-    tt.press(Key::Enter);
-    tt.press(Key::BackTab);
+    tt.press_and_wait(Key::BackTab, "Custom focused again", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.reports_panel().preset_is_focused("Custom")
+            && page.reports_panel().text().contains("Period: Today")
+            && !page.visible_text().contains("Custom period")
+    });
     tt.press_and_wait(Key::Enter, "the custom period fields", |screen| {
         TimeTrackerPage::new(screen.clone())
             .visible_text()
@@ -353,7 +348,10 @@ fn active_task_list_copies_the_selected_name_to_the_private_clipboard() {
     });
     assert_eq!(context.clipboard_text(), "Copy from active list");
     tt.wait_for("the copy confirmation to expire", |screen| {
-        TimeTrackerPage::new(screen.clone()).status_bar().text() == "Ready"
+        TimeTrackerPage::new(screen.clone())
+            .status_bar()
+            .text()
+            .is_empty()
     });
     tt.quit().assert_clean_exit();
 }
