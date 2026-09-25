@@ -13,6 +13,7 @@
 //! geometries, including the relocated layout after a resize.
 
 use termlens::{Color, Screen};
+use unicode_width::UnicodeWidthStr;
 
 /// The exact empty-state hints the two views render instead of task rows.
 const ACTIVE_EMPTY_HINT: &str = "No active tasks. Press a to add one.";
@@ -214,6 +215,44 @@ pub(crate) struct ReportsPanel {
 }
 
 impl ReportsPanel {
+    /// Whether the applied period and visible presets have a blank row between them.
+    pub(crate) fn separates_applied_period_from_presets(&self) -> bool {
+        let layout = Layout::of(&self.screen);
+        panel_row_text(&self.screen, layout.panel_first_content_row() + 1).is_empty()
+    }
+
+    /// Whether a preset label carries the keyboard cursor's reverse style.
+    pub(crate) fn preset_is_focused(&self, preset: &str) -> bool {
+        self.preset_style(preset, true)
+    }
+
+    /// Whether a preset label carries the applied-period underline.
+    pub(crate) fn preset_is_applied(&self, preset: &str) -> bool {
+        self.preset_style(preset, false)
+    }
+
+    fn preset_style(&self, preset: &str, reverse: bool) -> bool {
+        let layout = Layout::of(&self.screen);
+        (layout.panel_first_content_row()..=layout.panel_last_content_row()).any(|row| {
+            let text = panel_row_text(&self.screen, row);
+            let Some(col) = text.find(preset) else {
+                return false;
+            };
+            let col = UnicodeWidthStr::width(&text[..col]);
+            (col..col + preset.len()).all(|offset| {
+                self.screen
+                    .cell(row, offset as u16 + 1)
+                    .is_some_and(|cell| {
+                        if reverse {
+                            cell.style().reverse
+                        } else {
+                            cell.style().underline
+                        }
+                    })
+            })
+        })
+    }
+
     /// Visible report content in reading order, without panel borders.
     pub(crate) fn text(&self) -> String {
         let layout = Layout::of(&self.screen);
@@ -230,7 +269,7 @@ impl ReportsPanel {
     /// The selected visible report row, including its rendered duration.
     pub(crate) fn selected_row_text(&self) -> Option<String> {
         let layout = Layout::of(&self.screen);
-        (layout.panel_first_content_row() + 2..=layout.panel_last_content_row())
+        (layout.panel_first_content_row() + 3..=layout.panel_last_content_row())
             .find(|row| {
                 (1..layout.cols - 1).any(
                     |col| matches!(self.screen.cell(*row, col), Some(cell) if cell.style().reverse),
@@ -340,17 +379,17 @@ impl TaskPanel {
 
     /// Whether the active view's panel is shown.
     pub(crate) fn shows_active_tasks(&self) -> bool {
-        self.has_task_tabs() && self.tab_is_highlighted("Active")
+        self.has_task_tabs() && self.tab_is_selected("Active")
     }
 
     /// Whether the archived view's panel is shown.
     pub(crate) fn shows_archived_tasks(&self) -> bool {
-        self.has_task_tabs() && self.tab_is_highlighted("Archived")
+        self.has_task_tabs() && self.tab_is_selected("Archived")
     }
 
     /// Whether the Reports tab is selected.
     pub(crate) fn shows_reports(&self) -> bool {
-        self.has_task_tabs() && self.tab_is_highlighted("Reports")
+        self.has_task_tabs() && self.tab_is_selected("Reports")
     }
 
     fn has_task_tabs(&self) -> bool {
@@ -359,17 +398,33 @@ impl TaskPanel {
 
     /// Whether the current tab has the selection highlight.
     pub(crate) fn selected_tab_is_highlighted(&self) -> bool {
-        self.shows_active_tasks() || self.shows_archived_tasks() || self.shows_reports()
+        ["Active", "Archived", "Reports"]
+            .into_iter()
+            .any(|tab| self.tab_is_highlighted(tab))
     }
 
     fn tab_is_highlighted(&self, tab: &str) -> bool {
         let row = Layout::of(&self.screen).panel_top_row();
-        let Some(col) = self.screen.row_text(row).find(tab) else {
+        let text = self.screen.row_text(row);
+        let Some(byte_col) = text.find(tab) else {
             return false;
         };
+        let col = UnicodeWidthStr::width(&text[..byte_col]);
         self.screen
             .cell(row, col as u16)
             .is_some_and(|cell| cell.style().reverse)
+    }
+
+    fn tab_is_selected(&self, tab: &str) -> bool {
+        let row = Layout::of(&self.screen).panel_top_row();
+        let text = self.screen.row_text(row);
+        let Some(byte_col) = text.find(tab) else {
+            return false;
+        };
+        let col = UnicodeWidthStr::width(&text[..byte_col]);
+        self.screen
+            .cell(row, col as u16)
+            .is_some_and(|cell| cell.style().reverse || cell.style().underline)
     }
 
     /// Whether the bottom right border names the given ordering.

@@ -85,6 +85,7 @@ impl TuiDriver {
         }
         if let Some(path) = clipboard_file {
             builder = builder.env("TT_E2E_CLIPBOARD_FILE", path);
+            builder = builder.env("TT_E2E_SHORT_COPY_NOTICE", "1");
         }
         if let Ok(profile) = std::env::var("LLVM_PROFILE_FILE") {
             builder = builder.env("LLVM_PROFILE_FILE", profile);
