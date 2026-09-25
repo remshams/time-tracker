@@ -60,7 +60,7 @@ fn report_rows_on(
     let mut result = Vec::new();
     while let Some(row) = rows.next().map_err(report_query_error)? {
         let duration_us = match row.get_ref("duration_us")? {
-            ValueRef::Integer(value) if value > 0 => value,
+            ValueRef::Integer(value) => value,
             _ => return Err(StorageError::ReportDurationOverflow),
         };
         result.push(ReportRow {
@@ -83,5 +83,30 @@ fn report_query_error(error: rusqlite::Error) -> StorageError {
             StorageError::ReportDurationOverflow
         }
         _ => StorageError::Sql(error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overflow_mapping_preserves_unrelated_sqlite_errors() {
+        let sqlite_failure = |message| {
+            rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+                Some(message),
+            )
+        };
+        assert!(matches!(
+            report_query_error(sqlite_failure("integer overflow".to_owned())),
+            StorageError::ReportDurationOverflow
+        ));
+        assert!(matches!(
+            report_query_error(sqlite_failure(
+                "database disk image is malformed".to_owned()
+            )),
+            StorageError::Sql(_)
+        ));
     }
 }
