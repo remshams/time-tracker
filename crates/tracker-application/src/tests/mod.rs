@@ -241,6 +241,41 @@ impl TaskRepository for MemoryRepository {
     }
 }
 
+impl ReportRepository for MemoryRepository {
+    fn report_read(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportRead, RepositoryError> {
+        self.read_guard()?;
+        let data = self.0.borrow();
+        let mut rows = Vec::new();
+        for item in &data.tasks {
+            let duration = data
+                .worklogs
+                .iter()
+                .filter(|worklog| worklog.task_id() == item.task.id())
+                .map(|worklog| {
+                    let clipped_start = worklog.start().max(start);
+                    let clipped_end = worklog.end().unwrap_or(now).min(end);
+                    (clipped_end - clipped_start).max(chrono::TimeDelta::zero())
+                })
+                .sum::<chrono::TimeDelta>();
+            if duration > chrono::TimeDelta::zero() {
+                rows.push(ReportRow {
+                    task: item.task.clone(),
+                    duration,
+                });
+            }
+        }
+        Ok(ReportRead {
+            rows,
+            snapshot: Self::snapshot(&data),
+        })
+    }
+}
+
 fn has_same_task_overlap(
     worklogs: &[Worklog],
     candidate: &Worklog,
@@ -727,6 +762,7 @@ fn ordered_names(
 
 mod error;
 mod model;
+mod reports;
 mod tasks;
 mod tracking;
 mod worklogs;

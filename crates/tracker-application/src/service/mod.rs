@@ -1,5 +1,6 @@
 //! Application services and client-facing use-case contracts.
 
+mod reports;
 mod tasks;
 mod tracking;
 mod worklogs;
@@ -10,9 +11,9 @@ use tracker_domain::{
 };
 
 use crate::{
-    ApplicationError, ClearActiveTaskOutcome, RepositoryError, SetActiveTaskOutcome, TaskListItem,
-    TaskOrdering, TrackerRepository, TrackerSnapshot, WorklogCorrection, WorklogCursor,
-    WorklogDeletion, WorklogMove, WorklogPage, WorklogPageSnapshot,
+    ApplicationError, ClearActiveTaskOutcome, ReportTotals, RepositoryError, SetActiveTaskOutcome,
+    TaskListItem, TaskOrdering, TrackerRepository, TrackerSnapshot, WorklogCorrection,
+    WorklogCursor, WorklogDeletion, WorklogMove, WorklogPage, WorklogPageSnapshot,
 };
 
 fn canonical_timestamp(timestamp: DateTime<Utc>) -> DateTime<Utc> {
@@ -35,6 +36,19 @@ pub trait TaskQueries {
     /// The tasks of the selected backend, ordered by the given ordering.
     fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem>;
     fn task(&self, id: TaskId) -> Option<&Task>;
+}
+
+/// Reports time by task for a half-open UTC interval.
+pub trait ReportQueries {
+    /// Clips completed work to the interval and ends open work at `now`.
+    /// A successful read also refreshes task and tracking queries from the
+    /// same backend snapshot.
+    fn report_totals(
+        &mut self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportTotals, ApplicationError>;
 }
 
 /// Commands that create or change tasks.
@@ -141,12 +155,22 @@ pub trait WorklogOperations {
 ///
 /// This keeps repository ports behind the application boundary.
 pub trait TrackerApplicationService:
-    TaskQueries + TaskOperations + TrackingOperations + WorklogQueries + WorklogOperations
+    TaskQueries
+    + TaskOperations
+    + TrackingOperations
+    + WorklogQueries
+    + WorklogOperations
+    + ReportQueries
 {
 }
 
 impl<T> TrackerApplicationService for T where
-    T: TaskQueries + TaskOperations + TrackingOperations + WorklogQueries + WorklogOperations
+    T: TaskQueries
+        + TaskOperations
+        + TrackingOperations
+        + WorklogQueries
+        + WorklogOperations
+        + ReportQueries
 {
 }
 

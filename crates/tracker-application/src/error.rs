@@ -111,6 +111,10 @@ pub enum ApplicationError {
     },
     #[error("tracking state changed in another client")]
     TrackingStateChanged,
+    #[error("report end must be later than report start")]
+    InvalidReportRange,
+    #[error("report duration exceeds the supported range")]
+    ReportDurationOverflow,
 }
 
 impl ApplicationError {
@@ -230,6 +234,16 @@ impl ApplicationError {
                 message: "Tracking state changed in another client. Refreshed state.".to_owned(),
                 recovery: None,
             },
+            Self::InvalidReportRange => ApplicationFailure {
+                category: ApplicationFailureCategory::General,
+                message: "Report end must be later than start".to_owned(),
+                recovery: None,
+            },
+            Self::ReportDurationOverflow => ApplicationFailure {
+                category: ApplicationFailureCategory::General,
+                message: "Report duration is too large".to_owned(),
+                recovery: None,
+            },
         }
     }
 }
@@ -292,6 +306,7 @@ fn repository_error_message(error: &RepositoryError) -> &'static str {
         RepositoryError::TaskIsActive { .. } => "Task has active work",
         RepositoryError::Constraint { .. } => "Storage rejected the change",
         RepositoryError::CorruptData { .. } => "Stored data is invalid",
+        RepositoryError::ReportDurationOverflow => "Report duration is too large",
         RepositoryError::Backend { .. } => "Storage error",
     }
 }

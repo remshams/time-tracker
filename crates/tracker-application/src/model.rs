@@ -1,6 +1,6 @@
 //! Application read models and successful tracking outcomes.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use tracker_domain::{ActiveWorklog, Task, TaskId, Worklog, WorklogId};
 
 /// How the task list is ordered.
@@ -59,6 +59,20 @@ impl TaskOrdering {
 pub struct TaskListItem {
     pub task: Task,
     pub latest_work_start: Option<DateTime<Utc>>,
+}
+
+/// One task's time inside the requested report interval.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReportRow {
+    pub task: Task,
+    pub duration: TimeDelta,
+}
+
+/// Positive task totals and their combined duration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReportTotals {
+    pub rows: Vec<ReportRow>,
+    pub total: TimeDelta,
 }
 
 /// How many worklogs one history page carries.
