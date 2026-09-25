@@ -289,7 +289,7 @@ fn archived_and_empty_tasks_expose_their_history() {
             && page.task_panel().empty_hint().as_deref()
                 == Some("No active tasks. Press a to add one.")
     });
-    tt.press_and_wait(Key::Char('l'), "the explicit archived tasks", |screen| {
+    tt.press_and_wait(Key::Tab, "the explicit archived tasks", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_archived_tasks()
             && page.task_panel().task_names()
