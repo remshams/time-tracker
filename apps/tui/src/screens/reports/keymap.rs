@@ -346,24 +346,105 @@ mod tests {
     }
 
     #[test]
+    fn tab_and_row_keys_respect_focus_and_modifiers() {
+        let mut state = ReportState::new(chrono::Utc::now(), chrono_tz::UTC);
+        let mapped = |state: &ReportState, code, modifiers| {
+            map_key(InputState::Reports(state), KeyEvent::new(code, modifiers))
+        };
+        for code in [KeyCode::Char('q'), KeyCode::Esc] {
+            assert_eq!(
+                mapped(&state, code, KeyModifiers::NONE),
+                Some(Command::Quit)
+            );
+        }
+        state.focus = ReportFocus::Rows;
+        for (code, expected) in [
+            (
+                KeyCode::Char('G'),
+                Some(Command::Reports(ReportCommand::Last)),
+            ),
+            (
+                KeyCode::Char('r'),
+                Some(Command::Reports(ReportCommand::Refresh)),
+            ),
+            (KeyCode::Char('q'), Some(Command::Quit)),
+        ] {
+            assert_eq!(mapped(&state, code, KeyModifiers::NONE), expected);
+        }
+        assert_eq!(
+            mapped(&state, KeyCode::Char('G'), KeyModifiers::SHIFT),
+            Some(Command::Reports(ReportCommand::Last))
+        );
+        assert_eq!(
+            mapped(&state, KeyCode::BackTab, KeyModifiers::SHIFT),
+            Some(Command::Reports(ReportCommand::FocusPresets))
+        );
+        assert_eq!(
+            mapped(&state, KeyCode::Tab, KeyModifiers::SHIFT),
+            Some(Command::Reports(ReportCommand::FocusPresets))
+        );
+        for (code, modifiers) in [
+            (KeyCode::Char('G'), KeyModifiers::ALT),
+            (KeyCode::Char('r'), KeyModifiers::SHIFT),
+            (KeyCode::Char('q'), KeyModifiers::CONTROL),
+            (KeyCode::Char('x'), KeyModifiers::CONTROL),
+            (KeyCode::Tab, KeyModifiers::ALT),
+            (KeyCode::Char('d'), KeyModifiers::ALT),
+        ] {
+            assert_eq!(mapped(&state, code, modifiers), None);
+        }
+        assert_eq!(
+            mapped(&state, KeyCode::Char('d'), KeyModifiers::CONTROL),
+            Some(Command::Reports(ReportCommand::PageDown))
+        );
+        assert_eq!(
+            mapped(&state, KeyCode::Char('u'), KeyModifiers::CONTROL),
+            Some(Command::Reports(ReportCommand::PageUp))
+        );
+    }
+
+    #[test]
     fn footer_hints_follow_focus_and_fit_each_width() {
         let mut state = ReportState::new(chrono::Utc::now(), chrono_tz::UTC);
-        for focus in [
-            ReportFocus::TopTabs,
-            ReportFocus::Presets,
-            ReportFocus::Rows,
+        for (focus, narrow, medium, wide) in [
+            (
+                ReportFocus::TopTabs,
+                "Tab/⇧Tab tabs · Enter presets · q quit",
+                "Tab/⇧Tab switch tabs · Enter presets · q quit",
+                "Tab/⇧Tab switch tabs · Enter presets · q quit",
+            ),
+            (
+                ReportFocus::Presets,
+                "Tab/⇧Tab presets · Enter apply · j rows · Esc tabs",
+                "Tab/⇧Tab or h/l presets · Enter apply · j rows · Esc tabs",
+                "Tab/⇧Tab or h/l presets · Enter apply · j rows · Esc tabs",
+            ),
+            (
+                ReportFocus::Rows,
+                "j/k rows · h/l period · Enter logs · Tab presets · Esc tabs",
+                "j/k rows · h/l period · Enter logs · c/t/s copy · Tab presets · Esc tabs",
+                "j/k rows · gg/G ends · Ctrl+d/u page · h/l period · r refresh · Enter logs · c/t/s copy · Tab presets · Esc tabs",
+            ),
         ] {
             state.focus = focus;
-            for width in [60, 80, 116] {
-                assert!(footer_hints(&state, width).chars().count() <= width as usize);
+            for (width, expected) in [(79, narrow), (80, medium), (115, medium), (116, wide)] {
+                let hints = footer_hints(&state, width);
+                assert_eq!(hints, expected);
+                assert!(hints.chars().count() <= width as usize);
             }
         }
-        assert!(footer_hints(&state, 80).contains("c/t/s copy"));
         state.mode = ReportMode::Custom {
             from: String::new(),
             to: String::new(),
             focus_to: false,
         };
-        assert!(footer_hints(&state, 60).contains("H/L months"));
+        assert_eq!(
+            footer_hints(&state, 79),
+            "h/l days · H/L months · Tab field · Enter apply · Esc cancel"
+        );
+        assert_eq!(
+            footer_hints(&state, 80),
+            "YYYY-MM-DD · h/l day · H/L month · Tab/⇧Tab field · Enter apply · Esc cancel"
+        );
     }
 }

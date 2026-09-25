@@ -50,13 +50,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
         _ => (true, Some(2), 3),
     };
     if show_title {
-        frame.render_widget(
-            Paragraph::new(title),
-            Rect {
-                height: 1,
-                ..content
-            },
-        );
+        frame.render_widget(Paragraph::new(title), content);
     }
     let mut preset_spans = Vec::new();
     for (index, preset) in ReportPreset::ALL.iter().enumerate() {
@@ -81,7 +75,6 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
             Paragraph::new(Line::from(preset_spans)),
             Rect {
                 y: content.y.saturating_add(offset),
-                height: 1,
                 ..content
             },
         );
@@ -260,6 +253,16 @@ mod tests {
         let compact_buffer = compact.backend().buffer();
         assert_eq!(compact_buffer[(1, 3)].symbol(), "t");
         assert!(compact_buffer[(1, 3)].modifier.contains(Modifier::REVERSED));
+        assert_eq!(compact_buffer[(0, 3)].fg, Color::Blue);
+
+        for (height, selected_y) in [(3, 1), (4, 2)] {
+            let mut tiny = Terminal::new(TestBackend::new(60, height)).unwrap();
+            tiny.draw(|frame| render(frame, frame.area(), &state))
+                .unwrap();
+            let cell = &tiny.backend().buffer()[(1, selected_y)];
+            assert_eq!(cell.symbol(), "t");
+            assert!(cell.modifier.contains(Modifier::REVERSED));
+        }
     }
 
     #[test]

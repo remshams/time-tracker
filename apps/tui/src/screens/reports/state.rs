@@ -518,6 +518,7 @@ mod tests {
             chrono_tz::UTC,
         );
         assert_eq!(state.period_label(), "Today");
+        assert_eq!(state.highlighted_preset(), Some(ReportPreset::Today));
         assert!(state.step(-1));
         assert_eq!(state.period_label(), "Yesterday");
         assert_eq!(state.highlighted_preset(), Some(ReportPreset::Yesterday));
@@ -531,6 +532,18 @@ mod tests {
         assert!(state.step(1));
         assert_eq!(state.period_label(), "Day");
         assert_eq!(state.highlighted_preset(), None);
+
+        let mut from_yesterday = ReportState::new(
+            today.and_hms_opt(12, 0, 0).unwrap().and_utc(),
+            chrono_tz::UTC,
+        );
+        assert!(from_yesterday.choose(ReportPreset::Yesterday, today));
+        assert!(from_yesterday.step(1));
+        assert_eq!(from_yesterday.period_label(), "Today");
+        assert_eq!(
+            from_yesterday.highlighted_preset(),
+            Some(ReportPreset::Today)
+        );
     }
 
     #[test]

@@ -406,8 +406,15 @@ mod tests {
         let same_second = DateTime::from_timestamp(report.last_refresh_second.unwrap(), 0).unwrap();
         app.tick_reports_at(same_second);
         assert_eq!(spy.report_reads().len(), 1);
+        let original_day = app.shell().report().unwrap().from;
         app.handle(Command::Reports(ReportCommand::PreviousPeriod));
+        assert_eq!(
+            app.shell().report().unwrap().from,
+            original_day.pred_opt().unwrap()
+        );
         assert_eq!(spy.report_reads().len(), 2);
+        app.handle(Command::Reports(ReportCommand::NextPeriod));
+        assert_eq!(app.shell().report().unwrap().from, original_day);
         app.handle(Command::Reports(ReportCommand::ShowArchived));
         assert_eq!(app.shell().task_list().view(), TaskView::Archived);
         app.handle(Command::TaskList(TaskListCommand::ShowActiveTasks));
