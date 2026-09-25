@@ -126,30 +126,11 @@ impl<S: TrackerApplicationService> App<S> {
                 }
             }
             ReportCommand::Refresh => self.refresh_reports_now(),
-            ReportCommand::FocusPresets => {
-                self.shell_mut().report_mut().expect("report is open").focus = ReportFocus::Presets;
-            }
-            ReportCommand::FocusRows => {
-                let report = self.shell_mut().report_mut().expect("report is open");
-                if report
-                    .totals
-                    .as_ref()
-                    .is_some_and(|totals| !totals.rows.is_empty())
-                {
-                    report.focus = ReportFocus::Rows;
-                }
-            }
-            ReportCommand::FocusTabs => {
-                self.shell_mut().report_mut().expect("report is open").focus = ReportFocus::TopTabs;
-            }
-            ReportCommand::PresetPrevious | ReportCommand::PresetNext => {
-                let report = self.shell_mut().report_mut().expect("report is open");
-                report.preset_cursor = if command == ReportCommand::PresetPrevious {
-                    (report.preset_cursor + ReportPreset::ALL.len() - 1) % ReportPreset::ALL.len()
-                } else {
-                    (report.preset_cursor + 1) % ReportPreset::ALL.len()
-                };
-            }
+            ReportCommand::FocusPresets
+            | ReportCommand::FocusRows
+            | ReportCommand::FocusTabs
+            | ReportCommand::PresetPrevious
+            | ReportCommand::PresetNext => self.navigate_report(command),
             ReportCommand::ChoosePreset => {
                 let index = self.shell().report().expect("report is open").preset_cursor;
                 let today = report_now()
@@ -233,6 +214,31 @@ impl<S: TrackerApplicationService> App<S> {
         let first = self.catalog().tasks(view).first().map(|task| task.id());
         self.shell_mut().leave_reports(view, first);
         self.reload_tasks();
+    }
+
+    fn navigate_report(&mut self, command: ReportCommand) {
+        let report = self.shell_mut().report_mut().expect("report is open");
+        match command {
+            ReportCommand::FocusPresets => report.focus = ReportFocus::Presets,
+            ReportCommand::FocusRows => {
+                if report
+                    .totals
+                    .as_ref()
+                    .is_some_and(|totals| !totals.rows.is_empty())
+                {
+                    report.focus = ReportFocus::Rows;
+                }
+            }
+            ReportCommand::FocusTabs => report.focus = ReportFocus::TopTabs,
+            ReportCommand::PresetPrevious => {
+                report.preset_cursor =
+                    (report.preset_cursor + ReportPreset::ALL.len() - 1) % ReportPreset::ALL.len();
+            }
+            ReportCommand::PresetNext => {
+                report.preset_cursor = (report.preset_cursor + 1) % ReportPreset::ALL.len();
+            }
+            _ => unreachable!("only report navigation commands reach this handler"),
+        }
     }
 
     fn edit_custom(&mut self, edit: impl FnOnce(&mut String)) {

@@ -67,7 +67,11 @@ fn rows(state: &ReportState, key: KeyEvent) -> Option<KeymapCommand<ReportComman
     if key.modifiers != KeyModifiers::NONE {
         return None;
     }
-    let command = match key.code {
+    rows_plain(state, key.code)
+}
+
+fn rows_plain(state: &ReportState, code: KeyCode) -> Option<KeymapCommand<ReportCommand>> {
+    let command = match code {
         KeyCode::Tab | KeyCode::BackTab => ReportCommand::FocusPresets,
         KeyCode::Char('j') | KeyCode::Down => ReportCommand::MoveDown,
         KeyCode::Char('k') | KeyCode::Up => ReportCommand::MoveUp,
