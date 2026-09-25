@@ -258,7 +258,7 @@ mod tests {
         assert!(rows[21].contains("Sort: recently worked"));
         assert!(rows[2].contains("alpha"));
         assert!(rows[3].contains("beta"));
-        assert!(rows[22].contains("Ready"));
+        assert!(rows[22].trim().is_empty());
         assert!(rows[23].contains("enter history"));
         assert!(rows[23].contains("s sort"));
         assert!(rows[23].contains("a/e/d edit"));
