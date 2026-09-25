@@ -568,7 +568,7 @@ impl Footer {
 
     /// Whether the footer names the view-switch keys.
     pub(crate) fn hints_view_switching(&self) -> bool {
-        self.text().contains("h/l view")
+        self.text().contains("tab/⇧tab")
     }
 
     /// Whether the footer names the tracking toggle.
@@ -622,7 +622,7 @@ impl Footer {
 
     /// Whether the footer names the quit keys.
     pub(crate) fn hints_quit(&self) -> bool {
-        self.text().contains("q/esc/ctrl+c quit")
+        self.text().contains("q/esc/ctrl+c")
     }
 }
 
