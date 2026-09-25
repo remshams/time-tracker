@@ -51,7 +51,7 @@ The list panel shows Active and Archived as tabs on its top border, with the cur
 
 Shared:
 
-- `h`: switch to the Active view. `l`: switch to the Archived view. Switching to the view already shown does nothing.
+- `Tab`: switch to the Archived view. `Shift+Tab`: switch back to the Active view. Switching to the view already shown does nothing. The compact footer writes `⇧tab` for Shift+Tab.
 - `j` / `k` or Down / Up: move the selection, with safe bounds at both ends.
 - `s`: cycle through Recently worked, Recently updated, and Recently created ordering. One session-only choice applies to both task views, and selection follows the same task when its row changes.
 - `/`: search names in the current task view. Matches update as you type and use latest-activity order even when another list sort is selected. Up and Down navigate results while typing; Enter keeps the filter and restores normal task actions. Escape cancels editing, or clears a committed filter. Switching views clears the filter. At 60 columns the footer uses `␣` for Space.
