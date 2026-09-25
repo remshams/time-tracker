@@ -186,7 +186,7 @@ fn archived_history_deletion_stays_deleted_after_reopening_history() {
             .empty_hint()
             .is_some()
     });
-    tt.press_and_wait(Key::Char('l'), "the archived task", |screen| {
+    tt.press_and_wait(Key::Tab, "the archived task", |screen| {
         TimeTrackerPage::new(screen.clone())
             .task_panel()
             .task_names()
