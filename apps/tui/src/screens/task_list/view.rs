@@ -2,7 +2,7 @@ use ratatui::Frame;
 use ratatui::layout::{Margin, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Tabs};
 use tracker_domain::{Task, TaskId};
 
 use crate::components::{dialogs, text};
@@ -19,6 +19,7 @@ pub(crate) fn render(
     active_task_id: Option<TaskId>,
 ) {
     render_body(frame, area, state, tasks, ordering_label, active_task_id);
+    render_tabs(frame, area, state.view());
     match state.mode() {
         TaskListMode::Input { purpose, buffer } => {
             let prompt = match purpose {
@@ -39,6 +40,23 @@ pub(crate) fn render(
     }
 }
 
+fn render_tabs(frame: &mut Frame, area: Rect, view: TaskView) {
+    const LABELS: [&str; 2] = ["Active", "Archived"];
+    let tabs = Tabs::new(LABELS)
+        .select(usize::from(view == TaskView::Archived))
+        .highlight_style(styles::selected())
+        .divider("│");
+    frame.render_widget(
+        tabs,
+        Rect {
+            x: area.x.saturating_add(1),
+            y: area.y,
+            width: area.width.saturating_sub(2),
+            height: 1,
+        },
+    );
+}
+
 fn render_body(
     frame: &mut Frame,
     area: Rect,
@@ -56,30 +74,15 @@ fn render_body(
     } else {
         ordering_label
     };
-    let active_tab = if state.view() == TaskView::Active {
-        Span::styled("[Active]", styles::selected())
-    } else {
-        Span::raw("Active")
-    };
-    let archived_tab = if state.view() == TaskView::Archived {
-        Span::styled("[Archived]", styles::selected())
-    } else {
-        Span::raw("Archived")
-    };
-    let title = Line::from(vec![
-        Span::raw("Tasks · "),
-        active_tab,
-        Span::raw("  "),
-        archived_tab,
-        Span::raw(format!(" · {displayed_order}")),
-    ]);
-    let block = Block::bordered().title(title).border_style(
-        if matches!(state.mode(), TaskListMode::Normal | TaskListMode::Search) {
-            styles::focused_border()
-        } else {
-            Style::default()
-        },
-    );
+    let block = Block::bordered()
+        .title_bottom(Line::from(format!(" Sort: {displayed_order} ")).right_aligned())
+        .border_style(
+            if matches!(state.mode(), TaskListMode::Normal | TaskListMode::Search) {
+                styles::focused_border()
+            } else {
+                Style::default()
+            },
+        );
     let list_area = if let Some(query) = state.search_query() {
         frame.render_widget(&block, area);
         let inner = area.inner(Margin {
@@ -239,7 +242,8 @@ mod tests {
         let rows = rows(&terminal);
 
         assert!(rows[0].contains("Time Tracker"));
-        assert!(rows[1].contains("Tasks · [Active]  Archived · recently worked"));
+        assert!(rows[1].contains(" Active │ Archived "));
+        assert!(rows[21].contains("Sort: recently worked"));
         assert!(rows[2].contains("alpha"));
         assert!(rows[3].contains("beta"));
         assert!(rows[22].contains("Ready"));
@@ -255,28 +259,29 @@ mod tests {
     fn the_selected_task_tab_is_marked_in_both_views() {
         let mut app = app_with(&["alpha"]);
         let terminal = draw_at(&app, 60, 20);
-        assert!(row(&terminal, 1).contains("[Active]  Archived"));
+        assert!(row(&terminal, 1).contains(" Active │ Archived "));
+        assert_eq!(terminal.backend().buffer()[(20, 1)].symbol(), "─");
         assert!(
-            cell(&terminal, 9, 1)
+            cell(&terminal, 2, 1)
                 .add_modifier
                 .contains(Modifier::REVERSED)
         );
         assert!(
-            !cell(&terminal, 19, 1)
+            !cell(&terminal, 11, 1)
                 .add_modifier
                 .contains(Modifier::REVERSED)
         );
 
         app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
         let terminal = draw_at(&app, 60, 20);
-        assert!(row(&terminal, 1).contains("Active  [Archived]"));
+        assert!(row(&terminal, 1).contains(" Active │ Archived "));
         assert!(
-            !cell(&terminal, 9, 1)
+            !cell(&terminal, 2, 1)
                 .add_modifier
                 .contains(Modifier::REVERSED)
         );
         assert!(
-            cell(&terminal, 17, 1)
+            cell(&terminal, 11, 1)
                 .add_modifier
                 .contains(Modifier::REVERSED)
         );
@@ -371,10 +376,11 @@ mod tests {
     }
 
     #[test]
-    fn narrow_views_keep_ordering_titles_and_complete_compact_footers() {
+    fn narrow_views_keep_sort_labels_and_complete_compact_footers() {
         let mut app = app_with(&["alpha"]);
         let terminal = draw_at(&app, 60, 20);
-        assert!(row(&terminal, 1).contains("Tasks · [Active]  Archived · recently worked"));
+        assert!(row(&terminal, 1).contains(" Active │ Archived "));
+        assert!(row(&terminal, 17).contains("Sort: recently worked"));
         let footer = row(&terminal, 19);
         assert!(footer.contains("enter history"), "got {footer:?}");
         assert!(footer.contains("s sort"), "got {footer:?}");
@@ -383,7 +389,8 @@ mod tests {
         app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
         app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
         let terminal = draw_at(&app, 60, 20);
-        assert!(row(&terminal, 1).contains("Tasks · Active  [Archived] · recently updated"));
+        assert!(row(&terminal, 1).contains(" Active │ Archived "));
+        assert!(row(&terminal, 17).contains("Sort: recently updated"));
         let footer = row(&terminal, 19);
         assert!(footer.contains("enter history"), "got {footer:?}");
         assert!(footer.contains("u restore"), "got {footer:?}");
@@ -402,25 +409,26 @@ mod tests {
             "─",
             "search results must stay inside the panel"
         );
+        assert!(row(&terminal, 5).ends_with(" Sort: latest activity ┘"));
     }
 
     #[test]
-    fn task_panel_titles_show_the_shared_ordering_in_both_views() {
+    fn task_panel_bottom_border_shows_the_shared_ordering_in_both_views() {
         let mut app = app_with(&["alpha"]);
         app.handle(Command::TaskList(TaskListCommand::CycleOrdering));
         let terminal = draw(&app);
         assert!(
-            row(&terminal, 1).contains("Tasks · [Active]  Archived · recently updated"),
+            row(&terminal, 21).ends_with(" Sort: recently updated ┘"),
             "got {:?}",
-            row(&terminal, 1)
+            row(&terminal, 21)
         );
 
         app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
         let terminal = draw(&app);
         assert!(
-            row(&terminal, 1).contains("Tasks · Active  [Archived] · recently updated"),
+            row(&terminal, 21).ends_with(" Sort: recently updated ┘"),
             "got {:?}",
-            row(&terminal, 1)
+            row(&terminal, 21)
         );
     }
 
@@ -431,7 +439,7 @@ mod tests {
         );
         let terminal = draw(&app);
         assert!(row(&terminal, 2).contains("No active tasks. Press a to add one."));
-        assert!(row(&terminal, 1).contains("[Active]"));
+        assert!(row(&terminal, 1).contains(" Active │ Archived "));
     }
 
     #[test]
@@ -443,7 +451,7 @@ mod tests {
         let terminal = draw(&app);
         let rows = rows(&terminal);
 
-        assert!(rows[1].contains("[Archived]"), "got {:?}", rows[1]);
+        assert!(rows[1].contains(" Active │ Archived "), "got {:?}", rows[1]);
         assert!(rows[2].contains("alpha"), "got {:?}", rows[2]);
         assert!(!rows[3].contains("beta"), "beta is still active");
         assert!(rows[23].contains("u unarchive"), "got {:?}", rows[23]);
@@ -461,7 +469,7 @@ mod tests {
         app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
         let terminal = draw(&app);
         assert!(row(&terminal, 2).contains("No archived tasks."));
-        assert!(row(&terminal, 1).contains("[Archived]"));
+        assert!(row(&terminal, 1).contains(" Active │ Archived "));
     }
 
     #[test]
@@ -479,7 +487,7 @@ mod tests {
         // The active timer outlives the view switch.
         assert!(rows[0].contains("▶ alpha"), "got {:?}", rows[0]);
         assert!(rows[0].contains("00:01:01"), "got {:?}", rows[0]);
-        assert!(rows[1].contains("[Archived]"));
+        assert!(rows[1].contains(" Active │ Archived "));
         assert!(rows[2].contains("beta"), "got {:?}", rows[2]);
         // The archived row carries the selection highlight.
         assert!(
