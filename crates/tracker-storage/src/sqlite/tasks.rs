@@ -24,17 +24,16 @@ pub(crate) fn task_by_id_on(conn: &Connection, id: TaskId) -> Result<Option<Task
         .transpose()
 }
 
+/// The task list probes the latest start through the existing task/start
+/// index once per task, instead of scanning every historical worklog.
+pub(crate) const TASK_ITEMS_SQL: &str =
+    "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us,
+            (SELECT MAX(w.start_us) FROM worklogs AS w WHERE w.task_id = t.id) AS latest_start_us
+     FROM tasks AS t
+     ORDER BY t.id";
+
 pub(crate) fn list_task_items_on(conn: &Connection) -> Result<Vec<TaskListItem>, StorageError> {
-    let mut statement = conn.prepare(
-        "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us, w.latest_start_us
-         FROM tasks AS t
-         LEFT JOIN (
-             SELECT task_id, MAX(start_us) AS latest_start_us
-             FROM worklogs
-             GROUP BY task_id
-         ) AS w ON w.task_id = t.id
-         ORDER BY t.id",
-    )?;
+    let mut statement = conn.prepare(TASK_ITEMS_SQL)?;
     let mut rows = statement.query([])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {

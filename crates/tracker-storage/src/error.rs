@@ -50,6 +50,9 @@ pub enum StorageError {
     /// schema mismatch rather than at the caller.
     #[error("stored data is invalid: {0}")]
     CorruptData(&'static str),
+    /// A report interval or sum cannot fit a signed microsecond duration.
+    #[error("report duration exceeds the supported range")]
+    ReportDurationOverflow,
     /// The database was written by a newer version of Time Tracker; this
     /// version cannot understand its schema.
     #[error(
@@ -105,6 +108,7 @@ impl From<StorageError> for RepositoryError {
                 message: error.to_string(),
             },
             StorageError::CorruptData(field) => Self::CorruptData { field },
+            StorageError::ReportDurationOverflow => Self::ReportDurationOverflow,
             other => Self::Backend {
                 message: other.to_string(),
             },

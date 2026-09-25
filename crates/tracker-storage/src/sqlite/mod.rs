@@ -1,6 +1,7 @@
 //! SQLite repository implementation.
 
 mod mapping;
+mod reports;
 mod tasks;
 mod tracking;
 mod worklogs;
@@ -11,8 +12,9 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags};
 use tracker_application::{
-    RepositoryError, TaskRepository, TrackerSnapshot, TrackingRepository, WorklogCorrection,
-    WorklogCursor, WorklogDeletion, WorklogMove, WorklogPage, WorklogRepository,
+    ReportRead, ReportRepository, RepositoryError, TaskRepository, TrackerSnapshot,
+    TrackingRepository, WorklogCorrection, WorklogCursor, WorklogDeletion, WorklogMove,
+    WorklogPage, WorklogRepository,
 };
 use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
 
@@ -102,6 +104,17 @@ impl TaskRepository for SqliteRepository {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, RepositoryError> {
         SqliteRepository::unarchive_task(self, id, occurred_at).map_err(Into::into)
+    }
+}
+
+impl ReportRepository for SqliteRepository {
+    fn report_read(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportRead, RepositoryError> {
+        SqliteRepository::report_read(self, start, end, now).map_err(Into::into)
     }
 }
 
