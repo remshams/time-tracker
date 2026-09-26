@@ -69,6 +69,10 @@ fn task_tabs_and_worklog_breadcrumb_keep_the_source_view_visible() {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_reports() && page.task_panel().selected_tab_is_highlighted()
     });
+    tt.press_and_wait(Key::Tab, "the worklogs tab", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_panel().shows_worklogs() && page.task_panel().selected_tab_is_highlighted()
+    });
     tt.press_and_wait(
         Key::Tab,
         "the active tab after wrapping forward",
@@ -80,12 +84,16 @@ fn task_tabs_and_worklog_breadcrumb_keep_the_source_view_visible() {
     );
     tt.press_and_wait(
         Key::BackTab,
-        "the reports tab after wrapping back",
+        "the worklogs tab after wrapping back",
         |screen| {
             let page = TimeTrackerPage::new(screen.clone());
-            page.task_panel().shows_reports() && page.task_panel().selected_tab_is_highlighted()
+            page.task_panel().shows_worklogs() && page.task_panel().selected_tab_is_highlighted()
         },
     );
+    tt.press_and_wait(Key::BackTab, "the reports tab", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_panel().shows_reports() && page.task_panel().selected_tab_is_highlighted()
+    });
     tt.press_and_wait(Key::BackTab, "the archived tab", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_archived_tasks() && page.task_panel().selected_tab_is_highlighted()
