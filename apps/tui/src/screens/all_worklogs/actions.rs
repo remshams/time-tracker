@@ -69,10 +69,10 @@ impl<S: TrackerApplicationService> App<S> {
                 self.shell_mut().info("Move cancelled");
             }
         }
-        if command != C::GPrefix {
-            if let Some(state) = self.shell_mut().all_worklogs_mut() {
-                state.g_prefix = false;
-            }
+        if command != C::GPrefix
+            && let Some(state) = self.shell_mut().all_worklogs_mut()
+        {
+            state.g_prefix = false;
         }
     }
 
