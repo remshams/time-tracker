@@ -1,5 +1,7 @@
 //! Scenario modules.
 
+#[path = "scenarios/all_worklogs.rs"]
+mod all_worklogs;
 #[path = "scenarios/archive.rs"]
 mod archive;
 #[path = "scenarios/correction.rs"]

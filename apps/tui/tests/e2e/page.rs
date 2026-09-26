@@ -201,6 +201,13 @@ impl TimeTrackerPage {
         }
     }
 
+    /// The worklogs tab, which combines entries from every task.
+    pub(crate) fn all_worklogs_panel(&self) -> AllWorklogsPanel {
+        AllWorklogsPanel {
+            screen: self.screen.clone(),
+        }
+    }
+
     /// The body of the Reports panel, with borders and blank rows removed.
     pub(crate) fn reports_panel(&self) -> ReportsPanel {
         ReportsPanel {
@@ -398,13 +405,18 @@ impl TaskPanel {
         self.has_task_tabs() && self.tab_is_selected("Reports")
     }
 
+    /// Whether the Worklogs tab is selected.
+    pub(crate) fn shows_worklogs(&self) -> bool {
+        self.has_task_tabs() && self.tab_is_selected("Worklogs")
+    }
+
     fn has_task_tabs(&self) -> bool {
         self.title().contains("Active") && self.title().contains("Archived")
     }
 
     /// Whether the current tab has the selection highlight.
     pub(crate) fn selected_tab_is_highlighted(&self) -> bool {
-        ["Active", "Archived", "Reports"]
+        ["Active", "Archived", "Reports", "Worklogs"]
             .into_iter()
             .any(|tab| self.tab_is_highlighted(tab))
     }
@@ -912,6 +924,99 @@ impl WorklogRow {
             (1..cols - 1)
                 .any(|col| matches!(self.screen.cell(row, col), Some(cell) if cell.style().reverse))
         })
+    }
+}
+
+/// The global worklog list in latest-first order.
+pub(crate) struct AllWorklogsPanel {
+    screen: Screen,
+}
+
+impl AllWorklogsPanel {
+    pub(crate) fn is_shown(&self) -> bool {
+        TaskPanel {
+            screen: self.screen.clone(),
+        }
+        .shows_worklogs()
+    }
+
+    pub(crate) fn empty_hint(&self) -> Option<String> {
+        let layout = Layout::of(&self.screen);
+        (layout.panel_first_content_row()..=layout.panel_last_content_row())
+            .map(|row| panel_row_text(&self.screen, row))
+            .find(|text| text == HISTORY_EMPTY_HINT)
+    }
+
+    fn row_positions(&self) -> Vec<u16> {
+        let layout = Layout::of(&self.screen);
+        (layout.panel_first_content_row()..layout.panel_last_content_row())
+            .filter(|&row| panel_row_text(&self.screen, row).contains(HISTORY_ARROW))
+            .collect()
+    }
+
+    pub(crate) fn row_count(&self) -> usize {
+        self.row_positions().len()
+    }
+
+    pub(crate) fn row(&self, index: usize) -> AllWorklogRow {
+        let top_row = self.row_positions()[index];
+        AllWorklogRow {
+            screen: self.screen.clone(),
+            top_row,
+        }
+    }
+
+    pub(crate) fn selected_index(&self) -> Option<usize> {
+        let selected: Vec<usize> = (0..self.row_count())
+            .filter(|&index| self.row(index).is_selected())
+            .collect();
+        assert!(selected.len() <= 1, "more than one worklog row is selected");
+        selected.into_iter().next()
+    }
+}
+
+/// One task-labelled entry in the global worklog list.
+pub(crate) struct AllWorklogRow {
+    screen: Screen,
+    top_row: u16,
+}
+
+impl AllWorklogRow {
+    pub(crate) fn task_name(&self) -> String {
+        self.first_line()
+            .split_once(" · ")
+            .map_or(String::new(), |(name, _)| name.to_owned())
+    }
+
+    pub(crate) fn start_text(&self) -> String {
+        self.first_line()
+            .split_once(" · ")
+            .and_then(|(_, times)| times.split_once(HISTORY_ARROW))
+            .map_or(String::new(), |(start, _)| start.to_owned())
+    }
+
+    pub(crate) fn end_text(&self) -> String {
+        self.first_line()
+            .split_once(HISTORY_ARROW)
+            .map_or(String::new(), |(_, end)| end.to_owned())
+    }
+
+    pub(crate) fn duration_text(&self) -> String {
+        panel_row_text(&self.screen, self.top_row + 1)
+            .trim()
+            .to_owned()
+    }
+
+    pub(crate) fn is_selected(&self) -> bool {
+        let cols = Layout::of(&self.screen).cols;
+        (self.top_row..self.top_row + HISTORY_ROW_LINES).any(|row| {
+            (1..cols - 1)
+                .any(|col| matches!(self.screen.cell(row, col), Some(cell) if cell.style().reverse))
+        })
+    }
+
+    fn first_line(&self) -> String {
+        panel_row_text(&self.screen, self.top_row).trim().to_owned()
     }
 }
 
