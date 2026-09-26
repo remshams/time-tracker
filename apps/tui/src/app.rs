@@ -108,12 +108,10 @@ impl<S: TrackerApplicationService> App<S> {
                 self.handle_worklog_history_command(command);
             }
             (Screen::Reports, Command::Reports(command)) => self.handle_report_command(command),
-            (Screen::TaskList, Command::WorklogHistory(_))
-            | (Screen::TaskList, Command::Reports(_))
-            | (Screen::Reports, Command::TaskList(_))
-            | (Screen::Reports, Command::WorklogHistory(_))
-            | (Screen::WorklogHistory, Command::Reports(_))
-            | (Screen::WorklogHistory, Command::TaskList(_)) => {}
+            (Screen::AllWorklogs, Command::AllWorklogs(command)) => {
+                self.handle_all_worklogs_command(command)
+            }
+            _ => {}
         }
     }
 

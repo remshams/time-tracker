@@ -2,7 +2,8 @@ use chrono_tz::Tz;
 use std::time::{Duration, Instant};
 
 use crate::screens::{
-    InputState, ReportState, Screen, ScreenState, TaskListState, TaskView, WorklogHistoryState,
+    AllWorklogsState, InputState, ReportState, Screen, ScreenState, TaskListState, TaskView,
+    WorklogHistoryState,
 };
 
 use super::Status;
@@ -95,6 +96,9 @@ impl ShellState {
             ScreenState::TaskList(state) => state,
             ScreenState::WorklogHistory(state) => state.task_list(),
             ScreenState::Reports(_) => self.task_list_return.as_ref().expect("task list is saved"),
+            ScreenState::AllWorklogs(_) => {
+                self.task_list_return.as_ref().expect("task list is saved")
+            }
         }
     }
 
@@ -103,6 +107,9 @@ impl ShellState {
             ScreenState::TaskList(state) => state,
             ScreenState::WorklogHistory(state) => state.task_list_mut(),
             ScreenState::Reports(_) => self.task_list_return.as_mut().expect("task list is saved"),
+            ScreenState::AllWorklogs(_) => {
+                self.task_list_return.as_mut().expect("task list is saved")
+            }
         }
     }
 
@@ -111,6 +118,7 @@ impl ShellState {
             ScreenState::TaskList(state) => InputState::TaskList(state),
             ScreenState::WorklogHistory(state) => InputState::WorklogHistory(state),
             ScreenState::Reports(state) => InputState::Reports(state),
+            ScreenState::AllWorklogs(state) => InputState::AllWorklogs(state),
         }
     }
 
@@ -119,6 +127,7 @@ impl ShellState {
             ScreenState::TaskList(_) => None,
             ScreenState::WorklogHistory(state) => Some(state),
             ScreenState::Reports(_) => None,
+            ScreenState::AllWorklogs(_) => None,
         }
     }
 
@@ -127,6 +136,7 @@ impl ShellState {
             ScreenState::TaskList(_) => None,
             ScreenState::WorklogHistory(state) => Some(state),
             ScreenState::Reports(_) => None,
+            ScreenState::AllWorklogs(_) => None,
         }
     }
 
@@ -157,6 +167,44 @@ impl ShellState {
             unreachable!("task list is open")
         };
         self.task_list_return = Some(list);
+    }
+
+    pub(crate) fn open_all_worklogs(&mut self, state: AllWorklogsState) {
+        let previous =
+            std::mem::replace(&mut self.screen, ScreenState::AllWorklogs(Box::new(state)));
+        match previous {
+            ScreenState::TaskList(list) => self.task_list_return = Some(list),
+            ScreenState::Reports(report) => self.report_return = Some(*report),
+            _ => unreachable!("worklogs open from top tabs"),
+        }
+    }
+
+    pub(crate) fn all_worklogs(&self) -> Option<&AllWorklogsState> {
+        match &self.screen {
+            ScreenState::AllWorklogs(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn all_worklogs_mut(&mut self) -> Option<&mut AllWorklogsState> {
+        match &mut self.screen {
+            ScreenState::AllWorklogs(state) => Some(state),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn leave_all_worklogs_for_reports(&mut self, now: chrono::DateTime<chrono::Utc>) {
+        let report = self
+            .report_return
+            .take()
+            .unwrap_or_else(|| ReportState::new(now, self.timezone));
+        self.screen = ScreenState::Reports(Box::new(report));
+    }
+
+    pub(crate) fn leave_all_worklogs_for_tasks(&mut self) {
+        self.report_return = None;
+        self.screen =
+            ScreenState::TaskList(self.task_list_return.take().expect("task list is saved"));
     }
 
     pub(crate) fn leave_reports(&mut self, view: TaskView, first: Option<tracker_domain::TaskId>) {
