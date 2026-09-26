@@ -51,6 +51,9 @@ pub fn render(frame: &mut Frame, app: AppView<'_>) {
             worklog_history::view::render(frame, body, app, state);
         }
         ScreenState::Reports(state) => screens::reports::view::render(frame, body, state),
+        ScreenState::AllWorklogs(state) => {
+            screens::all_worklogs::view::render(frame, body, app, state)
+        }
     }
     status::render(frame, status_area, app.status());
     frame.render_widget(Paragraph::new(app.footer_hints(footer.width)), footer);

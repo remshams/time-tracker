@@ -1,3 +1,4 @@
+pub mod all_worklogs;
 pub mod reports;
 pub mod task_list;
 pub mod worklog_history;
@@ -22,6 +23,7 @@ pub enum Screen {
     TaskList,
     WorklogHistory,
     Reports,
+    AllWorklogs,
 }
 
 /// The only valid stored screen states.
@@ -30,6 +32,7 @@ pub enum ScreenState {
     TaskList(TaskListState),
     WorklogHistory(Box<WorklogHistoryState>),
     Reports(Box<ReportState>),
+    AllWorklogs(Box<AllWorklogsState>),
 }
 
 impl ScreenState {
@@ -38,6 +41,7 @@ impl ScreenState {
             Self::TaskList(_) => Screen::TaskList,
             Self::WorklogHistory(_) => Screen::WorklogHistory,
             Self::Reports(_) => Screen::Reports,
+            Self::AllWorklogs(_) => Screen::AllWorklogs,
         }
     }
 }
@@ -48,6 +52,7 @@ pub(crate) enum InputState<'a> {
     TaskList(&'a TaskListState),
     WorklogHistory(&'a WorklogHistoryState),
     Reports(&'a ReportState),
+    AllWorklogs(&'a AllWorklogsState),
 }
 
 impl InputState<'_> {
@@ -56,6 +61,7 @@ impl InputState<'_> {
             Self::TaskList(state) => task_list::footer_hints(state, width),
             Self::WorklogHistory(state) => worklog_history::footer_hints(state, width),
             Self::Reports(state) => reports::footer_hints(state, width),
+            Self::AllWorklogs(state) => all_worklogs::footer_hints(state, width),
         }
     }
 }
@@ -92,6 +98,12 @@ pub(crate) fn map_key(state: InputState<'_>, key: KeyEvent) -> Option<Command> {
             KeymapCommand::Local(command) => Command::Reports(command),
             KeymapCommand::Quit => Command::Quit,
         }),
+        InputState::AllWorklogs(state) => {
+            all_worklogs::map(state, key).map(|command| match command {
+                KeymapCommand::Local(command) => Command::AllWorklogs(command),
+                KeymapCommand::Quit => Command::Quit,
+            })
+        }
     }
 }
 
@@ -141,3 +153,4 @@ mod tests {
         }
     }
 }
+pub(crate) use all_worklogs::{AllWorklogsCommand, AllWorklogsState};

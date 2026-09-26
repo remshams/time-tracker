@@ -4,7 +4,7 @@
 //! [`crate::app::App`] dispatches a payload only when its screen is active, so
 //! the single mismatch guard is the boundary between active and dormant state.
 
-use crate::screens::{ReportCommand, TaskListCommand, WorklogHistoryCommand};
+use crate::screens::{AllWorklogsCommand, ReportCommand, TaskListCommand, WorklogHistoryCommand};
 
 /// A command accepted by the event loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,6 +13,7 @@ pub(crate) enum Command {
     TaskList(TaskListCommand),
     /// A command owned by the worklog-history screen.
     WorklogHistory(WorklogHistoryCommand),
+    AllWorklogs(AllWorklogsCommand),
     Reports(ReportCommand),
     /// Leave the application without changing active tracking.
     Quit,
