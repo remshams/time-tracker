@@ -88,7 +88,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: AppView<'_>, state: &Al
 
 #[cfg(test)]
 mod tests {
-    use ratatui::style::Modifier;
+    use ratatui::style::{Color, Modifier};
     use ratatui::{Terminal, backend::TestBackend};
     use tracker_domain::{Worklog, WorklogId};
 
@@ -168,5 +168,40 @@ mod tests {
                 .add_modifier
                 .contains(Modifier::REVERSED)
         );
+    }
+
+    #[test]
+    fn the_border_marks_row_focus_and_the_move_dialog_takes_focus() {
+        let source = task(1, "source");
+        let destination = task(2, "destination");
+        let mut service = TestService::with_tasks(vec![source.clone(), destination]);
+        service.authoritative_worklogs =
+            vec![Worklog::new(WorklogId::generate(), source.id(), at(10), Some(at(15))).unwrap()];
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        app.handle(Command::TaskList(TaskListCommand::ShowAllWorklogs));
+        assert_ne!(draw(&app).backend().buffer()[(0, 3)].fg, Color::Blue);
+
+        app.handle(Command::AllWorklogs(AllWorklogsCommand::FocusRows));
+        assert_eq!(draw(&app).backend().buffer()[(0, 3)].fg, Color::Blue);
+
+        app.handle(Command::AllWorklogs(AllWorklogsCommand::OpenMove));
+        assert_ne!(draw(&app).backend().buffer()[(0, 3)].fg, Color::Blue);
+    }
+
+    #[test]
+    fn a_task_name_that_exactly_fits_does_not_gain_an_ellipsis() {
+        let probe = app_in_timezone(TestService::with_tasks(vec![]), chrono_tz::UTC);
+        let start = probe.app_view().local_time(at(10));
+        let end = probe.app_view().local_time(at(15));
+        let name_width = 80 - 2 - start.len() - end.len() - 6;
+        let source = task(1, &"N".repeat(name_width));
+        let mut service = TestService::with_tasks(vec![source.clone()]);
+        service.authoritative_worklogs =
+            vec![Worklog::new(WorklogId::generate(), source.id(), at(10), Some(at(15))).unwrap()];
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        app.handle(Command::TaskList(TaskListCommand::ShowAllWorklogs));
+        let terminal = draw(&app);
+        assert!(row(&terminal, 2).contains(&"N".repeat(name_width)));
+        assert!(!row(&terminal, 2).contains('…'));
     }
 }

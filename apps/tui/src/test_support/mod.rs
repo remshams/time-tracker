@@ -123,6 +123,7 @@ pub(crate) fn text(status: &Status) -> &str {
 struct SpyState {
     worklog_reads: usize,
     global_worklog_reads: usize,
+    global_worklog_error: Option<ApplicationError>,
     report_reads: Vec<(DateTime<Utc>, DateTime<Utc>, DateTime<Utc>)>,
     report_result: Option<Result<ReportTotals, ApplicationError>>,
     report_tasks: Option<Vec<Task>>,
@@ -145,6 +146,10 @@ pub(crate) struct TestServiceSpy {
 impl TestServiceSpy {
     pub(crate) fn global_worklog_reads(&self) -> usize {
         self.state.borrow().global_worklog_reads
+    }
+
+    pub(crate) fn set_global_worklog_error(&self, error: ApplicationError) {
+        self.state.borrow_mut().global_worklog_error = Some(error);
     }
 
     pub(crate) fn report_reads(&self) -> Vec<(DateTime<Utc>, DateTime<Utc>, DateTime<Utc>)> {
@@ -678,6 +683,9 @@ impl WorklogQueries for TestService {
         after: Option<&GlobalWorklogCursor>,
     ) -> Result<GlobalWorklogPage, ApplicationError> {
         self.spy.state.borrow_mut().global_worklog_reads += 1;
+        if let Some(error) = self.spy.state.borrow_mut().global_worklog_error.take() {
+            return Err(error);
+        }
         self.apply_external_state();
         let mut worklogs = self.authoritative_worklogs.clone();
         worklogs.sort_by_key(|worklog| (std::cmp::Reverse(worklog.start()), worklog.id()));

@@ -237,6 +237,11 @@ mod tests {
                 Some(KeymapCommand::Local(C::Last)),
             ),
             (
+                KeyCode::Char('G'),
+                KeyModifiers::NONE,
+                Some(KeymapCommand::Local(C::Last)),
+            ),
+            (
                 KeyCode::Char('d'),
                 KeyModifiers::CONTROL,
                 Some(KeymapCommand::Local(C::PageDown)),
@@ -376,5 +381,33 @@ mod tests {
         ] {
             assert_eq!(map(&state, key(code, modifiers)), expected);
         }
+    }
+
+    #[test]
+    fn footer_hints_match_focus_availability_pagination_and_width() {
+        let mut state = state();
+        assert_eq!(
+            footer_hints(&state, 80),
+            "Tab/⇧Tab switch tabs · Enter rows · q quit"
+        );
+
+        state.focus = AllWorklogsFocus::Rows;
+        assert_eq!(
+            footer_hints(&state, 79),
+            "j/k rows · m move · o older · r refresh · Esc tabs · q quit"
+        );
+        assert_eq!(
+            footer_hints(&state, 80),
+            "j/k · gg/G · Ctrl+d/u · m move · o older · r refresh · Esc tabs · q quit"
+        );
+
+        state.pagination_invalidated = true;
+        assert_eq!(
+            footer_hints(&state, 80),
+            "j/k rows · m move · r refresh for older · Esc tabs · q quit"
+        );
+
+        state.available = false;
+        assert_eq!(footer_hints(&state, 80), "r retry · Esc tabs · q quit");
     }
 }

@@ -122,3 +122,72 @@ impl AllWorklogsState {
         self.pagination_invalidated = false;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tracker_application::TrackerSnapshot;
+    use tracker_domain::{TaskId, WorklogId};
+
+    use super::*;
+
+    fn worklog(start: i64) -> Worklog {
+        Worklog::begin(
+            WorklogId::generate(),
+            TaskId::generate(),
+            chrono::DateTime::from_timestamp(start, 0).unwrap(),
+        )
+    }
+
+    fn page(worklogs: Vec<Worklog>) -> GlobalWorklogPage {
+        GlobalWorklogPage {
+            worklogs,
+            snapshot: TrackerSnapshot {
+                task_items: Vec::new(),
+                active_worklog: None,
+            },
+            next_cursor: None,
+        }
+    }
+
+    #[test]
+    fn selection_moves_one_row_and_stops_at_each_end() {
+        let rows = vec![worklog(1), worklog(2), worklog(3)];
+        let mut state = AllWorklogsState::new(page(rows));
+        assert_eq!(state.selected_index(), Some(0));
+        state.move_selection(true);
+        assert_eq!(state.selected_index(), Some(1));
+        state.move_selection(false);
+        assert_eq!(state.selected_index(), Some(0));
+        state.move_selection(false);
+        assert_eq!(state.selected_index(), Some(0));
+        state.move_selection(true);
+        state.move_selection(true);
+        state.move_selection(true);
+        assert_eq!(state.selected_index(), Some(2));
+    }
+
+    #[test]
+    fn refresh_preserves_an_existing_selection_and_falls_back_when_it_is_gone() {
+        let first = worklog(1);
+        let second = worklog(2);
+        let mut state = AllWorklogsState::new(page(vec![first.clone(), second.clone()]));
+        state.select_index(1);
+        state.replace(
+            page(vec![first.clone(), second.clone()]),
+            state.selected_id(),
+        );
+        assert_eq!(state.selected_id(), Some(second.id()));
+        state.replace(page(vec![first.clone()]), Some(second.id()));
+        assert_eq!(state.selected_id(), Some(first.id()));
+    }
+
+    #[test]
+    fn unavailable_state_clears_rows_and_selection() {
+        let mut state = AllWorklogsState::new(page(vec![worklog(1)]));
+        state.mark_unavailable();
+        assert!(!state.available);
+        assert!(state.worklogs().is_empty());
+        assert_eq!(state.selected_id(), None);
+        assert_eq!(state.selected_index(), None);
+    }
+}

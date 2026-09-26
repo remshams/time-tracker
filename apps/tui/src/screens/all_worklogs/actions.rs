@@ -349,6 +349,135 @@ mod tests {
     }
 
     #[test]
+    fn page_motions_move_ten_rows_and_empty_pages_ignore_jumps() {
+        let source = task(1, "source");
+        let mut service = TestService::with_tasks(vec![source.clone()]);
+        service.authoritative_worklogs = (0..25).map(|start| worklog(source.id(), start)).collect();
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        app.handle(Command::TaskList(TaskListCommand::ShowAllWorklogs));
+        app.handle(Command::AllWorklogs(C::FocusRows));
+        app.handle(Command::AllWorklogs(C::PageDown));
+        assert_eq!(
+            app.shell().all_worklogs().unwrap().selected_index(),
+            Some(10)
+        );
+        app.handle(Command::AllWorklogs(C::PageDown));
+        assert_eq!(
+            app.shell().all_worklogs().unwrap().selected_index(),
+            Some(20)
+        );
+        app.handle(Command::AllWorklogs(C::PageUp));
+        assert_eq!(
+            app.shell().all_worklogs().unwrap().selected_index(),
+            Some(10)
+        );
+        app.handle(Command::AllWorklogs(C::Last));
+        assert_eq!(
+            app.shell().all_worklogs().unwrap().selected_index(),
+            Some(24)
+        );
+        app.handle(Command::AllWorklogs(C::First));
+        assert_eq!(
+            app.shell().all_worklogs().unwrap().selected_index(),
+            Some(0)
+        );
+
+        let selected = app.shell().all_worklogs().unwrap().selected_id();
+        app.shell_mut().all_worklogs_mut().unwrap().available = false;
+        app.handle(Command::AllWorklogs(C::PageDown));
+        assert_eq!(app.shell().all_worklogs().unwrap().selected_id(), selected);
+
+        let mut empty = app_in_timezone(TestService::with_tasks(vec![]), chrono_tz::UTC);
+        empty.handle(Command::TaskList(TaskListCommand::ShowAllWorklogs));
+        empty.handle(Command::AllWorklogs(C::PageDown));
+        assert_eq!(empty.shell().all_worklogs().unwrap().selected_id(), None);
+    }
+
+    #[test]
+    fn g_prefix_ends_after_the_next_row_command() {
+        let source = task(1, "source");
+        let mut service = TestService::with_tasks(vec![source.clone()]);
+        service.authoritative_worklogs = (0..3).map(|start| worklog(source.id(), start)).collect();
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        app.handle(Command::TaskList(TaskListCommand::ShowAllWorklogs));
+        app.handle(Command::AllWorklogs(C::FocusRows));
+        app.handle(Command::AllWorklogs(C::GPrefix));
+        assert!(app.shell().all_worklogs().unwrap().g_prefix);
+        app.handle(Command::AllWorklogs(C::MoveDown));
+        assert!(!app.shell().all_worklogs().unwrap().g_prefix);
+        assert_eq!(
+            app.shell().all_worklogs().unwrap().selected_index(),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn older_page_refreshes_after_history_changes_and_other_errors_leave_rows_visible() {
+        let source = task(1, "source");
+        let mut service = TestService::with_tasks(vec![source.clone()]);
+        service.authoritative_worklogs = (0..51).map(|start| worklog(source.id(), start)).collect();
+        let spy = service.spy();
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        app.handle(Command::TaskList(TaskListCommand::ShowAllWorklogs));
+        spy.set_global_worklog_error(
+            tracker_application::ApplicationError::worklog_history_changed(source.id()),
+        );
+        app.handle(Command::AllWorklogs(C::LoadOlder));
+        assert_eq!(spy.global_worklog_reads(), 3);
+        assert_eq!(
+            crate::test_support::text(app.app_view().status()),
+            "Worklogs changed and were refreshed"
+        );
+        assert_eq!(app.shell().all_worklogs().unwrap().worklogs().len(), 50);
+
+        spy.set_global_worklog_error(TestService::failure());
+        app.handle(Command::AllWorklogs(C::LoadOlder));
+        assert_eq!(spy.global_worklog_reads(), 4);
+        assert!(matches!(
+            app.app_view().status(),
+            crate::app::Status::Error(_)
+        ));
+        assert_eq!(app.shell().all_worklogs().unwrap().worklogs().len(), 50);
+    }
+
+    #[test]
+    fn backspace_changes_the_move_query_only_when_search_has_focus() {
+        let source = task(1, "source");
+        let destination = task(2, "destination");
+        let mut service = TestService::with_tasks(vec![source.clone(), destination]);
+        service.authoritative_worklogs = vec![worklog(source.id(), 10)];
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        app.handle(Command::TaskList(TaskListCommand::ShowAllWorklogs));
+        app.handle(Command::AllWorklogs(C::OpenMove));
+        app.handle(Command::AllWorklogs(C::InsertMoveQuery('d')));
+        app.handle(Command::AllWorklogs(C::InsertMoveQuery('e')));
+        app.handle(Command::AllWorklogs(C::ToggleMoveFocus));
+        app.handle(Command::AllWorklogs(C::BackspaceMoveQuery));
+        assert_eq!(
+            app.shell()
+                .all_worklogs()
+                .unwrap()
+                .move_draft
+                .as_ref()
+                .unwrap()
+                .query(),
+            "de"
+        );
+        app.handle(Command::AllWorklogs(C::ToggleMoveFocus));
+        app.handle(Command::AllWorklogs(C::BackspaceMoveQuery));
+        assert_eq!(
+            app.shell()
+                .all_worklogs()
+                .unwrap()
+                .move_draft
+                .as_ref()
+                .unwrap()
+                .query(),
+            "d"
+        );
+    }
+
+    #[test]
     fn moving_an_archived_source_keeps_the_row_selected_and_changes_its_task() {
         let source = task(1, "archived source");
         let destination = task(2, "destination");
