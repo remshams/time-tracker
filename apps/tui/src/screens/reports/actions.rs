@@ -102,8 +102,8 @@ impl<S: TrackerApplicationService> App<S> {
             return;
         }
         match command {
-            ReportCommand::ShowActive => self.leave_reports(TaskView::Active),
             ReportCommand::ShowArchived => self.leave_reports(TaskView::Archived),
+            ReportCommand::ShowAllWorklogs => self.open_all_worklogs(),
             ReportCommand::MoveUp
             | ReportCommand::MoveDown
             | ReportCommand::First
@@ -598,7 +598,10 @@ mod tests {
         newly_active.restore(at(200));
         spy.set_report_tasks(vec![newly_archived, newly_active]);
         app.refresh_reports_now();
-        app.handle(Command::Reports(ReportCommand::ShowActive));
+        app.handle(Command::Reports(ReportCommand::ShowAllWorklogs));
+        app.handle(Command::AllWorklogs(
+            crate::screens::AllWorklogsCommand::ShowActive,
+        ));
         assert_eq!(app.shell().task_list().selection(), Some(archived.id()));
         app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
         assert_eq!(app.shell().task_list().selection(), Some(active.id()));

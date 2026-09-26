@@ -23,7 +23,7 @@ fn top_tabs(key: KeyEvent) -> Option<KeymapCommand<ReportCommand>> {
         return None;
     }
     let command = match key.code {
-        KeyCode::Tab => ReportCommand::ShowActive,
+        KeyCode::Tab => ReportCommand::ShowAllWorklogs,
         KeyCode::BackTab => ReportCommand::ShowArchived,
         KeyCode::Enter | KeyCode::Char('j') | KeyCode::Down => ReportCommand::FocusPresets,
         KeyCode::Char('q') | KeyCode::Esc => return Some(KeymapCommand::Quit),
@@ -311,7 +311,7 @@ mod tests {
         );
         assert_eq!(
             mapped(&state, KeyCode::Tab),
-            Some(Command::Reports(ReportCommand::ShowActive))
+            Some(Command::Reports(ReportCommand::ShowAllWorklogs))
         );
         assert_eq!(
             mapped(&state, KeyCode::BackTab),
