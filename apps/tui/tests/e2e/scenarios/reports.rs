@@ -540,6 +540,16 @@ fn reports_adopt_external_tracking_and_return_to_current_active_tasks() {
                 .is_some_and(|row| row.starts_with(&selected_report_task))
     });
     tt.press(Key::Esc);
+    tt.press_and_wait(
+        Key::Tab,
+        "the external worklog in the global tab",
+        |screen| {
+            let page = TimeTrackerPage::new(screen.clone());
+            page.all_worklogs_panel().is_shown()
+                && page.all_worklogs_panel().row_count() > 0
+                && page.all_worklogs_panel().row(0).task_name() == "External task"
+        },
+    );
     tt.press_and_wait(Key::Tab, "the refreshed active task list", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         let panel = page.task_panel();
