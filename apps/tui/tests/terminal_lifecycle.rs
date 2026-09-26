@@ -205,9 +205,17 @@ fn baseline_termios() -> libc::termios {
 /// `argv` and `envp` are built before the fork. After the fork the child
 /// performs only async-signal-safe calls: `execve`, and `_exit` if the
 /// exec fails. It never touches the Rust runtime of the parent process.
-fn spawn_pty(home: &Path, baseline: &libc::termios) -> PtyChild {
+#[allow(clippy::unnecessary_mut_passed)] // macOS forkpty requires a mutable termios pointer.
+fn spawn_pty(home: &Path, baseline: &libc::termios, arguments: &[&str]) -> PtyChild {
     let binary = CString::new(env!("CARGO_BIN_EXE_tt")).expect("binary path has no NUL");
-    let argv = [binary.as_ptr(), c"tt".as_ptr(), std::ptr::null::<c_char>()];
+    let arguments: Vec<CString> = arguments
+        .iter()
+        .map(|argument| CString::new(*argument).expect("test argument has no NUL"))
+        .collect();
+    let argv: Vec<*const c_char> = std::iter::once(binary.as_ptr())
+        .chain(arguments.iter().map(|argument| argument.as_ptr()))
+        .chain(std::iter::once(std::ptr::null()))
+        .collect();
     let env_entries = child_env(home);
     let envp: Vec<*const c_char> = env_entries
         .iter()
@@ -415,7 +423,7 @@ fn tt_quits_cleanly_and_leaves_the_terminal_in_cooked_mode() {
     // The child starts from a captured known baseline, so a complete
     // restoration brings the pty back to exactly that baseline.
     let baseline = baseline_termios();
-    let mut pty = spawn_pty(&home, &baseline);
+    let mut pty = spawn_pty(&home, &baseline, &[]);
     configure_pty(pty.master());
 
     // Startup keeps the generous run limit; the first frame proves the
@@ -476,5 +484,41 @@ fn tt_quits_cleanly_and_leaves_the_terminal_in_cooked_mode() {
         differences.is_empty(),
         "the pty must be left in cooked mode; {}",
         differences.join(", ")
+    );
+}
+
+#[test]
+fn remote_mode_disables_focus_reporting_on_exit() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    std::fs::create_dir(&home).unwrap();
+    let baseline = baseline_termios();
+    let mut pty = spawn_pty(&home, &baseline, &["--server", "http://127.0.0.1:0/"]);
+    configure_pty(pty.master());
+
+    let mut output = Vec::new();
+    read_until_contains(
+        pty.master(),
+        Instant::now() + RUN_LIMIT,
+        b"Time Tracker",
+        &mut output,
+    );
+    write_all_pty(pty.master(), b"q");
+    drain_pty(pty.master(), Instant::now() + RESPONSE_LIMIT, &mut output);
+    let status = pty.wait_for_exit(Instant::now() + RESPONSE_LIMIT).unwrap();
+    pty.close_master().unwrap();
+
+    assert_eq!(exit_code(status), Some(0));
+    assert!(
+        output
+            .windows(b"\x1b[?1004h".len())
+            .any(|bytes| bytes == b"\x1b[?1004h"),
+        "remote mode did not enable focus reporting"
+    );
+    assert!(
+        output
+            .windows(b"\x1b[?1004l".len())
+            .any(|bytes| bytes == b"\x1b[?1004l"),
+        "remote mode did not disable focus reporting"
     );
 }
