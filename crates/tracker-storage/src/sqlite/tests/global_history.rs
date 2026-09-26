@@ -1,13 +1,13 @@
 use super::*;
 
-fn seed_global_history(repository: &SqliteRepository) {
+fn seed_global_history(repository: &SqliteRepository, count: u32) {
     repository
         .create_task(named_task(1, "active task"))
         .unwrap();
     repository
         .create_task(named_task(2, "archived task"))
         .unwrap();
-    for tag in (1..=55).rev() {
+    for tag in (1..=count).rev() {
         let task = if tag % 2 == 0 { task_id(2) } else { task_id(1) };
         repository
             .connection()
@@ -27,7 +27,7 @@ fn seed_global_history(repository: &SqliteRepository) {
 #[test]
 fn global_history_pages_cross_tasks_and_archived_history_without_losing_ties() {
     let repository = repo();
-    seed_global_history(&repository);
+    seed_global_history(&repository, 55);
     let first = repository.global_worklog_page(None).unwrap();
     assert_eq!(first.worklogs.len(), WORKLOG_PAGE_SIZE);
     assert_eq!(first.worklogs.first().unwrap().id(), worklog_id(1));
@@ -51,10 +51,20 @@ fn global_history_pages_cross_tasks_and_archived_history_without_losing_ties() {
 }
 
 #[test]
+fn an_exactly_full_global_page_has_no_continuation() {
+    let repository = repo();
+    seed_global_history(&repository, WORKLOG_PAGE_SIZE as u32);
+
+    let page = repository.global_worklog_page(None).unwrap();
+    assert_eq!(page.worklogs.len(), WORKLOG_PAGE_SIZE);
+    assert!(page.next_cursor.is_none());
+}
+
+#[test]
 fn global_cursor_rejects_other_client_insert_update_and_delete() {
     let dir = tempfile::tempdir().unwrap();
     let reader = file_repo(&dir);
-    seed_global_history(&reader);
+    seed_global_history(&reader, 55);
     let writer = file_repo(&dir);
 
     let cursor = reader
