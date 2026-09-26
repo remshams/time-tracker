@@ -60,6 +60,11 @@ impl ShellState {
         self.copy_confirmation_deadline = None;
     }
 
+    pub(crate) fn clear_status(&mut self) {
+        self.status = Status::Empty;
+        self.copy_confirmation_deadline = None;
+    }
+
     pub(crate) fn copied_to_clipboard(&mut self) {
         self.copied_to_clipboard_at(Instant::now());
     }

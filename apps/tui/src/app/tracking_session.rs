@@ -119,7 +119,7 @@ impl TrackingSession {
 enum Clock {
     System,
     #[cfg(test)]
-    Controlled(std::rc::Rc<std::cell::RefCell<ControlledClock>>),
+    Controlled(std::sync::Arc<std::sync::Mutex<ControlledClock>>),
 }
 
 impl Clock {
@@ -131,7 +131,7 @@ impl Clock {
         match self {
             Self::System => Utc::now(),
             #[cfg(test)]
-            Self::Controlled(clock) => clock.borrow().wall_clock,
+            Self::Controlled(clock) => clock.lock().expect("test clock lock").wall_clock,
         }
     }
 
@@ -139,13 +139,13 @@ impl Clock {
         match self {
             Self::System => Instant::now(),
             #[cfg(test)]
-            Self::Controlled(clock) => clock.borrow().monotonic_clock,
+            Self::Controlled(clock) => clock.lock().expect("test clock lock").monotonic_clock,
         }
     }
 
     #[cfg(test)]
     fn controlled(wall_clock: DateTime<Utc>) -> (Self, TestClock) {
-        let clock = std::rc::Rc::new(std::cell::RefCell::new(ControlledClock {
+        let clock = std::sync::Arc::new(std::sync::Mutex::new(ControlledClock {
             wall_clock,
             monotonic_clock: Instant::now(),
         }));
@@ -163,17 +163,17 @@ struct ControlledClock {
 #[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct TestClock {
-    clock: std::rc::Rc<std::cell::RefCell<ControlledClock>>,
+    clock: std::sync::Arc<std::sync::Mutex<ControlledClock>>,
 }
 
 #[cfg(test)]
 impl TestClock {
     pub(crate) fn advance_monotonic(&self, elapsed: Duration) {
-        let mut clock = self.clock.borrow_mut();
+        let mut clock = self.clock.lock().expect("test clock lock");
         clock.monotonic_clock += elapsed;
     }
 
     pub(crate) fn set_wall_clock(&self, wall_clock: DateTime<Utc>) {
-        self.clock.borrow_mut().wall_clock = wall_clock;
+        self.clock.lock().expect("test clock lock").wall_clock = wall_clock;
     }
 }
