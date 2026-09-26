@@ -10,10 +10,11 @@ pub(crate) use chrono::{
     DateTime, FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, TimeDelta, TimeZone, Utc,
 };
 pub(crate) use tracker_application::{
-    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, ReportQueries,
-    ReportTotals, RepositoryError, SetActiveTaskOutcome, TaskListItem, TaskOperations,
-    TaskOrdering, TaskQueries, TrackerApplication, TrackerApplicationService, TrackingOperations,
-    WorklogCursor, WorklogOperations, WorklogPage, WorklogPageSnapshot, WorklogQueries,
+    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, GlobalWorklogCursor,
+    GlobalWorklogPage, ReportQueries, ReportTotals, RepositoryError, SetActiveTaskOutcome,
+    TaskListItem, TaskOperations, TaskOrdering, TaskQueries, TrackerApplication,
+    TrackerApplicationService, TrackerSnapshot, TrackingOperations, WorklogCursor,
+    WorklogOperations, WorklogPage, WorklogPageSnapshot, WorklogQueries,
 };
 pub(crate) use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, TrackingState, Worklog, WorklogCorrectionError,
@@ -121,6 +122,7 @@ pub(crate) fn text(status: &Status) -> &str {
 #[derive(Default)]
 struct SpyState {
     worklog_reads: usize,
+    global_worklog_reads: usize,
     report_reads: Vec<(DateTime<Utc>, DateTime<Utc>, DateTime<Utc>)>,
     report_result: Option<Result<ReportTotals, ApplicationError>>,
     report_tasks: Option<Vec<Task>>,
@@ -141,6 +143,10 @@ pub(crate) struct TestServiceSpy {
 }
 
 impl TestServiceSpy {
+    pub(crate) fn global_worklog_reads(&self) -> usize {
+        self.state.borrow().global_worklog_reads
+    }
+
     pub(crate) fn report_reads(&self) -> Vec<(DateTime<Utc>, DateTime<Utc>, DateTime<Utc>)> {
         self.state.borrow().report_reads.clone()
     }
@@ -667,6 +673,61 @@ impl WorklogOperations for TestService {
 }
 
 impl WorklogQueries for TestService {
+    fn all_worklogs(
+        &mut self,
+        after: Option<&GlobalWorklogCursor>,
+    ) -> Result<GlobalWorklogPage, ApplicationError> {
+        self.spy.state.borrow_mut().global_worklog_reads += 1;
+        self.apply_external_state();
+        let mut worklogs = self.authoritative_worklogs.clone();
+        worklogs.sort_by_key(|worklog| (std::cmp::Reverse(worklog.start()), worklog.id()));
+        if let Some(cursor) = after {
+            worklogs.retain(|worklog| {
+                (std::cmp::Reverse(worklog.start()), worklog.id())
+                    > (std::cmp::Reverse(cursor.start), cursor.id)
+            });
+        }
+        let has_next = worklogs.len() > 50;
+        worklogs.truncate(50);
+        let next_cursor = has_next.then(|| {
+            let last = worklogs.last().expect("a full page has a last worklog");
+            GlobalWorklogCursor {
+                start: last.start(),
+                id: last.id(),
+                revision: 0,
+            }
+        });
+        let task_items = self
+            .tasks
+            .iter()
+            .cloned()
+            .map(|task| {
+                let latest_work_start = self
+                    .authoritative_worklogs
+                    .iter()
+                    .filter(|worklog| worklog.task_id() == task.id())
+                    .map(Worklog::start)
+                    .max();
+                TaskListItem {
+                    task,
+                    latest_work_start,
+                }
+            })
+            .collect();
+        Ok(GlobalWorklogPage {
+            worklogs,
+            snapshot: TrackerSnapshot {
+                task_items,
+                active_worklog: self
+                    .authoritative_worklogs
+                    .iter()
+                    .find(|worklog| worklog.is_active())
+                    .cloned(),
+            },
+            next_cursor,
+        })
+    }
+
     fn worklogs_for_task(
         &mut self,
         _task_id: TaskId,
