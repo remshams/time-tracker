@@ -17,7 +17,6 @@ impl<S: TrackerApplicationService> App<S> {
                 self.shell_mut()
                     .open_all_worklogs(AllWorklogsState::new(page));
                 self.sync_from_application(false);
-                self.shell_mut().info("Worklogs");
             }
             Err(error) => self.shell_mut().error(application_error_text(&error)),
         }
@@ -307,6 +306,7 @@ mod tests {
         let saved = app.shell().task_list().selection();
         app.handle(Command::TaskList(TaskListCommand::ShowAllWorklogs));
         assert_eq!(app.shell().screen(), Screen::AllWorklogs);
+        assert_eq!(app.app_view().status(), &crate::app::Status::Empty);
         assert_eq!(
             app.command_for(key(KeyCode::Tab)),
             Some(Command::AllWorklogs(C::ShowActive))
