@@ -1,0 +1,11 @@
+[package]
+name = "tracker-protocol"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+tracker-application = { path = "../tracker-application" }
+tracker-domain = { path = "../tracker-domain" }
