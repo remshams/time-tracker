@@ -17,14 +17,14 @@ pub(crate) fn map(state: &ReportState, key: KeyEvent) -> Option<KeymapCommand<Re
 
 fn top_tabs(key: KeyEvent) -> Option<KeymapCommand<ReportCommand>> {
     if key.modifiers == KeyModifiers::SHIFT && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
-        return Some(KeymapCommand::Local(ReportCommand::ShowArchived));
+        return Some(KeymapCommand::Local(ReportCommand::ShowAllWorklogs));
     }
     if key.modifiers != KeyModifiers::NONE {
         return None;
     }
     let command = match key.code {
-        KeyCode::Tab => ReportCommand::ShowAllWorklogs,
-        KeyCode::BackTab => ReportCommand::ShowArchived,
+        KeyCode::Tab => ReportCommand::ShowActive,
+        KeyCode::BackTab => ReportCommand::ShowAllWorklogs,
         KeyCode::Enter | KeyCode::Char('j') | KeyCode::Down => ReportCommand::FocusPresets,
         KeyCode::Char('q') | KeyCode::Esc => return Some(KeymapCommand::Quit),
         _ => return None,
@@ -311,11 +311,11 @@ mod tests {
         );
         assert_eq!(
             mapped(&state, KeyCode::Tab),
-            Some(Command::Reports(ReportCommand::ShowAllWorklogs))
+            Some(Command::Reports(ReportCommand::ShowActive))
         );
         assert_eq!(
             mapped(&state, KeyCode::BackTab),
-            Some(Command::Reports(ReportCommand::ShowArchived))
+            Some(Command::Reports(ReportCommand::ShowAllWorklogs))
         );
         state.focus = ReportFocus::Rows;
         assert_eq!(

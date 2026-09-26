@@ -102,7 +102,7 @@ impl<S: TrackerApplicationService> App<S> {
             return;
         }
         match command {
-            ReportCommand::ShowArchived => self.leave_reports(TaskView::Archived),
+            ReportCommand::ShowActive => self.leave_reports(TaskView::Active),
             ReportCommand::ShowAllWorklogs => self.open_all_worklogs(),
             ReportCommand::MoveUp
             | ReportCommand::MoveDown
@@ -430,9 +430,8 @@ mod tests {
         assert_eq!(spy.report_reads().len(), 2);
         app.handle(Command::Reports(ReportCommand::NextPeriod));
         assert_eq!(app.shell().report().unwrap().from, original_day);
-        app.handle(Command::Reports(ReportCommand::ShowArchived));
-        assert_eq!(app.shell().task_list().view(), TaskView::Archived);
-        app.handle(Command::TaskList(TaskListCommand::ShowActiveTasks));
+        app.handle(Command::Reports(ReportCommand::ShowActive));
+        assert_eq!(app.shell().task_list().view(), TaskView::Active);
         assert_eq!(app.shell().task_list().selection(), Some(selected.id()));
     }
 
@@ -600,11 +599,12 @@ mod tests {
         app.refresh_reports_now();
         app.handle(Command::Reports(ReportCommand::ShowAllWorklogs));
         app.handle(Command::AllWorklogs(
-            crate::screens::AllWorklogsCommand::ShowActive,
+            crate::screens::AllWorklogsCommand::ShowArchived,
         ));
-        assert_eq!(app.shell().task_list().selection(), Some(archived.id()));
-        app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
         assert_eq!(app.shell().task_list().selection(), Some(active.id()));
+        app.handle(Command::TaskList(TaskListCommand::ShowReports));
+        app.handle(Command::Reports(ReportCommand::ShowActive));
+        assert_eq!(app.shell().task_list().selection(), Some(archived.id()));
     }
 
     #[test]

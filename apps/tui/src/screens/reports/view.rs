@@ -124,7 +124,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
         );
         frame.render_stateful_widget(list, list_area, &mut selection);
     }
-    render_tabs(frame, area, 2, state.focus == ReportFocus::TopTabs);
+    render_tabs(frame, area, 3, state.focus == ReportFocus::TopTabs);
     match &state.mode {
         ReportMode::Custom { from, to, focus_to } => {
             render_custom(frame, area, from, to, *focus_to)
@@ -225,6 +225,8 @@ mod tests {
             .draw(|frame| render(frame, frame.area(), &state))
             .unwrap();
         let buffer = terminal.backend().buffer();
+        assert!(buffer[(33, 0)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(22, 0)].modifier.contains(Modifier::REVERSED));
         assert_eq!(buffer[(1, 1)].symbol(), " ");
         assert_eq!(buffer[(2, 2)].symbol(), "P");
         assert_eq!(buffer[(1, 3)].symbol(), " ");

@@ -9,7 +9,7 @@ pub use state::{ReportFocus, ReportMode, ReportPreset, ReportState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReportCommand {
-    ShowArchived,
+    ShowActive,
     ShowAllWorklogs,
     MoveUp,
     MoveDown,
