@@ -1,6 +1,7 @@
 //! SQLite repository implementation.
 
 mod mapping;
+mod reports;
 mod tasks;
 mod tracking;
 mod worklogs;
@@ -11,8 +12,9 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags};
 use tracker_application::{
-    RepositoryError, TaskRepository, TrackerSnapshot, TrackingRepository, WorklogCorrection,
-    WorklogCursor, WorklogDeletion, WorklogMove, WorklogPage, WorklogRepository,
+    GlobalWorklogCursor, GlobalWorklogPage, ReportRead, ReportRepository, RepositoryError,
+    TaskRepository, TrackerSnapshot, TrackingRepository, WorklogCorrection, WorklogCursor,
+    WorklogDeletion, WorklogMove, WorklogPage, WorklogRepository,
 };
 use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
 
@@ -105,6 +107,17 @@ impl TaskRepository for SqliteRepository {
     }
 }
 
+impl ReportRepository for SqliteRepository {
+    fn report_read(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportRead, RepositoryError> {
+        SqliteRepository::report_read(self, start, end, now).map_err(Into::into)
+    }
+}
+
 impl TrackingRepository for SqliteRepository {
     fn insert_worklog(&self, worklog: &Worklog) -> Result<(), RepositoryError> {
         SqliteRepository::insert_worklog(self, worklog).map_err(Into::into)
@@ -132,6 +145,13 @@ impl TrackingRepository for SqliteRepository {
 }
 
 impl WorklogRepository for SqliteRepository {
+    fn global_worklog_page(
+        &self,
+        after: Option<&GlobalWorklogCursor>,
+    ) -> Result<GlobalWorklogPage, RepositoryError> {
+        SqliteRepository::global_worklog_page(self, after).map_err(Into::into)
+    }
+
     fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, RepositoryError> {
         SqliteRepository::find_worklog(self, id).map_err(Into::into)
     }

@@ -12,6 +12,14 @@ impl<S: TrackerApplicationService> App<S> {
         match command {
             WorklogHistoryCommand::MoveUp => self.move_history_up(),
             WorklogHistoryCommand::MoveDown => self.move_history_down(),
+            WorklogHistoryCommand::First
+            | WorklogHistoryCommand::Last
+            | WorklogHistoryCommand::PageUp
+            | WorklogHistoryCommand::PageDown => self.jump_history(command),
+            WorklogHistoryCommand::GPrefix => self
+                .history_state_mut()
+                .expect("history is open")
+                .set_g_prefix(true),
             WorklogHistoryCommand::OpenCorrection => self.open_correction(),
             WorklogHistoryCommand::OpenDeletion => self.open_deletion(),
             WorklogHistoryCommand::OpenMove => self.open_move(),
@@ -48,6 +56,33 @@ impl<S: TrackerApplicationService> App<S> {
             }
             WorklogHistoryCommand::BackspaceMoveQuery => self.backspace_move_query(),
         }
+        if command != WorklogHistoryCommand::GPrefix
+            && let Some(history) = self.history_state_mut()
+        {
+            history.set_g_prefix(false);
+        }
+    }
+
+    fn jump_history(&mut self, command: WorklogHistoryCommand) {
+        if !self.history_is_normal() {
+            return;
+        }
+        let history = self.history().expect("history is open");
+        if !history.is_available() || history.worklogs().is_empty() {
+            return;
+        }
+        let len = history.worklogs().len();
+        let index = history.selected_index().unwrap_or(0);
+        let target = match command {
+            WorklogHistoryCommand::First => 0,
+            WorklogHistoryCommand::Last => len - 1,
+            WorklogHistoryCommand::PageUp => index.saturating_sub(10),
+            WorklogHistoryCommand::PageDown => (index + 10).min(len - 1),
+            _ => return,
+        };
+        self.history_mut()
+            .expect("history is open")
+            .select_index(target);
     }
 
     pub(crate) fn open_history(&mut self) {
@@ -93,6 +128,7 @@ impl<S: TrackerApplicationService> App<S> {
     pub(crate) fn back_to_task_list(&mut self) {
         if self.history_is_normal() {
             self.shell_mut().back_to_task_list();
+            self.refresh_reports_now();
         }
     }
 
@@ -274,8 +310,27 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
-    pub(super) fn sync_tracking_after_history_reload(&mut self) {
+    pub(crate) fn sync_tracking_after_history_reload(&mut self) {
         let tracking = self.application_mut().current_tracking().clone();
         self.tracking_mut().sync_after_history_reload(tracking);
+    }
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use crate::command::Command;
+    use crate::screens::task_list::TaskListCommand;
+    use crate::screens::worklog_history::WorklogHistoryCommand;
+    use crate::test_support::app_with;
+
+    #[test]
+    fn paging_an_empty_history_keeps_it_unselected() {
+        let mut app = app_with(&["empty task"]);
+        app.handle(Command::TaskList(TaskListCommand::OpenHistory));
+        app.handle(Command::WorklogHistory(WorklogHistoryCommand::Last));
+        assert_eq!(
+            app.shell().history().unwrap().history().selected_index(),
+            None
+        );
     }
 }

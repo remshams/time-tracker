@@ -17,8 +17,20 @@ impl<S: TrackerApplicationService> App<S> {
         match command {
             TaskListCommand::MoveUp => self.move_task_up(),
             TaskListCommand::MoveDown => self.move_task_down(),
+            TaskListCommand::First
+            | TaskListCommand::Last
+            | TaskListCommand::PageUp
+            | TaskListCommand::PageDown => self.jump_task(command),
+            TaskListCommand::GPrefix => self.shell_mut().task_list_mut().set_g_prefix(true),
             TaskListCommand::ShowActiveTasks => self.show_tasks(TaskView::Active),
             TaskListCommand::ShowArchivedTasks => self.show_tasks(TaskView::Archived),
+            TaskListCommand::ShowReports => self.open_reports(),
+            TaskListCommand::ShowAllWorklogs => self.open_all_worklogs(),
+            TaskListCommand::CopySelectedName => {
+                if let Some(name) = self.selected_task().map(|task| task.name().to_string()) {
+                    self.copy_text(&name);
+                }
+            }
             TaskListCommand::CycleOrdering => self.cycle_ordering(),
             TaskListCommand::OpenSearch => self.open_task_search(),
             TaskListCommand::CommitSearch => self.commit_task_search(),
@@ -50,6 +62,37 @@ impl<S: TrackerApplicationService> App<S> {
             }
             TaskListCommand::OpenHistory => self.open_history(),
         }
+        if command != TaskListCommand::GPrefix {
+            self.shell_mut().task_list_mut().set_g_prefix(false);
+        }
+    }
+
+    fn jump_task(&mut self, command: TaskListCommand) {
+        if !self.task_list_is_normal() {
+            return;
+        }
+        let list = self.shell().task_list();
+        let visible = self
+            .catalog()
+            .visible_tasks(list.view(), list.search_query());
+        if visible.is_empty() {
+            return;
+        }
+        let index = list
+            .selection()
+            .and_then(|id| visible.iter().position(|task| task.id() == id))
+            .unwrap_or(0);
+        let target = match command {
+            TaskListCommand::First => 0,
+            TaskListCommand::Last => visible.len() - 1,
+            TaskListCommand::PageUp => index.saturating_sub(10),
+            TaskListCommand::PageDown => (index + 10).min(visible.len() - 1),
+            _ => return,
+        };
+        let selected = visible[target].id();
+        self.shell_mut()
+            .task_list_mut()
+            .set_selection(Some(selected));
     }
 
     fn task_list_is_normal(&self) -> bool {
@@ -378,5 +421,30 @@ fn task_name_error_text(error: TaskNameError) -> String {
             "The task name must be at most {} characters",
             TaskName::MAX_LEN
         ),
+    }
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use crate::command::Command;
+    use crate::screens::task_list::{TaskListCommand, TaskView};
+    use crate::test_support::{TestService, app_in_timezone, task};
+
+    #[test]
+    fn page_motion_uses_the_selected_task_as_its_start() {
+        let tasks = (1..=25).map(|id| task(id, &format!("task {id}"))).collect();
+        let service = TestService::with_tasks(tasks);
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        let ids: Vec<_> = app
+            .catalog()
+            .visible_tasks(TaskView::Active, None)
+            .iter()
+            .map(|task| task.id())
+            .collect();
+        app.shell_mut().task_list_mut().set_selection(Some(ids[12]));
+        app.handle(Command::TaskList(TaskListCommand::PageUp));
+        assert_eq!(app.shell().task_list().selection(), Some(ids[2]));
+        app.handle(Command::TaskList(TaskListCommand::PageDown));
+        assert_eq!(app.shell().task_list().selection(), Some(ids[12]));
     }
 }

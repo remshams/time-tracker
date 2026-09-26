@@ -153,6 +153,10 @@ impl<'a> AppView<'a> {
             .map(|task| task.name().as_str())
     }
 
+    pub(crate) fn task_name(self, id: TaskId) -> Option<&'a str> {
+        self.catalog.task(id).map(|task| task.name().as_str())
+    }
+
     pub(crate) fn history_row_duration(self, worklog: &Worklog) -> Duration {
         self.tracking.row_duration(worklog)
     }

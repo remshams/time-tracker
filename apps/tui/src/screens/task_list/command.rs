@@ -7,10 +7,18 @@ pub(crate) enum TaskListCommand {
     MoveUp,
     /// Move the task selection down one row.
     MoveDown,
+    First,
+    Last,
+    PageUp,
+    PageDown,
+    GPrefix,
     /// Show the list of active tasks.
     ShowActiveTasks,
     /// Show the list of archived tasks.
     ShowArchivedTasks,
+    ShowReports,
+    ShowAllWorklogs,
+    CopySelectedName,
     /// Open the worklog history of the selected task.
     OpenHistory,
     /// Cycle the shared task-list ordering.

@@ -32,7 +32,7 @@ fn tt_seeds_the_database_renders_the_task_list_and_quits_on_q() {
                     "Fix the coffee machine".to_owned(),
                     "Plan Friday's demo".to_owned(),
                 ]
-            && page.status_bar().text() == "Ready"
+            && page.status_bar().text().is_empty()
             && page.footer().hints_open_history()
             && page.footer().hints_quit()
     });
@@ -67,8 +67,8 @@ fn tt_seeds_the_database_renders_the_task_list_and_quits_on_q() {
     );
     assert_eq!(
         page.status_bar().text(),
-        "Ready",
-        "the fresh app reports readiness:\n{}",
+        "",
+        "the fresh app leaves the status line empty:\n{}",
         page.screen()
     );
     // Every active-view action the footer advertises, asserted per action
@@ -227,7 +227,7 @@ fn an_existing_custom_database_is_shown_as_is_without_reseeding() {
         page.header().is_idle()
             && page.task_panel().task_names()
                 == ["Ship the beta".to_owned(), "Water the plants".to_owned()]
-            && page.status_bar().text() == "Ready"
+            && page.status_bar().text().is_empty()
             && page.footer().hints_quit()
     });
     // The rendered view is compared against fixed names, not against

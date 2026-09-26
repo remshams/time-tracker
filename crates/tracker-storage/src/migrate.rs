@@ -281,6 +281,28 @@ fn apply_active_worklog_delete_guard(transaction: &Transaction<'_>) -> Result<()
     Ok(())
 }
 
+/// Tracks writes that can invalidate a global worklog page cursor.
+fn apply_global_worklog_revision(transaction: &Transaction<'_>) -> Result<(), StorageError> {
+    transaction.execute_batch(
+        "CREATE TABLE global_worklog_revision (
+             id INTEGER PRIMARY KEY CHECK (id = 1),
+             revision INTEGER NOT NULL
+         ) STRICT;
+         INSERT INTO global_worklog_revision (id, revision) VALUES (1, 0);
+         CREATE INDEX worklogs_global_start ON worklogs (start_us DESC, id ASC);
+         CREATE TRIGGER worklogs_bump_global_revision_insert
+         AFTER INSERT ON worklogs
+         BEGIN UPDATE global_worklog_revision SET revision = revision + 1 WHERE id = 1; END;
+         CREATE TRIGGER worklogs_bump_global_revision_update
+         AFTER UPDATE ON worklogs
+         BEGIN UPDATE global_worklog_revision SET revision = revision + 1 WHERE id = 1; END;
+         CREATE TRIGGER worklogs_bump_global_revision_delete
+         AFTER DELETE ON worklogs
+         BEGIN UPDATE global_worklog_revision SET revision = revision + 1 WHERE id = 1; END;",
+    )?;
+    Ok(())
+}
+
 type Migration = fn(&Transaction<'_>) -> Result<(), StorageError>;
 
 /// The migrations in order; index plus one is the version each one produces.
@@ -290,6 +312,7 @@ const MIGRATIONS: &[Migration] = &[
     apply_worklog_overlap,
     apply_indexed_worklog_predecessor,
     apply_active_worklog_delete_guard,
+    apply_global_worklog_revision,
 ];
 
 /// The newest schema version this build understands.
@@ -325,7 +348,7 @@ mod tests {
 
     #[test]
     fn latest_version_counts_the_scripts() {
-        assert_eq!(LATEST_VERSION, 5);
+        assert_eq!(LATEST_VERSION, 6);
     }
 
     #[test]

@@ -58,6 +58,18 @@ impl TuiDriver {
     /// cargo-llvm-cov, so the child's execution counts toward the measured
     /// coverage.
     pub(crate) fn spawn_in_timezone(home: &Path, timezone: &str) -> Self {
+        Self::spawn_with_report_clock(home, timezone, None, None, None)
+    }
+
+    /// Launches `tt` with deterministic report time and a private clipboard
+    /// output file for reporting scenarios.
+    pub(crate) fn spawn_with_report_clock(
+        home: &Path,
+        timezone: &str,
+        now: Option<&str>,
+        fake_bin: Option<&Path>,
+        clipboard_file: Option<&Path>,
+    ) -> Self {
         let mut builder = Terminal::builder()
             .size(COLS, ROWS)
             .timeout(STARTUP_LIMIT)
@@ -65,6 +77,16 @@ impl TuiDriver {
             .env("HOME", home)
             .env("SHELL", "/bin/sh")
             .env("TZ", timezone);
+        if let Some(now) = now {
+            builder = builder.env("TT_TEST_NOW", now);
+        }
+        if let Some(path) = fake_bin {
+            builder = builder.env("PATH", path);
+        }
+        if let Some(path) = clipboard_file {
+            builder = builder.env("TT_E2E_CLIPBOARD_FILE", path);
+            builder = builder.env("TT_E2E_SHORT_COPY_NOTICE", "1");
+        }
         if let Ok(profile) = std::env::var("LLVM_PROFILE_FILE") {
             builder = builder.env("LLVM_PROFILE_FILE", profile);
         }

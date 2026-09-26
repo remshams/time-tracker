@@ -1,6 +1,102 @@
 use super::*;
 
 #[test]
+fn global_pages_include_archived_tasks_and_keep_tied_rows_in_id_order() {
+    let alpha = task(1, "alpha");
+    let mut archived = task(2, "archived");
+    assert!(archived.archive(at(100)));
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), archived.clone()]);
+    {
+        let mut data = repository.0.borrow_mut();
+        for tag in (1..=55).rev() {
+            let task_id = if tag % 2 == 0 {
+                archived.id()
+            } else {
+                alpha.id()
+            };
+            data.worklogs
+                .push(completed_worklog(tag, task_id, 200, 200));
+        }
+    }
+    let mut application = TrackerApplication::load(repository).unwrap();
+    let first = application.all_worklogs(None).unwrap();
+    assert_eq!(first.worklogs.len(), WORKLOG_PAGE_SIZE);
+    assert_eq!(
+        first.worklogs.first().unwrap().id(),
+        worklog(1, alpha.id(), 200).id()
+    );
+    let second = application
+        .all_worklogs(first.next_cursor.as_ref())
+        .unwrap();
+    let ids = first
+        .worklogs
+        .iter()
+        .chain(&second.worklogs)
+        .map(Worklog::id)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ids,
+        (1..=55)
+            .map(|tag| worklog(tag, alpha.id(), 200).id())
+            .collect::<Vec<_>>()
+    );
+    assert!(second.next_cursor.is_none());
+}
+
+#[test]
+fn global_query_adopts_the_catalog_and_tracking_from_its_page() {
+    let alpha = task(1, "alpha");
+    let beta = task(2, "beta");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    {
+        let mut data = repository.0.borrow_mut();
+        data.tasks.push(TaskListItem {
+            task: beta.clone(),
+            latest_work_start: None,
+        });
+        data.worklogs.push(worklog(10, beta.id(), 200));
+    }
+    let page = application.all_worklogs(None).unwrap();
+    assert_eq!(page.snapshot.task_items.len(), 2);
+    assert_eq!(
+        application.tasks(TaskOrdering::RecentlyWorked)[0].task.id(),
+        beta.id()
+    );
+    assert!(
+        matches!(application.current_tracking(), TrackingState::Running { worklog: active } if active.task_id() == beta.id())
+    );
+}
+
+#[test]
+fn global_cursor_rejects_a_change_to_a_row_on_another_task() {
+    let alpha = task(1, "alpha");
+    let beta = task(2, "beta");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+    {
+        let mut data = repository.0.borrow_mut();
+        for tag in 1_u32..=51 {
+            let task_id = if tag % 2 == 0 { alpha.id() } else { beta.id() };
+            data.worklogs.push(completed_worklog(
+                u128::from(tag),
+                task_id,
+                i64::from(tag) * 10,
+                i64::from(tag) * 10,
+            ));
+        }
+    }
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let cursor = application.all_worklogs(None).unwrap().next_cursor.unwrap();
+    repository.0.borrow_mut().worklogs[0] = completed_worklog(1, beta.id(), 600, 600);
+    assert!(matches!(
+        application.all_worklogs(Some(&cursor)),
+        Err(ApplicationError::Repository(
+            RepositoryError::GlobalWorklogHistoryChanged
+        ))
+    ));
+}
+
+#[test]
 fn memory_repository_honors_worklog_ordering_and_write_contracts() {
     let alpha = task(1, "alpha");
     let mut archived = task(2, "archived");

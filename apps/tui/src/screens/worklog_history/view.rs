@@ -71,7 +71,12 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: AppView<'_>, state: &Wo
     }
 }
 
-fn render_move_modal(frame: &mut Frame, area: Rect, app: AppView<'_>, draft: &MoveDraft) {
+pub(crate) fn render_move_modal(
+    frame: &mut Frame,
+    area: Rect,
+    app: AppView<'_>,
+    draft: &MoveDraft,
+) {
     const VISIBLE_RESULTS: usize = 6;
     let result_count = draft.result_count();
     let selected = draft.selected_result_index();
@@ -87,7 +92,7 @@ fn render_move_modal(frame: &mut Frame, area: Rect, app: AppView<'_>, draft: &Mo
     let mut lines = vec![
         Line::from(format!(
             "Source: {} · {} → {}",
-            app.history_task_name().unwrap_or("unknown task"),
+            app.task_name(source.task_id()).unwrap_or("unknown task"),
             app.local_time(source.start()),
             source_end
         )),
@@ -160,6 +165,7 @@ fn render_body(
             area.width,
             state.task_list().view(),
             task_name,
+            state.has_report_source(),
         ))
         .border_style(if matches!(state.mode(), WorklogHistoryMode::Normal) {
             styles::focused_border()
@@ -203,10 +209,14 @@ fn render_body(
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-fn history_title(width: u16, view: TaskView, task_name: &str) -> String {
-    let source = match view {
-        TaskView::Active => "Active",
-        TaskView::Archived => "Archived",
+fn history_title(width: u16, view: TaskView, task_name: &str, from_reports: bool) -> String {
+    let source = if from_reports {
+        "Reports"
+    } else {
+        match view {
+            TaskView::Active => "Active",
+            TaskView::Archived => "Archived",
+        }
     };
     let prefix = format!("{source} › ");
     let suffix = " › Worklogs";

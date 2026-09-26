@@ -39,6 +39,7 @@ pub struct TaskListState {
     search_query: Option<String>,
     search_snapshot: Option<(Option<String>, Option<TaskId>)>,
     before_filter_selection: Option<TaskId>,
+    g_prefix: bool,
 }
 
 impl TaskListState {
@@ -51,6 +52,7 @@ impl TaskListState {
             search_query: None,
             search_snapshot: None,
             before_filter_selection: None,
+            g_prefix: false,
         }
     }
 
@@ -125,10 +127,22 @@ impl TaskListState {
     }
 
     pub(crate) fn selection(&self) -> Option<TaskId> {
-        match self.view {
+        self.selection_for(self.view)
+    }
+
+    pub(crate) fn selection_for(&self, view: TaskView) -> Option<TaskId> {
+        match view {
             TaskView::Active => self.active_selection,
             TaskView::Archived => self.archived_selection,
         }
+    }
+
+    pub(crate) fn g_prefix(&self) -> bool {
+        self.g_prefix
+    }
+
+    pub(crate) fn set_g_prefix(&mut self, value: bool) {
+        self.g_prefix = value;
     }
 
     pub(crate) fn set_selection(&mut self, selected: Option<TaskId>) {

@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use chrono::{DateTime, Utc};
@@ -29,6 +30,19 @@ struct Data {
 struct MemoryRepository(Rc<RefCell<Data>>);
 
 impl MemoryRepository {
+    fn global_revision(data: &Data) -> i64 {
+        let mut rows = data.worklogs.iter().collect::<Vec<_>>();
+        rows.sort_by_key(|worklog| worklog.id());
+        let mut digest = std::collections::hash_map::DefaultHasher::new();
+        for worklog in rows {
+            worklog.id().hash(&mut digest);
+            worklog.task_id().hash(&mut digest);
+            worklog.start().hash(&mut digest);
+            worklog.end().hash(&mut digest);
+        }
+        digest.finish() as i64
+    }
+
     fn with_tasks(tasks: Vec<Task>) -> Self {
         let items = tasks
             .into_iter()
@@ -241,6 +255,41 @@ impl TaskRepository for MemoryRepository {
     }
 }
 
+impl ReportRepository for MemoryRepository {
+    fn report_read(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportRead, RepositoryError> {
+        self.read_guard()?;
+        let data = self.0.borrow();
+        let mut rows = Vec::new();
+        for item in &data.tasks {
+            let duration = data
+                .worklogs
+                .iter()
+                .filter(|worklog| worklog.task_id() == item.task.id())
+                .map(|worklog| {
+                    let clipped_start = worklog.start().max(start);
+                    let clipped_end = worklog.end().unwrap_or(now).min(end);
+                    (clipped_end - clipped_start).max(chrono::TimeDelta::zero())
+                })
+                .sum::<chrono::TimeDelta>();
+            if duration > chrono::TimeDelta::zero() {
+                rows.push(ReportRow {
+                    task: item.task.clone(),
+                    duration,
+                });
+            }
+        }
+        Ok(ReportRead {
+            rows,
+            snapshot: Self::snapshot(&data),
+        })
+    }
+}
+
 fn has_same_task_overlap(
     worklogs: &[Worklog],
     candidate: &Worklog,
@@ -252,6 +301,49 @@ fn has_same_task_overlap(
 }
 
 impl WorklogRepository for MemoryRepository {
+    fn global_worklog_page(
+        &self,
+        after: Option<&GlobalWorklogCursor>,
+    ) -> Result<GlobalWorklogPage, RepositoryError> {
+        self.read_guard()?;
+        let data = self.0.borrow();
+        let revision = Self::global_revision(&data);
+        if after.is_some_and(|cursor| cursor.revision != revision) {
+            return Err(RepositoryError::GlobalWorklogHistoryChanged);
+        }
+        let mut worklogs = data.worklogs.clone();
+        worklogs.sort_by_key(|worklog| (std::cmp::Reverse(worklog.start()), worklog.id()));
+        let first = after.map_or(0, |cursor| {
+            worklogs
+                .iter()
+                .position(|worklog| {
+                    (std::cmp::Reverse(worklog.start()), worklog.id())
+                        > (std::cmp::Reverse(cursor.start), cursor.id)
+                })
+                .unwrap_or(worklogs.len())
+        });
+        let mut worklogs = worklogs
+            .into_iter()
+            .skip(first)
+            .take(WORKLOG_PAGE_SIZE + 1)
+            .collect::<Vec<_>>();
+        let has_next = worklogs.len() > WORKLOG_PAGE_SIZE;
+        worklogs.truncate(WORKLOG_PAGE_SIZE);
+        let next_cursor = has_next.then(|| {
+            let last = worklogs.last().expect("a full page has a last worklog");
+            GlobalWorklogCursor {
+                start: last.start(),
+                id: last.id(),
+                revision,
+            }
+        });
+        Ok(GlobalWorklogPage {
+            worklogs,
+            snapshot: Self::snapshot(&data),
+            next_cursor,
+        })
+    }
+
     fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, RepositoryError> {
         self.read_guard()?;
         Ok(self
@@ -727,6 +819,7 @@ fn ordered_names(
 
 mod error;
 mod model;
+mod reports;
 mod tasks;
 mod tracking;
 mod worklogs;

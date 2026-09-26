@@ -7,16 +7,18 @@ mod service;
 
 pub use error::{ApplicationError, ApplicationFailure, ApplicationFailureCategory};
 pub use model::{
-    ClearActiveTaskOutcome, SetActiveTaskOutcome, TaskListItem, TaskOrdering, WORKLOG_PAGE_SIZE,
-    WorklogCursor, WorklogPage, WorklogPageSnapshot,
+    ClearActiveTaskOutcome, GlobalWorklogCursor, GlobalWorklogPage, ReportRow, ReportTotals,
+    SetActiveTaskOutcome, TaskListItem, TaskOrdering, WORKLOG_PAGE_SIZE, WorklogCursor,
+    WorklogPage, WorklogPageSnapshot,
 };
 pub use repository::{
-    RepositoryError, TaskRepository, TrackerRepository, TrackerSnapshot, TrackingRepository,
-    WorklogCorrection, WorklogDeletion, WorklogMove, WorklogRepository,
+    ReportRead, ReportRepository, RepositoryError, TaskRepository, TrackerRepository,
+    TrackerSnapshot, TrackingRepository, WorklogCorrection, WorklogDeletion, WorklogMove,
+    WorklogRepository,
 };
 pub use service::{
-    TaskOperations, TaskQueries, TrackerApplication, TrackerApplicationService, TrackingOperations,
-    WorklogOperations, WorklogQueries,
+    ReportQueries, TaskOperations, TaskQueries, TrackerApplication, TrackerApplicationService,
+    TrackingOperations, WorklogOperations, WorklogQueries,
 };
 
 #[cfg(test)]

@@ -1,9 +1,13 @@
+pub mod all_worklogs;
+pub mod reports;
 pub mod task_list;
 pub mod worklog_history;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::command::Command;
+pub(crate) use reports::ReportCommand;
+pub use reports::ReportState;
 pub(crate) use task_list::TaskListCommand;
 pub use task_list::{TaskListState, TaskView};
 #[cfg(test)]
@@ -18,6 +22,8 @@ pub use worklog_history::{History, WorklogHistoryMode, WorklogHistoryState};
 pub enum Screen {
     TaskList,
     WorklogHistory,
+    Reports,
+    AllWorklogs,
 }
 
 /// The only valid stored screen states.
@@ -25,6 +31,8 @@ pub enum Screen {
 pub enum ScreenState {
     TaskList(TaskListState),
     WorklogHistory(Box<WorklogHistoryState>),
+    Reports(Box<ReportState>),
+    AllWorklogs(Box<AllWorklogsState>),
 }
 
 impl ScreenState {
@@ -32,6 +40,8 @@ impl ScreenState {
         match self {
             Self::TaskList(_) => Screen::TaskList,
             Self::WorklogHistory(_) => Screen::WorklogHistory,
+            Self::Reports(_) => Screen::Reports,
+            Self::AllWorklogs(_) => Screen::AllWorklogs,
         }
     }
 }
@@ -41,6 +51,8 @@ impl ScreenState {
 pub(crate) enum InputState<'a> {
     TaskList(&'a TaskListState),
     WorklogHistory(&'a WorklogHistoryState),
+    Reports(&'a ReportState),
+    AllWorklogs(&'a AllWorklogsState),
 }
 
 impl InputState<'_> {
@@ -48,6 +60,8 @@ impl InputState<'_> {
         match self {
             Self::TaskList(state) => task_list::footer_hints(state, width),
             Self::WorklogHistory(state) => worklog_history::footer_hints(state, width),
+            Self::Reports(state) => reports::footer_hints(state, width),
+            Self::AllWorklogs(state) => all_worklogs::footer_hints(state, width),
         }
     }
 }
@@ -77,6 +91,16 @@ pub(crate) fn map_key(state: InputState<'_>, key: KeyEvent) -> Option<Command> {
         InputState::WorklogHistory(state) => {
             worklog_history::map(state, key).map(|command| match command {
                 KeymapCommand::Local(command) => Command::WorklogHistory(command),
+                KeymapCommand::Quit => Command::Quit,
+            })
+        }
+        InputState::Reports(state) => reports::map(state, key).map(|command| match command {
+            KeymapCommand::Local(command) => Command::Reports(command),
+            KeymapCommand::Quit => Command::Quit,
+        }),
+        InputState::AllWorklogs(state) => {
+            all_worklogs::map(state, key).map(|command| match command {
+                KeymapCommand::Local(command) => Command::AllWorklogs(command),
                 KeymapCommand::Quit => Command::Quit,
             })
         }
@@ -129,3 +153,4 @@ mod tests {
         }
     }
 }
+pub(crate) use all_worklogs::{AllWorklogsCommand, AllWorklogsState};

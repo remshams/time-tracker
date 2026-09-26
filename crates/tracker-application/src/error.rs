@@ -111,6 +111,10 @@ pub enum ApplicationError {
     },
     #[error("tracking state changed in another client")]
     TrackingStateChanged,
+    #[error("report end must be later than report start")]
+    InvalidReportRange,
+    #[error("report duration exceeds the supported range")]
+    ReportDurationOverflow,
 }
 
 impl ApplicationError {
@@ -230,6 +234,16 @@ impl ApplicationError {
                 message: "Tracking state changed in another client. Refreshed state.".to_owned(),
                 recovery: None,
             },
+            Self::InvalidReportRange => ApplicationFailure {
+                category: ApplicationFailureCategory::General,
+                message: "Report end must be later than start".to_owned(),
+                recovery: None,
+            },
+            Self::ReportDurationOverflow => ApplicationFailure {
+                category: ApplicationFailureCategory::General,
+                message: "Report duration is too large".to_owned(),
+                recovery: None,
+            },
         }
     }
 }
@@ -263,7 +277,8 @@ fn repository_error_category(error: &RepositoryError) -> ApplicationFailureCateg
         RepositoryError::WorklogNotFound { .. } => ApplicationFailureCategory::WorklogNotFound,
         RepositoryError::WorklogChanged { .. } => ApplicationFailureCategory::WorklogChanged,
         RepositoryError::WorklogIsActive { .. } => ApplicationFailureCategory::ActiveWorklog,
-        RepositoryError::WorklogHistoryChanged { .. } => {
+        RepositoryError::WorklogHistoryChanged { .. }
+        | RepositoryError::GlobalWorklogHistoryChanged => {
             ApplicationFailureCategory::WorklogHistoryChanged
         }
         RepositoryError::SameTaskWorklogOverlap { .. } => {
@@ -281,7 +296,8 @@ fn repository_error_message(error: &RepositoryError) -> &'static str {
         RepositoryError::WorklogAlreadyStopped { .. } => "Worklog is already stopped",
         RepositoryError::WorklogChanged { .. } => "Worklog changed in another client",
         RepositoryError::WorklogIsActive { .. } => "Running worklogs cannot be deleted",
-        RepositoryError::WorklogHistoryChanged { .. } => {
+        RepositoryError::WorklogHistoryChanged { .. }
+        | RepositoryError::GlobalWorklogHistoryChanged => {
             "Worklog history changed. Press r to refresh"
         }
         RepositoryError::SameTaskWorklogOverlap { .. } => "The worklog overlaps another worklog",
@@ -292,6 +308,7 @@ fn repository_error_message(error: &RepositoryError) -> &'static str {
         RepositoryError::TaskIsActive { .. } => "Task has active work",
         RepositoryError::Constraint { .. } => "Storage rejected the change",
         RepositoryError::CorruptData { .. } => "Stored data is invalid",
+        RepositoryError::ReportDurationOverflow => "Report duration is too large",
         RepositoryError::Backend { .. } => "Storage error",
     }
 }

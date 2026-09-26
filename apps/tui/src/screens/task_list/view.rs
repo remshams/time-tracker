@@ -1,6 +1,6 @@
 use ratatui::Frame;
 use ratatui::layout::{Margin, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Tabs};
 use tracker_domain::{Task, TaskId};
@@ -19,7 +19,12 @@ pub(crate) fn render(
     active_task_id: Option<TaskId>,
 ) {
     render_body(frame, area, state, tasks, ordering_label, active_task_id);
-    render_tabs(frame, area, state.view());
+    render_tabs(
+        frame,
+        area,
+        usize::from(state.view() == TaskView::Archived),
+        matches!(state.mode(), TaskListMode::Normal),
+    );
     match state.mode() {
         TaskListMode::Input { purpose, buffer } => {
             let prompt = match purpose {
@@ -40,11 +45,18 @@ pub(crate) fn render(
     }
 }
 
-fn render_tabs(frame: &mut Frame, area: Rect, view: TaskView) {
-    const LABELS: [&str; 2] = ["Active", "Archived"];
+pub(crate) fn render_tabs(frame: &mut Frame, area: Rect, selected: usize, focused: bool) {
+    const LABELS: [&str; 4] = ["Active", "Archived", "Worklogs", "Reports"];
     let tabs = Tabs::new(LABELS)
-        .select(usize::from(view == TaskView::Archived))
-        .highlight_style(styles::selected())
+        .select(selected)
+        .highlight_style(if focused {
+            styles::selected()
+        } else {
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::UNDERLINED)
+        })
         .divider("│");
     frame.render_widget(
         tabs,
@@ -242,11 +254,11 @@ mod tests {
         let rows = rows(&terminal);
 
         assert!(rows[0].contains("Time Tracker"));
-        assert!(rows[1].contains(" Active │ Archived "));
+        assert!(rows[1].contains(" Active │ Archived │ Worklogs │ Reports "));
         assert!(rows[21].contains("Sort: recently worked"));
         assert!(rows[2].contains("alpha"));
         assert!(rows[3].contains("beta"));
-        assert!(rows[22].contains("Ready"));
+        assert!(rows[22].trim().is_empty());
         assert!(rows[23].contains("enter history"));
         assert!(rows[23].contains("s sort"));
         assert!(rows[23].contains("a/e/d edit"));
@@ -260,7 +272,7 @@ mod tests {
         let mut app = app_with(&["alpha"]);
         let terminal = draw_at(&app, 60, 20);
         assert!(row(&terminal, 1).contains(" Active │ Archived "));
-        assert_eq!(terminal.backend().buffer()[(20, 1)].symbol(), "─");
+        assert_eq!(terminal.backend().buffer()[(45, 1)].symbol(), "─");
         assert!(
             cell(&terminal, 2, 1)
                 .add_modifier

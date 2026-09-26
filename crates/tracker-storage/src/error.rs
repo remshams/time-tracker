@@ -24,6 +24,9 @@ pub enum StorageError {
     /// A continuation cursor no longer matches the task's history order.
     #[error("worklog history for task {task_id} changed since this page was read")]
     WorklogHistoryChanged { task_id: TaskId },
+    /// A continuation cursor no longer matches the global worklog feed.
+    #[error("global worklog history changed since this page was read")]
+    GlobalWorklogHistoryChanged,
     /// The proposed interval overlaps another worklog for the same task.
     #[error("worklog {id} overlaps another worklog for the same task")]
     SameTaskWorklogOverlap { id: WorklogId },
@@ -50,6 +53,9 @@ pub enum StorageError {
     /// schema mismatch rather than at the caller.
     #[error("stored data is invalid: {0}")]
     CorruptData(&'static str),
+    /// A report interval or sum cannot fit a signed microsecond duration.
+    #[error("report duration exceeds the supported range")]
+    ReportDurationOverflow,
     /// The database was written by a newer version of Time Tracker; this
     /// version cannot understand its schema.
     #[error(
@@ -95,6 +101,7 @@ impl From<StorageError> for RepositoryError {
             StorageError::WorklogHistoryChanged { task_id } => {
                 Self::WorklogHistoryChanged { task_id }
             }
+            StorageError::GlobalWorklogHistoryChanged => Self::GlobalWorklogHistoryChanged,
             StorageError::SameTaskWorklogOverlap { id } => Self::SameTaskWorklogOverlap { id },
             StorageError::WorklogAlreadyExists { id } => Self::WorklogAlreadyExists { id },
             StorageError::TaskAlreadyExists { id } => Self::TaskAlreadyExists { id },
@@ -105,6 +112,7 @@ impl From<StorageError> for RepositoryError {
                 message: error.to_string(),
             },
             StorageError::CorruptData(field) => Self::CorruptData { field },
+            StorageError::ReportDurationOverflow => Self::ReportDurationOverflow,
             other => Self::Backend {
                 message: other.to_string(),
             },

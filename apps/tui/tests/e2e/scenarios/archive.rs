@@ -10,7 +10,8 @@ fn tt_archives_restores_and_persists_the_round_trip() {
     let context = TestContext::new();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
-        screen.contains("Write release notes") && screen.contains("Ready")
+        let page = TimeTrackerPage::new(screen.clone());
+        screen.contains("Write release notes") && page.status_bar().text().is_empty()
     });
 
     // Archive the selected task through its confirmation dialog.
@@ -84,7 +85,8 @@ fn tt_persists_an_archive_across_a_quit_and_a_relaunch() {
     let context = TestContext::new();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
-        screen.contains("Write release notes") && screen.contains("Ready")
+        let page = TimeTrackerPage::new(screen.clone());
+        screen.contains("Write release notes") && page.status_bar().text().is_empty()
     });
 
     tt.press_and_wait(Key::Char('d'), "the archive confirmation", |screen| {
@@ -138,7 +140,8 @@ fn tt_ignores_active_view_keys_in_the_archived_view() {
     let context = TestContext::new();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
-        screen.contains("Write release notes") && screen.contains("Ready")
+        let page = TimeTrackerPage::new(screen.clone());
+        screen.contains("Write release notes") && page.status_bar().text().is_empty()
     });
 
     let page = tt.press_and_wait(Key::Tab, "the archived view", |screen| {

@@ -2,9 +2,9 @@ mod actions;
 mod command;
 pub mod correction;
 mod deletion;
-mod keymap;
+pub(crate) mod keymap;
 mod move_actions;
-mod move_worklog;
+pub(crate) mod move_worklog;
 mod state;
 pub(crate) mod view;
 

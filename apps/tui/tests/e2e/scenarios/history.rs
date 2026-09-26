@@ -82,6 +82,38 @@ fn selected_task_history_lists_completed_worklogs_newest_first() {
     assert_eq!(panel.row(1).end_text(), "2025-01-15 08:45");
     assert_eq!(panel.row(1).duration_text(), "00:45:30");
 
+    tt.press_and_wait(Key::Char('j'), "the older history row", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .worklog_history_panel()
+            .selected_index()
+            == Some(1)
+    });
+    tt.press(Key::Char('g'));
+    tt.press_and_wait(Key::Char('g'), "the first row with gg", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .worklog_history_panel()
+            .selected_index()
+            == Some(0)
+    });
+    tt.press_and_wait(Key::Char('G'), "the last row with G", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .worklog_history_panel()
+            .selected_index()
+            == Some(1)
+    });
+    tt.press_and_wait(Key::Ctrl('u'), "the first row with Ctrl+u", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .worklog_history_panel()
+            .selected_index()
+            == Some(0)
+    });
+    tt.press_and_wait(Key::Ctrl('d'), "the last row with Ctrl+d", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .worklog_history_panel()
+            .selected_index()
+            == Some(1)
+    });
+
     let page = tt.press_and_wait(Key::Esc, "the same selected task", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_active_tasks()

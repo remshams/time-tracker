@@ -45,7 +45,7 @@ fn the_shrunken_layout_holds(screen: &Screen) -> bool {
         && page.task_panel().frame_corners_fit_current_geometry()
         && page.task_panel().task_names() == seeded_task_names()
         && page.task_panel().selected_index() == Some(1)
-        && page.status_bar().text() == "Ready"
+        && page.status_bar().text().is_empty()
         && page.footer().hints_open_history()
         && page.footer().hints_sorting()
         && page.footer().hints_quit()
@@ -63,7 +63,7 @@ fn the_grown_layout_holds(screen: &Screen) -> bool {
         && page.task_panel().frame_corners_fit_current_geometry()
         && page.task_panel().task_names() == seeded_task_names()
         && page.task_panel().selected_index() == Some(1)
-        && page.status_bar().text() == "Ready"
+        && page.status_bar().text().is_empty()
         && page.footer().hints_quit()
 }
 
@@ -74,7 +74,7 @@ fn the_grown_layout_holds(screen: &Screen) -> bool {
 fn the_shrunken_dialog_holds(screen: &Screen) -> bool {
     let page = TimeTrackerPage::new(screen.clone());
     page.size() == SHRUNKEN
-        && page.status_bar().text() == "Ready"
+        && page.status_bar().text().is_empty()
         && page.footer().hints_input()
         && page.task_panel().shows_active_tasks()
         && page.task_panel().shows_ordering("recently worked")
@@ -93,7 +93,7 @@ fn the_shrunken_dialog_holds(screen: &Screen) -> bool {
 fn the_grown_dialog_holds(screen: &Screen) -> bool {
     let page = TimeTrackerPage::new(screen.clone());
     page.size() == GROWN
-        && page.status_bar().text() == "Ready"
+        && page.status_bar().text().is_empty()
         && page.footer().hints_input()
         && page.task_panel().shows_active_tasks()
         && page.task_panel().shows_ordering("recently worked")
@@ -141,8 +141,8 @@ fn a_resized_terminal_relocates_every_component_and_stays_drivable() {
     );
     assert_eq!(
         page.status_bar().text(),
-        "Ready",
-        "the status line sits on the new bottom rows:\n{}",
+        "",
+        "the status line is empty at the new bottom rows:\n{}",
         page.screen()
     );
     assert!(

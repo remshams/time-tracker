@@ -1,12 +1,13 @@
 use chrono::{DateTime, Utc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use tracker_application::{GlobalWorklogPage, TrackerSnapshot};
 use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
 
 use crate::command::Command;
 use crate::screens::task_list::{InputPurpose, TaskListMode};
 use crate::screens::{
-    CorrectionDraft, InputState, MoveDraft, TaskListState, TaskView, WorklogHistoryMode,
-    WorklogHistoryState, map_key,
+    AllWorklogsState, CorrectionDraft, InputState, MoveDraft, TaskListState, TaskView,
+    WorklogHistoryMode, WorklogHistoryState, map_key,
 };
 
 pub(crate) fn key(code: KeyCode) -> KeyEvent {
@@ -113,6 +114,8 @@ fn history_state(mode: WorklogHistoryMode, available: bool) -> WorklogHistorySta
 pub(crate) enum TestInputState {
     TaskList(TaskListState),
     History(Box<WorklogHistoryState>),
+    Reports(crate::screens::ReportState),
+    AllWorklogs(Box<AllWorklogsState>),
 }
 
 impl TestInputState {
@@ -120,6 +123,8 @@ impl TestInputState {
         match self {
             Self::TaskList(state) => InputState::TaskList(state),
             Self::History(state) => InputState::WorklogHistory(state),
+            Self::Reports(state) => InputState::Reports(state),
+            Self::AllWorklogs(state) => InputState::AllWorklogs(state),
         }
     }
 }
@@ -136,6 +141,15 @@ pub(crate) fn valid_input_states() -> Vec<TestInputState> {
         TestInputState::History(Box::new(history_state(deletion(), true))),
         TestInputState::History(Box::new(history_state(correction(), true))),
         TestInputState::History(Box::new(history_state(move_dialog(), true))),
+        TestInputState::Reports(crate::screens::ReportState::new(Utc::now(), chrono_tz::UTC)),
+        TestInputState::AllWorklogs(Box::new(AllWorklogsState::new(GlobalWorklogPage {
+            worklogs: Vec::new(),
+            snapshot: TrackerSnapshot {
+                task_items: Vec::new(),
+                active_worklog: None,
+            },
+            next_cursor: None,
+        }))),
     ]
 }
 

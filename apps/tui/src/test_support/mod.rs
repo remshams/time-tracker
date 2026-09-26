@@ -10,9 +10,10 @@ pub(crate) use chrono::{
     DateTime, FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, TimeDelta, TimeZone, Utc,
 };
 pub(crate) use tracker_application::{
-    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, RepositoryError,
-    SetActiveTaskOutcome, TaskListItem, TaskOperations, TaskOrdering, TaskQueries,
-    TrackerApplication, TrackerApplicationService, TrackingOperations, WorklogCursor,
+    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, GlobalWorklogCursor,
+    GlobalWorklogPage, ReportQueries, ReportTotals, RepositoryError, SetActiveTaskOutcome,
+    TaskListItem, TaskOperations, TaskOrdering, TaskQueries, TrackerApplication,
+    TrackerApplicationService, TrackerSnapshot, TrackingOperations, WorklogCursor,
     WorklogOperations, WorklogPage, WorklogPageSnapshot, WorklogQueries,
 };
 pub(crate) use tracker_domain::{
@@ -113,6 +114,7 @@ fn replace_timestamp<S: TrackerApplicationService>(app: &mut App<S>, text: Strin
 
 pub(crate) fn text(status: &Status) -> &str {
     match status {
+        Status::Empty => "",
         Status::Info(text) | Status::Error(text) => text,
     }
 }
@@ -120,6 +122,11 @@ pub(crate) fn text(status: &Status) -> &str {
 #[derive(Default)]
 struct SpyState {
     worklog_reads: usize,
+    global_worklog_reads: usize,
+    global_worklog_error: Option<ApplicationError>,
+    report_reads: Vec<(DateTime<Utc>, DateTime<Utc>, DateTime<Utc>)>,
+    report_result: Option<Result<ReportTotals, ApplicationError>>,
+    report_tasks: Option<Vec<Task>>,
     correction_calls: Vec<(WorklogId, WorklogTimes, WorklogTimes, DateTime<Utc>)>,
     move_calls: Vec<(WorklogId, TaskId, WorklogTimes, TaskId)>,
     deletion_calls: Vec<(WorklogId, TaskId, WorklogTimes)>,
@@ -137,6 +144,26 @@ pub(crate) struct TestServiceSpy {
 }
 
 impl TestServiceSpy {
+    pub(crate) fn global_worklog_reads(&self) -> usize {
+        self.state.borrow().global_worklog_reads
+    }
+
+    pub(crate) fn set_global_worklog_error(&self, error: ApplicationError) {
+        self.state.borrow_mut().global_worklog_error = Some(error);
+    }
+
+    pub(crate) fn report_reads(&self) -> Vec<(DateTime<Utc>, DateTime<Utc>, DateTime<Utc>)> {
+        self.state.borrow().report_reads.clone()
+    }
+
+    pub(crate) fn set_report_result(&self, result: Result<ReportTotals, ApplicationError>) {
+        self.state.borrow_mut().report_result = Some(result);
+    }
+
+    pub(crate) fn set_report_tasks(&self, tasks: Vec<Task>) {
+        self.state.borrow_mut().report_tasks = Some(tasks);
+    }
+
     pub(crate) fn worklog_reads(&self) -> usize {
         self.state.borrow().worklog_reads
     }
@@ -651,6 +678,64 @@ impl WorklogOperations for TestService {
 }
 
 impl WorklogQueries for TestService {
+    fn all_worklogs(
+        &mut self,
+        after: Option<&GlobalWorklogCursor>,
+    ) -> Result<GlobalWorklogPage, ApplicationError> {
+        self.spy.state.borrow_mut().global_worklog_reads += 1;
+        if let Some(error) = self.spy.state.borrow_mut().global_worklog_error.take() {
+            return Err(error);
+        }
+        self.apply_external_state();
+        let mut worklogs = self.authoritative_worklogs.clone();
+        worklogs.sort_by_key(|worklog| (std::cmp::Reverse(worklog.start()), worklog.id()));
+        if let Some(cursor) = after {
+            worklogs.retain(|worklog| {
+                (std::cmp::Reverse(worklog.start()), worklog.id())
+                    > (std::cmp::Reverse(cursor.start), cursor.id)
+            });
+        }
+        let has_next = worklogs.len() > 50;
+        worklogs.truncate(50);
+        let next_cursor = has_next.then(|| {
+            let last = worklogs.last().expect("a full page has a last worklog");
+            GlobalWorklogCursor {
+                start: last.start(),
+                id: last.id(),
+                revision: 0,
+            }
+        });
+        let task_items = self
+            .tasks
+            .iter()
+            .cloned()
+            .map(|task| {
+                let latest_work_start = self
+                    .authoritative_worklogs
+                    .iter()
+                    .filter(|worklog| worklog.task_id() == task.id())
+                    .map(Worklog::start)
+                    .max();
+                TaskListItem {
+                    task,
+                    latest_work_start,
+                }
+            })
+            .collect();
+        Ok(GlobalWorklogPage {
+            worklogs,
+            snapshot: TrackerSnapshot {
+                task_items,
+                active_worklog: self
+                    .authoritative_worklogs
+                    .iter()
+                    .find(|worklog| worklog.is_active())
+                    .cloned(),
+            },
+            next_cursor,
+        })
+    }
+
     fn worklogs_for_task(
         &mut self,
         _task_id: TaskId,
@@ -682,6 +767,30 @@ impl WorklogQueries for TestService {
                 },
                 None => TrackingState::Idle,
             };
+        }
+        result
+    }
+}
+
+impl ReportQueries for TestService {
+    fn report_totals(
+        &mut self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportTotals, ApplicationError> {
+        let mut spy = self.spy.state.borrow_mut();
+        spy.report_reads.push((start, end, now));
+        let result = spy.report_result.clone().unwrap_or_else(|| {
+            Ok(ReportTotals {
+                rows: Vec::new(),
+                total: TimeDelta::zero(),
+            })
+        });
+        if result.is_ok()
+            && let Some(tasks) = spy.report_tasks.take()
+        {
+            self.tasks = tasks;
         }
         result
     }

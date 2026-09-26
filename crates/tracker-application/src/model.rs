@@ -1,6 +1,6 @@
 //! Application read models and successful tracking outcomes.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use tracker_domain::{ActiveWorklog, Task, TaskId, Worklog, WorklogId};
 
 /// How the task list is ordered.
@@ -61,6 +61,20 @@ pub struct TaskListItem {
     pub latest_work_start: Option<DateTime<Utc>>,
 }
 
+/// One task's time inside the requested report interval.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReportRow {
+    pub task: Task,
+    pub duration: TimeDelta,
+}
+
+/// Positive task totals and their combined duration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReportTotals {
+    pub rows: Vec<ReportRow>,
+    pub total: TimeDelta,
+}
+
 /// How many worklogs one history page carries.
 ///
 /// The size is an application constant, not a caller argument, so no caller
@@ -118,6 +132,26 @@ pub struct WorklogPage {
     /// The cursor to pass for the next page, or `None` at the end of the
     /// history.
     pub next_cursor: Option<WorklogCursor>,
+}
+
+/// Position and ordering revision for the global worklog feed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GlobalWorklogCursor {
+    pub start: DateTime<Utc>,
+    pub id: WorklogId,
+    /// Any committed worklog write changes this revision.
+    pub revision: i64,
+}
+
+/// One page of worklogs across active and archived tasks.
+///
+/// Rows are ordered by start descending, then `WorklogId` ascending. The
+/// tracker snapshot comes from the same backend read as the page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlobalWorklogPage {
+    pub worklogs: Vec<Worklog>,
+    pub snapshot: crate::TrackerSnapshot,
+    pub next_cursor: Option<GlobalWorklogCursor>,
 }
 
 /// The result of making one task active.

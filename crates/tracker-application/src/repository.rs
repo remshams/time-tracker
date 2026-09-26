@@ -19,7 +19,9 @@
 use chrono::{DateTime, Utc};
 use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
 
-use crate::{TaskListItem, WorklogCursor, WorklogPage};
+use crate::{
+    GlobalWorklogCursor, GlobalWorklogPage, ReportRow, TaskListItem, WorklogCursor, WorklogPage,
+};
 
 /// A persistence failure that application callers can handle without knowing
 /// which backend produced it.
@@ -37,6 +39,8 @@ pub enum RepositoryError {
     WorklogIsActive { id: WorklogId },
     #[error("worklog history for task {task_id} changed since this page was read")]
     WorklogHistoryChanged { task_id: TaskId },
+    #[error("global worklog history changed since this page was read")]
+    GlobalWorklogHistoryChanged,
     #[error("worklog {id} overlaps another worklog for the same task")]
     SameTaskWorklogOverlap { id: WorklogId },
     #[error("worklog {id} already exists")]
@@ -55,6 +59,8 @@ pub enum RepositoryError {
     CorruptData { field: &'static str },
     #[error("{message}")]
     Backend { message: String },
+    #[error("report duration exceeds the supported range")]
+    ReportDurationOverflow,
 }
 
 /// A coherent read of task-list aggregates and global tracking state.
@@ -62,6 +68,13 @@ pub enum RepositoryError {
 pub struct TrackerSnapshot {
     pub task_items: Vec<TaskListItem>,
     pub active_worklog: Option<Worklog>,
+}
+
+/// Report totals and tracker state from one backend read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReportRead {
+    pub rows: Vec<ReportRow>,
+    pub snapshot: TrackerSnapshot,
 }
 
 /// The committed result of a worklog correction.
@@ -164,6 +177,13 @@ pub trait WorklogRepository {
         task_id: TaskId,
         after: Option<&WorklogCursor>,
     ) -> Result<WorklogPage, RepositoryError>;
+
+    /// Returns one global page and tracker state from one backend snapshot.
+    /// A cursor becomes stale after any committed worklog write.
+    fn global_worklog_page(
+        &self,
+        after: Option<&GlobalWorklogCursor>,
+    ) -> Result<GlobalWorklogPage, RepositoryError>;
 }
 
 /// Persistence needed by tracking commands.
@@ -188,7 +208,25 @@ pub trait TrackingRepository {
     ) -> Result<(), RepositoryError>;
 }
 
-/// A backend that supports every current use case.
-pub trait TrackerRepository: TaskRepository + WorklogRepository + TrackingRepository {}
+/// A current read of time spent by task in one UTC interval.
+pub trait ReportRepository {
+    /// Returns positive task totals and tracker state from one read snapshot.
+    /// Open worklogs end at `now` for the report calculation.
+    fn report_read(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportRead, RepositoryError>;
+}
 
-impl<T> TrackerRepository for T where T: TaskRepository + WorklogRepository + TrackingRepository {}
+/// A backend that supports every current use case.
+pub trait TrackerRepository:
+    TaskRepository + WorklogRepository + TrackingRepository + ReportRepository
+{
+}
+
+impl<T> TrackerRepository for T where
+    T: TaskRepository + WorklogRepository + TrackingRepository + ReportRepository
+{
+}

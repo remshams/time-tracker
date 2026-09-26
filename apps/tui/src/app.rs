@@ -24,6 +24,7 @@ pub(crate) use self::view::AppView;
 /// The most recent message shown in the status line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status {
+    Empty,
     Info(String),
     Error(String),
 }
@@ -67,7 +68,7 @@ impl<S: TrackerApplicationService> App<S> {
             None if tracking.elapsed().is_some() => {
                 Status::Info("Recovered the previous active timer".to_owned())
             }
-            None => Status::Info("Ready".to_owned()),
+            None => Status::Empty,
         };
         Self {
             application,
@@ -106,13 +107,20 @@ impl<S: TrackerApplicationService> App<S> {
             (Screen::WorklogHistory, Command::WorklogHistory(command)) => {
                 self.handle_worklog_history_command(command);
             }
-            (Screen::TaskList, Command::WorklogHistory(_))
-            | (Screen::WorklogHistory, Command::TaskList(_)) => {}
+            (Screen::Reports, Command::Reports(command)) => self.handle_report_command(command),
+            (Screen::AllWorklogs, Command::AllWorklogs(command)) => {
+                self.handle_all_worklogs_command(command)
+            }
+            _ => {}
         }
     }
 
     pub fn is_running(&self) -> bool {
         self.shell.is_running()
+    }
+
+    pub(crate) fn expire_copy_confirmation(&mut self) {
+        self.shell.expire_copy_confirmation();
     }
 
     pub(crate) fn app_view(&self) -> AppView<'_> {

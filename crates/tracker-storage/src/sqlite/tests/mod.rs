@@ -18,10 +18,10 @@ use chrono::{DateTime, Utc};
 use std::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use tempfile::TempDir;
 use tracker_application::{
-    ApplicationError, ClearActiveTaskOutcome, RepositoryError, SetActiveTaskOutcome, TaskListItem,
-    TaskOperations, TaskOrdering, TaskQueries, TaskRepository, TrackerApplication,
-    TrackingOperations, TrackingRepository, WORKLOG_PAGE_SIZE, WorklogCursor, WorklogPage,
-    WorklogQueries, WorklogRepository,
+    ApplicationError, ClearActiveTaskOutcome, ReportRead, ReportRepository, RepositoryError,
+    SetActiveTaskOutcome, TaskListItem, TaskOperations, TaskOrdering, TaskQueries, TaskRepository,
+    TrackerApplication, TrackingOperations, TrackingRepository, WORKLOG_PAGE_SIZE, WorklogCursor,
+    WorklogPage, WorklogQueries, WorklogRepository,
 };
 use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingError, TrackingOutcome, TrackingState,
@@ -332,7 +332,29 @@ impl TaskRepository for SynchronizingRepository {
     }
 }
 
+impl ReportRepository for SynchronizingRepository {
+    fn report_read(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportRead, RepositoryError> {
+        self.repository
+            .report_read(start, end, now)
+            .map_err(Into::into)
+    }
+}
+
 impl WorklogRepository for SynchronizingRepository {
+    fn global_worklog_page(
+        &self,
+        after: Option<&tracker_application::GlobalWorklogCursor>,
+    ) -> Result<tracker_application::GlobalWorklogPage, RepositoryError> {
+        self.repository
+            .global_worklog_page(after)
+            .map_err(Into::into)
+    }
+
     fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, RepositoryError> {
         self.repository.find_worklog(id).map_err(Into::into)
     }
@@ -451,8 +473,10 @@ fn insert_numbered_worklogs(repository: &SqliteRepository, task: &Task, worklogs
 mod concurrency;
 mod correction;
 mod deletion;
+mod global_history;
 mod history;
 mod migrations;
 mod moves;
+mod reports;
 mod tasks;
 mod tracking;

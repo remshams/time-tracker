@@ -23,6 +23,19 @@ fn map_normal(
     state: &WorklogHistoryState,
     key: KeyEvent,
 ) -> Option<KeymapCommand<WorklogHistoryCommand>> {
+    if state.history().is_available() && key.modifiers == KeyModifiers::CONTROL {
+        return match key.code {
+            KeyCode::Char('d') => Some(KeymapCommand::Local(WorklogHistoryCommand::PageDown)),
+            KeyCode::Char('u') => Some(KeymapCommand::Local(WorklogHistoryCommand::PageUp)),
+            _ => None,
+        };
+    }
+    if state.history().is_available()
+        && key.code == KeyCode::Char('G')
+        && key.modifiers == KeyModifiers::SHIFT
+    {
+        return Some(KeymapCommand::Local(WorklogHistoryCommand::Last));
+    }
     if !state.history().is_available() || key.modifiers != KeyModifiers::NONE {
         if !state.history().is_available() {
             return match (key.code, key.modifiers) {
@@ -41,6 +54,14 @@ fn map_normal(
     let command = match key.code {
         KeyCode::Char('j') | KeyCode::Down => WorklogHistoryCommand::MoveDown,
         KeyCode::Char('k') | KeyCode::Up => WorklogHistoryCommand::MoveUp,
+        KeyCode::Char('g') => {
+            if state.g_prefix() {
+                WorklogHistoryCommand::First
+            } else {
+                WorklogHistoryCommand::GPrefix
+            }
+        }
+        KeyCode::Char('G') => WorklogHistoryCommand::Last,
         KeyCode::Char('e') => WorklogHistoryCommand::OpenCorrection,
         KeyCode::Char('d') => WorklogHistoryCommand::OpenDeletion,
         KeyCode::Char('m') => WorklogHistoryCommand::OpenMove,
@@ -53,7 +74,10 @@ fn map_normal(
     Some(KeymapCommand::Local(command))
 }
 
-fn map_move(focus: MoveFocus, key: KeyEvent) -> Option<KeymapCommand<WorklogHistoryCommand>> {
+pub(crate) fn map_move(
+    focus: MoveFocus,
+    key: KeyEvent,
+) -> Option<KeymapCommand<WorklogHistoryCommand>> {
     let command = match (key.code, key.modifiers) {
         (KeyCode::Enter, KeyModifiers::NONE) => WorklogHistoryCommand::Confirm,
         (KeyCode::Esc, KeyModifiers::NONE) => WorklogHistoryCommand::Cancel,
@@ -140,18 +164,7 @@ pub(crate) fn footer_hints(state: &WorklogHistoryState, width: u16) -> &'static 
                 "type · ←/→ · bs/del · tab/S-tab · j/k ±5m · J/K ±1h · enter · esc · ctrl+c"
             }
         }
-        WorklogHistoryMode::Move(draft) => match (draft.focus(), width < 80) {
-            (MoveFocus::Search, true) => {
-                "type/bs tab/S-tab ↑/↓ choose enter move esc cancel ctrl+c"
-            }
-            (MoveFocus::Search, false) => {
-                "type/bs · tab/S-tab · ↑/↓ choose · enter move · esc cancel · ctrl+c quit"
-            }
-            (MoveFocus::Results, true) => "j/k/↑/↓ choose tab/S-tab enter move esc cancel ctrl+c",
-            (MoveFocus::Results, false) => {
-                "j/k/↑/↓ choose · tab/S-tab · enter move · esc cancel · ctrl+c quit"
-            }
-        },
+        WorklogHistoryMode::Move(draft) => move_footer_hints(draft.focus(), width),
         WorklogHistoryMode::ConfirmDeletion { .. } => {
             if width < 80 {
                 "d/y/enter delete n/esc cancel ctrl+c quit"
@@ -176,12 +189,42 @@ pub(crate) fn footer_hints(state: &WorklogHistoryState, width: u16) -> &'static 
     }
 }
 
+pub(crate) fn move_footer_hints(focus: MoveFocus, width: u16) -> &'static str {
+    match (focus, width < 80) {
+        (MoveFocus::Search, true) => "type/bs tab/S-tab ↑/↓ choose enter move esc cancel ctrl+c",
+        (MoveFocus::Search, false) => {
+            "type/bs · tab/S-tab · ↑/↓ choose · enter move · esc cancel · ctrl+c quit"
+        }
+        (MoveFocus::Results, true) => "j/k/↑/↓ choose tab/S-tab enter move esc cancel ctrl+c",
+        (MoveFocus::Results, false) => {
+            "j/k/↑/↓ choose · tab/S-tab · enter move · esc cancel · ctrl+c quit"
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::command::Command;
     use crate::screens::{WorklogHistoryCommand, WorklogHistoryMode};
     use crate::test_support::keymap::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    #[test]
+    fn vim_motions_apply_only_to_normal_available_history() {
+        for (key, command) in [
+            (key(KeyCode::Char('g')), WorklogHistoryCommand::GPrefix),
+            (key(KeyCode::Char('G')), WorklogHistoryCommand::Last),
+            (ctrl('d'), WorklogHistoryCommand::PageDown),
+            (ctrl('u'), WorklogHistoryCommand::PageUp),
+        ] {
+            assert_eq!(
+                map_history(&WorklogHistoryMode::Normal, key),
+                Some(Command::WorklogHistory(command))
+            );
+            assert_eq!(map_unavailable(key), None);
+        }
+        assert_eq!(map_history(&correction(), ctrl('d')), None);
+    }
 
     #[test]
     fn deletion_mode_accepts_and_cancels_without_other_commands() {
@@ -287,7 +330,11 @@ mod tests {
                 "the history must not map {code:?}"
             );
         }
-        for modified in [ctrl('o'), with_modifier('r', KeyModifiers::ALT)] {
+        for modified in [
+            ctrl('o'),
+            with_modifier('r', KeyModifiers::ALT),
+            with_modifier('X', KeyModifiers::SHIFT),
+        ] {
             assert_eq!(
                 map_history(&WorklogHistoryMode::Normal, modified),
                 None,

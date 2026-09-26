@@ -7,7 +7,7 @@ use crate::screens::TaskListState;
 fn fresh_and_empty_apps_have_safe_selection() {
     let app = app_with(&["one", "two"]);
     assert_eq!(app.app_view().selected(), Some(0));
-    assert_eq!(app.app_view().status(), &Status::Info("Ready".to_owned()));
+    assert_eq!(app.app_view().status(), &Status::Empty);
     let mut empty = app_with(&[]);
     empty.handle(Command::TaskList(TaskListCommand::MoveDown));
     empty.handle(Command::TaskList(TaskListCommand::MoveUp));
@@ -528,7 +528,7 @@ fn the_active_view_refuses_unarchiving() {
     app.handle(Command::TaskList(TaskListCommand::UnarchiveSelected));
 
     assert_eq!(app.app_view().view(), TaskView::Active);
-    assert_eq!(app.app_view().status(), &Status::Info("Ready".to_owned()));
+    assert_eq!(app.app_view().status(), &Status::Empty);
     assert_eq!(app.app_view().tasks().len(), 1, "nothing was unarchived");
 }
 #[test]
@@ -726,7 +726,7 @@ fn enter_on_an_empty_task_list_is_a_no_op() {
 
     assert_eq!(app.app_view().screen(), Screen::TaskList);
     assert_eq!(app.app_view().history(), None);
-    assert_eq!(app.app_view().status(), &Status::Info("Ready".to_owned()));
+    assert_eq!(app.app_view().status(), &Status::Empty);
     assert_eq!(
         spy.worklog_reads(),
         0,

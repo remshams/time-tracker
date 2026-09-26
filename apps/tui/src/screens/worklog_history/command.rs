@@ -7,6 +7,11 @@ pub(crate) enum WorklogHistoryCommand {
     MoveUp,
     /// Move the worklog selection down one row.
     MoveDown,
+    First,
+    Last,
+    PageUp,
+    PageDown,
+    GPrefix,
     /// Open timestamp correction for the selected worklog.
     OpenCorrection,
     /// Ask for confirmation before deleting the selected completed worklog.
