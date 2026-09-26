@@ -24,11 +24,6 @@ fn open_worklogs(tt: &mut TuiDriver) -> TimeTrackerPage {
             .task_panel()
             .shows_archived_tasks()
     });
-    tt.press_and_wait(Key::Tab, "the reports tab", |screen| {
-        TimeTrackerPage::new(screen.clone())
-            .task_panel()
-            .shows_reports()
-    });
     tt.press_and_wait(Key::Tab, "the worklogs tab", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.all_worklogs_panel().is_shown() && page.task_panel().selected_tab_is_highlighted()
@@ -89,6 +84,11 @@ fn the_worklogs_tab_lists_active_and_archived_tasks_in_latest_first_order() {
     tt.press_and_wait(Key::Esc, "the top worklogs tab focus", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.all_worklogs_panel().is_shown() && page.task_panel().selected_tab_is_highlighted()
+    });
+    tt.press_and_wait(Key::Tab, "the reports tab", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .shows_reports()
     });
     tt.press_and_wait(Key::Tab, "the active tab after wrapping", |screen| {
         TimeTrackerPage::new(screen.clone())
