@@ -134,6 +134,26 @@ pub struct WorklogPage {
     pub next_cursor: Option<WorklogCursor>,
 }
 
+/// Position and ordering revision for the global worklog feed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GlobalWorklogCursor {
+    pub start: DateTime<Utc>,
+    pub id: WorklogId,
+    /// Any committed worklog write changes this revision.
+    pub revision: i64,
+}
+
+/// One page of worklogs across active and archived tasks.
+///
+/// Rows are ordered by start descending, then `WorklogId` ascending. The
+/// tracker snapshot comes from the same backend read as the page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlobalWorklogPage {
+    pub worklogs: Vec<Worklog>,
+    pub snapshot: crate::TrackerSnapshot,
+    pub next_cursor: Option<GlobalWorklogCursor>,
+}
+
 /// The result of making one task active.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetActiveTaskOutcome {

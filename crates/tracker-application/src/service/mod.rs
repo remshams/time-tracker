@@ -11,9 +11,10 @@ use tracker_domain::{
 };
 
 use crate::{
-    ApplicationError, ClearActiveTaskOutcome, ReportTotals, RepositoryError, SetActiveTaskOutcome,
-    TaskListItem, TaskOrdering, TrackerRepository, TrackerSnapshot, WorklogCorrection,
-    WorklogCursor, WorklogDeletion, WorklogMove, WorklogPage, WorklogPageSnapshot,
+    ApplicationError, ClearActiveTaskOutcome, GlobalWorklogCursor, GlobalWorklogPage, ReportTotals,
+    RepositoryError, SetActiveTaskOutcome, TaskListItem, TaskOrdering, TrackerRepository,
+    TrackerSnapshot, WorklogCorrection, WorklogCursor, WorklogDeletion, WorklogMove, WorklogPage,
+    WorklogPageSnapshot,
 };
 
 fn canonical_timestamp(timestamp: DateTime<Utc>) -> DateTime<Utc> {
@@ -105,6 +106,12 @@ pub trait WorklogQueries {
         task_id: TaskId,
         after: Option<&WorklogCursor>,
     ) -> Result<WorklogPage, ApplicationError>;
+
+    /// One bounded page across every task, including archived tasks.
+    fn all_worklogs(
+        &mut self,
+        after: Option<&GlobalWorklogCursor>,
+    ) -> Result<GlobalWorklogPage, ApplicationError>;
 }
 
 /// Commands that change existing worklog history.

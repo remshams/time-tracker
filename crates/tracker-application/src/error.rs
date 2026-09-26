@@ -277,7 +277,8 @@ fn repository_error_category(error: &RepositoryError) -> ApplicationFailureCateg
         RepositoryError::WorklogNotFound { .. } => ApplicationFailureCategory::WorklogNotFound,
         RepositoryError::WorklogChanged { .. } => ApplicationFailureCategory::WorklogChanged,
         RepositoryError::WorklogIsActive { .. } => ApplicationFailureCategory::ActiveWorklog,
-        RepositoryError::WorklogHistoryChanged { .. } => {
+        RepositoryError::WorklogHistoryChanged { .. }
+        | RepositoryError::GlobalWorklogHistoryChanged => {
             ApplicationFailureCategory::WorklogHistoryChanged
         }
         RepositoryError::SameTaskWorklogOverlap { .. } => {
@@ -295,7 +296,8 @@ fn repository_error_message(error: &RepositoryError) -> &'static str {
         RepositoryError::WorklogAlreadyStopped { .. } => "Worklog is already stopped",
         RepositoryError::WorklogChanged { .. } => "Worklog changed in another client",
         RepositoryError::WorklogIsActive { .. } => "Running worklogs cannot be deleted",
-        RepositoryError::WorklogHistoryChanged { .. } => {
+        RepositoryError::WorklogHistoryChanged { .. }
+        | RepositoryError::GlobalWorklogHistoryChanged => {
             "Worklog history changed. Press r to refresh"
         }
         RepositoryError::SameTaskWorklogOverlap { .. } => "The worklog overlaps another worklog",

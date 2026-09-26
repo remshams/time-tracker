@@ -19,7 +19,9 @@
 use chrono::{DateTime, Utc};
 use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
 
-use crate::{ReportRow, TaskListItem, WorklogCursor, WorklogPage};
+use crate::{
+    GlobalWorklogCursor, GlobalWorklogPage, ReportRow, TaskListItem, WorklogCursor, WorklogPage,
+};
 
 /// A persistence failure that application callers can handle without knowing
 /// which backend produced it.
@@ -37,6 +39,8 @@ pub enum RepositoryError {
     WorklogIsActive { id: WorklogId },
     #[error("worklog history for task {task_id} changed since this page was read")]
     WorklogHistoryChanged { task_id: TaskId },
+    #[error("global worklog history changed since this page was read")]
+    GlobalWorklogHistoryChanged,
     #[error("worklog {id} overlaps another worklog for the same task")]
     SameTaskWorklogOverlap { id: WorklogId },
     #[error("worklog {id} already exists")]
@@ -173,6 +177,13 @@ pub trait WorklogRepository {
         task_id: TaskId,
         after: Option<&WorklogCursor>,
     ) -> Result<WorklogPage, RepositoryError>;
+
+    /// Returns one global page and tracker state from one backend snapshot.
+    /// A cursor becomes stale after any committed worklog write.
+    fn global_worklog_page(
+        &self,
+        after: Option<&GlobalWorklogCursor>,
+    ) -> Result<GlobalWorklogPage, RepositoryError>;
 }
 
 /// Persistence needed by tracking commands.

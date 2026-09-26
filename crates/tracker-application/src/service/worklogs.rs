@@ -7,9 +7,21 @@ use super::{
     TrackerApplication, WorklogOperations, WorklogQueries, canonical_timestamp,
     canonical_worklog_times,
 };
-use crate::{ApplicationError, RepositoryError, TrackerRepository, WorklogCursor, WorklogPage};
+use crate::{
+    ApplicationError, GlobalWorklogCursor, GlobalWorklogPage, RepositoryError, TrackerRepository,
+    WorklogCursor, WorklogPage,
+};
 
 impl<R: TrackerRepository> WorklogQueries for TrackerApplication<R> {
+    fn all_worklogs(
+        &mut self,
+        after: Option<&GlobalWorklogCursor>,
+    ) -> Result<GlobalWorklogPage, ApplicationError> {
+        let page = self.repository.global_worklog_page(after)?;
+        self.adopt_snapshot(page.snapshot.clone())?;
+        Ok(page)
+    }
+
     fn worklogs_for_task(
         &mut self,
         task_id: TaskId,
