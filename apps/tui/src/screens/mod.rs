@@ -107,6 +107,8 @@ pub(crate) fn map_key(state: InputState<'_>, key: KeyEvent) -> Option<Command> {
     }
 }
 
+pub(crate) use all_worklogs::{AllWorklogsCommand, AllWorklogsState};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,4 +155,3 @@ mod tests {
         }
     }
 }
-pub(crate) use all_worklogs::{AllWorklogsCommand, AllWorklogsState};
