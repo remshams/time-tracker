@@ -1,0 +1,1389 @@
+use std::time::{Duration, Instant};
+
+use chrono::{DateTime, TimeDelta, Utc};
+use reqwest::{Method, StatusCode};
+use tracker_application::{
+    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, GlobalWorklogCursor,
+    GlobalWorklogPage, ReportQueries, ReportRow, ReportTotals, SetActiveTaskOutcome, TaskListItem,
+    TaskOperations, TaskOrdering, TaskQueries, TrackerSnapshot, TrackingOperations, WorklogCursor,
+    WorklogOperations, WorklogPage, WorklogPageSnapshot, WorklogQueries,
+};
+use tracker_domain::{
+    ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingState, Worklog, WorklogId, WorklogTimes,
+};
+use tracker_protocol::{
+    CreateTaskRequest, DeleteWorklogRequest, ErrorCode, ErrorDto, GlobalWorklogCursorDto,
+    GlobalWorklogPageDto, HealthDto, MutationDto, MutationResultDto, ReportDto, SetTrackingRequest,
+    SnapshotDto, TaskChangeRequest, TaskDto, WorklogChangeRequest, WorklogCursorDto, WorklogDto,
+    WorklogPageDto, WriteGuard,
+};
+
+use crate::{RemoteError, transport::Transport};
+
+/// The last failed operation's effect on remote availability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteFailureKind {
+    Unavailable,
+    Conflict,
+    Protocol,
+}
+
+/// A cached application service backed only by the configured server.
+///
+/// Reads of tasks and current tracking use the last confirmed snapshot.
+/// Explicit refreshes and successful server responses replace that snapshot.
+pub struct RemoteApplication {
+    transport: Transport,
+    snapshot: TrackerSnapshot,
+    tracking: TrackingState,
+    revision: String,
+    last_failure: Option<RemoteFailureKind>,
+    last_unavailable_at: Option<Instant>,
+    version_checked: bool,
+    pending_create: Option<CreateTaskRequest>,
+}
+
+impl RemoteApplication {
+    /// Creates an empty client that can reconnect through `refresh`.
+    pub fn disconnected(endpoint: &str) -> Result<Self, RemoteError> {
+        Ok(Self {
+            transport: Transport::new(endpoint)?,
+            snapshot: TrackerSnapshot {
+                task_items: Vec::new(),
+                active_worklog: None,
+            },
+            tracking: TrackingState::Idle,
+            revision: String::new(),
+            last_failure: Some(RemoteFailureKind::Unavailable),
+            last_unavailable_at: None,
+            version_checked: false,
+            pending_create: None,
+        })
+    }
+
+    pub fn connect(endpoint: &str) -> Result<Self, RemoteError> {
+        let mut client = Self::disconnected(endpoint)?;
+        client.refresh()?;
+        Ok(client)
+    }
+
+    /// Reloads task aggregates and active tracking in one server read.
+    pub fn refresh(&mut self) -> Result<(), RemoteError> {
+        let result = (|| {
+            if !self.version_checked {
+                let health: HealthDto = self.transport.send(
+                    Method::GET,
+                    self.transport.url("v1/health"),
+                    None::<&()>,
+                )?;
+                if health.protocol_version != tracker_protocol::VERSION || health.status != "ok" {
+                    return Err(RemoteError::Protocol(
+                        "server protocol version does not match".into(),
+                    ));
+                }
+            }
+            let dto: SnapshotDto =
+                self.transport
+                    .send(Method::GET, self.transport.url("v1/snapshot"), None::<&()>)?;
+            decode_snapshot(dto)
+        })();
+        match result {
+            Ok((snapshot, tracking, revision)) => {
+                self.snapshot = snapshot;
+                self.tracking = tracking;
+                self.revision = revision;
+                self.last_failure = None;
+                self.last_unavailable_at = None;
+                self.version_checked = true;
+                Ok(())
+            }
+            Err(error) => {
+                self.last_failure = Some(classify_error(&error));
+                if error.is_unavailable() {
+                    self.last_unavailable_at = Some(Instant::now());
+                }
+                Err(error)
+            }
+        }
+    }
+
+    pub fn last_failure(&self) -> Option<RemoteFailureKind> {
+        self.last_failure
+    }
+
+    pub fn snapshot(&self) -> &TrackerSnapshot {
+        &self.snapshot
+    }
+
+    fn guard(&self) -> WriteGuard {
+        WriteGuard {
+            expected_revision: self.revision.clone(),
+            request_id: uuid::Uuid::now_v7().to_string(),
+        }
+    }
+
+    fn mutation<B: serde::Serialize, T>(
+        &mut self,
+        method: Method,
+        path: &str,
+        body: &B,
+        worklog_id: Option<WorklogId>,
+        task_id: Option<TaskId>,
+        decode_result: impl FnOnce(MutationResultDto) -> Result<T, ApplicationError>,
+    ) -> Result<T, ApplicationError> {
+        let response: Result<MutationDto, RemoteError> =
+            self.transport
+                .send(method, self.transport.url(path), Some(body));
+        let dto = match response {
+            Ok(dto) => dto,
+            Err(error) => return Err(self.operation_error(error, worklog_id, task_id)),
+        };
+        let result = decode_result(dto.result).inspect_err(|_| {
+            self.last_failure = Some(RemoteFailureKind::Protocol);
+        })?;
+        let (snapshot, tracking, revision) = decode_snapshot(dto.snapshot)
+            .map_err(|error| self.operation_error(error, worklog_id, task_id))?;
+        self.snapshot = snapshot;
+        self.tracking = tracking;
+        self.revision = revision;
+        self.last_failure = None;
+        self.last_unavailable_at = None;
+        Ok(result)
+    }
+
+    fn operation_error(
+        &mut self,
+        error: RemoteError,
+        worklog_id: Option<WorklogId>,
+        task_id: Option<TaskId>,
+    ) -> ApplicationError {
+        self.last_failure = Some(classify_error(&error));
+        if error.is_unavailable() {
+            self.last_unavailable_at = Some(Instant::now());
+        }
+        let mapped = map_application_error(&error, worklog_id, task_id);
+        if matches!(error, RemoteError::Http { .. }) {
+            let _ = self.refresh();
+        }
+        mapped
+    }
+}
+
+impl TaskQueries for RemoteApplication {
+    fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
+        let mut items = self.snapshot.task_items.clone();
+        ordering.sort_items(&mut items);
+        items
+    }
+
+    fn task(&self, id: TaskId) -> Option<&Task> {
+        self.snapshot
+            .task_items
+            .iter()
+            .find(|item| item.task.id() == id)
+            .map(|item| &item.task)
+    }
+}
+
+impl TaskOperations for RemoteApplication {
+    fn create_task(
+        &mut self,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        if let Some(mut pending) = self.pending_create.clone() {
+            let recovering = matches!(self.last_failure, Some(RemoteFailureKind::Unavailable));
+            if recovering {
+                self.refresh()
+                    .map_err(|error| ApplicationError::storage_failure(error.to_string()))?;
+            }
+            let pending_id: TaskId = pending
+                .task_id
+                .parse()
+                .map_err(|_| protocol_failure("invalid pending task id"))?;
+            if let Some(task) = self.task(pending_id).cloned() {
+                self.pending_create = None;
+                if pending.name == name.as_str() {
+                    return Ok(task);
+                }
+            } else if recovering && pending.name == name.as_str() {
+                // The server has no record of the uncertain create. Retain
+                // its task ID but use the freshly loaded server revision.
+                pending.guard = self.guard();
+                self.pending_create = Some(pending);
+            }
+        }
+        let body = self
+            .pending_create
+            .clone()
+            .filter(|pending| pending.name == name.as_str())
+            .unwrap_or_else(|| {
+                let id = TaskId::generate();
+                CreateTaskRequest {
+                    task_id: id.to_string(),
+                    name: name.as_str().to_owned(),
+                    occurred_at: canonical(occurred_at),
+                    guard: self.guard(),
+                }
+            });
+        let id: TaskId = body
+            .task_id
+            .parse()
+            .map_err(|_| protocol_failure("invalid pending task id"))?;
+        self.pending_create = Some(body.clone());
+        let result = self.mutation(Method::POST, "v1/tasks", &body, None, Some(id), |result| {
+            task_result(result, id)
+        });
+        if !matches!(self.last_failure, Some(RemoteFailureKind::Unavailable)) {
+            self.pending_create = None;
+        }
+        result
+    }
+
+    fn rename_task(
+        &mut self,
+        id: TaskId,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        let body = TaskChangeRequest::Rename {
+            name: name.as_str().to_owned(),
+            occurred_at: canonical(occurred_at),
+            guard: self.guard(),
+        };
+        self.mutation(
+            Method::PATCH,
+            &format!("v1/tasks/{id}"),
+            &body,
+            None,
+            Some(id),
+            |result| task_result(result, id),
+        )
+    }
+
+    fn archive_task(
+        &mut self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        let body = TaskChangeRequest::Archive {
+            occurred_at: canonical(occurred_at),
+            guard: self.guard(),
+        };
+        self.mutation(
+            Method::PATCH,
+            &format!("v1/tasks/{id}"),
+            &body,
+            None,
+            Some(id),
+            |result| task_result(result, id),
+        )
+    }
+
+    fn unarchive_task(
+        &mut self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        let body = TaskChangeRequest::Restore {
+            occurred_at: canonical(occurred_at),
+            guard: self.guard(),
+        };
+        self.mutation(
+            Method::PATCH,
+            &format!("v1/tasks/{id}"),
+            &body,
+            None,
+            Some(id),
+            |result| task_result(result, id),
+        )
+    }
+}
+
+impl TrackingOperations for RemoteApplication {
+    fn current_tracking(&self) -> &TrackingState {
+        &self.tracking
+    }
+
+    fn set_active_task(
+        &mut self,
+        task_id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+        let old_active = active_id(&self.tracking);
+        let new_id = WorklogId::generate();
+        let body = SetTrackingRequest {
+            task_id: Some(task_id.to_string()),
+            worklog_id: Some(new_id.to_string()),
+            expected_active: old_active.map(|id| id.to_string()),
+            occurred_at: canonical(occurred_at),
+            guard: self.guard(),
+        };
+        self.mutation(
+            Method::PUT,
+            "v1/tracking",
+            &body,
+            None,
+            Some(task_id),
+            |result| set_tracking_result(result, task_id, new_id, old_active),
+        )
+    }
+
+    fn clear_active_task(
+        &mut self,
+        expected_active: WorklogId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
+        let body = SetTrackingRequest {
+            task_id: None,
+            worklog_id: None,
+            expected_active: active_id(&self.tracking).map(|_| expected_active.to_string()),
+            occurred_at: canonical(occurred_at),
+            guard: self.guard(),
+        };
+        self.mutation(
+            Method::PUT,
+            "v1/tracking",
+            &body,
+            Some(expected_active),
+            None,
+            |result| clear_tracking_result(result, expected_active),
+        )
+    }
+}
+
+impl WorklogQueries for RemoteApplication {
+    fn worklogs_for_task(
+        &mut self,
+        task_id: TaskId,
+        after: Option<&WorklogCursor>,
+    ) -> Result<WorklogPage, ApplicationError> {
+        let mut url = self.transport.url(&format!("v1/tasks/{task_id}/worklogs"));
+        if let Some(cursor) = after {
+            if cursor.task_id != task_id {
+                return Err(ApplicationError::worklog_history_changed(task_id));
+            }
+            url.query_pairs_mut()
+                .append_pair("after_start", &cursor.start.to_rfc3339())
+                .append_pair("after_id", &cursor.id.to_string())
+                .append_pair("after_revision", &cursor.revision.to_string());
+        }
+        let dto: WorklogPageDto = self
+            .transport
+            .send(Method::GET, url, None::<&()>)
+            .map_err(|error| self.operation_error(error, None, Some(task_id)))?;
+        let worklogs = dto
+            .worklogs
+            .into_iter()
+            .map(app_decode_worklog)
+            .collect::<Result<Vec<_>, _>>()?;
+        let (active, tracking) = decode_active(dto.active_worklog)
+            .map_err(|error| self.operation_error(error, None, Some(task_id)))?;
+        let next_cursor = dto
+            .next_cursor
+            .map(decode_cursor)
+            .transpose()
+            .map_err(|error| self.operation_error(error, None, Some(task_id)))?;
+        if next_cursor
+            .as_ref()
+            .is_some_and(|cursor| cursor.task_id != task_id)
+        {
+            return Err(protocol_failure("cursor belongs to a different task"));
+        }
+        self.tracking = tracking;
+        self.snapshot.active_worklog = active.clone();
+        if let Some(item) = self
+            .snapshot
+            .task_items
+            .iter_mut()
+            .find(|item| item.task.id() == task_id)
+        {
+            item.latest_work_start = dto.requested_task_latest_work_start;
+        }
+        if let Some(active) = &active
+            && let Some(item) = self
+                .snapshot
+                .task_items
+                .iter_mut()
+                .find(|item| item.task.id() == active.task_id())
+        {
+            item.latest_work_start = dto.active_task_latest_work_start;
+        }
+        // This page contains only part of the task catalog. Keep the last
+        // full-snapshot revision so a later write cannot overwrite task
+        // changes made by another client without first refreshing.
+        self.last_failure = None;
+        Ok(WorklogPage {
+            worklogs,
+            snapshot: WorklogPageSnapshot {
+                requested_task_latest_work_start: dto.requested_task_latest_work_start,
+                active_worklog: active,
+                active_task_latest_work_start: dto.active_task_latest_work_start,
+            },
+            next_cursor,
+        })
+    }
+
+    fn all_worklogs(
+        &mut self,
+        after: Option<&GlobalWorklogCursor>,
+    ) -> Result<GlobalWorklogPage, ApplicationError> {
+        let mut url = self.transport.url("v1/worklogs");
+        if let Some(cursor) = after {
+            url.query_pairs_mut()
+                .append_pair("after_start", &cursor.start.to_rfc3339())
+                .append_pair("after_id", &cursor.id.to_string())
+                .append_pair("after_revision", &cursor.revision.to_string());
+        }
+        let dto: GlobalWorklogPageDto = self
+            .transport
+            .send(Method::GET, url, None::<&()>)
+            .map_err(|error| self.operation_error(error, None, None))?;
+        let worklogs = dto
+            .worklogs
+            .into_iter()
+            .map(app_decode_worklog)
+            .collect::<Result<Vec<_>, _>>()?;
+        let (snapshot, tracking, revision) = decode_snapshot(dto.snapshot)
+            .map_err(|error| self.operation_error(error, None, None))?;
+        let next_cursor = dto
+            .next_cursor
+            .map(decode_global_cursor)
+            .transpose()
+            .map_err(|error| self.operation_error(error, None, None))?;
+        self.snapshot = snapshot.clone();
+        self.tracking = tracking;
+        self.revision = revision;
+        self.last_failure = None;
+        Ok(GlobalWorklogPage {
+            worklogs,
+            snapshot,
+            next_cursor,
+        })
+    }
+}
+
+impl WorklogOperations for RemoteApplication {
+    fn move_worklog(
+        &mut self,
+        id: WorklogId,
+        expected_source_task_id: TaskId,
+        expected: WorklogTimes,
+        destination_task_id: TaskId,
+    ) -> Result<Worklog, ApplicationError> {
+        let body = WorklogChangeRequest::Move {
+            expected_task_id: expected_source_task_id.to_string(),
+            expected_start: canonical(expected.start()),
+            expected_end: expected.end().map(canonical),
+            destination_task_id: destination_task_id.to_string(),
+            guard: self.guard(),
+        };
+        self.mutation(
+            Method::PATCH,
+            &format!("v1/worklogs/{id}"),
+            &body,
+            Some(id),
+            None,
+            |result| worklog_result(result, id),
+        )
+    }
+
+    fn correct_worklog(
+        &mut self,
+        id: WorklogId,
+        expected: WorklogTimes,
+        replacement: WorklogTimes,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Worklog, ApplicationError> {
+        let body = WorklogChangeRequest::Correct {
+            expected_start: canonical(expected.start()),
+            expected_end: expected.end().map(canonical),
+            replacement_start: canonical(replacement.start()),
+            replacement_end: replacement.end().map(canonical),
+            occurred_at: canonical(occurred_at),
+            guard: self.guard(),
+        };
+        self.mutation(
+            Method::PATCH,
+            &format!("v1/worklogs/{id}"),
+            &body,
+            Some(id),
+            None,
+            |result| worklog_result(result, id),
+        )
+    }
+
+    fn delete_completed_worklog(
+        &mut self,
+        id: WorklogId,
+        expected_task_id: TaskId,
+        expected: WorklogTimes,
+    ) -> Result<Worklog, ApplicationError> {
+        let end = expected
+            .end()
+            .ok_or_else(|| ApplicationError::active_worklog(id))?;
+        let body = DeleteWorklogRequest {
+            expected_task_id: expected_task_id.to_string(),
+            expected_start: canonical(expected.start()),
+            expected_end: canonical(end),
+            guard: self.guard(),
+        };
+        self.mutation(
+            Method::DELETE,
+            &format!("v1/worklogs/{id}"),
+            &body,
+            Some(id),
+            None,
+            |result| worklog_result(result, id),
+        )
+    }
+}
+
+impl ReportQueries for RemoteApplication {
+    fn report_totals(
+        &mut self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportTotals, ApplicationError> {
+        if end <= start {
+            return Err(ApplicationError::InvalidReportRange);
+        }
+        if report_cooldown_active(self.last_unavailable_at, Instant::now()) {
+            return Err(ApplicationError::storage_failure(
+                "tracker server is unavailable",
+            ));
+        }
+        let mut url = self.transport.url("v1/reports");
+        url.query_pairs_mut()
+            .append_pair("start", &start.to_rfc3339())
+            .append_pair("end", &end.to_rfc3339())
+            .append_pair("now", &now.to_rfc3339());
+        let dto: ReportDto = self
+            .transport
+            .send(Method::GET, url, None::<&()>)
+            .map_err(|error| self.operation_error(error, None, None))?;
+        let mut rows = Vec::with_capacity(dto.rows.len());
+        let mut sum = 0_i64;
+        for row in dto.rows {
+            if row.duration_us <= 0 {
+                return Err(protocol_failure("report row has invalid duration"));
+            }
+            sum = sum
+                .checked_add(row.duration_us)
+                .ok_or(ApplicationError::ReportDurationOverflow)?;
+            rows.push(ReportRow {
+                task: app_decode_task(row.task)?,
+                duration: TimeDelta::microseconds(row.duration_us),
+            });
+        }
+        if sum != dto.total_us {
+            return Err(protocol_failure("report total does not match rows"));
+        }
+        let (snapshot, tracking, revision) = decode_snapshot(dto.snapshot)
+            .map_err(|error| self.operation_error(error, None, None))?;
+        self.snapshot = snapshot;
+        self.tracking = tracking;
+        self.revision = revision;
+        self.last_failure = None;
+        Ok(ReportTotals {
+            rows,
+            total: TimeDelta::microseconds(sum),
+        })
+    }
+}
+
+fn report_cooldown_active(last_unavailable_at: Option<Instant>, now: Instant) -> bool {
+    last_unavailable_at.is_some_and(|at| now.saturating_duration_since(at) < Duration::from_secs(5))
+}
+
+fn canonical(at: DateTime<Utc>) -> DateTime<Utc> {
+    DateTime::from_timestamp_micros(at.timestamp_micros()).expect("UTC timestamp fits microseconds")
+}
+
+fn active_id(state: &TrackingState) -> Option<WorklogId> {
+    match state {
+        TrackingState::Idle => None,
+        TrackingState::Running { worklog } => Some(worklog.id()),
+    }
+}
+
+fn decode_task(dto: TaskDto) -> Result<Task, RemoteError> {
+    let id = dto
+        .id
+        .parse()
+        .map_err(|_| RemoteError::Protocol("invalid task id".into()))?;
+    let name =
+        TaskName::new(&dto.name).map_err(|_| RemoteError::Protocol("invalid task name".into()))?;
+    Task::rehydrate(id, name, dto.archived, dto.created_at, dto.updated_at)
+        .map_err(|error| RemoteError::Protocol(error.to_string()))
+}
+
+fn decode_worklog(dto: WorklogDto) -> Result<Worklog, RemoteError> {
+    let id = dto
+        .id
+        .parse()
+        .map_err(|_| RemoteError::Protocol("invalid worklog id".into()))?;
+    let task_id = dto
+        .task_id
+        .parse()
+        .map_err(|_| RemoteError::Protocol("invalid worklog task id".into()))?;
+    Worklog::new(id, task_id, dto.start, dto.end)
+        .map_err(|error| RemoteError::Protocol(error.to_string()))
+}
+
+fn decode_active(
+    active: Option<WorklogDto>,
+) -> Result<(Option<Worklog>, TrackingState), RemoteError> {
+    let worklog = active.map(decode_worklog).transpose()?;
+    let tracking = match worklog.clone() {
+        Some(worklog) => Tracker::resume(worklog)
+            .map_err(|error| RemoteError::Protocol(error.to_string()))?
+            .state()
+            .clone(),
+        None => TrackingState::Idle,
+    };
+    Ok((worklog, tracking))
+}
+
+fn decode_snapshot(
+    dto: SnapshotDto,
+) -> Result<(TrackerSnapshot, TrackingState, String), RemoteError> {
+    let mut task_items = dto
+        .task_items
+        .into_iter()
+        .map(|item| {
+            Ok(TaskListItem {
+                task: decode_task(item.task)?,
+                latest_work_start: item.latest_work_start,
+            })
+        })
+        .collect::<Result<Vec<_>, RemoteError>>()?;
+    task_items.sort_by_key(|item| item.task.id());
+    if task_items
+        .windows(2)
+        .any(|pair| pair[0].task.id() == pair[1].task.id())
+    {
+        return Err(RemoteError::Protocol("duplicate task in snapshot".into()));
+    }
+    let active_worklog = dto.active_worklog.map(decode_worklog).transpose()?;
+    let tracking = match active_worklog.clone() {
+        Some(worklog) => {
+            if !task_items
+                .iter()
+                .any(|item| item.task.id() == worklog.task_id() && !item.task.is_archived())
+            {
+                return Err(RemoteError::Protocol(
+                    "active worklog has no active task".into(),
+                ));
+            }
+            Tracker::resume(worklog)
+                .map_err(|error| RemoteError::Protocol(error.to_string()))?
+                .state()
+                .clone()
+        }
+        None => TrackingState::Idle,
+    };
+    if let Some(active) = &active_worklog
+        && let Some(item) = task_items
+            .iter_mut()
+            .find(|item| item.task.id() == active.task_id())
+    {
+        item.latest_work_start = Some(
+            item.latest_work_start
+                .map_or(active.start(), |old| old.max(active.start())),
+        );
+    }
+    Ok((
+        TrackerSnapshot {
+            task_items,
+            active_worklog,
+        },
+        tracking,
+        dto.revision,
+    ))
+}
+
+fn decode_cursor(dto: WorklogCursorDto) -> Result<WorklogCursor, RemoteError> {
+    Ok(WorklogCursor {
+        task_id: dto
+            .task_id
+            .parse()
+            .map_err(|_| RemoteError::Protocol("invalid cursor task id".into()))?,
+        start: dto.start,
+        id: dto
+            .id
+            .parse()
+            .map_err(|_| RemoteError::Protocol("invalid cursor worklog id".into()))?,
+        revision: dto.revision,
+    })
+}
+
+fn decode_global_cursor(dto: GlobalWorklogCursorDto) -> Result<GlobalWorklogCursor, RemoteError> {
+    Ok(GlobalWorklogCursor {
+        start: dto.start,
+        id: dto
+            .id
+            .parse()
+            .map_err(|_| RemoteError::Protocol("invalid cursor worklog id".into()))?,
+        revision: dto.revision,
+    })
+}
+
+fn app_decode_task(dto: TaskDto) -> Result<Task, ApplicationError> {
+    decode_task(dto).map_err(|error| protocol_failure(&error.to_string()))
+}
+
+fn app_decode_worklog(dto: WorklogDto) -> Result<Worklog, ApplicationError> {
+    decode_worklog(dto).map_err(|error| protocol_failure(&error.to_string()))
+}
+
+fn task_result(result: MutationResultDto, expected_id: TaskId) -> Result<Task, ApplicationError> {
+    match result {
+        MutationResultDto::Task(task) => {
+            let task = app_decode_task(task)?;
+            if task.id() != expected_id {
+                return Err(protocol_failure("task result has a different id"));
+            }
+            Ok(task)
+        }
+        _ => Err(protocol_failure("wrong task result")),
+    }
+}
+
+fn worklog_result(
+    result: MutationResultDto,
+    expected_id: WorklogId,
+) -> Result<Worklog, ApplicationError> {
+    match result {
+        MutationResultDto::Worklog(worklog) => {
+            let worklog = app_decode_worklog(worklog)?;
+            if worklog.id() != expected_id {
+                return Err(protocol_failure("worklog result has a different id"));
+            }
+            Ok(worklog)
+        }
+        _ => Err(protocol_failure("wrong worklog result")),
+    }
+}
+
+fn set_tracking_result(
+    result: MutationResultDto,
+    task_id: TaskId,
+    new_id: WorklogId,
+    old_active: Option<WorklogId>,
+) -> Result<SetActiveTaskOutcome, ApplicationError> {
+    match result {
+        MutationResultDto::Worklog(dto) => {
+            let worklog = app_decode_worklog(dto)?;
+            if old_active.is_some()
+                || worklog.id() != new_id
+                || worklog.task_id() != task_id
+                || !worklog.is_active()
+            {
+                return Err(protocol_failure("invalid started worklog"));
+            }
+            Ok(SetActiveTaskOutcome::Started { worklog })
+        }
+        MutationResultDto::TrackingSwitched { stopped, started } => {
+            let stopped = app_decode_worklog(stopped)?;
+            let started = app_decode_worklog(started)?;
+            if old_active != Some(stopped.id())
+                || stopped.is_active()
+                || started.id() != new_id
+                || started.task_id() != task_id
+                || !started.is_active()
+            {
+                return Err(protocol_failure("invalid switched worklogs"));
+            }
+            Ok(SetActiveTaskOutcome::Switched { stopped, started })
+        }
+        MutationResultDto::TrackingAlreadyActive(dto) => {
+            let worklog = app_decode_worklog(dto)?;
+            if !worklog.is_active() || worklog.task_id() != task_id {
+                return Err(protocol_failure("invalid already-active worklog"));
+            }
+            Ok(SetActiveTaskOutcome::AlreadyActive {
+                worklog: ActiveWorklog::begin(worklog.id(), worklog.task_id(), worklog.start()),
+            })
+        }
+        _ => Err(protocol_failure("wrong tracking result")),
+    }
+}
+
+fn clear_tracking_result(
+    result: MutationResultDto,
+    expected_active: WorklogId,
+) -> Result<ClearActiveTaskOutcome, ApplicationError> {
+    match result {
+        MutationResultDto::Worklog(dto) => {
+            let worklog = app_decode_worklog(dto)?;
+            if worklog.id() != expected_active || worklog.is_active() {
+                return Err(protocol_failure("invalid stopped worklog"));
+            }
+            Ok(ClearActiveTaskOutcome::Stopped { worklog })
+        }
+        MutationResultDto::TrackingAlreadyIdle => Ok(ClearActiveTaskOutcome::AlreadyIdle),
+        _ => Err(protocol_failure("wrong tracking result")),
+    }
+}
+
+fn protocol_failure(message: &str) -> ApplicationError {
+    ApplicationError::storage_failure(format!("invalid server response: {message}"))
+}
+
+fn classify_error(error: &RemoteError) -> RemoteFailureKind {
+    match error {
+        RemoteError::Unavailable(_) => RemoteFailureKind::Unavailable,
+        RemoteError::Http { status, .. }
+            if status.is_server_error() || *status == StatusCode::REQUEST_TIMEOUT =>
+        {
+            RemoteFailureKind::Unavailable
+        }
+        RemoteError::Http { status, .. } if *status == StatusCode::CONFLICT => {
+            RemoteFailureKind::Conflict
+        }
+        _ => RemoteFailureKind::Protocol,
+    }
+}
+
+fn map_application_error(
+    error: &RemoteError,
+    worklog_id: Option<WorklogId>,
+    _task_id: Option<TaskId>,
+) -> ApplicationError {
+    if let RemoteError::Http { status, body } = error {
+        if let Ok(dto) = serde_json::from_slice::<ErrorDto>(body) {
+            let category = match dto.code {
+                ErrorCode::InvalidRequest | ErrorCode::Conflict | ErrorCode::StaleRevision => {
+                    ApplicationFailureCategory::General
+                }
+                ErrorCode::NotFound if worklog_id.is_some() => {
+                    ApplicationFailureCategory::WorklogNotFound
+                }
+                ErrorCode::NotFound => ApplicationFailureCategory::General,
+                ErrorCode::WorklogChanged => ApplicationFailureCategory::WorklogChanged,
+                ErrorCode::WorklogHistoryChanged => {
+                    ApplicationFailureCategory::WorklogHistoryChanged
+                }
+                ErrorCode::WorklogOverlap => ApplicationFailureCategory::WorklogOverlap,
+                ErrorCode::ActiveWorklog => ApplicationFailureCategory::ActiveWorklog,
+                ErrorCode::ActiveTask => ApplicationFailureCategory::ActiveTask,
+                ErrorCode::Internal => {
+                    return ApplicationError::storage_failure("remote server error");
+                }
+            };
+            return ApplicationError::semantic_failure(category, safe_message(&dto.message));
+        }
+        if *status == StatusCode::CONFLICT {
+            return ApplicationError::semantic_failure(
+                ApplicationFailureCategory::General,
+                "Tracker state changed. Refresh and retry.",
+            );
+        }
+    }
+    ApplicationError::storage_failure(error.to_string())
+}
+
+#[cfg(test)]
+mod mutation_tests {
+    use std::{
+        net::SocketAddr,
+        sync::{Arc, Mutex, mpsc},
+        thread,
+        time::{Duration as StdDuration, Instant},
+    };
+
+    use axum::{
+        Json, Router,
+        routing::{get, post},
+    };
+    use chrono::{DateTime, Duration, Utc};
+    use reqwest::StatusCode;
+    use tokio::sync::oneshot;
+    use tracker_application::{
+        ApplicationFailureCategory, ClearActiveTaskOutcome, SetActiveTaskOutcome,
+    };
+    use tracker_domain::{TaskId, WorklogId};
+    use tracker_protocol::{
+        CreateTaskRequest, ErrorCode, ErrorDto, HealthDto, MutationDto, MutationResultDto,
+        SnapshotDto, TaskDto, TaskItemDto, WorklogDto, WriteGuard,
+    };
+
+    use super::{
+        RemoteApplication, RemoteError, RemoteFailureKind, classify_error, clear_tracking_result,
+        decode_snapshot, map_application_error, report_cooldown_active, set_tracking_result,
+    };
+    use tracker_application::TaskOperations;
+    use tracker_domain::TaskName;
+
+    fn at() -> DateTime<Utc> {
+        DateTime::from_timestamp(1_800_000_000, 0).unwrap()
+    }
+
+    fn task(id: TaskId, archived: bool) -> TaskDto {
+        TaskDto {
+            id: id.to_string(),
+            name: "Project".into(),
+            archived,
+            created_at: at(),
+            updated_at: at(),
+        }
+    }
+
+    #[test]
+    fn report_cooldown_ends_at_five_seconds() {
+        let now = Instant::now();
+        assert!(!report_cooldown_active(None, now));
+        assert!(report_cooldown_active(
+            Some(now - StdDuration::from_millis(4_999)),
+            now
+        ));
+        assert!(!report_cooldown_active(
+            Some(now - StdDuration::from_secs(5)),
+            now
+        ));
+        assert!(!report_cooldown_active(
+            Some(now - StdDuration::from_millis(5_001)),
+            now
+        ));
+    }
+
+    fn worklog(id: WorklogId, task_id: TaskId, end: Option<DateTime<Utc>>) -> WorklogDto {
+        WorklogDto {
+            id: id.to_string(),
+            task_id: task_id.to_string(),
+            start: at() + Duration::seconds(10),
+            end,
+        }
+    }
+
+    #[test]
+    fn snapshot_requires_an_active_task_for_the_running_worklog() {
+        let task_id = TaskId::generate();
+        let running = worklog(WorklogId::generate(), task_id, None);
+        let snapshot = |archived| SnapshotDto {
+            task_items: vec![TaskItemDto {
+                task: task(task_id, archived),
+                latest_work_start: Some(at()),
+            }],
+            active_worklog: Some(running.clone()),
+            revision: "revision".into(),
+        };
+
+        assert!(decode_snapshot(snapshot(true)).is_err());
+        let (decoded, tracking, revision) = decode_snapshot(snapshot(false)).unwrap();
+        assert_eq!(revision, "revision");
+        assert!(matches!(
+            tracking,
+            tracker_domain::TrackingState::Running { .. }
+        ));
+        assert_eq!(decoded.active_worklog.unwrap().id().to_string(), running.id);
+        assert_eq!(decoded.task_items[0].latest_work_start, Some(running.start));
+    }
+
+    #[test]
+    fn snapshot_rejects_a_running_worklog_for_a_missing_task() {
+        let snapshot = SnapshotDto {
+            task_items: vec![TaskItemDto {
+                task: task(TaskId::generate(), false),
+                latest_work_start: None,
+            }],
+            active_worklog: Some(worklog(WorklogId::generate(), TaskId::generate(), None)),
+            revision: "revision".into(),
+        };
+        assert!(decode_snapshot(snapshot).is_err());
+    }
+
+    #[test]
+    fn tracking_result_checks_every_started_and_stopped_identifier_and_state() {
+        let task_id = TaskId::generate();
+        let other_task = TaskId::generate();
+        let started_id = WorklogId::generate();
+        let old_id = WorklogId::generate();
+        let start = worklog(started_id, task_id, None);
+        let stop = worklog(old_id, task_id, Some(at() + Duration::seconds(20)));
+
+        assert!(matches!(
+            set_tracking_result(
+                MutationResultDto::Worklog(start.clone()),
+                task_id,
+                started_id,
+                None
+            )
+            .unwrap(),
+            SetActiveTaskOutcome::Started { .. }
+        ));
+        for (dto, expected_task, expected_id, previous) in [
+            (start.clone(), task_id, started_id, Some(old_id)),
+            (start.clone(), task_id, old_id, None),
+            (start.clone(), other_task, started_id, None),
+            (stop.clone(), task_id, old_id, None),
+        ] {
+            assert!(
+                set_tracking_result(
+                    MutationResultDto::Worklog(dto),
+                    expected_task,
+                    expected_id,
+                    previous
+                )
+                .is_err()
+            );
+        }
+
+        let switched = MutationResultDto::TrackingSwitched {
+            stopped: stop.clone(),
+            started: start.clone(),
+        };
+        assert!(matches!(
+            set_tracking_result(switched, task_id, started_id, Some(old_id)).unwrap(),
+            SetActiveTaskOutcome::Switched { .. }
+        ));
+        for (stopped, started, expected_task, expected_id, previous) in [
+            (stop.clone(), start.clone(), task_id, started_id, None),
+            (
+                start.clone(),
+                start.clone(),
+                task_id,
+                started_id,
+                Some(started_id),
+            ),
+            (stop.clone(), start.clone(), task_id, old_id, Some(old_id)),
+            (
+                stop.clone(),
+                start.clone(),
+                other_task,
+                started_id,
+                Some(old_id),
+            ),
+            (stop.clone(), stop.clone(), task_id, old_id, Some(old_id)),
+        ] {
+            assert!(
+                set_tracking_result(
+                    MutationResultDto::TrackingSwitched { stopped, started },
+                    expected_task,
+                    expected_id,
+                    previous
+                )
+                .is_err()
+            );
+        }
+        assert!(matches!(
+            set_tracking_result(
+                MutationResultDto::TrackingAlreadyActive(start.clone()),
+                task_id,
+                started_id,
+                Some(old_id)
+            )
+            .unwrap(),
+            SetActiveTaskOutcome::AlreadyActive { .. }
+        ));
+        assert!(
+            set_tracking_result(
+                MutationResultDto::TrackingAlreadyActive(stop),
+                task_id,
+                started_id,
+                Some(old_id)
+            )
+            .is_err()
+        );
+        assert!(
+            set_tracking_result(
+                MutationResultDto::TrackingAlreadyActive(start),
+                other_task,
+                started_id,
+                Some(old_id)
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn idle_tracking_result_is_a_successful_no_op() {
+        assert_eq!(
+            clear_tracking_result(
+                MutationResultDto::TrackingAlreadyIdle,
+                WorklogId::generate()
+            )
+            .unwrap(),
+            ClearActiveTaskOutcome::AlreadyIdle
+        );
+    }
+
+    #[test]
+    fn stopping_result_rejects_the_wrong_worklog_or_an_unfinished_worklog() {
+        let expected_id = WorklogId::generate();
+        let task_id = TaskId::generate();
+        let stopped = worklog(expected_id, task_id, Some(at() + Duration::seconds(20)));
+        assert!(matches!(
+            clear_tracking_result(MutationResultDto::Worklog(stopped.clone()), expected_id)
+                .unwrap(),
+            ClearActiveTaskOutcome::Stopped { .. }
+        ));
+        assert!(
+            clear_tracking_result(MutationResultDto::Worklog(stopped), WorklogId::generate())
+                .is_err()
+        );
+        assert!(
+            clear_tracking_result(
+                MutationResultDto::Worklog(worklog(expected_id, task_id, None)),
+                expected_id
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn http_failures_keep_unavailable_conflict_and_protocol_distinct() {
+        let error = |status| RemoteError::Http {
+            status,
+            body: Vec::new(),
+        };
+        assert_eq!(
+            classify_error(&error(StatusCode::INTERNAL_SERVER_ERROR)),
+            RemoteFailureKind::Unavailable
+        );
+        assert_eq!(
+            classify_error(&error(StatusCode::REQUEST_TIMEOUT)),
+            RemoteFailureKind::Unavailable
+        );
+        assert_eq!(
+            classify_error(&error(StatusCode::CONFLICT)),
+            RemoteFailureKind::Conflict
+        );
+        assert_eq!(
+            classify_error(&error(StatusCode::BAD_REQUEST)),
+            RemoteFailureKind::Protocol
+        );
+        assert_eq!(
+            classify_error(&RemoteError::Unavailable("offline".into())),
+            RemoteFailureKind::Unavailable
+        );
+    }
+
+    #[test]
+    fn not_found_category_depends_on_whether_a_worklog_was_requested() {
+        let error = RemoteError::Http {
+            status: StatusCode::NOT_FOUND,
+            body: serde_json::to_vec(&ErrorDto {
+                code: ErrorCode::NotFound,
+                message: "Missing entry".into(),
+            })
+            .unwrap(),
+        };
+        assert_eq!(
+            map_application_error(&error, Some(WorklogId::generate()), None)
+                .failure()
+                .category(),
+            ApplicationFailureCategory::WorklogNotFound
+        );
+        assert_eq!(
+            map_application_error(&error, None, Some(TaskId::generate()))
+                .failure()
+                .category(),
+            ApplicationFailureCategory::General
+        );
+        let invalid_body = RemoteError::Http {
+            status: StatusCode::CONFLICT,
+            body: Vec::new(),
+        };
+        assert_eq!(
+            map_application_error(&invalid_body, None, None)
+                .failure()
+                .message(),
+            "Tracker state changed. Refresh and retry."
+        );
+    }
+
+    #[test]
+    fn pending_create_recognizes_a_committed_task_or_reuses_its_id_after_reconnect() {
+        for (committed, recovering) in [(false, true), (true, true), (false, false)] {
+            let pending_id = TaskId::generate();
+            let pending_task = task(pending_id, false);
+            let sent = Arc::new(Mutex::new(Vec::<CreateTaskRequest>::new()));
+            let sent_for_route = Arc::clone(&sent);
+            let snapshot = SnapshotDto {
+                task_items: if committed {
+                    vec![TaskItemDto {
+                        task: pending_task.clone(),
+                        latest_work_start: None,
+                    }]
+                } else {
+                    Vec::new()
+                },
+                active_worklog: None,
+                revision: "new-revision".into(),
+            };
+            let router = Router::new()
+                .route(
+                    "/v1/health",
+                    get(|| async {
+                        Json(HealthDto {
+                            status: "ok".into(),
+                            protocol_version: tracker_protocol::VERSION,
+                        })
+                    }),
+                )
+                .route(
+                    "/v1/snapshot",
+                    get(move || {
+                        let snapshot = snapshot.clone();
+                        async move { Json(snapshot) }
+                    }),
+                )
+                .route(
+                    "/v1/tasks",
+                    post(move |Json(body): Json<CreateTaskRequest>| {
+                        let sent = Arc::clone(&sent_for_route);
+                        async move {
+                            sent.lock().unwrap().push(body.clone());
+                            let created = TaskDto {
+                                id: body.task_id,
+                                name: body.name,
+                                archived: false,
+                                created_at: body.occurred_at,
+                                updated_at: body.occurred_at,
+                            };
+                            Json(MutationDto {
+                                result: MutationResultDto::Task(created.clone()),
+                                snapshot: SnapshotDto {
+                                    task_items: vec![TaskItemDto {
+                                        task: created,
+                                        latest_work_start: None,
+                                    }],
+                                    active_worklog: None,
+                                    revision: "next-revision".into(),
+                                },
+                            })
+                        }
+                    }),
+                );
+            let (address_tx, address_rx) = mpsc::channel::<SocketAddr>();
+            let (shutdown_tx, shutdown_rx) = oneshot::channel();
+            let server = thread::spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                runtime.block_on(async move {
+                    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                    address_tx.send(listener.local_addr().unwrap()).unwrap();
+                    axum::serve(listener, router)
+                        .with_graceful_shutdown(async {
+                            let _ = shutdown_rx.await;
+                        })
+                        .await
+                        .unwrap();
+                });
+            });
+
+            let address = address_rx.recv().unwrap();
+            let mut client =
+                RemoteApplication::disconnected(&format!("http://{address}/")).unwrap();
+            client.pending_create = Some(CreateTaskRequest {
+                task_id: pending_id.to_string(),
+                name: "Project".into(),
+                occurred_at: at(),
+                guard: WriteGuard {
+                    expected_revision: "previous-revision".into(),
+                    request_id: uuid::Uuid::now_v7().to_string(),
+                },
+            });
+            client.last_failure = recovering.then_some(RemoteFailureKind::Unavailable);
+            let result = client
+                .create_task(TaskName::new("Project").unwrap(), at())
+                .unwrap();
+            assert_eq!(result.id(), pending_id);
+            assert!(client.pending_create.is_none());
+            let requests = sent.lock().unwrap();
+            assert_eq!(requests.len(), usize::from(!committed));
+            if !committed {
+                assert_eq!(requests[0].task_id, pending_id.to_string());
+                assert_eq!(
+                    requests[0].guard.expected_revision,
+                    if recovering {
+                        "new-revision"
+                    } else {
+                        "previous-revision"
+                    }
+                );
+            }
+            drop(requests);
+            shutdown_tx.send(()).unwrap();
+            server.join().unwrap();
+        }
+    }
+}
+
+fn safe_message(message: &str) -> String {
+    let cleaned: String = message
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(512)
+        .collect();
+    if cleaned.is_empty() {
+        "Server rejected the request".to_owned()
+    } else {
+        cleaned
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::TimeZone;
+    use tracker_protocol::{TaskItemDto, WorklogDto};
+
+    use super::*;
+
+    fn task(id: TaskId) -> TaskDto {
+        let at = Utc.timestamp_opt(100, 0).unwrap();
+        TaskDto {
+            id: id.to_string(),
+            name: "Project work".into(),
+            archived: false,
+            created_at: at,
+            updated_at: at,
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_active_worklog_before_adopting_snapshot() {
+        let task_id = TaskId::generate();
+        let at = Utc.timestamp_opt(100, 0).unwrap();
+        let dto = SnapshotDto {
+            task_items: vec![TaskItemDto {
+                task: task(task_id),
+                latest_work_start: None,
+            }],
+            active_worklog: Some(WorklogDto {
+                id: WorklogId::generate().to_string(),
+                task_id: task_id.to_string(),
+                start: at,
+                end: Some(at),
+            }),
+            revision: "r1".into(),
+        };
+        assert!(matches!(
+            decode_snapshot(dto),
+            Err(RemoteError::Protocol(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_tasks_in_server_snapshot() {
+        let id = TaskId::generate();
+        let item = TaskItemDto {
+            task: task(id),
+            latest_work_start: None,
+        };
+        let dto = SnapshotDto {
+            task_items: vec![item.clone(), item],
+            active_worklog: None,
+            revision: "r1".into(),
+        };
+        assert!(matches!(
+            decode_snapshot(dto),
+            Err(RemoteError::Protocol(_))
+        ));
+    }
+}
