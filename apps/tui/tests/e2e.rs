@@ -23,5 +23,7 @@ mod database;
 mod driver;
 #[path = "e2e/page.rs"]
 mod page;
+#[path = "e2e/remote.rs"]
+mod remote;
 #[path = "e2e/scenarios.rs"]
 mod scenarios;

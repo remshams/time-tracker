@@ -61,6 +61,18 @@ impl TestContext {
         TuiDriver::spawn(&self.home)
     }
 
+    pub(crate) fn launch_remote(&self, endpoint: &str) -> TuiDriver {
+        TuiDriver::spawn_remote(&self.home, endpoint)
+    }
+
+    pub(crate) fn home(&self) -> &Path {
+        &self.home
+    }
+
+    pub(crate) fn local_database_path(&self) -> &Path {
+        &self.database_path
+    }
+
     /// Launches `tt` with a specific IANA timezone for display assertions.
     pub(crate) fn launch_in_timezone(&self, timezone: &str) -> TuiDriver {
         TuiDriver::spawn_in_timezone(&self.home, timezone)

@@ -14,6 +14,8 @@ mod history;
 mod move_worklog;
 #[path = "scenarios/ordering.rs"]
 mod ordering;
+#[path = "scenarios/remote.rs"]
+mod remote;
 #[path = "scenarios/reports.rs"]
 mod reports;
 #[path = "scenarios/resize.rs"]

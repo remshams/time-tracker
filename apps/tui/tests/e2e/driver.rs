@@ -52,6 +52,22 @@ impl TuiDriver {
         Self::spawn_in_timezone(home, "UTC")
     }
 
+    /// Spawns `tt` with the remote server selected and an isolated home.
+    pub(crate) fn spawn_remote(home: &Path, endpoint: &str) -> Self {
+        let terminal = Terminal::builder()
+            .size(COLS, ROWS)
+            .timeout(STARTUP_LIMIT)
+            .env_clear()
+            .env("HOME", home)
+            .env("SHELL", "/bin/sh")
+            .env("TZ", "UTC")
+            .arg("--server")
+            .arg(endpoint)
+            .spawn(env!("CARGO_BIN_EXE_tt"))
+            .expect("spawning remote tt in a pty must succeed");
+        Self { terminal }
+    }
+
     /// Spawns `tt` with a cleared environment and the given IANA timezone.
     ///
     /// The coverage profile file passes through when the suite runs under

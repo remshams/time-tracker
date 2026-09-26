@@ -559,7 +559,12 @@ fn reports_adopt_external_tracking_and_return_to_current_active_tasks() {
                 .selected_row_text()
                 .is_some_and(|row| row.starts_with(&selected_report_task))
     });
-    tt.press(Key::Esc);
+    tt.press_and_wait(Key::Esc, "top-level report tabs", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .footer()
+            .text()
+            .contains("switch tabs")
+    });
     tt.press_and_wait(
         Key::BackTab,
         "the external worklog in the global tab",
