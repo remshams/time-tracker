@@ -44,7 +44,7 @@ fn next_tab(view: TaskView) -> TaskListCommand {
 
 fn previous_tab(view: TaskView) -> TaskListCommand {
     match view {
-        TaskView::Active => TaskListCommand::ShowReports,
+        TaskView::Active => TaskListCommand::ShowAllWorklogs,
         TaskView::Archived => TaskListCommand::ShowActiveTasks,
     }
 }
@@ -205,7 +205,7 @@ mod tests {
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::BackTab)),
-            Some(Command::TaskList(TaskListCommand::ShowReports))
+            Some(Command::TaskList(TaskListCommand::ShowAllWorklogs))
         );
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Tab)),
@@ -322,7 +322,7 @@ mod tests {
                         KeyEvent::new(code, KeyModifiers::SHIFT)
                     ),
                     Some(Command::TaskList(match view {
-                        TaskView::Active => TaskListCommand::ShowReports,
+                        TaskView::Active => TaskListCommand::ShowAllWorklogs,
                         TaskView::Archived => TaskListCommand::ShowActiveTasks,
                     }))
                 );

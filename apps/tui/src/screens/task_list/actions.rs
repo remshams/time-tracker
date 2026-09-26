@@ -25,6 +25,7 @@ impl<S: TrackerApplicationService> App<S> {
             TaskListCommand::ShowActiveTasks => self.show_tasks(TaskView::Active),
             TaskListCommand::ShowArchivedTasks => self.show_tasks(TaskView::Archived),
             TaskListCommand::ShowReports => self.open_reports(),
+            TaskListCommand::ShowAllWorklogs => self.open_all_worklogs(),
             TaskListCommand::CopySelectedName => {
                 if let Some(name) = self.selected_task().map(|task| task.name().to_string()) {
                     self.copy_text(&name);

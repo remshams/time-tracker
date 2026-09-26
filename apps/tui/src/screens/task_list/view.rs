@@ -46,7 +46,7 @@ pub(crate) fn render(
 }
 
 pub(crate) fn render_tabs(frame: &mut Frame, area: Rect, selected: usize, focused: bool) {
-    const LABELS: [&str; 3] = ["Active", "Archived", "Reports"];
+    const LABELS: [&str; 4] = ["Active", "Archived", "Reports", "Worklogs"];
     let tabs = Tabs::new(LABELS)
         .select(selected)
         .highlight_style(if focused {
@@ -272,7 +272,7 @@ mod tests {
         let mut app = app_with(&["alpha"]);
         let terminal = draw_at(&app, 60, 20);
         assert!(row(&terminal, 1).contains(" Active │ Archived "));
-        assert_eq!(terminal.backend().buffer()[(31, 1)].symbol(), "─");
+        assert_eq!(terminal.backend().buffer()[(45, 1)].symbol(), "─");
         assert!(
             cell(&terminal, 2, 1)
                 .add_modifier

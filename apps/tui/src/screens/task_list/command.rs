@@ -17,6 +17,7 @@ pub(crate) enum TaskListCommand {
     /// Show the list of archived tasks.
     ShowArchivedTasks,
     ShowReports,
+    ShowAllWorklogs,
     CopySelectedName,
     /// Open the worklog history of the selected task.
     OpenHistory,
