@@ -308,19 +308,19 @@ The move decisions are recorded in [ADR 0008](docs/adr/0008-move-worklogs-betwee
 
 ### Milestone 3: exclusive local or remote storage
 
-- [ ] Add explicit process modes to the same binary: local TUI, remote TUI with a configured endpoint, and `tt serve`.
-- [ ] Add a versioned resource-oriented REST API for tasks, worklogs, and the singleton active-tracking state under `/v1`.
-- [ ] Keep raw repository methods and storage commands out of the public HTTP contract.
-- [ ] Run the same `tracker-application` workflows behind local and server adapters.
-- [ ] Use SQLite as the initial server store and serialize or pool access safely for concurrent requests.
-- [ ] Bind the initial server only through an explicitly selected localhost or Tailscale address. Client and server may assume the same application version.
-- [ ] Send client-created UTC timestamps with remote task and tracking operations. Assume sufficiently synchronized clocks and add no clock-skew-specific error or conflict handling in the initial version.
-- [ ] Keep server validation to domain and persistence invariants, including rejecting a worklog end before its start and enforcing atomic start, stop, and switch behavior.
-- [ ] Make state-setting and record-creation requests safe to retry without reversing state or duplicating records.
-- [ ] Load the required task and current-tracking queries on connection and refresh affected resources after stale or conflicting commands.
-- [ ] Keep remote network work off the TUI rendering and input thread, with visible loading, saving, and unavailable states.
-- [ ] Fail remote operations when the endpoint is unavailable; never fall back to a local database.
-- [ ] Keep local and remote databases separate. Defer explicit import unless a concrete migration need is approved.
+- [x] Add explicit process modes to the same binary: local TUI, remote TUI with a configured endpoint, and `tt serve`.
+- [x] Add a versioned resource-oriented REST API for tasks, worklogs, and the singleton active-tracking state under `/v1`.
+- [x] Keep raw repository methods and storage commands out of the public HTTP contract.
+- [x] Run the same `tracker-application` workflows behind local and server adapters.
+- [x] Use SQLite as the initial server store and serialize or pool access safely for concurrent requests.
+- [x] Bind the initial server only through an explicitly selected localhost or Tailscale address. Client and server may assume the same application version.
+- [x] Send client-created UTC timestamps with remote task and tracking operations. Assume sufficiently synchronized clocks and add no clock-skew-specific error or conflict handling in the initial version.
+- [x] Keep server validation to domain and persistence invariants, including rejecting a worklog end before its start and enforcing atomic start, stop, and switch behavior.
+- [x] Make state-setting and record-creation requests safe to retry without reversing state or duplicating records.
+- [x] Load the required task and current-tracking queries on connection and refresh affected resources after stale or conflicting commands.
+- [x] Keep remote network work off the TUI rendering and input thread, with visible loading, saving, and unavailable states.
+- [x] Fail remote operations when the endpoint is unavailable; never fall back to a local database.
+- [x] Keep local and remote databases separate. Defer explicit import unless a concrete migration need is approved.
 - [ ] Measure polling and refresh behavior before adding Server-Sent Events or WebSockets.
 
 ### Deferred checkpoint: offline synchronization
