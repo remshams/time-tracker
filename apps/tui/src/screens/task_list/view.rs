@@ -46,7 +46,7 @@ pub(crate) fn render(
 }
 
 pub(crate) fn render_tabs(frame: &mut Frame, area: Rect, selected: usize, focused: bool) {
-    const LABELS: [&str; 4] = ["Active", "Archived", "Reports", "Worklogs"];
+    const LABELS: [&str; 4] = ["Active", "Archived", "Worklogs", "Reports"];
     let tabs = Tabs::new(LABELS)
         .select(selected)
         .highlight_style(if focused {
@@ -254,7 +254,7 @@ mod tests {
         let rows = rows(&terminal);
 
         assert!(rows[0].contains("Time Tracker"));
-        assert!(rows[1].contains(" Active │ Archived "));
+        assert!(rows[1].contains(" Active │ Archived │ Worklogs │ Reports "));
         assert!(rows[21].contains("Sort: recently worked"));
         assert!(rows[2].contains("alpha"));
         assert!(rows[3].contains("beta"));
