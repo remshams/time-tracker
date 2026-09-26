@@ -71,7 +71,12 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: AppView<'_>, state: &Wo
     }
 }
 
-fn render_move_modal(frame: &mut Frame, area: Rect, app: AppView<'_>, draft: &MoveDraft) {
+pub(crate) fn render_move_modal(
+    frame: &mut Frame,
+    area: Rect,
+    app: AppView<'_>,
+    draft: &MoveDraft,
+) {
     const VISIBLE_RESULTS: usize = 6;
     let result_count = draft.result_count();
     let selected = draft.selected_result_index();
@@ -87,7 +92,7 @@ fn render_move_modal(frame: &mut Frame, area: Rect, app: AppView<'_>, draft: &Mo
     let mut lines = vec![
         Line::from(format!(
             "Source: {} · {} → {}",
-            app.history_task_name().unwrap_or("unknown task"),
+            app.task_name(source.task_id()).unwrap_or("unknown task"),
             app.local_time(source.start()),
             source_end
         )),

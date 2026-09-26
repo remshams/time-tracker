@@ -74,7 +74,10 @@ fn map_normal(
     Some(KeymapCommand::Local(command))
 }
 
-fn map_move(focus: MoveFocus, key: KeyEvent) -> Option<KeymapCommand<WorklogHistoryCommand>> {
+pub(crate) fn map_move(
+    focus: MoveFocus,
+    key: KeyEvent,
+) -> Option<KeymapCommand<WorklogHistoryCommand>> {
     let command = match (key.code, key.modifiers) {
         (KeyCode::Enter, KeyModifiers::NONE) => WorklogHistoryCommand::Confirm,
         (KeyCode::Esc, KeyModifiers::NONE) => WorklogHistoryCommand::Cancel,
@@ -161,18 +164,7 @@ pub(crate) fn footer_hints(state: &WorklogHistoryState, width: u16) -> &'static 
                 "type · ←/→ · bs/del · tab/S-tab · j/k ±5m · J/K ±1h · enter · esc · ctrl+c"
             }
         }
-        WorklogHistoryMode::Move(draft) => match (draft.focus(), width < 80) {
-            (MoveFocus::Search, true) => {
-                "type/bs tab/S-tab ↑/↓ choose enter move esc cancel ctrl+c"
-            }
-            (MoveFocus::Search, false) => {
-                "type/bs · tab/S-tab · ↑/↓ choose · enter move · esc cancel · ctrl+c quit"
-            }
-            (MoveFocus::Results, true) => "j/k/↑/↓ choose tab/S-tab enter move esc cancel ctrl+c",
-            (MoveFocus::Results, false) => {
-                "j/k/↑/↓ choose · tab/S-tab · enter move · esc cancel · ctrl+c quit"
-            }
-        },
+        WorklogHistoryMode::Move(draft) => move_footer_hints(draft.focus(), width),
         WorklogHistoryMode::ConfirmDeletion { .. } => {
             if width < 80 {
                 "d/y/enter delete n/esc cancel ctrl+c quit"
@@ -193,6 +185,19 @@ pub(crate) fn footer_hints(state: &WorklogHistoryState, width: u16) -> &'static 
             } else {
                 "j/k/↑/↓ move e edit m move d delete o older r refresh esc back q/ctrl+c quit"
             }
+        }
+    }
+}
+
+pub(crate) fn move_footer_hints(focus: MoveFocus, width: u16) -> &'static str {
+    match (focus, width < 80) {
+        (MoveFocus::Search, true) => "type/bs tab/S-tab ↑/↓ choose enter move esc cancel ctrl+c",
+        (MoveFocus::Search, false) => {
+            "type/bs · tab/S-tab · ↑/↓ choose · enter move · esc cancel · ctrl+c quit"
+        }
+        (MoveFocus::Results, true) => "j/k/↑/↓ choose tab/S-tab enter move esc cancel ctrl+c",
+        (MoveFocus::Results, false) => {
+            "j/k/↑/↓ choose · tab/S-tab · enter move · esc cancel · ctrl+c quit"
         }
     }
 }

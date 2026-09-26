@@ -310,7 +310,7 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
-    pub(super) fn sync_tracking_after_history_reload(&mut self) {
+    pub(crate) fn sync_tracking_after_history_reload(&mut self) {
         let tracking = self.application_mut().current_tracking().clone();
         self.tracking_mut().sync_after_history_reload(tracking);
     }
