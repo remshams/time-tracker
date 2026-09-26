@@ -54,6 +54,11 @@ fn reports_choose_presets_clip_day_boundaries_and_validate_custom_dates() {
             .task_panel()
             .shows_archived_tasks()
     });
+    tt.press_and_wait(Key::Tab, "the worklogs tab", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .shows_worklogs()
+    });
     tt.press_and_wait(Key::Tab, "the reports tab", |screen| {
         TimeTrackerPage::new(screen.clone())
             .task_panel()
@@ -311,6 +316,11 @@ fn reports_copy_the_selected_name_exact_duration_and_rounded_duration() {
                 .task_panel()
                 .shows_archived_tasks()
         });
+        tt.press_and_wait(Key::Tab, "the worklogs tab", |screen| {
+            TimeTrackerPage::new(screen.clone())
+                .task_panel()
+                .shows_worklogs()
+        });
         tt.press_and_wait(Key::Tab, "the reports tab", |screen| {
             TimeTrackerPage::new(screen.clone())
                 .task_panel()
@@ -380,6 +390,11 @@ fn reports_vim_and_page_motions_move_and_copy_the_selected_row() {
         TimeTrackerPage::new(screen.clone())
             .task_panel()
             .shows_archived_tasks()
+    });
+    tt.press_and_wait(Key::Tab, "the worklogs tab", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .shows_worklogs()
     });
     tt.press_and_wait(Key::Tab, "the reports tab", |screen| {
         TimeTrackerPage::new(screen.clone())
@@ -499,6 +514,11 @@ fn reports_adopt_external_tracking_and_return_to_current_active_tasks() {
             .task_panel()
             .shows_archived_tasks()
     });
+    tt.press_and_wait(Key::Tab, "the worklogs tab", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .shows_worklogs()
+    });
     tt.press_and_wait(Key::Tab, "today's report", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_panel().shows_reports() && page.reports_panel().text().contains("Existing task")
@@ -541,7 +561,7 @@ fn reports_adopt_external_tracking_and_return_to_current_active_tasks() {
     });
     tt.press(Key::Esc);
     tt.press_and_wait(
-        Key::Tab,
+        Key::BackTab,
         "the external worklog in the global tab",
         |screen| {
             let page = TimeTrackerPage::new(screen.clone());
@@ -550,6 +570,11 @@ fn reports_adopt_external_tracking_and_return_to_current_active_tasks() {
                 && page.all_worklogs_panel().row(0).task_name() == "External task"
         },
     );
+    tt.press_and_wait(Key::Tab, "the restored reports tab", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .shows_reports()
+    });
     tt.press_and_wait(Key::Tab, "the refreshed active task list", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         let panel = page.task_panel();
