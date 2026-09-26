@@ -39,14 +39,14 @@ fn map_move(
 
 fn map_tabs(key: KeyEvent) -> Option<KeymapCommand<C>> {
     if key.modifiers == KeyModifiers::SHIFT && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
-        return Some(KeymapCommand::Local(C::ShowReports));
+        return Some(KeymapCommand::Local(C::ShowArchived));
     }
     if key.modifiers != KeyModifiers::NONE {
         return None;
     }
     match key.code {
-        KeyCode::Tab => Some(KeymapCommand::Local(C::ShowActive)),
-        KeyCode::BackTab => Some(KeymapCommand::Local(C::ShowReports)),
+        KeyCode::Tab => Some(KeymapCommand::Local(C::ShowReports)),
+        KeyCode::BackTab => Some(KeymapCommand::Local(C::ShowArchived)),
         KeyCode::Enter | KeyCode::Char('j') | KeyCode::Down => {
             Some(KeymapCommand::Local(C::FocusRows))
         }
@@ -156,22 +156,22 @@ mod tests {
             (
                 KeyCode::Tab,
                 KeyModifiers::NONE,
-                Some(KeymapCommand::Local(C::ShowActive)),
+                Some(KeymapCommand::Local(C::ShowReports)),
             ),
             (
                 KeyCode::BackTab,
                 KeyModifiers::NONE,
-                Some(KeymapCommand::Local(C::ShowReports)),
+                Some(KeymapCommand::Local(C::ShowArchived)),
             ),
             (
                 KeyCode::Tab,
                 KeyModifiers::SHIFT,
-                Some(KeymapCommand::Local(C::ShowReports)),
+                Some(KeymapCommand::Local(C::ShowArchived)),
             ),
             (
                 KeyCode::BackTab,
                 KeyModifiers::SHIFT,
-                Some(KeymapCommand::Local(C::ShowReports)),
+                Some(KeymapCommand::Local(C::ShowArchived)),
             ),
             (
                 KeyCode::Enter,

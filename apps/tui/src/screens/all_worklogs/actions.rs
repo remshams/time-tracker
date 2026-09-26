@@ -24,16 +24,16 @@ impl<S: TrackerApplicationService> App<S> {
 
     pub(crate) fn handle_all_worklogs_command(&mut self, command: C) {
         match command {
-            C::ShowActive => {
+            C::ShowArchived => {
                 let first = self
                     .catalog()
-                    .tasks(TaskView::Active)
+                    .tasks(TaskView::Archived)
                     .first()
                     .map(|task| task.id());
                 self.shell_mut().leave_all_worklogs_for_tasks();
                 self.shell_mut()
                     .task_list_mut()
-                    .show(TaskView::Active, first);
+                    .show(TaskView::Archived, first);
                 self.reload_tasks();
             }
             C::ShowReports => {
@@ -309,13 +309,15 @@ mod tests {
         assert_eq!(app.app_view().status(), &crate::app::Status::Empty);
         assert_eq!(
             app.command_for(key(KeyCode::Tab)),
-            Some(Command::AllWorklogs(C::ShowActive))
+            Some(Command::AllWorklogs(C::ShowReports))
         );
         assert_eq!(
             app.command_for(key(KeyCode::BackTab)),
-            Some(Command::AllWorklogs(C::ShowReports))
+            Some(Command::AllWorklogs(C::ShowArchived))
         );
-        app.handle(Command::AllWorklogs(C::ShowActive));
+        app.handle(Command::AllWorklogs(C::ShowReports));
+        assert_eq!(app.shell().screen(), Screen::Reports);
+        app.handle(Command::Reports(crate::screens::ReportCommand::ShowActive));
         assert_eq!(app.shell().screen(), Screen::TaskList);
         assert_eq!(app.shell().task_list().selection(), saved);
     }

@@ -8,7 +8,7 @@ pub(crate) use state::{AllWorklogsFocus, AllWorklogsState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AllWorklogsCommand {
-    ShowActive,
+    ShowArchived,
     ShowReports,
     FocusRows,
     FocusTabs,

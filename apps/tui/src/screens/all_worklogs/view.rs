@@ -78,7 +78,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: AppView<'_>, state: &Al
     render_tabs(
         frame,
         area,
-        3,
+        2,
         state.focus == AllWorklogsFocus::Tabs && state.move_draft.is_none(),
     );
     if let Some(draft) = &state.move_draft {
@@ -122,7 +122,7 @@ mod tests {
         let mut app = app_in_timezone(TestService::with_tasks(vec![]), chrono_tz::UTC);
         app.handle(Command::TaskList(TaskListCommand::ShowAllWorklogs));
         let terminal = draw(&app);
-        assert!(row(&terminal, 1).contains("Worklogs"));
+        assert!(row(&terminal, 1).contains(" Active │ Archived │ Worklogs │ Reports "));
         assert!(row(&terminal, 2).contains("No worklogs yet."));
     }
 
