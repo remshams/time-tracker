@@ -3,11 +3,12 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 use tracker_application::{
-    WORKLOG_PAGE_SIZE, WorklogCorrection, WorklogCursor, WorklogDeletion, WorklogMove, WorklogPage,
-    WorklogPageSnapshot,
+    GlobalWorklogCursor, GlobalWorklogPage, TrackerSnapshot, WORKLOG_PAGE_SIZE, WorklogCorrection,
+    WorklogCursor, WorklogDeletion, WorklogMove, WorklogPage, WorklogPageSnapshot,
 };
 use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
 
+use super::tasks::list_task_items_on;
 use super::tracking::active_worklog_on;
 use super::{
     SqliteRepository, error,
@@ -58,6 +59,78 @@ fn list_worklogs_on(conn: &Connection, task_id: TaskId) -> Result<Vec<Worklog>, 
 }
 
 impl SqliteRepository {
+    /// Reads a global worklog page and tracker state in one SQLite snapshot.
+    ///
+    /// A write to any worklog invalidates an earlier cursor. This makes a
+    /// continuation safe when another client changes ordering or page rows.
+    pub fn global_worklog_page(
+        &self,
+        after: Option<&GlobalWorklogCursor>,
+    ) -> Result<GlobalWorklogPage, StorageError> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Deferred)?;
+        let revision: i64 = transaction.query_row(
+            "SELECT revision FROM global_worklog_revision WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        if after.is_some_and(|cursor| cursor.revision != revision) {
+            return Err(StorageError::GlobalWorklogHistoryChanged);
+        }
+        let limit = i64::try_from(WORKLOG_PAGE_SIZE + 1).expect("the page size plus one fits i64");
+        let raw = match after {
+            None => {
+                let mut statement = transaction.prepare(
+                    "SELECT id, task_id, start_us, end_us FROM worklogs
+                     ORDER BY start_us DESC, id ASC LIMIT ?1",
+                )?;
+                statement
+                    .query_map([limit], raw_worklog)?
+                    .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
+            }
+            Some(cursor) => {
+                let mut statement = transaction.prepare(
+                    "SELECT id, task_id, start_us, end_us FROM worklogs
+                     WHERE start_us < ?1 OR (start_us = ?1 AND id > ?2)
+                     ORDER BY start_us DESC, id ASC LIMIT ?3",
+                )?;
+                statement
+                    .query_map(
+                        rusqlite::params![
+                            timestamp_to_us(cursor.start),
+                            cursor.id.to_string(),
+                            limit
+                        ],
+                        raw_worklog,
+                    )?
+                    .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
+            }
+        };
+        let has_next = raw.len() > WORKLOG_PAGE_SIZE;
+        let worklogs = raw
+            .into_iter()
+            .take(WORKLOG_PAGE_SIZE)
+            .map(worklog_from_raw)
+            .collect::<Result<Vec<_>, _>>()?;
+        let next_cursor = has_next.then(|| {
+            let last = worklogs.last().expect("a full page has a last worklog");
+            GlobalWorklogCursor {
+                start: last.start(),
+                id: last.id(),
+                revision,
+            }
+        });
+        let snapshot = TrackerSnapshot {
+            task_items: list_task_items_on(&transaction)?,
+            active_worklog: active_worklog_on(&transaction)?,
+        };
+        transaction.commit()?;
+        Ok(GlobalWorklogPage {
+            worklogs,
+            snapshot,
+            next_cursor,
+        })
+    }
+
     pub(crate) fn worklog_by_id(&self, id: WorklogId) -> Result<Option<Worklog>, StorageError> {
         worklog_by_id_on(&self.conn, id)
     }

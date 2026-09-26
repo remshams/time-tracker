@@ -12,9 +12,9 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags};
 use tracker_application::{
-    ReportRead, ReportRepository, RepositoryError, TaskRepository, TrackerSnapshot,
-    TrackingRepository, WorklogCorrection, WorklogCursor, WorklogDeletion, WorklogMove,
-    WorklogPage, WorklogRepository,
+    GlobalWorklogCursor, GlobalWorklogPage, ReportRead, ReportRepository, RepositoryError,
+    TaskRepository, TrackerSnapshot, TrackingRepository, WorklogCorrection, WorklogCursor,
+    WorklogDeletion, WorklogMove, WorklogPage, WorklogRepository,
 };
 use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
 
@@ -145,6 +145,13 @@ impl TrackingRepository for SqliteRepository {
 }
 
 impl WorklogRepository for SqliteRepository {
+    fn global_worklog_page(
+        &self,
+        after: Option<&GlobalWorklogCursor>,
+    ) -> Result<GlobalWorklogPage, RepositoryError> {
+        SqliteRepository::global_worklog_page(self, after).map_err(Into::into)
+    }
+
     fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, RepositoryError> {
         SqliteRepository::find_worklog(self, id).map_err(Into::into)
     }

@@ -346,6 +346,15 @@ impl ReportRepository for SynchronizingRepository {
 }
 
 impl WorklogRepository for SynchronizingRepository {
+    fn global_worklog_page(
+        &self,
+        after: Option<&tracker_application::GlobalWorklogCursor>,
+    ) -> Result<tracker_application::GlobalWorklogPage, RepositoryError> {
+        self.repository
+            .global_worklog_page(after)
+            .map_err(Into::into)
+    }
+
     fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, RepositoryError> {
         self.repository.find_worklog(id).map_err(Into::into)
     }
@@ -464,6 +473,7 @@ fn insert_numbered_worklogs(repository: &SqliteRepository, task: &Task, worklogs
 mod concurrency;
 mod correction;
 mod deletion;
+mod global_history;
 mod history;
 mod migrations;
 mod moves;

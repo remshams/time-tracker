@@ -21,7 +21,7 @@ fn simultaneous_first_opens_of_one_database_all_complete() {
         handle.join().unwrap().expect("every first open completes");
     }
     let repository = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&repository), 5, "migrations ran exactly once");
+    assert_eq!(user_version(&repository), 6, "migrations ran exactly once");
     assert_eq!(repository.list_tasks().unwrap().len(), 8);
 }
 
