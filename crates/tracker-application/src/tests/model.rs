@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn explicit_refresh_adopts_one_authoritative_snapshot_and_preserves_state_on_read_failure() {
+    let first = stamped_task(1, "First", 100, 100);
+    let second = stamped_task(2, "Second", 200, 200);
+    let repository = MemoryRepository::with_tasks(vec![first]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    repository.0.borrow_mut().tasks.push(TaskListItem {
+        task: second,
+        latest_work_start: None,
+    });
+    assert_eq!(application.tasks(TaskOrdering::RecentlyCreated).len(), 1);
+    application.refresh_authoritative_state().unwrap();
+    assert_eq!(application.tasks(TaskOrdering::RecentlyCreated).len(), 2);
+
+    repository.0.borrow_mut().fail_reads = true;
+    assert!(application.refresh_authoritative_state().is_err());
+    assert_eq!(application.tasks(TaskOrdering::RecentlyCreated).len(), 2);
+}
+
+#[test]
 fn the_default_ordering_is_recently_worked() {
     assert_eq!(TaskOrdering::default(), TaskOrdering::RecentlyWorked);
 }

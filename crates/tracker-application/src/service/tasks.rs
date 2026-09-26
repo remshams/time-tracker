@@ -27,11 +27,7 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
         name: TaskName,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
-        let occurred_at = canonical_timestamp(occurred_at);
-        let task = Task::create(TaskId::generate(), name, occurred_at);
-        self.repository.create_task(task.clone())?;
-        self.replace_task(task.clone());
-        Ok(task)
+        self.create_task_with_id(TaskId::generate(), name, occurred_at)
     }
 
     fn rename_task(
@@ -98,5 +94,21 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
                 Err(error.into())
             }
         }
+    }
+}
+
+impl<R: TrackerRepository> TrackerApplication<R> {
+    /// Creates a task with a caller-owned identifier, which makes remote retries safe.
+    pub fn create_task_with_id(
+        &mut self,
+        id: TaskId,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        let occurred_at = canonical_timestamp(occurred_at);
+        let task = Task::create(id, name, occurred_at);
+        self.repository.create_task(task.clone())?;
+        self.replace_task(task.clone());
+        Ok(task)
     }
 }

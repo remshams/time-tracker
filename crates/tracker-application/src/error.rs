@@ -62,6 +62,11 @@ impl ApplicationFailure {
 /// variants.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ApplicationError {
+    #[error("{message}")]
+    Semantic {
+        category: ApplicationFailureCategory,
+        message: String,
+    },
     #[error(transparent)]
     Domain(#[from] TrackingError),
     #[error(transparent)]
@@ -118,6 +123,18 @@ pub enum ApplicationError {
 }
 
 impl ApplicationError {
+    /// Rebuilds a presentation-safe semantic failure received from another
+    /// application service. Backend diagnostics must never be passed here.
+    pub fn semantic_failure(
+        category: ApplicationFailureCategory,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::Semantic {
+            category,
+            message: message.into(),
+        }
+    }
+
     /// Builds a backend failure while keeping its diagnostic text out of the
     /// presentation-safe classification.
     pub fn storage_failure(message: impl Into<String>) -> Self {
@@ -195,6 +212,11 @@ impl ApplicationError {
     /// unsanitized backend messages.
     pub fn failure(&self) -> ApplicationFailure {
         match self {
+            Self::Semantic { category, message } => ApplicationFailure {
+                category: *category,
+                message: message.clone(),
+                recovery: None,
+            },
             Self::Domain(error) => ApplicationFailure {
                 category: match error {
                     TrackingError::TaskIsActive { .. } => ApplicationFailureCategory::ActiveTask,

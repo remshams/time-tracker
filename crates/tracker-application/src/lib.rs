@@ -5,6 +5,13 @@ mod model;
 mod repository;
 mod service;
 
+/// Example tasks inserted only when the selected store is empty.
+pub const DEFAULT_TASK_NAMES: [&str; 3] = [
+    "Write release notes",
+    "Fix the coffee machine",
+    "Plan Friday's demo",
+];
+
 pub use error::{ApplicationError, ApplicationFailure, ApplicationFailureCategory};
 pub use model::{
     ClearActiveTaskOutcome, GlobalWorklogCursor, GlobalWorklogPage, ReportRow, ReportTotals,

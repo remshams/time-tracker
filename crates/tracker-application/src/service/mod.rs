@@ -209,6 +209,12 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         })
     }
 
+    /// Replaces cached task and tracking state with one authoritative read.
+    /// The server uses this after an uncertain write outcome.
+    pub fn refresh_authoritative_state(&mut self) -> Result<(), ApplicationError> {
+        self.refresh_tracking()
+    }
+
     pub(crate) fn state_from_snapshot(
         mut snapshot: TrackerSnapshot,
     ) -> Result<(Vec<TaskListItem>, Tracker), ApplicationError> {
@@ -385,6 +391,23 @@ impl<R: TrackerRepository> TrackerApplication<R> {
     fn note_work_start(&mut self, task_id: TaskId, at: DateTime<Utc>) {
         if let Some(item) = self.tasks.iter_mut().find(|item| item.task.id() == task_id) {
             item.latest_work_start = Some(item.latest_work_start.map_or(at, |old| old.max(at)));
+        }
+    }
+}
+
+#[cfg(test)]
+mod timestamp_range_tests {
+    use chrono::{DateTime, Utc};
+
+    use super::canonical_timestamp;
+
+    #[test]
+    fn chrono_utc_extremes_fit_the_canonical_microsecond_range() {
+        for instant in [DateTime::<Utc>::MIN_UTC, DateTime::<Utc>::MAX_UTC] {
+            assert_eq!(
+                canonical_timestamp(instant).timestamp_micros(),
+                instant.timestamp_micros()
+            );
         }
     }
 }

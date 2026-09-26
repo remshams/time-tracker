@@ -19,60 +19,7 @@ impl<R: TrackerRepository> TrackingOperations for TrackerApplication<R> {
         task_id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
-        let occurred_at = canonical_timestamp(occurred_at);
-        let cached_active = self.tracker.active().cloned();
-        self.refresh_tracking()?;
-        if cached_active.as_ref().is_some_and(|cached| {
-            self.tracker.active().is_some_and(|active| {
-                active.id() == cached.id() && active.start() != cached.start()
-            })
-        }) {
-            return Err(ApplicationError::TrackingStateChanged);
-        }
-        if let Some(active) = self.tracker.active().cloned()
-            && active.task_id() == task_id
-        {
-            // Another client may have started this worklog after our task
-            // snapshot was loaded. Keep the derived latest-work value current
-            // even though the desired tracking state already exists.
-            self.note_work_start(task_id, active.start());
-            return Ok(SetActiveTaskOutcome::AlreadyActive { worklog: active });
-        }
-
-        let task = self
-            .tasks
-            .iter()
-            .find(|item| item.task.id() == task_id)
-            .map(|TaskListItem { task, .. }| task.clone())
-            .ok_or_else(|| ApplicationError::from(RepositoryError::TaskNotFound { id: task_id }))?;
-        let mut candidate = self.tracker.clone();
-        let outcome = match candidate.active() {
-            None => {
-                let worklog = candidate.start(&task, occurred_at)?;
-                match self.repository.insert_worklog(&worklog) {
-                    Ok(()) => SetActiveTaskOutcome::Started { worklog },
-                    Err(error) => return Err(self.recover_after_tracking_write(error)),
-                }
-            }
-            Some(_) => {
-                let SwitchedWorklogs { stopped, started } =
-                    candidate.switch(&task, occurred_at, occurred_at)?;
-                match self.repository.switch_worklog(
-                    stopped.id(),
-                    stopped.start(),
-                    occurred_at,
-                    &started,
-                ) {
-                    Ok(()) => SetActiveTaskOutcome::Switched { stopped, started },
-                    Err(error) => return Err(self.recover_after_tracking_write(error)),
-                }
-            }
-        };
-        self.tracker = candidate;
-        // Starting or switching work makes this task the latest work on the
-        // snapshot; stopping never touches it.
-        self.note_work_start(task_id, occurred_at);
-        Ok(outcome)
+        self.set_active_task_with_id(task_id, WorklogId::generate(), occurred_at)
     }
 
     fn clear_active_task(
@@ -109,5 +56,74 @@ impl<R: TrackerRepository> TrackingOperations for TrackerApplication<R> {
             }
             Err(error) => Err(self.recover_after_tracking_write(error)),
         }
+    }
+}
+
+impl<R: TrackerRepository> TrackerApplication<R> {
+    /// Starts or switches tracking with an identifier chosen before the request.
+    pub fn set_active_task_with_id(
+        &mut self,
+        task_id: TaskId,
+        worklog_id: WorklogId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+        let occurred_at = canonical_timestamp(occurred_at);
+        let cached_active = self.tracker.active().cloned();
+        self.refresh_tracking()?;
+        if cached_active.as_ref().is_some_and(|cached| {
+            self.tracker.active().is_some_and(|active| {
+                active.id() == cached.id() && active.start() != cached.start()
+            })
+        }) {
+            return Err(ApplicationError::TrackingStateChanged);
+        }
+        if let Some(active) = self.tracker.active().cloned()
+            && active.task_id() == task_id
+        {
+            // Another client may have started this worklog after our task
+            // snapshot was loaded. Keep the derived latest-work value current
+            // even though the desired tracking state already exists.
+            self.note_work_start(task_id, active.start());
+            return Ok(SetActiveTaskOutcome::AlreadyActive { worklog: active });
+        }
+
+        let task = self
+            .tasks
+            .iter()
+            .find(|item| item.task.id() == task_id)
+            .map(|TaskListItem { task, .. }| task.clone())
+            .ok_or_else(|| ApplicationError::from(RepositoryError::TaskNotFound { id: task_id }))?;
+        let mut candidate = self.tracker.clone();
+        let outcome = match candidate.active() {
+            None => {
+                let _ = candidate.start(&task, occurred_at)?;
+                let worklog = tracker_domain::Worklog::begin(worklog_id, task_id, occurred_at);
+                candidate = tracker_domain::Tracker::resume(worklog.clone())?;
+                match self.repository.insert_worklog(&worklog) {
+                    Ok(()) => SetActiveTaskOutcome::Started { worklog },
+                    Err(error) => return Err(self.recover_after_tracking_write(error)),
+                }
+            }
+            Some(_) => {
+                let SwitchedWorklogs { stopped, .. } =
+                    candidate.switch(&task, occurred_at, occurred_at)?;
+                let started = tracker_domain::Worklog::begin(worklog_id, task_id, occurred_at);
+                candidate = tracker_domain::Tracker::resume(started.clone())?;
+                match self.repository.switch_worklog(
+                    stopped.id(),
+                    stopped.start(),
+                    occurred_at,
+                    &started,
+                ) {
+                    Ok(()) => SetActiveTaskOutcome::Switched { stopped, started },
+                    Err(error) => return Err(self.recover_after_tracking_write(error)),
+                }
+            }
+        };
+        self.tracker = candidate;
+        // Starting or switching work makes this task the latest work on the
+        // snapshot; stopping never touches it.
+        self.note_work_start(task_id, occurred_at);
+        Ok(outcome)
     }
 }
