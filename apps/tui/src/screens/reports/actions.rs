@@ -371,12 +371,11 @@ pub(crate) fn format_rounded(duration: TimeDelta) -> String {
 
 fn report_now() -> DateTime<Utc> {
     #[cfg(debug_assertions)]
-    if let Ok(value) = std::env::var("TT_TEST_NOW") {
-        if value.ends_with('Z')
-            && let Ok(parsed) = DateTime::parse_from_rfc3339(&value)
-        {
-            return parsed.with_timezone(&Utc);
-        }
+    if let Ok(value) = std::env::var("TT_TEST_NOW")
+        && value.ends_with('Z')
+        && let Ok(parsed) = DateTime::parse_from_rfc3339(&value)
+    {
+        return parsed.with_timezone(&Utc);
     }
     Utc::now()
 }
