@@ -5,8 +5,10 @@
 //! propagate after the terminal guard has restored the screen.
 
 mod app;
+mod cli;
 mod command;
 mod components;
+mod remote_runtime;
 mod screens;
 mod styles;
 mod support;
@@ -24,7 +26,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use crossterm::event::Event;
-use tracker_application::{TrackerApplication, TrackerApplicationService};
+use tracker_application::{DEFAULT_TASK_NAMES, TrackerApplication, TrackerApplicationService};
 use tracker_domain::TaskName;
 use tracker_storage::{SqliteRepository, StorageError, default_database_path, ensure_app_data_dir};
 
@@ -33,13 +35,6 @@ use crate::command::Command;
 #[cfg(test)]
 use crate::screens::{TaskListCommand, WorklogHistoryCommand};
 use crate::terminal::{Restoration, TerminalGuard};
-
-/// The tasks a brand-new database is seeded with, in order.
-const SEED_TASK_NAMES: [&str; 3] = [
-    "Write release notes",
-    "Fix the coffee machine",
-    "Plan Friday's demo",
-];
 
 /// How long to wait for input before redrawing, so the elapsed timer stays
 /// fresh without burning CPU.
@@ -61,20 +56,56 @@ fn report(result: Result<(), Box<dyn Error>>) -> ExitCode {
 }
 
 fn run_app() -> Result<(), Box<dyn Error>> {
-    // The guard and the panic hook share one restoration state, so a panic
-    // cleanup and the guard's drop never both write to the terminal.
-    let restoration = Restoration::new();
-    terminal::install_panic_hook({
-        let restoration = restoration.clone();
-        move || restoration.restore()
-    });
+    match cli::parse(std::env::args_os().skip(1))? {
+        cli::Mode::Local => run_local_tui(),
+        cli::Mode::Remote { server } => run_remote_tui(&server),
+        cli::Mode::Serve { bind, database } => run_server(bind, database),
+        cli::Mode::Help => {
+            print!("{}", cli::HELP);
+            Ok(())
+        }
+    }
+}
+
+fn run_server(
+    bind: std::net::SocketAddr,
+    database: Option<std::path::PathBuf>,
+) -> Result<(), Box<dyn Error>> {
+    let database = match database {
+        Some(path) => path,
+        None => {
+            ensure_app_data_dir()?;
+            default_database_path()?.with_file_name("tt-server.db")
+        }
+    };
+    tracker_server::run(bind, database).map_err(|error| error as Box<dyn Error>)
+}
+
+fn run_local_tui() -> Result<(), Box<dyn Error>> {
     ensure_app_data_dir()?;
     let repository = SqliteRepository::open(default_database_path()?)?;
     seed_default_tasks(&repository, Utc::now())?;
     let application = TrackerApplication::load(repository)?;
     let mut app = App::load(application);
-    let mut guard = TerminalGuard::new(restoration)?;
+    let mut guard = terminal_guard()?;
     run(&mut guard, &mut app).map_err(Into::into)
+}
+
+fn run_remote_tui(server: &str) -> Result<(), Box<dyn Error>> {
+    let application = tracker_remote::RemoteApplication::disconnected(server)?;
+    let mut guard = terminal_guard()?;
+    remote_runtime::run(&mut guard, application).map_err(Into::into)
+}
+
+fn terminal_guard() -> io::Result<TerminalGuard> {
+    // The guard and panic hook share restoration state, so only one restores
+    // the terminal after a failure.
+    let restoration = Restoration::new();
+    terminal::install_panic_hook({
+        let restoration = restoration.clone();
+        move || restoration.restore()
+    });
+    TerminalGuard::new(restoration)
 }
 
 /// The synchronous event loop: redraw, then handle at most one key per tick.
@@ -115,7 +146,7 @@ fn seed_default_tasks(
     repository: &SqliteRepository,
     created_at: DateTime<Utc>,
 ) -> Result<(), StorageError> {
-    let names: Vec<TaskName> = SEED_TASK_NAMES
+    let names: Vec<TaskName> = DEFAULT_TASK_NAMES
         .iter()
         .map(|name| TaskName::new(name).expect("seed task names are valid"))
         .collect();
