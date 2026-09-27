@@ -6,13 +6,15 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{self, DisableFocusChange, EnableFocusChange, Event, KeyEvent};
+use crossterm::event::{DisableFocusChange, EnableFocusChange, Event, EventStream, KeyEvent};
 use crossterm::execute;
+use futures_util::StreamExt;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::widgets::Paragraph;
+use tokio::sync::mpsc as async_mpsc;
 use tracker_remote::{RemoteApplication, RemoteFailureKind};
 
 use crate::app::{App, Status};
@@ -23,6 +25,8 @@ use crate::terminal::TerminalGuard;
 const TICK: Duration = Duration::from_millis(250);
 const REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 const BUSY_DELAY: Duration = Duration::from_millis(100);
+// Bound frames if terminal drawing stalls; the UI drains queued frames before drawing.
+const WORKER_OUTPUT_CAPACITY: usize = 8;
 
 enum WorkerInput {
     Key(KeyEvent, u16),
@@ -54,13 +58,16 @@ impl Drop for FocusGuard {
 /// Runs the TUI with a remote application service. A stalled request cannot
 /// block terminal reads or redraws, and the last frame remains visible.
 pub(crate) fn run(guard: &mut TerminalGuard, application: RemoteApplication) -> io::Result<()> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()?;
     let _focus = FocusGuard::enable()?;
     let (width, height) = crossterm::terminal::size()?;
     let (input_tx, input_rx) = mpsc::channel();
-    let (output_tx, output_rx) = mpsc::channel();
+    let (output_tx, output_rx) = async_mpsc::channel(WORKER_OUTPUT_CAPACITY);
     let worker = thread::spawn(move || worker(application, input_rx, output_tx, width, height));
 
-    let result = input_loop(guard, &input_tx, &output_rx, (width, height));
+    let result = runtime.block_on(input_loop(guard, &input_tx, output_rx, (width, height)));
     let _ = input_tx.send(WorkerInput::Quit);
     drop(input_tx);
     worker
@@ -69,64 +76,110 @@ pub(crate) fn run(guard: &mut TerminalGuard, application: RemoteApplication) -> 
     result
 }
 
-fn input_loop(
+async fn input_loop(
     guard: &mut TerminalGuard,
     input: &Sender<WorkerInput>,
-    output: &Receiver<WorkerOutput>,
+    mut output: async_mpsc::Receiver<WorkerOutput>,
     mut size: (u16, u16),
 ) -> io::Result<()> {
+    let mut terminal_events = EventStream::new();
     let mut last_frame = None;
     let mut busy = None;
+    let mut busy_visible = false;
     let mut running = true;
 
+    draw(guard, last_frame.as_ref(), None)?;
     while running {
-        for event in output.try_iter() {
-            match event {
-                WorkerOutput::Busy(label) => busy = Some((label, Instant::now())),
-                WorkerOutput::Frame {
-                    buffer,
-                    running: next,
-                } => {
-                    last_frame = Some(buffer);
-                    busy = None;
-                    running = next;
+        let busy_deadline = busy
+            .filter(|_| !busy_visible)
+            .map(|(_, started)| started + BUSY_DELAY);
+        tokio::select! {
+            event = terminal_events.next() => {
+                let event = event.ok_or_else(|| io::Error::other("terminal event stream stopped"))??;
+                if let Event::Resize(width, height) = &event {
+                    size = (*width, *height);
+                    draw(guard, last_frame.as_ref(), visible_busy_label(busy, Instant::now()))?;
+                }
+                if let Some(event) = event_to_worker_input(event, size.0) {
+                    input
+                        .send(event)
+                        .map_err(|_| io::Error::other("remote TUI worker stopped"))?;
                 }
             }
-        }
-
-        let (width, height) = crossterm::terminal::size()?;
-        if size != (width, height) {
-            size = (width, height);
-            input
-                .send(WorkerInput::Resize(width, height))
-                .map_err(|_| io::Error::other("remote TUI worker stopped"))?;
-        }
-        let busy_label = visible_busy_label(busy, Instant::now());
-        guard.draw(|frame| {
-            if let Some(buffer) = &last_frame
-                && buffer.area == frame.area()
-            {
-                frame.buffer_mut().clone_from(buffer);
-            } else {
-                frame.render_widget(Paragraph::new("Connecting to server..."), frame.area());
+            event = output.recv() => {
+                let event = event.ok_or_else(|| io::Error::other("remote TUI worker stopped"))?;
+                apply_output(event, &mut last_frame, &mut busy, &mut busy_visible, &mut running);
+                while let Ok(event) = output.try_recv() {
+                    apply_output(event, &mut last_frame, &mut busy, &mut busy_visible, &mut running);
+                }
+                let current_size = crossterm::terminal::size()?;
+                if running && size != current_size {
+                    size = current_size;
+                    input
+                        .send(WorkerInput::Resize(size.0, size.1))
+                        .map_err(|_| io::Error::other("remote TUI worker stopped"))?;
+                }
+                draw(guard, last_frame.as_ref(), visible_busy_label(busy, Instant::now()))?;
             }
-            if let Some(label) = busy_label {
-                let area = frame.area();
-                let status = Rect::new(0, area.height.saturating_sub(2), area.width, 1);
-                frame.render_widget(Paragraph::new(label), status);
+            _ = wait_for_busy(busy_deadline) => {
+                busy_visible = true;
+                draw(guard, last_frame.as_ref(), visible_busy_label(busy, Instant::now()))?;
             }
-        })?;
-        if !running {
-            break;
-        }
-        if event::poll(TICK)?
-            && let Some(event) = event_to_worker_input(event::read()?, width)
-        {
-            input
-                .send(event)
-                .map_err(|_| io::Error::other("remote TUI worker stopped"))?;
         }
     }
+    Ok(())
+}
+
+fn apply_output(
+    event: WorkerOutput,
+    last_frame: &mut Option<Buffer>,
+    busy: &mut Option<(&'static str, Instant)>,
+    busy_visible: &mut bool,
+    running: &mut bool,
+) {
+    match event {
+        WorkerOutput::Busy(label) => {
+            *busy = Some((label, Instant::now()));
+            *busy_visible = false;
+        }
+        WorkerOutput::Frame {
+            buffer,
+            running: next,
+        } => {
+            *last_frame = Some(buffer);
+            *busy = None;
+            *busy_visible = false;
+            *running = next;
+        }
+    }
+}
+
+async fn wait_for_busy(deadline: Option<Instant>) {
+    match deadline {
+        Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
+        None => std::future::pending().await,
+    }
+}
+
+fn draw(
+    guard: &mut TerminalGuard,
+    last_frame: Option<&Buffer>,
+    busy_label: Option<&str>,
+) -> io::Result<()> {
+    guard.draw(|frame| {
+        if let Some(buffer) = last_frame
+            && buffer.area == frame.area()
+        {
+            frame.buffer_mut().clone_from(buffer);
+        } else {
+            frame.render_widget(Paragraph::new("Connecting to server..."), frame.area());
+        }
+        if let Some(label) = busy_label {
+            let area = frame.area();
+            let status = Rect::new(0, area.height.saturating_sub(2), area.width, 1);
+            frame.render_widget(Paragraph::new(label), status);
+        }
+    })?;
     Ok(())
 }
 
@@ -148,14 +201,14 @@ fn visible_busy_label(busy: Option<(&'static str, Instant)>, now: Instant) -> Op
 fn worker(
     application: RemoteApplication,
     input: Receiver<WorkerInput>,
-    output: Sender<WorkerOutput>,
+    output: async_mpsc::Sender<WorkerOutput>,
     mut width: u16,
     mut height: u16,
 ) {
     let mut app = App::load(application);
     app.shell_mut().info("Connecting to server...");
     send_frame(&app, &output, width, height);
-    let _ = output.send(WorkerOutput::Busy("Loading..."));
+    let _ = output.blocking_send(WorkerOutput::Busy("Loading..."));
     refresh(&mut app);
     send_frame(&app, &output, width, height);
     let mut last_refresh = Instant::now();
@@ -166,7 +219,7 @@ fn worker(
                 if let Some(command) = app.command_for(key)
                     && super::command_is_allowed(command, terminal_width)
                 {
-                    let _ = output.send(WorkerOutput::Busy(command_busy_label(command)));
+                    let _ = output.blocking_send(WorkerOutput::Busy(command_busy_label(command)));
                     app.handle(command);
                     app.sync_from_application(false);
                     if app.application_mut().last_failure() == Some(RemoteFailureKind::Unavailable)
@@ -180,7 +233,7 @@ fn worker(
                 height = next_height;
             }
             Ok(WorkerInput::Refresh) => {
-                let _ = output.send(WorkerOutput::Busy("Loading..."));
+                let _ = output.blocking_send(WorkerOutput::Busy("Loading..."));
                 refresh(&mut app);
                 last_refresh = Instant::now();
             }
@@ -188,7 +241,7 @@ fn worker(
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
         if refresh_due(last_refresh, Instant::now()) {
-            let _ = output.send(WorkerOutput::Busy("Loading..."));
+            let _ = output.blocking_send(WorkerOutput::Busy("Loading..."));
             refresh(&mut app);
             last_refresh = Instant::now();
         }
@@ -223,7 +276,7 @@ fn refresh(app: &mut App<RemoteApplication>) {
 
 fn send_frame(
     app: &App<RemoteApplication>,
-    output: &Sender<WorkerOutput>,
+    output: &async_mpsc::Sender<WorkerOutput>,
     width: u16,
     height: u16,
 ) {
@@ -232,7 +285,7 @@ fn send_frame(
     terminal
         .draw(|frame| crate::ui::render(frame, app.app_view()))
         .expect("test backend draw must succeed");
-    let _ = output.send(WorkerOutput::Frame {
+    let _ = output.blocking_send(WorkerOutput::Frame {
         buffer: terminal.backend().buffer().clone(),
         running: app.is_running(),
     });

@@ -12,7 +12,8 @@ path = "src/main.rs"
 [dependencies]
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
-crossterm = { workspace = true }
+crossterm = { workspace = true, features = ["event-stream"] }
+futures-util = { workspace = true }
 iana-time-zone = { workspace = true }
 ratatui = { workspace = true }
 tracker-application = { path = "../../crates/tracker-application" }
@@ -21,6 +22,7 @@ tracker-remote = { path = "../../crates/tracker-remote" }
 tracker-server = { path = "../../crates/tracker-server" }
 tracker-storage = { path = "../../crates/tracker-storage" }
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "sync", "time"] }
 unicode-width = { workspace = true }
 
 [dev-dependencies]
