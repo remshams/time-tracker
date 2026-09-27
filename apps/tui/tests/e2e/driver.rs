@@ -199,6 +199,28 @@ impl TuiDriver {
         self.wait_for(waiting_for, condition)
     }
 
+    /// Sends one key and measures how long the matching screen state takes
+    /// to appear. This deliberately skips [`Self::settle`], so the duration
+    /// reflects input-to-render latency rather than the quiet-output window.
+    pub(crate) fn press_and_measure(
+        &mut self,
+        key: Key,
+        waiting_for: &str,
+        mut condition: impl FnMut(&Screen) -> bool,
+    ) -> Duration {
+        let before = self.terminal.screen();
+        assert!(
+            !condition(&before),
+            "{waiting_for} already holds before {key:?} was sent; the wait predicate must describe the state after the key press:\n{before}"
+        );
+        let started = std::time::Instant::now();
+        self.press(key);
+        self.terminal
+            .wait_until_for(|screen| condition(screen), RESPONSE_LIMIT)
+            .unwrap_or_else(|error| panic!("timed out waiting for {waiting_for}: {error}"));
+        started.elapsed()
+    }
+
     /// Resizes the terminal and waits for the repaint that answers it.
     ///
     /// `tt` emits no DEC 2026 synchronized-update markers, so there is no

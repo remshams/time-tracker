@@ -1,5 +1,7 @@
 //! The public TUI workflows against a separately running HTTP server.
 
+use std::time::Duration;
+
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use termlens::Key;
 
@@ -39,6 +41,43 @@ fn remote_terminal_redraws_after_resize_and_keeps_selection() {
     });
     assert_eq!(page.task_panel().row(1).name(), "Fix the coffee machine");
     tt.quit().assert_clean_exit();
+}
+
+#[test]
+fn remote_keypress_renders_worker_frame_without_poll_delay() {
+    let context = RemoteTestContext::new();
+    let mut tt = context.launch();
+    tt.wait_for_first_frame("the remote task list", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .task_names()
+            .len()
+            == 3
+    });
+
+    let mut samples = Vec::new();
+    for index in 0..5 {
+        let expected_index = if index % 2 == 0 { 1 } else { 0 };
+        let key = if expected_index == 1 {
+            Key::Char('j')
+        } else {
+            Key::Char('k')
+        };
+        let elapsed = tt.press_and_measure(key, "the remote selection response", |screen| {
+            TimeTrackerPage::new(screen.clone())
+                .task_panel()
+                .selected_index()
+                == Some(expected_index)
+        });
+        samples.push(elapsed);
+    }
+    tt.quit().assert_clean_exit();
+    samples.sort_unstable();
+    let fourth_fastest = samples[samples.len() - 2];
+    assert!(
+        fourth_fastest < Duration::from_millis(100),
+        "four of five remote key-to-frame responses should be prompt; samples: {samples:?}"
+    );
 }
 
 #[test]
