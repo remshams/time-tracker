@@ -90,9 +90,7 @@ async fn input_loop(
 
     draw(guard, last_frame.as_ref(), None)?;
     while running {
-        let busy_deadline = busy
-            .filter(|_| !busy_visible)
-            .map(|(_, started)| started + BUSY_DELAY);
+        let busy_deadline = pending_busy_deadline(busy, busy_visible);
         tokio::select! {
             event = terminal_events.next() => {
                 let event = event.ok_or_else(|| io::Error::other("terminal event stream stopped"))??;
@@ -159,6 +157,14 @@ async fn wait_for_busy(deadline: Option<Instant>) {
         Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
         None => std::future::pending().await,
     }
+}
+
+fn pending_busy_deadline(
+    busy: Option<(&'static str, Instant)>,
+    busy_visible: bool,
+) -> Option<Instant> {
+    busy.filter(|_| !busy_visible)
+        .map(|(_, started)| started + BUSY_DELAY)
 }
 
 fn draw(
@@ -315,8 +321,8 @@ mod tests {
     use tracker_remote::RemoteApplication;
 
     use super::{
-        WorkerInput, command_busy_label, event_to_worker_input, refresh, refresh_due,
-        visible_busy_label,
+        WorkerInput, command_busy_label, event_to_worker_input, pending_busy_deadline, refresh,
+        refresh_due, visible_busy_label,
     };
     use crate::app::{App, Status};
     use crate::command::Command;
@@ -426,6 +432,20 @@ mod tests {
                 started + Duration::from_millis(101)
             ),
             Some("Saving...")
+        );
+    }
+
+    #[test]
+    fn busy_deadline_is_armed_once_and_cancelled_when_visible() {
+        let started = Instant::now();
+        assert_eq!(pending_busy_deadline(None, false), None);
+        assert_eq!(
+            pending_busy_deadline(Some(("Loading...", started)), false),
+            Some(started + Duration::from_millis(100))
+        );
+        assert_eq!(
+            pending_busy_deadline(Some(("Loading...", started)), true),
+            None
         );
     }
 
