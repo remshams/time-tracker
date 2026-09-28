@@ -120,10 +120,14 @@ impl<S: TrackerApplicationService> App<S> {
 
     #[cfg(test)]
     fn drain_effects(&mut self) {
-        while let Some(effect) = self.state.take_effect() {
+        for _ in 0..32 {
+            let Some(effect) = self.state.take_effect() else {
+                return;
+            };
             let completed = execute_local(&mut self.application, effect.request.clone());
             self.state.complete_effect(effect, completed);
         }
+        panic!("application effects did not settle after 32 completions");
     }
 
     #[cfg(test)]

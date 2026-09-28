@@ -108,9 +108,7 @@ async fn event_loop(
             }
         }
 
-        let busy_deadline = busy
-            .filter(|_| !busy_visible)
-            .map(|(_, started)| started + BUSY_DELAY);
+        let busy_deadline = pending_busy_deadline(busy, busy_visible);
         tokio::select! {
             event = events.next(), if state.is_running() => {
                 let event = event.ok_or_else(|| io::Error::other("terminal event stream stopped"))??;
@@ -209,6 +207,14 @@ async fn wait_until(deadline: Option<Instant>) {
     }
 }
 
+fn pending_busy_deadline(
+    busy: Option<(&'static str, Instant)>,
+    busy_visible: bool,
+) -> Option<Instant> {
+    busy.filter(|_| !busy_visible)
+        .map(|(_, started)| started + BUSY_DELAY)
+}
+
 fn visible_busy_label(busy: Option<(&'static str, Instant)>, now: Instant) -> Option<&'static str> {
     busy.and_then(|(label, started)| {
         (now.saturating_duration_since(started) >= BUSY_DELAY).then_some(label)
@@ -244,13 +250,22 @@ mod tests {
     use tracker_domain::TrackingState;
     use tracker_remote::{RemoteApplication, RemoteError};
 
-    use super::{apply_refresh, busy_label, visible_busy_label};
+    use super::{apply_refresh, busy_label, pending_busy_deadline, visible_busy_label, wait_until};
     use crate::app::{AppState, Status};
     use crate::application_request::ApplicationRequest;
 
     #[test]
     fn busy_label_appears_after_the_short_delay() {
         let started = Instant::now();
+        assert_eq!(pending_busy_deadline(None, false), None);
+        assert_eq!(
+            pending_busy_deadline(Some(("Loading...", started)), false),
+            Some(started + Duration::from_millis(100))
+        );
+        assert_eq!(
+            pending_busy_deadline(Some(("Loading...", started)), true),
+            None
+        );
         assert_eq!(
             visible_busy_label(Some(("Loading...", started)), started),
             None
@@ -261,6 +276,18 @@ mod tests {
                 started + Duration::from_millis(100)
             ),
             Some("Loading...")
+        );
+    }
+
+    #[tokio::test]
+    async fn busy_deadline_waits_and_an_unarmed_deadline_never_fires() {
+        let started = Instant::now();
+        wait_until(Some(started + Duration::from_millis(25))).await;
+        assert!(started.elapsed() >= Duration::from_millis(25));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), wait_until(None))
+                .await
+                .is_err()
         );
     }
 
