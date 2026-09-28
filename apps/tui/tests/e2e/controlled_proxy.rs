@@ -13,6 +13,8 @@ const REQUEST_LIMIT: Duration = Duration::from_secs(5);
 pub(crate) enum Route {
     Snapshot,
     CreateTask,
+    InactivePreview,
+    ArchiveInactive,
     TaskHistory,
 }
 
@@ -21,6 +23,10 @@ impl Route {
         match self {
             Self::Snapshot => method == "GET" && path == "/v1/snapshot",
             Self::CreateTask => method == "POST" && path == "/v1/tasks",
+            Self::InactivePreview => {
+                method == "GET" && path.starts_with("/v1/tasks/inactive-preview?")
+            }
+            Self::ArchiveInactive => method == "POST" && path == "/v1/tasks/archive-inactive",
             Self::TaskHistory => {
                 method == "GET" && path.starts_with("/v1/tasks/") && path.ends_with("/worklogs")
             }

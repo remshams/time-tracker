@@ -4,6 +4,8 @@
 mod all_worklogs;
 #[path = "scenarios/archive.rs"]
 mod archive;
+#[path = "scenarios/archive_inactive.rs"]
+mod archive_inactive;
 #[path = "scenarios/correction.rs"]
 mod correction;
 #[path = "scenarios/deletion.rs"]
