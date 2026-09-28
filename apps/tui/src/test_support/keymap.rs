@@ -45,6 +45,16 @@ pub(crate) fn confirm() -> TaskListMode {
     }
 }
 
+pub(crate) fn archiving_mode() -> TaskListMode {
+    TaskListMode::ArchivingInactiveTasks {
+        preview: crate::screens::task_list::InactiveTaskPreview::Local {
+            as_of: DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
+            candidate_ids: vec![TaskId::generate()],
+            sample_names: vec!["old task".to_owned()],
+        },
+    }
+}
+
 pub(crate) fn deletion() -> WorklogHistoryMode {
     WorklogHistoryMode::ConfirmDeletion {
         worklog: Worklog::new(
@@ -90,6 +100,15 @@ fn task_list_state(mode: TaskListMode, view: TaskView) -> TaskListState {
         TaskListMode::Input { purpose, buffer } => state.open_input(purpose, buffer),
         TaskListMode::ConfirmArchive { task_id, name } => {
             state.open_archive_confirmation(task_id, name);
+        }
+        TaskListMode::PreviewingInactiveTasks { as_of } => {
+            state.open_inactive_archive_preview(as_of);
+        }
+        TaskListMode::ConfirmInactiveArchive { preview } => {
+            state.confirm_inactive_archive(preview);
+        }
+        TaskListMode::ArchivingInactiveTasks { preview } => {
+            state.begin_inactive_archive(preview);
         }
     }
     state

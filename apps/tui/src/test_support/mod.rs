@@ -481,6 +481,59 @@ impl TaskOperations for TestService {
         }
         Ok(task.clone())
     }
+
+    fn preview_inactive_tasks(
+        &mut self,
+        as_of: DateTime<Utc>,
+    ) -> Result<Vec<Task>, ApplicationError> {
+        self.apply_external_state();
+        Ok(self.inactive_candidates(as_of))
+    }
+
+    fn archive_inactive_tasks(
+        &mut self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+    ) -> Result<Vec<Task>, ApplicationError> {
+        self.apply_external_state();
+        if self.fail_archive {
+            return Err(Self::failure());
+        }
+        let candidates = self.inactive_candidates(as_of);
+        let candidate_ids = candidates.iter().map(Task::id).collect::<Vec<_>>();
+        if candidate_ids != expected_ids {
+            return Err(RepositoryError::InactiveTaskCandidatesChanged.into());
+        }
+        for task in &mut self.tasks {
+            if expected_ids.contains(&task.id()) {
+                task.archive(as_of);
+            }
+        }
+        Ok(self
+            .tasks
+            .iter()
+            .filter(|task| expected_ids.contains(&task.id()))
+            .cloned()
+            .collect())
+    }
+}
+
+impl TestService {
+    fn inactive_candidates(&self, as_of: DateTime<Utc>) -> Vec<Task> {
+        let cutoff = as_of - chrono::Duration::days(14);
+        self.tasks
+            .iter()
+            .filter(|task| {
+                !task.is_archived()
+                    && task.created_at() < cutoff
+                    && !self
+                        .latest_work_starts
+                        .iter()
+                        .any(|(id, latest)| *id == task.id() && *latest >= cutoff)
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 impl TrackingOperations for TestService {

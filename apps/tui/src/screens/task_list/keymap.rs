@@ -12,6 +12,9 @@ pub(crate) fn map(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<
         TaskListMode::Search => map_search(key),
         TaskListMode::Input { .. } => map_input(key),
         TaskListMode::ConfirmArchive { .. } => map_confirm(key),
+        TaskListMode::PreviewingInactiveTasks { .. } => map_previewing(key),
+        TaskListMode::ConfirmInactiveArchive { .. } => map_confirm(key),
+        TaskListMode::ArchivingInactiveTasks { .. } => None,
     }
 }
 
@@ -25,6 +28,14 @@ fn map_normal(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<Task
     }
     if key.code == KeyCode::Char('G') && key.modifiers == KeyModifiers::SHIFT {
         return Some(KeymapCommand::Local(TaskListCommand::Last));
+    }
+    if state.view() == TaskView::Active
+        && key.code == KeyCode::Char('D')
+        && key.modifiers == KeyModifiers::SHIFT
+    {
+        return Some(KeymapCommand::Local(
+            TaskListCommand::OpenInactiveArchivePreview,
+        ));
     }
     if key.modifiers == KeyModifiers::SHIFT && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
         return Some(KeymapCommand::Local(previous_tab(state.view())));
@@ -126,53 +137,118 @@ fn map_confirm(key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
     Some(KeymapCommand::Local(command))
 }
 
-pub(crate) fn footer_hints(state: &TaskListState, width: u16) -> &'static str {
-    let filtered = state.search_query().is_some();
-    if width < 80 {
-        return match state.mode() {
-            TaskListMode::Normal => match (state.view(), filtered) {
-                (TaskView::Active, false) => {
-                    "j/k tab/⇧tab / ␣ enter history a/e/d s sort q/esc/ctrl+c"
-                }
-                (TaskView::Archived, false) => {
-                    "j/k tab/⇧tab / enter history s sort u restore q/esc/ctrl+c"
-                }
-                (TaskView::Active, true) => {
-                    "j/k tab/⇧tab / spc enter history a/e/d s sort esc q/ctrl+c"
-                }
-                (TaskView::Archived, true) => {
-                    "j/k tab/⇧tab / enter history s sort u restore esc q/ctrl+c"
-                }
-            },
-            TaskListMode::Search => "type · ↑/↓ select · enter keep · esc cancel · ctrl+c quit",
-            TaskListMode::Input { .. } => {
-                "type · backspace · enter save · esc cancel · ctrl+c quit"
-            }
-            TaskListMode::ConfirmArchive { .. } => "y/enter · n/esc · ctrl+c quit",
-        };
+fn map_previewing(key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
+    if key.modifiers == KeyModifiers::NONE && key.code == KeyCode::Esc {
+        Some(KeymapCommand::Local(TaskListCommand::Cancel))
+    } else {
+        None
     }
+}
+
+pub(crate) fn footer_hints(state: &TaskListState, width: u16) -> &'static str {
+    if width < 80 {
+        return compact_footer_hints(state);
+    }
+    if width < 110 {
+        return medium_footer_hints(state);
+    }
+    wide_footer_hints(state)
+}
+
+fn compact_footer_hints(state: &TaskListState) -> &'static str {
     match state.mode() {
-        TaskListMode::Normal => match (state.view(), filtered) {
-            (TaskView::Active, false) => {
-                "j/k/↑/↓ tab/⇧tab / space track enter history s sort a/e/d edit q/esc/ctrl+c quit"
-            }
-            (TaskView::Archived, false) => {
-                "j/k/↑/↓ tab/⇧tab view / enter history s sort u unarchive q/esc ctrl+c quit"
-            }
-            (TaskView::Active, true) => {
-                "j/k tab/⇧tab /find spc track enter history s sort a/e/d edit esc clear q/ctrl+c"
-            }
-            (TaskView::Archived, true) => {
-                "j/k/↑/↓ tab/⇧tab /find enter history s sort u restore esc clear q/ctrl+c"
-            }
-        },
+        TaskListMode::Normal => compact_normal_footer_hints(state),
         TaskListMode::Search => {
             "type · backspace · ↑/↓ select · enter keep · esc cancel · ctrl+c quit"
         }
+        TaskListMode::Input { .. } => "type · backspace · enter save · esc cancel · ctrl+c quit",
+        TaskListMode::ConfirmArchive { .. } => "y/enter confirm · n/esc cancel · ctrl+c quit",
+        TaskListMode::PreviewingInactiveTasks { .. } => {
+            "loading preview · esc cancel · ctrl+c quit"
+        }
+        TaskListMode::ConfirmInactiveArchive { .. } => {
+            "enter/y confirm · n/esc cancel · ctrl+c quit"
+        }
+        TaskListMode::ArchivingInactiveTasks { .. } => "archive in progress · ctrl+c quit",
+    }
+}
+
+fn compact_normal_footer_hints(state: &TaskListState) -> &'static str {
+    match (state.view(), state.search_query().is_some()) {
+        (TaskView::Active, false) => "j/k tab/⇧tab a/e/d/D space enter history s sort q/esc/ctrl+c",
+        (TaskView::Archived, false) => "j/k tab/⇧tab / enter history s sort u restore q/esc/ctrl+c",
+        (TaskView::Active, true) => "j/k tab/⇧tab /find a/e/d/D ␣ enter history esc q/esc/ctrl+c",
+        (TaskView::Archived, true) => "j/k tab/⇧tab / enter history s sort u restore esc q/ctrl+c",
+    }
+}
+
+fn medium_footer_hints(state: &TaskListState) -> &'static str {
+    match state.mode() {
+        TaskListMode::Normal => medium_normal_footer_hints(state),
+        TaskListMode::Search => "type · ↑/↓ select · enter keep · esc cancel · ctrl+c quit",
         TaskListMode::Input { .. } => {
             "type · backspace delete · enter save · esc cancel · ctrl+c quit"
         }
         TaskListMode::ConfirmArchive { .. } => "y/enter confirm · n/esc cancel · ctrl+c quit",
+        TaskListMode::PreviewingInactiveTasks { .. } => {
+            "loading preview · esc cancel · ctrl+c quit"
+        }
+        TaskListMode::ConfirmInactiveArchive { .. } => {
+            "enter/y confirm · n/esc cancel · ctrl+c quit"
+        }
+        TaskListMode::ArchivingInactiveTasks { .. } => "archive in progress · ctrl+c quit",
+    }
+}
+
+fn medium_normal_footer_hints(state: &TaskListState) -> &'static str {
+    match (state.view(), state.search_query().is_some()) {
+        (TaskView::Active, false) => {
+            "j/k/↑/↓ tab/⇧tab space track enter history s sort a/e/d edit D q/esc/ctrl+c quit"
+        }
+        (TaskView::Archived, false) => {
+            "j/k/↑/↓ tab/⇧tab view / enter history s sort u unarchive q/esc/ctrl+c quit"
+        }
+        (TaskView::Active, true) => {
+            "j/k/↑/↓ tab/⇧tab /find space track enter history s sort a/e/d edit D bulk esc q/ctrl+c"
+        }
+        (TaskView::Archived, true) => {
+            "j/k/↑/↓ tab/⇧tab /find enter history s sort u restore esc q/esc/ctrl+c"
+        }
+    }
+}
+
+fn wide_footer_hints(state: &TaskListState) -> &'static str {
+    match state.mode() {
+        TaskListMode::Normal => wide_normal_footer_hints(state),
+        TaskListMode::Search => "type · ↑/↓ select · enter keep · esc cancel · ctrl+c quit",
+        TaskListMode::Input { .. } => {
+            "type · backspace delete · enter save · esc cancel · ctrl+c quit"
+        }
+        TaskListMode::ConfirmArchive { .. } => "y/enter confirm · n/esc cancel · ctrl+c quit",
+        TaskListMode::PreviewingInactiveTasks { .. } => {
+            "loading preview · esc cancel · ctrl+c quit"
+        }
+        TaskListMode::ConfirmInactiveArchive { .. } => {
+            "enter/y confirm · n/esc cancel · ctrl+c quit"
+        }
+        TaskListMode::ArchivingInactiveTasks { .. } => "archive in progress · ctrl+c quit",
+    }
+}
+
+fn wide_normal_footer_hints(state: &TaskListState) -> &'static str {
+    match (state.view(), state.search_query().is_some()) {
+        (TaskView::Active, false) => {
+            "j/k/↑/↓ tab/⇧tab / space track enter history s sort a/e/d edit D archive inactive q/esc/ctrl+c quit"
+        }
+        (TaskView::Archived, false) => {
+            "j/k/↑/↓ tab/⇧tab view / enter history s sort u unarchive q/esc/ctrl+c quit"
+        }
+        (TaskView::Active, true) => {
+            "j/k/↑/↓ tab/⇧tab /find ␣ enter history s sort D bulk esc clear q/ctrl+c"
+        }
+        (TaskView::Archived, true) => {
+            "j/k/↑/↓ tab/⇧tab /find enter history s sort u restore esc clear q/ctrl+c"
+        }
     }
 }
 
@@ -238,6 +314,69 @@ mod tests {
         assert_eq!(
             map_task_list(TaskListMode::Normal, view, key(KeyCode::Esc)),
             Some(Command::Quit)
+        );
+    }
+
+    #[test]
+    fn uppercase_d_opens_bulk_archive_only_on_the_active_tab() {
+        assert_eq!(
+            map_task_list(
+                TaskListMode::Normal,
+                TaskView::Active,
+                KeyEvent::new(KeyCode::Char('D'), KeyModifiers::SHIFT),
+            ),
+            Some(Command::TaskList(
+                TaskListCommand::OpenInactiveArchivePreview
+            ))
+        );
+        assert_eq!(
+            map_task_list(
+                TaskListMode::Normal,
+                TaskView::Archived,
+                KeyEvent::new(KeyCode::Char('D'), KeyModifiers::SHIFT),
+            ),
+            None
+        );
+        assert_eq!(
+            map_task_list(
+                TaskListMode::Normal,
+                TaskView::Active,
+                key(KeyCode::Char('D')),
+            ),
+            None
+        );
+        for key_event in [
+            key(KeyCode::Enter),
+            key(KeyCode::Esc),
+            key(KeyCode::Char('n')),
+        ] {
+            assert_eq!(
+                map_task_list(archiving_mode(), TaskView::Active, key_event,),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn preview_loading_accepts_only_unmodified_escape() {
+        let loading = TaskListMode::PreviewingInactiveTasks {
+            as_of: chrono::Utc::now(),
+        };
+        assert_eq!(
+            map_task_list(loading.clone(), TaskView::Active, key(KeyCode::Esc)),
+            Some(Command::TaskList(TaskListCommand::Cancel))
+        );
+        assert_eq!(
+            map_task_list(loading.clone(), TaskView::Active, key(KeyCode::Char('x')),),
+            None
+        );
+        assert_eq!(
+            map_task_list(
+                loading,
+                TaskView::Active,
+                KeyEvent::new(KeyCode::Esc, KeyModifiers::SHIFT),
+            ),
+            None
         );
     }
 
@@ -598,6 +737,7 @@ mod tests {
             "s sort",
             "a/e/d",
             "edit",
+            "D",
             "q/esc",
             "ctrl+c",
         ] {
@@ -672,6 +812,12 @@ mod tests {
     }
 
     #[test]
+    fn a_110_column_footer_uses_the_expanded_bulk_archive_hint() {
+        let footer = task_list_footer(TaskListMode::Normal, TaskView::Active, 110);
+        assert!(footer.contains("D archive inactive"), "{footer:?}");
+    }
+
+    #[test]
     fn compact_footers_keep_every_key_visible_at_sixty_columns() {
         let footers = [
             task_list_footer(TaskListMode::Normal, TaskView::Active, 60),
@@ -689,8 +835,8 @@ mod tests {
         }
         assert!(footers[0].contains("j/k"));
         assert!(footers[0].contains("tab/⇧tab"));
-        assert!(footers[0].contains("␣"));
-        assert!(footers[0].contains("a/e/d"));
+        assert!(footers[0].contains("space"));
+        assert!(footers[0].contains("a/e/d/D"));
         assert!(footers[0].contains("enter history"));
         assert!(footers[0].contains("s sort"));
         assert!(footers[1].contains("enter history"));

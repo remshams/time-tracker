@@ -1,4 +1,33 @@
+use chrono::{DateTime, Utc};
 use tracker_domain::TaskId;
+use tracker_remote::InactiveTaskPreviewDto;
+
+/// A preview captured before the user confirms a bulk archive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InactiveTaskPreview {
+    Local {
+        as_of: DateTime<Utc>,
+        candidate_ids: Vec<TaskId>,
+        sample_names: Vec<String>,
+    },
+    Remote(InactiveTaskPreviewDto),
+}
+
+impl InactiveTaskPreview {
+    pub(crate) fn count(&self) -> usize {
+        match self {
+            Self::Local { candidate_ids, .. } => candidate_ids.len(),
+            Self::Remote(preview) => preview.count,
+        }
+    }
+
+    pub(crate) fn sample_names(&self) -> &[String] {
+        match self {
+            Self::Local { sample_names, .. } => sample_names,
+            Self::Remote(preview) => &preview.sample_names,
+        }
+    }
+}
 
 /// What a confirmed task-name input does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +48,15 @@ pub enum TaskListMode {
     ConfirmArchive {
         task_id: TaskId,
         name: String,
+    },
+    PreviewingInactiveTasks {
+        as_of: DateTime<Utc>,
+    },
+    ConfirmInactiveArchive {
+        preview: InactiveTaskPreview,
+    },
+    ArchivingInactiveTasks {
+        preview: InactiveTaskPreview,
     },
 }
 
@@ -188,6 +226,21 @@ impl TaskListState {
     pub(crate) fn open_archive_confirmation(&mut self, task_id: TaskId, name: String) {
         self.dialog_generation = self.dialog_generation.wrapping_add(1);
         self.mode = TaskListMode::ConfirmArchive { task_id, name };
+    }
+
+    pub(crate) fn open_inactive_archive_preview(&mut self, as_of: DateTime<Utc>) {
+        self.dialog_generation = self.dialog_generation.wrapping_add(1);
+        self.mode = TaskListMode::PreviewingInactiveTasks { as_of };
+    }
+
+    pub(crate) fn confirm_inactive_archive(&mut self, preview: InactiveTaskPreview) {
+        self.dialog_generation = self.dialog_generation.wrapping_add(1);
+        self.mode = TaskListMode::ConfirmInactiveArchive { preview };
+    }
+
+    pub(crate) fn begin_inactive_archive(&mut self, preview: InactiveTaskPreview) {
+        self.dialog_generation = self.dialog_generation.wrapping_add(1);
+        self.mode = TaskListMode::ArchivingInactiveTasks { preview };
     }
 
     pub(crate) fn insert_name(&mut self, character: char, limit: usize) {

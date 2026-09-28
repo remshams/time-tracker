@@ -9,6 +9,8 @@ use tracker_application::{
 use tracker_domain::{Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes};
 use tracker_remote::RemoteApplication;
 
+use crate::screens::task_list::InactiveTaskPreview;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ApplicationRequest {
     CreateTask {
@@ -23,6 +25,12 @@ pub(crate) enum ApplicationRequest {
     ArchiveTask {
         id: TaskId,
         occurred_at: DateTime<Utc>,
+    },
+    PreviewInactiveTasks {
+        as_of: DateTime<Utc>,
+    },
+    ArchiveInactiveTasks {
+        preview: InactiveTaskPreview,
     },
     UnarchiveTask {
         id: TaskId,
@@ -74,6 +82,7 @@ impl ApplicationRequest {
             Self::CreateTask { .. }
                 | Self::RenameTask { .. }
                 | Self::ArchiveTask { .. }
+                | Self::ArchiveInactiveTasks { .. }
                 | Self::UnarchiveTask { .. }
                 | Self::SetActiveTask { .. }
                 | Self::ClearActiveTask { .. }
@@ -104,6 +113,10 @@ impl ApplicationRequest {
             | (Self::UnarchiveTask { id: left, .. }, Self::UnarchiveTask { id: right, .. }) => {
                 left == right
             }
+            (
+                Self::ArchiveInactiveTasks { preview: left },
+                Self::ArchiveInactiveTasks { preview: right },
+            ) => left == right,
             (
                 Self::SetActiveTask { task_id: left, .. },
                 Self::SetActiveTask { task_id: right, .. },
@@ -175,6 +188,8 @@ impl ApplicationRequest {
 #[derive(Debug)]
 pub(crate) enum ApplicationOutcome {
     Task(Result<Task, ApplicationError>),
+    InactiveTaskPreview(Result<InactiveTaskPreview, ApplicationError>),
+    ArchivedInactiveTasks(Result<usize, ApplicationError>),
     SetActiveTask(Result<SetActiveTaskOutcome, ApplicationError>),
     ClearActiveTask(Result<ClearActiveTaskOutcome, ApplicationError>),
     WorklogPage(Result<WorklogPage, ApplicationError>),
@@ -227,6 +242,37 @@ pub(crate) fn execute_local<S: TrackerApplicationService>(
         } => ApplicationOutcome::Task(application.rename_task(*id, name.clone(), *occurred_at)),
         ApplicationRequest::ArchiveTask { id, occurred_at } => {
             ApplicationOutcome::Task(application.archive_task(*id, *occurred_at))
+        }
+        ApplicationRequest::PreviewInactiveTasks { as_of } => {
+            ApplicationOutcome::InactiveTaskPreview(application.preview_inactive_tasks(*as_of).map(
+                |tasks| {
+                    let sample_names = tasks
+                        .iter()
+                        .take(3)
+                        .map(|task| task.name().to_string())
+                        .collect();
+                    InactiveTaskPreview::Local {
+                        as_of: *as_of,
+                        candidate_ids: tasks.iter().map(Task::id).collect(),
+                        sample_names,
+                    }
+                },
+            ))
+        }
+        ApplicationRequest::ArchiveInactiveTasks { preview } => {
+            let InactiveTaskPreview::Local {
+                as_of,
+                candidate_ids,
+                ..
+            } = preview
+            else {
+                unreachable!("local bulk archive uses a local preview")
+            };
+            ApplicationOutcome::ArchivedInactiveTasks(
+                application
+                    .archive_inactive_tasks(candidate_ids, *as_of)
+                    .map(|tasks| tasks.len()),
+            )
         }
         ApplicationRequest::UnarchiveTask { id, occurred_at } => {
             ApplicationOutcome::Task(application.unarchive_task(*id, *occurred_at))
@@ -310,6 +356,22 @@ pub(crate) async fn execute_remote(
         ApplicationRequest::ArchiveTask { id, occurred_at } => {
             ApplicationOutcome::Task(application.archive_task(*id, *occurred_at).await)
         }
+        ApplicationRequest::PreviewInactiveTasks { as_of } => {
+            ApplicationOutcome::InactiveTaskPreview(
+                application
+                    .preview_inactive_tasks(*as_of)
+                    .await
+                    .map(InactiveTaskPreview::Remote),
+            )
+        }
+        ApplicationRequest::ArchiveInactiveTasks { preview } => {
+            let InactiveTaskPreview::Remote(preview) = preview else {
+                unreachable!("remote bulk archive uses a remote preview")
+            };
+            ApplicationOutcome::ArchivedInactiveTasks(
+                application.archive_inactive_tasks(preview).await,
+            )
+        }
         ApplicationRequest::UnarchiveTask { id, occurred_at } => {
             ApplicationOutcome::Task(application.unarchive_task(*id, *occurred_at).await)
         }
@@ -385,6 +447,8 @@ pub(crate) async fn execute_remote(
 mod intent_tests {
     use chrono::{DateTime, TimeDelta, Utc};
     use tracker_domain::{TaskId, TaskName, WorklogId, WorklogTimes};
+
+    use crate::screens::task_list::InactiveTaskPreview;
 
     use super::ApplicationRequest as Request;
 
@@ -710,5 +774,30 @@ mod intent_tests {
             !Request::AllWorklogs { after: None }
                 .same_write_intent(&Request::AllWorklogs { after: None })
         );
+    }
+
+    #[test]
+    fn bulk_archive_write_intent_matches_only_the_same_captured_preview() {
+        let as_of = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
+        let task = TaskId::generate();
+        let preview = InactiveTaskPreview::Local {
+            as_of,
+            candidate_ids: vec![task],
+            sample_names: vec!["old task".to_owned()],
+        };
+        let same = Request::ArchiveInactiveTasks {
+            preview: preview.clone(),
+        };
+        let repeated = Request::ArchiveInactiveTasks { preview };
+        let distinct = Request::ArchiveInactiveTasks {
+            preview: InactiveTaskPreview::Local {
+                as_of,
+                candidate_ids: vec![TaskId::generate()],
+                sample_names: vec!["other task".to_owned()],
+            },
+        };
+
+        assert!(same.same_write_intent(&repeated));
+        assert!(!same.same_write_intent(&distinct));
     }
 }

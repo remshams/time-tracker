@@ -6,7 +6,9 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Tabs};
 use tracker_domain::{Task, TaskId};
 
 use crate::components::{dialogs, text};
-use crate::screens::task_list::{InputPurpose, TaskListMode, TaskListState, TaskView};
+use crate::screens::task_list::{
+    InactiveTaskPreview, InputPurpose, TaskListMode, TaskListState, TaskView,
+};
 use crate::styles;
 
 /// Renders the task list and the modal owned by its current mode.
@@ -41,8 +43,55 @@ pub(crate) fn render(
                 &format!("Archive \"{name}\"?"),
             );
         }
+        TaskListMode::PreviewingInactiveTasks { .. } => dialogs::render_lines(
+            frame,
+            area,
+            56,
+            3,
+            "Archive inactive tasks",
+            vec![Line::from("Loading preview...")],
+        ),
+        TaskListMode::ConfirmInactiveArchive { preview } => {
+            render_inactive_archive_confirmation(frame, area, preview);
+        }
+        TaskListMode::ArchivingInactiveTasks { .. } => dialogs::render_lines(
+            frame,
+            area,
+            56,
+            3,
+            "Archiving inactive tasks",
+            vec![Line::from("Archiving the tasks from this preview...")],
+        ),
         TaskListMode::Normal | TaskListMode::Search => {}
     }
+}
+
+fn render_inactive_archive_confirmation(
+    frame: &mut Frame,
+    area: Rect,
+    preview: &InactiveTaskPreview,
+) {
+    let count = preview.count();
+    let noun = if count == 1 { "task" } else { "tasks" };
+    let count_line = format!("{count} active {noun} inactive for 14 days");
+    let sample_names = preview.sample_names().join(", ");
+    let sample_line = if sample_names.is_empty() {
+        "Sample: none".to_owned()
+    } else {
+        format!("Sample: {sample_names}")
+    };
+    dialogs::render_lines(
+        frame,
+        area,
+        72,
+        5,
+        "Archive inactive tasks",
+        vec![
+            Line::from(count_line),
+            Line::from("Includes all active tasks, regardless of search."),
+            Line::from(sample_line),
+        ],
+    );
 }
 
 pub(crate) fn render_tabs(frame: &mut Frame, area: Rect, selected: usize, focused: bool) {
@@ -171,6 +220,7 @@ mod tests {
     use crate::app::App;
     use crate::command::Command;
     use crate::screens::TaskListCommand;
+    use crate::screens::task_list::InactiveTaskPreview;
     use crate::test_support::app_with_test_clock;
 
     const WIDTH: u16 = 80;
@@ -374,7 +424,7 @@ mod tests {
         let mut app = app_with(&["alpha"]);
         let terminal = draw(&app);
         assert!(row(&terminal, 23).contains("tab/⇧tab"));
-        assert!(row(&terminal, 23).contains("space track"));
+        assert!(row(&terminal, 23).contains("space"));
         assert!(row(&terminal, 23).contains("enter history"));
 
         app.handle(Command::TaskList(TaskListCommand::OpenAdd));
@@ -610,5 +660,38 @@ mod tests {
         let terminal = draw(&app);
         let row = row(&terminal, 11);
         assert!(row.contains("Archive \"alpha\"?"), "got {row:?}");
+    }
+
+    #[test]
+    fn inactive_archive_preview_samples_render_for_local_and_remote_backends() {
+        let as_of = DateTime::<Utc>::from_timestamp(2_000_000_000, 0).unwrap();
+        let previews = [
+            InactiveTaskPreview::Local {
+                as_of,
+                candidate_ids: vec![TaskId::generate()],
+                sample_names: vec!["local legacy task".to_owned()],
+            },
+            InactiveTaskPreview::Remote(tracker_remote::InactiveTaskPreviewDto {
+                as_of,
+                count: 1,
+                sample_names: vec!["remote legacy task".to_owned()],
+                revision: "revision".to_owned(),
+                candidate_fingerprint: "0".repeat(64),
+            }),
+        ];
+
+        for (preview, sample) in previews
+            .into_iter()
+            .zip(["Sample: local legacy task", "Sample: remote legacy task"])
+        {
+            let mut app = app_with(&["alpha"]);
+            app.shell_mut()
+                .task_list_mut()
+                .confirm_inactive_archive(preview);
+
+            let terminal = draw(&app);
+            let screen = rows(&terminal).join("\n");
+            assert!(screen.contains(sample), "missing {sample:?} in {screen:?}");
+        }
     }
 }

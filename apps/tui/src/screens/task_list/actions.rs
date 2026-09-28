@@ -26,11 +26,7 @@ impl AppState {
             TaskListCommand::ShowArchivedTasks => self.show_tasks(TaskView::Archived),
             TaskListCommand::ShowReports => self.open_reports(),
             TaskListCommand::ShowAllWorklogs => self.open_all_worklogs(),
-            TaskListCommand::CopySelectedName => {
-                if let Some(name) = self.selected_task().map(|task| task.name().to_string()) {
-                    self.copy_text(&name);
-                }
-            }
+            TaskListCommand::CopySelectedName => self.copy_selected_task_name(),
             TaskListCommand::CycleOrdering => self.cycle_ordering(),
             TaskListCommand::OpenSearch => self.open_task_search(),
             TaskListCommand::CommitSearch => self.commit_task_search(),
@@ -47,23 +43,43 @@ impl AppState {
             TaskListCommand::OpenAdd => self.open_add(),
             TaskListCommand::OpenRename => self.open_rename(),
             TaskListCommand::OpenArchiveConfirm => self.open_archive_confirm(),
+            TaskListCommand::OpenInactiveArchivePreview => self.open_inactive_archive_preview(),
             TaskListCommand::Insert(character) => self
                 .shell_mut()
                 .task_list_mut()
                 .insert_name(character, TaskName::MAX_LEN),
             TaskListCommand::Backspace => self.shell_mut().task_list_mut().backspace_name(),
             TaskListCommand::Confirm => self.confirm_task_list(),
-            TaskListCommand::Cancel => {
-                if matches!(self.shell().task_list().mode(), TaskListMode::Search) {
-                    self.cancel_task_search();
-                } else {
-                    self.shell_mut().task_list_mut().close_mode();
-                }
-            }
+            TaskListCommand::Cancel => self.cancel_task_list_mode(),
             TaskListCommand::OpenHistory => self.open_history(),
         }
         if command != TaskListCommand::GPrefix {
             self.shell_mut().task_list_mut().set_g_prefix(false);
+        }
+    }
+
+    fn copy_selected_task_name(&mut self) {
+        if let Some(name) = self.selected_task().map(|task| task.name().to_string()) {
+            self.copy_text(&name);
+        }
+    }
+
+    fn cancel_task_list_mode(&mut self) {
+        if matches!(self.shell().task_list().mode(), TaskListMode::Search) {
+            self.cancel_task_search();
+        } else if let TaskListMode::PreviewingInactiveTasks { as_of } =
+            self.shell().task_list().mode()
+        {
+            let as_of = *as_of;
+            self.discard_queued_inactive_preview(as_of);
+            self.shell_mut().task_list_mut().close_mode();
+        } else if matches!(
+            self.shell().task_list().mode(),
+            TaskListMode::ArchivingInactiveTasks { .. }
+        ) {
+            // A confirmed write cannot be dismissed while it is pending.
+        } else {
+            self.shell_mut().task_list_mut().close_mode();
         }
     }
 
@@ -267,7 +283,127 @@ impl AppState {
         match self.shell().task_list().mode() {
             TaskListMode::Input { .. } => self.confirm_input(),
             TaskListMode::ConfirmArchive { .. } => self.confirm_archive(),
-            TaskListMode::Normal | TaskListMode::Search => {}
+            TaskListMode::ConfirmInactiveArchive { .. } => self.confirm_inactive_archive(),
+            TaskListMode::Normal
+            | TaskListMode::Search
+            | TaskListMode::PreviewingInactiveTasks { .. }
+            | TaskListMode::ArchivingInactiveTasks { .. } => {}
+        }
+    }
+
+    fn open_inactive_archive_preview(&mut self) {
+        if !self.accepts_active_actions() {
+            return;
+        }
+        let as_of = Utc::now();
+        self.shell_mut()
+            .task_list_mut()
+            .open_inactive_archive_preview(as_of);
+        let dialog_generation = self.shell().task_list().dialog_generation();
+        let accepted = self.enqueue(
+            ApplicationRequest::PreviewInactiveTasks { as_of },
+            move |app, completed| {
+                let same_dialog = app.shell().task_list().view() == TaskView::Active
+                    && app.shell().task_list().dialog_generation() == dialog_generation
+                    && app.shell().task_list().mode()
+                        == &TaskListMode::PreviewingInactiveTasks { as_of };
+                let ApplicationOutcome::InactiveTaskPreview(result) = completed.outcome else {
+                    unreachable!("inactive task preview returns a preview")
+                };
+                app.sync_from_snapshot(
+                    completed.snapshot.items,
+                    completed.snapshot.tracking,
+                    false,
+                );
+                if !same_dialog {
+                    return;
+                }
+                match result {
+                    Ok(preview) if preview.count() == 0 => {
+                        app.shell_mut().task_list_mut().close_mode();
+                        app.shell_mut().info("No inactive tasks to archive");
+                    }
+                    Ok(preview) => app
+                        .shell_mut()
+                        .task_list_mut()
+                        .confirm_inactive_archive(preview),
+                    Err(error) => {
+                        app.shell_mut().task_list_mut().close_mode();
+                        app.shell_mut().error(application_error_text(&error));
+                    }
+                }
+            },
+        );
+        if !accepted {
+            self.shell_mut().task_list_mut().close_mode();
+        }
+    }
+
+    fn confirm_inactive_archive(&mut self) {
+        let mode_at_request = self.shell().task_list().mode().clone();
+        let TaskListMode::ConfirmInactiveArchive { preview } = mode_at_request.clone() else {
+            return;
+        };
+        if preview.count() == 0 {
+            self.shell_mut().task_list_mut().close_mode();
+            self.shell_mut().info("No inactive tasks to archive");
+            return;
+        }
+        self.shell_mut()
+            .task_list_mut()
+            .begin_inactive_archive(preview.clone());
+        let mode_at_request = self.shell().task_list().mode().clone();
+        let completion_mode = mode_at_request.clone();
+        let dialog_generation = self.shell().task_list().dialog_generation();
+        let accepted = self.enqueue(
+            ApplicationRequest::ArchiveInactiveTasks {
+                preview: preview.clone(),
+            },
+            move |app, completed| {
+                let same_dialog = app.shell().task_list().dialog_generation() == dialog_generation
+                    && app.shell().task_list().mode() == &completion_mode;
+                let ApplicationOutcome::ArchivedInactiveTasks(result) = completed.outcome else {
+                    unreachable!("inactive task archive returns a count")
+                };
+                app.sync_from_snapshot(
+                    completed.snapshot.items,
+                    completed.snapshot.tracking,
+                    false,
+                );
+                match result {
+                    Ok(count) => {
+                        if same_dialog {
+                            app.shell_mut().task_list_mut().close_mode();
+                        }
+                        let noun = if count == 1 { "task" } else { "tasks" };
+                        app.shell_mut()
+                            .info(format!("Archived {count} inactive {noun}"));
+                    }
+                    Err(error)
+                        if error.failure().category()
+                            == ApplicationFailureCategory::InactiveTaskCandidatesChanged =>
+                    {
+                        if same_dialog {
+                            app.shell_mut().task_list_mut().close_mode();
+                        }
+                        app.shell_mut()
+                            .error("Inactive task list changed. Preview again");
+                    }
+                    Err(error) => {
+                        if same_dialog {
+                            app.shell_mut().task_list_mut().close_mode();
+                        }
+                        app.shell_mut().error(format!(
+                            "{}; press D to preview again",
+                            application_error_text(&error)
+                        ));
+                    }
+                }
+            },
+        );
+        if !accepted {
+            self.shell_mut().task_list_mut().close_mode();
+            self.shell_mut().error("Archive request was not queued");
         }
     }
 
@@ -507,10 +643,13 @@ fn task_name_error_text(error: TaskNameError) -> String {
 
 #[cfg(test)]
 mod navigation_tests {
+    use crate::app::Status;
     use crate::app::{AppEffect, AppState};
-    use crate::application_request::{ApplicationOutcome, ApplicationSnapshot, CompletedRequest};
+    use crate::application_request::{
+        ApplicationOutcome, ApplicationRequest, ApplicationSnapshot, CompletedRequest,
+    };
     use crate::command::Command;
-    use crate::screens::task_list::{TaskListCommand, TaskListMode, TaskView};
+    use crate::screens::task_list::{InactiveTaskPreview, TaskListCommand, TaskListMode, TaskView};
     use crate::test_support::{TestService, app_in_timezone, task};
     use tracker_application::TaskListItem;
     use tracker_domain::{Task, TrackingState};
@@ -528,6 +667,122 @@ mod navigation_tests {
         state.handle_task_list_command(TaskListCommand::Confirm);
         let effect = state.take_effect().expect("archive request");
         (state, effect, selected)
+    }
+
+    #[test]
+    fn a_late_inactive_preview_does_not_reopen_after_cancel() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.handle_task_list_command(TaskListCommand::OpenInactiveArchivePreview);
+        let effect = state.take_effect().expect("preview request");
+        let TaskListMode::PreviewingInactiveTasks { as_of } = state.shell().task_list().mode()
+        else {
+            panic!("preview request should show its loading mode");
+        };
+        let preview = InactiveTaskPreview::Local {
+            as_of: *as_of,
+            candidate_ids: vec![task(1, "old task").id()],
+            sample_names: vec!["old task".to_owned()],
+        };
+
+        state.handle_task_list_command(TaskListCommand::Cancel);
+        let request = effect.request.clone();
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::InactiveTaskPreview(Ok(preview)),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+
+        assert_eq!(state.shell().task_list().mode(), &TaskListMode::Normal);
+    }
+
+    #[test]
+    fn changed_candidates_close_the_in_flight_dialog_and_require_a_new_preview() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state
+            .shell_mut()
+            .task_list_mut()
+            .confirm_inactive_archive(InactiveTaskPreview::Local {
+                as_of: chrono::Utc::now(),
+                candidate_ids: vec![task(1, "old task").id()],
+                sample_names: vec!["old task".to_owned()],
+            });
+        state.handle_task_list_command(TaskListCommand::Confirm);
+        let effect = state.take_effect().expect("bulk archive request");
+        let request = effect.request.clone();
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::ArchivedInactiveTasks(Err(
+                    tracker_application::RepositoryError::InactiveTaskCandidatesChanged.into(),
+                )),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+
+        assert_eq!(state.shell().task_list().mode(), &TaskListMode::Normal);
+        assert_eq!(
+            state.shell().status(),
+            &Status::Error("Inactive task list changed. Preview again".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_bulk_archive_completion_keeps_a_newer_task_list_mode_open() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state
+            .shell_mut()
+            .task_list_mut()
+            .confirm_inactive_archive(InactiveTaskPreview::Local {
+                as_of: chrono::Utc::now(),
+                candidate_ids: vec![task(1, "old task").id()],
+                sample_names: vec!["old task".to_owned()],
+            });
+        state.handle_task_list_command(TaskListCommand::Confirm);
+        let effect = state.take_effect().expect("bulk archive request");
+        let request = effect.request.clone();
+        state.shell_mut().task_list_mut().open_search();
+
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::ArchivedInactiveTasks(Ok(1)),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+
+        assert_eq!(state.shell().task_list().mode(), &TaskListMode::Search);
+        assert_eq!(
+            state.shell().status(),
+            &Status::Info("Archived 1 inactive task".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_rejected_preview_request_closes_the_loading_modal() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        while state.enqueue(ApplicationRequest::AllWorklogs { after: None }, |_, _| {}) {}
+
+        state.handle_task_list_command(TaskListCommand::OpenInactiveArchivePreview);
+
+        assert_eq!(state.shell().task_list().mode(), &TaskListMode::Normal);
+        assert_eq!(
+            state.shell().status(),
+            &Status::Error("Too many pending requests".to_owned())
+        );
     }
 
     fn finish_archive(state: &mut AppState, effect: AppEffect, mut selected: Task) {

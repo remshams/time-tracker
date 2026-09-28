@@ -29,7 +29,7 @@ pub enum Screen {
 /// The only valid stored screen states.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScreenState {
-    TaskList(TaskListState),
+    TaskList(Box<TaskListState>),
     WorklogHistory(Box<WorklogHistoryState>),
     Reports(Box<ReportState>),
     AllWorklogs(Box<AllWorklogsState>),

@@ -29,7 +29,7 @@ pub(crate) struct ShellState {
 impl ShellState {
     pub(crate) fn new(status: Status, task_list: TaskListState, timezone: Tz) -> Self {
         Self {
-            screen: ScreenState::TaskList(task_list),
+            screen: ScreenState::TaskList(Box::new(task_list)),
             status,
             copy_confirmation_deadline: None,
             lifecycle: Lifecycle::Running,
@@ -178,7 +178,7 @@ impl ShellState {
         let ScreenState::TaskList(list) = previous else {
             unreachable!("task list is open")
         };
-        self.task_list_return = Some(list);
+        self.task_list_return = Some(*list);
     }
 
     pub(crate) fn open_all_worklogs(&mut self, state: AllWorklogsState) {
@@ -186,7 +186,7 @@ impl ShellState {
         let previous =
             std::mem::replace(&mut self.screen, ScreenState::AllWorklogs(Box::new(state)));
         match previous {
-            ScreenState::TaskList(list) => self.task_list_return = Some(list),
+            ScreenState::TaskList(list) => self.task_list_return = Some(*list),
             ScreenState::Reports(report) => self.report_return = Some(*report),
             _ => unreachable!("worklogs open from top tabs"),
         }
@@ -218,8 +218,9 @@ impl ShellState {
     pub(crate) fn leave_all_worklogs_for_tasks(&mut self) {
         self.screen_generation = self.screen_generation.wrapping_add(1);
         self.report_return = None;
-        self.screen =
-            ScreenState::TaskList(self.task_list_return.take().expect("task list is saved"));
+        self.screen = ScreenState::TaskList(Box::new(
+            self.task_list_return.take().expect("task list is saved"),
+        ));
     }
 
     pub(crate) fn leave_reports(&mut self, view: TaskView, first: Option<tracker_domain::TaskId>) {
@@ -229,14 +230,14 @@ impl ShellState {
             .take()
             .unwrap_or_else(|| TaskListState::new(None));
         list.show(view, first);
-        self.screen = ScreenState::TaskList(list);
+        self.screen = ScreenState::TaskList(Box::new(list));
     }
 
     pub(crate) fn open_report_history(&mut self, history: crate::screens::History) {
         self.screen_generation = self.screen_generation.wrapping_add(1);
         let old = std::mem::replace(
             &mut self.screen,
-            ScreenState::TaskList(TaskListState::new(None)),
+            ScreenState::TaskList(Box::new(TaskListState::new(None))),
         );
         let ScreenState::Reports(report) = old else {
             unreachable!("report is open")
@@ -252,13 +253,13 @@ impl ShellState {
         self.screen_generation = self.screen_generation.wrapping_add(1);
         let screen = std::mem::replace(
             &mut self.screen,
-            ScreenState::TaskList(TaskListState::new(None)),
+            ScreenState::TaskList(Box::new(TaskListState::new(None))),
         );
         let ScreenState::TaskList(task_list) = screen else {
             unreachable!("history can open only from the task list");
         };
         self.screen =
-            ScreenState::WorklogHistory(Box::new(WorklogHistoryState::new(task_list, history)));
+            ScreenState::WorklogHistory(Box::new(WorklogHistoryState::new(*task_list, history)));
     }
 
     pub(crate) fn back_to_task_list(&mut self) {
@@ -269,12 +270,12 @@ impl ShellState {
         }
         let screen = std::mem::replace(
             &mut self.screen,
-            ScreenState::TaskList(TaskListState::new(None)),
+            ScreenState::TaskList(Box::new(TaskListState::new(None))),
         );
         let ScreenState::WorklogHistory(history) = screen else {
             unreachable!("the task list is already open");
         };
-        self.screen = ScreenState::TaskList(history.into_task_list());
+        self.screen = ScreenState::TaskList(Box::new(history.into_task_list()));
     }
 }
 

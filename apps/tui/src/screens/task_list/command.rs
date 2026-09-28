@@ -45,6 +45,8 @@ pub(crate) enum TaskListCommand {
     OpenRename,
     /// Ask for confirmation before archiving the selected task.
     OpenArchiveConfirm,
+    /// Preview all inactive tasks before asking to archive them.
+    OpenInactiveArchivePreview,
     /// Confirm the pending input or archive dialog.
     Confirm,
     /// Dismiss the pending input or archive dialog.
