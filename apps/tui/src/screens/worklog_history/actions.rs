@@ -418,15 +418,17 @@ impl AppState {
 
 #[cfg(test)]
 mod navigation_tests {
-    use tracker_application::{TaskListItem, WorklogPage, WorklogPageSnapshot};
-    use tracker_domain::TrackingState;
+    use tracker_application::{
+        ApplicationError, TaskListItem, WorklogCursor, WorklogPage, WorklogPageSnapshot,
+    };
+    use tracker_domain::{TaskId, TrackingState, Worklog, WorklogId};
 
     use crate::app::AppState;
     use crate::application_request::{ApplicationOutcome, ApplicationSnapshot, CompletedRequest};
     use crate::command::Command;
     use crate::screens::task_list::TaskListCommand;
     use crate::screens::worklog_history::WorklogHistoryCommand;
-    use crate::screens::{Screen, TaskView};
+    use crate::screens::{History, Screen, TaskView};
     use crate::test_support::{app_with, at, task};
 
     #[test]
@@ -514,5 +516,367 @@ mod navigation_tests {
             },
         );
         assert_eq!(state.shell().screen(), Screen::TaskList);
+    }
+
+    fn worklog(task_id: TaskId, start: i64) -> Worklog {
+        Worklog::new(
+            WorklogId::generate(),
+            task_id,
+            at(start),
+            Some(at(start + 10)),
+        )
+        .unwrap()
+    }
+
+    fn page(worklogs: Vec<Worklog>) -> WorklogPage {
+        WorklogPage {
+            worklogs,
+            snapshot: WorklogPageSnapshot {
+                requested_task_latest_work_start: None,
+                active_worklog: None,
+                active_task_latest_work_start: None,
+            },
+            next_cursor: None,
+        }
+    }
+
+    fn complete_page(state: &mut AppState, page: WorklogPage) {
+        let effect = state.take_effect().expect("page request");
+        let request = effect.request.clone();
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::WorklogPage(Ok(page)),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+    }
+
+    fn complete_worklog(state: &mut AppState, result: Result<Worklog, ApplicationError>) {
+        let effect = state.take_effect().expect("worklog request");
+        let request = effect.request.clone();
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::Worklog(result),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+    }
+
+    fn state_with_worklog(worklog: Worklog) -> AppState {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state
+            .shell_mut()
+            .open_history(History::new(worklog.task_id(), vec![worklog], None, None));
+        state
+    }
+
+    #[test]
+    fn older_page_does_not_replace_an_open_deletion_draft() {
+        let task_id = TaskId::generate();
+        let first = worklog(task_id, 100);
+        let older = worklog(task_id, 50);
+        let cursor = WorklogCursor {
+            task_id,
+            start: first.start(),
+            id: first.id(),
+            revision: 1,
+        };
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.shell_mut().open_history(History::new(
+            task_id,
+            vec![first.clone()],
+            Some(cursor),
+            None,
+        ));
+        state.handle_command(Command::WorklogHistory(
+            WorklogHistoryCommand::LoadOlderWorklogs,
+        ));
+        state
+            .shell_mut()
+            .history_mut()
+            .unwrap()
+            .open_deletion(first.clone());
+        complete_page(&mut state, page(vec![older]));
+        assert_eq!(state.history().unwrap().worklogs(), &[first]);
+        assert!(matches!(
+            state.history_state().unwrap().mode(),
+            crate::screens::WorklogHistoryMode::ConfirmDeletion { .. }
+        ));
+    }
+
+    #[test]
+    fn older_page_is_ignored_when_its_cursor_is_no_longer_current() {
+        let task_id = TaskId::generate();
+        let first = worklog(task_id, 100);
+        let older = worklog(task_id, 50);
+        let cursor = WorklogCursor {
+            task_id,
+            start: first.start(),
+            id: first.id(),
+            revision: 1,
+        };
+        let newer_cursor = WorklogCursor {
+            revision: 2,
+            ..cursor
+        };
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.shell_mut().open_history(History::new(
+            task_id,
+            vec![first.clone()],
+            Some(cursor),
+            None,
+        ));
+        state.handle_command(Command::WorklogHistory(
+            WorklogHistoryCommand::LoadOlderWorklogs,
+        ));
+        state
+            .history_mut()
+            .unwrap()
+            .append(Vec::new(), Some(newer_cursor));
+        complete_page(&mut state, page(vec![older]));
+        assert_eq!(state.history().unwrap().worklogs(), &[first]);
+        assert_eq!(state.history().unwrap().next_cursor(), Some(newer_cursor));
+    }
+
+    #[test]
+    fn refreshed_page_does_not_replace_an_open_deletion_draft() {
+        let task_id = TaskId::generate();
+        let first = worklog(task_id, 100);
+        let replacement = worklog(task_id, 200);
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state
+            .shell_mut()
+            .open_history(History::new(task_id, vec![first.clone()], None, None));
+        state.handle_command(Command::WorklogHistory(
+            WorklogHistoryCommand::RefreshWorklogs,
+        ));
+        state
+            .shell_mut()
+            .history_mut()
+            .unwrap()
+            .open_deletion(first.clone());
+        complete_page(&mut state, page(vec![replacement]));
+        assert_eq!(state.history().unwrap().worklogs(), &[first]);
+    }
+
+    #[test]
+    fn recovery_page_does_not_replace_an_open_deletion_draft() {
+        let task_id = TaskId::generate();
+        let first = worklog(task_id, 100);
+        let replacement = worklog(task_id, 200);
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state
+            .shell_mut()
+            .open_history(History::new(task_id, vec![first.clone()], None, None));
+        state.reload_newest_history_after_change(task_id);
+        state
+            .shell_mut()
+            .history_mut()
+            .unwrap()
+            .open_deletion(first.clone());
+        complete_page(&mut state, page(vec![replacement]));
+        assert_eq!(state.history().unwrap().worklogs(), &[first]);
+    }
+
+    #[test]
+    fn history_session_rejects_a_different_task_or_visit() {
+        let task_id = TaskId::generate();
+        let other_task = TaskId::generate();
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state
+            .shell_mut()
+            .open_history(History::new(task_id, Vec::new(), None, None));
+        let session = state.history_state().unwrap().session_id();
+        assert!(state.history_session_matches(session, task_id));
+        assert!(!state.history_session_matches(session, other_task));
+        state.shell_mut().back_to_task_list();
+        state
+            .shell_mut()
+            .open_history(History::new(task_id, Vec::new(), None, None));
+        assert!(!state.history_session_matches(session, task_id));
+    }
+
+    #[test]
+    fn delayed_correction_does_not_close_a_new_session_draft() {
+        let task_id = TaskId::generate();
+        let original = worklog(task_id, 100);
+        let mut state = state_with_worklog(original.clone());
+        state.open_correction();
+        state.confirm_correction();
+        let effect = state.take_effect().expect("correction request");
+        let request = effect.request.clone();
+        state.shell_mut().back_to_task_list();
+        state
+            .shell_mut()
+            .open_history(History::new(task_id, vec![original.clone()], None, None));
+        state.open_correction();
+        let new_session = state.history_state().unwrap().session_id();
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::Worklog(Ok(original)),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+        assert_eq!(state.history_state().unwrap().session_id(), new_session);
+        assert!(state.history_state().unwrap().correction().is_some());
+        assert!(!state.has_pending_effect());
+    }
+
+    #[test]
+    fn correction_refresh_does_not_replace_a_new_draft() {
+        let task_id = TaskId::generate();
+        let original = worklog(task_id, 100);
+        let changed = worklog(task_id, 200);
+        let mut state = state_with_worklog(original.clone());
+        state.open_correction();
+        state.confirm_correction();
+        complete_worklog(&mut state, Ok(original.clone()));
+        state.open_correction();
+        complete_page(&mut state, page(vec![changed]));
+        assert_eq!(state.history().unwrap().worklogs(), &[original]);
+        assert!(state.history_state().unwrap().correction().is_some());
+    }
+
+    #[test]
+    fn delayed_deletion_does_not_close_a_new_session_draft() {
+        let task_id = TaskId::generate();
+        let original = worklog(task_id, 100);
+        let mut state = state_with_worklog(original.clone());
+        state.open_deletion();
+        state.confirm_deletion();
+        let effect = state.take_effect().expect("deletion request");
+        let request = effect.request.clone();
+        state.shell_mut().back_to_task_list();
+        state
+            .shell_mut()
+            .open_history(History::new(task_id, vec![original.clone()], None, None));
+        state.open_deletion();
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::Worklog(Ok(original.clone())),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+        assert_eq!(state.history().unwrap().worklogs(), &[original]);
+        assert!(matches!(
+            state.history_state().unwrap().mode(),
+            crate::screens::WorklogHistoryMode::ConfirmDeletion { .. }
+        ));
+    }
+
+    #[test]
+    fn deletion_conflict_refresh_does_not_replace_a_new_draft() {
+        let task_id = TaskId::generate();
+        let original = worklog(task_id, 100);
+        let changed = worklog(task_id, 200);
+        let mut state = state_with_worklog(original.clone());
+        state.open_deletion();
+        state.confirm_deletion();
+        complete_worklog(
+            &mut state,
+            Err(ApplicationError::worklog_changed(original.id())),
+        );
+        state.open_deletion();
+        complete_page(&mut state, page(vec![changed]));
+        assert_eq!(state.history().unwrap().worklogs(), &[original]);
+        assert!(matches!(
+            state.history_state().unwrap().mode(),
+            crate::screens::WorklogHistoryMode::ConfirmDeletion { .. }
+        ));
+    }
+
+    fn state_with_move(worklog: Worklog, destination: TaskId) -> AppState {
+        let items = vec![
+            TaskListItem {
+                task: task(1, "source"),
+                latest_work_start: None,
+            },
+            TaskListItem {
+                task: task(2, "destination"),
+                latest_work_start: None,
+            },
+        ];
+        assert_eq!(items[0].task.id(), worklog.task_id());
+        assert_eq!(items[1].task.id(), destination);
+        let mut state = AppState::load_from_snapshot(items, TrackingState::Idle);
+        state
+            .shell_mut()
+            .open_history(History::new(worklog.task_id(), vec![worklog], None, None));
+        state
+    }
+
+    #[test]
+    fn delayed_move_does_not_close_a_new_session_draft() {
+        let source = task(1, "source");
+        let destination = task(2, "destination");
+        let original = worklog(source.id(), 100);
+        let mut state = state_with_move(original.clone(), destination.id());
+        state.open_move();
+        state.confirm_move();
+        let effect = state.take_effect().expect("move request");
+        let request = effect.request.clone();
+        state.shell_mut().back_to_task_list();
+        state.shell_mut().open_history(History::new(
+            source.id(),
+            vec![original.clone()],
+            None,
+            None,
+        ));
+        state.open_move();
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::Worklog(Ok(original.clone())),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+        assert_eq!(state.history().unwrap().worklogs(), &[original]);
+        assert!(matches!(
+            state.history_state().unwrap().mode(),
+            crate::screens::WorklogHistoryMode::Move(_)
+        ));
+    }
+
+    #[test]
+    fn move_refresh_does_not_replace_a_new_draft() {
+        let source = task(1, "source");
+        let destination = task(2, "destination");
+        let original = worklog(source.id(), 100);
+        let changed = worklog(source.id(), 200);
+        let mut state = state_with_move(original.clone(), destination.id());
+        state.open_move();
+        state.confirm_move();
+        complete_worklog(&mut state, Ok(original.clone()));
+        state.open_move();
+        complete_page(&mut state, page(vec![changed]));
+        assert_eq!(state.history().unwrap().worklogs(), &[original]);
+        assert!(matches!(
+            state.history_state().unwrap().mode(),
+            crate::screens::WorklogHistoryMode::Move(_)
+        ));
     }
 }
