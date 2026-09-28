@@ -774,7 +774,10 @@ mod navigation_tests {
     #[test]
     fn a_rejected_preview_request_closes_the_loading_modal() {
         let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
-        while state.enqueue(ApplicationRequest::AllWorklogs { after: None }, |_, _| {}) {}
+        for _ in 0..32 {
+            assert!(state.enqueue(ApplicationRequest::AllWorklogs { after: None }, |_, _| {}));
+        }
+        assert!(!state.enqueue(ApplicationRequest::AllWorklogs { after: None }, |_, _| {}));
 
         state.handle_task_list_command(TaskListCommand::OpenInactiveArchivePreview);
 
