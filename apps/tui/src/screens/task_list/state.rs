@@ -40,6 +40,8 @@ pub struct TaskListState {
     search_snapshot: Option<(Option<String>, Option<TaskId>)>,
     before_filter_selection: Option<TaskId>,
     g_prefix: bool,
+    dialog_generation: u64,
+    view_generation: u64,
 }
 
 impl TaskListState {
@@ -53,6 +55,8 @@ impl TaskListState {
             search_snapshot: None,
             before_filter_selection: None,
             g_prefix: false,
+            dialog_generation: 0,
+            view_generation: 0,
         }
     }
 
@@ -62,6 +66,14 @@ impl TaskListState {
 
     pub fn mode(&self) -> &TaskListMode {
         &self.mode
+    }
+
+    pub(crate) fn dialog_generation(&self) -> u64 {
+        self.dialog_generation
+    }
+
+    pub(crate) fn view_generation(&self) -> u64 {
+        self.view_generation
     }
 
     pub(crate) fn search_query(&self) -> Option<&str> {
@@ -160,6 +172,7 @@ impl TaskListState {
         if self.view == view {
             return;
         }
+        self.view_generation = self.view_generation.wrapping_add(1);
         self.clear_search();
         self.view = view;
         if self.selection().is_none() {
@@ -168,10 +181,12 @@ impl TaskListState {
     }
 
     pub(crate) fn open_input(&mut self, purpose: InputPurpose, buffer: String) {
+        self.dialog_generation = self.dialog_generation.wrapping_add(1);
         self.mode = TaskListMode::Input { purpose, buffer };
     }
 
     pub(crate) fn open_archive_confirmation(&mut self, task_id: TaskId, name: String) {
+        self.dialog_generation = self.dialog_generation.wrapping_add(1);
         self.mode = TaskListMode::ConfirmArchive { task_id, name };
     }
 

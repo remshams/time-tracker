@@ -3,16 +3,16 @@ use std::time::Duration;
 use chrono::Utc;
 use tracker_application::{
     ApplicationFailureCategory, ClearActiveTaskOutcome, SetActiveTaskOutcome,
-    TrackerApplicationService,
 };
 use tracker_domain::{ActiveWorklog, Task, TaskName, TaskNameError};
 
-use crate::app::App;
+use crate::app::AppState;
+use crate::application_request::{ApplicationOutcome, ApplicationRequest};
 use crate::screens::task_list::{InputPurpose, TaskListCommand, TaskListMode, TaskView};
 use crate::support::clock::tracking_timestamp;
 use crate::support::errors::application_error_text;
 
-impl<S: TrackerApplicationService> App<S> {
+impl AppState {
     pub(crate) fn handle_task_list_command(&mut self, command: TaskListCommand) {
         match command {
             TaskListCommand::MoveUp => self.move_task_up(),
@@ -272,8 +272,9 @@ impl<S: TrackerApplicationService> App<S> {
     }
 
     fn confirm_input(&mut self) {
-        let TaskListMode::Input { purpose, buffer } = self.shell().task_list().mode().clone()
-        else {
+        let mode_at_request = self.shell().task_list().mode().clone();
+        let dialog_generation = self.shell().task_list().dialog_generation();
+        let TaskListMode::Input { purpose, buffer } = mode_at_request.clone() else {
             return;
         };
         let name = match TaskName::new(&buffer) {
@@ -283,57 +284,104 @@ impl<S: TrackerApplicationService> App<S> {
                 return;
             }
         };
-        let result = match purpose {
-            InputPurpose::Add => self.application_mut().create_task(name, Utc::now()),
-            InputPurpose::Rename { task_id } => {
-                self.application_mut()
-                    .rename_task(task_id, name, Utc::now())
-            }
+        let request = match purpose {
+            InputPurpose::Add => ApplicationRequest::CreateTask {
+                name,
+                occurred_at: Utc::now(),
+            },
+            InputPurpose::Rename { task_id } => ApplicationRequest::RenameTask {
+                id: task_id,
+                name,
+                occurred_at: Utc::now(),
+            },
         };
-        match (purpose, result) {
-            (InputPurpose::Add, Ok(task)) => {
-                self.reload_tasks();
-                self.shell_mut()
-                    .task_list_mut()
-                    .set_selection(Some(task.id()));
-                self.shell_mut().task_list_mut().close_mode();
-                self.shell_mut().info(format!("Added \"{}\"", task.name()));
+        self.enqueue(request, move |app, completed| {
+            let same_dialog = app.shell().screen() == crate::screens::Screen::TaskList
+                && app.shell().task_list().dialog_generation() == dialog_generation
+                && app.shell().task_list().mode() == &mode_at_request;
+            let ApplicationOutcome::Task(result) = completed.outcome else {
+                unreachable!("task mutation returns a task")
+            };
+            match (purpose, result) {
+                (InputPurpose::Add, Ok(task)) => {
+                    app.sync_from_snapshot(
+                        completed.snapshot.items,
+                        completed.snapshot.tracking,
+                        false,
+                    );
+                    if same_dialog {
+                        app.shell_mut()
+                            .task_list_mut()
+                            .set_selection(Some(task.id()));
+                        app.shell_mut().task_list_mut().close_mode();
+                    }
+                    app.shell_mut().info(format!("Added \"{}\"", task.name()));
+                }
+                (InputPurpose::Rename { .. }, Ok(task)) => {
+                    app.sync_from_snapshot(
+                        completed.snapshot.items,
+                        completed.snapshot.tracking,
+                        false,
+                    );
+                    if same_dialog {
+                        app.shell_mut().task_list_mut().close_mode();
+                    }
+                    app.shell_mut()
+                        .info(format!("Renamed to \"{}\"", task.name()));
+                }
+                (_, Err(error)) => app.shell_mut().error(application_error_text(&error)),
             }
-            (InputPurpose::Rename { .. }, Ok(task)) => {
-                self.reload_tasks();
-                self.shell_mut().task_list_mut().close_mode();
-                self.shell_mut()
-                    .info(format!("Renamed to \"{}\"", task.name()));
-            }
-            (_, Err(error)) => self.shell_mut().error(application_error_text(&error)),
-        }
+        });
     }
 
     fn confirm_archive(&mut self) {
-        let TaskListMode::ConfirmArchive { task_id, .. } = self.shell().task_list().mode().clone()
-        else {
+        let mode_at_request = self.shell().task_list().mode().clone();
+        let dialog_generation = self.shell().task_list().dialog_generation();
+        let TaskListMode::ConfirmArchive { task_id, .. } = mode_at_request.clone() else {
             return;
         };
-        match self.application_mut().archive_task(task_id, Utc::now()) {
-            Ok(task) => {
-                self.sync_from_application(false);
-                self.shell_mut()
-                    .task_list_mut()
-                    .remember(TaskView::Archived, Some(task.id()));
-                self.shell_mut().task_list_mut().close_mode();
-                self.shell_mut()
-                    .info(format!("Archived \"{}\"", task.name()));
-            }
-            Err(error) if error.failure().category() == ApplicationFailureCategory::ActiveTask => {
-                self.sync_from_application(false);
-                self.shell_mut().task_list_mut().close_mode();
-                self.shell_mut().error("The active task cannot be archived");
-            }
-            Err(error) => {
-                self.sync_from_application(false);
-                self.shell_mut().error(application_error_text(&error));
-            }
-        }
+        self.enqueue(
+            ApplicationRequest::ArchiveTask {
+                id: task_id,
+                occurred_at: Utc::now(),
+            },
+            move |app, completed| {
+                let same_dialog = app.shell().screen() == crate::screens::Screen::TaskList
+                    && app.shell().task_list().dialog_generation() == dialog_generation
+                    && app.shell().task_list().mode() == &mode_at_request;
+                let ApplicationOutcome::Task(result) = completed.outcome else {
+                    unreachable!("archive returns a task")
+                };
+                app.sync_from_snapshot(
+                    completed.snapshot.items,
+                    completed.snapshot.tracking,
+                    false,
+                );
+                match result {
+                    Ok(task) => {
+                        app.shell_mut()
+                            .task_list_mut()
+                            .remember(TaskView::Archived, Some(task.id()));
+                        if same_dialog {
+                            app.shell_mut().task_list_mut().close_mode();
+                        }
+                        app.shell_mut()
+                            .info(format!("Archived \"{}\"", task.name()));
+                    }
+                    Err(error)
+                        if error.failure().category() == ApplicationFailureCategory::ActiveTask =>
+                    {
+                        if same_dialog {
+                            app.shell_mut().task_list_mut().close_mode();
+                        }
+                        app.shell_mut().error("The active task cannot be archived");
+                    }
+                    Err(error) => {
+                        app.shell_mut().error(application_error_text(&error));
+                    }
+                }
+            },
+        );
     }
 
     fn unarchive_selected(&mut self) {
@@ -345,20 +393,34 @@ impl<S: TrackerApplicationService> App<S> {
         let Some(task) = self.selected_task().cloned() else {
             return;
         };
-        match self.application_mut().unarchive_task(task.id(), Utc::now()) {
-            Ok(restored) => {
-                self.shell_mut()
-                    .task_list_mut()
-                    .remember(TaskView::Active, Some(restored.id()));
-                self.sync_from_application(false);
-                self.shell_mut()
-                    .info(format!("Restored \"{}\"", restored.name()));
-            }
-            Err(error) => {
-                self.sync_from_application(false);
-                self.shell_mut().error(application_error_text(&error));
-            }
-        }
+        self.enqueue(
+            ApplicationRequest::UnarchiveTask {
+                id: task.id(),
+                occurred_at: Utc::now(),
+            },
+            |app, completed| {
+                let ApplicationOutcome::Task(result) = completed.outcome else {
+                    unreachable!("unarchive returns a task")
+                };
+                app.sync_from_snapshot(
+                    completed.snapshot.items,
+                    completed.snapshot.tracking,
+                    false,
+                );
+                match result {
+                    Ok(restored) => {
+                        app.shell_mut()
+                            .task_list_mut()
+                            .remember(TaskView::Active, Some(restored.id()));
+                        app.shell_mut()
+                            .info(format!("Restored \"{}\"", restored.name()));
+                    }
+                    Err(error) => {
+                        app.shell_mut().error(application_error_text(&error));
+                    }
+                }
+            },
+        );
     }
 
     fn toggle_tracking(&mut self) {
@@ -376,40 +438,59 @@ impl<S: TrackerApplicationService> App<S> {
                 self.tracking().elapsed().unwrap_or(Duration::ZERO),
             )
         });
-        let result = if was_active == Some(task.id()) {
-            self.application_mut()
-                .clear_active_task(active.expect("active task has a worklog").id(), occurred_at)
-                .map(|outcome| match outcome {
-                    ClearActiveTaskOutcome::Stopped { .. }
-                    | ClearActiveTaskOutcome::AlreadyIdle => ("stopped", false),
-                })
+        let request = if was_active == Some(task.id()) {
+            ApplicationRequest::ClearActiveTask {
+                expected_active: active.expect("active task has a worklog").id(),
+                occurred_at,
+            }
         } else {
-            self.application_mut()
-                .set_active_task(task.id(), occurred_at)
-                .map(|outcome| match outcome {
+            ApplicationRequest::SetActiveTask {
+                task_id: task.id(),
+                occurred_at,
+            }
+        };
+        self.enqueue(request, move |app, completed| {
+            let result = match completed.outcome {
+                ApplicationOutcome::ClearActiveTask(result) => {
+                    result.map(|outcome| match outcome {
+                        ClearActiveTaskOutcome::Stopped { .. }
+                        | ClearActiveTaskOutcome::AlreadyIdle => ("stopped", false),
+                    })
+                }
+                ApplicationOutcome::SetActiveTask(result) => result.map(|outcome| match outcome {
                     SetActiveTaskOutcome::Started { .. } => ("started", true),
                     SetActiveTaskOutcome::Switched { .. } => ("switched", true),
                     SetActiveTaskOutcome::AlreadyActive { .. } if was_active.is_some() => {
                         ("switched", false)
                     }
                     SetActiveTaskOutcome::AlreadyActive { .. } => ("started", false),
-                })
-        };
-        match result {
-            Ok((action, fresh_active)) => {
-                self.sync_from_application(fresh_active);
-                let message = match action {
-                    "started" => format!("Started \"{}\"", task.name()),
-                    "switched" => format!("Switched to \"{}\"", task.name()),
-                    _ => format!("Stopped \"{}\"", task.name()),
-                };
-                self.shell_mut().info(message);
+                }),
+                _ => unreachable!("tracking request returns a tracking outcome"),
+            };
+            match result {
+                Ok((action, fresh_active)) => {
+                    app.sync_from_snapshot(
+                        completed.snapshot.items,
+                        completed.snapshot.tracking,
+                        fresh_active,
+                    );
+                    let message = match action {
+                        "started" => format!("Started \"{}\"", task.name()),
+                        "switched" => format!("Switched to \"{}\"", task.name()),
+                        _ => format!("Stopped \"{}\"", task.name()),
+                    };
+                    app.shell_mut().info(message);
+                }
+                Err(error) => {
+                    app.sync_from_snapshot(
+                        completed.snapshot.items,
+                        completed.snapshot.tracking,
+                        false,
+                    );
+                    app.shell_mut().error(application_error_text(&error));
+                }
             }
-            Err(error) => {
-                self.sync_from_application(false);
-                self.shell_mut().error(application_error_text(&error));
-            }
-        }
+        });
     }
 }
 
@@ -426,9 +507,13 @@ fn task_name_error_text(error: TaskNameError) -> String {
 
 #[cfg(test)]
 mod navigation_tests {
+    use crate::app::AppState;
+    use crate::application_request::{ApplicationOutcome, ApplicationSnapshot, CompletedRequest};
     use crate::command::Command;
-    use crate::screens::task_list::{TaskListCommand, TaskView};
+    use crate::screens::task_list::{TaskListCommand, TaskListMode, TaskView};
     use crate::test_support::{TestService, app_in_timezone, task};
+    use tracker_application::TaskListItem;
+    use tracker_domain::TrackingState;
 
     #[test]
     fn page_motion_uses_the_selected_task_as_its_start() {
@@ -446,5 +531,39 @@ mod navigation_tests {
         assert_eq!(app.shell().task_list().selection(), Some(ids[2]));
         app.handle(Command::TaskList(TaskListCommand::PageDown));
         assert_eq!(app.shell().task_list().selection(), Some(ids[12]));
+    }
+
+    #[test]
+    fn completed_add_keeps_a_newer_dialog_open() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.handle_task_list_command(TaskListCommand::OpenAdd);
+        state.handle_task_list_command(TaskListCommand::Insert('a'));
+        state.handle_task_list_command(TaskListCommand::Confirm);
+        let effect = state.take_effect().expect("add request");
+        state.handle_task_list_command(TaskListCommand::Cancel);
+        state.handle_task_list_command(TaskListCommand::OpenAdd);
+        state.handle_task_list_command(TaskListCommand::Insert('a'));
+
+        let added = task(1, "a");
+        let request = effect.request.clone();
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::Task(Ok(added.clone())),
+                snapshot: ApplicationSnapshot {
+                    items: vec![TaskListItem {
+                        task: added,
+                        latest_work_start: None,
+                    }],
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+        assert!(matches!(
+            state.shell().task_list().mode(),
+            TaskListMode::Input { .. }
+        ));
+        assert_eq!(state.catalog().tasks(TaskView::Active).len(), 1);
     }
 }
