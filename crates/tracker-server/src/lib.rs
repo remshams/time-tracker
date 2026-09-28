@@ -18,20 +18,21 @@ use axum::middleware::{Next, from_fn};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, DEFAULT_TASK_NAMES,
     GlobalWorklogCursor, ReportQueries, RepositoryError, SetActiveTaskOutcome, TaskOperations,
     TaskOrdering, TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor,
     WorklogOperations, WorklogQueries,
 };
-use tracker_domain::{TaskId, TaskName, TrackingState, WorklogId, WorklogTimes};
+use tracker_domain::{Task, TaskId, TaskName, TrackingState, WorklogId, WorklogTimes};
 use tracker_protocol::{
-    CreateTaskRequest, DeleteWorklogRequest, ErrorCode, ErrorDto, GlobalWorklogPageDto, HealthDto,
-    MutationDto, MutationResultDto, ReportDto, SetTrackingRequest, SnapshotDto, TaskChangeRequest,
-    TaskDto, WorklogChangeRequest, WorklogDto, WorklogPageDto, WriteGuard, parse_task_id,
-    parse_worklog_id,
+    ArchiveInactiveTasksRequest, CreateTaskRequest, DeleteWorklogRequest, ErrorCode, ErrorDto,
+    GlobalWorklogPageDto, HealthDto, InactiveTaskPreviewDto, MutationDto, MutationResultDto,
+    ReportDto, SetTrackingRequest, SnapshotDto, TaskChangeRequest, TaskDto, WorklogChangeRequest,
+    WorklogDto, WorklogPageDto, WriteGuard, parse_task_id, parse_worklog_id,
 };
 use tracker_storage::SqliteRepository;
 use uuid::Uuid;
@@ -224,6 +225,10 @@ impl From<ApplicationError> for ApiError {
                 (StatusCode::CONFLICT, ErrorCode::ActiveWorklog)
             }
             ApplicationFailureCategory::ActiveTask => (StatusCode::CONFLICT, ErrorCode::ActiveTask),
+            ApplicationFailureCategory::InactiveTaskCandidatesChanged => (
+                StatusCode::CONFLICT,
+                ErrorCode::InactiveTaskCandidatesChanged,
+            ),
             ApplicationFailureCategory::General => {
                 if matches!(
                     repository_cause(&error),
@@ -291,6 +296,87 @@ async fn health() -> Json<HealthDto> {
 
 async fn snapshot(State(shared): State<Shared>) -> ApiResult<SnapshotDto> {
     Ok(Json(lock(&shared)?.snapshot()))
+}
+
+const INACTIVE_PREVIEW_SAMPLE_SIZE: usize = 5;
+const INACTIVE_AS_OF_TOLERANCE: TimeDelta = TimeDelta::minutes(15);
+
+#[derive(Deserialize)]
+struct InactivePreviewQuery {
+    as_of: DateTime<Utc>,
+}
+
+fn candidate_fingerprint(tasks: &[Task]) -> String {
+    let mut ids: Vec<TaskId> = tasks.iter().map(Task::id).collect();
+    ids.sort_unstable();
+    let mut digest = Sha256::new();
+    for id in ids {
+        digest.update(id.to_string().as_bytes());
+    }
+    format!("{:x}", digest.finalize())
+}
+
+fn validate_inactive_as_of(as_of: DateTime<Utc>, now: DateTime<Utc>) -> Result<(), ApiError> {
+    let difference = as_of.signed_duration_since(now);
+    if difference < -INACTIVE_AS_OF_TOLERANCE || difference > INACTIVE_AS_OF_TOLERANCE {
+        Err(ApiError::invalid(
+            "Inactive task preview time is outside the allowed range",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+async fn preview_inactive_tasks(
+    State(shared): State<Shared>,
+    Query(query): Query<InactivePreviewQuery>,
+) -> ApiResult<InactiveTaskPreviewDto> {
+    validate_inactive_as_of(query.as_of, Utc::now())?;
+    let mut core = lock(&shared)?;
+    let tasks = core.app.preview_inactive_tasks(query.as_of)?;
+    Ok(Json(InactiveTaskPreviewDto {
+        as_of: query.as_of,
+        count: tasks.len(),
+        sample_names: tasks
+            .iter()
+            .take(INACTIVE_PREVIEW_SAMPLE_SIZE)
+            .map(|task| task.name().as_str().to_owned())
+            .collect(),
+        revision: core.revision(),
+        candidate_fingerprint: candidate_fingerprint(&tasks),
+    }))
+}
+
+async fn archive_inactive_tasks(
+    State(shared): State<Shared>,
+    input: Result<Json<ArchiveInactiveTasksRequest>, JsonRejection>,
+) -> ApiResult<MutationDto> {
+    let request = payload(input)?;
+    if request.candidate_fingerprint.len() != 64
+        || !request
+            .candidate_fingerprint
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(ApiError::invalid("Invalid candidate fingerprint"));
+    }
+    let key = fingerprint("POST /v1/tasks/archive-inactive", &request)?;
+    let mut core = lock(&shared)?;
+    let response = core.execute(&request.guard, key, |app| {
+        validate_inactive_as_of(request.as_of, Utc::now())?;
+        let candidates = app.preview_inactive_tasks(request.as_of)?;
+        if candidate_fingerprint(&candidates) != request.candidate_fingerprint {
+            return Err(ApiError::conflict(
+                "Inactive task preview changed. Preview again.",
+            ));
+        }
+        let ids: Vec<TaskId> = candidates.iter().map(Task::id).collect();
+        let archived = app.archive_inactive_tasks(&ids, request.as_of)?;
+        Ok(MutationResultDto::ArchivedInactive {
+            count: archived.len(),
+        })
+    })?;
+    Ok(Json(response))
 }
 
 fn payload<T>(value: Result<Json<T>, JsonRejection>) -> Result<T, ApiError> {
@@ -566,6 +652,8 @@ pub fn router_for_database(path: &Path) -> Result<Router, Box<dyn Error + Send +
         .route("/v1/health", get(health))
         .route("/v1/snapshot", get(snapshot))
         .route("/v1/tasks", post(create_task))
+        .route("/v1/tasks/inactive-preview", get(preview_inactive_tasks))
+        .route("/v1/tasks/archive-inactive", post(archive_inactive_tasks))
         .route("/v1/tasks/{id}", axum::routing::patch(change_task))
         .route("/v1/tracking", axum::routing::put(set_tracking))
         .route("/v1/tasks/{id}/worklogs", get(task_worklogs))
@@ -717,11 +805,12 @@ mod security_tests {
     use super::{
         Core, IDEMPOTENCY_CACHE_SIZE, allowed_bind_address, host_allowed, lock_database,
         reject_unexpected_host, router_for_database, run, tailscale_address_matches,
-        valid_lock_owner, validate_bind_address,
+        valid_lock_owner, validate_bind_address, validate_inactive_as_of,
     };
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use axum::middleware::from_fn;
+    use chrono::{TimeDelta, Utc};
     use std::net::SocketAddr;
     use std::os::unix::process::ExitStatusExt;
     use std::process::{ExitStatus, Output};
@@ -731,6 +820,17 @@ mod security_tests {
     use tracker_protocol::{MutationResultDto, WriteGuard};
     use tracker_storage::SqliteRepository;
     use uuid::Uuid;
+
+    #[test]
+    fn inactive_preview_accepts_exact_time_limits() {
+        let now = Utc::now();
+        let tolerance = TimeDelta::minutes(15);
+        let tick = TimeDelta::microseconds(1);
+        assert!(validate_inactive_as_of(now - tolerance, now).is_ok());
+        assert!(validate_inactive_as_of(now + tolerance, now).is_ok());
+        assert!(validate_inactive_as_of(now - tolerance - tick, now).is_err());
+        assert!(validate_inactive_as_of(now + tolerance + tick, now).is_err());
+    }
 
     #[test]
     fn accepts_only_explicit_loopback_or_tailscale_addresses() {

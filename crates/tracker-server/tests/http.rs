@@ -1,10 +1,12 @@
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tower::ServiceExt;
-use tracker_protocol::{MutationDto, SnapshotDto};
+use tracker_domain::{Task, TaskId, TaskName};
+use tracker_protocol::{InactiveTaskPreviewDto, MutationDto, MutationResultDto, SnapshotDto};
+use tracker_storage::SqliteRepository;
 use uuid::Uuid;
 
 fn at(seconds: i64) -> DateTime<Utc> {
@@ -48,6 +50,240 @@ async fn state(router: &axum::Router) -> SnapshotDto {
     let (status, body) = call(router, Method::GET, "/v1/snapshot", None).await;
     assert_eq!(status, StatusCode::OK);
     serde_json::from_value(body).unwrap()
+}
+
+fn preview_uri(as_of: DateTime<Utc>) -> String {
+    format!(
+        "/v1/tasks/inactive-preview?as_of={}",
+        as_of.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    )
+}
+
+fn archive_request(preview: &InactiveTaskPreviewDto) -> Value {
+    merge(
+        json!({
+            "as_of": preview.as_of,
+            "candidate_fingerprint": preview.candidate_fingerprint,
+        }),
+        guard(&preview.revision),
+    )
+}
+
+#[tokio::test]
+async fn inactive_preview_archives_once_and_replays_the_same_result() {
+    let directory = TempDir::new().unwrap();
+    let router = tracker_server::router_for_database(&directory.path().join("tracker.db")).unwrap();
+    let as_of = Utc::now();
+    let created_at = as_of - TimeDelta::days(20);
+    let before = state(&router).await;
+    let create = merge(
+        json!({
+            "task_id": Uuid::now_v7().to_string(),
+            "name": "Old planning task",
+            "occurred_at": created_at,
+        }),
+        guard(&before.revision),
+    );
+    let (status, body) = call(&router, Method::POST, "/v1/tasks", Some(create)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = call(&router, Method::GET, &preview_uri(as_of), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
+    assert_eq!(preview.count, 1);
+    assert_eq!(preview.sample_names, ["Old planning task"]);
+    assert_eq!(preview.candidate_fingerprint.len(), 64);
+
+    let request = archive_request(&preview);
+    let (status, first) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive",
+        Some(request.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    let mutation: MutationDto = serde_json::from_value(first.clone()).unwrap();
+    assert_eq!(
+        mutation.result,
+        MutationResultDto::ArchivedInactive { count: 1 }
+    );
+    assert!(
+        mutation
+            .snapshot
+            .task_items
+            .iter()
+            .any(|item| { item.task.name == "Old planning task" && item.task.archived })
+    );
+    let (status, replay) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive",
+        Some(request),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(replay, first);
+}
+
+#[tokio::test]
+async fn inactive_preview_bounds_sample_without_limiting_candidate_count() {
+    let directory = TempDir::new().unwrap();
+    let database = directory.path().join("tracker.db");
+    let router = tracker_server::router_for_database(&database).unwrap();
+    let as_of = Utc::now();
+    let outside = SqliteRepository::open(&database).unwrap();
+    for index in 0..7 {
+        outside
+            .create_task(Task::create(
+                TaskId::generate(),
+                TaskName::new(&format!("Old candidate {index}")).unwrap(),
+                as_of - TimeDelta::days(20),
+            ))
+            .unwrap();
+    }
+    let (status, body) = call(&router, Method::GET, &preview_uri(as_of), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
+    assert_eq!(preview.count, 7);
+    assert_eq!(preview.sample_names.len(), 5);
+}
+
+#[tokio::test]
+async fn inactive_archive_rejects_a_changed_candidate_set_without_writing() {
+    let directory = TempDir::new().unwrap();
+    let database = directory.path().join("tracker.db");
+    let router = tracker_server::router_for_database(&database).unwrap();
+    let as_of = Utc::now();
+    let (status, body) = call(&router, Method::GET, &preview_uri(as_of), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
+
+    let outside = SqliteRepository::open(&database).unwrap();
+    outside
+        .create_task(Task::create(
+            TaskId::generate(),
+            TaskName::new("Changed outside server").unwrap(),
+            as_of - TimeDelta::days(20),
+        ))
+        .unwrap();
+    let (status, body) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive",
+        Some(archive_request(&preview)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "conflict");
+    assert!(
+        !outside
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|task| task.name().as_str() == "Changed outside server")
+            .unwrap()
+            .is_archived()
+    );
+}
+
+#[tokio::test]
+async fn inactive_archive_rejects_a_tampered_fingerprint_without_writing() {
+    let directory = TempDir::new().unwrap();
+    let database = directory.path().join("tracker.db");
+    let router = tracker_server::router_for_database(&database).unwrap();
+    let as_of = Utc::now();
+    let outside = SqliteRepository::open(&database).unwrap();
+    outside
+        .create_task(Task::create(
+            TaskId::generate(),
+            TaskName::new("Old candidate").unwrap(),
+            as_of - TimeDelta::days(20),
+        ))
+        .unwrap();
+    let (status, body) = call(&router, Method::GET, &preview_uri(as_of), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
+    assert_eq!(preview.count, 1);
+
+    let mut request = archive_request(&preview);
+    request["candidate_fingerprint"] = json!("0".repeat(64));
+    let (status, body) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive",
+        Some(request),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "conflict");
+    for fingerprint in ["a".repeat(63), "g".repeat(64)] {
+        let mut request = archive_request(&preview);
+        request["candidate_fingerprint"] = json!(fingerprint);
+        let (status, body) = call(
+            &router,
+            Method::POST,
+            "/v1/tasks/archive-inactive",
+            Some(request),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["code"], "invalid_request");
+    }
+    assert!(
+        !outside
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|task| task.name().as_str() == "Old candidate")
+            .unwrap()
+            .is_archived()
+    );
+}
+
+#[tokio::test]
+async fn inactive_archive_rejects_stale_revision_and_out_of_range_time() {
+    let directory = TempDir::new().unwrap();
+    let router = tracker_server::router_for_database(&directory.path().join("tracker.db")).unwrap();
+    let now = Utc::now();
+    for as_of in [now - TimeDelta::hours(1), now + TimeDelta::hours(1)] {
+        let (status, body) = call(&router, Method::GET, &preview_uri(as_of), None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    }
+
+    let (status, body) = call(&router, Method::GET, &preview_uri(now), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
+    let mut future_request = archive_request(&preview);
+    future_request["as_of"] = json!(now + TimeDelta::hours(1));
+    let (status, body) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive",
+        Some(future_request),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let create = merge(
+        json!({
+            "task_id": Uuid::now_v7().to_string(),
+            "name": "New task",
+            "occurred_at": now,
+        }),
+        guard(&preview.revision),
+    );
+    let (status, body) = call(&router, Method::POST, "/v1/tasks", Some(create)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive",
+        Some(archive_request(&preview)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "stale_revision");
 }
 
 #[tokio::test]
