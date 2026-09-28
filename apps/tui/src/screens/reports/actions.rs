@@ -1,12 +1,12 @@
 use chrono::{DateTime, TimeDelta, Utc};
-use tracker_application::TrackerApplicationService;
 
-use crate::app::App;
+use crate::app::AppState;
+use crate::application_request::{ApplicationOutcome, ApplicationRequest};
 use crate::screens::reports::{ReportFocus, ReportMode, ReportPreset};
 use crate::screens::{History, ReportCommand, Screen, TaskView};
 use crate::support::errors::application_error_text;
 
-impl<S: TrackerApplicationService> App<S> {
+impl AppState {
     pub(crate) fn open_reports(&mut self) {
         if self.shell().screen() != Screen::TaskList {
             return;
@@ -20,7 +20,7 @@ impl<S: TrackerApplicationService> App<S> {
         self.refresh_reports_if_needed(report_now());
     }
 
-    fn refresh_reports_if_needed(&mut self, now: DateTime<Utc>) {
+    pub(crate) fn refresh_reports_if_needed(&mut self, now: DateTime<Utc>) {
         if self.shell().screen() != Screen::Reports {
             return;
         }
@@ -39,7 +39,7 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
-    fn tick_reports_at(&mut self, now: DateTime<Utc>) {
+    pub(crate) fn tick_reports_at(&mut self, now: DateTime<Utc>) {
         if self
             .shell()
             .report()
@@ -59,13 +59,13 @@ impl<S: TrackerApplicationService> App<S> {
     fn refresh_reports_at(&mut self, now: DateTime<Utc>) {
         let timezone = self.shell().timezone();
         let today = now.with_timezone(&timezone).date_naive();
-        self.shell_mut()
-            .report_mut()
-            .expect("report is open")
-            .follow_calendar_date(today);
+        let report = self.shell_mut().report_mut().expect("report is open");
+        report.follow_calendar_date(today);
         let Some(state) = self.shell().report() else {
             return;
         };
+        let session_id = state.session_id;
+        let period_generation = state.period_generation;
         let Some((start, end)) = state.range(timezone) else {
             let report = self.shell_mut().report_mut().expect("report is open");
             report.clear_totals();
@@ -78,23 +78,49 @@ impl<S: TrackerApplicationService> App<S> {
             .report_mut()
             .expect("report is open")
             .last_refresh_second = Some(now.timestamp());
-        match self.application_mut().report_totals(start, end, now) {
-            Ok(totals) => {
-                let had_error = self.shell().report().expect("report is open").report_error;
-                let report = self.shell_mut().report_mut().expect("report is open");
-                report.set_totals(totals);
-                self.sync_from_application(false);
-                if had_error {
-                    self.shell_mut().info("Report ready");
+        self.enqueue(
+            ApplicationRequest::ReportTotals { start, end, now },
+            move |app, completed| {
+                if app.shell().screen() != Screen::Reports {
+                    return;
                 }
-            }
-            Err(error) => {
-                let report = self.shell_mut().report_mut().expect("report is open");
-                report.clear_totals();
-                report.report_error = true;
-                self.shell_mut().error(application_error_text(&error));
-            }
-        }
+                let current_period = app.shell().report().is_some_and(|report| {
+                    report.session_id == session_id
+                        && report.period_generation == period_generation
+                        && report.range(app.shell().timezone()) == Some((start, end))
+                });
+                if !current_period {
+                    app.refresh_reports_now();
+                    return;
+                }
+                let ApplicationOutcome::ReportTotals(result) = completed.outcome else {
+                    unreachable!("report request returns totals")
+                };
+                match result {
+                    Ok(totals) => {
+                        let had_error = app.shell().report().expect("report is open").report_error;
+                        app.shell_mut()
+                            .report_mut()
+                            .expect("report is open")
+                            .set_totals(totals);
+                        app.sync_from_snapshot(
+                            completed.snapshot.items,
+                            completed.snapshot.tracking,
+                            false,
+                        );
+                        if had_error {
+                            app.shell_mut().info("Report ready");
+                        }
+                    }
+                    Err(error) => {
+                        let report = app.shell_mut().report_mut().expect("report is open");
+                        report.clear_totals();
+                        report.report_error = true;
+                        app.shell_mut().error(application_error_text(&error));
+                    }
+                }
+            },
+        );
     }
 
     pub(crate) fn handle_report_command(&mut self, command: ReportCommand) {
@@ -291,24 +317,59 @@ impl<S: TrackerApplicationService> App<S> {
         let Some(task_id) = self.shell().report().and_then(|report| report.selected) else {
             return;
         };
-        let result = self.application_mut().worklogs_for_task(task_id, None);
-        match result {
-            Ok(page) => {
-                let baseline = crate::screens::worklog_history::active_worklog_for_task(
-                    &page.snapshot.active_worklog,
-                    task_id,
-                );
-                self.shell_mut().open_report_history(History::new(
-                    task_id,
-                    page.worklogs,
-                    page.next_cursor,
-                    baseline,
-                ));
-                self.sync_from_application(false);
-                self.shell_mut().info("Task history");
-            }
-            Err(error) => self.shell_mut().error(application_error_text(&error)),
-        }
+        let report_context = self.shell().report().map(|report| {
+            (
+                report.session_id,
+                report.period_generation,
+                report.from,
+                report.to,
+            )
+        });
+        self.enqueue(
+            ApplicationRequest::WorklogsForTask {
+                task_id,
+                after: None,
+            },
+            move |app, completed| {
+                if app.shell().screen() != Screen::Reports
+                    || app.shell().report().and_then(|report| report.selected) != Some(task_id)
+                    || app.shell().report().map(|report| {
+                        (
+                            report.session_id,
+                            report.period_generation,
+                            report.from,
+                            report.to,
+                        )
+                    }) != report_context
+                {
+                    return;
+                }
+                let ApplicationOutcome::WorklogPage(result) = completed.outcome else {
+                    unreachable!("history request returns a page")
+                };
+                match result {
+                    Ok(page) => {
+                        let baseline = crate::screens::worklog_history::active_worklog_for_task(
+                            &page.snapshot.active_worklog,
+                            task_id,
+                        );
+                        app.shell_mut().open_report_history(History::new(
+                            task_id,
+                            page.worklogs,
+                            page.next_cursor,
+                            baseline,
+                        ));
+                        app.sync_from_snapshot(
+                            completed.snapshot.items,
+                            completed.snapshot.tracking,
+                            false,
+                        );
+                        app.shell_mut().info("Task history");
+                    }
+                    Err(error) => app.shell_mut().error(application_error_text(&error)),
+                }
+            },
+        );
     }
 
     fn copy_report_value(&mut self, command: ReportCommand) {
@@ -383,12 +444,191 @@ fn report_now() -> DateTime<Utc> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::Status;
+    use crate::app::{App, AppEffect, AppState, Status};
+    use crate::application_request::{ApplicationSnapshot, CompletedRequest};
     use crate::command::Command;
     use crate::screens::TaskListCommand;
     use crate::test_support::{TestService, app_in_timezone, archived_task, at, task};
     use tracker_application::{ApplicationError, RepositoryError};
-    use tracker_application::{ReportRow, ReportTotals};
+    use tracker_application::{ReportRow, ReportTotals, WorklogPage, WorklogPageSnapshot};
+    use tracker_domain::TrackingState;
+
+    fn finish_empty_report(state: &mut AppState, effect: AppEffect) {
+        let completed = CompletedRequest {
+            request: effect.request.clone(),
+            outcome: ApplicationOutcome::ReportTotals(Ok(ReportTotals {
+                rows: Vec::new(),
+                total: TimeDelta::zero(),
+            })),
+            snapshot: ApplicationSnapshot {
+                items: Vec::new(),
+                tracking: TrackingState::Idle,
+            },
+        };
+        state.complete_effect(effect, completed);
+    }
+
+    #[test]
+    fn period_change_during_a_report_read_queues_the_new_period() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.open_reports();
+        let first = state
+            .shell()
+            .report()
+            .unwrap()
+            .range(state.shell().timezone())
+            .unwrap();
+        let effect = state.take_effect().expect("first report request");
+        state.handle_report_command(ReportCommand::PreviousPeriod);
+        let latest = state
+            .shell()
+            .report()
+            .unwrap()
+            .range(state.shell().timezone())
+            .unwrap();
+        assert_ne!(first, latest);
+        assert!(state.shell().report().unwrap().totals.is_none());
+        finish_empty_report(&mut state, effect);
+        assert!(state.shell().report().unwrap().totals.is_none());
+        let replacement = state.take_effect().expect("new period request");
+        assert!(
+            matches!(replacement.request, ApplicationRequest::ReportTotals { start, end, .. } if (start, end) == latest)
+        );
+    }
+
+    #[test]
+    fn live_report_accepts_a_result_after_the_next_tick() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.open_reports();
+        let first = state.take_effect().expect("first report request");
+        let ApplicationRequest::ReportTotals { now, end, .. } = &first.request else {
+            unreachable!("first request is a report")
+        };
+        let next_tick = if *now + TimeDelta::seconds(2) < *end {
+            *now + TimeDelta::seconds(2)
+        } else {
+            *now - TimeDelta::seconds(2)
+        };
+        state.refresh_reports_at(next_tick);
+        finish_empty_report(&mut state, first);
+        assert!(state.shell().report().unwrap().totals.is_some());
+        assert!(state.take_effect().is_some());
+    }
+
+    #[test]
+    fn reopening_reports_during_a_read_ignores_the_old_result() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.open_reports();
+        let effect = state.take_effect().expect("first report request");
+        state.handle_report_command(ReportCommand::ShowActive);
+        state.open_reports();
+        finish_empty_report(&mut state, effect);
+        assert!(state.shell().report().unwrap().totals.is_none());
+        let replacement = state.take_effect().expect("reopened report request");
+        finish_empty_report(&mut state, replacement);
+        assert!(state.shell().report().unwrap().totals.is_some());
+    }
+
+    #[test]
+    fn report_refresh_does_not_discard_pending_history() {
+        let selected = task(1, "selected task");
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.open_reports();
+        let first = state.take_effect().expect("report request");
+        let request = first.request.clone();
+        state.complete_effect(
+            first,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::ReportTotals(Ok(ReportTotals {
+                    rows: vec![ReportRow {
+                        task: selected.clone(),
+                        duration: TimeDelta::seconds(1),
+                    }],
+                    total: TimeDelta::seconds(1),
+                })),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+        state.handle_report_command(ReportCommand::OpenHistory);
+        let history = state.take_effect().expect("history request");
+        let (start, end) = state
+            .shell()
+            .report()
+            .unwrap()
+            .range(state.shell().timezone())
+            .unwrap();
+        state.refresh_reports_at(start + (end - start) / 2);
+        let request = history.request.clone();
+        state.complete_effect(
+            history,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
+                    worklogs: Vec::new(),
+                    snapshot: WorklogPageSnapshot {
+                        requested_task_latest_work_start: None,
+                        active_worklog: None,
+                        active_task_latest_work_start: None,
+                    },
+                    next_cursor: None,
+                })),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+        assert_eq!(state.shell().screen(), Screen::WorklogHistory);
+    }
+
+    #[test]
+    fn history_read_does_not_open_after_stepping_away_and_back() {
+        let selected = task(1, "selected task");
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.open_reports();
+        let first = state.take_effect().expect("report request");
+        finish_empty_report(&mut state, first);
+        state
+            .shell_mut()
+            .report_mut()
+            .unwrap()
+            .set_totals(ReportTotals {
+                rows: vec![ReportRow {
+                    task: selected,
+                    duration: TimeDelta::seconds(1),
+                }],
+                total: TimeDelta::seconds(1),
+            });
+        state.handle_report_command(ReportCommand::OpenHistory);
+        let history = state.take_effect().expect("history request");
+        state.handle_report_command(ReportCommand::PreviousPeriod);
+        state.handle_report_command(ReportCommand::NextPeriod);
+        let request = history.request.clone();
+        state.complete_effect(
+            history,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
+                    worklogs: Vec::new(),
+                    snapshot: WorklogPageSnapshot {
+                        requested_task_latest_work_start: None,
+                        active_worklog: None,
+                        active_task_latest_work_start: None,
+                    },
+                    next_cursor: None,
+                })),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+        assert_eq!(state.shell().screen(), Screen::Reports);
+    }
     #[test]
     fn copied_durations_follow_exact_and_quarter_hour_formats() {
         assert_eq!(format_exact(TimeDelta::seconds(3_661)), "1h 1m 1s");

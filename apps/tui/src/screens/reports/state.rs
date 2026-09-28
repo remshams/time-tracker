@@ -1,5 +1,6 @@
 use chrono::{DateTime, Datelike, Duration, LocalResult, Months, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tracker_application::ReportTotals;
 use tracker_domain::TaskId;
 
@@ -62,6 +63,8 @@ pub(crate) enum DateShift {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportState {
+    pub(crate) session_id: u64,
+    pub(crate) period_generation: u64,
     pub(crate) preset: ReportPreset,
     pub(crate) from: NaiveDate,
     pub(crate) to: NaiveDate,
@@ -79,8 +82,11 @@ pub struct ReportState {
 
 impl ReportState {
     pub(crate) fn new(now: DateTime<Utc>, timezone: Tz) -> Self {
+        static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
         let today = now.with_timezone(&timezone).date_naive();
         Self {
+            session_id: NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed),
+            period_generation: 0,
             preset: ReportPreset::Today,
             from: today,
             to: today,
@@ -178,6 +184,7 @@ impl ReportState {
             return false;
         };
         self.preset = preset;
+        self.period_generation = self.period_generation.wrapping_add(1);
         self.from = from;
         self.to = to;
         self.follow_calendar = true;
@@ -217,6 +224,7 @@ impl ReportState {
             }
         })();
         if let Some((from, to)) = shifted {
+            self.period_generation = self.period_generation.wrapping_add(1);
             self.from = from;
             self.to = to;
             self.follow_calendar = false;
@@ -240,6 +248,7 @@ impl ReportState {
             return Err("To is outside the supported date range");
         }
         self.from = from;
+        self.period_generation = self.period_generation.wrapping_add(1);
         self.to = to;
         self.preset = ReportPreset::Custom;
         self.follow_calendar = false;
@@ -277,6 +286,9 @@ impl ReportState {
         if self.follow_calendar
             && let Some((from, to)) = preset_dates(self.preset, today)
         {
+            if self.from != from || self.to != to {
+                self.period_generation = self.period_generation.wrapping_add(1);
+            }
             self.from = from;
             self.to = to;
         }
