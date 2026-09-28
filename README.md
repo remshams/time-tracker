@@ -119,7 +119,7 @@ Task text input (`a` and `e`):
 Archive confirmation:
 
 - `y` or Enter confirms, `n` or Escape cancels.
-- `D` on the Active tab previews the number of inactive tasks and sample names. The 14-day window uses UTC and includes a worklog that crosses the cutoff. Confirmation rechecks the same candidate set and archives it in one transaction. If another client changes the set or server revision, open a fresh preview before trying again. The server accepts the preview time only while it is within 15 minutes of its clock.
+- `D` on the Active tab previews the number of inactive tasks and sample names. A task qualifies only if it was created and its metadata last changed more than 14 days ago and has no worklog overlapping that UTC window or running timer. Confirmation rechecks the same candidate set and archives it in one transaction. If another client changes the set or server revision, open a fresh preview before trying again. The server accepts the preview time only while it is within 15 minutes of its clock.
 
 Ctrl+C quits from every mode.
 
