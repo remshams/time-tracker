@@ -2,12 +2,15 @@
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
-use tracker_application::TaskListItem;
+use tracker_application::{
+    InactiveTaskArchive, InactiveTaskPreviewRead, TaskListItem, TrackerSnapshot,
+};
 use tracker_domain::{Task, TaskId, TaskName};
 
 use super::{
     SqliteRepository, error,
     mapping::{raw_task, raw_task_item, task_from_stored, timestamp_to_us, us_to_timestamp},
+    tracking::active_worklog_on,
 };
 use crate::StorageError;
 
@@ -44,6 +47,43 @@ pub(crate) fn list_task_items_on(conn: &Connection) -> Result<Vec<TaskListItem>,
         });
     }
     Ok(items)
+}
+
+const INACTIVE_WINDOW_US: i64 = 14 * 24 * 60 * 60 * 1_000_000;
+
+/// Half-open worklog intervals only overlap the window when they have
+/// positive duration. Running worklogs always prevent archiving.
+const INACTIVE_TASKS_SQL: &str = "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us
+     FROM tasks AS t
+     WHERE t.archived = 0 AND t.created_at_us < ?1
+       AND NOT EXISTS (
+         SELECT 1 FROM worklogs AS w
+         WHERE w.task_id = t.id
+           AND (w.end_us IS NULL
+                OR (w.start_us < ?2 AND w.end_us > ?1 AND w.end_us > w.start_us))
+       )
+     ORDER BY t.id";
+
+fn inactive_task_bounds(as_of: DateTime<Utc>) -> Result<(i64, i64), StorageError> {
+    let as_of_us = timestamp_to_us(as_of);
+    let cutoff_us = as_of_us
+        .checked_sub(INACTIVE_WINDOW_US)
+        .ok_or(StorageError::InvalidInactiveTaskTime)?;
+    Ok((cutoff_us, as_of_us))
+}
+
+fn inactive_tasks_on(conn: &Connection, as_of: DateTime<Utc>) -> Result<Vec<Task>, StorageError> {
+    let (cutoff_us, as_of_us) = inactive_task_bounds(as_of)?;
+    let mut statement = conn.prepare(INACTIVE_TASKS_SQL)?;
+    let mut rows = statement.query(rusqlite::params![cutoff_us, as_of_us])?;
+    let mut tasks = Vec::new();
+    while let Some(row) = rows.next()? {
+        let (id, name, archived, created_us, updated_us) = raw_task(row)?;
+        tasks.push(task_from_stored(
+            id, name, archived, created_us, updated_us,
+        )?);
+    }
+    Ok(tasks)
 }
 
 impl SqliteRepository {
@@ -223,5 +263,49 @@ impl SqliteRepository {
         }
         transaction.commit()?;
         Ok(task)
+    }
+
+    /// Reads the current eligible set from one SQLite snapshot.
+    pub fn preview_inactive_tasks(
+        &self,
+        as_of: DateTime<Utc>,
+    ) -> Result<InactiveTaskPreviewRead, StorageError> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Deferred)?;
+        let tasks = inactive_tasks_on(&transaction, as_of)?;
+        let snapshot = TrackerSnapshot {
+            task_items: list_task_items_on(&transaction)?,
+            active_worklog: active_worklog_on(&transaction)?,
+        };
+        transaction.commit()?;
+        Ok(InactiveTaskPreviewRead { tasks, snapshot })
+    }
+
+    /// Rechecks the previewed set and archives all rows under one write lock.
+    pub fn archive_inactive_tasks(
+        &self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+    ) -> Result<InactiveTaskArchive, StorageError> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let mut tasks = inactive_tasks_on(&transaction, as_of)?;
+        if tasks.iter().map(Task::id).collect::<Vec<_>>() != expected_ids {
+            return Err(StorageError::InactiveTaskCandidatesChanged);
+        }
+        let as_of = us_to_timestamp(timestamp_to_us(as_of))?;
+        for task in &mut tasks {
+            task.archive(as_of);
+            transaction
+                .execute(
+                    "UPDATE tasks SET archived = TRUE, updated_at_us = ?1 WHERE id = ?2",
+                    rusqlite::params![timestamp_to_us(task.updated_at()), task.id().to_string()],
+                )
+                .map_err(|error| error::archive_task_error(error, task.id()))?;
+        }
+        let snapshot = TrackerSnapshot {
+            task_items: list_task_items_on(&transaction)?,
+            active_worklog: active_worklog_on(&transaction)?,
+        };
+        transaction.commit()?;
+        Ok(InactiveTaskArchive { tasks, snapshot })
     }
 }

@@ -45,6 +45,12 @@ pub enum StorageError {
     /// The task has an active worklog, so it cannot be archived.
     #[error("task {id} has an active worklog and cannot be archived")]
     TaskIsActive { id: TaskId },
+    /// The candidate set changed after the caller previewed it.
+    #[error("inactive task candidates changed since preview")]
+    InactiveTaskCandidatesChanged,
+    /// Subtracting the 14-day window exceeded the supported timestamp range.
+    #[error("inactive task cutoff is outside the supported timestamp range")]
+    InvalidInactiveTaskTime,
     /// A database constraint rejected the write, such as an end time that
     /// precedes the start time.
     #[error("database constraint rejected the write: {0}")]
@@ -108,6 +114,10 @@ impl From<StorageError> for RepositoryError {
             StorageError::ActiveWorklogExists => Self::ActiveWorklogExists,
             StorageError::TaskArchived { id } => Self::TaskArchived { id },
             StorageError::TaskIsActive { id } => Self::TaskIsActive { id },
+            StorageError::InactiveTaskCandidatesChanged => Self::InactiveTaskCandidatesChanged,
+            StorageError::InvalidInactiveTaskTime => Self::Constraint {
+                message: "inactive task cutoff is outside the supported timestamp range".to_owned(),
+            },
             error @ StorageError::Constraint(_) => Self::Constraint {
                 message: error.to_string(),
             },

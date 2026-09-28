@@ -2,6 +2,209 @@
 
 use super::*;
 
+const FORTNIGHT_SECONDS: i64 = 14 * 24 * 60 * 60;
+
+#[test]
+fn inactive_preview_respects_creation_and_worklog_interval_boundaries() {
+    let repository = repo();
+    let as_of = at(2_000_000);
+    let cutoff = 2_000_000 - FORTNIGHT_SECONDS;
+    for (id, name, created) in [
+        (1, "never worked", cutoff - 1),
+        (2, "created at cutoff", cutoff),
+        (3, "work ended at cutoff", cutoff - 100),
+        (4, "work spans window", cutoff - 100),
+        (5, "worked recently", cutoff - 100),
+        (6, "future work", cutoff - 100),
+        (7, "zero duration work", cutoff - 100),
+        (8, "running work", cutoff - 100),
+        (9, "renamed old task", cutoff - 100),
+        (10, "archived old task", cutoff - 100),
+    ] {
+        repository
+            .create_task(stamped_task(id, name, created, created))
+            .unwrap();
+    }
+    repository
+        .insert_worklog(
+            &Worklog::new(worklog_id(3), task_id(3), at(cutoff - 20), Some(at(cutoff))).unwrap(),
+        )
+        .unwrap();
+    repository
+        .insert_worklog(
+            &Worklog::new(
+                worklog_id(4),
+                task_id(4),
+                at(cutoff - 20),
+                Some(as_of + chrono::TimeDelta::seconds(1)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    repository
+        .insert_worklog(
+            &Worklog::new(
+                worklog_id(5),
+                task_id(5),
+                at(as_of.timestamp() - 20),
+                Some(at(as_of.timestamp() - 1)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    repository
+        .insert_worklog(
+            &Worklog::new(
+                worklog_id(6),
+                task_id(6),
+                as_of,
+                Some(as_of + chrono::TimeDelta::seconds(10)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    repository
+        .insert_worklog(
+            &Worklog::new(
+                worklog_id(7),
+                task_id(7),
+                at(cutoff + 10),
+                Some(at(cutoff + 10)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    repository
+        .insert_worklog(&Worklog::begin(worklog_id(8), task_id(8), at(cutoff - 20)))
+        .unwrap();
+    repository
+        .rename_task(
+            task_id(9),
+            TaskName::new("renamed recently").unwrap(),
+            as_of,
+        )
+        .unwrap();
+    repository.archive_task(task_id(10), as_of).unwrap();
+
+    let ids: Vec<_> = repository
+        .preview_inactive_tasks(as_of)
+        .unwrap()
+        .tasks
+        .iter()
+        .map(Task::id)
+        .collect();
+    assert_eq!(
+        ids,
+        vec![task_id(1), task_id(3), task_id(6), task_id(7), task_id(9)]
+    );
+}
+
+#[test]
+fn inactive_preview_reads_candidates_and_tracking_from_one_current_snapshot() {
+    let directory = TempDir::new().unwrap();
+    let reader = file_repo(&directory);
+    let writer = file_repo(&directory);
+    let as_of = at(2_000_000);
+    let old = stamped_task(1, "old task", 100, 100);
+    writer.create_task(old.clone()).unwrap();
+    assert_eq!(reader.tracker_snapshot().unwrap().task_items.len(), 1);
+
+    let recent = stamped_task(2, "recent task", 1_999_000, 1_999_000);
+    writer.create_task(recent.clone()).unwrap();
+    let running = Worklog::begin(worklog_id(1), old.id(), at(1_999_000));
+    writer.insert_worklog(&running).unwrap();
+
+    let preview = reader.preview_inactive_tasks(as_of).unwrap();
+    assert!(preview.tasks.is_empty());
+    assert_eq!(preview.snapshot.active_worklog, Some(running.clone()));
+    assert_eq!(preview.snapshot.task_items.len(), 2);
+    assert_eq!(preview.snapshot.task_items[1].task, recent);
+    assert_eq!(
+        preview.snapshot.task_items[0].latest_work_start,
+        Some(running.start())
+    );
+}
+
+#[test]
+fn inactive_bulk_archive_rechecks_candidates_and_rolls_back_failed_writes() {
+    let repository = repo();
+    let as_of = at(2_000_000);
+    for id in 1..=2 {
+        repository
+            .create_task(stamped_task(id, "old task", 100, 100))
+            .unwrap();
+    }
+    let expected = [task_id(1), task_id(2)];
+    repository
+        .connection()
+        .execute_batch(&format!(
+            "CREATE TRIGGER reject_second_archive BEFORE UPDATE OF archived ON tasks
+         WHEN NEW.id = '{}' AND NEW.archived = 1
+         BEGIN SELECT RAISE(ABORT, 'injected archive failure'); END;",
+            task_id(2)
+        ))
+        .unwrap();
+    assert!(repository.archive_inactive_tasks(&expected, as_of).is_err());
+    assert!(
+        repository
+            .list_tasks()
+            .unwrap()
+            .iter()
+            .all(|task| !task.is_archived())
+    );
+    repository
+        .connection()
+        .execute_batch("DROP TRIGGER reject_second_archive")
+        .unwrap();
+
+    repository
+        .insert_worklog(
+            &Worklog::new(
+                worklog_id(1),
+                task_id(2),
+                at(1_999_000),
+                Some(at(1_999_100)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert!(matches!(
+        repository.archive_inactive_tasks(&expected, as_of),
+        Err(StorageError::InactiveTaskCandidatesChanged)
+    ));
+    assert!(
+        repository
+            .list_tasks()
+            .unwrap()
+            .iter()
+            .all(|task| !task.is_archived())
+    );
+
+    let archive = repository
+        .archive_inactive_tasks(&[task_id(1)], as_of)
+        .unwrap();
+    assert_eq!(archive.tasks.len(), 1);
+    assert_eq!(archive.tasks[0].updated_at(), as_of);
+    assert!(archive.tasks[0].is_archived());
+    assert!(archive.snapshot.task_items[0].task.is_archived());
+    assert!(!archive.snapshot.task_items[1].task.is_archived());
+
+    repository
+        .create_task(stamped_task(3, "newly added old task", 100, 100))
+        .unwrap();
+    assert!(matches!(
+        repository.archive_inactive_tasks(&[], as_of),
+        Err(StorageError::InactiveTaskCandidatesChanged)
+    ));
+    assert!(
+        !repository
+            .find_task(task_id(3))
+            .unwrap()
+            .unwrap()
+            .is_archived()
+    );
+}
+
 #[test]
 fn sqlite_application_ports_delegate_task_and_worklog_queries() {
     let repository = repo();

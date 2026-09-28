@@ -12,9 +12,10 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags};
 use tracker_application::{
-    GlobalWorklogCursor, GlobalWorklogPage, ReportRead, ReportRepository, RepositoryError,
-    TaskRepository, TrackerSnapshot, TrackingRepository, WorklogCorrection, WorklogCursor,
-    WorklogDeletion, WorklogMove, WorklogPage, WorklogRepository,
+    GlobalWorklogCursor, GlobalWorklogPage, InactiveTaskArchive, InactiveTaskPreviewRead,
+    ReportRead, ReportRepository, RepositoryError, TaskRepository, TrackerSnapshot,
+    TrackingRepository, WorklogCorrection, WorklogCursor, WorklogDeletion, WorklogMove,
+    WorklogPage, WorklogRepository,
 };
 use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
 
@@ -104,6 +105,21 @@ impl TaskRepository for SqliteRepository {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, RepositoryError> {
         SqliteRepository::unarchive_task(self, id, occurred_at).map_err(Into::into)
+    }
+
+    fn preview_inactive_tasks(
+        &self,
+        as_of: DateTime<Utc>,
+    ) -> Result<InactiveTaskPreviewRead, RepositoryError> {
+        SqliteRepository::preview_inactive_tasks(self, as_of).map_err(Into::into)
+    }
+
+    fn archive_inactive_tasks(
+        &self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+    ) -> Result<InactiveTaskArchive, RepositoryError> {
+        SqliteRepository::archive_inactive_tasks(self, expected_ids, as_of).map_err(Into::into)
     }
 }
 

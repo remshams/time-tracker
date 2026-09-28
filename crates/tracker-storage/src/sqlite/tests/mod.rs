@@ -330,6 +330,21 @@ impl TaskRepository for SynchronizingRepository {
     ) -> Result<Task, RepositoryError> {
         TaskRepository::unarchive_task(&self.repository, id, occurred_at)
     }
+
+    fn preview_inactive_tasks(
+        &self,
+        as_of: DateTime<Utc>,
+    ) -> Result<tracker_application::InactiveTaskPreviewRead, RepositoryError> {
+        TaskRepository::preview_inactive_tasks(&self.repository, as_of)
+    }
+
+    fn archive_inactive_tasks(
+        &self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+    ) -> Result<tracker_application::InactiveTaskArchive, RepositoryError> {
+        TaskRepository::archive_inactive_tasks(&self.repository, expected_ids, as_of)
+    }
 }
 
 impl ReportRepository for SynchronizingRepository {
