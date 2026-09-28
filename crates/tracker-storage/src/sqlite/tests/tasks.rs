@@ -5,7 +5,7 @@ use super::*;
 const FORTNIGHT_SECONDS: i64 = 14 * 24 * 60 * 60;
 
 #[test]
-fn inactive_preview_respects_creation_and_worklog_interval_boundaries() {
+fn inactive_preview_respects_creation_update_and_worklog_boundaries() {
     let repository = repo();
     let as_of = at(2_000_000);
     let cutoff = 2_000_000 - FORTNIGHT_SECONDS;
@@ -20,6 +20,8 @@ fn inactive_preview_respects_creation_and_worklog_interval_boundaries() {
         (8, "running work", cutoff - 100),
         (9, "renamed old task", cutoff - 100),
         (10, "archived old task", cutoff - 100),
+        (11, "renamed at cutoff", cutoff - 100),
+        (12, "renamed before cutoff", cutoff - 100),
     ] {
         repository
             .create_task(stamped_task(id, name, created, created))
@@ -52,6 +54,14 @@ fn inactive_preview_respects_creation_and_worklog_interval_boundaries() {
             .unwrap(),
         )
         .unwrap();
+    assert_eq!(
+        repository
+            .find_task(task_id(5))
+            .unwrap()
+            .unwrap()
+            .updated_at(),
+        at(cutoff - 100)
+    );
     repository
         .insert_worklog(
             &Worklog::new(
@@ -84,6 +94,20 @@ fn inactive_preview_respects_creation_and_worklog_interval_boundaries() {
             as_of,
         )
         .unwrap();
+    repository
+        .rename_task(
+            task_id(11),
+            TaskName::new("renamed at boundary").unwrap(),
+            at(cutoff),
+        )
+        .unwrap();
+    repository
+        .rename_task(
+            task_id(12),
+            TaskName::new("renamed before boundary").unwrap(),
+            at(cutoff - 1),
+        )
+        .unwrap();
     repository.archive_task(task_id(10), as_of).unwrap();
 
     let ids: Vec<_> = repository
@@ -95,7 +119,7 @@ fn inactive_preview_respects_creation_and_worklog_interval_boundaries() {
         .collect();
     assert_eq!(
         ids,
-        vec![task_id(1), task_id(3), task_id(6), task_id(7), task_id(9)]
+        vec![task_id(1), task_id(3), task_id(6), task_id(7), task_id(12)]
     );
 }
 
@@ -122,6 +146,32 @@ fn inactive_preview_reads_candidates_and_tracking_from_one_current_snapshot() {
     assert_eq!(
         preview.snapshot.task_items[0].latest_work_start,
         Some(running.start())
+    );
+}
+
+#[test]
+fn renaming_after_preview_prevents_bulk_archive() {
+    let repository = repo();
+    let as_of = at(2_000_000);
+    let task = stamped_task(1, "old task", 100, 100);
+    repository.create_task(task.clone()).unwrap();
+    let preview = repository.preview_inactive_tasks(as_of).unwrap();
+    assert_eq!(preview.tasks, vec![task]);
+
+    repository
+        .rename_task(task_id(1), TaskName::new("new name").unwrap(), as_of)
+        .unwrap();
+
+    assert!(matches!(
+        repository.archive_inactive_tasks(&[task_id(1)], as_of),
+        Err(StorageError::InactiveTaskCandidatesChanged)
+    ));
+    assert!(
+        !repository
+            .find_task(task_id(1))
+            .unwrap()
+            .unwrap()
+            .is_archived()
     );
 }
 

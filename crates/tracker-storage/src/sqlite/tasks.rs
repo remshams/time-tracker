@@ -55,7 +55,7 @@ const INACTIVE_WINDOW_US: i64 = 14 * 24 * 60 * 60 * 1_000_000;
 /// positive duration. Running worklogs always prevent archiving.
 const INACTIVE_TASKS_SQL: &str = "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us
      FROM tasks AS t
-     WHERE t.archived = 0 AND t.created_at_us < ?1
+     WHERE t.archived = 0 AND t.created_at_us < ?1 AND t.updated_at_us < ?1
        AND NOT EXISTS (
          SELECT 1 FROM worklogs AS w
          WHERE w.task_id = t.id
