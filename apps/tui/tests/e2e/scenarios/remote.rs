@@ -5,6 +5,7 @@ use std::time::Duration;
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use termlens::Key;
 
+use crate::controlled_proxy::Route;
 use crate::page::TimeTrackerPage;
 use crate::remote::RemoteTestContext;
 
@@ -44,7 +45,7 @@ fn remote_terminal_redraws_after_resize_and_keeps_selection() {
 }
 
 #[test]
-fn remote_keypress_renders_worker_frame_without_poll_delay() {
+fn remote_keypress_renders_without_poll_delay() {
     let context = RemoteTestContext::new();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the remote task list", |screen| {
@@ -78,6 +79,164 @@ fn remote_keypress_renders_worker_frame_without_poll_delay() {
         fourth_fastest < Duration::from_millis(100),
         "four of five remote key-to-frame responses should be prompt; samples: {samples:?}"
     );
+}
+
+#[test]
+fn remote_input_resize_and_timer_redraw_while_snapshot_response_is_held() {
+    let context = RemoteTestContext::new();
+    let proxy = context.proxy();
+    let mut tt = context.launch_through(&proxy);
+    tt.wait_for_first_frame("the remote task list", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .task_names()
+            .len()
+            == 3
+    });
+    tt.press_and_wait(Key::Char(' '), "the running timer", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .header()
+            .active_task()
+            .is_some()
+    });
+
+    proxy.hold(Route::Snapshot);
+    proxy.wait_for_request();
+    let mut samples = Vec::new();
+    for index in 0..5 {
+        let expected = if index % 2 == 0 { 1 } else { 0 };
+        let key = if expected == 1 {
+            Key::Char('j')
+        } else {
+            Key::Char('k')
+        };
+        samples.push(
+            tt.press_and_measure(key, "selection during HTTP", |screen| {
+                TimeTrackerPage::new(screen.clone())
+                    .task_panel()
+                    .selected_index()
+                    == Some(expected)
+            }),
+        );
+    }
+    samples.sort_unstable();
+    assert!(
+        samples[3] < Duration::from_millis(100),
+        "four of five selections should render promptly during HTTP: {samples:?}"
+    );
+    tt.resize_and_wait(110, 34, "the resized layout during HTTP", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.size() == (110, 34)
+            && page.task_panel().frame_corners_fit_current_geometry()
+            && page.task_panel().selected_index() == Some(1)
+            && page.footer().hints_quit()
+    });
+    let before = tt
+        .page()
+        .header()
+        .active_task()
+        .unwrap()
+        .elapsed_seconds()
+        .unwrap();
+    tt.wait_for("the next timer second during HTTP", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .header()
+            .active_task()
+            .and_then(|task| task.elapsed_seconds())
+            .is_some_and(|seconds| seconds > before)
+    });
+    proxy.release();
+    proxy.wait_for_delivery();
+    tt.quit().assert_clean_exit();
+}
+
+#[test]
+fn remote_duplicate_confirmation_does_not_send_a_second_write() {
+    let context = RemoteTestContext::new();
+    let proxy = context.proxy();
+    let mut tt = context.launch_through(&proxy);
+    tt.wait_for_first_frame("the remote task list", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .task_names()
+            .len()
+            == 3
+    });
+    tt.press_and_wait(Key::Char('a'), "the task name dialog", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_input_dialog()
+            .is_some()
+    });
+    tt.type_text("One delayed write");
+    tt.wait_for("the entered task name", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_input_dialog()
+            .is_some_and(|dialog| dialog.text() == "One delayed write")
+    });
+    proxy.hold(Route::CreateTask);
+    tt.press(Key::Enter);
+    proxy.wait_for_request();
+    tt.press(Key::Enter);
+    proxy.release();
+    let page = tt.wait_for("the saved task", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_input_dialog().is_none()
+            && page
+                .task_panel()
+                .task_names()
+                .contains(&"One delayed write".to_owned())
+    });
+    assert_eq!(page.status_bar().text(), "Added \"One delayed write\"");
+    assert_eq!(
+        proxy.request_count(),
+        1,
+        "the duplicate key sent another POST"
+    );
+    tt.quit().assert_clean_exit();
+    assert!(
+        context
+            .server_database()
+            .task_by_name("One delayed write")
+            .is_some()
+    );
+}
+
+#[test]
+fn remote_late_history_response_does_not_reopen_the_screen() {
+    let context = RemoteTestContext::new();
+    let proxy = context.proxy();
+    let mut tt = context.launch_through(&proxy);
+    tt.wait_for_first_frame("the remote task list", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .task_names()
+            .len()
+            == 3
+    });
+    proxy.hold(Route::TaskHistory);
+    tt.press(Key::Enter);
+    proxy.wait_for_request();
+    tt.press_and_wait(
+        Key::Tab,
+        "the archived tasks during history HTTP",
+        |screen| {
+            let page = TimeTrackerPage::new(screen.clone());
+            page.task_panel().shows_archived_tasks() && !page.worklog_history_panel().is_shown()
+        },
+    );
+    proxy.release();
+    proxy.wait_for_delivery();
+    tt.press_and_wait(
+        Key::BackTab,
+        "the active tasks after late history",
+        |screen| {
+            let page = TimeTrackerPage::new(screen.clone());
+            page.task_panel().shows_active_tasks() && !page.worklog_history_panel().is_shown()
+        },
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!tt.page().worklog_history_panel().is_shown());
+    tt.quit().assert_clean_exit();
 }
 
 #[test]

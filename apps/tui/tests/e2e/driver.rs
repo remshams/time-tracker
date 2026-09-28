@@ -54,7 +54,7 @@ impl TuiDriver {
 
     /// Spawns `tt` with the remote server selected and an isolated home.
     pub(crate) fn spawn_remote(home: &Path, endpoint: &str) -> Self {
-        let terminal = Terminal::builder()
+        let mut builder = Terminal::builder()
             .size(COLS, ROWS)
             .timeout(STARTUP_LIMIT)
             .env_clear()
@@ -62,7 +62,11 @@ impl TuiDriver {
             .env("SHELL", "/bin/sh")
             .env("TZ", "UTC")
             .arg("--server")
-            .arg(endpoint)
+            .arg(endpoint);
+        if let Ok(profile) = std::env::var("LLVM_PROFILE_FILE") {
+            builder = builder.env("LLVM_PROFILE_FILE", profile);
+        }
+        let terminal = builder
             .spawn(env!("CARGO_BIN_EXE_tt"))
             .expect("spawning remote tt in a pty must succeed");
         Self { terminal }

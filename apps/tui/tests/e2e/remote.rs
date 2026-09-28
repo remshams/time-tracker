@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::context::TestContext;
+use crate::controlled_proxy::ControlledProxy;
 
 const SERVER_START_LIMIT: Duration = Duration::from_secs(5);
 const HEALTH_REQUEST: &[u8] =
@@ -48,6 +49,14 @@ impl RemoteTestContext {
 
     pub(crate) fn launch_second_client(&self) -> crate::driver::TuiDriver {
         self.local.launch_remote(&self.endpoint())
+    }
+
+    pub(crate) fn proxy(&self) -> ControlledProxy {
+        ControlledProxy::new(self.address)
+    }
+
+    pub(crate) fn launch_through(&self, proxy: &ControlledProxy) -> crate::driver::TuiDriver {
+        self.local.launch_remote(&proxy.endpoint())
     }
 
     pub(crate) fn server_database(&self) -> crate::database::Database {

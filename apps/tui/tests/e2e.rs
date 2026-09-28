@@ -17,6 +17,8 @@
 // named after the file, so each direct submodule states its path.
 #[path = "e2e/context.rs"]
 mod context;
+#[path = "e2e/controlled_proxy.rs"]
+mod controlled_proxy;
 #[path = "e2e/database.rs"]
 mod database;
 #[path = "e2e/driver.rs"]
