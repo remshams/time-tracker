@@ -11,10 +11,10 @@ use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingState, Worklog, WorklogId, WorklogTimes,
 };
 use tracker_protocol::{
-    CreateTaskRequest, DeleteWorklogRequest, ErrorCode, ErrorDto, GlobalWorklogCursorDto,
-    GlobalWorklogPageDto, HealthDto, MutationDto, MutationResultDto, ReportDto, SetTrackingRequest,
-    SnapshotDto, TaskChangeRequest, TaskDto, WorklogChangeRequest, WorklogCursorDto, WorklogDto,
-    WorklogPageDto, WriteGuard,
+    ArchiveInactiveTasksRequest, CreateTaskRequest, DeleteWorklogRequest, ErrorCode, ErrorDto,
+    GlobalWorklogCursorDto, GlobalWorklogPageDto, HealthDto, InactiveTaskPreviewDto, MutationDto,
+    MutationResultDto, ReportDto, SetTrackingRequest, SnapshotDto, TaskChangeRequest, TaskDto,
+    WorklogChangeRequest, WorklogCursorDto, WorklogDto, WorklogPageDto, WriteGuard,
 };
 
 use crate::{RemoteError, transport::Transport};
@@ -304,6 +304,70 @@ impl RemoteApplication {
             None,
             Some(id),
             |result| task_result(result, id),
+        )
+        .await
+    }
+
+    pub async fn preview_inactive_tasks(
+        &mut self,
+        as_of: DateTime<Utc>,
+    ) -> Result<InactiveTaskPreviewDto, ApplicationError> {
+        let as_of = canonical(as_of);
+        let mut url = self.transport.url("v1/tasks/inactive-preview");
+        url.query_pairs_mut()
+            .append_pair("as_of", &as_of.to_rfc3339());
+        let response: Result<InactiveTaskPreviewDto, RemoteError> =
+            self.transport.send(Method::GET, url, None::<&()>).await;
+        let preview = match response {
+            Ok(preview) => preview,
+            Err(error) => return Err(self.operation_error(error, None, None).await),
+        };
+        if preview.as_of != as_of
+            || preview.sample_names.len() > 5
+            || preview.sample_names.len() > preview.count
+            || preview
+                .sample_names
+                .iter()
+                .any(|name| TaskName::new(name).is_err())
+            || preview.revision.is_empty()
+            || !valid_fingerprint(&preview.candidate_fingerprint)
+        {
+            self.last_failure = Some(RemoteFailureKind::Protocol);
+            return Err(protocol_failure("invalid inactive task preview"));
+        }
+        self.last_failure = None;
+        self.last_unavailable_at = None;
+        Ok(preview)
+    }
+
+    pub async fn archive_inactive_tasks(
+        &mut self,
+        preview: &InactiveTaskPreviewDto,
+    ) -> Result<usize, ApplicationError> {
+        if preview.revision.is_empty() || !valid_fingerprint(&preview.candidate_fingerprint) {
+            return Err(protocol_failure("invalid inactive task preview"));
+        }
+        let body = ArchiveInactiveTasksRequest {
+            as_of: preview.as_of,
+            candidate_fingerprint: preview.candidate_fingerprint.clone(),
+            guard: WriteGuard {
+                expected_revision: preview.revision.clone(),
+                request_id: uuid::Uuid::now_v7().to_string(),
+            },
+        };
+        let count = preview.count;
+        self.mutation(
+            Method::POST,
+            "v1/tasks/archive-inactive",
+            &body,
+            None,
+            None,
+            |result| match result {
+                MutationResultDto::ArchivedInactive { count: archived } if archived == count => {
+                    Ok(archived)
+                }
+                _ => Err(protocol_failure("invalid inactive task archive result")),
+            },
         )
         .await
     }
@@ -851,6 +915,13 @@ fn protocol_failure(message: &str) -> ApplicationError {
     ApplicationError::storage_failure(format!("invalid server response: {message}"))
 }
 
+fn valid_fingerprint(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn classify_error(error: &RemoteError) -> RemoteFailureKind {
     match error {
         RemoteError::Unavailable(_) => RemoteFailureKind::Unavailable,
@@ -888,6 +959,9 @@ fn map_application_error(
                 ErrorCode::WorklogOverlap => ApplicationFailureCategory::WorklogOverlap,
                 ErrorCode::ActiveWorklog => ApplicationFailureCategory::ActiveWorklog,
                 ErrorCode::ActiveTask => ApplicationFailureCategory::ActiveTask,
+                ErrorCode::InactiveTaskCandidatesChanged => {
+                    ApplicationFailureCategory::InactiveTaskCandidatesChanged
+                }
                 ErrorCode::Internal => {
                     return ApplicationError::storage_failure("remote server error");
                 }
@@ -907,7 +981,8 @@ fn map_application_error(
 #[cfg(test)]
 mod mutation_tests {
     use std::{
-        net::SocketAddr,
+        io::{Read, Write},
+        net::{SocketAddr, TcpListener, TcpStream},
         sync::{Arc, Mutex, mpsc},
         thread,
         time::{Duration as StdDuration, Instant},
@@ -921,12 +996,12 @@ mod mutation_tests {
     use reqwest::StatusCode;
     use tokio::sync::oneshot;
     use tracker_application::{
-        ApplicationFailureCategory, ClearActiveTaskOutcome, SetActiveTaskOutcome,
+        ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, SetActiveTaskOutcome,
     };
     use tracker_domain::{TaskId, WorklogId};
     use tracker_protocol::{
-        CreateTaskRequest, ErrorCode, ErrorDto, HealthDto, MutationDto, MutationResultDto,
-        SnapshotDto, TaskDto, TaskItemDto, WorklogDto, WriteGuard,
+        CreateTaskRequest, ErrorCode, ErrorDto, HealthDto, InactiveTaskPreviewDto, MutationDto,
+        MutationResultDto, SnapshotDto, TaskDto, TaskItemDto, WorklogDto, WriteGuard,
     };
 
     use super::{
@@ -947,6 +1022,254 @@ mod mutation_tests {
             created_at: at(),
             updated_at: at(),
         }
+    }
+
+    fn valid_inactive_preview() -> InactiveTaskPreviewDto {
+        InactiveTaskPreviewDto {
+            as_of: at(),
+            count: 1,
+            sample_names: vec!["Project".into()],
+            revision: "before-archive".into(),
+            candidate_fingerprint: "a".repeat(64),
+        }
+    }
+
+    fn accept_with_deadline(listener: &TcpListener) -> Option<TcpStream> {
+        listener.set_nonblocking(true).unwrap();
+        let deadline = Instant::now() + StdDuration::from_secs(2);
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    stream.set_nonblocking(false).unwrap();
+                    return Some(stream);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        return None;
+                    }
+                    thread::sleep(StdDuration::from_millis(10));
+                }
+                Err(error) => panic!("listener failed: {error}"),
+            }
+        }
+    }
+
+    fn serve_json_once(body: Vec<u8>) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let mut stream = accept_with_deadline(&listener).expect("expected one request");
+            stream
+                .set_read_timeout(Some(StdDuration::from_secs(2)))
+                .unwrap();
+            let mut request = [0_u8; 2048];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(header.as_bytes()).unwrap();
+            stream.write_all(&body).unwrap();
+        });
+        (endpoint, server)
+    }
+
+    #[tokio::test]
+    async fn inactive_preview_rejects_each_invalid_field_and_accepts_five_names() {
+        let mut valid = valid_inactive_preview();
+        valid.count = 5;
+        valid.sample_names = (0..5).map(|index| format!("Task {index}")).collect();
+        let mut cases = Vec::new();
+
+        let mut wrong_time = valid.clone();
+        wrong_time.as_of += Duration::seconds(1);
+        cases.push(wrong_time);
+
+        let mut too_many_names = valid.clone();
+        too_many_names.count = 6;
+        too_many_names.sample_names.push("Task 5".into());
+        cases.push(too_many_names);
+
+        let mut more_names_than_count = valid.clone();
+        more_names_than_count.count = 4;
+        cases.push(more_names_than_count);
+
+        let mut invalid_name = valid.clone();
+        invalid_name.sample_names[2] = "Bad\u{1b}name".into();
+        cases.push(invalid_name);
+
+        let mut empty_revision = valid.clone();
+        empty_revision.revision.clear();
+        cases.push(empty_revision);
+
+        let mut short_fingerprint = valid.clone();
+        short_fingerprint.candidate_fingerprint.pop();
+        cases.push(short_fingerprint);
+
+        let mut invalid_fingerprint = valid.clone();
+        invalid_fingerprint.candidate_fingerprint = "g".repeat(64);
+        cases.push(invalid_fingerprint);
+
+        for preview in cases {
+            let (endpoint, server) = serve_json_once(serde_json::to_vec(&preview).unwrap());
+            let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
+            assert_eq!(
+                client.preview_inactive_tasks(at()).await.unwrap_err(),
+                ApplicationError::storage_failure(
+                    "invalid server response: invalid inactive task preview"
+                )
+            );
+            assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
+            server.join().unwrap();
+        }
+
+        let (endpoint, server) = serve_json_once(serde_json::to_vec(&valid).unwrap());
+        let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
+        assert_eq!(client.preview_inactive_tasks(at()).await.unwrap(), valid);
+        assert_eq!(client.last_failure(), None);
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn inactive_archive_rejects_invalid_preview_guards_before_sending() {
+        let endpoint = "http://127.0.0.1:1/";
+        let mut empty_revision = valid_inactive_preview();
+        empty_revision.revision.clear();
+        let mut invalid_fingerprint = valid_inactive_preview();
+        invalid_fingerprint.candidate_fingerprint = "g".repeat(64);
+        for preview in [empty_revision, invalid_fingerprint] {
+            let mut client = RemoteApplication::disconnected(endpoint).unwrap();
+            assert_eq!(
+                client.archive_inactive_tasks(&preview).await.unwrap_err(),
+                ApplicationError::storage_failure(
+                    "invalid server response: invalid inactive task preview"
+                )
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn inactive_archive_rejects_result_counts_below_and_above_preview() {
+        let preview = valid_inactive_preview();
+        let task_id = TaskId::generate();
+        for archived_count in [0, 2] {
+            let response = MutationDto {
+                result: MutationResultDto::ArchivedInactive {
+                    count: archived_count,
+                },
+                snapshot: SnapshotDto {
+                    task_items: vec![TaskItemDto {
+                        task: task(task_id, true),
+                        latest_work_start: None,
+                    }],
+                    active_worklog: None,
+                    revision: "after-archive".into(),
+                },
+            };
+            let (endpoint, server) = serve_json_once(serde_json::to_vec(&response).unwrap());
+            let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
+            assert_eq!(
+                client.archive_inactive_tasks(&preview).await.unwrap_err(),
+                ApplicationError::storage_failure(
+                    "invalid server response: invalid inactive task archive result"
+                )
+            );
+            assert!(client.task(task_id).is_none());
+            assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
+            server.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn bulk_archive_recovers_after_a_committed_write_loses_its_response_body() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        let task_id = TaskId::generate();
+        let response = serde_json::to_vec(&MutationDto {
+            result: MutationResultDto::ArchivedInactive { count: 1 },
+            snapshot: SnapshotDto {
+                task_items: vec![TaskItemDto {
+                    task: task(task_id, true),
+                    latest_work_start: None,
+                }],
+                active_worklog: None,
+                revision: "after-archive".into(),
+            },
+        })
+        .unwrap();
+        let server = thread::spawn(move || {
+            let mut bodies = Vec::new();
+            let mut committed = 0;
+            let mut completed_request_id = None;
+            for attempt in 0..2 {
+                let Some(mut stream) = accept_with_deadline(&listener) else {
+                    break;
+                };
+                stream
+                    .set_read_timeout(Some(StdDuration::from_secs(2)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let header_end = loop {
+                    let mut chunk = [0_u8; 1024];
+                    let count = stream.read(&mut chunk).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&chunk[..count]);
+                    if let Some(index) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                        break index + 4;
+                    }
+                };
+                let headers = String::from_utf8_lossy(&request[..header_end]);
+                assert!(headers.starts_with("POST /v1/tasks/archive-inactive HTTP/1.1"));
+                let length: usize = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length: ")
+                            .and_then(|value| value.parse().ok())
+                    })
+                    .unwrap();
+                while request.len() < header_end + length {
+                    let mut chunk = [0_u8; 1024];
+                    let count = stream.read(&mut chunk).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&chunk[..count]);
+                }
+                let body = request[header_end..header_end + length].to_vec();
+                let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                let request_id = payload["request_id"].as_str().unwrap();
+                if completed_request_id.as_deref() != Some(request_id) {
+                    committed += 1;
+                    completed_request_id = Some(request_id.to_owned());
+                }
+                bodies.push(body);
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    response.len()
+                );
+                stream.write_all(header.as_bytes()).unwrap();
+                if attempt == 0 {
+                    stream.write_all(&response[..response.len() / 2]).unwrap();
+                } else {
+                    stream.write_all(&response).unwrap();
+                }
+            }
+            (bodies, committed)
+        });
+
+        let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
+        let preview = InactiveTaskPreviewDto {
+            as_of: at(),
+            count: 1,
+            sample_names: vec!["Project".into()],
+            revision: "before-archive".into(),
+            candidate_fingerprint: "a".repeat(64),
+        };
+        assert_eq!(client.archive_inactive_tasks(&preview).await.unwrap(), 1);
+        assert!(client.task(task_id).unwrap().is_archived());
+        let (bodies, committed) = server.join().unwrap();
+        assert_eq!(bodies.len(), 2);
+        assert_eq!(bodies[0], bodies[1]);
+        assert_eq!(committed, 1);
     }
 
     #[test]

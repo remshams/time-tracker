@@ -65,33 +65,41 @@ impl Transport {
             }
             request.send()
         };
-        let mut response = match send_once().await {
-            Ok(response) => response,
-            Err(_) if retry_write => send_once()
-                .await
-                .map_err(|error| RemoteError::Unavailable(error.to_string()))?,
-            Err(error) => return Err(RemoteError::Unavailable(error.to_string())),
-        };
-        let status = response.status();
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|error| RemoteError::Unavailable(error.to_string()))?
-        {
-            if chunk.len() as u64 > MAX_RESPONSE_BYTES - bytes.len() as u64 {
-                return Err(RemoteError::Protocol("server response is too large".into()));
+        let attempts = if retry_write { 2 } else { 1 };
+        'attempt: for attempt in 0..attempts {
+            let mut response = match send_once().await {
+                Ok(response) => response,
+                Err(_) if attempt + 1 < attempts => continue,
+                Err(error) => return Err(RemoteError::Unavailable(error.to_string())),
+            };
+            let status = response.status();
+            let mut bytes = Vec::new();
+            loop {
+                match response.chunk().await {
+                    Ok(Some(chunk)) => {
+                        if chunk.len() as u64 > MAX_RESPONSE_BYTES - bytes.len() as u64 {
+                            return Err(RemoteError::Protocol(
+                                "server response is too large".into(),
+                            ));
+                        }
+                        bytes.extend_from_slice(&chunk);
+                    }
+                    Ok(None) => break,
+                    Err(_) if attempt + 1 < attempts => continue 'attempt,
+                    Err(error) => return Err(RemoteError::Unavailable(error.to_string())),
+                }
             }
-            bytes.extend_from_slice(&chunk);
-        }
-        if !status.is_success() {
-            return Err(RemoteError::Http {
-                status,
-                body: bytes,
+            if !status.is_success() {
+                return Err(RemoteError::Http {
+                    status,
+                    body: bytes,
+                });
+            }
+            return serde_json::from_slice(&bytes).map_err(|error| {
+                RemoteError::Protocol(format!("invalid server response: {error}"))
             });
         }
-        serde_json::from_slice(&bytes)
-            .map_err(|error| RemoteError::Protocol(format!("invalid server response: {error}")))
+        unreachable!("the loop returns after its last attempt")
     }
 }
 
@@ -104,15 +112,36 @@ mod tests {
     use super::*;
     use std::{
         io::{Read, Write},
-        net::TcpListener,
+        net::{TcpListener, TcpStream},
         thread,
+        time::Instant,
     };
+
+    fn accept_with_deadline(listener: &TcpListener) -> Option<TcpStream> {
+        listener.set_nonblocking(true).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    stream.set_nonblocking(false).unwrap();
+                    return Some(stream);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        return None;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("listener failed: {error}"),
+            }
+        }
+    }
 
     fn serve_json(body: Vec<u8>) -> (String, thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}/", listener.local_addr().unwrap());
         let worker = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
+            let mut stream = accept_with_deadline(&listener).expect("expected one request");
             stream
                 .set_write_timeout(Some(Duration::from_secs(2)))
                 .unwrap();
@@ -141,7 +170,9 @@ mod tests {
         let server = thread::spawn(move || {
             let mut bodies = Vec::new();
             for attempt in 0..2 {
-                let (mut stream, _) = listener.accept().unwrap();
+                let Some(mut stream) = accept_with_deadline(&listener) else {
+                    break;
+                };
                 stream
                     .set_read_timeout(Some(Duration::from_secs(2)))
                     .unwrap();
@@ -190,11 +221,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_write_stops_after_two_truncated_response_bodies() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let mut requests = Vec::new();
+            for _ in 0..2 {
+                let Some(mut stream) = accept_with_deadline(&listener) else {
+                    break;
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let header_end = loop {
+                    let mut chunk = [0_u8; 1024];
+                    let count = stream.read(&mut chunk).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&chunk[..count]);
+                    if let Some(index) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                        break index + 4;
+                    }
+                };
+                let headers = String::from_utf8_lossy(&request[..header_end]);
+                let length: usize = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length: ")
+                            .and_then(|value| value.parse().ok())
+                    })
+                    .unwrap();
+                while request.len() < header_end + length {
+                    let mut chunk = [0_u8; 1024];
+                    let count = stream.read(&mut chunk).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&chunk[..count]);
+                }
+                requests.push(request[header_end..header_end + length].to_vec());
+                stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 8\r\nConnection: close\r\n\r\npart").unwrap();
+            }
+            requests
+        });
+        let transport = Transport::new(&endpoint).unwrap();
+        let body = serde_json::json!({"request_id": "same-request"});
+        let result: Result<serde_json::Value, _> = transport
+            .send(
+                Method::POST,
+                transport.url("v1/tasks/archive-inactive"),
+                Some(&body),
+            )
+            .await;
+        assert!(matches!(result, Err(RemoteError::Unavailable(_))));
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0], requests[1]);
+    }
+
+    #[tokio::test]
     async fn a_read_with_a_lost_response_is_not_retried() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}/", listener.local_addr().unwrap());
         let server = thread::spawn(move || {
-            let (mut first, _) = listener.accept().unwrap();
+            let mut first = accept_with_deadline(&listener).expect("expected one read");
             let mut request = [0_u8; 1024];
             assert!(first.read(&mut request).unwrap() > 0);
             drop(first);

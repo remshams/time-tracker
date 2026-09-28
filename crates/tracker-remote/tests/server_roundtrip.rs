@@ -161,6 +161,59 @@ fn name(raw: &str) -> TaskName {
 }
 
 #[tokio::test]
+async fn remote_inactive_archive_uses_the_preview_revision() {
+    let server = TestServer::start();
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
+    let mut other = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
+    let as_of = Utc::now();
+    client
+        .create_task(name("Old remote task"), as_of - Duration::days(20))
+        .await
+        .unwrap();
+    other.refresh().await.unwrap();
+
+    let preview = client.preview_inactive_tasks(as_of).await.unwrap();
+    assert_eq!(preview.count, 1);
+    assert_eq!(preview.sample_names, ["Old remote task"]);
+    other
+        .create_task(name("New remote task"), as_of)
+        .await
+        .unwrap();
+    client.refresh().await.unwrap();
+
+    let error = client.archive_inactive_tasks(&preview).await.unwrap_err();
+    assert_eq!(
+        error.failure().message(),
+        "Tracker state changed. Refresh and retry."
+    );
+    assert!(
+        !client
+            .tasks(TaskOrdering::RecentlyCreated)
+            .into_iter()
+            .find(|item| item.task.name().as_str() == "Old remote task")
+            .unwrap()
+            .task
+            .is_archived()
+    );
+
+    let current = client.preview_inactive_tasks(Utc::now()).await.unwrap();
+    assert_eq!(client.archive_inactive_tasks(&current).await.unwrap(), 1);
+    assert!(
+        client
+            .tasks(TaskOrdering::RecentlyCreated)
+            .into_iter()
+            .find(|item| item.task.name().as_str() == "Old remote task")
+            .unwrap()
+            .task
+            .is_archived()
+    );
+}
+
+#[tokio::test]
 async fn remote_client_rejects_each_invalid_health_field_before_adopting_a_snapshot() {
     for health in [
         HealthDto {
