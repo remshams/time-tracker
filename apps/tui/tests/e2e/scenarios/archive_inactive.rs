@@ -56,15 +56,16 @@ fn bulk_archive_reports_when_no_task_qualifies_and_is_inactive_on_other_tabs() {
 }
 
 #[test]
-fn bulk_archive_uses_all_active_tasks_and_protects_recent_or_running_work() {
+fn bulk_archive_uses_all_active_tasks_and_protects_recent_metadata_or_work() {
     let context = TestContext::new();
     let now = Utc::now();
     let old = now - TimeDelta::days(30);
     {
         let database = context.database();
-        database.create_task_at("Dormant planning", old, now);
+        database.create_task_at("Dormant planning", old, old);
         database.create_task_at("Dormant review", old, old);
         database.create_task_at("Recently created", now - TimeDelta::days(2), now);
+        database.create_task_at("Recently renamed", old, now);
         database.create_task_at("Recently tracked", old, old);
         database.create_task_at("Crosses cutoff", old, old);
         database.create_task_at("Still tracking", old, old);
@@ -87,7 +88,7 @@ fn bulk_archive_uses_all_active_tasks_and_protects_recent_or_running_work() {
             .task_panel()
             .task_names()
             .len()
-            == 6
+            == 7
     });
     tt.press_and_wait(Key::Char('/'), "the search field", |screen| {
         TimeTrackerPage::new(screen.clone())
@@ -149,6 +150,7 @@ fn bulk_archive_uses_all_active_tasks_and_protects_recent_or_running_work() {
     }
     for name in [
         "Recently created",
+        "Recently renamed",
         "Recently tracked",
         "Crosses cutoff",
         "Still tracking",
@@ -167,8 +169,17 @@ fn remote_bulk_archive_uses_server_storage() {
     let now = Utc::now();
     {
         let database = context.server_database();
-        database.create_task_at("Old remote task", now - TimeDelta::days(30), now);
+        database.create_task_at(
+            "Old remote task",
+            now - TimeDelta::days(30),
+            now - TimeDelta::days(30),
+        );
         database.create_task_at("New remote task", now - TimeDelta::days(1), now);
+        database.create_task_at(
+            "Recently renamed remote task",
+            now - TimeDelta::days(30),
+            now,
+        );
     }
     context.start();
     let mut tt = context.launch();
@@ -177,7 +188,7 @@ fn remote_bulk_archive_uses_server_storage() {
             .task_panel()
             .task_names()
             .len()
-            == 2
+            == 3
     });
     tt.press_and_wait(Key::Char('D'), "the remote archive preview", |screen| {
         TimeTrackerPage::new(screen.clone())
@@ -186,14 +197,19 @@ fn remote_bulk_archive_uses_server_storage() {
     });
     tt.press_and_wait(Key::Char('y'), "the remote bulk archive", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
-        page.status_bar().text().contains("1")
-            && page.task_panel().task_names() == ["New remote task".to_owned()]
+        page.status_bar().text().contains("1") && page.task_panel().task_names().len() == 2
     });
     tt.quit().assert_clean_exit();
 
     let database = context.server_database();
     assert!(database.task_by_name("Old remote task").unwrap().archived);
     assert!(!database.task_by_name("New remote task").unwrap().archived);
+    assert!(
+        !database
+            .task_by_name("Recently renamed remote task")
+            .unwrap()
+            .archived
+    );
     assert!(!context.local_database_path().exists());
 }
 
