@@ -629,6 +629,61 @@ mod tests {
         );
         assert_eq!(state.shell().screen(), Screen::Reports);
     }
+
+    #[test]
+    fn history_read_does_not_open_after_selecting_another_report_row() {
+        let first_task = task(1, "first task");
+        let second_task = task(2, "second task");
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.open_reports();
+        let first = state.take_effect().expect("report request");
+        finish_empty_report(&mut state, first);
+        state
+            .shell_mut()
+            .report_mut()
+            .unwrap()
+            .set_totals(ReportTotals {
+                rows: vec![
+                    ReportRow {
+                        task: first_task,
+                        duration: TimeDelta::seconds(1),
+                    },
+                    ReportRow {
+                        task: second_task.clone(),
+                        duration: TimeDelta::seconds(1),
+                    },
+                ],
+                total: TimeDelta::seconds(2),
+            });
+        state.handle_report_command(ReportCommand::OpenHistory);
+        let history = state.take_effect().expect("history request");
+        state.shell_mut().report_mut().unwrap().select_index(1);
+        assert_eq!(
+            state.shell().report().unwrap().selected,
+            Some(second_task.id())
+        );
+        let request = history.request.clone();
+        state.complete_effect(
+            history,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
+                    worklogs: Vec::new(),
+                    snapshot: WorklogPageSnapshot {
+                        requested_task_latest_work_start: None,
+                        active_worklog: None,
+                        active_task_latest_work_start: None,
+                    },
+                    next_cursor: None,
+                })),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+        assert_eq!(state.shell().screen(), Screen::Reports);
+    }
     #[test]
     fn copied_durations_follow_exact_and_quarter_hour_formats() {
         assert_eq!(format_exact(TimeDelta::seconds(3_661)), "1h 1m 1s");

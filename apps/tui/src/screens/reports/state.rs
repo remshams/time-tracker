@@ -368,6 +368,36 @@ mod tests {
     use tracker_application::ReportRow;
 
     #[test]
+    fn calendar_following_advances_generation_when_only_start_changes() {
+        let now = DateTime::from_timestamp(1_774_896_000, 0).unwrap();
+        let mut state = ReportState::new(now, chrono_tz::UTC);
+        let today = state.from;
+        state.from = today.pred_opt().unwrap();
+        let generation = state.period_generation;
+
+        state.follow_calendar_date(today);
+
+        assert_eq!(state.from, today);
+        assert_eq!(state.to, today);
+        assert_eq!(state.period_generation, generation + 1);
+    }
+
+    #[test]
+    fn calendar_following_advances_generation_when_only_end_changes() {
+        let now = DateTime::from_timestamp(1_774_896_000, 0).unwrap();
+        let mut state = ReportState::new(now, chrono_tz::UTC);
+        let today = state.from;
+        state.to = today.succ_opt().unwrap();
+        let generation = state.period_generation;
+
+        state.follow_calendar_date(today);
+
+        assert_eq!(state.from, today);
+        assert_eq!(state.to, today);
+        assert_eq!(state.period_generation, generation + 1);
+    }
+
+    #[test]
     fn berlin_day_boundaries_follow_both_dst_changes() {
         let spring = NaiveDate::from_ymd_opt(2026, 3, 29).unwrap();
         let autumn = NaiveDate::from_ymd_opt(2026, 10, 25).unwrap();
