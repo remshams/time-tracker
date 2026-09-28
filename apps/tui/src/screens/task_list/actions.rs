@@ -507,13 +507,79 @@ fn task_name_error_text(error: TaskNameError) -> String {
 
 #[cfg(test)]
 mod navigation_tests {
-    use crate::app::AppState;
+    use crate::app::{AppEffect, AppState};
     use crate::application_request::{ApplicationOutcome, ApplicationSnapshot, CompletedRequest};
     use crate::command::Command;
     use crate::screens::task_list::{TaskListCommand, TaskListMode, TaskView};
     use crate::test_support::{TestService, app_in_timezone, task};
     use tracker_application::TaskListItem;
-    use tracker_domain::TrackingState;
+    use tracker_domain::{Task, TrackingState};
+
+    fn pending_archive() -> (AppState, AppEffect, Task) {
+        let selected = task(1, "selected task");
+        let mut state = AppState::load_from_snapshot(
+            vec![TaskListItem {
+                task: selected.clone(),
+                latest_work_start: None,
+            }],
+            TrackingState::Idle,
+        );
+        state.handle_task_list_command(TaskListCommand::OpenArchiveConfirm);
+        state.handle_task_list_command(TaskListCommand::Confirm);
+        let effect = state.take_effect().expect("archive request");
+        (state, effect, selected)
+    }
+
+    fn finish_archive(state: &mut AppState, effect: AppEffect, mut selected: Task) {
+        selected.archive(chrono::Utc::now());
+        let request = effect.request.clone();
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::Task(Ok(selected.clone())),
+                snapshot: ApplicationSnapshot {
+                    items: vec![TaskListItem {
+                        task: selected,
+                        latest_work_start: None,
+                    }],
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+    }
+
+    #[test]
+    fn archived_result_keeps_a_hidden_confirmation_open() {
+        let (mut state, effect, selected) = pending_archive();
+        state.shell_mut().open_reports(chrono::Utc::now());
+        finish_archive(&mut state, effect, selected);
+        assert!(matches!(
+            state.shell().task_list().mode(),
+            TaskListMode::ConfirmArchive { .. }
+        ));
+    }
+
+    #[test]
+    fn archived_result_keeps_a_newer_confirmation_open() {
+        let (mut state, effect, selected) = pending_archive();
+        state.handle_task_list_command(TaskListCommand::Cancel);
+        state.handle_task_list_command(TaskListCommand::OpenArchiveConfirm);
+        finish_archive(&mut state, effect, selected);
+        assert!(matches!(
+            state.shell().task_list().mode(),
+            TaskListMode::ConfirmArchive { .. }
+        ));
+    }
+
+    #[test]
+    fn archived_result_keeps_a_search_started_after_confirmation() {
+        let (mut state, effect, selected) = pending_archive();
+        state.handle_task_list_command(TaskListCommand::Cancel);
+        state.handle_task_list_command(TaskListCommand::OpenSearch);
+        finish_archive(&mut state, effect, selected);
+        assert_eq!(state.shell().task_list().mode(), &TaskListMode::Search);
+    }
 
     #[test]
     fn page_motion_uses_the_selected_task_as_its_start() {
