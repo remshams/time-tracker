@@ -494,7 +494,33 @@ mod tests {
         state.load_older_global();
         complete_global(&mut state, effect, page(vec![worklog(task_id, 2)]));
         assert_eq!(state.shell().all_worklogs().unwrap().worklogs().len(), 2);
+        assert_eq!(state.shell().all_worklogs().unwrap().loading_cursor, None);
         assert!(state.take_effect().is_none());
+    }
+
+    #[test]
+    fn replaced_page_with_the_same_cursor_discards_a_pending_older_page() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let task_id = tracker_domain::TaskId::generate();
+        let first = worklog(task_id, 1);
+        let cursor = GlobalWorklogCursor {
+            start: first.start(),
+            id: first.id(),
+            revision: 1,
+        };
+        state
+            .shell_mut()
+            .open_all_worklogs(AllWorklogsState::new(page_with_cursor(vec![first], cursor)));
+        state.load_older_global();
+        let effect = state.take_effect().expect("older page request");
+        let replacement = worklog(task_id, 2);
+        state
+            .global_mut()
+            .replace(page_with_cursor(vec![replacement.clone()], cursor), None);
+        complete_global(&mut state, effect, page(vec![worklog(task_id, 3)]));
+        let rows = state.shell().all_worklogs().unwrap().worklogs();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id(), replacement.id());
     }
 
     #[test]
@@ -605,10 +631,62 @@ mod tests {
         let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
         state.open_all_worklogs();
         let effect = state.take_effect().expect("global open request");
+        let original_view_generation = state.shell().task_list().view_generation();
+        let original_screen_generation = state.shell().screen_generation();
         state.shell_mut().open_reports(chrono::Utc::now());
         state.shell_mut().leave_reports(TaskView::Active, None);
+        assert_eq!(
+            state.shell().task_list().view_generation(),
+            original_view_generation
+        );
+        assert_ne!(
+            state.shell().screen_generation(),
+            original_screen_generation
+        );
         complete_global(&mut state, effect, page(Vec::new()));
         assert_eq!(state.shell().screen(), Screen::TaskList);
+    }
+
+    #[test]
+    fn pending_open_does_not_reopen_after_switching_task_views() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.open_all_worklogs();
+        let effect = state.take_effect().expect("global open request");
+        let original_screen_generation = state.shell().screen_generation();
+        let original_view_generation = state.shell().task_list().view_generation();
+        state
+            .shell_mut()
+            .task_list_mut()
+            .show(TaskView::Archived, None);
+        state
+            .shell_mut()
+            .task_list_mut()
+            .show(TaskView::Active, None);
+        assert_eq!(
+            state.shell().screen_generation(),
+            original_screen_generation
+        );
+        assert_ne!(
+            state.shell().task_list().view_generation(),
+            original_view_generation
+        );
+        complete_global(&mut state, effect, page(Vec::new()));
+        assert_eq!(state.shell().screen(), Screen::TaskList);
+    }
+
+    #[test]
+    fn pending_open_from_reports_does_not_override_a_new_period() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.shell_mut().open_reports(chrono::Utc::now());
+        state.open_all_worklogs();
+        let effect = state.take_effect().expect("global open request");
+        let screen_generation = state.shell().screen_generation();
+        let report_session = state.shell().report().unwrap().session_id;
+        assert!(state.shell_mut().report_mut().unwrap().step(-1));
+        assert_eq!(state.shell().screen_generation(), screen_generation);
+        assert_eq!(state.shell().report().unwrap().session_id, report_session);
+        complete_global(&mut state, effect, page(Vec::new()));
+        assert_eq!(state.shell().screen(), Screen::Reports);
     }
 
     #[test]
