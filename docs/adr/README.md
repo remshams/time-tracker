@@ -23,3 +23,5 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0007](0007-completed-worklog-deletion.md) | Delete completed worklogs | Accepted |
 | [0008](0008-move-worklogs-between-tasks.md) | Move worklogs between tasks | Accepted |
 | [0009](0009-task-search.md) | Search and rank tasks by recent activity | Accepted |
+| [0010](0010-share-tui-application-requests.md) | Share TUI application requests across local and remote modes | Accepted |
+| [0011](0011-use-one-tui-event-loop-with-a-fixed-redraw-tick.md) | Use one TUI event loop with a fixed redraw tick | Accepted |
