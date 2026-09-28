@@ -7,9 +7,9 @@ use crate::app::Status;
 use crate::styles;
 
 /// Renders the current status message.
-pub(crate) fn render(frame: &mut Frame, area: Rect, status: &Status) {
+pub(crate) fn render(frame: &mut Frame, area: Rect, status: &Status, busy_label: Option<&str>) {
     let paragraph = match status {
-        Status::Empty => Paragraph::new(""),
+        Status::Empty => Paragraph::new(busy_label.unwrap_or("")),
         Status::Info(text) => Paragraph::new(text.as_str()),
         Status::Error(text) => Paragraph::new(Line::from(vec![
             Span::styled("Error: ", styles::error_label()),

@@ -9,8 +9,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::{DisableFocusChange, EnableFocusChange, Event, EventStream};
 use crossterm::execute;
 use futures_util::StreamExt;
-use ratatui::layout::Rect;
-use ratatui::widgets::Paragraph;
+use ratatui::Frame;
 use tracker_application::TrackerApplication;
 use tracker_remote::{RemoteApplication, RemoteError, RemoteFailureKind};
 use tracker_storage::SqliteRepository;
@@ -222,17 +221,12 @@ fn visible_busy_label(busy: Option<(&'static str, Instant)>, now: Instant) -> Op
 }
 
 fn draw(guard: &mut TerminalGuard, state: &AppState, busy_label: Option<&str>) -> io::Result<()> {
-    guard.draw(|frame| {
-        crate::ui::render(frame, state.app_view());
-        if let Some(label) = busy_label {
-            let area = frame.area();
-            frame.render_widget(
-                Paragraph::new(label),
-                Rect::new(0, area.height.saturating_sub(2), area.width, 1),
-            );
-        }
-    })?;
+    guard.draw(|frame| render_frame(frame, state, busy_label))?;
     Ok(())
+}
+
+fn render_frame(frame: &mut Frame<'_>, state: &AppState, busy_label: Option<&str>) {
+    crate::ui::render_with_busy(frame, state.app_view(), busy_label);
 }
 
 fn busy_label(request: &ApplicationRequest) -> &'static str {
@@ -247,12 +241,74 @@ fn busy_label(request: &ApplicationRequest) -> &'static str {
 mod tests {
     use std::time::{Duration, Instant};
 
+    use ratatui::{Terminal, backend::TestBackend};
     use tracker_domain::TrackingState;
     use tracker_remote::{RemoteApplication, RemoteError};
 
-    use super::{apply_refresh, busy_label, pending_busy_deadline, visible_busy_label, wait_until};
+    use super::{
+        apply_refresh, busy_label, pending_busy_deadline, render_frame, visible_busy_label,
+        wait_until,
+    };
     use crate::app::{AppState, Status};
     use crate::application_request::ApplicationRequest;
+
+    #[test]
+    fn a_busy_refresh_does_not_overlap_an_existing_error_status() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.shell_mut().error("Server unavailable");
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+
+        terminal
+            .draw(|frame| render_frame(frame, &state, Some("Loading...")))
+            .unwrap();
+
+        let status: String = (0..80)
+            .map(|x| terminal.backend().buffer()[(x, 22)].symbol())
+            .collect();
+        assert!(
+            status.starts_with("Error: Server unavailable"),
+            "{status:?}"
+        );
+        assert!(!status.contains("Loading..."), "{status:?}");
+    }
+
+    #[test]
+    fn a_busy_refresh_uses_the_empty_status_row_and_leaves_the_footer_intact() {
+        let state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+
+        terminal
+            .draw(|frame| render_frame(frame, &state, Some("Loading...")))
+            .unwrap();
+
+        let status: String = (0..80)
+            .map(|x| terminal.backend().buffer()[(x, 22)].symbol())
+            .collect();
+        let footer: String = (0..80)
+            .map(|x| terminal.backend().buffer()[(x, 23)].symbol())
+            .collect();
+        assert!(status.starts_with("Loading..."), "{status:?}");
+        assert!(footer.contains("quit"), "{footer:?}");
+    }
+
+    #[test]
+    fn a_busy_refresh_does_not_cover_the_small_terminal_warning() {
+        let state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut terminal = Terminal::new(TestBackend::new(40, 2)).unwrap();
+
+        terminal
+            .draw(|frame| render_frame(frame, &state, Some("Loading...")))
+            .unwrap();
+
+        let warning: String = (0..40)
+            .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
+            .collect();
+        assert!(
+            warning.starts_with("Time Tracker needs at least"),
+            "{warning:?}"
+        );
+        assert!(!warning.contains("Loading..."), "{warning:?}");
+    }
 
     #[test]
     fn busy_label_appears_after_the_short_delay() {
