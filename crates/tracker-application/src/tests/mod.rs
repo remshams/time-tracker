@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, TrackingError, TrackingState, Worklog,
     WorklogCorrectionError, WorklogId, WorklogTimes,
@@ -30,6 +30,32 @@ struct Data {
 struct MemoryRepository(Rc<RefCell<Data>>);
 
 impl MemoryRepository {
+    fn inactive_tasks(data: &Data, as_of: DateTime<Utc>) -> Result<Vec<Task>, RepositoryError> {
+        let cutoff = as_of
+            .checked_sub_signed(TimeDelta::days(14))
+            .ok_or_else(|| RepositoryError::Constraint {
+                message: "inactive task cutoff is outside the supported timestamp range".to_owned(),
+            })?;
+        Ok(data
+            .tasks
+            .iter()
+            .filter(|item| {
+                let task = &item.task;
+                !task.is_archived()
+                    && task.created_at() < cutoff
+                    && !data.worklogs.iter().any(|worklog| {
+                        worklog.task_id() == task.id()
+                            && (worklog.is_active()
+                                || (worklog.start() < as_of
+                                    && worklog
+                                        .end()
+                                        .is_some_and(|end| end > cutoff && end > worklog.start())))
+                    })
+            })
+            .map(|item| item.task.clone())
+            .collect())
+    }
+
     fn global_revision(data: &Data) -> i64 {
         let mut rows = data.worklogs.iter().collect::<Vec<_>>();
         rows.sort_by_key(|worklog| worklog.id());
@@ -252,6 +278,46 @@ impl TaskRepository for MemoryRepository {
             data.fail_reads_after_task_write = false;
         }
         Ok(task)
+    }
+
+    fn preview_inactive_tasks(
+        &self,
+        as_of: DateTime<Utc>,
+    ) -> Result<crate::InactiveTaskPreviewRead, RepositoryError> {
+        self.read_guard()?;
+        let data = self.0.borrow();
+        Ok(crate::InactiveTaskPreviewRead {
+            tasks: Self::inactive_tasks(&data, as_of)?,
+            snapshot: Self::snapshot(&data),
+        })
+    }
+
+    fn archive_inactive_tasks(
+        &self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+    ) -> Result<crate::InactiveTaskArchive, RepositoryError> {
+        if let Some(error) = self.take_write_failure() {
+            return Err(error);
+        }
+        let mut data = self.0.borrow_mut();
+        let mut tasks = Self::inactive_tasks(&data, as_of)?;
+        let actual_ids: Vec<_> = tasks.iter().map(Task::id).collect();
+        if actual_ids != expected_ids {
+            return Err(RepositoryError::InactiveTaskCandidatesChanged);
+        }
+        for task in &mut tasks {
+            task.archive(as_of);
+            data.tasks
+                .iter_mut()
+                .find(|item| item.task.id() == task.id())
+                .unwrap()
+                .task = task.clone();
+        }
+        Ok(crate::InactiveTaskArchive {
+            tasks,
+            snapshot: Self::snapshot(&data),
+        })
     }
 }
 

@@ -53,6 +53,8 @@ pub enum RepositoryError {
     TaskArchived { id: TaskId },
     #[error("task {id} has an active worklog and cannot be archived")]
     TaskIsActive { id: TaskId },
+    #[error("inactive task candidates changed since preview")]
+    InactiveTaskCandidatesChanged,
     #[error("{message}")]
     Constraint { message: String },
     #[error("stored data is invalid: {field}")]
@@ -68,6 +70,20 @@ pub enum RepositoryError {
 pub struct TrackerSnapshot {
     pub task_items: Vec<TaskListItem>,
     pub active_worklog: Option<Worklog>,
+}
+
+/// Preview candidates and tracker state from one backend read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InactiveTaskPreviewRead {
+    pub tasks: Vec<Task>,
+    pub snapshot: TrackerSnapshot,
+}
+
+/// Bulk archive rows and the tracker state read before its transaction commits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InactiveTaskArchive {
+    pub tasks: Vec<Task>,
+    pub snapshot: TrackerSnapshot,
 }
 
 /// Report totals and tracker state from one backend read.
@@ -135,6 +151,19 @@ pub trait TaskRepository {
         id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, RepositoryError>;
+
+    /// Reads eligible tasks and tracker state from one backend snapshot.
+    fn preview_inactive_tasks(
+        &self,
+        as_of: DateTime<Utc>,
+    ) -> Result<InactiveTaskPreviewRead, RepositoryError>;
+
+    /// Rechecks the exact eligible identifier set and archives it atomically.
+    fn archive_inactive_tasks(
+        &self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+    ) -> Result<InactiveTaskArchive, RepositoryError>;
 }
 
 /// Persistence needed to read and change worklog history.

@@ -18,6 +18,7 @@ pub enum ApplicationFailureCategory {
     WorklogHistoryChanged,
     WorklogOverlap,
     ActiveTask,
+    InactiveTaskCandidatesChanged,
 }
 
 /// A presentation-safe view of an [`ApplicationError`].
@@ -307,6 +308,9 @@ fn repository_error_category(error: &RepositoryError) -> ApplicationFailureCateg
             ApplicationFailureCategory::WorklogOverlap
         }
         RepositoryError::TaskIsActive { .. } => ApplicationFailureCategory::ActiveTask,
+        RepositoryError::InactiveTaskCandidatesChanged => {
+            ApplicationFailureCategory::InactiveTaskCandidatesChanged
+        }
         _ => ApplicationFailureCategory::General,
     }
 }
@@ -328,6 +332,9 @@ fn repository_error_message(error: &RepositoryError) -> &'static str {
         RepositoryError::ActiveWorklogExists => "Another worklog is active",
         RepositoryError::TaskArchived { .. } => "Task is archived",
         RepositoryError::TaskIsActive { .. } => "Task has active work",
+        RepositoryError::InactiveTaskCandidatesChanged => {
+            "Inactive task list changed. Preview again"
+        }
         RepositoryError::Constraint { .. } => "Storage rejected the change",
         RepositoryError::CorruptData { .. } => "Stored data is invalid",
         RepositoryError::ReportDurationOverflow => "Report duration is too large",

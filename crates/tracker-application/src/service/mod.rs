@@ -78,6 +78,20 @@ pub trait TaskOperations {
         id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError>;
+
+    /// Lists active tasks created more than 14 days before `as_of` with no
+    /// worklog overlapping the preceding 14 days.
+    fn preview_inactive_tasks(
+        &mut self,
+        as_of: DateTime<Utc>,
+    ) -> Result<Vec<Task>, ApplicationError>;
+
+    /// Archives the previewed set only if it is still the complete eligible set.
+    fn archive_inactive_tasks(
+        &mut self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+    ) -> Result<Vec<Task>, ApplicationError>;
 }
 
 /// Current tracking state and desired-state tracking commands.

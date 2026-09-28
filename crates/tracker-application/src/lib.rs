@@ -19,9 +19,9 @@ pub use model::{
     WorklogPage, WorklogPageSnapshot,
 };
 pub use repository::{
-    ReportRead, ReportRepository, RepositoryError, TaskRepository, TrackerRepository,
-    TrackerSnapshot, TrackingRepository, WorklogCorrection, WorklogDeletion, WorklogMove,
-    WorklogRepository,
+    InactiveTaskArchive, InactiveTaskPreviewRead, ReportRead, ReportRepository, RepositoryError,
+    TaskRepository, TrackerRepository, TrackerSnapshot, TrackingRepository, WorklogCorrection,
+    WorklogDeletion, WorklogMove, WorklogRepository,
 };
 pub use service::{
     ReportQueries, TaskOperations, TaskQueries, TrackerApplication, TrackerApplicationService,

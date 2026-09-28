@@ -66,6 +66,11 @@ fn repository_failures_have_stable_semantic_classifications_and_sanitized_messag
             "Task has active work",
         ),
         (
+            RepositoryError::InactiveTaskCandidatesChanged,
+            ApplicationFailureCategory::InactiveTaskCandidatesChanged,
+            "Inactive task list changed. Preview again",
+        ),
+        (
             RepositoryError::Constraint {
                 message: "private constraint".to_owned(),
             },

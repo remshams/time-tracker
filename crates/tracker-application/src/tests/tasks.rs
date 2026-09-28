@@ -1,6 +1,83 @@
 use super::*;
 
 #[test]
+fn inactive_preview_reads_current_worklogs_and_bulk_archive_rechecks_them() {
+    let as_of = at(2_000_000);
+    let old = stamped_task(1, "old task", 100, 100);
+    let another = stamped_task(2, "another old task", 100, 100);
+    let repository = MemoryRepository::with_tasks(vec![old.clone(), another.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+
+    let preview = application.preview_inactive_tasks(as_of).unwrap();
+    assert_eq!(preview, vec![old.clone(), another.clone()]);
+
+    repository
+        .insert_worklog(&completed_worklog(10, old.id(), 1_999_000, 1_999_100))
+        .unwrap();
+    assert_eq!(
+        application.archive_inactive_tasks(&[old.id(), another.id()], as_of),
+        Err(ApplicationError::Repository(
+            RepositoryError::InactiveTaskCandidatesChanged
+        ))
+    );
+    assert!(
+        !repository
+            .0
+            .borrow()
+            .tasks
+            .iter()
+            .any(|item| item.task.is_archived())
+    );
+    assert_eq!(
+        application.preview_inactive_tasks(as_of).unwrap(),
+        vec![another]
+    );
+
+    let archived = application
+        .archive_inactive_tasks(&[TaskId::from_uuid(uuid::Uuid::from_u128(2))], as_of)
+        .unwrap();
+    assert_eq!(archived.len(), 1);
+    assert!(archived[0].is_archived());
+    assert!(application.task(archived[0].id()).unwrap().is_archived());
+}
+
+#[test]
+fn empty_inactive_preview_adopts_tasks_and_tracking_written_by_another_client() {
+    let as_of = at(2_000_000);
+    let old = stamped_task(1, "old task", 100, 100);
+    let recent = stamped_task(2, "recent task", 1_999_000, 1_999_000);
+    let repository = MemoryRepository::with_tasks(vec![old.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+
+    repository.create_task(recent.clone()).unwrap();
+    let running = worklog(10, old.id(), 1_999_000);
+    repository.insert_worklog(&running).unwrap();
+
+    assert!(
+        application
+            .preview_inactive_tasks(as_of)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(application.task(recent.id()), Some(&recent));
+    assert_eq!(
+        application.current_tracking(),
+        &TrackingState::Running {
+            worklog: ActiveWorklog::begin(running.id(), old.id(), running.start())
+        }
+    );
+    assert_eq!(
+        application
+            .tasks(TaskOrdering::RecentlyWorked)
+            .iter()
+            .find(|item| item.task.id() == old.id())
+            .unwrap()
+            .latest_work_start,
+        Some(running.start())
+    );
+}
+
+#[test]
 fn create_task_stamps_the_client_timestamp_on_both_values() {
     let repository = MemoryRepository::default();
     let mut application = TrackerApplication::load(repository.clone()).unwrap();
