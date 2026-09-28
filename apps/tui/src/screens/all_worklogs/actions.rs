@@ -1,25 +1,59 @@
-use tracker_application::{ApplicationFailureCategory, TrackerApplicationService};
+use tracker_application::ApplicationFailureCategory;
 
-use crate::app::App;
+use crate::app::AppState;
+use crate::application_request::{ApplicationOutcome, ApplicationRequest};
 use crate::screens::worklog_history::move_worklog::{MoveCandidate, MoveDraft};
 use crate::screens::{Screen, TaskView};
 use crate::support::errors::application_error_text;
 
 use super::{AllWorklogsCommand as C, AllWorklogsFocus, AllWorklogsState};
 
-impl<S: TrackerApplicationService> App<S> {
+impl AppState {
     pub(crate) fn open_all_worklogs(&mut self) {
         if !matches!(self.shell().screen(), Screen::TaskList | Screen::Reports) {
             return;
         }
-        match self.application_mut().all_worklogs(None) {
-            Ok(page) => {
-                self.shell_mut()
-                    .open_all_worklogs(AllWorklogsState::new(page));
-                self.sync_from_application(false);
-            }
-            Err(error) => self.shell_mut().error(application_error_text(&error)),
-        }
+        let source_screen = self.shell().screen();
+        let screen_generation = self.shell().screen_generation();
+        let task_view_generation =
+            (source_screen == Screen::TaskList).then(|| self.shell().task_list().view_generation());
+        let source_report_context = self
+            .shell()
+            .report()
+            .map(|report| (report.session_id, report.period_generation));
+        self.enqueue(
+            ApplicationRequest::AllWorklogs { after: None },
+            move |app, completed| {
+                if app.shell().screen() != source_screen
+                    || app.shell().screen_generation() != screen_generation
+                    || (source_screen == Screen::TaskList
+                        && Some(app.shell().task_list().view_generation()) != task_view_generation)
+                    || (source_screen == Screen::Reports
+                        && app
+                            .shell()
+                            .report()
+                            .map(|report| (report.session_id, report.period_generation))
+                            != source_report_context)
+                {
+                    return;
+                }
+                let ApplicationOutcome::GlobalWorklogPage(result) = completed.outcome else {
+                    unreachable!("global history request returns a page")
+                };
+                match result {
+                    Ok(page) => {
+                        app.shell_mut()
+                            .open_all_worklogs(AllWorklogsState::new(page));
+                        app.sync_from_snapshot(
+                            completed.snapshot.items,
+                            completed.snapshot.tracking,
+                            false,
+                        );
+                    }
+                    Err(error) => app.shell_mut().error(application_error_text(&error)),
+                }
+            },
+        );
     }
 
     pub(crate) fn handle_all_worklogs_command(&mut self, command: C) {
@@ -65,7 +99,9 @@ impl<S: TrackerApplicationService> App<S> {
             }),
             C::ConfirmMove => self.confirm_global_move(),
             C::CancelMove => {
-                self.global_mut().move_draft = None;
+                let state = self.global_mut();
+                state.move_draft_generation = state.move_draft_generation.wrapping_add(1);
+                state.move_draft = None;
                 self.shell_mut().info("Move cancelled");
             }
         }
@@ -80,6 +116,14 @@ impl<S: TrackerApplicationService> App<S> {
         self.shell_mut()
             .all_worklogs_mut()
             .expect("worklogs are open")
+    }
+
+    fn global_session_matches(&self, session: u64) -> bool {
+        self.shell().screen() == Screen::AllWorklogs
+            && self
+                .shell()
+                .all_worklogs()
+                .is_some_and(|state| state.session_id() == session)
     }
 
     fn jump_global(&mut self, command: C) {
@@ -118,27 +162,61 @@ impl<S: TrackerApplicationService> App<S> {
             self.shell_mut().info("No older worklogs");
             return;
         };
-        match self.application_mut().all_worklogs(Some(&cursor)) {
-            Ok(page) => {
-                let count = page.worklogs.len();
-                self.global_mut().append(page);
-                self.sync_from_application(false);
-                self.shell_mut().info(if count == 0 {
-                    "No older worklogs".to_owned()
-                } else {
-                    format!("Loaded {count} older worklogs")
+        let state = self.shell().all_worklogs().expect("worklogs are open");
+        if state.loading_cursor == Some(cursor) {
+            return;
+        }
+        let session = state.session_id();
+        let page_generation = state.page_generation;
+        if self.enqueue(
+            ApplicationRequest::AllWorklogs {
+                after: Some(cursor),
+            },
+            move |app, completed| {
+                let current = app.global_session_matches(session);
+                let ApplicationOutcome::GlobalWorklogPage(result) = completed.outcome else {
+                    unreachable!("global history request returns a page")
+                };
+                app.sync_from_snapshot(
+                    completed.snapshot.items,
+                    completed.snapshot.tracking,
+                    false,
+                );
+                if !current {
+                    return;
+                }
+                let current_page = app.shell().all_worklogs().is_some_and(|state| {
+                    state.page_generation == page_generation && state.next_cursor() == Some(cursor)
                 });
-            }
-            Err(error)
-                if error.failure().category()
-                    == ApplicationFailureCategory::WorklogHistoryChanged =>
-            {
-                self.reload_global_after_change();
-            }
-            Err(error) => {
-                self.sync_from_application(false);
-                self.shell_mut().error(application_error_text(&error));
-            }
+                if app.global_mut().loading_cursor == Some(cursor) {
+                    app.global_mut().loading_cursor = None;
+                }
+                if !current_page {
+                    return;
+                }
+                match result {
+                    Ok(page) => {
+                        let count = page.worklogs.len();
+                        app.global_mut().append(page);
+                        app.shell_mut().info(if count == 0 {
+                            "No older worklogs".to_owned()
+                        } else {
+                            format!("Loaded {count} older worklogs")
+                        });
+                    }
+                    Err(error)
+                        if error.failure().category()
+                            == ApplicationFailureCategory::WorklogHistoryChanged =>
+                    {
+                        app.reload_global_after_change();
+                    }
+                    Err(error) => {
+                        app.shell_mut().error(application_error_text(&error));
+                    }
+                }
+            },
+        ) {
+            self.global_mut().loading_cursor = Some(cursor);
         }
     }
 
@@ -147,14 +225,31 @@ impl<S: TrackerApplicationService> App<S> {
             .shell()
             .all_worklogs()
             .and_then(AllWorklogsState::selected_id);
-        match self.application_mut().all_worklogs(None) {
-            Ok(page) => {
-                self.global_mut().replace(page, keep);
-                self.sync_from_application(false);
-                self.shell_mut().info("Refreshed");
-            }
-            Err(error) => self.shell_mut().error(application_error_text(&error)),
-        }
+        let session = self.global_mut().session_id();
+        self.enqueue(
+            ApplicationRequest::AllWorklogs { after: None },
+            move |app, completed| {
+                let current = app.global_session_matches(session);
+                let ApplicationOutcome::GlobalWorklogPage(result) = completed.outcome else {
+                    unreachable!("global history request returns a page")
+                };
+                if !current {
+                    return;
+                }
+                match result {
+                    Ok(page) => {
+                        app.global_mut().replace(page, keep);
+                        app.sync_from_snapshot(
+                            completed.snapshot.items,
+                            completed.snapshot.tracking,
+                            false,
+                        );
+                        app.shell_mut().info("Refreshed");
+                    }
+                    Err(error) => app.shell_mut().error(application_error_text(&error)),
+                }
+            },
+        );
     }
 
     fn reload_global_after_change(&mut self) {
@@ -162,21 +257,37 @@ impl<S: TrackerApplicationService> App<S> {
             .shell()
             .all_worklogs()
             .and_then(AllWorklogsState::selected_id);
-        match self.application_mut().all_worklogs(None) {
-            Ok(page) => {
-                self.global_mut().replace(page, keep);
-                self.sync_from_application(false);
-                self.shell_mut().info("Worklogs changed and were refreshed");
-            }
-            Err(error) => {
-                self.global_mut().mark_unavailable();
-                self.sync_from_application(false);
-                self.shell_mut().error(format!(
-                    "Worklogs changed, but refresh failed: {}",
-                    application_error_text(&error)
-                ));
-            }
-        }
+        let session = self.global_mut().session_id();
+        self.enqueue(
+            ApplicationRequest::AllWorklogs { after: None },
+            move |app, completed| {
+                let current = app.global_session_matches(session);
+                let ApplicationOutcome::GlobalWorklogPage(result) = completed.outcome else {
+                    unreachable!("global history request returns a page")
+                };
+                app.sync_from_snapshot(
+                    completed.snapshot.items,
+                    completed.snapshot.tracking,
+                    false,
+                );
+                if !current {
+                    return;
+                }
+                match result {
+                    Ok(page) => {
+                        app.global_mut().replace(page, keep);
+                        app.shell_mut().info("Worklogs changed and were refreshed");
+                    }
+                    Err(error) => {
+                        app.global_mut().mark_unavailable();
+                        app.shell_mut().error(format!(
+                            "Worklogs changed, but refresh failed: {}",
+                            application_error_text(&error)
+                        ));
+                    }
+                }
+            },
+        );
     }
 
     fn open_global_move(&mut self) {
@@ -201,7 +312,9 @@ impl<S: TrackerApplicationService> App<S> {
                 )
             })
             .collect();
-        self.global_mut().move_draft = Some(MoveDraft::new(worklog, candidates));
+        let state = self.global_mut();
+        state.move_draft_generation = state.move_draft_generation.wrapping_add(1);
+        state.move_draft = Some(MoveDraft::new(worklog, candidates));
         self.shell_mut().info("Choose a destination task");
     }
 
@@ -228,44 +341,70 @@ impl<S: TrackerApplicationService> App<S> {
         else {
             return;
         };
-        match self.application_mut().move_worklog(
-            source.id(),
-            source.task_id(),
-            source.times(),
-            destination_task_id,
-        ) {
-            Ok(moved) => {
-                self.global_mut().move_draft = None;
-                self.global_mut().apply_move(moved);
-                self.reload_tasks();
-                self.sync_tracking_after_history_reload();
-                self.shell_mut()
-                    .info(format!("Moved worklog to \"{destination_name}\""));
-            }
-            Err(error) => {
-                let failure = error.failure();
-                self.sync_from_application(false);
-                if failure.recovery_failed() {
-                    self.shell_mut().error(application_error_text(&error));
+        let session = self.global_mut().session_id();
+        let draft_generation = self.global_mut().move_draft_generation;
+        self.enqueue(
+            ApplicationRequest::MoveWorklog {
+                id: source.id(),
+                expected_source_task_id: source.task_id(),
+                expected: source.times(),
+                destination_task_id,
+            },
+            move |app, completed| {
+                let current = app.global_session_matches(session);
+                let ApplicationOutcome::Worklog(result) = completed.outcome else {
+                    unreachable!("move request returns a worklog")
+                };
+                if result.is_ok() {
+                    app.replace_items(completed.snapshot.items);
+                    app.sync_tracking_after_history_reload(completed.snapshot.tracking);
+                } else {
+                    app.sync_from_snapshot(
+                        completed.snapshot.items,
+                        completed.snapshot.tracking,
+                        false,
+                    );
+                }
+                if !current {
                     return;
                 }
-                let stale = matches!(
-                    failure.category(),
-                    ApplicationFailureCategory::WorklogChanged
-                        | ApplicationFailureCategory::WorklogNotFound
-                );
-                let destination_unavailable = self
-                    .catalog()
-                    .task(destination_task_id)
-                    .is_none_or(|task| task.is_archived());
-                if stale || destination_unavailable {
-                    self.global_mut().move_draft = None;
-                    self.reload_global_after_change();
-                } else {
-                    self.shell_mut().error(application_error_text(&error));
+                let same_draft = app.global_mut().move_draft_generation == draft_generation;
+                match result {
+                    Ok(moved) => {
+                        if same_draft {
+                            app.global_mut().move_draft = None;
+                        }
+                        app.global_mut().apply_move(moved);
+                        app.shell_mut()
+                            .info(format!("Moved worklog to \"{destination_name}\""));
+                    }
+                    Err(error) => {
+                        let failure = error.failure();
+                        if failure.recovery_failed() {
+                            app.shell_mut().error(application_error_text(&error));
+                            return;
+                        }
+                        let stale = matches!(
+                            failure.category(),
+                            ApplicationFailureCategory::WorklogChanged
+                                | ApplicationFailureCategory::WorklogNotFound
+                        );
+                        let destination_unavailable = app
+                            .catalog()
+                            .task(destination_task_id)
+                            .is_none_or(|task| task.is_archived());
+                        if stale || destination_unavailable {
+                            if same_draft {
+                                app.global_mut().move_draft = None;
+                            }
+                            app.reload_global_after_change();
+                        } else {
+                            app.shell_mut().error(application_error_text(&error));
+                        }
+                    }
                 }
-            }
-        }
+            },
+        );
     }
 }
 
@@ -274,8 +413,13 @@ mod tests {
     use std::time::Duration;
 
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use tracker_application::{
+        GlobalWorklogCursor, GlobalWorklogPage, TaskListItem, TrackerSnapshot,
+    };
     use tracker_domain::{ActiveWorklog, TrackingState, Worklog, WorklogId};
 
+    use crate::app::AppState;
+    use crate::application_request::{ApplicationOutcome, ApplicationSnapshot, CompletedRequest};
     use crate::command::Command;
     use crate::screens::{Screen, TaskListCommand};
     use crate::test_support::{TestService, app_in_timezone, app_with_test_clock, at, task};
@@ -294,6 +438,177 @@ mod tests {
             Some(at(start + 1)),
         )
         .unwrap()
+    }
+
+    fn page(worklogs: Vec<Worklog>) -> GlobalWorklogPage {
+        GlobalWorklogPage {
+            worklogs,
+            snapshot: TrackerSnapshot {
+                task_items: Vec::new(),
+                active_worklog: None,
+            },
+            next_cursor: None,
+        }
+    }
+
+    fn page_with_cursor(worklogs: Vec<Worklog>, cursor: GlobalWorklogCursor) -> GlobalWorklogPage {
+        let mut page = page(worklogs);
+        page.next_cursor = Some(cursor);
+        page
+    }
+
+    fn complete_global(
+        state: &mut AppState,
+        effect: crate::app::AppEffect,
+        page: GlobalWorklogPage,
+    ) {
+        let request = effect.request.clone();
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::GlobalWorklogPage(Ok(page)),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+    }
+
+    #[test]
+    fn repeated_load_older_queues_one_cursor_and_appends_one_page() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let task_id = tracker_domain::TaskId::generate();
+        let first = worklog(task_id, 1);
+        let cursor = GlobalWorklogCursor {
+            start: first.start(),
+            id: first.id(),
+            revision: 1,
+        };
+        state
+            .shell_mut()
+            .open_all_worklogs(AllWorklogsState::new(page_with_cursor(vec![first], cursor)));
+        state.load_older_global();
+        let effect = state.take_effect().expect("older page request");
+        state.load_older_global();
+        complete_global(&mut state, effect, page(vec![worklog(task_id, 2)]));
+        assert_eq!(state.shell().all_worklogs().unwrap().worklogs().len(), 2);
+        assert!(state.take_effect().is_none());
+    }
+
+    #[test]
+    fn older_page_queued_before_refresh_result_is_ignored() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let task_id = tracker_domain::TaskId::generate();
+        let first = worklog(task_id, 1);
+        let cursor = GlobalWorklogCursor {
+            start: first.start(),
+            id: first.id(),
+            revision: 1,
+        };
+        state
+            .shell_mut()
+            .open_all_worklogs(AllWorklogsState::new(page_with_cursor(vec![first], cursor)));
+        state.refresh_global();
+        state.load_older_global();
+        let refresh = state.take_effect().expect("refresh request");
+        let refreshed = worklog(task_id, 2);
+        complete_global(&mut state, refresh, page(vec![refreshed.clone()]));
+        let older = state.take_effect().expect("queued older page request");
+        complete_global(&mut state, older, page(vec![worklog(task_id, 3)]));
+        let rows = state.shell().all_worklogs().unwrap().worklogs();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id(), refreshed.id());
+    }
+
+    #[test]
+    fn completed_move_keeps_a_newer_move_dialog_open() {
+        let source = task(1, "source");
+        let destination = task(2, "destination");
+        let destination_id = destination.id();
+        let items = vec![source.clone(), destination.clone()]
+            .into_iter()
+            .map(|task| TaskListItem {
+                task,
+                latest_work_start: None,
+            })
+            .collect();
+        let mut state = AppState::load_from_snapshot(items, TrackingState::Idle);
+        let entry = worklog(source.id(), 1);
+        state
+            .shell_mut()
+            .open_all_worklogs(AllWorklogsState::new(page(vec![entry.clone()])));
+        state.open_global_move();
+        state.confirm_global_move();
+        let effect = state.take_effect().expect("move request");
+        state.handle_all_worklogs_command(C::CancelMove);
+        state.open_global_move();
+        let newer_generation = state.shell().all_worklogs().unwrap().move_draft_generation;
+        let request = effect.request.clone();
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::Worklog(Ok(entry.moved_to(destination_id).unwrap())),
+                snapshot: ApplicationSnapshot {
+                    items: vec![source, destination]
+                        .into_iter()
+                        .map(|task| TaskListItem {
+                            task,
+                            latest_work_start: None,
+                        })
+                        .collect(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+        let state = state.shell().all_worklogs().unwrap();
+        assert_eq!(state.move_draft_generation, newer_generation);
+        assert!(state.move_draft.is_some());
+        assert_eq!(state.selected_worklog().unwrap().task_id(), destination_id);
+    }
+
+    #[test]
+    fn old_refresh_does_not_replace_a_new_global_session() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let task_id = tracker_domain::TaskId::generate();
+        state
+            .shell_mut()
+            .open_all_worklogs(AllWorklogsState::new(page(vec![worklog(task_id, 1)])));
+        state.refresh_global();
+        let effect = state.take_effect().expect("refresh request");
+        let current = worklog(task_id, 2);
+        state.shell_mut().leave_all_worklogs_for_tasks();
+        state
+            .shell_mut()
+            .open_all_worklogs(AllWorklogsState::new(page(vec![current.clone()])));
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request: ApplicationRequest::AllWorklogs { after: None },
+                outcome: ApplicationOutcome::GlobalWorklogPage(Ok(page(vec![worklog(task_id, 3)]))),
+                snapshot: ApplicationSnapshot {
+                    items: Vec::new(),
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+        assert_eq!(
+            state.shell().all_worklogs().unwrap().worklogs()[0].id(),
+            current.id()
+        );
+    }
+
+    #[test]
+    fn pending_open_does_not_reopen_after_leaving_and_returning_to_tasks() {
+        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        state.open_all_worklogs();
+        let effect = state.take_effect().expect("global open request");
+        state.shell_mut().open_reports(chrono::Utc::now());
+        state.shell_mut().leave_reports(TaskView::Active, None);
+        complete_global(&mut state, effect, page(Vec::new()));
+        assert_eq!(state.shell().screen(), Screen::TaskList);
     }
 
     #[test]

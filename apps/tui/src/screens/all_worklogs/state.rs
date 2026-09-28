@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use tracker_application::{GlobalWorklogCursor, GlobalWorklogPage};
 use tracker_domain::{Worklog, WorklogId};
 
@@ -11,6 +12,7 @@ pub(crate) enum AllWorklogsFocus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AllWorklogsState {
+    session_id: u64,
     worklogs: Vec<Worklog>,
     next_cursor: Option<GlobalWorklogCursor>,
     selected: Option<WorklogId>,
@@ -19,11 +21,16 @@ pub(crate) struct AllWorklogsState {
     pub(crate) g_prefix: bool,
     pub(crate) available: bool,
     pub(crate) pagination_invalidated: bool,
+    pub(crate) page_generation: u64,
+    pub(crate) loading_cursor: Option<GlobalWorklogCursor>,
+    pub(crate) move_draft_generation: u64,
 }
 
 impl AllWorklogsState {
     pub(crate) fn new(page: GlobalWorklogPage) -> Self {
+        static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
         Self {
+            session_id: NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed),
             selected: page.worklogs.first().map(Worklog::id),
             worklogs: page.worklogs,
             next_cursor: page.next_cursor,
@@ -32,7 +39,14 @@ impl AllWorklogsState {
             g_prefix: false,
             available: true,
             pagination_invalidated: false,
+            page_generation: 0,
+            loading_cursor: None,
+            move_draft_generation: 0,
         }
+    }
+
+    pub(crate) fn session_id(&self) -> u64 {
+        self.session_id
     }
 
     pub(crate) fn worklogs(&self) -> &[Worklog] {
@@ -77,6 +91,7 @@ impl AllWorklogsState {
     }
 
     pub(crate) fn append(&mut self, page: GlobalWorklogPage) {
+        self.page_generation = self.page_generation.wrapping_add(1);
         let empty = self.worklogs.is_empty();
         self.worklogs.extend(page.worklogs);
         self.next_cursor = page.next_cursor;
@@ -96,6 +111,8 @@ impl AllWorklogsState {
         next_cursor: Option<GlobalWorklogCursor>,
         preferred: Option<WorklogId>,
     ) {
+        self.page_generation = self.page_generation.wrapping_add(1);
+        self.loading_cursor = None;
         self.worklogs = worklogs;
         self.next_cursor = next_cursor;
         self.selected = preferred
@@ -107,6 +124,7 @@ impl AllWorklogsState {
 
     /// Keeps the loaded position after a move and discards its stale cursor.
     pub(crate) fn apply_move(&mut self, moved: Worklog) {
+        self.page_generation = self.page_generation.wrapping_add(1);
         if let Some(row) = self.worklogs.iter_mut().find(|row| row.id() == moved.id()) {
             *row = moved;
         }
@@ -115,6 +133,8 @@ impl AllWorklogsState {
     }
 
     pub(crate) fn mark_unavailable(&mut self) {
+        self.page_generation = self.page_generation.wrapping_add(1);
+        self.loading_cursor = None;
         self.available = false;
         self.worklogs.clear();
         self.next_cursor = None;
