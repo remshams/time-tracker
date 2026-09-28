@@ -23,6 +23,7 @@ pub(crate) struct ShellState {
     timezone: Tz,
     report_return: Option<ReportState>,
     task_list_return: Option<TaskListState>,
+    screen_generation: u64,
 }
 
 impl ShellState {
@@ -35,6 +36,7 @@ impl ShellState {
             timezone,
             report_return: None,
             task_list_return: None,
+            screen_generation: 0,
         }
     }
 
@@ -90,6 +92,10 @@ impl ShellState {
 
     pub(crate) fn screen(&self) -> Screen {
         self.screen.screen()
+    }
+
+    pub(crate) fn screen_generation(&self) -> u64 {
+        self.screen_generation
     }
 
     pub(crate) fn screen_state(&self) -> &ScreenState {
@@ -164,6 +170,7 @@ impl ShellState {
     }
 
     pub(crate) fn open_reports(&mut self, now: chrono::DateTime<chrono::Utc>) {
+        self.screen_generation = self.screen_generation.wrapping_add(1);
         let previous = std::mem::replace(
             &mut self.screen,
             ScreenState::Reports(Box::new(ReportState::new(now, self.timezone))),
@@ -175,6 +182,7 @@ impl ShellState {
     }
 
     pub(crate) fn open_all_worklogs(&mut self, state: AllWorklogsState) {
+        self.screen_generation = self.screen_generation.wrapping_add(1);
         let previous =
             std::mem::replace(&mut self.screen, ScreenState::AllWorklogs(Box::new(state)));
         match previous {
@@ -199,6 +207,7 @@ impl ShellState {
     }
 
     pub(crate) fn leave_all_worklogs_for_reports(&mut self, now: chrono::DateTime<chrono::Utc>) {
+        self.screen_generation = self.screen_generation.wrapping_add(1);
         let report = self
             .report_return
             .take()
@@ -207,12 +216,14 @@ impl ShellState {
     }
 
     pub(crate) fn leave_all_worklogs_for_tasks(&mut self) {
+        self.screen_generation = self.screen_generation.wrapping_add(1);
         self.report_return = None;
         self.screen =
             ScreenState::TaskList(self.task_list_return.take().expect("task list is saved"));
     }
 
     pub(crate) fn leave_reports(&mut self, view: TaskView, first: Option<tracker_domain::TaskId>) {
+        self.screen_generation = self.screen_generation.wrapping_add(1);
         let mut list = self
             .task_list_return
             .take()
@@ -222,6 +233,7 @@ impl ShellState {
     }
 
     pub(crate) fn open_report_history(&mut self, history: crate::screens::History) {
+        self.screen_generation = self.screen_generation.wrapping_add(1);
         let old = std::mem::replace(
             &mut self.screen,
             ScreenState::TaskList(TaskListState::new(None)),
@@ -237,6 +249,7 @@ impl ShellState {
     }
 
     pub(crate) fn open_history(&mut self, history: crate::screens::History) {
+        self.screen_generation = self.screen_generation.wrapping_add(1);
         let screen = std::mem::replace(
             &mut self.screen,
             ScreenState::TaskList(TaskListState::new(None)),
@@ -249,6 +262,7 @@ impl ShellState {
     }
 
     pub(crate) fn back_to_task_list(&mut self) {
+        self.screen_generation = self.screen_generation.wrapping_add(1);
         if let Some(report) = self.report_return.take() {
             self.screen = ScreenState::Reports(Box::new(report));
             return;

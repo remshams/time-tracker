@@ -5,10 +5,11 @@
 //! propagate after the terminal guard has restored the screen.
 
 mod app;
+mod application_request;
 mod cli;
 mod command;
 mod components;
-mod remote_runtime;
+mod runtime;
 mod screens;
 mod styles;
 mod support;
@@ -22,23 +23,18 @@ mod ui_tests;
 use std::error::Error;
 use std::io;
 use std::process::ExitCode;
-use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use crossterm::event::Event;
-use tracker_application::{DEFAULT_TASK_NAMES, TrackerApplication, TrackerApplicationService};
+use tracker_application::{DEFAULT_TASK_NAMES, TrackerApplication};
 use tracker_domain::TaskName;
 use tracker_storage::{SqliteRepository, StorageError, default_database_path, ensure_app_data_dir};
 
-use crate::app::App;
+use crate::app::{App, AppState};
 use crate::command::Command;
+use crate::runtime::Backend;
 #[cfg(test)]
 use crate::screens::{TaskListCommand, WorklogHistoryCommand};
 use crate::terminal::{Restoration, TerminalGuard};
-
-/// How long to wait for input before redrawing, so the elapsed timer stays
-/// fresh without burning CPU.
-const TICK: Duration = Duration::from_millis(250);
 
 fn main() -> ExitCode {
     report(run_app())
@@ -86,15 +82,21 @@ fn run_local_tui() -> Result<(), Box<dyn Error>> {
     let repository = SqliteRepository::open(default_database_path()?)?;
     seed_default_tasks(&repository, Utc::now())?;
     let application = TrackerApplication::load(repository)?;
-    let mut app = App::load(application);
+    let app = App::load(application);
+    let (application, state) = app.into_parts();
     let mut guard = terminal_guard()?;
-    run(&mut guard, &mut app).map_err(Into::into)
+    runtime::run(&mut guard, Backend::Local(application), state).map_err(Into::into)
 }
 
 fn run_remote_tui(server: &str) -> Result<(), Box<dyn Error>> {
     let application = tracker_remote::RemoteApplication::disconnected(server)?;
+    let mut state = AppState::load_from_snapshot(
+        application.tasks(tracker_application::TaskOrdering::default()),
+        application.current_tracking().clone(),
+    );
+    state.shell_mut().info("Connecting to server...");
     let mut guard = terminal_guard()?;
-    remote_runtime::run(&mut guard, application).map_err(Into::into)
+    runtime::run(&mut guard, Backend::Remote(application), state).map_err(Into::into)
 }
 
 fn terminal_guard() -> io::Result<TerminalGuard> {
@@ -106,29 +108,6 @@ fn terminal_guard() -> io::Result<TerminalGuard> {
         move || restoration.restore()
     });
     TerminalGuard::new(restoration)
-}
-
-/// The synchronous event loop: redraw, then handle at most one key per tick.
-///
-/// The guard restores the terminal on drop, for normal quits and for errors
-/// alike.
-fn run<S: TrackerApplicationService>(
-    guard: &mut TerminalGuard,
-    app: &mut App<S>,
-) -> io::Result<()> {
-    while app.is_running() {
-        app.expire_copy_confirmation();
-        app.refresh_reports();
-        guard.draw(|frame| ui::render(frame, app.app_view()))?;
-        if crossterm::event::poll(TICK)?
-            && let Event::Key(key) = crossterm::event::read()?
-            && let Some(command) = app.command_for(key)
-            && command_is_allowed(command, crossterm::terminal::size()?.0)
-        {
-            app.handle(command);
-        }
-    }
-    Ok(())
 }
 
 /// Below the supported width only quitting may change application state.
