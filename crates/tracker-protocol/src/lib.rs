@@ -102,6 +102,25 @@ pub struct WriteGuard {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+pub struct InactiveTaskPreviewDto {
+    pub as_of: DateTime<Utc>,
+    pub count: usize,
+    pub sample_names: Vec<String>,
+    pub revision: String,
+    pub candidate_fingerprint: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveInactiveTasksRequest {
+    pub as_of: DateTime<Utc>,
+    pub candidate_fingerprint: String,
+    #[serde(flatten)]
+    pub guard: WriteGuard,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct CreateTaskRequest {
     pub task_id: String,
     pub name: String,
@@ -201,6 +220,9 @@ pub struct DeleteWorklogRequest {
 )]
 pub enum MutationResultDto {
     Task(TaskDto),
+    ArchivedInactive {
+        count: usize,
+    },
     Worklog(WorklogDto),
     TrackingAlreadyActive(WorklogDto),
     TrackingSwitched {
@@ -347,6 +369,7 @@ pub enum ErrorCode {
     WorklogOverlap,
     ActiveWorklog,
     ActiveTask,
+    InactiveTaskCandidatesChanged,
     Internal,
 }
 
