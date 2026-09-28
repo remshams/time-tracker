@@ -1,13 +1,14 @@
 use chrono::TimeDelta;
-use tracker_application::{ApplicationFailureCategory, TrackerApplicationService, WorklogPage};
+use tracker_application::{ApplicationFailureCategory, WorklogPage};
 use tracker_domain::{TaskId, WorklogId};
 
-use crate::app::App;
+use crate::app::AppState;
+use crate::application_request::{ApplicationOutcome, ApplicationRequest};
 use crate::screens::worklog_history::active_worklog_for_task;
 use crate::screens::{History, Screen, WorklogHistoryCommand, WorklogHistoryMode};
 use crate::support::errors::application_error_text;
 
-impl<S: TrackerApplicationService> App<S> {
+impl AppState {
     pub(crate) fn handle_worklog_history_command(&mut self, command: WorklogHistoryCommand) {
         match command {
             WorklogHistoryCommand::MoveUp => self.move_history_up(),
@@ -107,22 +108,52 @@ impl<S: TrackerApplicationService> App<S> {
         else {
             return;
         };
-        let result = self.application_mut().worklogs_for_task(task.id(), None);
-        self.sync_from_application(false);
-        match result {
-            Ok(page) => {
-                let baseline = active_worklog_for_task(&page.snapshot.active_worklog, task.id());
-                self.shell_mut().open_history(History::new(
-                    task.id(),
-                    page.worklogs,
-                    page.next_cursor,
-                    baseline,
-                ));
-                self.shell_mut()
-                    .info(format!("History of \"{}\"", task.name()));
-            }
-            Err(error) => self.shell_mut().error(application_error_text(&error)),
-        }
+        let task_id = task.id();
+        let screen_generation = self.shell().screen_generation();
+        let view_generation = self.shell().task_list().view_generation();
+        self.enqueue(
+            ApplicationRequest::WorklogsForTask {
+                task_id,
+                after: None,
+            },
+            move |state, completed| {
+                let still_selected = state.shell().screen() == Screen::TaskList
+                    && state.shell().screen_generation() == screen_generation
+                    && state.shell().task_list().view_generation() == view_generation
+                    && matches!(
+                        state.shell().task_list().mode(),
+                        crate::screens::task_list::TaskListMode::Normal
+                    )
+                    && state.shell().task_list().selection() == Some(task_id);
+                let ApplicationOutcome::WorklogPage(result) = completed.outcome else {
+                    unreachable!()
+                };
+                state.sync_from_snapshot(
+                    completed.snapshot.items,
+                    completed.snapshot.tracking,
+                    false,
+                );
+                if !still_selected {
+                    return;
+                }
+                match result {
+                    Ok(page) => {
+                        let baseline =
+                            active_worklog_for_task(&page.snapshot.active_worklog, task_id);
+                        state.shell_mut().open_history(History::new(
+                            task_id,
+                            page.worklogs,
+                            page.next_cursor,
+                            baseline,
+                        ));
+                        state
+                            .shell_mut()
+                            .info(format!("History of \"{}\"", task.name()));
+                    }
+                    Err(error) => state.shell_mut().error(application_error_text(&error)),
+                }
+            },
+        );
     }
 
     pub(crate) fn back_to_task_list(&mut self) {
@@ -218,39 +249,58 @@ impl<S: TrackerApplicationService> App<S> {
             return;
         };
         let baseline = self.history().and_then(History::active_worklog_baseline);
-        match self
-            .application_mut()
-            .worklogs_for_task(task_id, Some(&cursor))
-        {
-            Ok(page) => {
-                let active = active_worklog_for_task(&page.snapshot.active_worklog, task_id);
-                if active != baseline {
-                    self.reload_newest_history_after_change(task_id);
+        let session = self.history_state().expect("history is open").session_id();
+        self.enqueue(
+            ApplicationRequest::WorklogsForTask {
+                task_id,
+                after: Some(cursor),
+            },
+            move |state, completed| {
+                let current = state.history_session_matches(session, task_id)
+                    && state.history_is_normal()
+                    && state.history().and_then(History::next_cursor) == Some(cursor);
+                let ApplicationOutcome::WorklogPage(result) = completed.outcome else {
+                    unreachable!()
+                };
+                state.sync_from_snapshot(
+                    completed.snapshot.items,
+                    completed.snapshot.tracking,
+                    false,
+                );
+                if !current {
                     return;
                 }
-                let loaded = page.worklogs.len();
-                self.history_mut()
-                    .expect("history is open")
-                    .append(page.worklogs, page.next_cursor);
-                self.sync_from_application(false);
-                if loaded == 0 {
-                    self.shell_mut().info("No older worklogs");
-                } else {
-                    self.shell_mut()
-                        .info(format!("Loaded {loaded} older worklogs"));
+                match result {
+                    Ok(page) => {
+                        let active =
+                            active_worklog_for_task(&page.snapshot.active_worklog, task_id);
+                        if active != baseline {
+                            state.reload_newest_history_after_change(task_id);
+                            return;
+                        }
+                        let loaded = page.worklogs.len();
+                        state
+                            .history_mut()
+                            .expect("history is open")
+                            .append(page.worklogs, page.next_cursor);
+                        if loaded == 0 {
+                            state.shell_mut().info("No older worklogs");
+                        } else {
+                            state
+                                .shell_mut()
+                                .info(format!("Loaded {loaded} older worklogs"));
+                        }
+                    }
+                    Err(error)
+                        if error.failure().category()
+                            == ApplicationFailureCategory::WorklogHistoryChanged =>
+                    {
+                        state.reload_newest_history_after_change(task_id);
+                    }
+                    Err(error) => state.shell_mut().error(application_error_text(&error)),
                 }
-            }
-            Err(error)
-                if error.failure().category()
-                    == ApplicationFailureCategory::WorklogHistoryChanged =>
-            {
-                self.reload_newest_history_after_change(task_id);
-            }
-            Err(error) => {
-                self.sync_from_application(false);
-                self.shell_mut().error(application_error_text(&error));
-            }
-        }
+            },
+        );
     }
 
     fn refresh_worklogs(&mut self) {
@@ -261,34 +311,76 @@ impl<S: TrackerApplicationService> App<S> {
             return;
         };
         let keep = self.history().and_then(History::selected_id);
-        let result = self.application_mut().worklogs_for_task(task_id, None);
-        self.sync_from_application(false);
-        match result {
-            Ok(page) => {
-                self.replace_history_with_newest_page(task_id, keep, page);
-                self.shell_mut().info("Refreshed");
-            }
-            Err(error) => self.shell_mut().error(application_error_text(&error)),
-        }
+        let session = self.history_state().expect("history is open").session_id();
+        self.enqueue(
+            ApplicationRequest::WorklogsForTask {
+                task_id,
+                after: None,
+            },
+            move |state, completed| {
+                let current =
+                    state.history_session_matches(session, task_id) && state.history_is_normal();
+                let ApplicationOutcome::WorklogPage(result) = completed.outcome else {
+                    unreachable!()
+                };
+                state.sync_from_snapshot(
+                    completed.snapshot.items,
+                    completed.snapshot.tracking,
+                    false,
+                );
+                if !current {
+                    return;
+                }
+                match result {
+                    Ok(page) => {
+                        state.replace_history_with_newest_page(task_id, keep, page);
+                        state.shell_mut().info("Refreshed");
+                    }
+                    Err(error) => state.shell_mut().error(application_error_text(&error)),
+                }
+            },
+        );
     }
 
     pub(super) fn reload_newest_history_after_change(&mut self, task_id: TaskId) {
         let keep = self.history().and_then(History::selected_id);
-        match self.application_mut().worklogs_for_task(task_id, None) {
-            Ok(page) => {
-                self.replace_history_with_newest_page(task_id, keep, page);
-                self.sync_from_application(false);
-                self.shell_mut().info("History changed and was refreshed");
-            }
-            Err(error) => {
-                self.mark_history_unavailable();
-                self.sync_from_application(false);
-                self.shell_mut().error(format!(
-                    "History changed, but refresh failed: {}",
-                    application_error_text(&error)
-                ));
-            }
-        }
+        let Some(session) = self.history_state().map(|state| state.session_id()) else {
+            return;
+        };
+        self.enqueue(
+            ApplicationRequest::WorklogsForTask {
+                task_id,
+                after: None,
+            },
+            move |state, completed| {
+                let current =
+                    state.history_session_matches(session, task_id) && state.history_is_normal();
+                let ApplicationOutcome::WorklogPage(result) = completed.outcome else {
+                    unreachable!()
+                };
+                state.sync_from_snapshot(
+                    completed.snapshot.items,
+                    completed.snapshot.tracking,
+                    false,
+                );
+                if !current {
+                    return;
+                }
+                match result {
+                    Ok(page) => {
+                        state.replace_history_with_newest_page(task_id, keep, page);
+                        state.shell_mut().info("History changed and was refreshed");
+                    }
+                    Err(error) => {
+                        state.mark_history_unavailable();
+                        state.shell_mut().error(format!(
+                            "History changed, but refresh failed: {}",
+                            application_error_text(&error)
+                        ));
+                    }
+                }
+            },
+        );
     }
 
     pub(super) fn replace_history_with_newest_page(
@@ -310,18 +402,32 @@ impl<S: TrackerApplicationService> App<S> {
         }
     }
 
-    pub(crate) fn sync_tracking_after_history_reload(&mut self) {
-        let tracking = self.application_mut().current_tracking().clone();
+    pub(super) fn history_session_matches(&self, session: u64, task_id: TaskId) -> bool {
+        self.history_state().is_some_and(|state| {
+            state.session_id() == session && state.history().task_id() == task_id
+        })
+    }
+
+    pub(crate) fn sync_tracking_after_history_reload(
+        &mut self,
+        tracking: tracker_domain::TrackingState,
+    ) {
         self.tracking_mut().sync_after_history_reload(tracking);
     }
 }
 
 #[cfg(test)]
 mod navigation_tests {
+    use tracker_application::{TaskListItem, WorklogPage, WorklogPageSnapshot};
+    use tracker_domain::TrackingState;
+
+    use crate::app::AppState;
+    use crate::application_request::{ApplicationOutcome, ApplicationSnapshot, CompletedRequest};
     use crate::command::Command;
     use crate::screens::task_list::TaskListCommand;
     use crate::screens::worklog_history::WorklogHistoryCommand;
-    use crate::test_support::app_with;
+    use crate::screens::{Screen, TaskView};
+    use crate::test_support::{app_with, at, task};
 
     #[test]
     fn paging_an_empty_history_keeps_it_unselected() {
@@ -332,5 +438,81 @@ mod navigation_tests {
             app.shell().history().unwrap().history().selected_index(),
             None
         );
+    }
+
+    #[test]
+    fn delayed_history_does_not_reopen_after_leaving_and_returning_to_the_task_list() {
+        let selected = task(1, "alpha");
+        let items = vec![TaskListItem {
+            task: selected.clone(),
+            latest_work_start: None,
+        }];
+        let mut state = AppState::load_from_snapshot(items.clone(), TrackingState::Idle);
+        state.handle_command(Command::TaskList(TaskListCommand::OpenHistory));
+        let effect = state.take_effect().expect("history request");
+        let request = effect.request.clone();
+
+        state.shell_mut().open_reports(at(100));
+        state
+            .shell_mut()
+            .leave_reports(TaskView::Active, Some(selected.id()));
+        assert_eq!(state.shell().task_list().selection(), Some(selected.id()));
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
+                    worklogs: Vec::new(),
+                    snapshot: WorklogPageSnapshot {
+                        requested_task_latest_work_start: None,
+                        active_worklog: None,
+                        active_task_latest_work_start: None,
+                    },
+                    next_cursor: None,
+                })),
+                snapshot: ApplicationSnapshot {
+                    items,
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+        assert_eq!(state.shell().screen(), Screen::TaskList);
+    }
+
+    #[test]
+    fn delayed_history_does_not_open_after_switching_task_views_twice() {
+        let selected = task(1, "alpha");
+        let items = vec![TaskListItem {
+            task: selected.clone(),
+            latest_work_start: None,
+        }];
+        let mut state = AppState::load_from_snapshot(items.clone(), TrackingState::Idle);
+        state.handle_command(Command::TaskList(TaskListCommand::OpenHistory));
+        let effect = state.take_effect().expect("history request");
+        let request = effect.request.clone();
+
+        state.handle_command(Command::TaskList(TaskListCommand::ShowArchivedTasks));
+        state.handle_command(Command::TaskList(TaskListCommand::ShowActiveTasks));
+        assert_eq!(state.shell().task_list().selection(), Some(selected.id()));
+        state.complete_effect(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
+                    worklogs: Vec::new(),
+                    snapshot: WorklogPageSnapshot {
+                        requested_task_latest_work_start: None,
+                        active_worklog: None,
+                        active_task_latest_work_start: None,
+                    },
+                    next_cursor: None,
+                })),
+                snapshot: ApplicationSnapshot {
+                    items,
+                    tracking: TrackingState::Idle,
+                },
+            },
+        );
+        assert_eq!(state.shell().screen(), Screen::TaskList);
     }
 }

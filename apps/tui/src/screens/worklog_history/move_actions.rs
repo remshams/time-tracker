@@ -1,13 +1,14 @@
-use tracker_application::{ApplicationFailureCategory, TrackerApplicationService};
+use tracker_application::ApplicationFailureCategory;
 
-use crate::app::App;
+use crate::app::AppState;
+use crate::application_request::{ApplicationOutcome, ApplicationRequest};
 use crate::screens::{TaskView, WorklogHistoryMode};
 use crate::support::errors::application_error_text;
 
 use super::MoveFocus;
 use super::move_worklog::{MoveCandidate, MoveDraft};
 
-impl<S: TrackerApplicationService> App<S> {
+impl AppState {
     pub(super) fn open_move(&mut self) {
         let Some(worklog) = self.selected_history_worklog() else {
             return;
@@ -107,65 +108,106 @@ impl<S: TrackerApplicationService> App<S> {
                 })
                 .map(|worklog| worklog.id())
         });
-        match self.application_mut().move_worklog(
-            source_id,
-            source_task_id,
-            source_times,
-            destination_task_id,
-        ) {
-            Ok(_) => {
-                self.history_state_mut()
-                    .expect("history is open")
-                    .close_mode();
-                match self
-                    .application_mut()
-                    .worklogs_for_task(source_task_id, None)
-                {
-                    Ok(page) => {
-                        self.replace_history_with_newest_page(
-                            source_task_id,
-                            preferred_selection,
-                            page,
-                        );
-                        self.reload_tasks();
-                        self.sync_tracking_after_history_reload();
-                        self.shell_mut()
-                            .info(format!("Moved worklog to \"{destination_name}\""));
-                    }
-                    Err(_) => {
-                        self.mark_history_unavailable();
-                        self.reload_tasks();
-                        self.sync_tracking_after_history_reload();
-                        self.shell_mut()
-                            .error("Move saved, but history refresh failed");
-                    }
+        let session = self.history_state().expect("history is open").session_id();
+        self.enqueue(
+            ApplicationRequest::MoveWorklog {
+                id: source_id,
+                expected_source_task_id: source_task_id,
+                expected: source_times,
+                destination_task_id,
+            },
+            move |state, completed| {
+                let current = state.history_session_matches(session, source_task_id)
+                    && matches!(state.history_state().map(|state| state.mode()),
+                    Some(WorklogHistoryMode::Move(draft)) if draft.worklog().id() == source_id);
+                let ApplicationOutcome::Worklog(result) = completed.outcome else {
+                    unreachable!()
+                };
+                state.replace_items(completed.snapshot.items);
+                if result.is_ok() {
+                    state.sync_tracking_after_history_reload(completed.snapshot.tracking);
+                } else {
+                    state
+                        .tracking_mut()
+                        .sync(completed.snapshot.tracking, false);
                 }
-            }
-            Err(error) => {
-                let failure = error.failure();
-                self.sync_from_application(false);
-                if failure.recovery_failed() {
-                    self.shell_mut().error(application_error_text(&error));
+                if !current {
                     return;
                 }
-                let stale = matches!(
-                    failure.category(),
-                    ApplicationFailureCategory::WorklogChanged
-                        | ApplicationFailureCategory::WorklogNotFound
-                );
-                let destination_unavailable = self
-                    .catalog()
-                    .task(destination_task_id)
-                    .is_none_or(|task| task.is_archived());
-                if stale || destination_unavailable {
-                    self.history_state_mut()
-                        .expect("history is open")
-                        .close_mode();
-                    self.reload_newest_history_after_change(source_task_id);
-                } else {
-                    self.shell_mut().error(application_error_text(&error));
+                match result {
+                    Ok(_) => {
+                        state
+                            .history_state_mut()
+                            .expect("history is open")
+                            .close_mode();
+                        state.enqueue(
+                            ApplicationRequest::WorklogsForTask {
+                                task_id: source_task_id,
+                                after: None,
+                            },
+                            move |state, completed| {
+                                let current = state
+                                    .history_session_matches(session, source_task_id)
+                                    && state.history_is_normal();
+                                let ApplicationOutcome::WorklogPage(result) = completed.outcome
+                                else {
+                                    unreachable!()
+                                };
+                                state.replace_items(completed.snapshot.items);
+                                state.sync_tracking_after_history_reload(
+                                    completed.snapshot.tracking,
+                                );
+                                if !current {
+                                    return;
+                                }
+                                match result {
+                                    Ok(page) => {
+                                        state.replace_history_with_newest_page(
+                                            source_task_id,
+                                            preferred_selection,
+                                            page,
+                                        );
+                                        state.shell_mut().info(format!(
+                                            "Moved worklog to \"{destination_name}\""
+                                        ));
+                                    }
+                                    Err(_) => {
+                                        state.mark_history_unavailable();
+                                        state
+                                            .shell_mut()
+                                            .error("Move saved, but history refresh failed");
+                                    }
+                                }
+                            },
+                        );
+                    }
+                    Err(error) => {
+                        let failure = error.failure();
+                        if failure.recovery_failed() {
+                            state.shell_mut().error(application_error_text(&error));
+                            return;
+                        }
+                        let stale = matches!(
+                            failure.category(),
+                            ApplicationFailureCategory::WorklogChanged
+                                | ApplicationFailureCategory::WorklogNotFound
+                        );
+                        let destination_unavailable = state
+                            .catalog()
+                            .task(destination_task_id)
+                            .is_none_or(|task| task.is_archived());
+                        if stale || destination_unavailable {
+                            state
+                                .history_state_mut()
+                                .expect("history is open")
+                                .close_mode();
+                            state.reload_newest_history_after_change(source_task_id);
+                        } else {
+                            state.shell_mut().error(application_error_text(&error));
+                        }
+                    }
                 }
-            }
-        }
+            },
+        );
     }
 }

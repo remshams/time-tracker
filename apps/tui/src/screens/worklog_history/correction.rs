@@ -1,8 +1,8 @@
 use chrono::{TimeDelta, Utc};
-use tracker_application::TrackerApplicationService;
 use tracker_domain::WorklogTimes;
 
-use crate::app::App;
+use crate::app::AppState;
+use crate::application_request::{ApplicationOutcome, ApplicationRequest};
 use crate::screens::WorklogHistoryMode;
 use crate::support::errors::correction_error_text;
 use crate::support::timestamps::{
@@ -96,7 +96,7 @@ impl CorrectionDraft {
     }
 }
 
-impl<S: TrackerApplicationService> App<S> {
+impl AppState {
     pub(super) fn open_correction(&mut self) {
         let Some(worklog) = self.selected_history_worklog() else {
             return;
@@ -216,39 +216,84 @@ impl<S: TrackerApplicationService> App<S> {
         };
         let occurred_at = Utc::now();
         let replacement = WorklogTimes::new(start, end);
-        match self.application_mut().correct_worklog(
-            draft.id,
-            draft.expected,
-            replacement,
-            occurred_at,
-        ) {
-            Ok(worklog) => {
-                let task_id = self
-                    .history()
-                    .expect("a correction belongs to an open history")
-                    .task_id();
-                self.history_state_mut()
-                    .expect("history is open")
-                    .close_mode();
-                match self.application_mut().worklogs_for_task(task_id, None) {
-                    Ok(page) => {
-                        self.replace_history_with_newest_page(task_id, Some(worklog.id()), page);
-                        self.reload_tasks();
-                        self.sync_tracking_after_history_reload();
-                        self.shell_mut().info("Corrected worklog");
-                    }
-                    Err(_) => {
-                        self.mark_history_unavailable();
-                        self.sync_from_application(false);
-                        self.shell_mut()
-                            .error("Correction saved, but history refresh failed");
-                    }
+        let task_id = self
+            .history()
+            .expect("a correction belongs to an open history")
+            .task_id();
+        let session = self.history_state().expect("history is open").session_id();
+        self.enqueue(
+            ApplicationRequest::CorrectWorklog {
+                id: draft.id,
+                expected: draft.expected,
+                replacement,
+                occurred_at,
+            },
+            move |state, completed| {
+                let current = state.history_session_matches(session, task_id)
+                    && matches!(state.history_state().map(|state| state.mode()),
+                    Some(WorklogHistoryMode::Correction(current)) if current.id == draft.id);
+                let ApplicationOutcome::Worklog(result) = completed.outcome else {
+                    unreachable!()
+                };
+                state.replace_items(completed.snapshot.items);
+                if result.is_ok() {
+                    state.sync_tracking_after_history_reload(completed.snapshot.tracking);
+                } else {
+                    state
+                        .tracking_mut()
+                        .sync(completed.snapshot.tracking, false);
                 }
-            }
-            Err(error) => {
-                self.sync_from_application(false);
-                self.shell_mut().error(correction_error_text(&error));
-            }
-        }
+                if !current {
+                    return;
+                }
+                match result {
+                    Ok(worklog) => {
+                        state
+                            .history_state_mut()
+                            .expect("history is open")
+                            .close_mode();
+                        state.enqueue(
+                            ApplicationRequest::WorklogsForTask {
+                                task_id,
+                                after: None,
+                            },
+                            move |state, completed| {
+                                let current = state.history_session_matches(session, task_id)
+                                    && state.history_is_normal();
+                                let ApplicationOutcome::WorklogPage(result) = completed.outcome
+                                else {
+                                    unreachable!()
+                                };
+                                state.replace_items(completed.snapshot.items);
+                                state.sync_tracking_after_history_reload(
+                                    completed.snapshot.tracking,
+                                );
+                                if !current {
+                                    return;
+                                }
+                                match result {
+                                    Ok(page) => {
+                                        state.replace_history_with_newest_page(
+                                            task_id,
+                                            Some(worklog.id()),
+                                            page,
+                                        );
+                                        state.reload_tasks();
+                                        state.shell_mut().info("Corrected worklog");
+                                    }
+                                    Err(_) => {
+                                        state.mark_history_unavailable();
+                                        state
+                                            .shell_mut()
+                                            .error("Correction saved, but history refresh failed");
+                                    }
+                                }
+                            },
+                        );
+                    }
+                    Err(error) => state.shell_mut().error(correction_error_text(&error)),
+                }
+            },
+        );
     }
 }

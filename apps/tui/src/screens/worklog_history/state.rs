@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use std::sync::atomic::{AtomicU64, Ordering};
 use tracker_application::WorklogCursor;
 use tracker_domain::{TaskId, Worklog, WorklogId};
 
@@ -183,6 +184,7 @@ pub enum WorklogHistoryMode {
 /// History state and the exact task-list navigation restored on return.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorklogHistoryState {
+    session_id: u64,
     task_list: TaskListState,
     history: History,
     mode: WorklogHistoryMode,
@@ -202,7 +204,9 @@ pub(crate) fn active_worklog_for_task(
 
 impl WorklogHistoryState {
     pub(crate) fn new(task_list: TaskListState, history: History) -> Self {
+        static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
         Self {
+            session_id: NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed),
             task_list,
             history,
             mode: WorklogHistoryMode::Normal,
@@ -219,6 +223,10 @@ impl WorklogHistoryState {
 
     pub(crate) fn has_report_source(&self) -> bool {
         self.from_reports
+    }
+
+    pub(crate) fn session_id(&self) -> u64 {
+        self.session_id
     }
 
     pub(crate) fn g_prefix(&self) -> bool {
