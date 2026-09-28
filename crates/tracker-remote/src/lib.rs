@@ -1,4 +1,4 @@
-//! Synchronous HTTP client for a remote tracker server.
+//! Async HTTP client for a remote tracker server.
 
 mod application;
 mod transport;
@@ -8,7 +8,7 @@ use reqwest::StatusCode;
 pub use application::{RemoteApplication, RemoteFailureKind};
 
 /// A connection or wire failure. Semantic command errors use
-/// `ApplicationError` through the service traits.
+/// `ApplicationError` in operation results.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum RemoteError {
     #[error("invalid tracker endpoint: {0}")]

@@ -4,9 +4,8 @@ use chrono::{DateTime, TimeDelta, Utc};
 use reqwest::{Method, StatusCode};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, GlobalWorklogCursor,
-    GlobalWorklogPage, ReportQueries, ReportRow, ReportTotals, SetActiveTaskOutcome, TaskListItem,
-    TaskOperations, TaskOrdering, TaskQueries, TrackerSnapshot, TrackingOperations, WorklogCursor,
-    WorklogOperations, WorklogPage, WorklogPageSnapshot, WorklogQueries,
+    GlobalWorklogPage, ReportRow, ReportTotals, SetActiveTaskOutcome, TaskListItem, TaskOrdering,
+    TrackerSnapshot, WorklogCursor, WorklogPage, WorklogPageSnapshot,
 };
 use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingState, Worklog, WorklogId, WorklogTimes,
@@ -61,32 +60,33 @@ impl RemoteApplication {
         })
     }
 
-    pub fn connect(endpoint: &str) -> Result<Self, RemoteError> {
+    pub async fn connect(endpoint: &str) -> Result<Self, RemoteError> {
         let mut client = Self::disconnected(endpoint)?;
-        client.refresh()?;
+        client.refresh().await?;
         Ok(client)
     }
 
     /// Reloads task aggregates and active tracking in one server read.
-    pub fn refresh(&mut self) -> Result<(), RemoteError> {
-        let result = (|| {
+    pub async fn refresh(&mut self) -> Result<(), RemoteError> {
+        let result = async {
             if !self.version_checked {
-                let health: HealthDto = self.transport.send(
-                    Method::GET,
-                    self.transport.url("v1/health"),
-                    None::<&()>,
-                )?;
+                let health: HealthDto = self
+                    .transport
+                    .send(Method::GET, self.transport.url("v1/health"), None::<&()>)
+                    .await?;
                 if health.protocol_version != tracker_protocol::VERSION || health.status != "ok" {
                     return Err(RemoteError::Protocol(
                         "server protocol version does not match".into(),
                     ));
                 }
             }
-            let dto: SnapshotDto =
-                self.transport
-                    .send(Method::GET, self.transport.url("v1/snapshot"), None::<&()>)?;
+            let dto: SnapshotDto = self
+                .transport
+                .send(Method::GET, self.transport.url("v1/snapshot"), None::<&()>)
+                .await?;
             decode_snapshot(dto)
-        })();
+        }
+        .await;
         match result {
             Ok((snapshot, tracking, revision)) => {
                 self.snapshot = snapshot;
@@ -122,7 +122,7 @@ impl RemoteApplication {
         }
     }
 
-    fn mutation<B: serde::Serialize, T>(
+    async fn mutation<B: serde::Serialize, T>(
         &mut self,
         method: Method,
         path: &str,
@@ -131,18 +131,21 @@ impl RemoteApplication {
         task_id: Option<TaskId>,
         decode_result: impl FnOnce(MutationResultDto) -> Result<T, ApplicationError>,
     ) -> Result<T, ApplicationError> {
-        let response: Result<MutationDto, RemoteError> =
-            self.transport
-                .send(method, self.transport.url(path), Some(body));
+        let response: Result<MutationDto, RemoteError> = self
+            .transport
+            .send(method, self.transport.url(path), Some(body))
+            .await;
         let dto = match response {
             Ok(dto) => dto,
-            Err(error) => return Err(self.operation_error(error, worklog_id, task_id)),
+            Err(error) => return Err(self.operation_error(error, worklog_id, task_id).await),
         };
         let result = decode_result(dto.result).inspect_err(|_| {
             self.last_failure = Some(RemoteFailureKind::Protocol);
         })?;
-        let (snapshot, tracking, revision) = decode_snapshot(dto.snapshot)
-            .map_err(|error| self.operation_error(error, worklog_id, task_id))?;
+        let (snapshot, tracking, revision) = match decode_snapshot(dto.snapshot) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return Err(self.operation_error(error, worklog_id, task_id).await),
+        };
         self.snapshot = snapshot;
         self.tracking = tracking;
         self.revision = revision;
@@ -151,7 +154,7 @@ impl RemoteApplication {
         Ok(result)
     }
 
-    fn operation_error(
+    async fn operation_error(
         &mut self,
         error: RemoteError,
         worklog_id: Option<WorklogId>,
@@ -163,20 +166,20 @@ impl RemoteApplication {
         }
         let mapped = map_application_error(&error, worklog_id, task_id);
         if matches!(error, RemoteError::Http { .. }) {
-            let _ = self.refresh();
+            let _ = self.refresh().await;
         }
         mapped
     }
 }
 
-impl TaskQueries for RemoteApplication {
-    fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
+impl RemoteApplication {
+    pub fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
         let mut items = self.snapshot.task_items.clone();
         ordering.sort_items(&mut items);
         items
     }
 
-    fn task(&self, id: TaskId) -> Option<&Task> {
+    pub fn task(&self, id: TaskId) -> Option<&Task> {
         self.snapshot
             .task_items
             .iter()
@@ -185,8 +188,8 @@ impl TaskQueries for RemoteApplication {
     }
 }
 
-impl TaskOperations for RemoteApplication {
-    fn create_task(
+impl RemoteApplication {
+    pub async fn create_task(
         &mut self,
         name: TaskName,
         occurred_at: DateTime<Utc>,
@@ -195,6 +198,7 @@ impl TaskOperations for RemoteApplication {
             let recovering = matches!(self.last_failure, Some(RemoteFailureKind::Unavailable));
             if recovering {
                 self.refresh()
+                    .await
                     .map_err(|error| ApplicationError::storage_failure(error.to_string()))?;
             }
             let pending_id: TaskId = pending
@@ -231,16 +235,18 @@ impl TaskOperations for RemoteApplication {
             .parse()
             .map_err(|_| protocol_failure("invalid pending task id"))?;
         self.pending_create = Some(body.clone());
-        let result = self.mutation(Method::POST, "v1/tasks", &body, None, Some(id), |result| {
-            task_result(result, id)
-        });
+        let result = self
+            .mutation(Method::POST, "v1/tasks", &body, None, Some(id), |result| {
+                task_result(result, id)
+            })
+            .await;
         if !matches!(self.last_failure, Some(RemoteFailureKind::Unavailable)) {
             self.pending_create = None;
         }
         result
     }
 
-    fn rename_task(
+    pub async fn rename_task(
         &mut self,
         id: TaskId,
         name: TaskName,
@@ -259,9 +265,10 @@ impl TaskOperations for RemoteApplication {
             Some(id),
             |result| task_result(result, id),
         )
+        .await
     }
 
-    fn archive_task(
+    pub async fn archive_task(
         &mut self,
         id: TaskId,
         occurred_at: DateTime<Utc>,
@@ -278,9 +285,10 @@ impl TaskOperations for RemoteApplication {
             Some(id),
             |result| task_result(result, id),
         )
+        .await
     }
 
-    fn unarchive_task(
+    pub async fn unarchive_task(
         &mut self,
         id: TaskId,
         occurred_at: DateTime<Utc>,
@@ -297,15 +305,16 @@ impl TaskOperations for RemoteApplication {
             Some(id),
             |result| task_result(result, id),
         )
+        .await
     }
 }
 
-impl TrackingOperations for RemoteApplication {
-    fn current_tracking(&self) -> &TrackingState {
+impl RemoteApplication {
+    pub fn current_tracking(&self) -> &TrackingState {
         &self.tracking
     }
 
-    fn set_active_task(
+    pub async fn set_active_task(
         &mut self,
         task_id: TaskId,
         occurred_at: DateTime<Utc>,
@@ -327,9 +336,10 @@ impl TrackingOperations for RemoteApplication {
             Some(task_id),
             |result| set_tracking_result(result, task_id, new_id, old_active),
         )
+        .await
     }
 
-    fn clear_active_task(
+    pub async fn clear_active_task(
         &mut self,
         expected_active: WorklogId,
         occurred_at: DateTime<Utc>,
@@ -349,11 +359,12 @@ impl TrackingOperations for RemoteApplication {
             None,
             |result| clear_tracking_result(result, expected_active),
         )
+        .await
     }
 }
 
-impl WorklogQueries for RemoteApplication {
-    fn worklogs_for_task(
+impl RemoteApplication {
+    pub async fn worklogs_for_task(
         &mut self,
         task_id: TaskId,
         after: Option<&WorklogCursor>,
@@ -368,22 +379,23 @@ impl WorklogQueries for RemoteApplication {
                 .append_pair("after_id", &cursor.id.to_string())
                 .append_pair("after_revision", &cursor.revision.to_string());
         }
-        let dto: WorklogPageDto = self
-            .transport
-            .send(Method::GET, url, None::<&()>)
-            .map_err(|error| self.operation_error(error, None, Some(task_id)))?;
+        let dto: WorklogPageDto = match self.transport.send(Method::GET, url, None::<&()>).await {
+            Ok(dto) => dto,
+            Err(error) => return Err(self.operation_error(error, None, Some(task_id)).await),
+        };
         let worklogs = dto
             .worklogs
             .into_iter()
             .map(app_decode_worklog)
             .collect::<Result<Vec<_>, _>>()?;
-        let (active, tracking) = decode_active(dto.active_worklog)
-            .map_err(|error| self.operation_error(error, None, Some(task_id)))?;
-        let next_cursor = dto
-            .next_cursor
-            .map(decode_cursor)
-            .transpose()
-            .map_err(|error| self.operation_error(error, None, Some(task_id)))?;
+        let (active, tracking) = match decode_active(dto.active_worklog) {
+            Ok(decoded) => decoded,
+            Err(error) => return Err(self.operation_error(error, None, Some(task_id)).await),
+        };
+        let next_cursor = match dto.next_cursor.map(decode_cursor).transpose() {
+            Ok(cursor) => cursor,
+            Err(error) => return Err(self.operation_error(error, None, Some(task_id)).await),
+        };
         if next_cursor
             .as_ref()
             .is_some_and(|cursor| cursor.task_id != task_id)
@@ -424,7 +436,7 @@ impl WorklogQueries for RemoteApplication {
         })
     }
 
-    fn all_worklogs(
+    pub async fn all_worklogs(
         &mut self,
         after: Option<&GlobalWorklogCursor>,
     ) -> Result<GlobalWorklogPage, ApplicationError> {
@@ -435,22 +447,24 @@ impl WorklogQueries for RemoteApplication {
                 .append_pair("after_id", &cursor.id.to_string())
                 .append_pair("after_revision", &cursor.revision.to_string());
         }
-        let dto: GlobalWorklogPageDto = self
-            .transport
-            .send(Method::GET, url, None::<&()>)
-            .map_err(|error| self.operation_error(error, None, None))?;
+        let dto: GlobalWorklogPageDto =
+            match self.transport.send(Method::GET, url, None::<&()>).await {
+                Ok(dto) => dto,
+                Err(error) => return Err(self.operation_error(error, None, None).await),
+            };
         let worklogs = dto
             .worklogs
             .into_iter()
             .map(app_decode_worklog)
             .collect::<Result<Vec<_>, _>>()?;
-        let (snapshot, tracking, revision) = decode_snapshot(dto.snapshot)
-            .map_err(|error| self.operation_error(error, None, None))?;
-        let next_cursor = dto
-            .next_cursor
-            .map(decode_global_cursor)
-            .transpose()
-            .map_err(|error| self.operation_error(error, None, None))?;
+        let (snapshot, tracking, revision) = match decode_snapshot(dto.snapshot) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return Err(self.operation_error(error, None, None).await),
+        };
+        let next_cursor = match dto.next_cursor.map(decode_global_cursor).transpose() {
+            Ok(cursor) => cursor,
+            Err(error) => return Err(self.operation_error(error, None, None).await),
+        };
         self.snapshot = snapshot.clone();
         self.tracking = tracking;
         self.revision = revision;
@@ -463,8 +477,8 @@ impl WorklogQueries for RemoteApplication {
     }
 }
 
-impl WorklogOperations for RemoteApplication {
-    fn move_worklog(
+impl RemoteApplication {
+    pub async fn move_worklog(
         &mut self,
         id: WorklogId,
         expected_source_task_id: TaskId,
@@ -486,9 +500,10 @@ impl WorklogOperations for RemoteApplication {
             None,
             |result| worklog_result(result, id),
         )
+        .await
     }
 
-    fn correct_worklog(
+    pub async fn correct_worklog(
         &mut self,
         id: WorklogId,
         expected: WorklogTimes,
@@ -511,9 +526,10 @@ impl WorklogOperations for RemoteApplication {
             None,
             |result| worklog_result(result, id),
         )
+        .await
     }
 
-    fn delete_completed_worklog(
+    pub async fn delete_completed_worklog(
         &mut self,
         id: WorklogId,
         expected_task_id: TaskId,
@@ -536,11 +552,12 @@ impl WorklogOperations for RemoteApplication {
             None,
             |result| worklog_result(result, id),
         )
+        .await
     }
 }
 
-impl ReportQueries for RemoteApplication {
-    fn report_totals(
+impl RemoteApplication {
+    pub async fn report_totals(
         &mut self,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
@@ -559,10 +576,10 @@ impl ReportQueries for RemoteApplication {
             .append_pair("start", &start.to_rfc3339())
             .append_pair("end", &end.to_rfc3339())
             .append_pair("now", &now.to_rfc3339());
-        let dto: ReportDto = self
-            .transport
-            .send(Method::GET, url, None::<&()>)
-            .map_err(|error| self.operation_error(error, None, None))?;
+        let dto: ReportDto = match self.transport.send(Method::GET, url, None::<&()>).await {
+            Ok(dto) => dto,
+            Err(error) => return Err(self.operation_error(error, None, None).await),
+        };
         let mut rows = Vec::with_capacity(dto.rows.len());
         let mut sum = 0_i64;
         for row in dto.rows {
@@ -580,8 +597,10 @@ impl ReportQueries for RemoteApplication {
         if sum != dto.total_us {
             return Err(protocol_failure("report total does not match rows"));
         }
-        let (snapshot, tracking, revision) = decode_snapshot(dto.snapshot)
-            .map_err(|error| self.operation_error(error, None, None))?;
+        let (snapshot, tracking, revision) = match decode_snapshot(dto.snapshot) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return Err(self.operation_error(error, None, None).await),
+        };
         self.snapshot = snapshot;
         self.tracking = tracking;
         self.revision = revision;
@@ -914,7 +933,6 @@ mod mutation_tests {
         RemoteApplication, RemoteError, RemoteFailureKind, classify_error, clear_tracking_result,
         decode_snapshot, map_application_error, report_cooldown_active, set_tracking_result,
     };
-    use tracker_application::TaskOperations;
     use tracker_domain::TaskName;
 
     fn at() -> DateTime<Utc> {
@@ -1195,8 +1213,8 @@ mod mutation_tests {
         );
     }
 
-    #[test]
-    fn pending_create_recognizes_a_committed_task_or_reuses_its_id_after_reconnect() {
+    #[tokio::test]
+    async fn pending_create_recognizes_a_committed_task_or_reuses_its_id_after_reconnect() {
         for (committed, recovering) in [(false, true), (true, true), (false, false)] {
             let pending_id = TaskId::generate();
             let pending_task = task(pending_id, false);
@@ -1292,6 +1310,7 @@ mod mutation_tests {
             client.last_failure = recovering.then_some(RemoteFailureKind::Unavailable);
             let result = client
                 .create_task(TaskName::new("Project").unwrap(), at())
+                .await
                 .unwrap();
             assert_eq!(result.id(), pending_id);
             assert!(client.pending_create.is_none());

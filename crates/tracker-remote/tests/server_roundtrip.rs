@@ -5,9 +5,8 @@ use chrono::{DateTime, Duration, Utc};
 use tempfile::TempDir;
 use tokio::sync::oneshot;
 use tracker_application::{
-    ApplicationError, ClearActiveTaskOutcome, ReportQueries, RepositoryError, SetActiveTaskOutcome,
-    TaskOperations, TaskOrdering, TaskQueries, TrackingOperations, WorklogCursor,
-    WorklogOperations, WorklogQueries,
+    ApplicationError, ClearActiveTaskOutcome, RepositoryError, SetActiveTaskOutcome, TaskOrdering,
+    WorklogCursor,
 };
 use tracker_domain::{TaskName, WorklogId, WorklogTimes};
 use tracker_protocol::{HealthDto, SnapshotDto, VERSION};
@@ -161,8 +160,8 @@ fn name(raw: &str) -> TaskName {
     TaskName::new(raw).unwrap()
 }
 
-#[test]
-fn remote_client_rejects_each_invalid_health_field_before_adopting_a_snapshot() {
+#[tokio::test]
+async fn remote_client_rejects_each_invalid_health_field_before_adopting_a_snapshot() {
     for health in [
         HealthDto {
             status: "ok".into(),
@@ -176,7 +175,7 @@ fn remote_client_rejects_each_invalid_health_field_before_adopting_a_snapshot() 
         let server = StubServer::with_health(health);
         let mut client = RemoteApplication::disconnected(&server.endpoint()).unwrap();
         assert!(matches!(
-            client.refresh(),
+            client.refresh().await,
             Err(tracker_remote::RemoteError::Protocol(_))
         ));
         assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
@@ -184,24 +183,30 @@ fn remote_client_rejects_each_invalid_health_field_before_adopting_a_snapshot() 
     }
 }
 
-#[test]
-fn uncommitted_task_create_retries_after_server_restart() {
+#[tokio::test]
+async fn uncommitted_task_create_retries_after_server_restart() {
     let mut server = TestServer::start();
-    let mut client = RemoteApplication::connect(&server.endpoint()).unwrap();
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
     let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
     server.stop();
     assert!(
         client
             .create_task(name("Created after restart"), at)
+            .await
             .is_err()
     );
 
     server.restart();
     let created = client
         .create_task(name("Created after restart"), at)
+        .await
         .unwrap();
     assert_eq!(created.name().as_str(), "Created after restart");
-    let observer = RemoteApplication::connect(&server.endpoint()).unwrap();
+    let observer = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
     assert_eq!(
         observer
             .tasks(TaskOrdering::RecentlyCreated)
@@ -212,17 +217,20 @@ fn uncommitted_task_create_retries_after_server_restart() {
     );
 }
 
-#[test]
-fn remote_client_round_trips_every_application_operation() {
+#[tokio::test]
+async fn remote_client_round_trips_every_application_operation() {
     fn assert_send<T: Send>() {}
     assert_send::<RemoteApplication>();
 
     let server = TestServer::start();
-    let mut client = RemoteApplication::connect(&server.endpoint()).unwrap();
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
     let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
-    let first = client.create_task(name("First project"), at).unwrap();
+    let first = client.create_task(name("First project"), at).await.unwrap();
     let second = client
         .create_task(name("Second project"), at + Duration::seconds(1))
+        .await
         .unwrap();
     let renamed = client
         .rename_task(
@@ -230,6 +238,7 @@ fn remote_client_round_trips_every_application_operation() {
             name("Renamed project"),
             at + Duration::seconds(2),
         )
+        .await
         .unwrap();
     assert_eq!(renamed.name().as_str(), "Renamed project");
     assert_eq!(
@@ -239,6 +248,7 @@ fn remote_client_round_trips_every_application_operation() {
 
     let started = match client
         .set_active_task(first.id(), at + Duration::seconds(3))
+        .await
         .unwrap()
     {
         SetActiveTaskOutcome::Started { worklog } => worklog,
@@ -247,11 +257,13 @@ fn remote_client_round_trips_every_application_operation() {
     assert!(matches!(
         client
             .set_active_task(first.id(), at + Duration::seconds(4))
+            .await
             .unwrap(),
         SetActiveTaskOutcome::AlreadyActive { .. }
     ));
     let switched = client
         .set_active_task(second.id(), at + Duration::seconds(10))
+        .await
         .unwrap();
     let second_active = match switched {
         SetActiveTaskOutcome::Switched {
@@ -266,6 +278,7 @@ fn remote_client_round_trips_every_application_operation() {
     assert!(matches!(
         client
             .clear_active_task(second_active.id(), at + Duration::seconds(20))
+            .await
             .unwrap(),
         ClearActiveTaskOutcome::Stopped { .. }
     ));
@@ -274,10 +287,10 @@ fn remote_client_round_trips_every_application_operation() {
         tracker_domain::TrackingState::Idle
     ));
 
-    let page = client.worklogs_for_task(first.id(), None).unwrap();
+    let page = client.worklogs_for_task(first.id(), None).await.unwrap();
     assert_eq!(page.worklogs.len(), 1);
     assert_eq!(page.worklogs[0].id(), started.id());
-    let all = client.all_worklogs(None).unwrap();
+    let all = client.all_worklogs(None).await.unwrap();
     assert!(
         all.worklogs
             .iter()
@@ -285,6 +298,7 @@ fn remote_client_round_trips_every_application_operation() {
     );
     let report = client
         .report_totals(at, at + Duration::seconds(30), at + Duration::seconds(30))
+        .await
         .unwrap();
     assert_eq!(report.total, Duration::seconds(17));
 
@@ -296,6 +310,7 @@ fn remote_client_round_trips_every_application_operation() {
             WorklogTimes::new(at + Duration::seconds(12), Some(at + Duration::seconds(11))),
             at + Duration::seconds(21),
         )
+        .await
         .unwrap_err();
     assert_eq!(
         invalid.failure().message(),
@@ -308,18 +323,22 @@ fn remote_client_round_trips_every_application_operation() {
             WorklogTimes::new(at + Duration::seconds(4), Some(at + Duration::seconds(9))),
             at + Duration::seconds(21),
         )
+        .await
         .unwrap();
     let moved = client
         .move_worklog(corrected.id(), first.id(), corrected.times(), second.id())
+        .await
         .unwrap();
     assert_eq!(moved.task_id(), second.id());
     let deleted = client
         .delete_completed_worklog(moved.id(), second.id(), moved.times())
+        .await
         .unwrap();
     assert_eq!(deleted.id(), started.id());
     assert!(
         client
             .worklogs_for_task(first.id(), None)
+            .await
             .unwrap()
             .worklogs
             .is_empty()
@@ -327,10 +346,12 @@ fn remote_client_round_trips_every_application_operation() {
 
     client
         .archive_task(first.id(), at + Duration::seconds(22))
+        .await
         .unwrap();
     assert!(client.task(first.id()).unwrap().is_archived());
     let archived = client
         .set_active_task(first.id(), at + Duration::seconds(23))
+        .await
         .unwrap_err();
     assert_eq!(
         archived.failure().message(),
@@ -338,6 +359,7 @@ fn remote_client_round_trips_every_application_operation() {
     );
     client
         .unarchive_task(first.id(), at + Duration::seconds(23))
+        .await
         .unwrap();
     assert!(!client.task(first.id()).unwrap().is_archived());
     assert!(
@@ -348,13 +370,17 @@ fn remote_client_round_trips_every_application_operation() {
     );
 }
 
-#[test]
-fn stale_client_refreshes_after_conflicting_write() {
+#[tokio::test]
+async fn stale_client_refreshes_after_conflicting_write() {
     let server = TestServer::start();
-    let mut first = RemoteApplication::connect(&server.endpoint()).unwrap();
+    let mut first = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
     let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
-    let task = first.create_task(name("Shared task"), at).unwrap();
-    let mut second = RemoteApplication::connect(&server.endpoint()).unwrap();
+    let task = first.create_task(name("Shared task"), at).await.unwrap();
+    let mut second = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
 
     first
         .rename_task(
@@ -362,6 +388,7 @@ fn stale_client_refreshes_after_conflicting_write() {
             name("Updated by first"),
             at + Duration::seconds(1),
         )
+        .await
         .unwrap();
     assert!(
         second
@@ -370,6 +397,7 @@ fn stale_client_refreshes_after_conflicting_write() {
                 name("Updated by second"),
                 at + Duration::seconds(2)
             )
+            .await
             .is_err()
     );
     assert_eq!(
@@ -382,26 +410,32 @@ fn stale_client_refreshes_after_conflicting_write() {
             name("Updated by second"),
             at + Duration::seconds(3),
         )
+        .await
         .unwrap();
-    first.refresh().unwrap();
+    first.refresh().await.unwrap();
     assert_eq!(
         first.task(task.id()).unwrap().name().as_str(),
         "Updated by second"
     );
 }
 
-#[test]
-fn a_history_page_does_not_authorize_writes_from_a_stale_task_catalog() {
+#[tokio::test]
+async fn a_history_page_does_not_authorize_writes_from_a_stale_task_catalog() {
     let server = TestServer::start();
-    let mut first = RemoteApplication::connect(&server.endpoint()).unwrap();
+    let mut first = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
     let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
-    let task = first.create_task(name("Shared task"), at).unwrap();
-    let mut second = RemoteApplication::connect(&server.endpoint()).unwrap();
+    let task = first.create_task(name("Shared task"), at).await.unwrap();
+    let mut second = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
 
     first
         .rename_task(task.id(), name("New name"), at + Duration::seconds(1))
+        .await
         .unwrap();
-    second.worklogs_for_task(task.id(), None).unwrap();
+    second.worklogs_for_task(task.id(), None).await.unwrap();
     assert_eq!(
         second.task(task.id()).unwrap().name().as_str(),
         "Shared task"
@@ -409,45 +443,53 @@ fn a_history_page_does_not_authorize_writes_from_a_stale_task_catalog() {
     assert!(
         second
             .rename_task(task.id(), name("Stale name"), at + Duration::seconds(2))
+            .await
             .is_err()
     );
     assert_eq!(second.task(task.id()).unwrap().name().as_str(), "New name");
 }
 
-#[test]
-fn disconnected_client_keeps_last_confirmed_state_and_rejects_writes() {
+#[tokio::test]
+async fn disconnected_client_keeps_last_confirmed_state_and_rejects_writes() {
     let server = TestServer::start();
-    let mut client = RemoteApplication::connect(&server.endpoint()).unwrap();
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
     let count = client.tasks(TaskOrdering::RecentlyCreated).len();
     assert!(count > 0);
     drop(server);
 
-    let error = client.refresh().unwrap_err();
+    let error = client.refresh().await.unwrap_err();
     assert!(error.is_unavailable());
     assert_eq!(client.last_failure(), Some(RemoteFailureKind::Unavailable));
     assert_eq!(client.tasks(TaskOrdering::RecentlyCreated).len(), count);
     let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
-    assert!(client.create_task(name("Offline task"), at).is_err());
+    assert!(client.create_task(name("Offline task"), at).await.is_err());
     assert_eq!(client.tasks(TaskOrdering::RecentlyCreated).len(), count);
     assert!(matches!(
         client
-            .report_totals(at, at + Duration::seconds(1), at)
+            .report_totals(at, at + Duration::seconds(1), at).await
             .unwrap_err(),
         ApplicationError::Repository(RepositoryError::Backend { message })
             if message == "tracker server is unavailable"
     ));
 }
 
-#[test]
-fn task_history_rejects_a_cursor_from_another_task_and_refreshes_active_aggregates() {
+#[tokio::test]
+async fn task_history_rejects_a_cursor_from_another_task_and_refreshes_active_aggregates() {
     let server = TestServer::start();
-    let mut first = RemoteApplication::connect(&server.endpoint()).unwrap();
+    let mut first = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
     let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
-    let requested = first.create_task(name("Requested"), at).unwrap();
+    let requested = first.create_task(name("Requested"), at).await.unwrap();
     let active = first
         .create_task(name("Active"), at + Duration::seconds(1))
+        .await
         .unwrap();
-    let mut second = RemoteApplication::connect(&server.endpoint()).unwrap();
+    let mut second = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
     let cursor = WorklogCursor {
         task_id: active.id(),
         start: at,
@@ -457,20 +499,32 @@ fn task_history_rejects_a_cursor_from_another_task_and_refreshes_active_aggregat
     assert!(
         second
             .worklogs_for_task(requested.id(), Some(&cursor))
+            .await
             .is_err()
     );
 
     let requested_at = at + Duration::seconds(2);
-    let requested_worklog = match first.set_active_task(requested.id(), requested_at).unwrap() {
+    let requested_worklog = match first
+        .set_active_task(requested.id(), requested_at)
+        .await
+        .unwrap()
+    {
         SetActiveTaskOutcome::Started { worklog } => worklog,
         other => panic!("expected started worklog, got {other:?}"),
     };
     first
         .clear_active_task(requested_worklog.id(), at + Duration::seconds(3))
+        .await
         .unwrap();
     let started_at = at + Duration::seconds(10);
-    first.set_active_task(active.id(), started_at).unwrap();
-    let page = second.worklogs_for_task(requested.id(), None).unwrap();
+    first
+        .set_active_task(active.id(), started_at)
+        .await
+        .unwrap();
+    let page = second
+        .worklogs_for_task(requested.id(), None)
+        .await
+        .unwrap();
     assert_eq!(page.worklogs.len(), 1);
     assert_eq!(
         page.snapshot.requested_task_latest_work_start,
@@ -500,40 +554,51 @@ fn task_history_rejects_a_cursor_from_another_task_and_refreshes_active_aggregat
     );
 }
 
-#[test]
-fn task_history_returns_a_cursor_for_a_full_page() {
+#[tokio::test]
+async fn task_history_returns_a_cursor_for_a_full_page() {
     let server = TestServer::start();
-    let mut client = RemoteApplication::connect(&server.endpoint()).unwrap();
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
     let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
-    let task = client.create_task(name("Paged history"), at).unwrap();
+    let task = client.create_task(name("Paged history"), at).await.unwrap();
     for index in 0..51 {
         let start = at + Duration::seconds(2 * index + 1);
-        let worklog = match client.set_active_task(task.id(), start).unwrap() {
+        let worklog = match client.set_active_task(task.id(), start).await.unwrap() {
             SetActiveTaskOutcome::Started { worklog } => worklog,
             other => panic!("expected started worklog, got {other:?}"),
         };
         client
             .clear_active_task(worklog.id(), start + Duration::seconds(1))
+            .await
             .unwrap();
     }
-    let first = client.worklogs_for_task(task.id(), None).unwrap();
+    let first = client.worklogs_for_task(task.id(), None).await.unwrap();
     assert_eq!(first.worklogs.len(), 50);
     let cursor = first.next_cursor.expect("more worklogs remain");
     assert_eq!(cursor.task_id, task.id());
-    let second = client.worklogs_for_task(task.id(), Some(&cursor)).unwrap();
+    let second = client
+        .worklogs_for_task(task.id(), Some(&cursor))
+        .await
+        .unwrap();
     assert_eq!(second.worklogs.len(), 1);
     assert_ne!(first.worklogs[49].id(), second.worklogs[0].id());
 }
 
-#[test]
-fn global_history_adopts_other_client_changes_and_reports_exclude_the_end_instant() {
+#[tokio::test]
+async fn global_history_adopts_other_client_changes_and_reports_exclude_the_end_instant() {
     let server = TestServer::start();
-    let mut first = RemoteApplication::connect(&server.endpoint()).unwrap();
-    let mut second = RemoteApplication::connect(&server.endpoint()).unwrap();
+    let mut first = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
+    let mut second = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
     let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
-    let task = first.create_task(name("Shared report"), at).unwrap();
+    let task = first.create_task(name("Shared report"), at).await.unwrap();
     let started = match first
         .set_active_task(task.id(), at + Duration::seconds(10))
+        .await
         .unwrap()
     {
         SetActiveTaskOutcome::Started { worklog } => worklog,
@@ -541,9 +606,10 @@ fn global_history_adopts_other_client_changes_and_reports_exclude_the_end_instan
     };
     first
         .clear_active_task(started.id(), at + Duration::seconds(20))
+        .await
         .unwrap();
 
-    let feed = second.all_worklogs(None).unwrap();
+    let feed = second.all_worklogs(None).await.unwrap();
     assert_eq!(feed.worklogs[0].id(), started.id());
     assert!(
         feed.snapshot
@@ -559,6 +625,7 @@ fn global_history_adopts_other_client_changes_and_reports_exclude_the_end_instan
                 at + Duration::seconds(20),
                 at + Duration::seconds(30)
             )
+            .await
             .unwrap()
             .total,
         Duration::seconds(5)
@@ -570,6 +637,7 @@ fn global_history_adopts_other_client_changes_and_reports_exclude_the_end_instan
                 at + Duration::seconds(30),
                 at + Duration::seconds(30)
             )
+            .await
             .unwrap()
             .total,
         Duration::zero()

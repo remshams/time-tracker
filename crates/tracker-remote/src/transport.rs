@@ -1,6 +1,6 @@
-use std::{io::Read, time::Duration};
+use std::time::Duration;
 
-use reqwest::{Method, StatusCode, Url, blocking::Client};
+use reqwest::{Client, Method, StatusCode, Url, header::CONTENT_TYPE};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::RemoteError;
@@ -45,35 +45,44 @@ impl Transport {
             .expect("validated endpoint accepts fixed API paths")
     }
 
-    pub(crate) fn send<T: DeserializeOwned, B: Serialize>(
+    pub(crate) async fn send<T: DeserializeOwned, B: Serialize>(
         &self,
         method: Method,
         url: Url,
         body: Option<&B>,
     ) -> Result<T, RemoteError> {
         let retry_write = method != Method::GET && method != Method::HEAD;
+        let encoded = body
+            .map(serde_json::to_vec)
+            .transpose()
+            .map_err(|error| RemoteError::Protocol(format!("invalid request body: {error}")))?;
         let send_once = || {
             let mut request = self.client.request(method.clone(), url.clone());
-            if let Some(body) = body {
-                request = request.json(body);
+            if let Some(body) = &encoded {
+                request = request
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.clone());
             }
             request.send()
         };
-        let response = match send_once() {
+        let mut response = match send_once().await {
             Ok(response) => response,
-            Err(_) if retry_write => {
-                send_once().map_err(|error| RemoteError::Unavailable(error.to_string()))?
-            }
+            Err(_) if retry_write => send_once()
+                .await
+                .map_err(|error| RemoteError::Unavailable(error.to_string()))?,
             Err(error) => return Err(RemoteError::Unavailable(error.to_string())),
         };
         let status = response.status();
         let mut bytes = Vec::new();
-        response
-            .take(MAX_RESPONSE_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|error| RemoteError::Unavailable(error.to_string()))?;
-        if bytes.len() as u64 > MAX_RESPONSE_BYTES {
-            return Err(RemoteError::Protocol("server response is too large".into()));
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| RemoteError::Unavailable(error.to_string()))?
+        {
+            if chunk.len() as u64 > MAX_RESPONSE_BYTES - bytes.len() as u64 {
+                return Err(RemoteError::Protocol("server response is too large".into()));
+            }
+            bytes.extend_from_slice(&chunk);
         }
         if !status.is_success() {
             return Err(RemoteError::Http {
@@ -93,13 +102,20 @@ pub(crate) fn is_unavailable_status(status: StatusCode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{io::Write, net::TcpListener, thread};
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
 
     fn serve_json(body: Vec<u8>) -> (String, thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}/", listener.local_addr().unwrap());
         let worker = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
             let mut request = [0_u8; 1024];
             assert!(stream.read(&mut request).unwrap() > 0);
             let header = format!(
@@ -118,8 +134,8 @@ mod tests {
         assert!(Transport::new("http://localhost:8118/other").is_err());
     }
 
-    #[test]
-    fn retry_sends_the_identical_request_after_a_lost_response() {
+    #[tokio::test]
+    async fn retry_sends_the_identical_request_after_a_lost_response() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}/", listener.local_addr().unwrap());
         let server = thread::spawn(move || {
@@ -165,6 +181,7 @@ mod tests {
         let body = serde_json::json!({"request_id": "stable-id", "task_id": "stable-task"});
         let response: serde_json::Value = transport
             .send(Method::POST, transport.url("v1/tasks"), Some(&body))
+            .await
             .unwrap();
         assert_eq!(response, serde_json::json!({"ok": true}));
         let bodies = server.join().unwrap();
@@ -172,8 +189,8 @@ mod tests {
         assert_eq!(bodies[0], bodies[1]);
     }
 
-    #[test]
-    fn a_read_with_a_lost_response_is_not_retried() {
+    #[tokio::test]
+    async fn a_read_with_a_lost_response_is_not_retried() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}/", listener.local_addr().unwrap());
         let server = thread::spawn(move || {
@@ -198,44 +215,48 @@ mod tests {
             false
         });
         let transport = Transport::new(&endpoint).unwrap();
-        let result: Result<bool, _> =
-            transport.send(Method::GET, transport.url("v1/snapshot"), None::<&()>);
+        let result: Result<bool, _> = transport
+            .send(Method::GET, transport.url("v1/snapshot"), None::<&()>)
+            .await;
         assert!(result.is_err());
         assert!(!server.join().unwrap());
     }
 
-    #[test]
-    fn accepts_a_large_response_within_the_sixteen_megabyte_limit() {
+    #[tokio::test]
+    async fn accepts_a_large_response_within_the_sixteen_megabyte_limit() {
         let payload = format!("\"{}\"", "x".repeat(2_000_000)).into_bytes();
         let (endpoint, worker) = serve_json(payload);
         let transport = Transport::new(&endpoint).unwrap();
         let received: String = transport
             .send(Method::GET, transport.url("v1/snapshot"), None::<&()>)
+            .await
             .unwrap();
         assert_eq!(received.len(), 2_000_000);
         worker.join().unwrap();
     }
 
-    #[test]
-    fn rejects_a_response_larger_than_sixteen_megabytes() {
+    #[tokio::test]
+    async fn rejects_a_response_larger_than_sixteen_megabytes() {
         let payload = format!("\"{}\"", "x".repeat(16 * 1024 * 1024)).into_bytes();
         let (endpoint, worker) = serve_json(payload);
         let transport = Transport::new(&endpoint).unwrap();
-        let result: Result<String, _> =
-            transport.send(Method::GET, transport.url("v1/snapshot"), None::<&()>);
+        let result: Result<String, _> = transport
+            .send(Method::GET, transport.url("v1/snapshot"), None::<&()>)
+            .await;
         assert!(
             matches!(result, Err(RemoteError::Protocol(message)) if message == "server response is too large")
         );
         worker.join().unwrap();
     }
 
-    #[test]
-    fn accepts_a_response_at_the_exact_limit() {
+    #[tokio::test]
+    async fn accepts_a_response_at_the_exact_limit() {
         let payload = format!("\"{}\"", "x".repeat(16 * 1024 * 1024 - 2)).into_bytes();
         let (endpoint, worker) = serve_json(payload);
         let transport = Transport::new(&endpoint).unwrap();
         let received: String = transport
             .send(Method::GET, transport.url("v1/snapshot"), None::<&()>)
+            .await
             .unwrap();
         assert_eq!(received.len(), 16 * 1024 * 1024 - 2);
         worker.join().unwrap();
