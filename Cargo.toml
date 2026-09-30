@@ -9,6 +9,7 @@ members = [
     "crates/tracker-remote",
     "apps/tui",
     "apps/cli",
+    "apps/swiftui/bridge",
 ]
 
 [workspace.package]

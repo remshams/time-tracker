@@ -2977,6 +2977,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracker-swift-bridge"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracker-application",
+ "tracker-domain",
+ "tracker-storage",
+]
+
+[[package]]
 name = "tracker-tui"
 version = "0.1.0"
 dependencies = [
