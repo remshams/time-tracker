@@ -1,6 +1,6 @@
 # Time Tracker
 
-A time tracker written in Rust. `tt` provides the keyboard-driven TUI, and `tt-cli` provides commands for scripts and external agents. Both run locally or connect to a separate `tt` server on Linux and macOS. `plan.md` is the source of truth for scope and milestones.
+A time tracker written in Rust. `tt` provides the keyboard-driven TUI, and `tt-cli` provides commands for scripts and external agents. Both run locally or connect to a separate `tt` server on Linux and macOS. A native macOS proof of concept is in [`apps/swiftui`](apps/swiftui/README.md). `plan.md` is the source of truth for scope and milestones.
 
 ## Current state
 
