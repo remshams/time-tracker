@@ -3,4 +3,5 @@ mutants.out*
 lcov.info
 *.profraw
 __pycache__/
-apps/swiftui/.build/
+xcuserdata/
+DerivedData/
