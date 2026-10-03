@@ -17,6 +17,10 @@ struct TimeTrackerApp: App {
         MenuBarExtra("Time Tracker", systemImage: "clock", isInserted: $menuBarInserted) {
             TrackerMenu(store: store)
         }
+
+        Settings {
+            ConnectionSettingsView(store: store)
+        }
     }
 }
 
@@ -25,6 +29,8 @@ private struct TrackerMenu: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        Text(store.connectionStatusText)
+        if store.isStale { Text("Showing last confirmed state") }
         Text(store.runningTaskName)
         if let elapsed = store.elapsed {
             Text(clockDuration(elapsed))
@@ -93,20 +99,52 @@ private struct TrackerWindow: View {
             .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 400)
         } detail: {
             VStack(spacing: 0) {
+                ConnectionSummary(store: store)
+                Divider()
                 TimerSummary(store: store)
                 Divider()
                 TaskDetails(store: store)
             }
         }
         .frame(minWidth: 760, minHeight: 480)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            store.refresh()
-        }
         .alert("Could not change tracking", isPresented: trackingFailurePresented) {
             Button("OK", role: .cancel) { store.dismissTrackingError() }
         } message: {
             Text(store.trackingError ?? "Please try again.")
         }
+    }
+}
+
+private struct ConnectionSummary: View {
+    @ObservedObject var store: TrackerStore
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: store.connectionSettings.mode == .local ? "internaldrive" : "network")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(store.connectionSettings.mode == .local
+                     ? "Local database" : store.connectionSettings.serverURL)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                    .help(store.connectionSettings.serverURL)
+                Text(store.connectionStatusText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .help(store.connectionMessage ?? store.connectionStatusText)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if store.isBusy {
+                ProgressView().controlSize(.small)
+            } else if store.isStale {
+                Button("Retry") { store.refresh() }
+            }
+            ConnectionSettingsButton(store: store)
+                .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 12)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 
@@ -131,7 +169,7 @@ private struct TimerSummary: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(store.elapsed.map(clockDuration) ?? "Idle")
+            Text(store.timerDisplayText)
                 .font(.system(.title2, design: .monospaced).weight(.medium))
                 .monospacedDigit()
                 .fixedSize()
@@ -201,6 +239,7 @@ private struct TaskDetails: View {
 
                         if store.hasMoreHistory {
                             Button("Load older worklogs") { store.loadOlder() }
+                                .disabled(store.isBusy || store.isStale)
                                 .padding(.top, 8)
                         }
                     }
@@ -229,6 +268,7 @@ private struct TaskDetails: View {
                 Label("Stop tracking", systemImage: "stop.fill")
             }
             .buttonStyle(.bordered)
+            .disabled(!store.canStopTracking)
             .help("Stop the running timer and save this worklog.")
         } else {
             Button { store.startTracking(taskID: taskID) } label: {
