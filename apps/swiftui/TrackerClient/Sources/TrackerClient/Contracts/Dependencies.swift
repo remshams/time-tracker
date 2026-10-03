@@ -1,0 +1,34 @@
+import Foundation
+
+public protocol TrackerClient: Sendable {
+    func openConfigured(_ settings: ConnectionSettings) async throws -> TrackerSnapshot
+    func test(_ settings: ConnectionSettings) async throws
+    func connect(_ settings: ConnectionSettings) async throws -> TrackerSnapshot
+    func refresh(settings: ConnectionSettings) async throws -> TrackerSnapshot
+    func snapshot() async throws -> TrackerSnapshot
+    func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws -> TrackerSnapshot
+    func stopTracking(worklogID: String, occurredAt: String) async throws -> TrackerSnapshot
+    func history(taskID: String, cursor: String?) async throws -> HistoryPage
+}
+
+@MainActor
+public protocol TrackerClock {
+    var now: Date { get }
+    var uptime: TimeInterval { get }
+}
+
+public protocol TrackerCancellation {
+    func cancel()
+}
+
+@MainActor
+public protocol TrackerScheduler {
+    func schedule(after: TimeInterval, repeating: Bool, tolerance: TimeInterval,
+                  action: @escaping @MainActor () -> Void) -> any TrackerCancellation
+}
+
+@MainActor
+public protocol ConnectionSettingsRepository {
+    func load() -> ConnectionSettings?
+    func save(_ settings: ConnectionSettings)
+}
