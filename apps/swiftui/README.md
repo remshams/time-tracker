@@ -1,8 +1,8 @@
 # Native macOS proof of concept
 
-This SwiftUI app reads the same local `tt.db` as the terminal client. It shows active and archived tasks, the running timer, and paged worklog history. The app is read-only. It refreshes database state once a second and also refreshes when macOS activates its window.
+This SwiftUI app uses the same local `tt.db` as the terminal client. It shows active and archived tasks, the running timer, and paged worklog history. You can start, switch, and stop tracking. It refreshes database state once a second and also refreshes when macOS activates its window.
 
-The Xcode app target calls a small Rust static library through a bridging header. Its Build Rust bridge phase compiles that library before Xcode links the app. Rust opens the secured default database, seeds a new empty database once, and uses `TrackerApplication` for task and worklog reads. Swift never opens SQLite directly.
+The Xcode app target calls a small Rust static library through a bridging header. Its Build Rust bridge phase compiles that library before Xcode links the app. Rust opens the secured default database, seeds a new empty database once, and uses `TrackerApplication` for reads and tracking commands. Swift never opens SQLite directly.
 
 ## Build and run on a Mac
 
@@ -17,6 +17,14 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 Xcode keeps build output in DerivedData. The project signs local builds ad hoc and does not require an Apple Developer account for the current app capabilities.
 
 The task list uses the native sidebar. The segmented control switches between Active and Archived; each tab remembers its selected task. The details pane shows the selected task's worklogs, 50 per page. The macOS menu bar has a clock item with the current task, elapsed time, a command to open the window, and Quit. Closing the window leaves the menu bar item running.
+
+## Tracking
+
+Select an active task and click Start tracking in its details. The button changes to Stop tracking while that task is running. Select another task and click Switch tracking to end the previous worklog and begin the new one at the same instant. Archived tasks cannot start tracking.
+
+The timer and history update after each command. Tracking errors appear in an alert and refresh the displayed state. If another client switched tasks before your Stop click, the app reports the change and leaves that client's new timer running.
+
+To check on a Mac, start a task, confirm its timer and running worklog appear, then select a different task and switch tracking. Confirm the first task's worklog is stopped. Stop the second task and confirm the timer shows Idle and its worklog has an end time. Relaunch the app to confirm the saved history remains.
 
 ## Appearance
 

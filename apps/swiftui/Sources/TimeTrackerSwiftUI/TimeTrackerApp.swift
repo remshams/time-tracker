@@ -46,6 +46,12 @@ private struct TrackerWindow: View {
         Binding(get: { store.selectedTaskID }, set: { store.select($0) })
     }
 
+    private var trackingFailurePresented: Binding<Bool> {
+        Binding(get: { store.trackingError != nil }, set: {
+            if !$0 { store.dismissTrackingError() }
+        })
+    }
+
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
@@ -95,6 +101,11 @@ private struct TrackerWindow: View {
         .frame(minWidth: 760, minHeight: 480)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             store.refresh()
+        }
+        .alert("Could not change tracking", isPresented: trackingFailurePresented) {
+            Button("OK", role: .cancel) { store.dismissTrackingError() }
+        } message: {
+            Text(store.trackingError ?? "Please try again.")
         }
     }
 }
@@ -148,15 +159,23 @@ private struct TaskDetails: View {
                         .textSelection(.enabled)
                         .help(task.name)
 
-                    if task.archived {
-                        Label("Archived", systemImage: "archivebox")
-                            .foregroundStyle(.secondary)
-                    } else if let active = store.active, active.taskId == task.id {
-                        Label("Running since \(localTimestamp(active.start))", systemImage: "timer")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Label("Active", systemImage: "checklist")
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        if task.archived {
+                            Label("Archived", systemImage: "archivebox")
+                                .foregroundStyle(.secondary)
+                        } else if let active = store.active, active.taskId == task.id {
+                            Label("Running since \(localTimestamp(active.start))", systemImage: "timer")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Label("Active", systemImage: "checklist")
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer(minLength: 12)
+                        if !task.archived {
+                            trackingButton(taskID: task.id)
+                                .fixedSize()
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -198,10 +217,29 @@ private struct TaskDetails: View {
                 .padding(24)
             }
         }
-        .foregroundStyle(.primary)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(store.selectedTask?.name ?? "Time Tracker")
+    }
+
+    @ViewBuilder
+    private func trackingButton(taskID: String) -> some View {
+        if let active = store.active, active.taskId == taskID {
+            Button { store.stopTracking(worklogID: active.id) } label: {
+                Label("Stop tracking", systemImage: "stop.fill")
+            }
+            .buttonStyle(.bordered)
+            .help("Stop the running timer and save this worklog.")
+        } else {
+            Button { store.startTracking(taskID: taskID) } label: {
+                Label(store.active == nil ? "Start tracking" : "Switch tracking", systemImage: "play.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!store.canStartSelectedTask)
+            .help(store.active == nil
+                  ? "Start a timer for this task."
+                  : "Stop the current timer and start tracking this task.")
+        }
     }
 
     @ViewBuilder

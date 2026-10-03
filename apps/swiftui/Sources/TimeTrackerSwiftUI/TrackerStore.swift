@@ -66,6 +66,14 @@ private final class RustBridge {
         try decode(tt_bridge_snapshot(handle, refresh))
     }
 
+    func startTracking(taskID: String) throws -> TrackerSnapshot {
+        try taskID.withCString { try decode(tt_bridge_start_tracking(handle, $0)) }
+    }
+
+    func stopTracking(worklogID: String) throws -> TrackerSnapshot {
+        try worklogID.withCString { try decode(tt_bridge_stop_tracking(handle, $0)) }
+    }
+
     func history(taskID: String, cursor: String?) throws -> HistoryPage {
         try taskID.withCString { taskPointer in
             if let cursor {
@@ -91,6 +99,7 @@ final class TrackerStore: ObservableObject {
     @Published private(set) var worklogs: [WorklogItem] = []
     @Published private(set) var nextCursor: String?
     @Published private(set) var error: String?
+    @Published private(set) var trackingError: String?
     @Published private(set) var historyUnavailable = false
     @Published private(set) var selectedTaskID: String?
     @Published private(set) var tab: TaskTab = .active
@@ -121,6 +130,10 @@ final class TrackerStore: ObservableObject {
     var visibleTasks: [TaskItem] { tasks.filter { $0.archived == (tab == .archived) } }
     var selectedTask: TaskItem? { tasks.first { $0.id == selectedTaskID } }
     var hasMoreHistory: Bool { nextCursor != nil }
+    var canStartSelectedTask: Bool {
+        guard bridge != nil, let task = selectedTask else { return false }
+        return !task.archived && active?.taskId != task.id
+    }
     var runningTaskName: String {
         guard let active else { return "No timer running" }
         return tasks.first { $0.id == active.taskId }?.name ?? "Unknown task"
@@ -161,6 +174,29 @@ final class TrackerStore: ObservableObject {
     }
 
     func retryHistory() { loadHistory() }
+
+    func startTracking(taskID: String) {
+        guard let bridge, let task = tasks.first(where: { $0.id == taskID }), !task.archived else { return }
+        changeTracking { try bridge.startTracking(taskID: taskID) }
+    }
+
+    func stopTracking(worklogID: String) {
+        guard let bridge else { return }
+        changeTracking { try bridge.stopTracking(worklogID: worklogID) }
+    }
+
+    func dismissTrackingError() { trackingError = nil }
+
+    private func changeTracking(_ command: () throws -> TrackerSnapshot) {
+        trackingError = nil
+        do {
+            apply(try command())
+        } catch {
+            let message = error.localizedDescription
+            refresh()
+            trackingError = message
+        }
+    }
 
     func loadOlder() {
         guard let bridge, let taskID = selectedTaskID, let nextCursor else { return }
