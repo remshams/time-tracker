@@ -18,4 +18,10 @@ Xcode keeps build output in DerivedData. The project signs local builds ad hoc a
 
 The task list uses the native sidebar. The segmented control switches between Active and Archived; each tab remembers its selected task. The details pane shows the selected task's worklogs, 50 per page. The macOS menu bar has a clock item with the current task, elapsed time, a command to open the window, and Quit. Closing the window leaves the menu bar item running.
 
+## Appearance
+
+The app follows macOS light and dark mode. Text, window backgrounds, worklog cards, and borders use system colors. The sidebar keeps macOS's native selection appearance. The task heading stays above the scrolling history and wraps to three lines. Hover over a task name to read its full text.
+
+To check the layout on a Mac, keep the app open and switch between Light and Dark in System Settings > Appearance. Check the window title, timer, selected task, worklog dates, and durations in both modes. Resize the window to its minimum size, scroll a task's history, and confirm the heading remains fully visible. Also check the menu bar item and the Archived tab.
+
 If the build or launch fails, send the error text from Xcode's Report navigator. The Build Rust bridge phase is listed there separately from Swift compilation and linking.

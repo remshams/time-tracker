@@ -12,6 +12,7 @@ struct TimeTrackerApp: App {
             TrackerWindow(store: store)
         }
         .defaultSize(width: 1100, height: 760)
+        .windowToolbarStyle(.unifiedCompact)
 
         MenuBarExtra("Time Tracker", systemImage: "clock", isInserted: $menuBarInserted) {
             TrackerMenu(store: store)
@@ -46,66 +47,89 @@ private struct TrackerWindow: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 16) {
-                Image(systemName: "clock")
-                Text(store.runningTaskName)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(store.elapsed.map(clockDuration) ?? "Idle")
-                    .monospacedDigit()
-                    .font(.title3)
-            }
-            .padding(.horizontal, 20)
-            .frame(height: 56)
-            .foregroundStyle(.white)
-            .background(Color(nsColor: .darkGray))
-
-            NavigationSplitView {
-                VStack(spacing: 0) {
-                    Picker("Tasks", selection: tabBinding) {
-                        ForEach(TaskTab.allCases) { tab in
-                            Text(tab.rawValue).tag(tab)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .padding(12)
-
-                    List(selection: selectionBinding) {
-                        ForEach(store.visibleTasks) { task in
-                            Label {
-                                Text(task.name).lineLimit(1)
-                            } icon: {
-                                Image(systemName: store.active?.taskId == task.id
-                                      ? "circle.fill" : "checklist")
-                                    .foregroundColor(store.active?.taskId == task.id
-                                                     ? .green : .secondary)
-                            }
-                            .tag(task.id)
-                        }
-                    }
-                    .listStyle(.sidebar)
-                    .overlay {
-                        if store.visibleTasks.isEmpty {
-                            VStack(spacing: 8) {
-                                Image(systemName: "tray")
-                                Text("No \(store.tab.rawValue.lowercased()) tasks")
-                            }
-                            .foregroundStyle(.secondary)
-                        }
+        NavigationSplitView {
+            VStack(spacing: 0) {
+                Picker("Tasks", selection: tabBinding) {
+                    ForEach(TaskTab.allCases) { tab in
+                        Text(tab.rawValue).tag(tab)
                     }
                 }
-                .navigationTitle("Tasks")
-                .navigationSplitViewColumnWidth(min: 240, ideal: 320, max: 480)
-            } detail: {
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(12)
+
+                List(selection: selectionBinding) {
+                    ForEach(store.visibleTasks) { task in
+                        Label {
+                            Text(task.name)
+                                .lineLimit(2)
+                                .padding(.vertical, 4)
+                        } icon: {
+                            Image(systemName: store.active?.taskId == task.id
+                                  ? "timer" : "checklist")
+                        }
+                        .tag(task.id)
+                        .help(task.name)
+                    }
+                }
+                .listStyle(.sidebar)
+                .overlay {
+                    if store.visibleTasks.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "tray")
+                            Text("No \(store.tab.rawValue.lowercased()) tasks")
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Tasks")
+            .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 400)
+        } detail: {
+            VStack(spacing: 0) {
+                TimerSummary(store: store)
+                Divider()
                 TaskDetails(store: store)
             }
         }
-        .frame(minWidth: 480, minHeight: 420)
+        .frame(minWidth: 760, minHeight: 480)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             store.refresh()
         }
+    }
+}
+
+private struct TimerSummary: View {
+    @ObservedObject var store: TrackerStore
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: store.active == nil ? "clock" : "timer")
+                .font(.title2)
+                .foregroundStyle(store.active == nil ? Color.secondary : Color.accentColor)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(store.active == nil ? "Timer" : "Currently tracking")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(store.runningTaskName)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(store.runningTaskName)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(store.elapsed.map(clockDuration) ?? "Idle")
+                .font(.system(.title2, design: .monospaced).weight(.medium))
+                .monospacedDigit()
+                .fixedSize()
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 }
 
@@ -113,51 +137,70 @@ private struct TaskDetails: View {
     @ObservedObject var store: TrackerStore
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                if let task = store.selectedTask {
+        VStack(alignment: .leading, spacing: 0) {
+            if let task = store.selectedTask {
+                VStack(alignment: .leading, spacing: 10) {
                     Text(task.name)
-                        .font(.largeTitle)
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
+                        .help(task.name)
 
                     if task.archived {
-                        Text("Archived").foregroundStyle(.secondary)
-                    } else if let active = store.active, active.taskId == task.id {
-                        Text("Running since \(localTimestamp(active.start))")
+                        Label("Archived", systemImage: "archivebox")
                             .foregroundStyle(.secondary)
-                        Text(clockDuration(store.elapsed ?? 0))
-                            .font(.title)
-                            .monospacedDigit()
-                            .foregroundStyle(.green)
+                    } else if let active = store.active, active.taskId == task.id {
+                        Label("Running since \(localTimestamp(active.start))", systemImage: "timer")
+                            .foregroundStyle(.secondary)
                     } else {
-                        Text("Active").foregroundStyle(.secondary)
+                        Label("Active", systemImage: "checklist")
+                            .foregroundStyle(.secondary)
                     }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
 
-                    Divider()
-                    Text("Worklogs").font(.title2)
-                    errorView
+                Divider()
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        Text("Worklogs")
+                            .font(.title3.weight(.semibold))
+                            .padding(.bottom, 4)
+                        errorView
 
-                    if store.worklogs.isEmpty && store.error == nil {
-                        Text("No worklogs yet.").foregroundStyle(.secondary)
+                        if store.worklogs.isEmpty && store.error == nil {
+                            Label("No worklogs yet", systemImage: "clock")
+                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 12)
+                        }
+
+                        ForEach(store.worklogs) { worklog in
+                            WorklogRow(worklog: worklog, active: store.active, elapsed: store.elapsed)
+                        }
+
+                        if store.hasMoreHistory {
+                            Button("Load older worklogs") { store.loadOlder() }
+                                .padding(.top, 8)
+                        }
                     }
-
-                    ForEach(store.worklogs) { worklog in
-                        WorklogRow(worklog: worklog, active: store.active, elapsed: store.elapsed)
-                    }
-
-                    if store.hasMoreHistory {
-                        Button("Load older worklogs") { store.loadOlder() }
-                            .padding(.top, 8)
-                    }
-                } else {
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(24)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 16) {
                     errorView
                     Label("Select a task", systemImage: "checklist")
+                        .font(.title3)
                         .foregroundStyle(.secondary)
                 }
+                .padding(24)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(24)
         }
+        .foregroundStyle(.primary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(store.selectedTask?.name ?? "Time Tracker")
     }
 
@@ -165,14 +208,24 @@ private struct TaskDetails: View {
     private var errorView: some View {
         if let error = store.error {
             VStack(alignment: .leading, spacing: 8) {
-                Text(error).foregroundStyle(.red)
+                Label {
+                    Text(error).textSelection(.enabled)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Color(nsColor: .systemRed))
+                }
+                .foregroundStyle(.primary)
                 if store.historyUnavailable {
                     Button("Retry") { store.retryHistory() }
                 }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+            }
         }
     }
 }
@@ -192,17 +245,25 @@ private struct WorklogRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(localDay(worklog.start))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
                 Text("\(localTimestamp(worklog.start)) – \(worklog.end.map(localTimestamp) ?? "Running")")
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
             Spacer(minLength: 12)
             Text(clockDuration(duration))
+                .font(.system(.title3, design: .monospaced).weight(.medium))
+                .foregroundStyle(.primary)
                 .monospacedDigit()
+                .fixedSize()
         }
-        .padding(12)
+        .padding(16)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+        }
     }
 }
 
