@@ -12,9 +12,14 @@ crate-type = ["staticlib", "rlib"]
 chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 tracker-application = { path = "../../../crates/tracker-application" }
 tracker-domain = { path = "../../../crates/tracker-domain" }
+tracker-remote = { path = "../../../crates/tracker-remote" }
 tracker-storage = { path = "../../../crates/tracker-storage" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+axum = { workspace = true }
+tracker-server = { path = "../../../crates/tracker-server" }
+tracker-protocol = { path = "../../../crates/tracker-protocol" }

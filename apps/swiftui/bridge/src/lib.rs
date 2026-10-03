@@ -8,14 +8,16 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tracker_application::{
-    ApplicationFailureCategory, DEFAULT_TASK_NAMES, TaskOrdering, TaskQueries, TrackerApplication,
-    TrackingOperations, WorklogCursor, WorklogQueries,
+    ApplicationFailureCategory, DEFAULT_TASK_NAMES, TaskOrdering, TrackerApplication, WorklogCursor,
 };
+
+mod backend;
+use backend::{Backend, BridgeError};
 use tracker_domain::{TaskId, TaskName, TrackingState, WorklogId};
 use tracker_storage::{SqliteRepository, default_database_path, ensure_app_data_dir};
 
 pub struct Bridge {
-    application: TrackerApplication<SqliteRepository>,
+    application: Backend,
 }
 
 #[derive(Serialize)]
@@ -63,7 +65,7 @@ fn worklog_json(worklog: &tracker_domain::Worklog) -> WorklogJson {
     }
 }
 
-fn snapshot(application: &TrackerApplication<SqliteRepository>) -> SnapshotJson {
+fn snapshot(application: &Backend) -> SnapshotJson {
     let tasks = application
         .tasks(TaskOrdering::default())
         .into_iter()
@@ -86,10 +88,12 @@ fn snapshot(application: &TrackerApplication<SqliteRepository>) -> SnapshotJson 
     SnapshotJson { tasks, active }
 }
 
-fn encode(result: Result<Value, String>) -> *mut c_char {
+fn encode(result: Result<Value, BridgeError>) -> *mut c_char {
     let value = match result {
         Ok(data) => json!({ "data": data }),
-        Err(error) => json!({ "error": error }),
+        Err(error) => {
+            json!({ "error": error.message, "kind": error.kind, "uncertain": error.uncertain, "requiresRefresh": error.requires_refresh })
+        }
     };
     let bytes = serde_json::to_string(&value)
         .unwrap_or_else(|_| "{\"error\":\"JSON encoding failed\"}".to_owned());
@@ -114,7 +118,9 @@ fn open_at(path: &Path) -> Result<Bridge, String> {
         .seed_default_tasks(&names, Utc::now())
         .map_err(|error| error.to_string())?;
     let application = TrackerApplication::load(repository).map_err(|error| error.to_string())?;
-    Ok(Bridge { application })
+    Ok(Bridge {
+        application: Backend::Local(application),
+    })
 }
 
 /// Opens the same secured default database as the terminal client.
@@ -141,10 +147,41 @@ pub unsafe extern "C" fn tt_bridge_open(error: *mut *mut c_char) -> *mut Bridge 
     }
 }
 
-/// Releases a bridge returned by `tt_bridge_open`.
+/// Opens a disconnected remote client without creating a local database.
+/// Call `tt_bridge_snapshot` with refresh enabled to test the connection.
 ///
 /// # Safety
-/// `bridge` must be null or a live pointer returned by `tt_bridge_open`, used once.
+/// `endpoint` must be null or a valid C string. `error` must point to writable
+/// storage. The caller must serialize all access and free returned strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_open_remote(
+    endpoint: *const c_char,
+    error: *mut *mut c_char,
+) -> *mut Bridge {
+    if error.is_null() {
+        return ptr::null_mut();
+    }
+    // SAFETY: The caller supplies writable storage under this contract.
+    unsafe { *error = ptr::null_mut() };
+    // SAFETY: The caller supplies a valid C string or null.
+    let result = unsafe { read_identifier::<String>(endpoint, "Invalid server URL") }
+        .and_then(|endpoint| Backend::remote(&endpoint));
+    match result {
+        Ok(application) => Box::into_raw(Box::new(Bridge { application })),
+        Err(message) => {
+            let message = CString::new(message)
+                .unwrap_or_else(|_| c"Could not open remote client".to_owned());
+            // SAFETY: The caller supplies writable storage under this contract.
+            unsafe { *error = message.into_raw() };
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Releases a bridge returned by either opener.
+///
+/// # Safety
+/// `bridge` must be null or a live pointer returned by either opener, used once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tt_bridge_close(bridge: *mut Bridge) {
     if !bridge.is_null() {
@@ -165,7 +202,7 @@ pub unsafe extern "C" fn tt_bridge_string_free(value: *mut c_char) {
     }
 }
 
-/// Returns a JSON snapshot. A refresh rereads the authoritative database state.
+/// Returns a JSON snapshot. A refresh rereads the authoritative backend state.
 ///
 /// # Safety
 /// `bridge` must point to a live bridge, and calls for a bridge must be serialized.
@@ -173,18 +210,16 @@ pub unsafe extern "C" fn tt_bridge_string_free(value: *mut c_char) {
 pub unsafe extern "C" fn tt_bridge_snapshot(bridge: *mut Bridge, refresh: bool) -> *mut c_char {
     // SAFETY: The caller guarantees the bridge is live and uniquely accessed.
     let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned()));
+        return encode(Err("Database is not open".to_owned().into()));
     };
     let result = if refresh {
-        bridge
-            .application
-            .refresh_authoritative_state()
-            .map_err(|error| error.failure().message().to_owned())
+        bridge.application.refresh()
     } else {
         Ok(())
     };
     encode(result.and_then(|_| {
-        serde_json::to_value(snapshot(&bridge.application)).map_err(|error| error.to_string())
+        serde_json::to_value(snapshot(&bridge.application))
+            .map_err(|error| error.to_string().into())
     }))
 }
 
@@ -217,17 +252,15 @@ pub unsafe extern "C" fn tt_bridge_start_tracking(
 ) -> *mut c_char {
     // SAFETY: The caller guarantees the bridge is live and uniquely accessed.
     let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned()));
+        return encode(Err("Database is not open".to_owned().into()));
     };
     // SAFETY: The caller supplies a valid C string or null.
-    let result = unsafe { read_identifier(task_id, "Invalid task ID") }.and_then(|task_id| {
-        bridge
-            .application
-            .set_active_task(task_id, Utc::now())
-            .map_err(|error| error.failure().message().to_owned())
-    });
+    let result = unsafe { read_identifier(task_id, "Invalid task ID") }
+        .map_err(BridgeError::from)
+        .and_then(|task_id| bridge.application.set_active_task(task_id, Utc::now()));
     encode(result.and_then(|_| {
-        serde_json::to_value(snapshot(&bridge.application)).map_err(|error| error.to_string())
+        serde_json::to_value(snapshot(&bridge.application))
+            .map_err(|error| error.to_string().into())
     }))
 }
 
@@ -244,17 +277,120 @@ pub unsafe extern "C" fn tt_bridge_stop_tracking(
 ) -> *mut c_char {
     // SAFETY: The caller guarantees the bridge is live and uniquely accessed.
     let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned()));
+        return encode(Err("Database is not open".to_owned().into()));
     };
     // SAFETY: The caller supplies a valid C string or null.
-    let result = unsafe { read_identifier(worklog_id, "Invalid worklog ID") }.and_then(|id| {
-        bridge
-            .application
-            .clear_active_task(id, Utc::now())
-            .map_err(|error| error.failure().message().to_owned())
-    });
+    let result = unsafe { read_identifier(worklog_id, "Invalid worklog ID") }
+        .map_err(BridgeError::from)
+        .and_then(|id| bridge.application.clear_active_task(id, Utc::now()));
     encode(result.and_then(|_| {
-        serde_json::to_value(snapshot(&bridge.application)).map_err(|error| error.to_string())
+        serde_json::to_value(snapshot(&bridge.application))
+            .map_err(|error| error.to_string().into())
+    }))
+}
+
+/// Starts or switches tracking at the timestamp captured when the user clicked.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Both strings must be null or
+/// valid C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_start_tracking_at(
+    bridge: *mut Bridge,
+    task_id: *const c_char,
+    occurred_at: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees exclusive access to the live bridge.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    // SAFETY: The caller supplies valid C strings or null.
+    let result = unsafe { read_identifier(task_id, "Invalid task ID") }
+        .map_err(BridgeError::from)
+        .and_then(|task_id| {
+            // SAFETY: The caller supplies a valid C string or null.
+            let occurred_at = unsafe { read_identifier(occurred_at, "Invalid tracking timestamp") }
+                .map_err(BridgeError::from)?;
+            bridge.application.set_active_task(task_id, occurred_at)
+        });
+    encode(result.and_then(|_| {
+        serde_json::to_value(snapshot(&bridge.application))
+            .map_err(|error| error.to_string().into())
+    }))
+}
+
+/// Stops the expected worklog at the timestamp captured when the user clicked.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Both strings must be null or
+/// valid C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_stop_tracking_at(
+    bridge: *mut Bridge,
+    worklog_id: *const c_char,
+    occurred_at: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees exclusive access to the live bridge.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    // SAFETY: The caller supplies valid C strings or null.
+    let result = unsafe { read_identifier(worklog_id, "Invalid worklog ID") }
+        .map_err(BridgeError::from)
+        .and_then(|worklog_id| {
+            // SAFETY: The caller supplies a valid C string or null.
+            let occurred_at = unsafe { read_identifier(occurred_at, "Invalid tracking timestamp") }
+                .map_err(BridgeError::from)?;
+            bridge
+                .application
+                .clear_active_task(worklog_id, occurred_at)
+        });
+    encode(result.and_then(|_| {
+        serde_json::to_value(snapshot(&bridge.application))
+            .map_err(|error| error.to_string().into())
+    }))
+}
+
+/// Starts or switches only if cached tracking still matches the rendered timer.
+/// A null expected active ID means the user saw an idle timer.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be null or valid
+/// C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_start_tracking_if_active_at(
+    bridge: *mut Bridge,
+    task_id: *const c_char,
+    expected_active_id: *const c_char,
+    occurred_at: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees exclusive access to the live bridge.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    // SAFETY: The caller supplies valid C strings or null.
+    let result = unsafe { read_identifier(task_id, "Invalid task ID") }
+        .map_err(BridgeError::from)
+        .and_then(|task_id| {
+            let expected_active = if expected_active_id.is_null() {
+                None
+            } else {
+                // SAFETY: The caller supplies a valid C string or null.
+                Some(
+                    unsafe { read_identifier(expected_active_id, "Invalid worklog ID") }
+                        .map_err(BridgeError::from)?,
+                )
+            };
+            // SAFETY: The caller supplies a valid C string or null.
+            let occurred_at = unsafe { read_identifier(occurred_at, "Invalid tracking timestamp") }
+                .map_err(BridgeError::from)?;
+            bridge
+                .application
+                .set_active_task_if_active(task_id, expected_active, occurred_at)
+        });
+    encode(result.and_then(|_| {
+        serde_json::to_value(snapshot(&bridge.application))
+            .map_err(|error| error.to_string().into())
     }))
 }
 
@@ -293,13 +429,13 @@ pub unsafe extern "C" fn tt_bridge_history(
 ) -> *mut c_char {
     // SAFETY: The caller guarantees the bridge is live and uniquely accessed.
     let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned()));
+        return encode(Err("Database is not open".to_owned().into()));
     };
     // SAFETY: The caller supplies a valid C string or null.
     let task_id = unsafe { read_identifier::<TaskId>(task_id, "Invalid task ID") };
     let task_id = match task_id {
         Ok(task_id) => task_id,
-        Err(error) => return encode(Err(error)),
+        Err(error) => return encode(Err(error.into())),
     };
     let cursor = if cursor.is_null() {
         Ok(None)
@@ -310,7 +446,7 @@ pub unsafe extern "C" fn tt_bridge_history(
             .map_err(|_| "Invalid history cursor".to_owned())
             .and_then(|text| parse_cursor(task_id, text).map(Some))
     };
-    let result = cursor.and_then(|cursor| {
+    let result = cursor.map_err(BridgeError::from).and_then(|cursor| {
         let (page, reset) = match bridge
             .application
             .worklogs_for_task(task_id, cursor.as_ref())
@@ -324,11 +460,11 @@ pub unsafe extern "C" fn tt_bridge_history(
                     bridge
                         .application
                         .worklogs_for_task(task_id, None)
-                        .map_err(|error| error.failure().message().to_owned())?,
+                        .map_err(|error| bridge.application.history_error(error))?,
                     true,
                 )
             }
-            Err(error) => return Err(error.failure().message().to_owned()),
+            Err(error) => return Err(bridge.application.history_error(error)),
         };
         let next_cursor = page.next_cursor.map(|next| {
             json!({
@@ -344,7 +480,10 @@ pub unsafe extern "C" fn tt_bridge_history(
             reset,
         })
     });
-    encode(result.and_then(|page| serde_json::to_value(page).map_err(|error| error.to_string())))
+    encode(
+        result
+            .and_then(|page| serde_json::to_value(page).map_err(|error| error.to_string().into())),
+    )
 }
 
 #[cfg(test)]
@@ -576,7 +715,7 @@ mod tests {
         repository.seed_default_tasks(&names, Utc::now()).unwrap();
         let application = TrackerApplication::load(repository).unwrap();
 
-        let value = serde_json::to_value(snapshot(&application)).unwrap();
+        let value = serde_json::to_value(snapshot(&Backend::Local(application))).unwrap();
         let tasks = value["tasks"].as_array().unwrap();
         assert_eq!(tasks.len(), DEFAULT_TASK_NAMES.len());
         assert_eq!(value["active"], Value::Null);
@@ -626,7 +765,9 @@ mod tests {
                 .unwrap();
         }
 
-        let bridge = Box::into_raw(Box::new(Bridge { application }));
+        let bridge = Box::into_raw(Box::new(Bridge {
+            application: Backend::Local(application),
+        }));
         let task_id = CString::new(task.id().to_string()).unwrap();
         // SAFETY: The bridge and input string are live for both calls.
         let first_ptr = unsafe { tt_bridge_history(bridge, task_id.as_ptr(), ptr::null()) };
