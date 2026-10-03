@@ -7,22 +7,41 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		000000000000000000000014 /* TimeTrackerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000008 /* TimeTrackerApp.swift */; };
-		000000000000000000000015 /* TrackerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000009 /* TrackerStore.swift */; };
-		000000000000000000000028 /* TrackerConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000026 /* TrackerConnection.swift */; };
-		000000000000000000000029 /* ConnectionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000027 /* ConnectionSettingsView.swift */; };
+		B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */; };
+		DE423B1658B6F34E52F7AF18 /* TrackerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476B3C57830D1CBF6F0B675F /* TrackerMenu.swift */; };
+		3B56BC67EA3B3C706744AFC4 /* TrackerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC372281DA1DF7ABC74910A /* TrackerStore.swift */; };
+		FC2B643D35A2A957D3C0D7E8 /* TrackerWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E054EA2B878A02189368B9D /* TrackerWindow.swift */; };
+		547C118F7FB1E47BBCD519B9 /* ConnectionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF149CF30295C296B13AF32E /* ConnectionSettingsView.swift */; };
+		0A65C064D466FC9FA040A35B /* ConnectionSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5534AB05B3FFE276794F6960 /* ConnectionSummary.swift */; };
+		116FD31CDE5706ECFF597C6B /* TaskDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */; };
+		72A9DF3982DAC7B2F0166CD0 /* TimerSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F85615390A489E1BD026F82 /* TimerSummary.swift */; };
+		9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */; };
+		03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C44057A177E810540FF857 /* WorklogRow.swift */; };
+		99855A0370850FBEBEE64BE3 /* MacLifecycleObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */; };
+		E724446CA77190001E61A002 /* SystemDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EECD295169E48244028EE41 /* SystemDependencies.swift */; };
+		5F1D759FC3D354345CBF0671 /* TrackerWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0597366B0A0E2028788E2696 /* TrackerWorker.swift */; };
+		7E768477586D21659FFEC5F7 /* TrackerClient in Frameworks */ = {isa = PBXBuildFile; productRef = C8DF62E0CBC32AE617C1EA99 /* TrackerClient */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		000000000000000000000007 /* TimeTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TimeTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		000000000000000000000008 /* TimeTrackerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeTrackerApp.swift; sourceTree = "<group>"; };
-		000000000000000000000009 /* TrackerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStore.swift; sourceTree = "<group>"; };
 		000000000000000000000010 /* TrackerBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TrackerBridge.h; sourceTree = "<group>"; };
 		000000000000000000000011 /* TimeTracker-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "TimeTracker-Bridging-Header.h"; sourceTree = "<group>"; };
 		000000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		000000000000000000000013 /* build-rust.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "build-rust.sh"; sourceTree = "<group>"; };
-		000000000000000000000026 /* TrackerConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerConnection.swift; sourceTree = "<group>"; };
-		000000000000000000000027 /* ConnectionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSettingsView.swift; sourceTree = "<group>"; };
+		F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeTrackerApp.swift; sourceTree = "<group>"; };
+		476B3C57830D1CBF6F0B675F /* TrackerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerMenu.swift; sourceTree = "<group>"; };
+		4EC372281DA1DF7ABC74910A /* TrackerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStore.swift; sourceTree = "<group>"; };
+		9E054EA2B878A02189368B9D /* TrackerWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerWindow.swift; sourceTree = "<group>"; };
+		AF149CF30295C296B13AF32E /* ConnectionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSettingsView.swift; sourceTree = "<group>"; };
+		5534AB05B3FFE276794F6960 /* ConnectionSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSummary.swift; sourceTree = "<group>"; };
+		06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetails.swift; sourceTree = "<group>"; };
+		3F85615390A489E1BD026F82 /* TimerSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimerSummary.swift; sourceTree = "<group>"; };
+		E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogFormatting.swift; sourceTree = "<group>"; };
+		A8C44057A177E810540FF857 /* WorklogRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogRow.swift; sourceTree = "<group>"; };
+		804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLifecycleObserver.swift; sourceTree = "<group>"; };
+		7EECD295169E48244028EE41 /* SystemDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemDependencies.swift; sourceTree = "<group>"; };
+		0597366B0A0E2028788E2696 /* TrackerWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerWorker.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -30,6 +49,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7E768477586D21659FFEC5F7 /* TrackerClient in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -50,10 +70,9 @@
 		000000000000000000000003 /* TimeTrackerSwiftUI */ = {
 			isa = PBXGroup;
 			children = (
-				000000000000000000000008 /* TimeTrackerApp.swift */,
-				000000000000000000000009 /* TrackerStore.swift */,
-				000000000000000000000026 /* TrackerConnection.swift */,
-				000000000000000000000027 /* ConnectionSettingsView.swift */,
+				13C4608B5138EBE9B3A45A55 /* App */,
+				E64DA6756D6CF253E6CA6FFA /* Features */,
+				D0206F6998B4F1500BBA2442 /* Infrastructure */,
 				000000000000000000000011 /* TimeTracker-Bridging-Header.h */,
 			);
 			path = "Sources/TimeTrackerSwiftUI";
@@ -75,6 +94,88 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		13C4608B5138EBE9B3A45A55 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */,
+				476B3C57830D1CBF6F0B675F /* TrackerMenu.swift */,
+				4EC372281DA1DF7ABC74910A /* TrackerStore.swift */,
+				9E054EA2B878A02189368B9D /* TrackerWindow.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		E64DA6756D6CF253E6CA6FFA /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				BC2C72DE80FA70B4405D048F /* Connection */,
+				DD8C138E5B09DE3D7D67AA06 /* TaskCatalog */,
+				8E70C3CFF05EE0815A3B9AD4 /* Tracking */,
+				3ABD701C8406AD405352A72E /* WorklogHistory */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		BC2C72DE80FA70B4405D048F /* Connection */ = {
+			isa = PBXGroup;
+			children = (
+				AF149CF30295C296B13AF32E /* ConnectionSettingsView.swift */,
+				5534AB05B3FFE276794F6960 /* ConnectionSummary.swift */,
+			);
+			path = Connection;
+			sourceTree = "<group>";
+		};
+		DD8C138E5B09DE3D7D67AA06 /* TaskCatalog */ = {
+			isa = PBXGroup;
+			children = (
+				06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */,
+			);
+			path = TaskCatalog;
+			sourceTree = "<group>";
+		};
+		8E70C3CFF05EE0815A3B9AD4 /* Tracking */ = {
+			isa = PBXGroup;
+			children = (
+				3F85615390A489E1BD026F82 /* TimerSummary.swift */,
+			);
+			path = Tracking;
+			sourceTree = "<group>";
+		};
+		3ABD701C8406AD405352A72E /* WorklogHistory */ = {
+			isa = PBXGroup;
+			children = (
+				E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */,
+				A8C44057A177E810540FF857 /* WorklogRow.swift */,
+			);
+			path = WorklogHistory;
+			sourceTree = "<group>";
+		};
+		D0206F6998B4F1500BBA2442 /* Infrastructure */ = {
+			isa = PBXGroup;
+			children = (
+				4E3BEBFB03311020BF2AEC66 /* MacLifecycle */,
+				FCEB2C08258D17442B301359 /* RustBridge */,
+			);
+			path = Infrastructure;
+			sourceTree = "<group>";
+		};
+		4E3BEBFB03311020BF2AEC66 /* MacLifecycle */ = {
+			isa = PBXGroup;
+			children = (
+				804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */,
+				7EECD295169E48244028EE41 /* SystemDependencies.swift */,
+			);
+			path = MacLifecycle;
+			sourceTree = "<group>";
+		};
+		FCEB2C08258D17442B301359 /* RustBridge */ = {
+			isa = PBXGroup;
+			children = (
+				0597366B0A0E2028788E2696 /* TrackerWorker.swift */,
+			);
+			path = RustBridge;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -94,6 +195,9 @@
 			name = TimeTracker;
 			productName = TimeTracker;
 			productReference = 000000000000000000000007 /* TimeTracker.app */;
+			packageProductDependencies = (
+				C8DF62E0CBC32AE617C1EA99 /* TrackerClient */,
+			);
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -120,6 +224,9 @@
 			);
 			mainGroup = 000000000000000000000002;
 			productRefGroup = 000000000000000000000005 /* Products */;
+			packageReferences = (
+				470A363E361E8AD08B336D79 /* XCLocalSwiftPackageReference "TrackerClient" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -162,10 +269,19 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				000000000000000000000014 /* TimeTrackerApp.swift in Sources */,
-				000000000000000000000015 /* TrackerStore.swift in Sources */,
-				000000000000000000000029 /* ConnectionSettingsView.swift in Sources */,
-				000000000000000000000028 /* TrackerConnection.swift in Sources */,
+				B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */,
+				DE423B1658B6F34E52F7AF18 /* TrackerMenu.swift in Sources */,
+				3B56BC67EA3B3C706744AFC4 /* TrackerStore.swift in Sources */,
+				FC2B643D35A2A957D3C0D7E8 /* TrackerWindow.swift in Sources */,
+				547C118F7FB1E47BBCD519B9 /* ConnectionSettingsView.swift in Sources */,
+				0A65C064D466FC9FA040A35B /* ConnectionSummary.swift in Sources */,
+				116FD31CDE5706ECFF597C6B /* TaskDetails.swift in Sources */,
+				72A9DF3982DAC7B2F0166CD0 /* TimerSummary.swift in Sources */,
+				9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */,
+				03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */,
+				99855A0370850FBEBEE64BE3 /* MacLifecycleObserver.swift in Sources */,
+				E724446CA77190001E61A002 /* SystemDependencies.swift in Sources */,
+				5F1D759FC3D354345CBF0671 /* TrackerWorker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -312,6 +428,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+/* Begin XCLocalSwiftPackageReference section */
+		470A363E361E8AD08B336D79 /* XCLocalSwiftPackageReference "TrackerClient" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = TrackerClient;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C8DF62E0CBC32AE617C1EA99 /* TrackerClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 470A363E361E8AD08B336D79 /* XCLocalSwiftPackageReference "TrackerClient" */;
+			productName = TrackerClient;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 000000000000000000000001 /* Project object */;
 }

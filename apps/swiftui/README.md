@@ -32,14 +32,30 @@ Commands capture the selected task, expected running worklog, and UTC time when 
 
 While a request is running or state is stale, tracking buttons are disabled. If a write fails, the app refreshes authoritative state before allowing another write because the server may already have committed it. During an outage, the app labels its last confirmed state as unavailable. Before the first successful snapshot, the timer displays Unavailable rather than claiming Idle.
 
+## Unit tests
+
+The `TrackerClient` package contains Foundation-only client state and XCTest tests. It has no Rust, SwiftUI, AppKit, database, or network dependency. Run it from the repository root on a Mac or Linux machine with Swift 5.9 or newer:
+
+```sh
+swift test --package-path apps/swiftui/TrackerClient
+```
+
+The tests use an in-memory settings repository, a manually advanced wall and monotonic clock, a manual scheduler, and an async client whose responses the test controls. They cover connection rollback and persistence, command serialization and captured click times, write reconciliation, selection and pagination, stale history responses, polling, display ticks, sleep/wake, and shutdown.
+
+You can also open `apps/swiftui/TrackerClient/Package.swift` in Xcode and run its package tests. The app remains a native Xcode project and links the local package. Native UI E2E tests are deferred; package tests do not exercise macOS windows, menus, notification delivery, or the rendered appearance.
+
 ## Architecture
 
-The Xcode target links a Rust static library through a C bridging header. Swift publishes view state on the main actor. A serial background queue owns every bridge operation, JSON decode, and handle release. HTTP requests and database work do not block the UI thread.
+The Xcode target links a Rust static library through a C bridging header. The app's `TrackerStore` publishes client-session changes on the main actor. A serial background queue owns every bridge operation, JSON decode, and handle release. HTTP requests and database work do not block the UI thread.
 
 ```mermaid
 flowchart TD
-    UI[SwiftUI window, settings and menu] --> Store[TrackerStore on main actor]
-    Store --> Worker[Serial background connection worker]
+    UI[SwiftUI window, settings and menu] --> Store[TrackerStore observable adapter]
+    Store --> Session[TrackerClient package session]
+    Session --> Features[Connection, task catalog, tracking and history state]
+    Lifecycle[AppKit notifications] --> Session
+    Session --> Port[Injected TrackerClient interface]
+    Port --> Worker[Serial background connection worker]
     Worker --> ABI[C functions and JSON]
     ABI --> Backend[Rust bridge backend]
     Backend --> Local[TrackerApplication]
@@ -50,7 +66,13 @@ flowchart TD
     Server --> ServerDB[Server SQLite tt.db]
 ```
 
-A candidate connection must return a valid snapshot before replacing the current backend. Store operations run one at a time. Selection and connection generations prevent older history results from replacing the current selection. The Rust remote backend also blocks writes after failures until an explicit snapshot refresh succeeds.
+A candidate connection must return a valid snapshot before replacing the current backend. The session coordinates operations one at a time. Selection and connection generations prevent older history results from replacing the current selection. The Rust remote backend also blocks writes after failures until an explicit snapshot refresh succeeds.
+
+The package organizes state under `Features/Connection`, `Features/TaskCatalog`, `Features/Tracking`, and `Features/WorklogHistory`. `App/TrackerSession` coordinates them through injected client, clock, scheduler, and settings interfaces. The macOS app organizes its views by the same capabilities. Its `Infrastructure` directory owns Rust bridge calls, real timers, preferences, and AppKit lifecycle notifications. Rust remains responsible for domain rules and persistence.
+
+A session moves once from idle to running, then to stopped on shutdown. A running session distinguishes unconfirmed, confirmed, and stale snapshots. Writes require a confirmed current snapshot and an idle operation gate. Failed writes trigger an authoritative read before another write can proceed. Successful connection changes replace feature state and persist settings; failed changes retain the previous source.
+
+History responses carry the selection generation captured at request time. Timer callbacks carry their scheduling generation. Shutdown invalidates both, cancels scheduled timers, and rejects late results. An already running C call can finish on its queue and release its handle there. Sleep cancels timers while allowing an in-flight operation to finish; wake resets the elapsed anchor and refreshes.
 
 The bridge passes small JSON snapshots and history pages across an in-process function call. Its costs are serialization and decoding, with no separate bridge process or IPC. Server response time and network activity need measurement on a Mac before making battery or latency claims.
 
@@ -78,4 +100,4 @@ The Active and Archived tabs remember their selections. Worklogs load 50 at a ti
 6. Watch server requests with the window visible, then close or minimize it and keep the menu closed. Confirm the refresh interval changes from about 5 to about 60 seconds. Open the clock menu and confirm it refreshes. Sleep and wake the Mac and confirm the elapsed time includes sleep.
 7. Switch to Local, then back to Server. Confirm each data source retains its own tasks and history.
 
-Swift compilation, native layout, and the lifecycle checks above require a Mac. If the build fails, send the error text from Xcode's Report navigator. The Build Rust bridge phase appears separately from Swift compilation and linking.
+Xcode compilation, native layout, and the lifecycle checks above require a Mac. Foundation package tests can run on Linux. If the build fails, send the error text from Xcode's Report navigator. The Build Rust bridge phase appears separately from Swift compilation and linking.

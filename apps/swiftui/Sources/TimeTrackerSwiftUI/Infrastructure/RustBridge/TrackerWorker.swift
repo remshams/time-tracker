@@ -1,27 +1,5 @@
 import Foundation
-
-enum ConnectionMode: String, CaseIterable, Codable, Identifiable, Sendable {
-    case local
-    case server
-
-    var id: Self { self }
-    var label: String { self == .local ? "Local database" : "Server" }
-}
-
-struct ConnectionSettings: Codable, Equatable, Sendable {
-    var mode: ConnectionMode
-    var serverURL: String
-
-    static let local = ConnectionSettings(mode: .local, serverURL: "")
-}
-
-struct BridgeFailure: LocalizedError, Sendable {
-    let message: String
-    var kind = "general"
-    var uncertain = false
-    var requiresRefresh = false
-    var errorDescription: String? { message }
-}
+import TrackerClient
 
 private struct BridgeEnvelope<Value: Decodable>: Decodable {
     let data: Value?
@@ -32,7 +10,7 @@ private struct BridgeEnvelope<Value: Decodable>: Decodable {
 }
 
 private final class RustBridge {
-    private let handle: OpaquePointer
+    private var handle: OpaquePointer?
 
     init(settings: ConnectionSettings) throws {
         var error: UnsafeMutablePointer<CChar>?
@@ -49,7 +27,13 @@ private final class RustBridge {
         handle = opened
     }
 
-    deinit { tt_bridge_close(handle) }
+    deinit { close() }
+
+    func close() {
+        guard let handle else { return }
+        self.handle = nil
+        tt_bridge_close(handle)
+    }
 
     private func decode<Value: Decodable>(_ pointer: UnsafeMutablePointer<CChar>?) throws -> Value {
         guard let pointer else { throw BridgeFailure(message: "The tracker bridge returned no data.") }
@@ -98,13 +82,14 @@ private final class RustBridge {
 }
 
 // Every handle operation, including creation and destruction, belongs to this queue.
-final class TrackerWorker: @unchecked Sendable {
+final class TrackerWorker: TrackerClient, @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.timetracker.connection", qos: .utility)
     private var bridge: RustBridge?
 
     deinit {
         let retainedBridge = bridge
-        queue.async { _ = retainedBridge }
+        bridge = nil
+        queue.async { retainedBridge?.close() }
     }
 
     private func perform<Value: Sendable>(_ operation: @escaping @Sendable (TrackerWorker) throws -> Value) async throws -> Value {
@@ -169,10 +154,3 @@ final class TrackerWorker: @unchecked Sendable {
     }
 }
 
-struct TrackerPollingPolicy {
-    static func interval(visible: Bool, failures: Int) -> TimeInterval {
-        let base: TimeInterval = visible ? 5 : 60
-        let backoff = 5 * pow(2, Double(min(max(failures - 1, 0), 4)))
-        return max(base, min(60, backoff))
-    }
-}

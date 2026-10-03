@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TrackerClient
 
 @MainActor
 struct ConnectionSettingsView: View {
