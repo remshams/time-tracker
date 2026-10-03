@@ -1,6 +1,6 @@
 [package]
 name = "tracker-swift-bridge"
-description = "Read-only C bridge for the native macOS client"
+description = "C bridge for the native macOS client"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true

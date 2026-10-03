@@ -1,4 +1,4 @@
-//! Read-only JSON bridge between SwiftUI and the application service.
+//! JSON bridge between SwiftUI and the application service.
 
 use std::ffi::{CStr, CString, c_char};
 use std::path::Path;
@@ -188,6 +188,76 @@ pub unsafe extern "C" fn tt_bridge_snapshot(bridge: *mut Bridge, refresh: bool) 
     }))
 }
 
+// SAFETY: A non-null identifier must point to a live, NUL-terminated C string.
+unsafe fn read_identifier<T: std::str::FromStr>(
+    identifier: *const c_char,
+    message: &str,
+) -> Result<T, String> {
+    if identifier.is_null() {
+        return Err(message.to_owned());
+    }
+    // SAFETY: The caller supplies a valid C string under this function's contract.
+    unsafe { CStr::from_ptr(identifier) }
+        .to_str()
+        .ok()
+        .and_then(|text| text.parse().ok())
+        .ok_or_else(|| message.to_owned())
+}
+
+/// Starts the requested task, or atomically switches from the running task.
+/// Returns the committed snapshot without a second database read.
+///
+/// # Safety
+/// `bridge` must point to a live, uniquely accessed bridge. `task_id` must be
+/// null or a valid C string. Release the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_start_tracking(
+    bridge: *mut Bridge,
+    task_id: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees the bridge is live and uniquely accessed.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned()));
+    };
+    // SAFETY: The caller supplies a valid C string or null.
+    let result = unsafe { read_identifier(task_id, "Invalid task ID") }.and_then(|task_id| {
+        bridge
+            .application
+            .set_active_task(task_id, Utc::now())
+            .map_err(|error| error.failure().message().to_owned())
+    });
+    encode(result.and_then(|_| {
+        serde_json::to_value(snapshot(&bridge.application)).map_err(|error| error.to_string())
+    }))
+}
+
+/// Stops the expected worklog without stopping a different client's new timer.
+/// Returns the committed snapshot without a second database read.
+///
+/// # Safety
+/// `bridge` must point to a live, uniquely accessed bridge. `worklog_id` must be
+/// null or a valid C string. Release the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_stop_tracking(
+    bridge: *mut Bridge,
+    worklog_id: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees the bridge is live and uniquely accessed.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned()));
+    };
+    // SAFETY: The caller supplies a valid C string or null.
+    let result = unsafe { read_identifier(worklog_id, "Invalid worklog ID") }.and_then(|id| {
+        bridge
+            .application
+            .clear_active_task(id, Utc::now())
+            .map_err(|error| error.failure().message().to_owned())
+    });
+    encode(result.and_then(|_| {
+        serde_json::to_value(snapshot(&bridge.application)).map_err(|error| error.to_string())
+    }))
+}
+
 fn parse_cursor(task_id: TaskId, text: &str) -> Result<WorklogCursor, String> {
     let value: Value =
         serde_json::from_str(text).map_err(|_| "Invalid history cursor".to_owned())?;
@@ -225,16 +295,11 @@ pub unsafe extern "C" fn tt_bridge_history(
     let Some(bridge) = (unsafe { bridge.as_mut() }) else {
         return encode(Err("Database is not open".to_owned()));
     };
-    if task_id.is_null() {
-        return encode(Err("Invalid task ID".to_owned()));
-    }
-    // SAFETY: The caller supplies a valid C string under this function's contract.
-    let task_id = unsafe { CStr::from_ptr(task_id) }
-        .to_str()
-        .ok()
-        .and_then(|text| text.parse::<TaskId>().ok());
-    let Some(task_id) = task_id else {
-        return encode(Err("Invalid task ID".to_owned()));
+    // SAFETY: The caller supplies a valid C string or null.
+    let task_id = unsafe { read_identifier::<TaskId>(task_id, "Invalid task ID") };
+    let task_id = match task_id {
+        Ok(task_id) => task_id,
+        Err(error) => return encode(Err(error)),
     };
     let cursor = if cursor.is_null() {
         Ok(None)
@@ -286,6 +351,194 @@ pub unsafe extern "C" fn tt_bridge_history(
 mod tests {
     use super::*;
     use tracker_application::{TaskOperations, TrackingOperations};
+
+    fn response(pointer: *mut c_char) -> Value {
+        assert!(!pointer.is_null());
+        // SAFETY: Tests pass strings returned by the bridge and release each once.
+        unsafe {
+            let value = serde_json::from_str(CStr::from_ptr(pointer).to_str().unwrap()).unwrap();
+            tt_bridge_string_free(pointer);
+            value
+        }
+    }
+
+    fn start_tracking(bridge: &mut Bridge, task_id: TaskId) -> Value {
+        let task_id = CString::new(task_id.to_string()).unwrap();
+        // SAFETY: Both the bridge and task ID are live and uniquely accessed.
+        response(unsafe { tt_bridge_start_tracking(bridge, task_id.as_ptr()) })
+    }
+
+    fn stop_tracking(bridge: &mut Bridge, worklog_id: &str) -> Value {
+        let worklog_id = CString::new(worklog_id).unwrap();
+        // SAFETY: Both the bridge and worklog ID are live and uniquely accessed.
+        response(unsafe { tt_bridge_stop_tracking(bridge, worklog_id.as_ptr()) })
+    }
+
+    #[test]
+    fn tracking_commands_persist_one_worklog_and_repeated_commands_are_noops() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("tt.db");
+        let mut bridge = open_at(&path).unwrap();
+        let task_id = bridge.application.tasks(TaskOrdering::default())[0]
+            .task
+            .id();
+
+        let started = start_tracking(&mut bridge, task_id);
+        assert!(started.get("error").is_none(), "{started}");
+        assert_eq!(started["data"]["active"]["taskId"], task_id.to_string());
+        assert!(started["data"]["active"]["end"].is_null());
+        let worklog_id = started["data"]["active"]["id"].as_str().unwrap();
+        let start = started["data"]["active"]["start"].as_str().unwrap();
+        let task = started["data"]["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|task| task["id"] == task_id.to_string())
+            .unwrap();
+        assert_eq!(task["latestStart"], start);
+
+        let repeated = start_tracking(&mut bridge, task_id);
+        assert_eq!(repeated, started);
+
+        let stopped = stop_tracking(&mut bridge, worklog_id);
+        assert!(stopped.get("error").is_none(), "{stopped}");
+        assert!(stopped["data"]["active"].is_null());
+        assert_eq!(stop_tracking(&mut bridge, worklog_id), stopped);
+        drop(bridge);
+
+        let mut reopened = open_at(&path).unwrap();
+        assert!(matches!(
+            reopened.application.current_tracking(),
+            TrackingState::Idle
+        ));
+        let page = reopened
+            .application
+            .worklogs_for_task(task_id, None)
+            .unwrap();
+        assert_eq!(page.worklogs.len(), 1);
+        assert_eq!(page.worklogs[0].id().to_string(), worklog_id);
+        assert_eq!(timestamp(page.worklogs[0].start()), start);
+        assert!(page.worklogs[0].end().unwrap() >= page.worklogs[0].start());
+    }
+
+    #[test]
+    fn switching_through_the_bridge_stops_and_starts_at_the_same_instant() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = open_at(&directory.path().join("tt.db")).unwrap();
+        let tasks = bridge.application.tasks(TaskOrdering::default());
+        let first = tasks[0].task.id();
+        let second = tasks[1].task.id();
+        let started = start_tracking(&mut bridge, first);
+        let switched = start_tracking(&mut bridge, second);
+        assert!(switched.get("error").is_none(), "{switched}");
+        assert_eq!(switched["data"]["active"]["taskId"], second.to_string());
+        assert_ne!(
+            switched["data"]["active"]["id"],
+            started["data"]["active"]["id"]
+        );
+
+        let old_page = bridge.application.worklogs_for_task(first, None).unwrap();
+        assert_eq!(old_page.worklogs.len(), 1);
+        assert_eq!(
+            timestamp(old_page.worklogs[0].end().unwrap()),
+            switched["data"]["active"]["start"].as_str().unwrap()
+        );
+        let new_page = bridge.application.worklogs_for_task(second, None).unwrap();
+        assert_eq!(new_page.worklogs.len(), 1);
+        assert!(new_page.worklogs[0].end().is_none());
+    }
+
+    #[test]
+    fn stale_stop_does_not_stop_another_clients_new_timer() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("tt.db");
+        let mut first = open_at(&path).unwrap();
+        let tasks = first.application.tasks(TaskOrdering::default());
+        let started = start_tracking(&mut first, tasks[0].task.id());
+        let expected_id = started["data"]["active"]["id"].as_str().unwrap();
+        let mut second = open_at(&path).unwrap();
+        let switched = start_tracking(&mut second, tasks[1].task.id());
+
+        let rejected = stop_tracking(&mut first, expected_id);
+        assert_eq!(
+            rejected["error"],
+            "Tracking state changed in another client. Refreshed state."
+        );
+        assert_eq!(
+            serde_json::to_value(snapshot(&first.application)).unwrap()["active"],
+            switched["data"]["active"]
+        );
+        let page = second
+            .application
+            .worklogs_for_task(tasks[1].task.id(), None)
+            .unwrap();
+        assert_eq!(page.worklogs.len(), 1);
+        assert!(page.worklogs[0].end().is_none());
+    }
+
+    #[test]
+    fn start_rejects_missing_and_newly_archived_tasks_without_switching() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("tt.db");
+        let mut bridge = open_at(&path).unwrap();
+        let tasks = bridge.application.tasks(TaskOrdering::default());
+        let started = start_tracking(&mut bridge, tasks[0].task.id());
+        let mut other = open_at(&path).unwrap();
+        other
+            .application
+            .archive_task(tasks[1].task.id(), Utc::now())
+            .unwrap();
+
+        let archived = start_tracking(&mut bridge, tasks[1].task.id());
+        assert_eq!(
+            archived["error"],
+            format!("task {} is archived", tasks[1].task.id())
+        );
+        assert_eq!(
+            start_tracking(&mut bridge, TaskId::generate())["error"],
+            "Task not found"
+        );
+        assert_eq!(
+            serde_json::to_value(snapshot(&bridge.application)).unwrap()["active"],
+            started["data"]["active"]
+        );
+    }
+
+    #[test]
+    fn tracking_commands_reject_null_bridges_and_invalid_identifiers() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = open_at(&directory.path().join("tt.db")).unwrap();
+        let malformed = CString::new("not an ID").unwrap();
+        let non_utf8 = CString::new(vec![0xff]).unwrap();
+        // SAFETY: Null bridges are supported, and no identifiers are dereferenced.
+        unsafe {
+            assert_eq!(
+                response(tt_bridge_start_tracking(ptr::null_mut(), ptr::null()))["error"],
+                "Database is not open"
+            );
+            assert_eq!(
+                response(tt_bridge_stop_tracking(ptr::null_mut(), ptr::null()))["error"],
+                "Database is not open"
+            );
+        }
+        for identifier in [ptr::null(), malformed.as_ptr(), non_utf8.as_ptr()] {
+            // SAFETY: The bridge is uniquely accessed; inputs are null or live C strings.
+            unsafe {
+                assert_eq!(
+                    response(tt_bridge_start_tracking(&mut bridge, identifier))["error"],
+                    "Invalid task ID"
+                );
+                assert_eq!(
+                    response(tt_bridge_stop_tracking(&mut bridge, identifier))["error"],
+                    "Invalid worklog ID"
+                );
+            }
+        }
+        assert!(matches!(
+            bridge.application.current_tracking(),
+            TrackingState::Idle
+        ));
+    }
 
     #[test]
     fn history_cursor_rejects_incomplete_input() {
