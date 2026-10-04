@@ -52,6 +52,19 @@ struct HistoryJson {
     reset: bool,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReportRowJson {
+    task_id: String,
+    duration_microseconds: i64,
+}
+
+#[derive(Serialize)]
+struct ReportJson {
+    snapshot: SnapshotJson,
+    rows: Vec<ReportRowJson>,
+}
+
 fn timestamp(value: DateTime<Utc>) -> String {
     value.to_rfc3339_opts(SecondsFormat::Micros, true)
 }
@@ -221,6 +234,55 @@ pub unsafe extern "C" fn tt_bridge_snapshot(bridge: *mut Bridge, refresh: bool) 
         serde_json::to_value(snapshot(&bridge.application))
             .map_err(|error| error.to_string().into())
     }))
+}
+
+/// Returns task totals and the snapshot from the same authoritative report read.
+/// The caller supplies the UTC interval and the instant used to cap active work.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be null or valid
+/// C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_report(
+    bridge: *mut Bridge,
+    start: *const c_char,
+    end: *const c_char,
+    now: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees exclusive access to the live bridge.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    let result = (|| {
+        // SAFETY: The caller supplies valid C strings or null.
+        let start =
+            unsafe { read_identifier(start, "Invalid report start") }.map_err(BridgeError::from)?;
+        // SAFETY: The caller supplies valid C strings or null.
+        let end =
+            unsafe { read_identifier(end, "Invalid report end") }.map_err(BridgeError::from)?;
+        // SAFETY: The caller supplies valid C strings or null.
+        let now = unsafe { read_identifier(now, "Invalid report timestamp") }
+            .map_err(BridgeError::from)?;
+        let totals = bridge.application.report_totals(start, end, now)?;
+        let rows = totals
+            .rows
+            .into_iter()
+            .map(|row| {
+                Ok(ReportRowJson {
+                    task_id: row.task.id().to_string(),
+                    duration_microseconds: row.duration.num_microseconds().ok_or_else(|| {
+                        BridgeError::from("Report duration exceeds the supported range".to_owned())
+                    })?,
+                })
+            })
+            .collect::<Result<Vec<_>, BridgeError>>()?;
+        serde_json::to_value(ReportJson {
+            snapshot: snapshot(&bridge.application),
+            rows,
+        })
+        .map_err(|error| error.to_string().into())
+    })();
+    encode(result)
 }
 
 // SAFETY: A non-null identifier must point to a live, NUL-terminated C string.
@@ -552,6 +614,9 @@ pub unsafe extern "C" fn tt_bridge_history(
 
 #[cfg(test)]
 mod automation_tests;
+
+#[cfg(test)]
+mod report_tests;
 
 #[cfg(test)]
 mod tests {

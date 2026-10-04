@@ -10,6 +10,7 @@ Bridge *tt_bridge_open_remote(const char *endpoint, char **error);
 void tt_bridge_close(Bridge *bridge);
 void tt_bridge_string_free(char *value);
 char *tt_bridge_snapshot(Bridge *bridge, bool refresh);
+char *tt_bridge_report(Bridge *bridge, const char *start, const char *end, const char *now);
 char *tt_bridge_start_tracking(Bridge *bridge, const char *task_id);
 char *tt_bridge_stop_tracking(Bridge *bridge, const char *worklog_id);
 char *tt_bridge_start_tracking_at(Bridge *bridge, const char *task_id, const char *occurred_at);

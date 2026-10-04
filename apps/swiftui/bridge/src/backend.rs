@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
 use tokio::runtime::{Builder, Runtime};
 use tracker_application::{
-    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, RepositoryError,
-    SetActiveTaskOutcome, TaskListItem, TaskOrdering, TaskQueries, TrackerApplication,
-    TrackingOperations, WorklogCursor, WorklogPage, WorklogQueries,
+    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, ReportQueries,
+    ReportTotals, RepositoryError, SetActiveTaskOutcome, TaskListItem, TaskOrdering, TaskQueries,
+    TrackerApplication, TrackingOperations, WorklogCursor, WorklogPage, WorklogQueries,
 };
 use tracker_domain::{TaskId, TrackingState, WorklogId};
 use tracker_remote::{RemoteApplication, RemoteError, RemoteFailureKind};
@@ -177,6 +177,38 @@ impl Backend {
             Self::Remote(remote) => remote
                 .runtime
                 .block_on(remote.application.worklogs_for_task(task_id, cursor)),
+        }
+    }
+
+    pub fn report_totals(
+        &mut self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportTotals, BridgeError> {
+        if end <= start {
+            return Err(local_error(ApplicationError::InvalidReportRange));
+        }
+        match self {
+            Self::Local(application) => application
+                .report_totals(start, end, now)
+                .map_err(local_error),
+            Self::Remote(remote) => {
+                match remote
+                    .runtime
+                    .block_on(remote.application.report_totals(start, end, now))
+                {
+                    Ok(totals) => {
+                        remote.requires_refresh = false;
+                        Ok(totals)
+                    }
+                    Err(error) => {
+                        // A failed remote query can refresh Rust's cache without returning it to Swift.
+                        remote.requires_refresh = true;
+                        Err(remote.operation_error(error, false))
+                    }
+                }
+            }
         }
     }
 
