@@ -286,6 +286,100 @@ final class DailyTotalsSessionTests: XCTestCase {
     }
 
     @MainActor
+    func testUnavailableProtocolAndUncertainReportFailuresRequireSnapshotRecovery() async throws {
+        let failures = [
+            BridgeFailure(message: "Report offline", kind: "unavailable"),
+            BridgeFailure(message: "Report incompatible", kind: "protocol"),
+            BridgeFailure(message: "Report state uncertain", uncertain: true)
+        ]
+        for failure in failures {
+            let fixture = Fixture(reports: true, calendar: dailyCalendar())
+            defer { fixture.cleanup() }
+            let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+            try await fixture.start(snapshot, rows: [total(firstTask, 4)])
+            fixture.scheduler.poll?.fire()
+            let failed = try await fixture.client.next()
+            failed.fail(failure)
+            try await fixture.settled()
+            XCTAssertEqual(fixture.session.dailyTotalsStatus, .cached, failure.message)
+            XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 4, failure.message)
+            XCTAssertTrue(fixture.session.isStale, failure.message)
+            XCTAssertFalse(fixture.session.canStartSelectedTask, failure.message)
+            XCTAssertFalse(fixture.session.canStopTracking, failure.message)
+            if failure.kind == "protocol" {
+                XCTAssertNil(fixture.scheduler.poll)
+                XCTAssertEqual(fixture.session.connectionStatusText, "Incompatible server")
+            } else {
+                XCTAssertNotNil(fixture.scheduler.poll)
+            }
+            fixture.session.refresh()
+            let refresh = try await fixture.client.next()
+            XCTAssertEqual(refresh.operation, .refresh(.local), failure.message)
+            refresh.succeed(snapshot)
+            let report = try await fixture.client.next()
+            guard case .report = report.operation else { return XCTFail("Snapshot recovery must precede the next report.") }
+            XCTAssertFalse(fixture.session.canStartSelectedTask)
+            report.succeed(TrackerReport(snapshot: snapshot, rows: [total(firstTask, 8)]))
+            try await fixture.settled()
+            XCTAssertFalse(fixture.session.isStale, failure.message)
+            XCTAssertTrue(fixture.session.canStartSelectedTask, failure.message)
+            XCTAssertEqual(fixture.session.dailyTotalsStatus, .current, failure.message)
+        }
+    }
+
+    @MainActor
+    func testMalformedReportFailsAsProtocolBeforeAdoptingItsSnapshot() async throws {
+        let fixture = Fixture(reports: true, calendar: dailyCalendar())
+        defer { fixture.cleanup() }
+        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(snapshot, rows: [total(firstTask, 4)])
+        fixture.scheduler.poll?.fire()
+        let report = try await fixture.client.next()
+        let replacementActive = WorklogItem(id: "replacement", taskId: secondTask.id,
+                                           start: "2025-01-01T00:00:00.000Z", end: nil)
+        report.succeed(TrackerReport(snapshot: TrackerSnapshot(tasks: [secondTask], active: replacementActive),
+                                    rows: [total(firstTask, 8)]))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.tasks, [firstTask])
+        XCTAssertEqual(fixture.session.active, activeWorklog)
+        XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 4)
+        XCTAssertEqual(fixture.session.dailyTotalsStatus, .cached)
+        XCTAssertTrue(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.canStopTracking)
+        XCTAssertEqual(fixture.session.connectionStatusText, "Incompatible server")
+        XCTAssertNil(fixture.scheduler.poll)
+    }
+
+    @MainActor
+    func testBothLocalDayTimersClearYesterdayWithoutRetryingProtocolFailure() async throws {
+        for useDisplayTimer in [false, true] {
+            let fixture = Fixture(reports: true, calendar: dailyCalendar())
+            defer { fixture.cleanup() }
+            fixture.session.setWindowVisible(true)
+            let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+            try await fixture.start(snapshot, rows: [total(firstTask, 4)])
+            let display = try XCTUnwrap(fixture.scheduler.display)
+            let rollover = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
+            fixture.scheduler.poll?.fire()
+            let report = try await fixture.client.next()
+            report.fail(BridgeFailure(message: "Report incompatible", kind: "protocol"))
+            try await fixture.settled()
+            let operationCount = fixture.client.operations.count
+            fixture.clock.now.addTimeInterval(86_400)
+            fixture.clock.uptime += 86_400
+            if useDisplayTimer { display.fire() }
+            else { rollover.fire() }
+            XCTAssertEqual(fixture.client.operations.count, operationCount)
+            XCTAssertFalse(fixture.session.isBusy)
+            XCTAssertNil(fixture.session.dailyDuration(taskID: firstTask.id))
+            XCTAssertTrue(fixture.session.todayTasks.isEmpty)
+            XCTAssertEqual(fixture.session.dailyTotalsStatus, .unavailable)
+            XCTAssertEqual(fixture.session.connectionStatusText, "Incompatible server")
+            XCTAssertNil(fixture.scheduler.poll)
+        }
+    }
+
+    @MainActor
     func testSuccessfulSourceChangeClearsTotalsButFailedCandidatePreservesThem() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
@@ -453,5 +547,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         XCTAssertEqual(content, 1)
         XCTAssertEqual(daily, 1)
         XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 4)
+        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertTrue(fixture.session.canStartSelectedTask)
     }
 }

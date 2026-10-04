@@ -599,7 +599,7 @@ public final class TrackerSession {
             now = clock.now
             if reports != nil, dailyTotals.updateDay(at: clock.now), !isBusy {
                 updateRolloverTimer()
-                refresh()
+                if !connection.protocolBlocked { refresh() }
             }
             publish()
         }
@@ -624,7 +624,7 @@ public final class TrackerSession {
             guard let self, token == rolloverGeneration, running, !sleeping else { return }
             dailyTotals.updateDay(at: clock.now)
             updateRolloverTimer()
-            refresh()
+            if !connection.protocolBlocked { refresh() }
             publish()
         }
     }
