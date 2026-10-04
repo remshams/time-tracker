@@ -3,6 +3,25 @@ import XCTest
 
 final class HistoryTests: XCTestCase {
     @MainActor
+    func testSelectingAnotherTaskImmediatelyClearsCachedRowsAndCursor() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        fixture.session.retryHistory()
+        let initial = try await fixture.client.next()
+        initial.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
+        try await fixture.settled()
+
+        fixture.session.select(secondTask.id)
+        XCTAssertTrue(fixture.session.worklogs.isEmpty)
+        XCTAssertNil(fixture.session.nextCursor)
+        let selected = try await fixture.client.next()
+        XCTAssertEqual(selected.operation, .history(task: secondTask.id, cursor: nil))
+        selected.succeed(emptyPage)
+        try await fixture.settled()
+    }
+
+    @MainActor
     func testPollingKeepsExistingRowsWhileSameTaskHistoryRefreshes() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
