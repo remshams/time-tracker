@@ -5,3 +5,5 @@ lcov.info
 __pycache__/
 xcuserdata/
 DerivedData/
+.build/
+.swiftpm/

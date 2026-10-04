@@ -44,6 +44,39 @@ The tests use an in-memory settings repository, a manually advanced wall and mon
 
 You can also open `apps/swiftui/TrackerClient/Package.swift` in Xcode and run its package tests. The app remains a native Xcode project and links the local package. Native UI E2E tests are deferred; package tests do not exercise macOS windows, menus, notification delivery, or the rendered appearance.
 
+## Coverage and mutation testing
+
+Run these commands from the repository root on Linux or macOS. The scripts require Python 3.12 or newer. Coverage uses the selected Swift toolchain's `llvm-cov`, with `xcrun` as a fallback on macOS:
+
+```sh
+python3 scripts/swift-coverage.py
+```
+
+The command runs the package tests with instrumentation and requires at least 95% executable source line coverage. It exports `coverage.json`, `lcov.info`, `summary.json`, and `html/index.html` under `.build/swift-coverage`. Tests, generated code, and the native app are outside this report. The protocol-only dependency contract has no executable lines; the script checks its compiler parse tree before listing it separately. Missing coverage for an executable source is an error. Use `--minimum-line-coverage` to choose a stricter minimum.
+
+Build the pinned Muter tool once with Swift 6.1 or newer, then run the mutation check:
+
+```sh
+python3 scripts/install-swift-muter.py
+python3 scripts/swift-mutations.py
+```
+
+The installer downloads public source and dependencies, verifies the source archive checksum, and uses the upstream dependency lockfile. It installs under `.build/swift-tools` without changing system tools. Muter is pinned to revision `7f1f2584e0a27fc05c952a5c8cdd52b10cc9513f`. Compatibility patches supply the missing Linux autorelease-pool function, match reparsed syntax by position and text, insert nested mutations before enclosing ones, and group source mappings by path. These fix upstream defects that reported mutations without inserting them. The runner rejects duplicate source basenames because upstream mutation IDs and log names still use basenames.
+
+Mutation testing copies only the package manifest, source, and tests into a temporary directory. It runs the unmodified tests first, then applies Muter's operators across production Swift sources. Coverage filtering is disabled so uncovered mutation points also run. Each mutant has a 60-second test timeout. The runner limits the baseline to 180 seconds and the full Muter process to 1,800 seconds; use `--timeout` to change the latter. Timeout or interruption stops compiler and test descendants before removing temporary files.
+
+Surviving, timed-out, skipped, or failed-to-build mutants fail the command. An unexplained runtime error also fails; accepting a crash as a killed mutant requires a matching test log with evidence that a test started and crashed. A missing, empty, or inconsistent report fails. The mutation score alone does not decide success. Unit fixtures bound asynchronous waits so removed callbacks fail promptly.
+
+Results and logs go to `.build/swift-mutations`, including individual test logs under `test-logs` when Muter fails or times out. A focused diagnostic run accepts package-relative source paths:
+
+```sh
+python3 scripts/swift-mutations.py --files Sources/TrackerClient/Features/Connection/ConnectionState.swift
+```
+
+Focused runs label their scope and do not replace a full package check. All commands accept `--swift` for a specific toolchain. Coverage also accepts `--llvm-cov`; mutation testing accepts `--muter` for another tool binary. Generated artifacts are ignored by Git.
+
+These checks cover the portable client state. Native UI E2E tests will run on macOS and remain deferred. Rust coverage, mutation testing, and CRAP checks continue to cover the Rust application and bridge separately.
+
 ## Architecture
 
 The Xcode target links a Rust static library through a C bridging header. The app's `TrackerStore` publishes client-session changes on the main actor. A serial background queue owns every bridge operation, JSON decode, and handle release. HTTP requests and database work do not block the UI thread.
