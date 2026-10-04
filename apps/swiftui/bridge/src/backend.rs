@@ -130,6 +130,19 @@ impl Backend {
         }
     }
 
+    pub fn resume_tracking(
+        &mut self,
+        task_id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<SetActiveTaskOutcome, BridgeError> {
+        match self {
+            Self::Local(application) => application
+                .start_tracking_if_idle(task_id, occurred_at)
+                .map_err(local_error),
+            Self::Remote(_) => self.set_active_task_if_active(task_id, None, occurred_at),
+        }
+    }
+
     pub fn set_active_task_if_active(
         &mut self,
         task_id: TaskId,

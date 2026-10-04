@@ -394,6 +394,70 @@ pub unsafe extern "C" fn tt_bridge_start_tracking_if_active_at(
     }))
 }
 
+/// Pauses the expected worklog and reports whether this command stopped it.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be null or valid
+/// C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_pause_tracking_at(
+    bridge: *mut Bridge,
+    worklog_id: *const c_char,
+    occurred_at: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees exclusive access to the live bridge.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    // SAFETY: The caller supplies valid C strings or null.
+    let result = unsafe { read_identifier(worklog_id, "Invalid worklog ID") }
+        .map_err(BridgeError::from)
+        .and_then(|worklog_id| {
+            // SAFETY: The caller supplies a valid C string or null.
+            let occurred_at = unsafe { read_identifier(occurred_at, "Invalid tracking timestamp") }
+                .map_err(BridgeError::from)?;
+            bridge
+                .application
+                .clear_active_task(worklog_id, occurred_at)
+        });
+    encode(result.map(|outcome| {
+        json!({
+            "snapshot": snapshot(&bridge.application),
+            "didStop": matches!(outcome, tracker_application::ClearActiveTaskOutcome::Stopped { .. })
+        })
+    }))
+}
+
+/// Resumes a task only when the authoritative tracker remains idle.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be null or valid
+/// C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_resume_tracking_at(
+    bridge: *mut Bridge,
+    task_id: *const c_char,
+    occurred_at: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees exclusive access to the live bridge.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    // SAFETY: The caller supplies valid C strings or null.
+    let result = unsafe { read_identifier(task_id, "Invalid task ID") }
+        .map_err(BridgeError::from)
+        .and_then(|task_id| {
+            // SAFETY: The caller supplies a valid C string or null.
+            let occurred_at = unsafe { read_identifier(occurred_at, "Invalid tracking timestamp") }
+                .map_err(BridgeError::from)?;
+            bridge.application.resume_tracking(task_id, occurred_at)
+        });
+    encode(result.and_then(|_| {
+        serde_json::to_value(snapshot(&bridge.application))
+            .map_err(|error| error.to_string().into())
+    }))
+}
+
 fn parse_cursor(task_id: TaskId, text: &str) -> Result<WorklogCursor, String> {
     let value: Value =
         serde_json::from_str(text).map_err(|_| "Invalid history cursor".to_owned())?;
@@ -485,6 +549,9 @@ pub unsafe extern "C" fn tt_bridge_history(
             .and_then(|page| serde_json::to_value(page).map_err(|error| error.to_string().into())),
     )
 }
+
+#[cfg(test)]
+mod automation_tests;
 
 #[cfg(test)]
 mod tests {
