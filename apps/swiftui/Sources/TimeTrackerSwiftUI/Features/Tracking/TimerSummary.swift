@@ -29,7 +29,7 @@ struct TimerSummary: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(store.timerDisplayText)
+            TrackerElapsedText(timer: store.timer)
                 .font(.system(.title2, design: .monospaced).weight(.medium))
                 .monospacedDigit()
                 .fixedSize()
@@ -40,4 +40,10 @@ struct TimerSummary: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor))
     }
+}
+
+struct TrackerElapsedText: View {
+    @ObservedObject var timer: TrackerTimerStore
+
+    var body: some View { Text(timer.text) }
 }
