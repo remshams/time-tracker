@@ -89,3 +89,21 @@ public struct BridgeFailure: LocalizedError, Sendable {
         self.requiresRefresh = requiresRefresh
     }
 }
+
+public struct TrackingPreferences: Codable, Equatable, Sendable {
+    public var pauseOnScreenLock: Bool
+
+    public init(pauseOnScreenLock: Bool = false) {
+        self.pauseOnScreenLock = pauseOnScreenLock
+    }
+}
+
+public struct TrackingPauseResult: Decodable, Equatable, Sendable {
+    public let snapshot: TrackerSnapshot
+    public let didStop: Bool
+
+    public init(snapshot: TrackerSnapshot, didStop: Bool) {
+        self.snapshot = snapshot
+        self.didStop = didStop
+    }
+}

@@ -16,6 +16,8 @@ final class FakeClient: TrackerClient {
         case snapshot
         case start(task: String, expected: String?, at: String)
         case stop(worklog: String, at: String)
+        case pause(worklog: String, at: String)
+        case resume(task: String, at: String)
         case history(task: String, cursor: String?)
     }
 
@@ -23,6 +25,7 @@ final class FakeClient: TrackerClient {
         case snapshot(TrackerSnapshot)
         case history(HistoryPage)
         case tested
+        case paused(TrackingPauseResult)
     }
 
     @MainActor
@@ -32,6 +35,9 @@ final class FakeClient: TrackerClient {
 
         func succeed(_ snapshot: TrackerSnapshot) { complete(.success(.snapshot(snapshot))) }
         func succeed(_ page: HistoryPage) { complete(.success(.history(page))) }
+        func paused(_ snapshot: TrackerSnapshot, didStop: Bool = true) {
+            complete(.success(.paused(TrackingPauseResult(snapshot: snapshot, didStop: didStop))))
+        }
         func tested() { complete(.success(.tested)) }
         func fail(_ error: Error) { complete(.failure(error)) }
     }
@@ -105,6 +111,15 @@ final class FakeClient: TrackerClient {
     func stopTracking(worklogID: String, occurredAt: String) async throws -> TrackerSnapshot {
         try await snapshotReply(.stop(worklog: worklogID, at: occurredAt))
     }
+    func pauseTracking(worklogID: String, occurredAt: String) async throws -> TrackingPauseResult {
+        guard case .paused(let value) = try await perform(.pause(worklog: worklogID, at: occurredAt)) else {
+            fatalError("A pause request received a different reply.")
+        }
+        return value
+    }
+    func resumeTracking(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
+        try await snapshotReply(.resume(task: taskID, at: occurredAt))
+    }
     func history(taskID: String, cursor: String?) async throws -> HistoryPage {
         guard case .history(let value) = try await perform(.history(task: taskID, cursor: cursor)) else {
             fatalError("A history request received a different reply.")
@@ -172,11 +187,14 @@ final class Fixture {
     let scheduler = FakeScheduler()
     let settings: MemorySettings
     let session: TrackerSession
+    let preferences: MemoryTrackingPreferences
 
-    init(saved: ConnectionSettings? = nil) {
+    init(saved: ConnectionSettings? = nil, pauseOnScreenLock: Bool = false) {
         let settings = MemorySettings(saved)
         self.settings = settings
-        session = TrackerSession(client: client, clock: clock, scheduler: scheduler, settings: settings)
+        let preferences = MemoryTrackingPreferences(TrackingPreferences(pauseOnScreenLock: pauseOnScreenLock))
+        self.preferences = preferences
+        session = TrackerSession(client: client, clock: clock, scheduler: scheduler, settings: settings, trackingPreferences: preferences)
     }
 
     func cleanup() {
@@ -246,3 +264,12 @@ let archivedTask = TaskItem(id: "task-archived", name: "Archived task", archived
 let activeWorklog = WorklogItem(id: "worklog-active", taskId: "task-one", start: "2024-12-31T23:59:30.000Z", end: nil)
 let oldWorklog = WorklogItem(id: "worklog-old", taskId: "task-one", start: "2024-12-30T09:00:00.000Z", end: "2024-12-30T10:00:00.000Z")
 let serverSettings = ConnectionSettings(mode: .server, serverURL: "https://tracker.example")
+
+@MainActor
+final class MemoryTrackingPreferences: TrackingPreferencesRepository {
+    var saved: TrackingPreferences
+    private(set) var writes: [TrackingPreferences] = []
+    init(_ preferences: TrackingPreferences = TrackingPreferences()) { saved = preferences }
+    func load() -> TrackingPreferences { saved }
+    func save(_ preferences: TrackingPreferences) { saved = preferences; writes.append(preferences) }
+}

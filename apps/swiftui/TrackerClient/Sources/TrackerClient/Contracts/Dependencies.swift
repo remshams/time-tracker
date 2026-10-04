@@ -8,6 +8,8 @@ public protocol TrackerClient: Sendable {
     func snapshot() async throws -> TrackerSnapshot
     func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws -> TrackerSnapshot
     func stopTracking(worklogID: String, occurredAt: String) async throws -> TrackerSnapshot
+    func pauseTracking(worklogID: String, occurredAt: String) async throws -> TrackingPauseResult
+    func resumeTracking(taskID: String, occurredAt: String) async throws -> TrackerSnapshot
     func history(taskID: String, cursor: String?) async throws -> HistoryPage
 }
 
@@ -31,4 +33,10 @@ public protocol TrackerScheduler {
 public protocol ConnectionSettingsRepository {
     func load() -> ConnectionSettings?
     func save(_ settings: ConnectionSettings)
+}
+
+@MainActor
+public protocol TrackingPreferencesRepository {
+    func load() -> TrackingPreferences
+    func save(_ preferences: TrackingPreferences)
 }

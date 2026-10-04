@@ -12,6 +12,8 @@ public final class TrackerSession {
     private let clock: any TrackerClock
     private let scheduler: any TrackerScheduler
     private let settingsRepository: any ConnectionSettingsRepository
+    private let trackingPreferencesRepository: (any TrackingPreferencesRepository)?
+    private let automation: TrackingAutomationState
     private let connection: ConnectionState
     private let catalog = TaskCatalogState()
     private let tracking = TrackingState()
@@ -22,6 +24,7 @@ public final class TrackerSession {
     private var pollGeneration = 0
     private var generation = 0
     private var pendingRefresh = false
+    private var pendingOwnStartTaskID: String?
     private var sleeping = false
     private var windowVisible = false
     private var menuDepth = 0
@@ -29,11 +32,14 @@ public final class TrackerSession {
     private var running: Bool { lifecycle == .running }
 
     public init(client: any TrackerClient, clock: any TrackerClock,
-                scheduler: any TrackerScheduler, settings: any ConnectionSettingsRepository) {
+                scheduler: any TrackerScheduler, settings: any ConnectionSettingsRepository,
+                trackingPreferences: (any TrackingPreferencesRepository)? = nil) {
         self.client = client
         self.clock = clock
         self.scheduler = scheduler
         settingsRepository = settings
+        trackingPreferencesRepository = trackingPreferences
+        automation = TrackingAutomationState(preferences: trackingPreferences?.load() ?? TrackingPreferences())
         connection = ConnectionState(settings: settings.load() ?? .local)
         now = clock.now
     }
@@ -43,6 +49,8 @@ public final class TrackerSession {
         pollTimer?.cancel()
     }
 
+    public var pauseOnScreenLock: Bool { automation.enabled }
+    public var autoPauseStatusText: String? { automation.statusText }
     public var tasks: [TaskItem] { catalog.tasks }
     public var active: WorklogItem? { tracking.active }
     public var worklogs: [WorklogItem] { history.worklogs }
@@ -104,6 +112,7 @@ public final class TrackerSession {
         lifecycle = .stopped
         generation += 1
         history.invalidate()
+        automation.cancel()
         pendingRefresh = false
         cancelTimers()
         isBusy = false
@@ -147,6 +156,30 @@ public final class TrackerSession {
         refresh()
     }
 
+    public func setPauseOnScreenLock(_ enabled: Bool) {
+        guard lifecycle != .stopped,
+              automation.setEnabled(enabled, at: clock.now, active: active,
+                                    ownStartTaskID: pendingOwnStartTaskID, confirmed: connection.confirmed) else { return }
+        trackingPreferencesRepository?.save(TrackingPreferences(pauseOnScreenLock: enabled))
+        drainAutomation()
+        publish()
+    }
+
+    public func screenLocked(at date: Date) {
+        guard lifecycle != .stopped else { return }
+        automation.lock(at: date, active: active, ownStartTaskID: pendingOwnStartTaskID,
+                        confirmed: connection.confirmed)
+        drainAutomation()
+        publish()
+    }
+
+    public func screenUnlocked(at date: Date) {
+        guard lifecycle != .stopped else { return }
+        automation.unlock(at: date)
+        drainAutomation()
+        publish()
+    }
+
     public func changeTab(_ newTab: TaskTab) {
         guard lifecycle != .stopped, catalog.changeTab(newTab) else { return }
         requestHistory()
@@ -181,6 +214,7 @@ public final class TrackerSession {
     }
 
     public func connect(_ settings: ConnectionSettings) async -> Bool {
+        automation.cancel()
         guard running, !isBusy else {
             if running {
                 connection.message = "Wait for the current request to finish before changing connections."
@@ -201,6 +235,7 @@ public final class TrackerSession {
             let normalized = try connection.normalized(settings)
             let snapshot = try await client.connect(normalized)
             guard isCurrent(token) else { return false }
+            automation.cancel()
             pendingRefresh = false
             connection.settings = normalized
             settingsRepository.save(normalized)
@@ -222,7 +257,8 @@ public final class TrackerSession {
               active?.taskId != taskID else { return }
         let occurredAt = commandTimestamp(clock.now)
         let expectedActiveID = active?.id
-        changeTracking { [client] in
+        automation.cancel()
+        changeTracking(startTaskID: taskID) { [client] in
             try await client.startTracking(taskID: taskID, expectedActiveID: expectedActiveID, occurredAt: occurredAt)
         }
     }
@@ -230,6 +266,7 @@ public final class TrackerSession {
     public func stopTracking(worklogID: String) {
         guard canStopTracking, active?.id == worklogID else { return }
         let occurredAt = commandTimestamp(clock.now)
+        automation.cancel()
         changeTracking { [client] in
             try await client.stopTracking(worklogID: worklogID, occurredAt: occurredAt)
         }
@@ -257,6 +294,7 @@ public final class TrackerSession {
     private func finishOperation(token: Int) {
         guard isCurrent(token) else { return }
         isBusy = false
+        if drainAutomation() { return }
         if !sleeping {
             if pendingRefresh {
                 pendingRefresh = false
@@ -269,6 +307,93 @@ public final class TrackerSession {
             } else { schedulePolling() }
         }
         publish()
+    }
+
+    @discardableResult
+    private func drainAutomation() -> Bool {
+        guard running, !isBusy, connection.confirmed, automation.enabled else { return false }
+        let action: TrackingAutomationState.Pause?
+        let resumeAt: Date?
+        let taskID: String?
+        if let pause = automation.pendingPause {
+            automation.pendingPause = nil
+            action = pause
+            resumeAt = nil
+            taskID = nil
+        } else if !sleeping, !automation.locked, let date = automation.resumeAt,
+                  let pausedTaskID = automation.pausedTaskID {
+            automation.resumeAt = nil
+            action = nil
+            resumeAt = date
+            taskID = pausedTaskID
+        } else { return false }
+        let automationToken = automation.generation
+        let token = generation
+        tracking.error = nil
+        beginOperation()
+        Task { [weak self] in
+            guard let self, isCurrent(token) else { return }
+            defer { finishOperation(token: token) }
+            do {
+                // Reconcile before an automatic write. A second client may have
+                // changed tracking while this request waited behind another one.
+                let snapshot = try await client.snapshot()
+                guard isCurrent(token) else { return }
+                acceptSnapshot(snapshot)
+                guard automationToken == automation.generation, automation.enabled else { return }
+                if let action {
+                    guard let worklog = snapshot.active,
+                          action.discoverAtStartup || action.expectedWorklogID == worklog.id else { return }
+                    guard let start = timestamp(worklog.start) else {
+                        tracking.error = "Cannot pause tracking because its start time is invalid."
+                        return
+                    }
+                    guard start <= action.occurredAt else {
+                        tracking.error = "Cannot pause tracking before the worklog start time."
+                        return
+                    }
+                    let result = try await client.pauseTracking(worklogID: worklog.id,
+                                                                occurredAt: commandTimestamp(action.occurredAt))
+                    guard isCurrent(token) else { return }
+                    acceptSnapshot(result.snapshot)
+                    guard automationToken == automation.generation, automation.enabled else { return }
+                    if result.didStop && result.snapshot.active == nil { automation.pausedTaskID = worklog.taskId }
+                    else { automation.cancel() }
+                } else if let taskID, let resumeAt {
+                    guard snapshot.active == nil,
+                          snapshot.tasks.contains(where: { $0.id == taskID && !$0.archived }) else {
+                        automation.cancel()
+                        return
+                    }
+                    guard !automation.locked, !sleeping else { return }
+                    automation.pausedTaskID = nil
+                    pendingOwnStartTaskID = taskID
+                    defer { pendingOwnStartTaskID = nil }
+                    let resumed = try await client.resumeTracking(taskID: taskID,
+                                                                  occurredAt: commandTimestamp(resumeAt))
+                    guard isCurrent(token) else { return }
+                    automation.acknowledgeOwnStart(resumed.active, taskID: taskID)
+                    acceptSnapshot(resumed)
+                }
+            } catch {
+                guard isCurrent(token) else { return }
+                if automationToken == automation.generation { automation.cancel() }
+                let message = error.localizedDescription
+                connection.stale = true
+                publish()
+                do {
+                    let snapshot = try await client.snapshot()
+                    guard isCurrent(token) else { return }
+                    acceptSnapshot(snapshot)
+                } catch {
+                    guard isCurrent(token) else { return }
+                    recordConnectionFailure(error)
+                }
+                tracking.error = message
+            }
+            publish()
+        }
+        return true
     }
 
     private func beginRefresh() {
@@ -289,16 +414,21 @@ public final class TrackerSession {
         }
     }
 
-    private func changeTracking(_ command: @escaping @MainActor () async throws -> TrackerSnapshot) {
+    private func changeTracking(startTaskID: String? = nil, _ command: @escaping @MainActor () async throws -> TrackerSnapshot) {
         tracking.error = nil
-        beginOperation()
+        pendingOwnStartTaskID = startTaskID
         let token = generation
+        beginOperation()
         Task { [weak self] in
             guard let self, isCurrent(token) else { return }
-            defer { finishOperation(token: token) }
+            defer {
+                pendingOwnStartTaskID = nil
+                finishOperation(token: token)
+            }
             do {
                 let snapshot = try await command()
                 guard isCurrent(token) else { return }
+                if let startTaskID { automation.acknowledgeOwnStart(snapshot.active, taskID: startTaskID) }
                 acceptSnapshot(snapshot)
             } catch {
                 guard isCurrent(token) else { return }
@@ -323,6 +453,7 @@ public final class TrackerSession {
         let retryFailedHistory = connection.stale && history.unavailable
         connection.acceptSnapshot()
         let previousActive = active
+        automation.observeActive(snapshot.active)
         tracking.apply(snapshot.active, clock: clock)
         if catalog.apply(snapshot.tasks, previousActive: previousActive, active: active) {
             requestHistory()
