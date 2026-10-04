@@ -103,12 +103,11 @@ fn search_ranks(items: &[TaskListItem]) -> HashMap<TaskId, SearchRank> {
     items
         .iter()
         .map(|item| {
-            let updated = item.task.updated_at();
-            let rank = SearchRank::new(
+            let rank = SearchRank::from_task_activity(
                 item.task.id(),
                 item.task.created_at(),
-                item.latest_work_start
-                    .map_or(updated, |worked| worked.max(updated)),
+                item.task.updated_at(),
+                item.latest_work_start,
             );
             (item.task.id(), rank)
         })

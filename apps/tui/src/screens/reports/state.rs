@@ -1,7 +1,8 @@
-use chrono::{DateTime, Datelike, Duration, LocalResult, Months, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Duration, Months, NaiveDate, Utc};
 use chrono_tz::Tz;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tracker_application::ReportTotals;
+use tracker_application::calendar_reports::{self, CalendarPreset};
 use tracker_domain::TaskId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,11 +105,7 @@ impl ReportState {
     }
 
     pub(crate) fn range(&self, timezone: Tz) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
-        let end_date = self.to.succ_opt()?;
-        Some((
-            local_day_start(timezone, self.from)?,
-            local_day_start(timezone, end_date)?,
-        ))
+        calendar_reports::inclusive_range(timezone, self.from, self.to).ok()
     }
 
     pub(crate) fn selected_index(&self) -> Option<usize> {
@@ -308,56 +305,20 @@ fn shift_months(date: NaiveDate, backwards: bool) -> Option<NaiveDate> {
 }
 
 fn preset_dates(preset: ReportPreset, today: NaiveDate) -> Option<(NaiveDate, NaiveDate)> {
-    match preset {
-        ReportPreset::Today => Some((today, today)),
-        ReportPreset::Yesterday => {
-            let day = today.pred_opt()?;
-            Some((day, day))
-        }
-        ReportPreset::Week => {
-            let offset = today.weekday().num_days_from_monday() as i64;
-            let from = shift_days(today, -offset)?;
-            Some((from, shift_days(from, 6)?))
-        }
-        ReportPreset::Month => {
-            let from = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)?;
-            Some((from, from.checked_add_months(Months::new(1))?.pred_opt()?))
-        }
-        ReportPreset::Year => Some((
-            NaiveDate::from_ymd_opt(today.year(), 1, 1)?,
-            NaiveDate::from_ymd_opt(today.year(), 12, 31)?,
-        )),
-        ReportPreset::Custom => None,
-    }
+    let preset = match preset {
+        ReportPreset::Today => CalendarPreset::Today,
+        ReportPreset::Yesterday => CalendarPreset::Yesterday,
+        ReportPreset::Week => CalendarPreset::Week,
+        ReportPreset::Month => CalendarPreset::Month,
+        ReportPreset::Year => CalendarPreset::Year,
+        ReportPreset::Custom => return None,
+    };
+    calendar_reports::preset_dates(preset, today)
 }
 
+#[cfg(test)]
 fn local_day_start(timezone: Tz, date: NaiveDate) -> Option<DateTime<Utc>> {
-    let mut local = date.and_hms_opt(0, 0, 0)?;
-    loop {
-        if local.date() != date {
-            return None;
-        }
-        match timezone.from_local_datetime(&local) {
-            LocalResult::None => local = local.checked_add_signed(Duration::minutes(1))?,
-            _ => {
-                let mut first = local;
-                for _ in 0..59 {
-                    let previous = first.checked_sub_signed(Duration::seconds(1))?;
-                    if previous.date() != date
-                        || matches!(timezone.from_local_datetime(&previous), LocalResult::None)
-                    {
-                        break;
-                    }
-                    first = previous;
-                }
-                return match timezone.from_local_datetime(&first) {
-                    LocalResult::Single(at) => Some(at.with_timezone(&Utc)),
-                    LocalResult::Ambiguous(a, b) => Some(a.min(b).with_timezone(&Utc)),
-                    LocalResult::None => None,
-                };
-            }
-        }
-    }
+    calendar_reports::day_start(timezone, date).ok()
 }
 
 #[cfg(test)]
