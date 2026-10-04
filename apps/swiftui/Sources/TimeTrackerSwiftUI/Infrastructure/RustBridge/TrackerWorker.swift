@@ -71,6 +71,22 @@ private final class RustBridge {
         }
     }
 
+    func pauseTracking(worklogID: String, occurredAt: String) throws -> TrackingPauseResult {
+        try worklogID.withCString { worklog in
+            try occurredAt.withCString { instant in
+                try decode(tt_bridge_pause_tracking_at(handle, worklog, instant))
+            }
+        }
+    }
+
+    func resumeTracking(taskID: String, occurredAt: String) throws -> TrackerSnapshot {
+        try taskID.withCString { task in
+            try occurredAt.withCString { instant in
+                try decode(tt_bridge_resume_tracking_at(handle, task, instant))
+            }
+        }
+    }
+
     func history(taskID: String, cursor: String?) throws -> HistoryPage {
         try taskID.withCString { task in
             if let cursor {
@@ -149,8 +165,15 @@ final class TrackerWorker: TrackerClient, @unchecked Sendable {
         try await perform { try $0.currentBridge().stopTracking(worklogID: worklogID, occurredAt: occurredAt) }
     }
 
+    func pauseTracking(worklogID: String, occurredAt: String) async throws -> TrackingPauseResult {
+        try await perform { try $0.currentBridge().pauseTracking(worklogID: worklogID, occurredAt: occurredAt) }
+    }
+
+    func resumeTracking(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
+        try await perform { try $0.currentBridge().resumeTracking(taskID: taskID, occurredAt: occurredAt) }
+    }
+
     func history(taskID: String, cursor: String?) async throws -> HistoryPage {
         try await perform { try $0.currentBridge().history(taskID: taskID, cursor: cursor) }
     }
 }
-
