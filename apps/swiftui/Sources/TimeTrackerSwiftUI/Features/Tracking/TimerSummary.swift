@@ -20,6 +20,12 @@ struct TimerSummary: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .help(store.runningTaskName)
+                if let status = store.autoPauseStatusText {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
