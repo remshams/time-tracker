@@ -5,10 +5,9 @@ import TrackerClient
 struct WorklogRow: View {
     let worklog: WorklogItem
     let active: WorklogItem?
-    let elapsed: TimeInterval?
+    let timer: TrackerTimerStore
 
     private var duration: TimeInterval {
-        if active?.id == worklog.id { return elapsed ?? 0 }
         guard let start = timestamp(worklog.start), let end = timestamp(worklog.end) else { return 0 }
         return max(0, end.timeIntervalSince(start))
     }
@@ -24,7 +23,13 @@ struct WorklogRow: View {
                     .lineLimit(2)
             }
             Spacer(minLength: 12)
-            Text(clockDuration(duration))
+            Group {
+                if active?.id == worklog.id {
+                    TrackerElapsedText(timer: timer)
+                } else {
+                    Text(clockDuration(duration))
+                }
+            }
                 .font(.system(.title3, design: .monospaced).weight(.medium))
                 .foregroundStyle(.primary)
                 .monospacedDigit()
