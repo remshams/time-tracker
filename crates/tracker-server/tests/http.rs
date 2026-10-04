@@ -52,6 +52,18 @@ async fn state(router: &axum::Router) -> SnapshotDto {
     serde_json::from_value(body).unwrap()
 }
 
+async fn create_fixture_task(router: &axum::Router, name: &str) -> String {
+    let before = state(router).await;
+    let id = Uuid::now_v7().to_string();
+    let request = merge(
+        json!({"task_id": id, "name": name, "occurred_at": at(0)}),
+        guard(&before.revision),
+    );
+    let (status, body) = call(router, Method::POST, "/v1/tasks", Some(request)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    id
+}
+
 fn preview_uri(as_of: DateTime<Utc>) -> String {
     format!(
         "/v1/tasks/inactive-preview?as_of={}",
@@ -294,7 +306,7 @@ async fn health_create_retry_and_stale_revision() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(health, json!({"status":"ok","protocol_version":1}));
     let before = state(&router).await;
-    assert_eq!(before.task_items.len(), 3);
+    assert!(before.task_items.is_empty());
     let task_id = Uuid::now_v7().to_string();
     let request = merge(
         json!({"task_id":task_id,"name":"Write tests","occurred_at":at(100)}),
@@ -303,7 +315,7 @@ async fn health_create_retry_and_stale_revision() {
     let (status, first) = call(&router, Method::POST, "/v1/tasks", Some(request.clone())).await;
     assert_eq!(status, StatusCode::OK, "{first}");
     let first: MutationDto = serde_json::from_value(first.clone()).unwrap();
-    assert_eq!(first.snapshot.task_items.len(), 4);
+    assert_eq!(first.snapshot.task_items.len(), 1);
     let (status, replay) = call(&router, Method::POST, "/v1/tasks", Some(request.clone())).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(replay, serde_json::to_value(&first).unwrap());
@@ -319,7 +331,7 @@ async fn health_create_retry_and_stale_revision() {
     let (status, error) = call(&router, Method::POST, "/v1/tasks", Some(stale)).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(error["code"], "stale_revision");
-    assert_eq!(state(&router).await.task_items.len(), 4);
+    assert_eq!(state(&router).await.task_items.len(), 1);
 }
 
 #[tokio::test]
@@ -327,9 +339,9 @@ async fn tracking_survives_restart_and_worklogs_support_edits() {
     let temp = TempDir::new().unwrap();
     let path = temp.path().join("tracker.db");
     let router = tracker_server::router_for_database(&path).unwrap();
+    let first_task = create_fixture_task(&router, "First project").await;
+    let second_task = create_fixture_task(&router, "Second project").await;
     let initial = state(&router).await;
-    let first_task = initial.task_items[0].task.id.clone();
-    let second_task = initial.task_items[1].task.id.clone();
     let first_id = Uuid::now_v7().to_string();
     let set = merge(
         json!({"task_id":first_task,"worklog_id":first_id,"expected_active":null,"occurred_at":at(100)}),
@@ -417,8 +429,8 @@ async fn tracking_survives_restart_and_worklogs_support_edits() {
 async fn task_changes_and_request_limit() {
     let temp = TempDir::new().unwrap();
     let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
+    let id = create_fixture_task(&router, "Change this task").await;
     let initial = state(&router).await;
-    let id = initial.task_items[0].task.id.clone();
     let route = format!("/v1/tasks/{id}");
     let rename = merge(
         json!({"action":"rename","name":"Renamed task","occurred_at":at(100)}),
@@ -506,7 +518,7 @@ async fn concurrent_commands_and_duplicate_server_are_rejected_safely() {
     let statuses = [left.0, right.0];
     assert!(statuses.contains(&StatusCode::OK));
     assert!(statuses.contains(&StatusCode::CONFLICT));
-    assert_eq!(state(&router).await.task_items.len(), 4);
+    assert_eq!(state(&router).await.task_items.len(), 1);
 }
 
 #[tokio::test]
@@ -560,7 +572,7 @@ async fn error_mapping_distinguishes_invalid_and_missing_tasks() {
 async fn worklog_page_routes_validate_complete_nonnegative_cursors() {
     let temp = TempDir::new().unwrap();
     let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
-    let task_id = state(&router).await.task_items[0].task.id.clone();
+    let task_id = create_fixture_task(&router, "Worklog project").await;
     let start = at(100).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let worklog_id = Uuid::now_v7().to_string();
 
@@ -613,5 +625,20 @@ async fn stopping_an_already_idle_tracker_is_an_idempotent_success() {
     let (status, retry) = call(&router, Method::PUT, "/v1/tracking", Some(request)).await;
     assert_eq!(status, StatusCode::OK, "{retry}");
     assert_eq!(retry, first);
-    assert_eq!(state(&router).await.task_items.len(), 3);
+    assert!(state(&router).await.task_items.is_empty());
+}
+
+#[tokio::test]
+async fn a_new_server_database_stays_empty_after_restart() {
+    let temp = TempDir::new().unwrap();
+    let path = temp.path().join("tracker.db");
+    for _ in 0..2 {
+        let router = tracker_server::router_for_database(&path).unwrap();
+        let snapshot = state(&router).await;
+        assert!(snapshot.task_items.is_empty());
+        assert!(snapshot.active_worklog.is_none());
+    }
+    let repository = SqliteRepository::open(&path).unwrap();
+    assert!(repository.list_tasks().unwrap().is_empty());
+    assert!(repository.active_worklog().unwrap().is_none());
 }

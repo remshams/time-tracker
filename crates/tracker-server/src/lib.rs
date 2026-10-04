@@ -22,10 +22,9 @@ use chrono::{DateTime, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracker_application::{
-    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, DEFAULT_TASK_NAMES,
-    GlobalWorklogCursor, ReportQueries, RepositoryError, SetActiveTaskOutcome, TaskOperations,
-    TaskOrdering, TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor,
-    WorklogOperations, WorklogQueries,
+    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, GlobalWorklogCursor,
+    ReportQueries, SetActiveTaskOutcome, TaskOperations, TaskOrdering, TaskQueries,
+    TrackerApplication, TrackingOperations, WorklogCursor, WorklogOperations, WorklogQueries,
 };
 use tracker_domain::{Task, TaskId, TaskName, TrackingState, WorklogId, WorklogTimes};
 use tracker_protocol::{
@@ -192,24 +191,14 @@ impl From<ApplicationError> for ApiError {
         if matches!(error, ApplicationError::TrackingStateChanged) {
             return Self::conflict(failure.message());
         }
-        if matches!(
-            error,
-            ApplicationError::TrackingRecovery(_)
-                | ApplicationError::TaskRecovery(_)
-                | ApplicationError::WorklogCorrectionRecovery { .. }
-                | ApplicationError::WorklogMoveRecovery { .. }
-                | ApplicationError::WorklogDeletionRecovery { .. }
-        ) {
-            return Self::internal();
-        }
-        if matches!(
-            repository_cause(&error),
-            Some(RepositoryError::Backend { .. } | RepositoryError::CorruptData { .. })
-        ) {
+        if failure.recovery_failed()
+            || failure.source() != tracker_application::ApplicationFailureSource::Operation
+        {
             return Self::internal();
         }
         let (status, code) = match failure.category() {
-            ApplicationFailureCategory::WorklogNotFound => {
+            ApplicationFailureCategory::WorklogNotFound
+            | ApplicationFailureCategory::TaskNotFound => {
                 (StatusCode::NOT_FOUND, ErrorCode::NotFound)
             }
             ApplicationFailureCategory::WorklogChanged => {
@@ -230,14 +219,7 @@ impl From<ApplicationError> for ApiError {
                 ErrorCode::InactiveTaskCandidatesChanged,
             ),
             ApplicationFailureCategory::General => {
-                if matches!(
-                    repository_cause(&error),
-                    Some(RepositoryError::TaskNotFound { .. })
-                ) {
-                    (StatusCode::NOT_FOUND, ErrorCode::NotFound)
-                } else {
-                    (StatusCode::BAD_REQUEST, ErrorCode::InvalidRequest)
-                }
+                (StatusCode::BAD_REQUEST, ErrorCode::InvalidRequest)
             }
         };
         Self {
@@ -245,16 +227,6 @@ impl From<ApplicationError> for ApiError {
             code,
             message: failure.message().to_owned(),
         }
-    }
-}
-
-fn repository_cause(error: &ApplicationError) -> Option<&RepositoryError> {
-    match error {
-        ApplicationError::Repository(cause)
-        | ApplicationError::TrackingWrite(cause)
-        | ApplicationError::TrackingRecovery(cause)
-        | ApplicationError::TaskRecovery(cause) => Some(cause),
-        _ => None,
     }
 }
 
@@ -632,11 +604,6 @@ async fn report(
 pub fn router_for_database(path: &Path) -> Result<Router, Box<dyn Error + Send + Sync>> {
     let database_lock = lock_database(path)?;
     let repository = SqliteRepository::open(path)?;
-    let names: Vec<TaskName> = DEFAULT_TASK_NAMES
-        .iter()
-        .map(|name| TaskName::new(name).expect("valid seed task name"))
-        .collect();
-    repository.seed_default_tasks(&names, Utc::now())?;
     let app = TrackerApplication::load(repository)?;
     let core = Core {
         _database_lock: database_lock,
@@ -1084,9 +1051,68 @@ mod security_tests {
                 tracker_protocol::ErrorCode::Internal,
             ),
             (
+                tracker_application::ApplicationError::WorklogCorrectionWrite {
+                    write: RepositoryError::Backend {
+                        message: "correction secret".into(),
+                    },
+                },
+                StatusCode::INTERNAL_SERVER_ERROR,
+                tracker_protocol::ErrorCode::Internal,
+            ),
+            (
+                tracker_application::ApplicationError::WorklogMoveWrite {
+                    write: RepositoryError::CorruptData { field: "password" },
+                },
+                StatusCode::INTERNAL_SERVER_ERROR,
+                tracker_protocol::ErrorCode::Internal,
+            ),
+            (
+                tracker_application::ApplicationError::WorklogDeletionWrite {
+                    write: RepositoryError::Backend {
+                        message: "deletion secret".into(),
+                    },
+                },
+                StatusCode::INTERNAL_SERVER_ERROR,
+                tracker_protocol::ErrorCode::Internal,
+            ),
+            (
+                tracker_application::ApplicationError::WorklogDeletionRecovery {
+                    write: RepositoryError::WorklogChanged {
+                        id: tracker_domain::WorklogId::generate(),
+                    },
+                    recovery: RepositoryError::Backend {
+                        message: "recovery secret".into(),
+                    },
+                },
+                StatusCode::INTERNAL_SERVER_ERROR,
+                tracker_protocol::ErrorCode::Internal,
+            ),
+            (
+                tracker_application::ApplicationError::TaskRecovery(
+                    RepositoryError::TaskNotFound { id: task_id },
+                ),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                tracker_protocol::ErrorCode::Internal,
+            ),
+            (
                 tracker_application::ApplicationError::Repository(RepositoryError::TaskNotFound {
                     id: task_id,
                 }),
+                StatusCode::NOT_FOUND,
+                tracker_protocol::ErrorCode::NotFound,
+            ),
+            (
+                tracker_application::ApplicationError::semantic_failure(
+                    tracker_application::ApplicationFailureCategory::TaskNotFound,
+                    "Task not found",
+                ),
+                StatusCode::NOT_FOUND,
+                tracker_protocol::ErrorCode::NotFound,
+            ),
+            (
+                tracker_application::ApplicationError::WorklogMoveWrite {
+                    write: RepositoryError::TaskNotFound { id: task_id },
+                },
                 StatusCode::NOT_FOUND,
                 tracker_protocol::ErrorCode::NotFound,
             ),
