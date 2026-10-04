@@ -26,6 +26,22 @@ final class UserDefaultsConnectionSettings: ConnectionSettingsRepository {
 }
 
 @MainActor
+final class UserDefaultsTrackingPreferences: TrackingPreferencesRepository {
+    private let defaults: UserDefaults
+    private let key = "tracker.pauseOnScreenLock"
+
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    func load() -> TrackingPreferences {
+        TrackingPreferences(pauseOnScreenLock: defaults.bool(forKey: key))
+    }
+
+    func save(_ preferences: TrackingPreferences) {
+        defaults.set(preferences.pauseOnScreenLock, forKey: key)
+    }
+}
+
+@MainActor
 struct RunLoopTrackerScheduler: TrackerScheduler {
     func schedule(after interval: TimeInterval, repeating: Bool, tolerance: TimeInterval,
                   action: @escaping @MainActor () -> Void) -> any TrackerCancellation {

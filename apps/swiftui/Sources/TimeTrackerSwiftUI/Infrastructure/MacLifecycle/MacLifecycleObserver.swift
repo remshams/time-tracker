@@ -29,6 +29,9 @@ final class MacLifecycleObserver {
             $0.updateVisibility()
             $0.session?.wake()
         }
+        let distributed = DistributedNotificationCenter.default()
+        observeScreenEvent(distributed, Notification.Name("com.apple.screenIsLocked"), locked: true)
+        observeScreenEvent(distributed, Notification.Name("com.apple.screenIsUnlocked"), locked: false)
         updateVisibility()
     }
 
@@ -39,7 +42,7 @@ final class MacLifecycleObserver {
     private func observe(_ center: NotificationCenter, _ name: Notification.Name,
                          action: @escaping @MainActor (MacLifecycleObserver) -> Void) {
         let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated {
                 guard let self else { return }
                 action(self)
             }
@@ -53,5 +56,17 @@ final class MacLifecycleObserver {
                 $0.occlusionState.contains(.visible)
         }
         session?.setWindowVisible(visible)
+    }
+
+    private func observeScreenEvent(_ center: NotificationCenter, _ name: Notification.Name, locked: Bool) {
+        let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            let occurredAt = Date()
+            // The main queue preserves the notification order and the captured event time.
+            MainActor.assumeIsolated {
+                if locked { self?.session?.screenLocked(at: occurredAt) }
+                else { self?.session?.screenUnlocked(at: occurredAt) }
+            }
+        }
+        observers.append((center, observer))
     }
 }
