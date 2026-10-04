@@ -7,7 +7,7 @@ use crate::page::TimeTrackerPage;
 
 #[test]
 fn tracking_shows_the_timer_the_modal_and_the_validation_error_with_their_styles() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
 
     let page = tt.wait_for_first_frame("the first frame", |screen| {
@@ -103,7 +103,7 @@ fn tracking_shows_the_timer_the_modal_and_the_validation_error_with_their_styles
 
 #[test]
 fn stopping_tracking_idles_the_header_and_closes_the_worklog() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -178,7 +178,7 @@ fn stopping_tracking_idles_the_header_and_closes_the_worklog() {
 
 #[test]
 fn switching_tasks_moves_the_marker_and_shares_one_boundary_timestamp() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -273,7 +273,7 @@ fn switching_tasks_moves_the_marker_and_shares_one_boundary_timestamp() {
 
 #[test]
 fn restarting_a_task_opens_a_second_distinct_worklog() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -339,7 +339,7 @@ fn restarting_a_task_opens_a_second_distinct_worklog() {
 
 #[test]
 fn an_active_timer_recovers_after_a_relaunch() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());

@@ -1,4 +1,4 @@
-//! Startup, seeding, and shutdown scenarios.
+//! Empty startup, existing data, and shutdown scenarios.
 
 use std::io::Read;
 use std::process::Stdio;
@@ -16,8 +16,10 @@ use crate::page::TimeTrackerPage;
 const EXIT_LIMIT: Duration = Duration::from_secs(5);
 
 #[test]
-fn tt_seeds_the_database_renders_the_task_list_and_quits_on_q() {
+fn tt_creates_an_empty_database_and_keeps_it_empty_after_restart() {
     let context = TestContext::new();
+    assert!(!context.local_database_path().exists());
+    assert!(!context.local_database_path().parent().unwrap().exists());
     let mut tt = context.launch();
 
     // The predicate covers every region the assertions below rely on:
@@ -26,12 +28,9 @@ fn tt_seeds_the_database_renders_the_task_list_and_quits_on_q() {
         let page = TimeTrackerPage::new(screen.clone());
         page.header().title_is_accented()
             && page.header().is_idle()
-            && page.task_panel().task_names()
-                == [
-                    "Write release notes".to_owned(),
-                    "Fix the coffee machine".to_owned(),
-                    "Plan Friday's demo".to_owned(),
-                ]
+            && page.task_panel().task_names().is_empty()
+            && page.task_panel().empty_hint().is_some()
+            && page.task_panel().selected_index().is_none()
             && page.status_bar().text().is_empty()
             && page.footer().hints_open_history()
             && page.footer().hints_quit()
@@ -50,16 +49,9 @@ fn tt_seeds_the_database_renders_the_task_list_and_quits_on_q() {
     );
 
     let panel = page.task_panel();
-    assert_eq!(
-        panel.task_names(),
-        [
-            "Write release notes".to_owned(),
-            "Fix the coffee machine".to_owned(),
-            "Plan Friday's demo".to_owned()
-        ],
-        "the seeded task list renders:\n{}",
-        page.screen()
-    );
+    assert!(panel.task_names().is_empty(), "{}", page.screen());
+    assert!(panel.empty_hint().is_some(), "{}", page.screen());
+    assert_eq!(panel.selected_index(), None, "{}", page.screen());
     assert!(
         panel.is_focused(),
         "normal mode focuses the panel border:\n{}",
@@ -110,34 +102,42 @@ fn tt_seeds_the_database_renders_the_task_list_and_quits_on_q() {
         page.screen()
     );
 
-    // Keep the exact stored records the first frame showed, so the exit
-    // can be checked against them record by record.
     let database = context.database();
-    assert_eq!(
-        database.task_names(),
-        [
-            "Write release notes".to_owned(),
-            "Fix the coffee machine".to_owned(),
-            "Plan Friday's demo".to_owned()
-        ]
-    );
-    let stored = database.tasks();
+    assert!(database.tasks().is_empty());
+    assert!(database.active_worklogs().is_empty());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let path = context.local_database_path();
+        assert_eq!(
+            std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            std::fs::metadata(path.parent().unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+    }
 
-    let outcome = tt.exit_with(termlens::Key::Char('q'));
-    outcome.assert_clean_exit();
+    tt.exit_with(Key::Char('q')).assert_clean_exit();
+    assert!(database.tasks().is_empty());
+    assert!(database.active_worklogs().is_empty());
 
-    // Seeding went through the real SQLite adapter and quit touched
-    // neither the stored records nor the timer.
-    assert_eq!(
-        database.tasks(),
-        stored,
-        "quitting changed no stored record"
-    );
-    assert_eq!(
-        database.active_worklog_task_name(),
-        None,
-        "quitting must not start or stop a timer"
-    );
+    let mut restarted = context.launch();
+    restarted.wait_for_first_frame("the empty list after restart", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.header().is_idle()
+            && page.task_panel().empty_hint().is_some()
+            && page.task_panel().task_names().is_empty()
+            && page.task_panel().selected_index().is_none()
+    });
+    restarted.quit().assert_clean_exit();
+    assert!(database.tasks().is_empty());
+    assert!(database.active_worklogs().is_empty());
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn tt_reports_a_startup_failure_and_exits_nonzero() {
 }
 
 #[test]
-fn an_existing_custom_database_is_shown_as_is_without_reseeding() {
+fn an_existing_custom_database_is_shown_without_changes() {
     let context = TestContext::new();
     // Seed through the real adapter before tt starts, and keep the exact
     // stored records the launch must leave untouched.
@@ -246,9 +246,7 @@ fn an_existing_custom_database_is_shown_as_is_without_reseeding() {
 
     tt.quit().assert_clean_exit();
 
-    // A database that already has tasks is never reseeded: every stored
-    // record is exactly what setup put there, so no default task was
-    // inserted and nothing else changed.
+    // Startup keeps each stored record unchanged.
     let database = context.database();
     assert_eq!(
         database.tasks(),
@@ -351,4 +349,23 @@ fn a_mixed_database_shows_active_and_archived_tasks_in_their_own_views() {
         None,
         "launching a mixed database starts nothing"
     );
+}
+
+#[test]
+fn tasks_from_earlier_sample_data_remain_unchanged() {
+    let context = TestContext::new_with_tasks();
+    let before = context.database().tasks();
+    let mut tt = context.launch();
+    tt.wait_for_first_frame("the existing sample tasks", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .task_names()
+            == [
+                "Write release notes",
+                "Fix the coffee machine",
+                "Plan Friday's demo",
+            ]
+    });
+    tt.quit().assert_clean_exit();
+    assert_eq!(context.database().tasks(), before);
 }

@@ -32,7 +32,7 @@ fn open_worklogs(tt: &mut TuiDriver) -> TimeTrackerPage {
 
 #[test]
 fn an_empty_global_worklog_tab_shows_its_hint() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     let page = open_worklogs(&mut tt);
     assert_eq!(

@@ -17,7 +17,7 @@ fn at(hour: u32, minute: u32) -> DateTime<Utc> {
 
 #[test]
 fn remote_terminal_redraws_after_resize_and_keeps_selection() {
-    let context = RemoteTestContext::new();
+    let context = RemoteTestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the remote task list", |screen| {
         TimeTrackerPage::new(screen.clone())
@@ -46,7 +46,7 @@ fn remote_terminal_redraws_after_resize_and_keeps_selection() {
 
 #[test]
 fn remote_keypress_renders_without_poll_delay() {
-    let context = RemoteTestContext::new();
+    let context = RemoteTestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the remote task list", |screen| {
         TimeTrackerPage::new(screen.clone())
@@ -83,7 +83,7 @@ fn remote_keypress_renders_without_poll_delay() {
 
 #[test]
 fn remote_input_resize_and_timer_redraw_while_snapshot_response_is_held() {
-    let context = RemoteTestContext::new();
+    let context = RemoteTestContext::new_with_tasks();
     let proxy = context.proxy();
     let mut tt = context.launch_through(&proxy);
     tt.wait_for_first_frame("the remote task list", |screen| {
@@ -152,7 +152,7 @@ fn remote_input_resize_and_timer_redraw_while_snapshot_response_is_held() {
 
 #[test]
 fn remote_duplicate_confirmation_does_not_send_a_second_write() {
-    let context = RemoteTestContext::new();
+    let context = RemoteTestContext::new_with_tasks();
     let proxy = context.proxy();
     let mut tt = context.launch_through(&proxy);
     tt.wait_for_first_frame("the remote task list", |screen| {
@@ -203,7 +203,7 @@ fn remote_duplicate_confirmation_does_not_send_a_second_write() {
 
 #[test]
 fn remote_late_history_response_does_not_reopen_the_screen() {
-    let context = RemoteTestContext::new();
+    let context = RemoteTestContext::new_with_tasks();
     let proxy = context.proxy();
     let mut tt = context.launch_through(&proxy);
     tt.wait_for_first_frame("the remote task list", |screen| {
@@ -241,7 +241,7 @@ fn remote_late_history_response_does_not_reopen_the_screen() {
 
 #[test]
 fn remote_task_create_rename_search_archive_and_restore_use_the_server_database() {
-    let context = RemoteTestContext::new();
+    let context = RemoteTestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the server task list", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -335,7 +335,7 @@ fn remote_task_create_rename_search_archive_and_restore_use_the_server_database(
 
 #[test]
 fn remote_tracking_switch_stop_history_and_global_history_are_server_backed() {
-    let context = RemoteTestContext::new();
+    let context = RemoteTestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the initial server task list", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -721,7 +721,7 @@ fn remote_clients_refresh_and_reject_a_stale_worklog_correction() {
 
 #[test]
 fn a_second_remote_client_refreshes_after_a_server_change() {
-    let context = RemoteTestContext::new();
+    let context = RemoteTestContext::new_with_tasks();
     let mut observer = context.launch_second_client();
     observer.wait_for_first_frame("the observer client task list", |screen| {
         TimeTrackerPage::new(screen.clone())
@@ -769,7 +769,7 @@ fn a_second_remote_client_refreshes_after_a_server_change() {
 
 #[test]
 fn a_remote_client_shows_unavailable_at_startup_and_recovers_without_local_fallback() {
-    let mut context = RemoteTestContext::new();
+    let mut context = RemoteTestContext::new_with_tasks();
     context.stop_server();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the unavailable server state", |screen| {
@@ -798,7 +798,7 @@ fn a_remote_client_shows_unavailable_at_startup_and_recovers_without_local_fallb
 
 #[test]
 fn remote_disconnect_shows_unavailable_reconnects_and_keeps_active_timer_on_restart() {
-    let mut context = RemoteTestContext::new();
+    let mut context = RemoteTestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the remote task list", |screen| {
         TimeTrackerPage::new(screen.clone())
@@ -841,5 +841,50 @@ fn remote_disconnect_shows_unavailable_reconnects_and_keeps_active_timer_on_rest
         .active_worklog()
         .expect("server restart must preserve the active worklog");
     assert_eq!(active.task_name, "Write release notes");
+    assert!(!context.local_database_path().exists());
+}
+
+#[test]
+fn an_empty_server_stays_empty_after_restart_and_accepts_its_first_task() {
+    let mut context = RemoteTestContext::new();
+    let mut tt = context.launch();
+    tt.wait_for_first_frame("the empty remote task list", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.header().is_idle()
+            && page.status_bar().text().is_empty()
+            && page.task_panel().empty_hint().is_some()
+            && page.task_panel().task_names().is_empty()
+            && page.task_panel().selected_index().is_none()
+    });
+    tt.quit().assert_clean_exit();
+    assert!(context.server_database().tasks().is_empty());
+    assert!(context.server_database().active_worklogs().is_empty());
+    context.restart_server();
+
+    let mut tt = context.launch();
+    tt.wait_for_first_frame("the empty server after restart", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.status_bar().text().is_empty()
+            && page.task_panel().empty_hint().is_some()
+            && page.task_panel().task_names().is_empty()
+    });
+    tt.press_and_wait(Key::Char('a'), "the first task dialog", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_input_dialog()
+            .is_some()
+    });
+    tt.type_text("First server task");
+    tt.press_and_wait(Key::Enter, "the first server task", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_input_dialog().is_none()
+            && page.task_panel().task_names() == ["First server task"]
+            && page.task_panel().selected_index() == Some(0)
+    });
+    tt.quit().assert_clean_exit();
+    assert_eq!(
+        context.server_database().task_names(),
+        ["First server task"]
+    );
+    assert!(context.server_database().active_worklogs().is_empty());
     assert!(!context.local_database_path().exists());
 }

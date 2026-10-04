@@ -7,7 +7,7 @@ use crate::page::TimeTrackerPage;
 
 #[test]
 fn tt_archives_restores_and_persists_the_round_trip() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -82,7 +82,7 @@ fn tt_archives_restores_and_persists_the_round_trip() {
 
 #[test]
 fn tt_persists_an_archive_across_a_quit_and_a_relaunch() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -137,7 +137,7 @@ fn tt_persists_an_archive_across_a_quit_and_a_relaunch() {
 
 #[test]
 fn tt_ignores_active_view_keys_in_the_archived_view() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -196,7 +196,7 @@ fn tt_ignores_active_view_keys_in_the_archived_view() {
 
 #[test]
 fn archiving_the_active_task_is_rejected_and_keeps_tracking() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());

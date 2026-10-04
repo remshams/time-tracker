@@ -55,6 +55,13 @@ impl TestContext {
         }
     }
 
+    /// Creates the task fixture used by scenarios that need existing rows.
+    pub(crate) fn new_with_tasks() -> Self {
+        let context = Self::new();
+        context.database().create_fixture_tasks();
+        context
+    }
+
     /// Launches `tt` against this home in a fresh pseudo-terminal. Call
     /// again for a restart of the same context.
     pub(crate) fn launch(&self) -> TuiDriver {

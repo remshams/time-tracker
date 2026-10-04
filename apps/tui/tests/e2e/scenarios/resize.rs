@@ -109,7 +109,7 @@ fn the_grown_dialog_holds(screen: &Screen) -> bool {
 
 #[test]
 fn a_resized_terminal_relocates_every_component_and_stays_drivable() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -192,7 +192,7 @@ fn a_resized_terminal_relocates_every_component_and_stays_drivable() {
 
 #[test]
 fn an_open_dialog_recenters_on_resize_and_saves_what_was_typed() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());

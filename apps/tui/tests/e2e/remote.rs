@@ -27,6 +27,13 @@ impl RemoteTestContext {
         context
     }
 
+    pub(crate) fn new_with_tasks() -> Self {
+        let mut context = Self::new_without_server();
+        context.server_database().create_fixture_tasks();
+        context.start_server();
+        context
+    }
+
     pub(crate) fn new_without_server() -> Self {
         let local = TestContext::new();
         let database_path = local.home().join("remote-server.db");

@@ -31,7 +31,7 @@ fn launch_stale_and_current(context: &TestContext) -> (TuiDriver, TuiDriver) {
 
 #[test]
 fn a_stale_process_adopts_the_worklog_another_client_started() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let (mut stale, mut current) = launch_stale_and_current(&context);
     let database = context.database();
     let task = database
@@ -98,7 +98,7 @@ fn a_stale_process_adopts_the_worklog_another_client_started() {
 
 #[test]
 fn a_stale_stop_refreshes_without_stopping_the_newer_worklog() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let (mut stale, mut current) = launch_stale_and_current(&context);
     let database = context.database();
     let first_task = database
@@ -196,7 +196,7 @@ fn a_stale_stop_refreshes_without_stopping_the_newer_worklog() {
 
 #[test]
 fn a_stale_set_active_intentionally_switches_from_the_authoritative_state() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let (mut stale, mut current) = launch_stale_and_current(&context);
     let database = context.database();
     let task_a = database

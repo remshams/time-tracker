@@ -11,7 +11,7 @@ fn adding_a_task_renders_selects_and_persists_it() {
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
-        page.header().is_idle() && page.task_panel().task_names().len() == 3
+        page.header().is_idle() && page.task_panel().task_names().is_empty()
     });
 
     let page = tt.press_and_wait(Key::Char('a'), "the add dialog", |screen| {
@@ -41,7 +41,7 @@ fn adding_a_task_renders_selects_and_persists_it() {
         let page = TimeTrackerPage::new(screen.clone());
         page.task_input_dialog().is_none()
             && page.status_bar().text() == "Added \"Prepare sprint review\""
-            && page.task_panel().task_names().len() == 4
+            && page.task_panel().task_names().len() == 1
             && page.task_panel().row(0).is_selected()
     });
     let panel = page.task_panel();
@@ -57,15 +57,7 @@ fn adding_a_task_renders_selects_and_persists_it() {
     tt.quit().assert_clean_exit();
 
     let database = context.database();
-    assert_eq!(
-        database.task_names(),
-        [
-            "Write release notes".to_owned(),
-            "Fix the coffee machine".to_owned(),
-            "Plan Friday's demo".to_owned(),
-            "Prepare sprint review".to_owned(),
-        ]
-    );
+    assert_eq!(database.task_names(), ["Prepare sprint review".to_owned()]);
     let stored = database
         .task_by_name("Prepare sprint review")
         .expect("the added task is stored");
@@ -74,7 +66,7 @@ fn adding_a_task_renders_selects_and_persists_it() {
 
 #[test]
 fn renaming_a_task_replaces_the_name_and_persists_it() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -151,7 +143,7 @@ fn renaming_a_task_replaces_the_name_and_persists_it() {
 
 #[test]
 fn selection_moves_with_j_and_k_and_never_wraps_at_the_list_edges() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
@@ -221,7 +213,7 @@ fn selection_moves_with_j_and_k_and_never_wraps_at_the_list_edges() {
 
 #[test]
 fn a_failed_create_keeps_the_dialog_and_a_retry_persists_the_task() {
-    let context = TestContext::new();
+    let context = TestContext::new_with_tasks();
     let mut tt = context.launch();
     tt.wait_for_first_frame("the first frame", |screen| {
         let page = TimeTrackerPage::new(screen.clone());

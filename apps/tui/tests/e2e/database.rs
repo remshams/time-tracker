@@ -66,6 +66,17 @@ impl Database {
         self.create_task_at(name, fixture_time(0), fixture_time(0))
     }
 
+    pub(crate) fn create_fixture_tasks(&self) {
+        let now = Utc::now();
+        for name in [
+            "Write release notes",
+            "Fix the coffee machine",
+            "Plan Friday's demo",
+        ] {
+            self.create_task_at(name, now, now);
+        }
+    }
+
     /// Adds a task with explicit metadata timestamps for ordering scenarios.
     pub(crate) fn create_task_at(
         &self,
