@@ -12,8 +12,8 @@ struct TrackerMenu: View {
         Text(store.runningTaskName)
         if let status = store.autoPauseStatusText { Text(status) }
         if let error = store.trackingError { Text(error) }
-        if let elapsed = store.elapsed {
-            Text(clockDuration(elapsed))
+        if store.active != nil {
+            TrackerElapsedText(timer: store.timer)
         }
         Divider()
         Button("Open Time Tracker") { openWindow(id: "tracker") }
