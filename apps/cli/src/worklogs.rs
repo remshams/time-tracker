@@ -72,20 +72,23 @@ fn selected(id: WorklogId, task: TaskId, expected: &ExpectedTimes) -> Result<Wor
 fn validate_mutation(command: &Worklogs, now: DateTime<Utc>) -> Result<(), CliError> {
     match command {
         Worklogs::Correct {
-            worklog_id,
             expected,
             start,
             end,
+            ..
         } => {
-            let task = TaskId::from_uuid(worklog_id.as_uuid());
-            let worklog = selected(*worklog_id, task, expected)?;
+            let original = WorklogTimes::new(
+                canonical(expected.expected_start),
+                expected.expected_end.0.map(canonical),
+            );
+            original.validate().map_err(CliError::input)?;
             let replacement = replacement(expected, *start, *end);
             let replacement = WorklogTimes::new(
                 canonical(replacement.start()),
                 replacement.end().map(canonical),
             );
-            worklog
-                .corrected(replacement, canonical(now))
+            original
+                .validate_correction(replacement, canonical(now))
                 .map_err(CliError::input)?;
         }
         Worklogs::Move {
@@ -259,5 +262,42 @@ async fn list(
         Ok(
             json!({"worklogs": page.worklogs.iter().map(WorklogDto::from).collect::<Vec<_>>(), "next_cursor": next}),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::args::EndTimestamp;
+
+    fn correction(start: DateTime<Utc>, end: DateTime<Utc>, replacement: EndTimestamp) -> Worklogs {
+        Worklogs::Correct {
+            worklog_id: "00000000-0000-7000-8000-000000000001".parse().unwrap(),
+            expected: ExpectedTimes {
+                expected_start: start,
+                expected_end: EndTimestamp(Some(end)),
+            },
+            start: None,
+            end: Some(replacement),
+        }
+    }
+
+    #[test]
+    fn original_interval_errors_precede_replacement_completion_errors() {
+        let start = DateTime::from_timestamp(200, 0).unwrap();
+        let end = DateTime::from_timestamp(100, 0).unwrap();
+        let mut command = correction(start, end, EndTimestamp(None));
+        let error = validate(&mut command, "unused", start).unwrap_err();
+        assert_eq!(error.message, "worklog end must not precede its start");
+        assert_eq!(error.exit_code, 2);
+    }
+
+    #[test]
+    fn original_and_replacement_intervals_compare_canonical_microseconds() {
+        let earlier = DateTime::from_timestamp(100, 1).unwrap();
+        let later = DateTime::from_timestamp(100, 999).unwrap();
+        let now = DateTime::from_timestamp(100, 0).unwrap();
+        let mut command = correction(later, earlier, EndTimestamp(Some(later)));
+        assert!(validate(&mut command, "unused", now).is_ok());
     }
 }

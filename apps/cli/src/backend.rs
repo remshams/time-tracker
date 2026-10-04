@@ -68,11 +68,7 @@ fn canonical_database_path(path: &Path) -> std::io::Result<PathBuf> {
 }
 
 impl Backend {
-    pub async fn open(
-        database: Option<PathBuf>,
-        server: Option<String>,
-        now: DateTime<Utc>,
-    ) -> Result<Self, CliError> {
+    pub async fn open(database: Option<PathBuf>, server: Option<String>) -> Result<Self, CliError> {
         let identity = identity(database.as_deref(), server.as_deref())?;
         let kind = if let Some(server) = server {
             BackendKind::Remote(
@@ -89,11 +85,7 @@ impl Backend {
                 }
             };
             let repository = SqliteRepository::open(path).map_err(CliError::storage)?;
-            seed(&repository, now)?;
-            BackendKind::Local(
-                TrackerApplication::load(repository)
-                    .map_err(|error| CliError::application(error, None))?,
-            )
+            BackendKind::Local(TrackerApplication::load(repository).map_err(CliError::application)?)
         };
         Ok(Self { identity, kind })
     }
@@ -120,26 +112,15 @@ impl Backend {
     }
 }
 
-fn seed(repository: &SqliteRepository, now: DateTime<Utc>) -> Result<(), CliError> {
-    let names: Vec<_> = tracker_application::DEFAULT_TASK_NAMES
-        .iter()
-        .map(|name| TaskName::new(name).expect("default task names are valid"))
-        .collect();
-    repository
-        .seed_default_tasks(&names, now)
-        .map(|_| ())
-        .map_err(CliError::storage)
-}
-
 macro_rules! operation {
     ($name:ident($($arg:ident: $ty:ty),*) -> $result:ty) => {
         impl Backend {
             pub async fn $name(&mut self, $($arg: $ty),*) -> Result<$result, CliError> {
                 match &mut self.kind {
                     BackendKind::Local(app) => app.$name($($arg),*)
-                        .map_err(|error| CliError::application(error, None)),
+                        .map_err(CliError::application),
                     BackendKind::Remote(app) => app.$name($($arg),*).await
-                        .map_err(|error| CliError::remote_application(error, app.last_failure())),
+                        .map_err(CliError::application),
                 }
             }
         }

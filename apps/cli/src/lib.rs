@@ -22,7 +22,7 @@ pub async fn run(mut cli: Cli) -> Result<Value, CliError> {
     }
     let identity = backend::identity(cli.db.as_deref(), cli.server.as_deref())?;
     validate(&mut cli.command, &identity, now)?;
-    let mut backend = backend::Backend::open(cli.db, cli.server, now).await?;
+    let mut backend = backend::Backend::open(cli.db, cli.server).await?;
     match cli.command {
         args::Command::Tasks { command } => tasks::execute(&mut backend, command, now).await,
         args::Command::Tracking { command } => tracking::execute(&mut backend, command, now).await,

@@ -26,11 +26,13 @@ const T2: &str = "2026-01-01T02:00:00Z";
 const T3: &str = "2026-01-01T03:00:00Z";
 
 #[test]
-fn tasks_share_seed_data_and_support_create_rename_archive_restore_and_search() {
+fn tasks_start_empty_and_support_create_rename_archive_restore_and_search() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tt.db");
-    let seeded = command(&path, T0, &["tasks", "list"]).unwrap();
-    assert_eq!(seeded["tasks"].as_array().unwrap().len(), 3);
+    for _ in 0..2 {
+        let empty = command(&path, T0, &["tasks", "list"]).unwrap();
+        assert_eq!(empty["tasks"], serde_json::json!([]));
+    }
     let created = command(&path, T1, &["tasks", "create", "  Build release  "]).unwrap();
     let id = created["id"].as_str().unwrap();
     assert_eq!(created["name"], "Build release");
@@ -61,7 +63,7 @@ fn tasks_share_seed_data_and_support_create_rename_archive_restore_and_search() 
             .as_array()
             .unwrap()
             .len(),
-        4
+        1
     );
     assert_eq!(
         command(&path, T3, &["tasks", "restore", id]).unwrap()["archived"],
@@ -297,7 +299,9 @@ fn invalid_inputs_are_rejected_before_a_database_is_created() {
 fn inactive_archiving_preserves_preview_candidates_and_backend_identity() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tt.db");
-    command(&path, T0, &["tasks", "list"]).unwrap();
+    for name in ["Old planning", "Old review", "Old release"] {
+        command(&path, T0, &["tasks", "create", name]).unwrap();
+    }
     let preview = command(
         &path,
         "2026-02-01T00:00:00Z",

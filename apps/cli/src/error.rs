@@ -1,6 +1,6 @@
 use serde::Serialize;
-use tracker_application::{ApplicationError, ApplicationFailureCategory, RepositoryError};
-use tracker_remote::{RemoteError, RemoteFailureKind};
+use tracker_application::{ApplicationError, ApplicationFailureCategory, ApplicationFailureSource};
+use tracker_remote::RemoteError;
 
 #[derive(Debug, thiserror::Error, Serialize)]
 #[error("{message}")]
@@ -46,57 +46,33 @@ impl CliError {
         }
     }
 
-    pub fn application(error: ApplicationError, remote: Option<RemoteFailureKind>) -> Self {
-        Self::classify(error, remote, false)
-    }
-
-    pub fn remote_application(error: ApplicationError, failure: Option<RemoteFailureKind>) -> Self {
-        Self::classify(error, failure, true)
-    }
-
-    fn classify(
-        error: ApplicationError,
-        remote: Option<RemoteFailureKind>,
-        remote_backend: bool,
-    ) -> Self {
+    pub fn application(error: ApplicationError) -> Self {
         let failure = error.failure();
-        let code = category_code(failure.category());
-        let storage = is_storage_failure(&error);
-        let remote_failure = matches!(
-            remote,
-            Some(RemoteFailureKind::Unavailable | RemoteFailureKind::Protocol)
-        ) || (remote_backend && storage);
-        let recovery_failed = failure.recovery_failed()
-            || matches!(
-                error,
-                ApplicationError::TrackingRecovery(_) | ApplicationError::TaskRecovery(_)
-            );
+        let category_code = category_code(failure.category());
+        let (source_code, exit_code) = match failure.source() {
+            ApplicationFailureSource::Operation => ("operation_failed", 3),
+            ApplicationFailureSource::Storage => ("storage", 4),
+            ApplicationFailureSource::RemoteUnavailable
+            | ApplicationFailureSource::RemoteProtocol => ("remote", 5),
+        };
         Self {
-            code: if code != "operation_failed" {
-                code
-            } else if remote_failure {
-                "remote"
-            } else if storage {
-                "storage"
+            code: if category_code == "operation_failed" {
+                source_code
             } else {
-                code
+                category_code
             },
             message: failure.message().to_owned(),
-            recovery_failed,
-            exit_code: if remote_failure {
-                5
-            } else if storage {
-                4
-            } else {
-                3
-            },
+            recovery_failed: failure.recovery_failed(),
+            exit_code,
         }
     }
 }
 
 fn category_code(category: ApplicationFailureCategory) -> &'static str {
     match category {
-        ApplicationFailureCategory::General => "operation_failed",
+        ApplicationFailureCategory::General | ApplicationFailureCategory::TaskNotFound => {
+            "operation_failed"
+        }
         ApplicationFailureCategory::WorklogNotFound => "worklog_not_found",
         ApplicationFailureCategory::WorklogChanged => "worklog_changed",
         ApplicationFailureCategory::ActiveWorklog => "active_worklog",
@@ -104,30 +80,5 @@ fn category_code(category: ApplicationFailureCategory) -> &'static str {
         ApplicationFailureCategory::WorklogOverlap => "worklog_overlap",
         ApplicationFailureCategory::ActiveTask => "active_task",
         ApplicationFailureCategory::InactiveTaskCandidatesChanged => "inactive_candidates_changed",
-    }
-}
-
-fn repository_is_storage(error: &RepositoryError) -> bool {
-    matches!(
-        error,
-        RepositoryError::Backend { .. } | RepositoryError::CorruptData { .. }
-    )
-}
-
-fn is_storage_failure(error: &ApplicationError) -> bool {
-    match error {
-        ApplicationError::Repository(error)
-        | ApplicationError::TrackingWrite(error)
-        | ApplicationError::TrackingRecovery(error)
-        | ApplicationError::TaskRecovery(error) => repository_is_storage(error),
-        ApplicationError::WorklogCorrectionWrite { write }
-        | ApplicationError::WorklogMoveWrite { write }
-        | ApplicationError::WorklogDeletionWrite { write } => repository_is_storage(write),
-        ApplicationError::WorklogCorrectionRecovery { write, recovery }
-        | ApplicationError::WorklogMoveRecovery { write, recovery }
-        | ApplicationError::WorklogDeletionRecovery { write, recovery } => {
-            repository_is_storage(write) || repository_is_storage(recovery)
-        }
-        _ => false,
     }
 }

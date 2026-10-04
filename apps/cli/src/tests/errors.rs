@@ -1,6 +1,6 @@
 use tracker_application::{ApplicationError, ApplicationFailureCategory, RepositoryError};
 use tracker_domain::{TaskId, WorklogId};
-use tracker_remote::{RemoteError, RemoteFailureKind};
+use tracker_remote::RemoteError;
 
 use crate::CliError;
 
@@ -42,28 +42,32 @@ fn error_classes_keep_input_semantic_storage_and_remote_failures_distinct() {
             RepositoryError::InactiveTaskCandidatesChanged.into(),
             "inactive_candidates_changed",
         ),
+        (
+            RepositoryError::TaskNotFound { id: task }.into(),
+            "operation_failed",
+        ),
         (ApplicationError::TrackingStateChanged, "operation_failed"),
     ] {
-        let cli = CliError::application(error, None);
+        let cli = CliError::application(error);
         assert_eq!(cli.exit_code, 3);
         assert_eq!(cli.code, code);
         assert!(!cli.recovery_failed);
     }
-    let semantic = CliError::application(
-        ApplicationError::semantic_failure(ApplicationFailureCategory::WorklogChanged, "stale"),
-        Some(RemoteFailureKind::Conflict),
-    );
+    let semantic = CliError::application(ApplicationError::semantic_failure(
+        ApplicationFailureCategory::WorklogChanged,
+        "stale",
+    ));
     assert_eq!(semantic.code, "worklog_changed");
     assert_eq!(semantic.exit_code, 3);
     assert_eq!(semantic.message, "stale");
-    for remote in [RemoteFailureKind::Unavailable, RemoteFailureKind::Protocol] {
-        let cli = CliError::application(
-            ApplicationError::storage_failure("secret SQL"),
-            Some(remote),
-        );
+    for remote in [
+        ApplicationError::RemoteUnavailable("private transport URL".into()),
+        ApplicationError::RemoteProtocol("private response body".into()),
+    ] {
+        let cli = CliError::application(remote);
         assert_eq!(cli.code, "remote");
         assert_eq!(cli.exit_code, 5);
-        assert!(!cli.message.contains("secret SQL"));
+        assert!(!cli.message.contains("private"));
     }
 }
 
@@ -82,7 +86,7 @@ fn wrapped_storage_failures_and_recovery_failures_preserve_the_failure_flag() {
         ApplicationError::WorklogDeletionWrite { write: backend() },
         ApplicationError::Repository(RepositoryError::CorruptData { field: "timestamp" }),
     ] {
-        let cli = CliError::application(error, None);
+        let cli = CliError::application(error);
         assert_eq!(cli.exit_code, 4);
         assert_eq!(cli.code, "storage");
         assert!(!cli.message.contains("private database details"));
@@ -101,15 +105,15 @@ fn wrapped_storage_failures_and_recovery_failures_preserve_the_failure_flag() {
             recovery: backend(),
         },
     ] {
-        let cli = CliError::application(error, None);
+        let cli = CliError::application(error);
         assert!(cli.recovery_failed);
         assert_eq!(cli.exit_code, 4);
     }
     let id = WorklogId::generate();
-    let cli = CliError::application(
-        ApplicationError::deletion_changed_with_recovery_failure(id, "recovery failed"),
-        None,
-    );
+    let cli = CliError::application(ApplicationError::deletion_changed_with_recovery_failure(
+        id,
+        "recovery failed",
+    ));
     assert_eq!(cli.exit_code, 4);
     assert!(cli.recovery_failed);
     assert_eq!(cli.code, "worklog_changed");
@@ -117,17 +121,24 @@ fn wrapped_storage_failures_and_recovery_failures_preserve_the_failure_flag() {
         ApplicationError::TrackingRecovery(backend()),
         ApplicationError::TaskRecovery(backend()),
     ] {
-        assert!(CliError::application(error, None).recovery_failed);
+        assert!(CliError::application(error).recovery_failed);
     }
-    let remote = CliError::remote_application(
-        ApplicationError::storage_failure("invalid protocol data"),
-        None,
-    );
+    let remote = CliError::application(ApplicationError::RemoteProtocol(
+        "invalid protocol data".into(),
+    ));
     assert_eq!(remote.exit_code, 5);
     assert_eq!(remote.code, "remote");
-    let remote_semantic = CliError::remote_application(ApplicationError::worklog_changed(id), None);
+    let remote_semantic = CliError::application(ApplicationError::worklog_changed(id));
     assert_eq!(remote_semantic.exit_code, 3);
     assert_eq!(remote_semantic.code, "worklog_changed");
+    let remote_recovery = CliError::application(
+        ApplicationError::worklog_changed(id)
+            .with_recovery_failure(ApplicationError::RemoteProtocol("private response".into())),
+    );
+    assert_eq!(remote_recovery.code, "worklog_changed");
+    assert_eq!(remote_recovery.exit_code, 5);
+    assert!(remote_recovery.recovery_failed);
+    assert!(!remote_recovery.message.contains("private"));
 }
 
 #[test]

@@ -70,6 +70,10 @@ fn remote_commands_use_the_server_and_preserve_guards_and_committed_values() {
     let t1 = (now - chrono::Duration::hours(2)).to_rfc3339();
     let t2 = (now - chrono::Duration::hours(1)).to_rfc3339();
     let t3 = now.to_rfc3339();
+    assert_eq!(
+        server.command(&t0, &["tasks", "list"]).unwrap()["tasks"],
+        serde_json::json!([])
+    );
     let first = server.command(&t0, &["tasks", "create", "First"]).unwrap();
     let second = server.command(&t0, &["tasks", "create", "Second"]).unwrap();
     let first_id = first["id"].as_str().unwrap();

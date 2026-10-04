@@ -1,9 +1,10 @@
-use std::cmp::Reverse;
 use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tracker_application::task_search::SearchRank;
+pub(crate) use tracker_application::task_search::fuzzy_match;
 use tracker_application::{TaskOperations, TaskOrdering};
 use tracker_domain::{TaskId, TaskName};
 use tracker_protocol::{InactiveTaskPreviewDto, TaskDto, TaskItemDto};
@@ -118,7 +119,6 @@ pub(crate) async fn execute(
             let task = backend.task(task_id).ok_or_else(|| {
                 CliError::application(
                     tracker_application::RepositoryError::TaskNotFound { id: task_id }.into(),
-                    None,
                 )
             })?;
             crate::json(TaskDto::from(task))
@@ -140,7 +140,7 @@ pub(crate) async fn execute(
             crate::json(TaskDto::from(&backend.unarchive_task(task_id, now).await?))
         }
         Tasks::PreviewInactive => preview(backend, now).await,
-        Tasks::ArchiveInactive { preview, .. } => archive(backend, read_json(&preview)?, now).await,
+        Tasks::ArchiveInactive { preview, .. } => archive(backend, read_json(&preview)?).await,
     }
 }
 
@@ -164,27 +164,15 @@ fn list(
     if let Some(query) = search {
         items.retain(|item| fuzzy_match(item.task.name().as_str(), query));
         items.sort_by_key(|item| {
-            (
-                Reverse(
-                    item.latest_work_start
-                        .map_or(item.task.updated_at(), |worked| {
-                            worked.max(item.task.updated_at())
-                        }),
-                ),
-                Reverse(item.task.created_at()),
+            SearchRank::from_task_activity(
                 item.task.id(),
+                item.task.created_at(),
+                item.task.updated_at(),
+                item.latest_work_start,
             )
         });
     }
     Ok(json!({"tasks": items.iter().map(TaskItemDto::from).collect::<Vec<_>>()}))
-}
-
-pub(crate) fn fuzzy_match(name: &str, query: &str) -> bool {
-    let mut name = name.chars().flat_map(char::to_lowercase);
-    query
-        .chars()
-        .flat_map(char::to_lowercase)
-        .all(|wanted| name.by_ref().any(|ch| ch == wanted))
 }
 
 async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, CliError> {
@@ -192,7 +180,7 @@ async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, C
         BackendKind::Local(app) => {
             let tasks = app
                 .preview_inactive_tasks(as_of)
-                .map_err(|error| CliError::application(error, None))?;
+                .map_err(CliError::application)?;
             let token = PreviewToken::Local {
                 backend: backend.identity.clone(),
                 as_of,
@@ -206,7 +194,7 @@ async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, C
             let preview = app
                 .preview_inactive_tasks(as_of)
                 .await
-                .map_err(|error| CliError::remote_application(error, app.last_failure()))?;
+                .map_err(CliError::application)?;
             let token = PreviewToken::Remote {
                 backend: backend.identity.clone(),
                 preview: preview.clone(),
@@ -218,27 +206,28 @@ async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, C
     }
 }
 
-async fn archive(
-    backend: &mut Backend,
-    token: PreviewToken,
-    now: DateTime<Utc>,
-) -> Result<Value, CliError> {
+async fn archive(backend: &mut Backend, token: PreviewToken) -> Result<Value, CliError> {
     validate_preview(&token, &backend.identity)?;
     let count = match (&mut backend.kind, token) {
-        (BackendKind::Local(app), PreviewToken::Local { task_ids, .. }) => {
+        (
+            BackendKind::Local(app),
+            PreviewToken::Local {
+                task_ids, as_of, ..
+            },
+        ) => {
             let ids = task_ids
                 .iter()
                 .map(|id| id.parse())
                 .collect::<Result<Vec<TaskId>, _>>()
                 .map_err(CliError::input)?;
-            app.archive_inactive_tasks(&ids, now)
-                .map_err(|error| CliError::application(error, None))?
+            app.archive_inactive_tasks(&ids, as_of)
+                .map_err(CliError::application)?
                 .len()
         }
         (BackendKind::Remote(app), PreviewToken::Remote { preview, .. }) => app
             .archive_inactive_tasks(&preview)
             .await
-            .map_err(|error| CliError::remote_application(error, app.last_failure()))?,
+            .map_err(CliError::application)?,
         _ => return Err(CliError::input("preview mode does not match backend")),
     };
     Ok(json!({"archived_count": count}))

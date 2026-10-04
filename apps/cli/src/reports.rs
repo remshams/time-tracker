@@ -1,6 +1,7 @@
-use chrono::{DateTime, Datelike, Duration, LocalResult, Months, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
 use serde_json::{Value, json};
+use tracker_application::calendar_reports::{self, CalendarPreset, CalendarRangeError};
 use tracker_protocol::ReportRowDto;
 
 use crate::CliError;
@@ -51,13 +52,7 @@ pub(crate) fn range(args: &ReportArgs, now: DateTime<Utc>) -> Result<Range, CliE
             )
             .ok_or_else(|| CliError::input("report dates exceed the supported range"))?
         };
-        if from > to {
-            return Err(CliError::input("--from must be on or before --to"));
-        }
-        let next = to
-            .succ_opt()
-            .ok_or_else(|| CliError::input("report dates exceed the supported range"))?;
-        (day_start(timezone, from)?, day_start(timezone, next)?)
+        calendar_reports::inclusive_range(timezone, from, to).map_err(calendar_error)?
     };
     if end <= start {
         return Err(CliError::input("report end must be later than start"));
@@ -105,47 +100,26 @@ fn parse_timezone(value: &str) -> Option<Tz> {
 }
 
 pub(crate) fn preset_dates(preset: Preset, today: NaiveDate) -> Option<(NaiveDate, NaiveDate)> {
-    match preset {
-        Preset::Today => Some((today, today)),
-        Preset::Yesterday => {
-            let day = today.pred_opt()?;
-            Some((day, day))
-        }
-        Preset::Week => {
-            let from = today.checked_sub_signed(Duration::days(
-                today.weekday().num_days_from_monday() as i64,
-            ))?;
-            Some((from, from.checked_add_signed(Duration::days(6))?))
-        }
-        Preset::Month => {
-            let from = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)?;
-            Some((from, from.checked_add_months(Months::new(1))?.pred_opt()?))
-        }
-        Preset::Year => Some((
-            NaiveDate::from_ymd_opt(today.year(), 1, 1)?,
-            NaiveDate::from_ymd_opt(today.year(), 12, 31)?,
-        )),
-    }
+    let preset = match preset {
+        Preset::Today => CalendarPreset::Today,
+        Preset::Yesterday => CalendarPreset::Yesterday,
+        Preset::Week => CalendarPreset::Week,
+        Preset::Month => CalendarPreset::Month,
+        Preset::Year => CalendarPreset::Year,
+    };
+    calendar_reports::preset_dates(preset, today)
 }
 
+#[cfg(test)]
 pub(crate) fn day_start(timezone: Tz, date: NaiveDate) -> Result<DateTime<Utc>, CliError> {
-    let mut local = date
-        .and_hms_opt(0, 0, 0)
-        .ok_or_else(|| CliError::input("invalid date"))?;
-    loop {
-        if local.date() != date {
-            return Err(CliError::input(
-                "calendar day does not exist in this timezone",
-            ));
-        }
-        match timezone.from_local_datetime(&local) {
-            LocalResult::Single(at) => return Ok(at.with_timezone(&Utc)),
-            LocalResult::Ambiguous(a, b) => return Ok(a.min(b).with_timezone(&Utc)),
-            LocalResult::None => {
-                local = local
-                    .checked_add_signed(Duration::seconds(1))
-                    .ok_or_else(|| CliError::input("date exceeds the supported range"))?
-            }
-        }
-    }
+    calendar_reports::day_start(timezone, date).map_err(calendar_error)
+}
+
+fn calendar_error(error: CalendarRangeError) -> CliError {
+    CliError::input(match error {
+        CalendarRangeError::ReversedDates => "--from must be on or before --to",
+        CalendarRangeError::DatesOutOfRange => "report dates exceed the supported range",
+        CalendarRangeError::MissingDay => "calendar day does not exist in this timezone",
+        CalendarRangeError::BoundaryOutOfRange => "date exceeds the supported range",
+    })
 }
