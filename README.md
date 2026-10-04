@@ -1,6 +1,6 @@
 # Time Tracker
 
-A keyboard-first time tracker written in Rust. `tt` runs locally or connects to a separate `tt` server on Linux and macOS. `plan.md` is the source of truth for scope and milestones.
+A time tracker written in Rust. `tt` provides the keyboard-driven TUI, and `tt-cli` provides commands for scripts and external agents. Both run locally or connect to a separate `tt` server on Linux and macOS. `plan.md` is the source of truth for scope and milestones.
 
 ## Current state
 
@@ -30,7 +30,13 @@ Task names are trimmed, non-empty, at most 256 characters long, and free of cont
 ```sh
 cargo run -p tracker-tui        # run in development
 cargo install --path apps/tui   # install the binary as `tt`
+cargo run -p tracker-cli -- --help
+cargo install --path apps/cli   # install the binary as `tt-cli`
 ```
+
+### Command line interface
+
+`tt-cli` provides task management, tracking, worklog history and editing, and reports without opening a terminal interface. It uses the same local database and application rules as the TUI, or the same remote server through `--server URL`. See the [CLI reference](docs/cli.md) for commands, JSON output, and guarded writes.
 
 ### Remote mode
 
@@ -125,7 +131,9 @@ Ctrl+C quits from every mode.
 
 ## Architecture
 
-The workspace has seven packages:
+The workspace has eight packages:
+
+- `apps/cli`: the `tt-cli` binary. Command parsing and handlers are grouped by tasks, tracking, worklogs, and reports. It uses the existing application services and remote client; it does not access raw SQL or set up a terminal.
 
 - `crates/tracker-domain`: tasks, encapsulated worklogs, tracking state, identifiers, and timestamp-correction invariants. `Task` owns its identity, and `Worklog` owns reusable same-task half-open overlap semantics. The crate has no application, terminal, database, or network code.
 - `crates/tracker-application`: backend-neutral repository ports and synchronous use cases. Its source is split into `error`, `model`, `repository`, and task, tracking, and worklog service modules. Presentation code uses semantic application failure categories rather than matching repository failures. Commands return the exact domain value when there is no alternative outcome.

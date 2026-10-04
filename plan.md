@@ -333,6 +333,7 @@ The move decisions are recorded in [ADR 0008](docs/adr/0008-move-worklogs-betwee
 
 ### Milestone 4: more clients
 
+- [x] Add a noninteractive Rust CLI for all current TUI domain operations, with local and remote backends, JSON output, caller-supplied concurrency guards, and bounded history pagination.
 - [ ] Extract a versioned client API or SDK only after the TUI and server prove what callers need.
 - [ ] Add a web client against the same server API.
 - [ ] Define a narrow plugin command or IPC protocol for Omarchy integrations.
@@ -367,5 +368,7 @@ Each reviewer must return one complete report with severity, affected files, rat
 7. For Omarchy, what integration is expected first: a launcher command, a status-bar indicator, desktop notifications, or a plugin API?
 
 ## Approval gate
+
+The Rust CLI is authorized by the user's request to expose the TUI's current operations to external agents and implement it on a new branch. The implementation adds a separate `tt-cli` binary and reuses the existing local and remote application services.
 
 Milestones 1 and 2, their bootstrap prerequisite, the functional defaults recorded above, and the listed subagents are approved. The `Worklog` terminology, domain/application separation, exclusive local-or-remote direction, same-binary server mode, initial same-version, synchronized-clock and Tailscale assumptions, client-created timestamps, resource-oriented REST API, and deferred offline synchronization are approved architectural direction. The domain/application refactor has an approved implementation and review workflow. Milestone 3 implementation and additional clients require a later planning and approval round.
