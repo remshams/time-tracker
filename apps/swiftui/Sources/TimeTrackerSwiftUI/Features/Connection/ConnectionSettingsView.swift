@@ -5,6 +5,7 @@ import TrackerClient
 @MainActor
 struct ConnectionSettingsView: View {
     @ObservedObject var store: TrackerStore
+    @ObservedObject private var activity: TrackerActivityStore
     var showsDoneButton = false
     @Environment(\.dismiss) private var dismiss
     @State private var draft: ConnectionSettings
@@ -14,11 +15,12 @@ struct ConnectionSettingsView: View {
 
     init(store: TrackerStore, showsDoneButton: Bool = false) {
         self.store = store
+        activity = store.activity
         self.showsDoneButton = showsDoneButton
         _draft = State(initialValue: store.connectionSettings)
     }
 
-    private var controlsDisabled: Bool { operationPending || store.isBusy }
+    private var controlsDisabled: Bool { operationPending || activity.isBusy }
     private var missingEndpoint: Bool {
         draft.mode == .server && draft.serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
