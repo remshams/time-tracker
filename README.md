@@ -60,7 +60,7 @@ The database lives in the platform application-data directory:
 
 On first start the directory is created with mode 0700 and the database file with mode 0600. On every start the final directory and the database file are checked: a symbolic link or an object owned by another user is refused, and permissions of owner-owned objects are repaired to 0700 and 0600. The database itself is opened with `SQLITE_OPEN_NOFOLLOW`.
 
-A brand-new empty database is seeded once with three tasks: Write release notes, Fix the coffee machine, and Plan Friday's demo. The emptiness check and the inserts run in one immediate transaction, so a failure leaves no partial seed and concurrent starts cannot seed twice. A database that already has tasks is left untouched. Migrations are concurrency-safe and a database written by a newer version of Time Tracker is refused with a clear error.
+A new database starts with no tasks. Create tasks through the TUI or CLI. Existing tasks, including example tasks from earlier versions, remain intact. Migrations are concurrency-safe and a database written by a newer version of Time Tracker is refused with a clear error.
 
 ## Keybindings
 
@@ -125,7 +125,7 @@ Task text input (`a` and `e`):
 Archive confirmation:
 
 - `y` or Enter confirms, `n` or Escape cancels.
-- `D` on the Active tab previews the number of inactive tasks and sample names. A task qualifies only if it was created and its metadata last changed more than 14 days ago and has no worklog overlapping that UTC window or running timer. Confirmation rechecks the same candidate set and archives it in one transaction. If another client changes the set or server revision, open a fresh preview before trying again. The server accepts the preview time only while it is within 15 minutes of its clock.
+- `D` on the Active tab previews the number of inactive tasks and sample names. A task qualifies only if it was created and its metadata last changed more than 14 days ago and has no worklog overlapping that UTC window or running timer. Confirmation uses the preview's original time, rechecks the same candidate set, and archives it in one transaction. Recorded positive-duration work starting at or after the preview time also prevents archiving. If another client changes the set or server revision, open a fresh preview before trying again. The server accepts the preview time only while it is within 15 minutes of its clock.
 
 Ctrl+C quits from every mode.
 
@@ -136,7 +136,7 @@ The workspace has eight packages:
 - `apps/cli`: the `tt-cli` binary. Command parsing and handlers are grouped by tasks, tracking, worklogs, and reports. It uses the existing application services and remote client; it does not access raw SQL or set up a terminal.
 
 - `crates/tracker-domain`: tasks, encapsulated worklogs, tracking state, identifiers, and timestamp-correction invariants. `Task` owns its identity, and `Worklog` owns reusable same-task half-open overlap semantics. The crate has no application, terminal, database, or network code.
-- `crates/tracker-application`: backend-neutral repository ports and synchronous use cases. Its source is split into `error`, `model`, `repository`, and task, tracking, and worklog service modules. Presentation code uses semantic application failure categories rather than matching repository failures. Commands return the exact domain value when there is no alternative outcome.
+- `crates/tracker-application`: backend-neutral repository ports and synchronous use cases. Its source is split into `error`, `model`, `repository`, and task, tracking, and worklog service modules. The `calendar_reports` and `task_search` modules share report boundaries, fuzzy matching, and search ordering across clients. Presentation code uses semantic failure categories, failure origin, and recovery status rather than matching repository failures. Commands return the exact domain value when there is no alternative outcome.
 - `crates/tracker-storage`: SQLite persistence. Its adapter is split into `mapping`, `tasks`, `tracking`, and `worklogs`. `SqliteRepository` still owns one `Connection`; transaction-aware helpers continue to take an explicit `&Connection`. Application repository ports contain only the queries and writes used by application workflows. Direct SQLite diagnostics compile for storage tests and through the opt-in `test-support` feature used by TUI tests.
 - `crates/tracker-protocol`: versioned JSON requests and responses shared by the HTTP adapters.
 - `crates/tracker-server`: REST routes that run the application service against the server's SQLite database. It serializes requests against one application instance and checks revisions on writes.

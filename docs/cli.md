@@ -11,7 +11,7 @@ cargo install --path apps/cli
 
 ## Storage and output
 
-Without storage options, `tt-cli` uses the TUI's local `tt.db` and seeds a new empty database with the same three example tasks. Use `--db PATH` for a different local database or `--server URL` for a running `tt serve` instance. These options are mutually exclusive. Remote commands never fall back to local storage. An explicit database path requires an existing parent directory. Database paths must be valid UTF-8 so backend tokens identify them without replacing filename bytes.
+Without storage options, `tt-cli` uses the TUI's local `tt.db`. New local and server databases start with no tasks. Existing data remains intact. Use `--db PATH` for a different local database or `--server URL` for a running `tt serve` instance. These options are mutually exclusive. Remote commands never fall back to local storage. An explicit database path requires an existing parent directory. Database paths must be valid UTF-8 so backend tokens identify them without replacing filename bytes.
 
 ```sh
 tt-cli tasks list
@@ -39,7 +39,7 @@ Errors include `code`, `message`, and `recovery_failed`. Codes include `invalid_
 
 Identifiers are UUID strings. Timestamps are RFC3339 instants with explicit UTC offsets, such as `2026-10-04T09:00:00Z` or `2026-10-04T11:00:00+02:00`. Storage preserves microsecond precision. Keep the returned timestamp values when constructing concurrency guards. Bare local timestamps are rejected.
 
-The global `--at TIME` option supplies the command's operation time instead of the current instant. It also sets the report's current time and the inactive-task preview time. The application still rejects invalid intervals and tracking transitions.
+The global `--at TIME` option supplies the command's operation time instead of the current instant. It also sets the report's current time and the inactive-task preview time. Bulk archive confirmation retains the token's original preview time. The application still rejects invalid intervals and tracking transitions.
 
 ## Tasks
 
@@ -58,7 +58,7 @@ Listing defaults to active tasks ordered by most recently worked. Search uses th
 
 `preview-inactive` returns a token for tasks with no work in the preceding 14 days whose creation and metadata update are also older than 14 days. A running timer protects its task. Pass the returned token unchanged to `archive-inactive --preview`, either as a JSON argument or as `@PATH` to a file containing the token. The token belongs to its selected backend and retains the preview time and candidate set. `--yes` explicitly confirms the bulk archive.
 
-Archiving rechecks the candidate set in one transaction. Local confirmation checks eligibility at the command's current time, so work completed after the preview protects its task. If the set changed, generate a new preview. Remote previews also carry a server revision and expire when their preview time is more than 15 minutes from the server clock. Restoring a task preserves its ID and worklogs.
+Archiving rechecks the candidate set in one transaction at the token's original preview time, as the TUI does. Waiting to confirm does not change the eligibility window or add newly eligible tasks. A running timer, changed eligibility, or recorded positive-duration work starting at or after the preview time prevents archiving. Local confirmation cannot precede the preview time. If a guard fails, generate a new preview. Remote previews also carry a server revision and expire when their preview time is more than 15 minutes from the server clock. Restoring a task preserves its ID and worklogs.
 
 ## Tracking
 
