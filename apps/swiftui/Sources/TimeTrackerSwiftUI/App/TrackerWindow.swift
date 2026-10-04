@@ -31,15 +31,29 @@ struct TrackerWindow: View {
                 .labelsHidden()
                 .padding(12)
 
+                HStack {
+                    Text("Tasks")
+                    Spacer()
+                    Text(store.dailyTotalsStatus == .cached ? "Today, cached" : "Today")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 4)
+
                 List(selection: selectionBinding) {
                     ForEach(store.visibleTasks) { task in
-                        Label {
-                            Text(task.name)
-                                .lineLimit(2)
-                                .padding(.vertical, 4)
-                        } icon: {
-                            Image(systemName: store.active?.taskId == task.id
-                                  ? "timer" : "checklist")
+                        HStack(spacing: 8) {
+                            Label {
+                                Text(task.name)
+                                    .lineLimit(2)
+                                    .padding(.vertical, 4)
+                            } icon: {
+                                Image(systemName: store.active?.taskId == task.id
+                                      ? "timer" : "checklist")
+                            }
+                            Spacer(minLength: 4)
+                            TrackerDailyTotalText(totals: store.dailyTotals, taskID: task.id)
                         }
                         .tag(task.id)
                         .help(task.name)
@@ -57,7 +71,7 @@ struct TrackerWindow: View {
                 }
             }
             .navigationTitle("Tasks")
-            .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 400)
+            .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 480)
         } detail: {
             VStack(spacing: 0) {
                 ConnectionSummary(store: store)
@@ -73,5 +87,20 @@ struct TrackerWindow: View {
         } message: {
             Text(store.trackingError ?? "Please try again.")
         }
+    }
+}
+
+struct TrackerDailyTotalText: View {
+    @ObservedObject var totals: TrackerDailyTotalsStore
+    let taskID: String
+
+    var body: some View {
+        Text(totals.text(taskID: taskID))
+            .font(.callout.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .help(totals.explanation)
+            .accessibilityLabel("Today's total: \(totals.text(taskID: taskID))")
     }
 }

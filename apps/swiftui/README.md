@@ -44,6 +44,14 @@ The app must remain running to receive lock and unlock events. A locked Mac waki
 
 The server's conditional idle-start guard was also strengthened. Deploy the server update on tabit to use that guard. The HTTP protocol is unchanged.
 
+## Today's totals
+
+Each sidebar task shows its time logged today. The menu's Today section lists tasks with time logged today, including archived tasks. Click an entry to open that task. Totals include the running worklog and only the portion of an overnight worklog that overlaps today.
+
+Today follows the Mac's local calendar and time zone. Calendar boundaries account for daylight saving changes. A missing report shows an unavailable value instead of zero; failed updates label retained totals as cached. Connecting to a different data source clears the previous totals.
+
+The Rust application report query aggregates the full day independently of paged worklog history. Its response includes totals and an authoritative tracker snapshot from the same read. Healthy synchronization uses this report instead of a separate snapshot request. Swift advances the matching running worklog's contribution locally between reports. Ordinary display ticks make no network request. One local day-boundary timer clears yesterday's totals and requests today's report, even while tracking is idle.
+
 ## Unit tests
 
 The `TrackerClient` package contains Foundation-only client state and XCTest tests. It has no Rust, SwiftUI, AppKit, database, or network dependency. Run it from the repository root on a Mac or Linux machine with Swift 5.9 or newer:
@@ -93,15 +101,15 @@ These checks cover the portable client state. Native UI E2E tests will run on ma
 
 ## Architecture
 
-The Xcode target links a Rust static library through a C bridging header. The app's `TrackerStore` publishes changed content on the main actor. `TrackerPresentationObserver` compares content, request controls, and formatted elapsed time separately. Timer labels and request controls have their own observable adapters, so clock ticks and unchanged server polls do not invalidate the task and worklog lists. A serial background queue owns every bridge operation, JSON decode, and handle release. HTTP requests and database work do not block the UI thread.
+The Xcode target links a Rust static library through a C bridging header. The app's `TrackerStore` publishes changed content on the main actor. `TrackerPresentationObserver` compares content, request controls, formatted elapsed time, and daily totals separately. Timer labels, daily totals, and request controls have their own observable adapters, so clock ticks and unchanged server polls do not invalidate the task and worklog lists. A serial background queue owns every bridge operation, JSON decode, and handle release. HTTP requests and database work do not block the UI thread.
 
 ```mermaid
 flowchart TD
     UI[SwiftUI window, settings and menu] --> Store[TrackerStore observable adapter]
     Store --> Session[TrackerClient package session]
-    Session --> Features[Connection, task catalog, tracking and history state]
+    Session --> Features[Connection, task catalog, tracking, daily totals and history state]
     Lifecycle[AppKit notifications] --> Session
-    Session --> Port[Injected TrackerClient interface]
+    Session --> Port[Injected TrackerClient and ReportClient interfaces]
     Port --> Worker[Serial background connection worker]
     Worker --> ABI[C functions and JSON]
     ABI --> Backend[Rust bridge backend]
@@ -115,7 +123,7 @@ flowchart TD
 
 A candidate connection must return a valid snapshot before replacing the current backend. The session coordinates operations one at a time. Selection and connection generations prevent older history results from replacing the current selection. The Rust remote backend also blocks writes after failures until an explicit snapshot refresh succeeds.
 
-The package organizes state under `Features/Connection`, `Features/TaskCatalog`, `Features/Tracking`, and `Features/WorklogHistory`. `App/TrackerSession` coordinates them through injected client, clock, scheduler, and settings interfaces. The macOS app organizes its views by the same capabilities. Its `Infrastructure` directory owns Rust bridge calls, real timers, preferences, and AppKit lifecycle notifications. Rust remains responsible for domain rules and persistence.
+The package organizes state under `Features/Connection`, `Features/TaskCatalog`, `Features/Tracking`, `Features/DailyTotals`, and `Features/WorklogHistory`. `App/TrackerSession` coordinates them through injected client, clock, scheduler, and settings interfaces. The macOS app organizes its views by the same capabilities. Its `Infrastructure` directory owns Rust bridge calls, real timers, preferences, and AppKit lifecycle notifications. Rust remains responsible for domain rules and persistence.
 
 A session moves once from idle to running, then to stopped on shutdown. A running session distinguishes unconfirmed, confirmed, and stale snapshots. Writes require a confirmed current snapshot and an idle operation gate. Failed writes trigger an authoritative read before another write can proceed. Successful connection changes replace feature state and persist settings; failed changes retain the previous source.
 
@@ -123,7 +131,7 @@ History responses carry the selection generation captured at request time. Timer
 
 Refreshing history for the same task retains its rows and pagination cursor until the replacement page arrives. Selecting another task or connecting to another data source clears that history immediately. Rows stay visible during synchronization without displaying another task's cached rows.
 
-The bridge passes small JSON snapshots and history pages across an in-process function call. Its costs are serialization and decoding, with no separate bridge process or IPC. Server response time and network activity need measurement on a Mac before making battery or latency claims.
+The bridge passes JSON snapshots, daily reports, and history pages across an in-process function call. Its costs are serialization and decoding, with no separate bridge process or IPC. Server response time and network activity need measurement on a Mac before making battery or latency claims.
 
 ## Refresh and battery behavior
 
@@ -137,7 +145,7 @@ The elapsed timer redraws once a second only while UI is visible and a timer is 
 
 The app follows macOS light and dark mode. Text, window backgrounds, worklog cards, and borders use system colors. The sidebar keeps macOS's native selection appearance. The task heading stays above the scrolling history and wraps to three lines. Hover over a task name to read its full text.
 
-The Active and Archived tabs remember their selections. Worklogs load 50 at a time. The menu bar clock shows the current task, elapsed time, connection status, and commands to open the window or quit. Closing the window leaves the menu bar item running.
+The Active and Archived tabs remember their selections. Worklogs load 50 at a time. The menu bar clock shows the current task, elapsed time, connection status, today's task totals, and commands to open the window or quit. Closing the window leaves the menu bar item running.
 
 ## Check on a Mac
 
@@ -150,5 +158,6 @@ The Active and Archived tabs remember their selections. Worklogs load 50 at a ti
 7. Switch to Local, then back to Server. Confirm each data source retains its own tasks and history.
 8. Enable automatic pause in Settings > Tracking, start a task, lock the Mac for about 30 seconds, then unlock it. Confirm the same task resumes in a new worklog and the locked interval is excluded. Repeat with the app window closed and with lock followed by sleep. Wake while still locked and confirm tracking remains paused. Start a timer from another client before unlocking and confirm the Mac preserves it. Disable the setting and confirm locking leaves tracking unchanged.
 9. Keep a running task open for several server polls. Confirm elapsed labels advance while task and worklog rows remain stable. Change tracking from another client and confirm the updated history appears without briefly showing an empty list. Repeat with a slow connection; selecting a different task must clear the old task's history.
+10. Check sidebar totals against all of today's worklogs, including a running worklog and one crossing midnight. Confirm yesterday's time is excluded. Check the menu includes archived tasks with time today and opens each selected task. Stop the server and confirm totals are labelled cached. Change the data source and confirm old totals disappear. Repeat in Light and Dark appearance and with the sidebar narrowed.
 
 Xcode compilation, native layout, and the lifecycle checks above require a Mac. Foundation package tests can run on Linux. If the build fails, send the error text from Xcode's Report navigator. The Build Rust bridge phase appears separately from Swift compilation and linking.

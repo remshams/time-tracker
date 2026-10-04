@@ -9,16 +9,20 @@ final class TrackerStore: ObservableObject {
     private let presentation: TrackerPresentationObserver
     let activity: TrackerActivityStore
     let timer: TrackerTimerStore
+    let dailyTotals: TrackerDailyTotalsStore
     private var lifecycle: MacLifecycleObserver?
 
     init() {
-        session = TrackerSession(client: TrackerWorker(), clock: SystemTrackerClock(),
+        let worker = TrackerWorker()
+        session = TrackerSession(client: worker, clock: SystemTrackerClock(),
                                  scheduler: RunLoopTrackerScheduler(),
                                  settings: UserDefaultsConnectionSettings(),
-                                 trackingPreferences: UserDefaultsTrackingPreferences())
+                                 trackingPreferences: UserDefaultsTrackingPreferences(),
+                                 reports: worker)
         presentation = TrackerPresentationObserver(session: session)
         activity = TrackerActivityStore(session: session, presentation: presentation)
         timer = TrackerTimerStore(session: session, presentation: presentation)
+        dailyTotals = TrackerDailyTotalsStore(session: session, presentation: presentation)
         presentation.onContentChange = { [weak self] in self?.objectWillChange.send() }
         session.onChange = { [weak self] in
             guard let self else { return }
@@ -54,6 +58,9 @@ final class TrackerStore: ObservableObject {
     var elapsed: TimeInterval? { session.elapsed }
     var pauseOnScreenLock: Bool { session.pauseOnScreenLock }
     var autoPauseStatusText: String? { session.autoPauseStatusText }
+    var todayTasks: [TaskItem] { session.todayTasks }
+    var dailyTotalsStatus: DailyTotalsStatus { session.dailyTotalsStatus }
+    var dailyTotalsError: String? { session.dailyTotalsError }
 
     func setPauseOnScreenLock(_ enabled: Bool) { session.setPauseOnScreenLock(enabled) }
     func changeTab(_ tab: TaskTab) { session.changeTab(tab) }
@@ -69,6 +76,30 @@ final class TrackerStore: ObservableObject {
     }
     func connect(_ settings: ConnectionSettings) async -> Bool {
         await session.connect(settings)
+    }
+}
+
+@MainActor
+final class TrackerDailyTotalsStore: ObservableObject {
+    let objectWillChange = ObservableObjectPublisher()
+    private let session: TrackerSession
+
+    init(session: TrackerSession, presentation: TrackerPresentationObserver) {
+        self.session = session
+        presentation.onDailyTotalsChange = { [weak self] in self?.objectWillChange.send() }
+    }
+
+    func text(taskID: String) -> String {
+        session.dailyDuration(taskID: taskID).map(clockDuration) ?? "-"
+    }
+
+    var explanation: String {
+        switch session.dailyTotalsStatus {
+        case .current: return "Time logged today in your local time zone"
+        case .cached: return "Today's total uses cached tracker state. Running time may be unconfirmed."
+        case .loading: return "Loading today's totals"
+        case .unavailable: return session.dailyTotalsError ?? "Today's total is unavailable"
+        }
     }
 }
 

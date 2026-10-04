@@ -35,20 +35,41 @@ private final class RustBridge {
         tt_bridge_close(handle)
     }
 
-    private func decode<Value: Decodable>(_ pointer: UnsafeMutablePointer<CChar>?) throws -> Value {
-        guard let pointer else { throw BridgeFailure(message: "The tracker bridge returned no data.") }
+    private func decode<Value: Decodable>(_ pointer: UnsafeMutablePointer<CChar>?,
+                                         requiresRefreshOnMalformed: Bool = false) throws -> Value {
+        func malformed(_ message: String) -> BridgeFailure {
+            BridgeFailure(message: message, kind: requiresRefreshOnMalformed ? "protocol" : "general",
+                          requiresRefresh: requiresRefreshOnMalformed)
+        }
+        guard let pointer else { throw malformed("The tracker bridge returned no data.") }
         defer { tt_bridge_string_free(pointer) }
-        let envelope = try JSONDecoder().decode(BridgeEnvelope<Value>.self, from: Data(String(cString: pointer).utf8))
+        let envelope: BridgeEnvelope<Value>
+        do {
+            envelope = try JSONDecoder().decode(BridgeEnvelope<Value>.self, from: Data(String(cString: pointer).utf8))
+        } catch {
+            guard requiresRefreshOnMalformed else { throw error }
+            throw malformed("The tracker bridge returned an invalid report: \(error.localizedDescription)")
+        }
         if let error = envelope.error {
             throw BridgeFailure(message: error, kind: envelope.kind ?? "general",
                                 uncertain: envelope.uncertain ?? false,
                                 requiresRefresh: envelope.requiresRefresh ?? false)
         }
-        guard let data = envelope.data else { throw BridgeFailure(message: "The tracker bridge returned an empty result.") }
+        guard let data = envelope.data else { throw malformed("The tracker bridge returned an empty result.") }
         return data
     }
 
     func snapshot() throws -> TrackerSnapshot { try decode(tt_bridge_snapshot(handle, true)) }
+
+    func report(start: String, end: String, now: String) throws -> TrackerReport {
+        try start.withCString { start in
+            try end.withCString { end in
+                try now.withCString { now in
+                    try decode(tt_bridge_report(handle, start, end, now), requiresRefreshOnMalformed: true)
+                }
+            }
+        }
+    }
 
     func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) throws -> TrackerSnapshot {
         try taskID.withCString { task in
@@ -98,7 +119,7 @@ private final class RustBridge {
 }
 
 // Every handle operation, including creation and destruction, belongs to this queue.
-final class TrackerWorker: TrackerClient, @unchecked Sendable {
+final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.timetracker.connection", qos: .utility)
     private var bridge: RustBridge?
 
@@ -155,6 +176,13 @@ final class TrackerWorker: TrackerClient, @unchecked Sendable {
 
     func snapshot() async throws -> TrackerSnapshot {
         try await perform { try $0.currentBridge().snapshot() }
+    }
+
+    func report(settings: ConnectionSettings, start: String, end: String, now: String) async throws -> TrackerReport {
+        try await perform { worker in
+            if worker.bridge == nil { worker.bridge = try RustBridge(settings: settings) }
+            return try worker.currentBridge().report(start: start, end: end, now: now)
+        }
     }
 
     func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws -> TrackerSnapshot {
