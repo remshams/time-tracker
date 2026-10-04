@@ -5,8 +5,7 @@ use chrono::{DateTime, Duration, Utc};
 use tempfile::TempDir;
 use tokio::sync::oneshot;
 use tracker_application::{
-    ApplicationError, ClearActiveTaskOutcome, RepositoryError, SetActiveTaskOutcome, TaskOrdering,
-    WorklogCursor,
+    ClearActiveTaskOutcome, SetActiveTaskOutcome, TaskOrdering, WorklogCursor,
 };
 use tracker_domain::{TaskName, WorklogId, WorklogTimes};
 use tracker_protocol::{HealthDto, SnapshotDto, VERSION};
@@ -508,24 +507,32 @@ async fn disconnected_client_keeps_last_confirmed_state_and_rejects_writes() {
     let mut client = RemoteApplication::connect(&server.endpoint())
         .await
         .unwrap();
+    let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
+    client
+        .create_task(name("Confirmed task"), at)
+        .await
+        .unwrap();
     let count = client.tasks(TaskOrdering::RecentlyCreated).len();
-    assert!(count > 0);
+    assert_eq!(count, 1);
     drop(server);
 
     let error = client.refresh().await.unwrap_err();
     assert!(error.is_unavailable());
     assert_eq!(client.last_failure(), Some(RemoteFailureKind::Unavailable));
     assert_eq!(client.tasks(TaskOrdering::RecentlyCreated).len(), count);
-    let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
     assert!(client.create_task(name("Offline task"), at).await.is_err());
     assert_eq!(client.tasks(TaskOrdering::RecentlyCreated).len(), count);
-    assert!(matches!(
-        client
-            .report_totals(at, at + Duration::seconds(1), at).await
-            .unwrap_err(),
-        ApplicationError::Repository(RepositoryError::Backend { message })
-            if message == "tracker server is unavailable"
-    ));
+    let failure = client
+        .report_totals(at, at + Duration::seconds(1), at)
+        .await
+        .unwrap_err()
+        .failure();
+    assert_eq!(
+        failure.source(),
+        tracker_application::ApplicationFailureSource::RemoteUnavailable
+    );
+    assert_eq!(failure.message(), "Tracker server is unavailable");
+    assert!(!failure.recovery_failed());
 }
 
 #[tokio::test]

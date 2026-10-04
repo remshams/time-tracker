@@ -166,7 +166,9 @@ impl RemoteApplication {
         }
         let mapped = map_application_error(&error, worklog_id, task_id);
         if matches!(error, RemoteError::Http { .. }) {
-            let _ = self.refresh().await;
+            if let Err(recovery) = self.refresh().await {
+                return mapped.with_recovery_failure(map_application_error(&recovery, None, None));
+            }
         }
         mapped
     }
@@ -199,7 +201,7 @@ impl RemoteApplication {
             if recovering {
                 self.refresh()
                     .await
-                    .map_err(|error| ApplicationError::storage_failure(error.to_string()))?;
+                    .map_err(|error| map_application_error(&error, None, None))?;
             }
             let pending_id: TaskId = pending
                 .task_id
@@ -631,8 +633,8 @@ impl RemoteApplication {
             return Err(ApplicationError::InvalidReportRange);
         }
         if report_cooldown_active(self.last_unavailable_at, Instant::now()) {
-            return Err(ApplicationError::storage_failure(
-                "tracker server is unavailable",
+            return Err(ApplicationError::RemoteUnavailable(
+                "tracker server is unavailable".into(),
             ));
         }
         let mut url = self.transport.url("v1/reports");
@@ -912,7 +914,7 @@ fn clear_tracking_result(
 }
 
 fn protocol_failure(message: &str) -> ApplicationError {
-    ApplicationError::storage_failure(format!("invalid server response: {message}"))
+    ApplicationError::RemoteProtocol(format!("invalid server response: {message}"))
 }
 
 fn valid_fingerprint(value: &str) -> bool {
@@ -942,6 +944,9 @@ fn map_application_error(
     worklog_id: Option<WorklogId>,
     _task_id: Option<TaskId>,
 ) -> ApplicationError {
+    if error.is_unavailable() {
+        return ApplicationError::RemoteUnavailable(error.to_string());
+    }
     if let RemoteError::Http { status, body } = error {
         if let Ok(dto) = serde_json::from_slice::<ErrorDto>(body) {
             let category = match dto.code {
@@ -951,7 +956,7 @@ fn map_application_error(
                 ErrorCode::NotFound if worklog_id.is_some() => {
                     ApplicationFailureCategory::WorklogNotFound
                 }
-                ErrorCode::NotFound => ApplicationFailureCategory::General,
+                ErrorCode::NotFound => ApplicationFailureCategory::TaskNotFound,
                 ErrorCode::WorklogChanged => ApplicationFailureCategory::WorklogChanged,
                 ErrorCode::WorklogHistoryChanged => {
                     ApplicationFailureCategory::WorklogHistoryChanged
@@ -963,7 +968,7 @@ fn map_application_error(
                     ApplicationFailureCategory::InactiveTaskCandidatesChanged
                 }
                 ErrorCode::Internal => {
-                    return ApplicationError::storage_failure("remote server error");
+                    return ApplicationError::RemoteUnavailable("remote server error".into());
                 }
             };
             return ApplicationError::semantic_failure(category, safe_message(&dto.message));
@@ -975,7 +980,7 @@ fn map_application_error(
             );
         }
     }
-    ApplicationError::storage_failure(error.to_string())
+    ApplicationError::RemoteProtocol(error.to_string())
 }
 
 #[cfg(test)]
@@ -1115,8 +1120,8 @@ mod mutation_tests {
             let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
             assert_eq!(
                 client.preview_inactive_tasks(at()).await.unwrap_err(),
-                ApplicationError::storage_failure(
-                    "invalid server response: invalid inactive task preview"
+                ApplicationError::RemoteProtocol(
+                    "invalid server response: invalid inactive task preview".into()
                 )
             );
             assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
@@ -1141,8 +1146,8 @@ mod mutation_tests {
             let mut client = RemoteApplication::disconnected(endpoint).unwrap();
             assert_eq!(
                 client.archive_inactive_tasks(&preview).await.unwrap_err(),
-                ApplicationError::storage_failure(
-                    "invalid server response: invalid inactive task preview"
+                ApplicationError::RemoteProtocol(
+                    "invalid server response: invalid inactive task preview".into()
                 )
             );
         }
@@ -1170,8 +1175,8 @@ mod mutation_tests {
             let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
             assert_eq!(
                 client.archive_inactive_tasks(&preview).await.unwrap_err(),
-                ApplicationError::storage_failure(
-                    "invalid server response: invalid inactive task archive result"
+                ApplicationError::RemoteProtocol(
+                    "invalid server response: invalid inactive task archive result".into()
                 )
             );
             assert!(client.task(task_id).is_none());
@@ -1522,7 +1527,7 @@ mod mutation_tests {
             map_application_error(&error, None, Some(TaskId::generate()))
                 .failure()
                 .category(),
-            ApplicationFailureCategory::General
+            ApplicationFailureCategory::TaskNotFound
         );
         let invalid_body = RemoteError::Http {
             status: StatusCode::CONFLICT,
@@ -1533,6 +1538,178 @@ mod mutation_tests {
                 .failure()
                 .message(),
             "Tracker state changed. Refresh and retry."
+        );
+    }
+
+    #[test]
+    fn application_failures_preserve_transport_origin_and_redact_internal_responses() {
+        use tracker_application::ApplicationFailureSource;
+
+        let cases = [
+            (
+                RemoteError::Unavailable("private URL".into()),
+                ApplicationFailureSource::RemoteUnavailable,
+            ),
+            (
+                RemoteError::Protocol("private response body".into()),
+                ApplicationFailureSource::RemoteProtocol,
+            ),
+            (
+                RemoteError::InvalidEndpoint("private endpoint"),
+                ApplicationFailureSource::RemoteProtocol,
+            ),
+            (
+                RemoteError::Http {
+                    status: StatusCode::BAD_REQUEST,
+                    body: b"private body".to_vec(),
+                },
+                ApplicationFailureSource::RemoteProtocol,
+            ),
+            (
+                RemoteError::Http {
+                    status: StatusCode::REQUEST_TIMEOUT,
+                    body: Vec::new(),
+                },
+                ApplicationFailureSource::RemoteUnavailable,
+            ),
+            (
+                RemoteError::Http {
+                    status: StatusCode::INTERNAL_SERVER_ERROR,
+                    body: serde_json::to_vec(&ErrorDto {
+                        code: ErrorCode::WorklogChanged,
+                        message: "private database credentials".into(),
+                    })
+                    .unwrap(),
+                },
+                ApplicationFailureSource::RemoteUnavailable,
+            ),
+            (
+                RemoteError::Http {
+                    status: StatusCode::BAD_REQUEST,
+                    body: serde_json::to_vec(&ErrorDto {
+                        code: ErrorCode::Internal,
+                        message: "private database credentials".into(),
+                    })
+                    .unwrap(),
+                },
+                ApplicationFailureSource::RemoteUnavailable,
+            ),
+        ];
+        for (error, source) in cases {
+            let failure = map_application_error(&error, None, None).failure();
+            assert_eq!(failure.source(), source);
+            assert_eq!(failure.category(), ApplicationFailureCategory::General);
+            assert!(!failure.recovery_failed());
+            assert!(!failure.message().contains("private"));
+        }
+        let error = RemoteError::Http {
+            status: StatusCode::CONFLICT,
+            body: serde_json::to_vec(&ErrorDto {
+                code: ErrorCode::WorklogChanged,
+                message: "Worklog changed".into(),
+            })
+            .unwrap(),
+        };
+        let failure = map_application_error(&error, None, None).failure();
+        assert_eq!(
+            failure.category(),
+            ApplicationFailureCategory::WorklogChanged
+        );
+        assert_eq!(failure.source(), ApplicationFailureSource::Operation);
+    }
+
+    #[tokio::test]
+    async fn successful_refresh_keeps_the_returned_error_source_after_clearing_availability() {
+        use tracker_application::ApplicationFailureSource;
+
+        let router = Router::new()
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(HealthDto {
+                        status: "ok".into(),
+                        protocol_version: tracker_protocol::VERSION,
+                    })
+                }),
+            )
+            .route(
+                "/v1/snapshot",
+                get(|| async {
+                    Json(SnapshotDto {
+                        task_items: Vec::new(),
+                        active_worklog: None,
+                        revision: "refreshed".into(),
+                    })
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
+        for (status, code, category, source) in [
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorCode::Internal,
+                ApplicationFailureCategory::General,
+                ApplicationFailureSource::RemoteUnavailable,
+            ),
+            (
+                StatusCode::CONFLICT,
+                ErrorCode::WorklogChanged,
+                ApplicationFailureCategory::WorklogChanged,
+                ApplicationFailureSource::Operation,
+            ),
+        ] {
+            let error = RemoteError::Http {
+                status,
+                body: serde_json::to_vec(&ErrorDto {
+                    code,
+                    message: "Worklog changed".into(),
+                })
+                .unwrap(),
+            };
+            let failure = client.operation_error(error, None, None).await.failure();
+            assert_eq!(failure.category(), category);
+            assert_eq!(failure.source(), source);
+            assert!(!failure.recovery_failed());
+            assert_eq!(client.last_failure(), None);
+            assert_eq!(client.revision, "refreshed");
+        }
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn failed_authoritative_refresh_keeps_primary_semantics_and_transport_failure() {
+        use tracker_application::ApplicationFailureSource;
+
+        let mut client = RemoteApplication::disconnected("http://127.0.0.1:1/").unwrap();
+        let error = RemoteError::Http {
+            status: StatusCode::CONFLICT,
+            body: serde_json::to_vec(&ErrorDto {
+                code: ErrorCode::WorklogChanged,
+                message: "Worklog changed".into(),
+            })
+            .unwrap(),
+        };
+        let failure = client.operation_error(error, None, None).await.failure();
+        assert_eq!(
+            failure.category(),
+            ApplicationFailureCategory::WorklogChanged
+        );
+        assert_eq!(
+            failure.source(),
+            ApplicationFailureSource::RemoteUnavailable
+        );
+        assert!(failure.recovery_failed());
+        assert_eq!(
+            failure.recovery_message(),
+            Some("Tracker server is unavailable")
+        );
+        assert_eq!(
+            failure.message(),
+            "Worklog changed. State recovery failed: Tracker server is unavailable."
         );
     }
 
