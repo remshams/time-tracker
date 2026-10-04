@@ -31,7 +31,7 @@ struct TaskDetails: View {
 
                         Spacer(minLength: 12)
                         if !task.archived {
-                            trackingButton(taskID: task.id)
+                            TrackingTaskButton(store: store, activity: store.activity, taskID: task.id)
                                 .fixedSize()
                         }
                     }
@@ -54,12 +54,11 @@ struct TaskDetails: View {
                         }
 
                         ForEach(store.worklogs) { worklog in
-                            WorklogRow(worklog: worklog, active: store.active, elapsed: store.elapsed)
+                            WorklogRow(worklog: worklog, active: store.active, timer: store.timer)
                         }
 
                         if store.hasMoreHistory {
-                            Button("Load older worklogs") { store.loadOlder() }
-                                .disabled(store.isBusy || store.isStale)
+                            HistoryPaginationButton(store: store, activity: store.activity)
                                 .padding(.top, 8)
                         }
                     }
@@ -79,27 +78,6 @@ struct TaskDetails: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(store.selectedTask?.name ?? "Time Tracker")
-    }
-
-    @ViewBuilder
-    private func trackingButton(taskID: String) -> some View {
-        if let active = store.active, active.taskId == taskID {
-            Button { store.stopTracking(worklogID: active.id) } label: {
-                Label("Stop tracking", systemImage: "stop.fill")
-            }
-            .buttonStyle(.bordered)
-            .disabled(!store.canStopTracking)
-            .help("Stop the running timer and save this worklog.")
-        } else {
-            Button { store.startTracking(taskID: taskID) } label: {
-                Label(store.active == nil ? "Start tracking" : "Switch tracking", systemImage: "play.fill")
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!store.canStartSelectedTask)
-            .help(store.active == nil
-                  ? "Start a timer for this task."
-                  : "Stop the current timer and start tracking this task.")
-        }
     }
 
     @ViewBuilder
@@ -125,5 +103,41 @@ struct TaskDetails: View {
                     .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
             }
         }
+    }
+}
+
+private struct TrackingTaskButton: View {
+    @ObservedObject var store: TrackerStore
+    @ObservedObject var activity: TrackerActivityStore
+    let taskID: String
+
+    var body: some View {
+        if let active = store.active, active.taskId == taskID {
+            Button { store.stopTracking(worklogID: active.id) } label: {
+                Label("Stop tracking", systemImage: "stop.fill")
+            }
+            .buttonStyle(.bordered)
+            .disabled(!activity.canStopTracking)
+            .help("Stop the running timer and save this worklog.")
+        } else {
+            Button { store.startTracking(taskID: taskID) } label: {
+                Label(store.active == nil ? "Start tracking" : "Switch tracking", systemImage: "play.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!activity.canStartSelectedTask)
+            .help(store.active == nil
+                  ? "Start a timer for this task."
+                  : "Stop the current timer and start tracking this task.")
+        }
+    }
+}
+
+private struct HistoryPaginationButton: View {
+    @ObservedObject var store: TrackerStore
+    @ObservedObject var activity: TrackerActivityStore
+
+    var body: some View {
+        Button("Load older worklogs") { store.loadOlder() }
+            .disabled(activity.isBusy || store.isStale)
     }
 }
