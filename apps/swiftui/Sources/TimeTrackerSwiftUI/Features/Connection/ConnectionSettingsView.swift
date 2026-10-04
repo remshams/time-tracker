@@ -47,6 +47,21 @@ struct ConnectionSettingsView: View {
                 }
                 .disabled(operationPending || store.isChangingConnection)
 
+                Section("Tracking") {
+                    Toggle("Automatically pause tracking when the screen is locked", isOn: Binding(
+                        get: { store.pauseOnScreenLock },
+                        set: { store.setPauseOnScreenLock($0) }
+                    ))
+                    Text("Resume the same task when you unlock this Mac, unless another timer is already running.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let status = store.autoPauseStatusText {
+                        Text(status)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
                 Section {
                     HStack(spacing: 12) {
                         Button("Test connection") { testConnection() }
@@ -148,11 +163,11 @@ struct ConnectionSettingsButton: View {
         Group {
             if #available(macOS 14, *) {
                 SettingsLink {
-                    Label("Connection settings", systemImage: "gearshape")
+                    Label("Settings", systemImage: "gearshape")
                 }
             } else {
                 Button { showsSheet = true } label: {
-                    Label("Connection settings", systemImage: "gearshape")
+                    Label("Settings", systemImage: "gearshape")
                 }
                 .sheet(isPresented: $showsSheet) {
                     ConnectionSettingsView(store: store, showsDoneButton: true)
@@ -160,6 +175,6 @@ struct ConnectionSettingsButton: View {
             }
         }
         .labelStyle(.iconOnly)
-        .help("Choose Local or Server and change the server address.")
+        .help("Change the connection and automatic tracking preferences.")
     }
 }
