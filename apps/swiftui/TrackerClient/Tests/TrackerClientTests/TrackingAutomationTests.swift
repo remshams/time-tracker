@@ -578,4 +578,64 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertEqual(fixture.client.operations, [.open(.local)])
     }
 
+    func testUncertainPauseFailureCancelsRelockActionFromSameOwnershipGeneration() async throws {
+        let fixture = Fixture(pauseOnScreenLock: true)
+        defer { fixture.cleanup() }
+        try await fixture.start(running)
+        fixture.session.screenLocked(at: fixture.clock.now)
+        let snapshot = try await fixture.client.next()
+        snapshot.succeed(running)
+        let pause = try await fixture.client.next()
+        fixture.clock.now.addTimeInterval(10)
+        fixture.session.screenUnlocked(at: fixture.clock.now)
+        fixture.clock.now.addTimeInterval(10)
+        fixture.session.screenLocked(at: fixture.clock.now)
+        fixture.session.select(secondTask.id)
+        pause.fail(BridgeFailure(message: "Pause response lost", uncertain: true))
+        let reconcile = try await fixture.client.next()
+        XCTAssertEqual(reconcile.operation, .snapshot)
+        reconcile.succeed(running)
+        let history = try await fixture.client.next()
+        XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.trackingError, "Pause response lost")
+        XCTAssertNil(fixture.session.autoPauseStatusText)
+        fixture.session.screenUnlocked(at: fixture.clock.now)
+        XCTAssertFalse(fixture.session.isBusy)
+        XCTAssertEqual(fixture.client.operations.filter { if case .pause = $0 { return true }; return false }.count, 1)
+        XCTAssertFalse(fixture.client.operations.contains { if case .resume = $0 { return true }; return false })
+    }
+
+    func testOldPauseFailurePreservesExplicitlyReenabledLockAction() async throws {
+        let fixture = Fixture(pauseOnScreenLock: true)
+        defer { fixture.cleanup() }
+        try await fixture.start(running)
+        fixture.session.screenLocked(at: fixture.clock.now)
+        let snapshot = try await fixture.client.next()
+        snapshot.succeed(running)
+        let pause = try await fixture.client.next()
+        fixture.session.setPauseOnScreenLock(false)
+        fixture.clock.now.addTimeInterval(10)
+        let enabledAt = fixture.clock.now
+        fixture.session.setPauseOnScreenLock(true)
+        pause.fail(BridgeFailure(message: "Old pause response lost", uncertain: true))
+        let reconcile = try await fixture.client.next()
+        XCTAssertEqual(reconcile.operation, .snapshot)
+        reconcile.succeed(running)
+        let newSnapshot = try await fixture.client.next()
+        XCTAssertEqual(newSnapshot.operation, .snapshot)
+        newSnapshot.succeed(running)
+        let newPause = try await fixture.client.next()
+        XCTAssertEqual(newPause.operation, .pause(worklog: activeWorklog.id, at: commandTimestamp(enabledAt)))
+        newPause.paused(idle)
+        let history = try await fixture.client.next()
+        XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.autoPauseStatusText, "Paused while screen is locked")
+        XCTAssertNil(fixture.session.trackingError)
+        XCTAssertEqual(fixture.client.operations.filter { if case .pause = $0 { return true }; return false }.count, 2)
+    }
+
 }
