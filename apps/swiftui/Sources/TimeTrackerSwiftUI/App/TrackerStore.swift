@@ -6,6 +6,9 @@ import TrackerClient
 final class TrackerStore: ObservableObject {
     let objectWillChange = ObservableObjectPublisher()
     private let session: TrackerSession
+    private let presentation: TrackerPresentationObserver
+    let activity: TrackerActivityStore
+    let timer: TrackerTimerStore
     private var lifecycle: MacLifecycleObserver?
 
     init() {
@@ -13,7 +16,14 @@ final class TrackerStore: ObservableObject {
                                  scheduler: RunLoopTrackerScheduler(),
                                  settings: UserDefaultsConnectionSettings(),
                                  trackingPreferences: UserDefaultsTrackingPreferences())
-        session.onChange = { [weak self] in self?.objectWillChange.send() }
+        presentation = TrackerPresentationObserver(session: session)
+        activity = TrackerActivityStore(session: session, presentation: presentation)
+        timer = TrackerTimerStore(session: session, presentation: presentation)
+        presentation.onContentChange = { [weak self] in self?.objectWillChange.send() }
+        session.onChange = { [weak self] in
+            guard let self else { return }
+            presentation.update(from: session)
+        }
         lifecycle = MacLifecycleObserver(session: session)
         lifecycle?.start()
         session.start()
@@ -60,4 +70,32 @@ final class TrackerStore: ObservableObject {
     func connect(_ settings: ConnectionSettings) async -> Bool {
         await session.connect(settings)
     }
+}
+
+@MainActor
+final class TrackerActivityStore: ObservableObject {
+    let objectWillChange = ObservableObjectPublisher()
+    private let session: TrackerSession
+
+    init(session: TrackerSession, presentation: TrackerPresentationObserver) {
+        self.session = session
+        presentation.onActivityChange = { [weak self] in self?.objectWillChange.send() }
+    }
+
+    var isBusy: Bool { session.isBusy }
+    var canStartSelectedTask: Bool { session.canStartSelectedTask }
+    var canStopTracking: Bool { session.canStopTracking }
+}
+
+@MainActor
+final class TrackerTimerStore: ObservableObject {
+    let objectWillChange = ObservableObjectPublisher()
+    private let session: TrackerSession
+
+    init(session: TrackerSession, presentation: TrackerPresentationObserver) {
+        self.session = session
+        presentation.onTimerChange = { [weak self] in self?.objectWillChange.send() }
+    }
+
+    var text: String { session.timerDisplayText }
 }
