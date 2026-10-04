@@ -33,6 +33,9 @@ class MuterInstallerTests(unittest.TestCase):
                 "            with: node\n"
                 "        return super.visit(newNode)\n", encoding="utf-8"
             )
+            effects = source / "Sources/muterCore/MutationOperators/RemoveSideEffectsOperator.swift"
+            effects.parent.mkdir()
+            effects.write_text('            "NSRecursiveLock",\n', encoding="utf-8")
             INSTALLER.patch_source(source)
             patched = mapping.read_text(encoding="utf-8")
             self.assertIn("$0.key.position == codeBlockSyntax.position", patched)
@@ -40,6 +43,7 @@ class MuterInstallerTests(unittest.TestCase):
             self.assertNotIn("map.fileName", patched)
             self.assertIn("map.filePath", patched)
             self.assertIn("with: rewritten", rewriter.read_text(encoding="utf-8"))
+            self.assertIn('"NSLock"', effects.read_text(encoding="utf-8"))
             shim = (source / "Sources/muterCore/LinuxAutoreleasepool.swift").read_text(encoding="utf-8")
             self.assertTrue(shim.startswith("#if os(Linux)\n"))
 

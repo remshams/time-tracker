@@ -74,6 +74,12 @@ def patch_source(source: Path) -> None:
     if contents.count(original) != 3:
         raise ValueError("Pinned Muter source no longer matches the file path grouping patch")
     mapping.write_text(contents.replace(original, "map.filePath"), encoding="utf-8")
+    effects = source / "Sources/muterCore/MutationOperators/RemoveSideEffectsOperator.swift"
+    contents = effects.read_text(encoding="utf-8")
+    original = '            "NSRecursiveLock",\n'
+    if contents.count(original) != 1:
+        raise ValueError("Pinned Muter source no longer matches the NSLock exclusion patch")
+    effects.write_text(contents.replace(original, '            "NSLock",\n' + original), encoding="utf-8")
 
 
 def install(swift: str, jobs: int) -> Path:
