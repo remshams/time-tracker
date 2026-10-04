@@ -438,3 +438,51 @@ fn archiving_after_a_concurrent_rename_keeps_the_name() {
     );
     assert_eq!(archived.updated_at(), at(200));
 }
+
+#[test]
+fn failed_task_writes_preserve_primary_categories_when_authoritative_recovery_fails() {
+    for operation in 0..3 {
+        let task = stamped_task(1, "Old task", 100, 100);
+        let repository = MemoryRepository::with_tasks(vec![task.clone()]);
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        let (primary, category) = match operation {
+            0 => (
+                RepositoryError::TaskIsActive { id: task.id() },
+                ApplicationFailureCategory::ActiveTask,
+            ),
+            1 => (
+                RepositoryError::TaskNotFound { id: task.id() },
+                ApplicationFailureCategory::TaskNotFound,
+            ),
+            _ => (
+                RepositoryError::InactiveTaskCandidatesChanged,
+                ApplicationFailureCategory::InactiveTaskCandidatesChanged,
+            ),
+        };
+        repository.fail_next_write(primary, None);
+        repository.fail_recovery_after_next_write();
+        let error = match operation {
+            0 => application
+                .archive_task(task.id(), at(2_000_000))
+                .unwrap_err(),
+            1 => application
+                .unarchive_task(task.id(), at(2_000_000))
+                .unwrap_err(),
+            _ => application
+                .archive_inactive_tasks(&[task.id()], at(2_000_000))
+                .unwrap_err(),
+        };
+        let failure = error.failure();
+        assert_eq!(failure.category(), category);
+        assert_eq!(failure.source(), ApplicationFailureSource::Storage);
+        assert!(failure.recovery_failed());
+        assert_eq!(
+            failure.recovery_category(),
+            Some(ApplicationFailureCategory::General)
+        );
+        assert_eq!(failure.recovery_message(), Some("Storage error"));
+        assert!(!failure.message().contains("read failed"));
+        assert!(!application.task(task.id()).unwrap().is_archived());
+        assert!(!repository.0.borrow().tasks[0].task.is_archived());
+    }
+}

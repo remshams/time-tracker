@@ -1,18 +1,16 @@
 //! Backend-neutral application use cases for tasks and time tracking.
 
+pub mod calendar_reports;
+pub mod task_search;
+
 mod error;
 mod model;
 mod repository;
 mod service;
 
-/// Example tasks inserted only when the selected store is empty.
-pub const DEFAULT_TASK_NAMES: [&str; 3] = [
-    "Write release notes",
-    "Fix the coffee machine",
-    "Plan Friday's demo",
-];
-
-pub use error::{ApplicationError, ApplicationFailure, ApplicationFailureCategory};
+pub use error::{
+    ApplicationError, ApplicationFailure, ApplicationFailureCategory, ApplicationFailureSource,
+};
 pub use model::{
     ClearActiveTaskOutcome, GlobalWorklogCursor, GlobalWorklogPage, ReportRow, ReportTotals,
     SetActiveTaskOutcome, TaskListItem, TaskOrdering, WORKLOG_PAGE_SIZE, WorklogCursor,

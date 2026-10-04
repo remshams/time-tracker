@@ -2873,6 +2873,7 @@ name = "tracker-application"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "thiserror 2.0.20",
  "tracker-domain",
  "uuid",

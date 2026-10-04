@@ -43,13 +43,13 @@ impl MemoryRepository {
                 let task = &item.task;
                 !task.is_archived()
                     && task.created_at() < cutoff
+                    && task.updated_at() < cutoff
                     && !data.worklogs.iter().any(|worklog| {
                         worklog.task_id() == task.id()
                             && (worklog.is_active()
-                                || (worklog.start() < as_of
-                                    && worklog
-                                        .end()
-                                        .is_some_and(|end| end > cutoff && end > worklog.start())))
+                                || worklog
+                                    .end()
+                                    .is_some_and(|end| end > cutoff && end > worklog.start()))
                     })
             })
             .map(|item| item.task.clone())

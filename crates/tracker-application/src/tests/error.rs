@@ -7,7 +7,7 @@ fn repository_failures_have_stable_semantic_classifications_and_sanitized_messag
     let cases = [
         (
             RepositoryError::TaskNotFound { id: task_id },
-            ApplicationFailureCategory::General,
+            ApplicationFailureCategory::TaskNotFound,
             "Task not found",
         ),
         (
@@ -94,9 +94,18 @@ fn repository_failures_have_stable_semantic_classifications_and_sanitized_messag
     ];
 
     for (error, category, message) in cases {
+        let source = if matches!(
+            error,
+            RepositoryError::Backend { .. } | RepositoryError::CorruptData { .. }
+        ) {
+            crate::ApplicationFailureSource::Storage
+        } else {
+            crate::ApplicationFailureSource::Operation
+        };
         let failure = ApplicationError::Repository(error).failure();
         assert_eq!(failure.category(), category);
         assert_eq!(failure.message(), message);
+        assert_eq!(failure.source(), source);
         assert!(!failure.recovery_failed());
     }
 }
@@ -206,4 +215,130 @@ fn recovery_errors_keep_the_repository_error_as_their_source() {
         },
     };
     assert!(error.source().is_some());
+}
+
+#[test]
+fn failure_sources_include_storage_in_either_cause_and_standalone_recovery() {
+    use crate::ApplicationFailureSource;
+
+    let id = WorklogId::generate();
+    let backend = || RepositoryError::Backend {
+        message: "private storage credentials".into(),
+    };
+    for error in [
+        ApplicationError::Repository(backend()),
+        ApplicationError::TrackingWrite(backend()),
+        ApplicationError::WorklogCorrectionWrite { write: backend() },
+        ApplicationError::WorklogMoveWrite { write: backend() },
+        ApplicationError::WorklogDeletionWrite { write: backend() },
+        ApplicationError::Repository(RepositoryError::CorruptData {
+            field: "private token",
+        }),
+    ] {
+        let failure = error.failure();
+        assert_eq!(failure.source(), ApplicationFailureSource::Storage);
+        assert!(!failure.recovery_failed());
+        assert_eq!(failure.recovery_category(), None);
+        assert_eq!(failure.recovery_message(), None);
+        assert!(!failure.message().contains("private"));
+    }
+    for error in [
+        ApplicationError::TrackingRecovery(backend()),
+        ApplicationError::TaskRecovery(backend()),
+    ] {
+        let failure = error.failure();
+        assert_eq!(failure.source(), ApplicationFailureSource::Storage);
+        assert!(failure.recovery_failed());
+        assert_eq!(
+            failure.recovery_category(),
+            Some(ApplicationFailureCategory::General)
+        );
+        assert_eq!(failure.recovery_message(), Some("Storage error"));
+    }
+    for error in [
+        ApplicationError::WorklogCorrectionRecovery {
+            write: RepositoryError::WorklogChanged { id },
+            recovery: backend(),
+        },
+        ApplicationError::WorklogMoveRecovery {
+            write: RepositoryError::WorklogChanged { id },
+            recovery: backend(),
+        },
+        ApplicationError::WorklogDeletionRecovery {
+            write: RepositoryError::WorklogChanged { id },
+            recovery: backend(),
+        },
+    ] {
+        let failure = error.failure();
+        assert_eq!(failure.source(), ApplicationFailureSource::Storage);
+        assert_eq!(
+            failure.category(),
+            ApplicationFailureCategory::WorklogChanged
+        );
+        assert!(failure.recovery_failed());
+        assert_eq!(failure.recovery_message(), Some("Storage error"));
+        assert!(!failure.message().contains("private"));
+    }
+    for error in [
+        ApplicationError::WorklogCorrectionRecovery {
+            write: backend(),
+            recovery: RepositoryError::WorklogNotFound { id },
+        },
+        ApplicationError::WorklogMoveRecovery {
+            write: backend(),
+            recovery: RepositoryError::WorklogNotFound { id },
+        },
+        ApplicationError::WorklogDeletionRecovery {
+            write: backend(),
+            recovery: RepositoryError::WorklogNotFound { id },
+        },
+    ] {
+        let failure = error.failure();
+        assert_eq!(failure.source(), ApplicationFailureSource::Storage);
+        assert!(failure.recovery_failed());
+        assert_eq!(
+            failure.recovery_category(),
+            Some(ApplicationFailureCategory::WorklogNotFound)
+        );
+    }
+}
+
+#[test]
+fn semantic_and_domain_failures_keep_their_categories_after_remote_recovery_fails() {
+    use crate::ApplicationFailureSource;
+
+    let id = TaskId::generate();
+    for primary in [
+        ApplicationError::Domain(TrackingError::TaskIsActive { id }),
+        ApplicationError::semantic_failure(
+            ApplicationFailureCategory::ActiveTask,
+            "Task has active work",
+        ),
+    ] {
+        let failure = primary
+            .with_recovery_failure(ApplicationError::RemoteUnavailable(
+                "private endpoint".into(),
+            ))
+            .failure();
+        assert_eq!(failure.category(), ApplicationFailureCategory::ActiveTask);
+        assert_eq!(
+            failure.source(),
+            ApplicationFailureSource::RemoteUnavailable
+        );
+        assert!(failure.recovery_failed());
+        assert_eq!(
+            failure.recovery_message(),
+            Some("Tracker server is unavailable")
+        );
+        assert!(!failure.message().contains("private"));
+    }
+    let failure = ApplicationError::RemoteProtocol("private payload".into()).failure();
+    assert_eq!(failure.source(), ApplicationFailureSource::RemoteProtocol);
+    assert_eq!(failure.message(), "Tracker server returned invalid data");
+    assert!(!failure.recovery_failed());
+    let failure = ApplicationError::InvalidReportRange
+        .with_recovery_failure(ApplicationError::InvalidReportRange)
+        .failure();
+    assert_eq!(failure.source(), ApplicationFailureSource::Operation);
+    assert!(failure.recovery_failed());
 }

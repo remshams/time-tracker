@@ -12,6 +12,7 @@ use crate::RepositoryError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplicationFailureCategory {
     General,
+    TaskNotFound,
     WorklogNotFound,
     WorklogChanged,
     ActiveWorklog,
@@ -21,15 +22,30 @@ pub enum ApplicationFailureCategory {
     InactiveTaskCandidatesChanged,
 }
 
+/// Where an operation or its state recovery failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApplicationFailureSource {
+    Operation,
+    Storage,
+    RemoteUnavailable,
+    RemoteProtocol,
+}
+
 /// A presentation-safe view of an [`ApplicationError`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApplicationFailure {
     category: ApplicationFailureCategory,
     message: String,
-    recovery: Option<(ApplicationFailureCategory, &'static str)>,
+    source: ApplicationFailureSource,
+    recovery: Option<(ApplicationFailureCategory, String)>,
 }
 
 impl ApplicationFailure {
+    /// Returns the failure source, including a failed state recovery.
+    pub fn source(&self) -> ApplicationFailureSource {
+        self.source
+    }
+
     /// Returns the primary semantic failure category.
     pub fn category(&self) -> ApplicationFailureCategory {
         self.category
@@ -47,12 +63,12 @@ impl ApplicationFailure {
 
     /// Returns the recovery failure category when state recovery also failed.
     pub fn recovery_category(&self) -> Option<ApplicationFailureCategory> {
-        self.recovery.map(|(category, _)| category)
+        self.recovery.as_ref().map(|(category, _)| *category)
     }
 
     /// Returns the sanitized recovery failure message when recovery also failed.
-    pub fn recovery_message(&self) -> Option<&'static str> {
-        self.recovery.map(|(_, message)| message)
+    pub fn recovery_message(&self) -> Option<&str> {
+        self.recovery.as_ref().map(|(_, message)| message.as_str())
     }
 }
 
@@ -63,6 +79,16 @@ impl ApplicationFailure {
 /// variants.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ApplicationError {
+    #[error("tracker server is unavailable: {0}")]
+    RemoteUnavailable(String),
+    #[error("tracker server returned invalid data: {0}")]
+    RemoteProtocol(String),
+    #[error("{primary}; state recovery failed: {recovery}")]
+    Recovery {
+        #[source]
+        primary: Box<ApplicationError>,
+        recovery: Box<ApplicationError>,
+    },
     #[error("{message}")]
     Semantic {
         category: ApplicationFailureCategory,
@@ -124,6 +150,14 @@ pub enum ApplicationError {
 }
 
 impl ApplicationError {
+    /// Attaches a failed authoritative refresh without losing the primary category.
+    pub fn with_recovery_failure(self, recovery: Self) -> Self {
+        Self::Recovery {
+            primary: Box::new(self),
+            recovery: Box::new(recovery),
+        }
+    }
+
     /// Rebuilds a presentation-safe semantic failure received from another
     /// application service. Backend diagnostics must never be passed here.
     pub fn semantic_failure(
@@ -213,9 +247,31 @@ impl ApplicationError {
     /// unsanitized backend messages.
     pub fn failure(&self) -> ApplicationFailure {
         match self {
+            Self::RemoteUnavailable(_) => ApplicationFailure {
+                category: ApplicationFailureCategory::General,
+                message: "Tracker server is unavailable".to_owned(),
+                source: ApplicationFailureSource::RemoteUnavailable,
+                recovery: None,
+            },
+            Self::RemoteProtocol(_) => ApplicationFailure {
+                category: ApplicationFailureCategory::General,
+                message: "Tracker server returned invalid data".to_owned(),
+                source: ApplicationFailureSource::RemoteProtocol,
+                recovery: None,
+            },
+            Self::Recovery { primary, recovery } => {
+                let mut failure = primary.failure();
+                let recovery = recovery.failure();
+                failure.message = format!(
+                    "{}. State recovery failed: {}.",
+                    failure.message, recovery.message
+                );
+                attach_recovery(failure, recovery)
+            }
             Self::Semantic { category, message } => ApplicationFailure {
                 category: *category,
                 message: message.clone(),
+                source: ApplicationFailureSource::Operation,
                 recovery: None,
             },
             Self::Domain(error) => ApplicationFailure {
@@ -224,22 +280,27 @@ impl ApplicationError {
                     _ => ApplicationFailureCategory::General,
                 },
                 message: error.to_string(),
+                source: ApplicationFailureSource::Operation,
                 recovery: None,
             },
             Self::InvalidWorklogCorrection(error) => ApplicationFailure {
                 category: ApplicationFailureCategory::General,
                 message: error.to_string(),
+                source: ApplicationFailureSource::Operation,
                 recovery: None,
             },
             Self::InvalidWorklogMove(error) => ApplicationFailure {
                 category: ApplicationFailureCategory::General,
                 message: error.to_string(),
+                source: ApplicationFailureSource::Operation,
                 recovery: None,
             },
-            Self::Repository(error)
-            | Self::TrackingWrite(error)
-            | Self::TrackingRecovery(error)
-            | Self::TaskRecovery(error) => repository_failure(error),
+            Self::Repository(error) | Self::TrackingWrite(error) => repository_failure(error),
+            Self::TrackingRecovery(error) | Self::TaskRecovery(error) => {
+                let mut failure = repository_failure(error);
+                failure.recovery = Some((failure.category, failure.message.clone()));
+                failure
+            }
             Self::WorklogCorrectionWrite { write }
             | Self::WorklogMoveWrite { write }
             | Self::WorklogDeletionWrite { write } => repository_failure(write),
@@ -255,16 +316,19 @@ impl ApplicationError {
             Self::TrackingStateChanged => ApplicationFailure {
                 category: ApplicationFailureCategory::General,
                 message: "Tracking state changed in another client. Refreshed state.".to_owned(),
+                source: ApplicationFailureSource::Operation,
                 recovery: None,
             },
             Self::InvalidReportRange => ApplicationFailure {
                 category: ApplicationFailureCategory::General,
                 message: "Report end must be later than start".to_owned(),
+                source: ApplicationFailureSource::Operation,
                 recovery: None,
             },
             Self::ReportDurationOverflow => ApplicationFailure {
                 category: ApplicationFailureCategory::General,
                 message: "Report duration is too large".to_owned(),
+                source: ApplicationFailureSource::Operation,
                 recovery: None,
             },
         }
@@ -277,13 +341,23 @@ fn failure_with_recovery(
     recovery: &RepositoryError,
 ) -> ApplicationFailure {
     let mut failure = repository_failure(primary);
-    let recovery_category = repository_error_category(recovery);
-    let recovery_message = repository_error_message(recovery);
+    let recovery_failure = repository_failure(recovery);
+    let recovery_message = recovery_failure.message();
     failure.message = format!(
         "{operation} failed: {}. State recovery failed: {recovery_message}.",
         failure.message
     );
-    failure.recovery = Some((recovery_category, recovery_message));
+    attach_recovery(failure, recovery_failure)
+}
+
+fn attach_recovery(
+    mut failure: ApplicationFailure,
+    recovery: ApplicationFailure,
+) -> ApplicationFailure {
+    if recovery.source != ApplicationFailureSource::Operation {
+        failure.source = recovery.source;
+    }
+    failure.recovery = Some((recovery.category, recovery.message));
     failure
 }
 
@@ -291,12 +365,21 @@ fn repository_failure(error: &RepositoryError) -> ApplicationFailure {
     ApplicationFailure {
         category: repository_error_category(error),
         message: repository_error_message(error).to_owned(),
+        source: if matches!(
+            error,
+            RepositoryError::Backend { .. } | RepositoryError::CorruptData { .. }
+        ) {
+            ApplicationFailureSource::Storage
+        } else {
+            ApplicationFailureSource::Operation
+        },
         recovery: None,
     }
 }
 
 fn repository_error_category(error: &RepositoryError) -> ApplicationFailureCategory {
     match error {
+        RepositoryError::TaskNotFound { .. } => ApplicationFailureCategory::TaskNotFound,
         RepositoryError::WorklogNotFound { .. } => ApplicationFailureCategory::WorklogNotFound,
         RepositoryError::WorklogChanged { .. } => ApplicationFailureCategory::WorklogChanged,
         RepositoryError::WorklogIsActive { .. } => ApplicationFailureCategory::ActiveWorklog,

@@ -61,13 +61,13 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
                 Ok(task)
             }
             Err(error) => {
-                self.refresh_after_task_operation()?;
-                match error {
+                let primary = match error {
                     RepositoryError::TaskIsActive { id } => {
-                        Err(TrackingError::TaskIsActive { id }.into())
+                        TrackingError::TaskIsActive { id }.into()
                     }
-                    error => Err(error.into()),
-                }
+                    error => error.into(),
+                };
+                Err(self.task_failure_with_recovery(primary))
             }
         }
     }
@@ -89,10 +89,7 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
                 self.refresh_after_task_operation()?;
                 Ok(task)
             }
-            Err(error) => {
-                self.refresh_after_task_operation()?;
-                Err(error.into())
-            }
+            Err(error) => Err(self.task_failure_with_recovery(error.into())),
         }
     }
 
@@ -120,15 +117,19 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
                 self.adopt_snapshot(archive.snapshot)?;
                 Ok(archive.tasks)
             }
-            Err(error) => {
-                self.refresh_after_task_operation()?;
-                Err(error.into())
-            }
+            Err(error) => Err(self.task_failure_with_recovery(error.into())),
         }
     }
 }
 
 impl<R: TrackerRepository> TrackerApplication<R> {
+    fn task_failure_with_recovery(&mut self, primary: ApplicationError) -> ApplicationError {
+        match self.refresh_after_task_operation() {
+            Ok(()) => primary,
+            Err(recovery) => primary.with_recovery_failure(recovery),
+        }
+    }
+
     /// Creates a task with a caller-owned identifier, which makes remote retries safe.
     pub fn create_task_with_id(
         &mut self,
