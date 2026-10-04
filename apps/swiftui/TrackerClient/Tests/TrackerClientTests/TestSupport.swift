@@ -87,9 +87,15 @@ final class FakeClient: TrackerClient {
         }
     }
 
+    private func wrongReply(_ expected: String, operation: Operation) -> TestTimeout {
+        let message = "Expected a \(expected) reply for \(operation)."
+        XCTFail(message)
+        return TestTimeout(description: message)
+    }
+
     private func snapshotReply(_ operation: Operation) async throws -> TrackerSnapshot {
         guard case .snapshot(let value) = try await perform(operation) else {
-            fatalError("A snapshot request received a different reply.")
+            throw wrongReply("snapshot", operation: operation)
         }
         return value
     }
@@ -113,7 +119,7 @@ final class FakeClient: TrackerClient {
     }
     func pauseTracking(worklogID: String, occurredAt: String) async throws -> TrackingPauseResult {
         guard case .paused(let value) = try await perform(.pause(worklog: worklogID, at: occurredAt)) else {
-            fatalError("A pause request received a different reply.")
+            throw wrongReply("pause", operation: .pause(worklog: worklogID, at: occurredAt))
         }
         return value
     }
@@ -122,7 +128,7 @@ final class FakeClient: TrackerClient {
     }
     func history(taskID: String, cursor: String?) async throws -> HistoryPage {
         guard case .history(let value) = try await perform(.history(task: taskID, cursor: cursor)) else {
-            fatalError("A history request received a different reply.")
+            throw wrongReply("history", operation: .history(task: taskID, cursor: cursor))
         }
         return value
     }
@@ -211,6 +217,10 @@ final class Fixture {
         if let task = snapshot.tasks.first(where: { !$0.archived }) {
             let history = try await client.next()
             XCTAssertEqual(history.operation, .history(task: task.id, cursor: nil))
+            guard session.isBusy else {
+                XCTFail("Fetching startup history must keep conflicting commands disabled.")
+                throw TestTimeout(description: "Startup history ran outside the session operation gate.")
+            }
             history.succeed(emptyPage)
         }
         try await settled()
