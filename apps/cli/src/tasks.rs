@@ -78,9 +78,18 @@ fn validate_preview(token: &PreviewToken, identity: &str) -> Result<(), CliError
                 || !preview
                     .candidate_fingerprint
                     .bytes()
-                    .all(|b| b.is_ascii_hexdigit())
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
             {
                 return Err(CliError::input("invalid remote preview guard"));
+            }
+            if preview.sample_names.len() > 5
+                || preview.sample_names.len() > preview.count
+                || preview
+                    .sample_names
+                    .iter()
+                    .any(|name| TaskName::new(name).is_err())
+            {
+                return Err(CliError::input("invalid remote preview candidates"));
             }
             if !identity.starts_with("remote:") {
                 return Err(CliError::input("remote preview requires a server"));

@@ -318,3 +318,85 @@ fn json_file_inputs_reject_fifos_and_directories_without_waiting_for_writers() {
         2
     );
 }
+
+#[test]
+fn remote_preview_tokens_reject_invalid_guards_and_candidates_before_connecting() {
+    let backend = "remote:http://127.0.0.1:8765/";
+    let valid = serde_json::json!({
+        "mode":"remote", "backend":backend,
+        "preview":{"as_of":T0,"count":1,"sample_names":["Old task"],"revision":"revision-1","candidate_fingerprint":"a".repeat(64)}
+    });
+    let now = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    let validate = |token: &serde_json::Value, identity: &str| {
+        let mut command = crate::args::Tasks::ArchiveInactive {
+            preview: token.to_string(),
+            yes: true,
+        };
+        crate::tasks::validate(&mut command, identity, now)
+    };
+    validate(&valid, backend).unwrap();
+    let mut exactly_five = valid.clone();
+    exactly_five["preview"]["count"] = serde_json::json!(5);
+    exactly_five["preview"]["sample_names"] =
+        serde_json::json!(["One", "Two", "Three", "Four", "Five"]);
+    validate(&exactly_five, backend).unwrap();
+    let mut fewer_than_count = valid.clone();
+    fewer_than_count["preview"]["count"] = serde_json::json!(5);
+    validate(&fewer_than_count, backend).unwrap();
+    let mut too_many = exactly_five.clone();
+    too_many["preview"]["count"] = serde_json::json!(6);
+    too_many["preview"]["sample_names"] =
+        serde_json::json!(["One", "Two", "Three", "Four", "Five", "Six"]);
+    assert_eq!(validate(&too_many, backend).unwrap_err().exit_code, 2);
+    for (field, value) in [
+        ("revision", serde_json::json!("")),
+        ("candidate_fingerprint", serde_json::json!("A".repeat(64))),
+        ("candidate_fingerprint", serde_json::json!("g".repeat(64))),
+        ("candidate_fingerprint", serde_json::json!("a".repeat(63))),
+        ("candidate_fingerprint", serde_json::json!("a".repeat(65))),
+        ("sample_names", serde_json::json!([""])),
+        (
+            "sample_names",
+            serde_json::json!(["One", "Two", "Three", "Four", "Five", "Six"]),
+        ),
+        ("count", serde_json::json!(0)),
+    ] {
+        let mut invalid = valid.clone();
+        invalid["preview"][field] = value;
+        assert_eq!(validate(&invalid, backend).unwrap_err().exit_code, 2);
+    }
+    assert_eq!(
+        validate(&valid, "local:/tmp/tt.db").unwrap_err().exit_code,
+        2
+    );
+    assert_eq!(
+        validate(&valid, "remote:http://127.0.0.1:9000/")
+            .unwrap_err()
+            .exit_code,
+        2
+    );
+}
+
+#[test]
+fn correction_requires_a_replacement_even_when_expected_times_are_valid() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("never-created.db");
+    let id = "00000000-0000-7000-8000-000000000001";
+    let error = command(
+        &path,
+        T2,
+        &[
+            "worklogs",
+            "correct",
+            id,
+            "--expected-start",
+            T0,
+            "--expected-end",
+            T1,
+        ],
+    )
+    .unwrap_err();
+    assert_eq!(error.exit_code, 2);
+    assert_eq!(error.message, "correction requires --start or --end");
+    assert!(!path.exists());
+}

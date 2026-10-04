@@ -115,3 +115,34 @@ fn json_inputs_are_bounded_and_file_inputs_use_the_same_parser() {
     std::fs::write(&path, oversized).unwrap();
     assert!(crate::read_json::<serde_json::Value>(&format!("@{}", path.display())).is_err());
 }
+
+#[test]
+fn json_input_limit_accepts_exactly_one_mib_and_rejects_valid_json_above_it() {
+    const LIMIT: usize = 1024 * 1024;
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("large.json");
+    let boundary = format!("{{}}{}", " ".repeat(LIMIT - 2));
+    assert_eq!(
+        crate::read_json::<serde_json::Value>(&boundary).unwrap(),
+        serde_json::json!({})
+    );
+    std::fs::write(&path, &boundary).unwrap();
+    assert_eq!(
+        crate::read_json::<serde_json::Value>(&format!("@{}", path.display())).unwrap(),
+        serde_json::json!({})
+    );
+    let oversized = format!("{boundary} ");
+    assert_eq!(
+        crate::read_json::<serde_json::Value>(&oversized)
+            .unwrap_err()
+            .message,
+        "JSON input exceeds 1 MiB"
+    );
+    std::fs::write(&path, oversized).unwrap();
+    assert_eq!(
+        crate::read_json::<serde_json::Value>(&format!("@{}", path.display()))
+            .unwrap_err()
+            .message,
+        "JSON input exceeds 1 MiB"
+    );
+}

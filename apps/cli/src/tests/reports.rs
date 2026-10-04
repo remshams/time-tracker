@@ -132,3 +132,31 @@ fn reports_default_to_today_in_selected_timezone_and_accept_inclusive_dates() {
         .is_err()
     );
 }
+
+#[test]
+fn implicit_timezone_uses_process_environment() {
+    const MARKER: &str = "TT_CLI_TIMEZONE_UNIT_TEST";
+    if std::env::var(MARKER).as_deref() == Ok("berlin") {
+        let now = Utc.with_ymd_and_hms(2026, 10, 4, 23, 30, 0).unwrap();
+        let range = range(&report_args(&[]), now).unwrap();
+        assert_eq!(range.timezone, chrono_tz::Europe::Berlin);
+        assert_eq!(range.start.to_rfc3339(), "2026-10-04T22:00:00+00:00");
+        assert_eq!(range.end.to_rfc3339(), "2026-10-05T22:00:00+00:00");
+        return;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "tests::reports::implicit_timezone_uses_process_environment",
+            "--nocapture",
+        ])
+        .env(MARKER, "berlin")
+        .env("TZ", "Europe/Berlin")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "child test failed: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
