@@ -16,6 +16,19 @@ private func total(_ task: TaskItem, _ seconds: Int64) -> TaskReportTotal {
 
 final class DailyTotalsTests: XCTestCase {
     @MainActor
+    func testAggregateHandlesMicrosecondSumAboveInt64WithoutOverflow() async throws {
+        let clock = FakeClock()
+        let state = DailyTotalsState(calendar: dailyCalendar())
+        let request = try XCTUnwrap(state.begin(clock: clock))
+        let rows = [firstTask, secondTask].map {
+            TaskReportTotal(taskId: $0.id, durationMicroseconds: Int64.max)
+        }
+        state.accept(TrackerReport(snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: nil), rows: rows),
+                     requested: request, clock: clock)
+        XCTAssertEqual(state.totalDuration(active: nil, clock: clock), 18_446_744_073_709.55)
+    }
+
+    @MainActor
     func testAggregateDistinguishesUnavailableDataFromLoadedEmptyAndCachedEmptyReports() async throws {
         let clock = FakeClock()
         let state = DailyTotalsState(calendar: dailyCalendar())
@@ -224,6 +237,24 @@ final class DailyTotalsTests: XCTestCase {
 }
 
 final class DailyTotalsSessionTests: XCTestCase {
+    @MainActor
+    func testAggregateFormatsExactMicrosecondSumsAtSecondAndMinuteBoundaries() async throws {
+        for (count, microseconds, expectedSeconds, expectedText) in [
+            (10, Int64(100_000), TimeInterval(1), "00:00:01"),
+            (200, Int64(300_000), TimeInterval(60), "00:01:00")
+        ] {
+            let fixture = Fixture(reports: true, calendar: dailyCalendar())
+            defer { fixture.cleanup() }
+            let tasks = (0..<count).map {
+                TaskItem(id: "task-\($0)", name: "Task \($0)", archived: false, latestStart: nil)
+            }
+            let rows = tasks.map { TaskReportTotal(taskId: $0.id, durationMicroseconds: microseconds) }
+            try await fixture.start(TrackerSnapshot(tasks: tasks, active: nil), rows: rows)
+            XCTAssertEqual(fixture.session.totalDailyDuration, expectedSeconds)
+            XCTAssertEqual(fixture.session.totalDailyDurationText, expectedText)
+        }
+    }
+
     @MainActor
     func testSessionAggregateRemainsUnavailableUntilAnEmptyReportIsLoaded() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())

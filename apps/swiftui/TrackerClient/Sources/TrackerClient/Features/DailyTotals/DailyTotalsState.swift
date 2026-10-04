@@ -14,7 +14,7 @@ final class DailyTotalsState {
 
     private let calendar: Calendar
     private var request: Request?
-    private var rows: [String: TimeInterval] = [:]
+    private var rows: [String: Int64] = [:]
     private var reportedActive: WorklogItem?
     private var anchorDate: Date?
     private var anchorUptime: TimeInterval = 0
@@ -64,7 +64,7 @@ final class DailyTotalsState {
         updateDay(at: clock.now)
         guard day == requested.day else { pending = true; return }
         rows = report.rows.reduce(into: [:]) { totals, row in
-            totals[row.taskId] = max(0, Double(row.durationMicroseconds) / 1_000_000)
+            totals[row.taskId] = max(0, row.durationMicroseconds)
         }
         request = requested
         reportedActive = report.snapshot.active
@@ -113,14 +113,14 @@ final class DailyTotalsState {
 
     func totalDuration(active: WorklogItem?, clock: any TrackerClock) -> TimeInterval? {
         guard let request, calendar.dateInterval(of: .day, for: clock.now) == request.day else { return nil }
-        let total = rows.values.reduce(0, +)
+        let total = rows.values.reduce(0.0) { $0 + Double($1) } / 1_000_000
         guard let active, let projected = duration(taskID: active.taskId, active: active, clock: clock) else { return total }
-        return total + (projected - (rows[active.taskId] ?? 0))
+        return total + (projected - baseDuration(taskID: active.taskId))
     }
 
     func duration(taskID: String, active: WorklogItem?, clock: any TrackerClock) -> TimeInterval? {
         guard let request, calendar.dateInterval(of: .day, for: clock.now) == request.day else { return nil }
-        let base = rows[taskID] ?? 0
+        let base = baseDuration(taskID: taskID)
         guard let active, let reportedActive, active.id == reportedActive.id,
               active.taskId == reportedActive.taskId, active.start == reportedActive.start,
               active.taskId == taskID, active.end == nil,
@@ -129,5 +129,9 @@ final class DailyTotalsState {
         let lower = max(request.cutoff, request.day.start, start)
         let upper = min(projectedNow, request.day.end)
         return base + max(0, upper.timeIntervalSince(lower))
+    }
+
+    private func baseDuration(taskID: String) -> TimeInterval {
+        Double(rows[taskID] ?? 0) / 1_000_000
     }
 }
