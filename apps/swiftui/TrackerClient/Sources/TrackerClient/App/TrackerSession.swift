@@ -102,7 +102,10 @@ public final class TrackerSession {
     public var dailyTotalsDayStart: Date? { dailyTotals.day?.start }
     public var todayTasks: [TaskItem] {
         tasks.filter { (dailyDuration(taskID: $0.id) ?? 0) > 0 }
-            .sorted { $0.name == $1.name ? $0.id < $1.id : $0.name < $1.name }
+            .sorted {
+                if $0.name == $1.name { return $0.id < $1.id }
+                return $0.name < $1.name
+            }
     }
     public func dailyDuration(taskID: String) -> TimeInterval? {
         dailyTotals.duration(taskID: taskID, active: active, clock: clock)

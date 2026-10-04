@@ -176,6 +176,18 @@ final class DailyTotalsTests: XCTestCase {
 
 final class DailyTotalsSessionTests: XCTestCase {
     @MainActor
+    func testTodaysTasksSortByNameAndThenByIDForMatchingNames() async throws {
+        let fixture = Fixture(reports: true, calendar: dailyCalendar())
+        defer { fixture.cleanup() }
+        let laterID = TaskItem(id: "task-z", name: "Matching name", archived: false, latestStart: nil)
+        let earlierID = TaskItem(id: "task-a", name: "Matching name", archived: true, latestStart: nil)
+        let earlierName = TaskItem(id: "task-middle", name: "Earlier name", archived: false, latestStart: nil)
+        let tasks = [laterID, earlierID, earlierName]
+        try await fixture.start(TrackerSnapshot(tasks: tasks, active: nil), rows: tasks.map { total($0, 1) })
+        XCTAssertEqual(fixture.session.todayTasks.map(\.id), [earlierName.id, earlierID.id, laterID.id])
+    }
+
+    @MainActor
     func testReportPublishesNewActiveSnapshotTogetherWithItsMatchingTotals() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
