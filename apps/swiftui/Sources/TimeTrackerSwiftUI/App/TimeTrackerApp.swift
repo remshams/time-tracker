@@ -15,12 +15,27 @@ struct TimeTrackerApp: App {
         .defaultSize(width: 1100, height: 760)
         .windowToolbarStyle(.unifiedCompact)
 
-        MenuBarExtra("Time Tracker", systemImage: "clock", isInserted: $menuBarInserted) {
+        MenuBarExtra(isInserted: $menuBarInserted) {
             TrackerMenu(store: store)
+        } label: {
+            Image(systemName: menuBarSymbol)
+                .accessibilityLabel(Text(menuBarStatus))
+                .help(menuBarStatus)
         }
 
         Settings {
             ConnectionSettingsView(store: store)
         }
+    }
+
+    private var menuBarSymbol: String {
+        if store.isStale { return "questionmark.circle" }
+        return store.active == nil ? "clock" : "play.circle.fill"
+    }
+
+    private var menuBarStatus: String {
+        if store.isStale { return "Time Tracker: Tracking status unavailable" }
+        if store.active != nil { return "Time Tracker: Tracking \(store.runningTaskName)" }
+        return "Time Tracker: \(store.autoPauseStatusText ?? "No timer running")"
     }
 }
