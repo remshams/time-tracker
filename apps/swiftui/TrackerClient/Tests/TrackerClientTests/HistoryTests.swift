@@ -3,6 +3,31 @@ import XCTest
 
 final class HistoryTests: XCTestCase {
     @MainActor
+    func testPollingKeepsExistingRowsWhileSameTaskHistoryRefreshes() async throws {
+        let fixture = Fixture(saved: serverSettings)
+        defer { fixture.cleanup() }
+        let running = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(running)
+        fixture.session.retryHistory()
+        let initial = try await fixture.client.next()
+        initial.succeed(HistoryPage(worklogs: [activeWorklog, oldWorklog], nextCursor: "older", reset: false))
+        try await fixture.settled()
+
+        fixture.scheduler.poll?.fire()
+        let refresh = try await fixture.client.next()
+        refresh.succeed(TrackerSnapshot(tasks: [firstTask], active: nil))
+        let history = try await fixture.client.next()
+        XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
+        XCTAssertEqual(fixture.session.worklogs, [activeWorklog, oldWorklog],
+                       "Existing rows must remain visible while their replacement is fetched.")
+        XCTAssertEqual(fixture.session.nextCursor, "older")
+        history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
+        XCTAssertNil(fixture.session.nextCursor)
+    }
+
+    @MainActor
     func testIncompatibleHistoryDisablesTrackingAndStopsAutomaticPolling() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }

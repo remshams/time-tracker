@@ -7,12 +7,16 @@ final class WorklogHistoryState {
     var unavailable = false
     var error: String?
     private(set) var generation = 0
+    private var taskID: String?
     var pending = false
 
     func request(selectedTaskID: String?) {
         generation += 1
-        worklogs = []
-        nextCursor = nil
+        if taskID != selectedTaskID {
+            worklogs = []
+            nextCursor = nil
+        }
+        taskID = selectedTaskID
         unavailable = false
         error = nil
         pending = selectedTaskID != nil
