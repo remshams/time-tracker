@@ -9,6 +9,7 @@ public final class TrackerSession {
     private enum Lifecycle { case idle, running, stopped }
     private var lifecycle: Lifecycle = .idle
     private let client: any TrackerClient
+    private let reports: (any ReportClient)?
     private let clock: any TrackerClock
     private let scheduler: any TrackerScheduler
     private let settingsRepository: any ConnectionSettingsRepository
@@ -18,10 +19,13 @@ public final class TrackerSession {
     private let catalog = TaskCatalogState()
     private let tracking = TrackingState()
     private let history = WorklogHistoryState()
+    private let dailyTotals: DailyTotalsState
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
+    private var rolloverTimer: (any TrackerCancellation)?
     private var displayGeneration = 0
     private var pollGeneration = 0
+    private var rolloverGeneration = 0
     private var generation = 0
     private var pendingRefresh = false
     private var pendingOwnStartTaskID: String?
@@ -33,8 +37,11 @@ public final class TrackerSession {
 
     public init(client: any TrackerClient, clock: any TrackerClock,
                 scheduler: any TrackerScheduler, settings: any ConnectionSettingsRepository,
-                trackingPreferences: (any TrackingPreferencesRepository)? = nil) {
+                trackingPreferences: (any TrackingPreferencesRepository)? = nil,
+                reports: (any ReportClient)? = nil, calendar: Calendar = .autoupdatingCurrent) {
         self.client = client
+        self.reports = reports
+        dailyTotals = DailyTotalsState(calendar: calendar)
         self.clock = clock
         self.scheduler = scheduler
         settingsRepository = settings
@@ -42,11 +49,13 @@ public final class TrackerSession {
         automation = TrackingAutomationState(preferences: trackingPreferences?.load() ?? TrackingPreferences())
         connection = ConnectionState(settings: settings.load() ?? .local)
         now = clock.now
+        dailyTotals.updateDay(at: clock.now)
     }
 
     deinit {
         displayTimer?.cancel()
         pollTimer?.cancel()
+        rolloverTimer?.cancel()
     }
 
     public var pauseOnScreenLock: Bool { automation.enabled }
@@ -85,10 +94,28 @@ public final class TrackerSession {
         return elapsed.map(clockDuration) ?? "Idle"
     }
     public var elapsed: TimeInterval? { tracking.elapsed(clock: clock) }
+    public var dailyTotalsStatus: DailyTotalsStatus {
+        guard let day = dailyTotals.day, clock.now >= day.start, clock.now < day.end else { return .unavailable }
+        return dailyTotals.status
+    }
+    public var dailyTotalsError: String? { dailyTotals.error }
+    public var dailyTotalsDayStart: Date? { dailyTotals.day?.start }
+    public var todayTasks: [TaskItem] {
+        tasks.filter { (dailyDuration(taskID: $0.id) ?? 0) > 0 }
+            .sorted { $0.name == $1.name ? $0.id < $1.id : $0.name < $1.name }
+    }
+    public func dailyDuration(taskID: String) -> TimeInterval? {
+        dailyTotals.duration(taskID: taskID, active: active, clock: clock)
+    }
+    public func dailyDurationText(taskID: String) -> String {
+        dailyDuration(taskID: taskID).map(clockDuration) ?? "Unavailable"
+    }
 
     public func start() {
         guard lifecycle == .idle else { return }
         lifecycle = .running
+        dailyTotals.updateDay(at: clock.now)
+        updateRolloverTimer()
         beginOperation()
         updateDisplayTimer()
         let token = generation
@@ -152,7 +179,10 @@ public final class TrackerSession {
         guard running else { return }
         sleeping = false
         tracking.resetElapsedAnchor(clock: clock)
+        dailyTotals.updateDay(at: clock.now)
+        dailyTotals.reanchor(clock: clock)
         updateDisplayTimer()
+        updateRolloverTimer()
         refresh()
     }
 
@@ -238,6 +268,7 @@ public final class TrackerSession {
             automation.cancel()
             pendingRefresh = false
             connection.settings = normalized
+            dailyTotals.clear(at: clock.now)
             settingsRepository.save(normalized)
             catalog.resetSelections()
             history.request(selectedTaskID: nil)
@@ -299,6 +330,8 @@ public final class TrackerSession {
             if pendingRefresh {
                 pendingRefresh = false
                 beginRefresh()
+            } else if reports != nil && dailyTotals.pending && connection.confirmed && !connection.stale {
+                beginReport()
             } else if history.pending {
                 history.pending = false
                 if let taskID = selectedTaskID {
@@ -397,6 +430,11 @@ public final class TrackerSession {
     }
 
     private func beginRefresh() {
+        dailyTotals.updateDay(at: clock.now)
+        if reports != nil, connection.confirmed, !connection.stale {
+            beginReport()
+            return
+        }
         beginOperation()
         let token = generation
         let settings = connection.settings
@@ -449,18 +487,51 @@ public final class TrackerSession {
         }
     }
 
-    private func acceptSnapshot(_ snapshot: TrackerSnapshot) {
+    private func acceptSnapshot(_ snapshot: TrackerSnapshot, requestReport: Bool = true) {
+        dailyTotals.updateDay(at: clock.now)
         let retryFailedHistory = connection.stale && history.unavailable
         connection.acceptSnapshot()
         let previousActive = active
         automation.observeActive(snapshot.active)
         tracking.apply(snapshot.active, clock: clock)
+        if reports != nil && requestReport { dailyTotals.invalidate() }
         if catalog.apply(snapshot.tasks, previousActive: previousActive, active: active) {
             requestHistory()
         } else if !history.unavailable { history.error = nil }
         if retryFailedHistory && !history.pending { requestHistory() }
         updateDisplayTimer()
+        updateRolloverTimer()
         publish()
+    }
+
+    private func beginReport() {
+        guard let reports, running, !sleeping, let requested = dailyTotals.begin(clock: clock) else {
+            schedulePolling()
+            return
+        }
+        let token = generation
+        let settings = connection.settings
+        beginOperation()
+        Task { [weak self] in
+            guard let self, isCurrent(token) else { return }
+            defer { finishOperation(token: token) }
+            do {
+                let report = try await reports.report(settings: settings, start: requested.start,
+                                                      end: requested.end, now: requested.now)
+                guard isCurrent(token) else { return }
+                try dailyTotals.validate(report)
+                dailyTotals.accept(report, requested: requested, clock: clock)
+                acceptSnapshot(report.snapshot, requestReport: false)
+            } catch {
+                guard isCurrent(token) else { return }
+                dailyTotals.fail(error, clock: clock)
+                if let failure = error as? BridgeFailure,
+                   failure.requiresRefresh || failure.uncertain || failure.kind == "unavailable" || failure.kind == "protocol" {
+                    recordConnectionFailure(error)
+                }
+                publish()
+            }
+        }
     }
 
     private func recordConnectionFailure(_ failure: Error) {
@@ -523,6 +594,10 @@ public final class TrackerSession {
         displayTimer = scheduler.schedule(after: 1, repeating: true, tolerance: 0.2) { [weak self] in
             guard let self, token == displayGeneration, running, !sleeping, uiVisible, active != nil else { return }
             now = clock.now
+            if reports != nil, dailyTotals.updateDay(at: clock.now), !isBusy {
+                updateRolloverTimer()
+                refresh()
+            }
             publish()
         }
     }
@@ -530,6 +605,25 @@ public final class TrackerSession {
     private func cancelTimers() {
         cancelPolling()
         cancelDisplay()
+        rolloverGeneration += 1
+        rolloverTimer?.cancel()
+        rolloverTimer = nil
+    }
+
+    private func updateRolloverTimer() {
+        rolloverGeneration += 1
+        rolloverTimer?.cancel()
+        rolloverTimer = nil
+        guard reports != nil, running, !sleeping, let day = dailyTotals.day else { return }
+        let token = rolloverGeneration
+        rolloverTimer = scheduler.schedule(after: max(0.001, day.end.timeIntervalSince(clock.now)),
+                                            repeating: false, tolerance: 0) { [weak self] in
+            guard let self, token == rolloverGeneration, running, !sleeping else { return }
+            dailyTotals.updateDay(at: clock.now)
+            updateRolloverTimer()
+            refresh()
+            publish()
+        }
     }
 
     private func cancelPolling() {

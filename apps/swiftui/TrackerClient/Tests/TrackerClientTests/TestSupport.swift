@@ -7,7 +7,7 @@ struct TestTimeout: Error, CustomStringConvertible {
 }
 
 @MainActor
-final class FakeClient: TrackerClient {
+final class FakeClient: TrackerClient, ReportClient {
     enum Operation: Equatable {
         case open(ConnectionSettings)
         case test(ConnectionSettings)
@@ -19,6 +19,7 @@ final class FakeClient: TrackerClient {
         case pause(worklog: String, at: String)
         case resume(task: String, at: String)
         case history(task: String, cursor: String?)
+        case report(settings: ConnectionSettings, start: String, end: String, now: String)
     }
 
     enum Reply {
@@ -26,6 +27,7 @@ final class FakeClient: TrackerClient {
         case history(HistoryPage)
         case tested
         case paused(TrackingPauseResult)
+        case report(TrackerReport)
     }
 
     @MainActor
@@ -35,6 +37,7 @@ final class FakeClient: TrackerClient {
 
         func succeed(_ snapshot: TrackerSnapshot) { complete(.success(.snapshot(snapshot))) }
         func succeed(_ page: HistoryPage) { complete(.success(.history(page))) }
+        func succeed(_ report: TrackerReport) { complete(.success(.report(report))) }
         func paused(_ snapshot: TrackerSnapshot, didStop: Bool = true) {
             complete(.success(.paused(TrackingPauseResult(snapshot: snapshot, didStop: didStop))))
         }
@@ -132,6 +135,13 @@ final class FakeClient: TrackerClient {
         }
         return value
     }
+    func report(settings: ConnectionSettings, start: String, end: String, now: String) async throws -> TrackerReport {
+        let operation = Operation.report(settings: settings, start: start, end: end, now: now)
+        guard case .report(let value) = try await perform(operation) else {
+            throw wrongReply("report", operation: operation)
+        }
+        return value
+    }
 }
 
 @MainActor
@@ -194,13 +204,17 @@ final class Fixture {
     let settings: MemorySettings
     let session: TrackerSession
     let preferences: MemoryTrackingPreferences
+    private let reportsEnabled: Bool
 
-    init(saved: ConnectionSettings? = nil, pauseOnScreenLock: Bool = false) {
+    init(saved: ConnectionSettings? = nil, pauseOnScreenLock: Bool = false,
+         reports: Bool = false, calendar: Calendar = .autoupdatingCurrent) {
+        reportsEnabled = reports
         let settings = MemorySettings(saved)
         self.settings = settings
         let preferences = MemoryTrackingPreferences(TrackingPreferences(pauseOnScreenLock: pauseOnScreenLock))
         self.preferences = preferences
-        session = TrackerSession(client: client, clock: clock, scheduler: scheduler, settings: settings, trackingPreferences: preferences)
+        session = TrackerSession(client: client, clock: clock, scheduler: scheduler, settings: settings,
+                                 trackingPreferences: preferences, reports: reports ? client : nil, calendar: calendar)
     }
 
     func cleanup() {
@@ -209,11 +223,16 @@ final class Fixture {
         client.cancelOutstanding()
     }
 
-    func start(_ snapshot: TrackerSnapshot = emptySnapshot) async throws {
+    func start(_ snapshot: TrackerSnapshot = emptySnapshot, rows: [TaskReportTotal] = []) async throws {
         session.start()
         let open = try await client.next()
         XCTAssertEqual(open.operation, .open(settings.saved ?? .local))
         open.succeed(snapshot)
+        if reportsEnabled {
+            let report = try await client.next()
+            guard case .report = report.operation else { throw TestTimeout(description: "Expected startup report before history.") }
+            report.succeed(TrackerReport(snapshot: snapshot, rows: rows))
+        }
         if let task = snapshot.tasks.first(where: { !$0.archived }) {
             let history = try await client.next()
             XCTAssertEqual(history.operation, .history(task: task.id, cursor: nil))

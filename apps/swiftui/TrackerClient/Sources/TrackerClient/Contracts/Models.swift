@@ -1,5 +1,29 @@
 import Foundation
 
+public struct TaskReportTotal: Decodable, Equatable, Sendable {
+    public let taskId: String
+    public let durationMicroseconds: Int64
+
+    public init(taskId: String, durationMicroseconds: Int64) {
+        self.taskId = taskId
+        self.durationMicroseconds = durationMicroseconds
+    }
+}
+
+public struct TrackerReport: Decodable, Equatable, Sendable {
+    public let snapshot: TrackerSnapshot
+    public let rows: [TaskReportTotal]
+
+    public init(snapshot: TrackerSnapshot, rows: [TaskReportTotal]) {
+        self.snapshot = snapshot
+        self.rows = rows
+    }
+}
+
+public enum DailyTotalsStatus: String, Equatable, Sendable {
+    case unavailable, loading, current, cached
+}
+
 public struct TaskItem: Decodable, Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String

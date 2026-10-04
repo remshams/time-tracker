@@ -1,5 +1,9 @@
 import Foundation
 
+public protocol ReportClient: Sendable {
+    func report(settings: ConnectionSettings, start: String, end: String, now: String) async throws -> TrackerReport
+}
+
 public protocol TrackerClient: Sendable {
     func openConfigured(_ settings: ConnectionSettings) async throws -> TrackerSnapshot
     func test(_ settings: ConnectionSettings) async throws
