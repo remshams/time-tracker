@@ -434,7 +434,13 @@ async fn set_tracking(
         }
         match (desired, new_id, current) {
             (Some(task_id), Some(new_id), _) => {
-                match app.set_active_task_with_id(task_id, new_id, request.occurred_at)? {
+                let outcome = match current {
+                    None => {
+                        app.start_tracking_if_idle_with_id(task_id, new_id, request.occurred_at)
+                    }
+                    Some(_) => app.set_active_task_with_id(task_id, new_id, request.occurred_at),
+                }?;
+                match outcome {
                     SetActiveTaskOutcome::Started { worklog } => {
                         Ok(MutationResultDto::Worklog(WorklogDto::from(&worklog)))
                     }
@@ -765,6 +771,121 @@ fn host_allowed(host: &str, bind: SocketAddr) -> bool {
         || bind.ip().is_loopback()
             && (host.eq_ignore_ascii_case("localhost")
                 || host.eq_ignore_ascii_case(&format!("localhost:{}", bind.port())))
+}
+
+#[cfg(test)]
+mod tracking_tests {
+    use super::*;
+
+    fn core(path: &Path) -> Shared {
+        let database_lock = lock_database(path).unwrap();
+        let repository = SqliteRepository::open(path).unwrap();
+        let mut app = TrackerApplication::load(repository).unwrap();
+        app.create_task(TaskName::new("Write release notes").unwrap(), at(1))
+            .unwrap();
+        app.create_task(TaskName::new("Review changes").unwrap(), at(2))
+            .unwrap();
+        Arc::new(Mutex::new(Core {
+            _database_lock: database_lock,
+            app,
+            needs_refresh: false,
+            epoch: "tracking-test".to_owned(),
+            sequence: 0,
+            completed: HashMap::new(),
+            completion_order: VecDeque::new(),
+        }))
+    }
+
+    fn at(seconds: i64) -> DateTime<Utc> {
+        DateTime::from_timestamp(seconds, 0).unwrap()
+    }
+
+    fn request(
+        shared: &Shared,
+        task_id: TaskId,
+        worklog_id: WorklogId,
+        expected: Option<WorklogId>,
+        seconds: i64,
+    ) -> SetTrackingRequest {
+        SetTrackingRequest {
+            task_id: Some(task_id.to_string()),
+            worklog_id: Some(worklog_id.to_string()),
+            expected_active: expected.map(|id| id.to_string()),
+            occurred_at: at(seconds),
+            guard: WriteGuard {
+                expected_revision: shared.lock().unwrap().revision(),
+                request_id: Uuid::now_v7().to_string(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn idle_request_preserves_a_timer_started_directly_in_the_database() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("tracker.db");
+        let shared = core(&path);
+        let tasks = shared.lock().unwrap().app.tasks(TaskOrdering::default());
+        let mut other = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
+        other.set_active_task(tasks[1].task.id(), at(100)).unwrap();
+        let foreign = other.current_tracking().clone();
+        let new_id = WorklogId::generate();
+        let request = request(&shared, tasks[0].task.id(), new_id, None, 200);
+        let rejected = set_tracking(State(shared.clone()), Ok(Json(request)))
+            .await
+            .unwrap_err();
+        assert_eq!(rejected.status, StatusCode::CONFLICT);
+        assert_eq!(shared.lock().unwrap().app.current_tracking(), &foreign);
+        let repository = SqliteRepository::open(&path).unwrap();
+        assert!(repository.find_worklog(new_id).unwrap().is_none());
+        assert_eq!(
+            repository.active_worklog().unwrap().unwrap().task_id(),
+            tasks[1].task.id()
+        );
+    }
+
+    #[tokio::test]
+    async fn conditional_idle_start_keeps_the_id_and_explicit_switch_remains_supported() {
+        let directory = tempfile::tempdir().unwrap();
+        let shared = core(&directory.path().join("tracker.db"));
+        let tasks = shared.lock().unwrap().app.tasks(TaskOrdering::default());
+        let first_id = WorklogId::generate();
+        let first_request = request(&shared, tasks[0].task.id(), first_id, None, 100);
+        let first = set_tracking(State(shared.clone()), Ok(Json(first_request.clone())))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(
+            first.snapshot.active_worklog.as_ref().unwrap().id,
+            first_id.to_string()
+        );
+        assert_eq!(
+            first.snapshot.active_worklog.as_ref().unwrap().start,
+            at(100)
+        );
+        let repeated = set_tracking(State(shared.clone()), Ok(Json(first_request)))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(
+            repeated.snapshot.active_worklog,
+            first.snapshot.active_worklog
+        );
+        let next_id = WorklogId::generate();
+        let next_request = request(&shared, tasks[1].task.id(), next_id, Some(first_id), 200);
+        let switched = set_tracking(State(shared.clone()), Ok(Json(next_request)))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(
+            switched.snapshot.active_worklog.as_ref().unwrap().id,
+            next_id.to_string()
+        );
+        assert!(
+            matches!(switched.result, MutationResultDto::TrackingSwitched { stopped, started }
+            if stopped.id == first_id.to_string() && stopped.end == Some(at(200))
+                && started.start == at(200))
+        );
+    }
 }
 
 #[cfg(test)]
