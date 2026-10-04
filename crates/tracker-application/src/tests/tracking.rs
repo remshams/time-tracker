@@ -1,6 +1,159 @@
 use super::*;
 
 #[test]
+fn idle_only_start_uses_the_requested_id_and_canonical_timestamp() {
+    let alpha = stamped_task(1, "alpha", 1, 2);
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), task(2, "beta")]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let requested_id = WorklogId::generate();
+    let occurred_at = DateTime::from_timestamp(100, 123_456_789).unwrap();
+    let canonical = DateTime::from_timestamp(100, 123_456_000).unwrap();
+
+    let outcome = application
+        .start_tracking_if_idle_with_id(alpha.id(), requested_id, occurred_at)
+        .unwrap();
+    assert!(matches!(outcome,
+        SetActiveTaskOutcome::Started { worklog }
+            if worklog.id() == requested_id && worklog.start() == canonical
+    ));
+    let stored = repository.active_worklog().unwrap().unwrap();
+    assert_eq!(stored.id(), requested_id);
+    assert_eq!(stored.start(), canonical);
+    assert!(matches!(application.current_tracking(),
+        TrackingState::Running { worklog } if worklog.id() == requested_id
+    ));
+    assert_eq!(
+        application.tasks(TaskOrdering::RecentlyWorked)[0].task.id(),
+        alpha.id()
+    );
+    assert_eq!(
+        application.tasks(TaskOrdering::RecentlyWorked)[0].latest_work_start,
+        Some(canonical)
+    );
+    assert_eq!(application.task(alpha.id()).unwrap().updated_at(), at(2));
+}
+
+#[test]
+fn idle_only_start_generates_a_new_worklog_after_a_pause() {
+    let alpha = task(1, "alpha");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let first = match application
+        .start_tracking_if_idle(alpha.id(), at(100))
+        .unwrap()
+    {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        other => panic!("expected start, got {other:?}"),
+    };
+    application.clear_active_task(first.id(), at(120)).unwrap();
+    let next = match application
+        .start_tracking_if_idle(alpha.id(), at(200))
+        .unwrap()
+    {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        other => panic!("expected start, got {other:?}"),
+    };
+    assert_ne!(first.id(), next.id());
+    assert_eq!(next.task_id(), alpha.id());
+    assert_eq!(next.start(), at(200));
+    assert_eq!(repository.0.borrow().worklogs.len(), 2);
+    assert_eq!(repository.0.borrow().worklogs[0].end(), Some(at(120)));
+}
+
+#[test]
+fn idle_only_start_adopts_a_competing_timer_without_switching_it() {
+    let alpha = task(1, "alpha");
+    let beta = task(2, "beta");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let foreign = worklog(99, beta.id(), 90);
+    repository.insert_worklog(&foreign).unwrap();
+
+    for task_id in [alpha.id(), beta.id()] {
+        assert_eq!(
+            application.start_tracking_if_idle(task_id, at(100)),
+            Err(ApplicationError::TrackingStateChanged)
+        );
+    }
+    assert_eq!(repository.0.borrow().worklogs, vec![foreign.clone()]);
+    assert!(matches!(application.current_tracking(),
+        TrackingState::Running { worklog } if worklog.id() == foreign.id()
+    ));
+}
+
+#[test]
+fn idle_only_start_rejects_missing_and_newly_archived_tasks() {
+    let alpha = task(1, "alpha");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    repository.0.borrow_mut().tasks[0].task.archive(at(50));
+    assert_eq!(
+        application.start_tracking_if_idle(alpha.id(), at(100)),
+        Err(ApplicationError::Domain(TrackingError::TaskArchived {
+            id: alpha.id()
+        }))
+    );
+    let missing = TaskId::generate();
+    assert_eq!(
+        application.start_tracking_if_idle(missing, at(100)),
+        Err(ApplicationError::Repository(
+            RepositoryError::TaskNotFound { id: missing }
+        ))
+    );
+    assert!(repository.0.borrow().worklogs.is_empty());
+    assert_eq!(application.current_tracking(), &TrackingState::Idle);
+}
+
+#[test]
+fn idle_only_insert_conflict_recovers_the_timer_that_won_the_race() {
+    let alpha = task(1, "alpha");
+    let beta = task(2, "beta");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let foreign = worklog(99, beta.id(), 90);
+    repository.fail_next_write(RepositoryError::ActiveWorklogExists, Some(foreign.clone()));
+    assert_eq!(
+        application.start_tracking_if_idle(alpha.id(), at(100)),
+        Err(ApplicationError::TrackingWrite(
+            RepositoryError::ActiveWorklogExists
+        ))
+    );
+    assert_eq!(repository.0.borrow().worklogs, vec![foreign.clone()]);
+    assert!(matches!(application.current_tracking(),
+        TrackingState::Running { worklog } if worklog.id() == foreign.id()
+    ));
+    assert_eq!(
+        application.tasks(TaskOrdering::RecentlyWorked)[0].task.id(),
+        beta.id()
+    );
+}
+
+#[test]
+fn idle_only_start_reports_read_and_recovery_failures_without_creating_work() {
+    let alpha = task(1, "alpha");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    repository.0.borrow_mut().fail_reads = true;
+    assert!(matches!(
+        application.start_tracking_if_idle(alpha.id(), at(100)),
+        Err(ApplicationError::Repository(
+            RepositoryError::Backend { .. }
+        ))
+    ));
+    repository.0.borrow_mut().fail_reads = false;
+    repository.fail_next_write(RepositoryError::ActiveWorklogExists, None);
+    repository.fail_recovery_after_next_write();
+    assert!(matches!(
+        application.start_tracking_if_idle(alpha.id(), at(100)),
+        Err(ApplicationError::TrackingRecovery(
+            RepositoryError::Backend { .. }
+        ))
+    ));
+    assert!(repository.0.borrow().worklogs.is_empty());
+    assert_eq!(application.current_tracking(), &TrackingState::Idle);
+}
+
+#[test]
 fn set_active_task_uses_the_explicit_client_timestamp() {
     let alpha = task(1, "alpha");
     let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
