@@ -40,12 +40,14 @@ public final class TrackerPresentationObserver {
 
     private struct DailyPresentation: Equatable {
         let texts: [String: String]
+        let totalText: String
         let status: DailyTotalsStatus
         let error: String?
         let dayStart: Date?
 
         @MainActor init(_ session: TrackerSession) {
             texts = Dictionary(uniqueKeysWithValues: session.tasks.map { ($0.id, session.dailyDurationText(taskID: $0.id)) })
+            totalText = session.totalDailyDurationText
             status = session.dailyTotalsStatus
             error = session.dailyTotalsError
             dayStart = session.dailyTotalsDayStart

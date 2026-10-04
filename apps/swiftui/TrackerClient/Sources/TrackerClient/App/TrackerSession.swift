@@ -78,7 +78,12 @@ public final class TrackerSession {
     public var selectedTask: TaskItem? { catalog.selectedTask }
     public var hasMoreHistory: Bool { nextCursor != nil }
     public var canStartSelectedTask: Bool {
-        guard running, !isBusy, !isStale, connection.confirmed, let task = selectedTask else { return false }
+        guard let selectedTaskID else { return false }
+        return canStartTracking(taskID: selectedTaskID)
+    }
+    public func canStartTracking(taskID: String) -> Bool {
+        guard running, !isBusy, !isStale, connection.confirmed,
+              let task = tasks.first(where: { $0.id == taskID }) else { return false }
         return !task.archived && active?.taskId != task.id
     }
     public var canStopTracking: Bool {
@@ -100,6 +105,12 @@ public final class TrackerSession {
     }
     public var dailyTotalsError: String? { dailyTotals.error }
     public var dailyTotalsDayStart: Date? { dailyTotals.day?.start }
+    public var totalDailyDuration: TimeInterval? {
+        dailyTotals.totalDuration(active: active, clock: clock)
+    }
+    public var totalDailyDurationText: String {
+        totalDailyDuration.map(clockDuration) ?? "Unavailable"
+    }
     public var todayTasks: [TaskItem] {
         tasks.filter { (dailyDuration(taskID: $0.id) ?? 0) > 0 }
             .sorted {
@@ -286,9 +297,7 @@ public final class TrackerSession {
     }
 
     public func startTracking(taskID: String) {
-        guard running, !isBusy, !isStale, connection.confirmed,
-              let task = tasks.first(where: { $0.id == taskID }), !task.archived,
-              active?.taskId != taskID else { return }
+        guard canStartTracking(taskID: taskID) else { return }
         let occurredAt = commandTimestamp(clock.now)
         let expectedActiveID = active?.id
         automation.cancel()

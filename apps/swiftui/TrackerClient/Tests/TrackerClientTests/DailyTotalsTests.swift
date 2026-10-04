@@ -16,6 +16,55 @@ private func total(_ task: TaskItem, _ seconds: Int64) -> TaskReportTotal {
 
 final class DailyTotalsTests: XCTestCase {
     @MainActor
+    func testAggregateDistinguishesUnavailableDataFromLoadedEmptyAndCachedEmptyReports() async throws {
+        let clock = FakeClock()
+        let state = DailyTotalsState(calendar: dailyCalendar())
+        XCTAssertNil(state.totalDuration(active: nil, clock: clock))
+        let request = try XCTUnwrap(state.begin(clock: clock))
+        XCTAssertNil(state.totalDuration(active: nil, clock: clock))
+        state.accept(TrackerReport(snapshot: emptySnapshot, rows: []), requested: request, clock: clock)
+        XCTAssertEqual(state.totalDuration(active: nil, clock: clock), 0)
+        state.fail(BridgeFailure(message: "Report unavailable"), clock: clock)
+        XCTAssertEqual(state.status, .cached)
+        XCTAssertEqual(state.totalDuration(active: nil, clock: clock), 0)
+        clock.now.addTimeInterval(86_400)
+        XCTAssertNil(state.totalDuration(active: nil, clock: clock))
+    }
+
+    @MainActor
+    func testAggregateIncludesArchivedRowsAndProjectsTheMatchingRunningWorklogOnce() async throws {
+        let clock = FakeClock()
+        let state = DailyTotalsState(calendar: dailyCalendar())
+        let request = try XCTUnwrap(state.begin(clock: clock))
+        state.accept(TrackerReport(snapshot: TrackerSnapshot(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog),
+                                   rows: [total(firstTask, 20), total(secondTask, 5), total(archivedTask, 50)]),
+                     requested: request, clock: clock)
+        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 75)
+        clock.now.addTimeInterval(7)
+        clock.uptime += 7
+        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 82)
+        XCTAssertEqual(state.totalDuration(active: nil, clock: clock), 75)
+        let changed = WorklogItem(id: "changed-worklog", taskId: firstTask.id, start: activeWorklog.start, end: nil)
+        XCTAssertEqual(state.totalDuration(active: changed, clock: clock), 75)
+        state.fail(BridgeFailure(message: "Report unavailable"), clock: clock)
+        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 82)
+        state.clear(at: clock.now)
+        XCTAssertNil(state.totalDuration(active: activeWorklog, clock: clock))
+    }
+
+    @MainActor
+    func testAggregateProjectsRunningTaskWhenItsReportRowIsAbsent() async throws {
+        let clock = FakeClock()
+        let state = DailyTotalsState(calendar: dailyCalendar())
+        let request = try XCTUnwrap(state.begin(clock: clock))
+        state.accept(TrackerReport(snapshot: TrackerSnapshot(tasks: [firstTask, archivedTask], active: activeWorklog),
+                                   rows: [total(archivedTask, 50)]), requested: request, clock: clock)
+        clock.uptime += 3
+        clock.now.addTimeInterval(3)
+        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 53)
+    }
+
+    @MainActor
     func testReportIncludesRunningTimeOnceAndAddsOnlyTimeAfterCapturedCutoff() async throws {
         let clock = FakeClock()
         clock.now = dailyDate("2025-01-01T12:00:00.123Z")
@@ -175,6 +224,55 @@ final class DailyTotalsTests: XCTestCase {
 }
 
 final class DailyTotalsSessionTests: XCTestCase {
+    @MainActor
+    func testSessionAggregateRemainsUnavailableUntilAnEmptyReportIsLoaded() async throws {
+        let fixture = Fixture(reports: true, calendar: dailyCalendar())
+        defer { fixture.cleanup() }
+        XCTAssertNil(fixture.session.totalDailyDuration)
+        XCTAssertEqual(fixture.session.totalDailyDurationText, "Unavailable")
+        fixture.session.start()
+        let open = try await fixture.client.next()
+        open.succeed(emptySnapshot)
+        let report = try await fixture.client.next()
+        XCTAssertTrue(fixture.session.tasks.isEmpty)
+        XCTAssertNil(fixture.session.totalDailyDuration)
+        report.succeed(TrackerReport(snapshot: emptySnapshot, rows: []))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.totalDailyDuration, 0)
+        XCTAssertEqual(fixture.session.totalDailyDurationText, "00:00:00")
+        fixture.clock.now.addTimeInterval(86_400)
+        XCTAssertNil(fixture.session.totalDailyDuration)
+        XCTAssertEqual(fixture.session.totalDailyDurationText, "Unavailable")
+    }
+
+    @MainActor
+    func testDailyObserverNotifiesWhenFractionalSumChangesButIndividualTextsStayTheSame() async throws {
+        let fixture = Fixture(reports: true, calendar: dailyCalendar())
+        defer { fixture.cleanup() }
+        let snapshot = TrackerSnapshot(tasks: [firstTask, archivedTask], active: nil)
+        let initialRows = snapshot.tasks.map { TaskReportTotal(taskId: $0.id, durationMicroseconds: 400_000) }
+        try await fixture.start(snapshot, rows: initialRows)
+        XCTAssertEqual(try XCTUnwrap(fixture.session.totalDailyDuration), 0.8, accuracy: 0.000001)
+        XCTAssertEqual(fixture.session.totalDailyDurationText, "00:00:00")
+        let observer = TrackerPresentationObserver(session: fixture.session)
+        var totalTexts: [String] = []
+        var contentChanges = 0
+        observer.onDailyTotalsChange = { totalTexts.append(fixture.session.totalDailyDurationText) }
+        observer.onContentChange = { contentChanges += 1 }
+        fixture.session.onChange = { observer.update(from: fixture.session) }
+        fixture.scheduler.poll?.fire()
+        let report = try await fixture.client.next()
+        let updatedRows = snapshot.tasks.map { TaskReportTotal(taskId: $0.id, durationMicroseconds: 600_000) }
+        report.succeed(TrackerReport(snapshot: snapshot, rows: updatedRows))
+        let finished = Task { @MainActor in while fixture.session.isBusy && !Task.isCancelled { await Task.yield() } }
+        try await fixture.taskValue(finished)
+        for task in snapshot.tasks {
+            XCTAssertEqual(fixture.session.dailyDurationText(taskID: task.id), "00:00:00")
+        }
+        XCTAssertEqual(totalTexts, ["00:00:01"])
+        XCTAssertEqual(contentChanges, 0)
+    }
+
     @MainActor
     func testDailyObserverSurfacesChangedErrorWhileCachedStatusAndDurationStayTheSame() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())

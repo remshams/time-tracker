@@ -111,6 +111,13 @@ final class DailyTotalsState {
         anchorUptime = clock.uptime
     }
 
+    func totalDuration(active: WorklogItem?, clock: any TrackerClock) -> TimeInterval? {
+        guard let request, calendar.dateInterval(of: .day, for: clock.now) == request.day else { return nil }
+        let total = rows.values.reduce(0, +)
+        guard let active, let projected = duration(taskID: active.taskId, active: active, clock: clock) else { return total }
+        return total + (projected - (rows[active.taskId] ?? 0))
+    }
+
     func duration(taskID: String, active: WorklogItem?, clock: any TrackerClock) -> TimeInterval? {
         guard let request, calendar.dateInterval(of: .day, for: clock.now) == request.day else { return nil }
         let base = rows[taskID] ?? 0

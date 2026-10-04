@@ -4,6 +4,67 @@ import XCTest
 
 final class TrackingTests: XCTestCase {
     @MainActor
+    func testTaskEligibilityAndAtomicSwitchDoNotDependOnSelection() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
+        let tasks = [firstTask, secondTask, archivedTask]
+        try await fixture.start(TrackerSnapshot(tasks: tasks, active: activeWorklog))
+        XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
+        XCTAssertFalse(fixture.session.canStartSelectedTask)
+        XCTAssertTrue(fixture.session.canStartTracking(taskID: secondTask.id))
+        let operationCount = fixture.client.operations.count
+        for taskID in [firstTask.id, archivedTask.id, "missing-task"] {
+            XCTAssertFalse(fixture.session.canStartTracking(taskID: taskID))
+            fixture.session.startTracking(taskID: taskID)
+        }
+        XCTAssertEqual(fixture.client.operations.count, operationCount)
+
+        fixture.session.startTracking(taskID: secondTask.id)
+        XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
+        let switched = WorklogItem(id: "switched-worklog", taskId: secondTask.id,
+                                  start: "2025-01-01T00:00:00.000Z", end: nil)
+        let start = try await fixture.client.next()
+        XCTAssertEqual(start.operation, .start(task: secondTask.id, expected: activeWorklog.id,
+                                             at: "2025-01-01T00:00:00.000Z"))
+        start.succeed(TrackerSnapshot(tasks: tasks, active: switched))
+        let history = try await fixture.client.next()
+        XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertEqual(Array(fixture.client.operations.dropFirst(operationCount)), [start.operation, history.operation],
+                       "Switching tasks must delegate one atomic start command without a separate stop.")
+        XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
+        XCTAssertTrue(fixture.session.canStartSelectedTask)
+        XCTAssertTrue(fixture.session.canStartTracking(taskID: firstTask.id))
+        XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
+    }
+
+    @MainActor
+    func testTaskEligibilityDisablesCommandsDuringRefreshAfterFailureAndAfterShutdown() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        XCTAssertTrue(fixture.session.canStartTracking(taskID: secondTask.id))
+        fixture.session.refresh()
+        let refresh = try await fixture.client.next()
+        XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
+        let operationCount = fixture.client.operations.count
+        fixture.session.startTracking(taskID: secondTask.id)
+        XCTAssertEqual(fixture.client.operations.count, operationCount)
+        refresh.fail(BridgeFailure(message: "Tracker offline", kind: "unavailable"))
+        try await fixture.settled()
+        XCTAssertTrue(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
+        fixture.session.startTracking(taskID: secondTask.id)
+        XCTAssertEqual(fixture.client.operations.count, operationCount)
+        fixture.session.shutdown()
+        XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
+        fixture.session.startTracking(taskID: secondTask.id)
+        XCTAssertEqual(fixture.client.operations.count, operationCount)
+    }
+
+    @MainActor
     func testStartButtonAllowsSwitchingTaskButRejectsRunningAndArchivedSelection() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
