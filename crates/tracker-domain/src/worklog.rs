@@ -39,6 +39,37 @@ impl WorklogTimes {
     pub fn is_active(&self) -> bool {
         self.end.is_none()
     }
+
+    /// Rejects an end timestamp before the start timestamp.
+    pub fn validate(&self) -> Result<(), WorklogError> {
+        if self.end.is_some_and(|end| end < self.start) {
+            return Err(WorklogError::EndBeforeStart);
+        }
+        Ok(())
+    }
+
+    /// Checks replacement timestamps without requiring worklog identity.
+    ///
+    /// Call `validate` first when these original timestamps came from input.
+    pub fn validate_correction(
+        &self,
+        replacement: Self,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<(), WorklogCorrectionError> {
+        if self.is_active() != replacement.is_active() {
+            return Err(WorklogCorrectionError::CompletionStateChanged);
+        }
+        if replacement.end.is_some_and(|end| end < replacement.start) {
+            return Err(WorklogCorrectionError::EndBeforeStart);
+        }
+        if replacement.start > occurred_at {
+            return Err(WorklogCorrectionError::StartAfterOccurredAt);
+        }
+        if replacement.end.is_some_and(|end| end > occurred_at) {
+            return Err(WorklogCorrectionError::EndAfterOccurredAt);
+        }
+        Ok(())
+    }
 }
 
 /// A recorded interval spent on a task.
@@ -95,7 +126,7 @@ impl Worklog {
         start: DateTime<Utc>,
         end: Option<DateTime<Utc>>,
     ) -> Result<Self, WorklogError> {
-        Self::validate_order(start, end)?;
+        WorklogTimes::new(start, end).validate()?;
         Ok(Self {
             id,
             task_id,
@@ -173,21 +204,7 @@ impl Worklog {
         replacement: WorklogTimes,
         occurred_at: DateTime<Utc>,
     ) -> Result<Self, WorklogCorrectionError> {
-        if self.is_active() != replacement.is_active() {
-            return Err(WorklogCorrectionError::CompletionStateChanged);
-        }
-        if replacement
-            .end()
-            .is_some_and(|end| end < replacement.start())
-        {
-            return Err(WorklogCorrectionError::EndBeforeStart);
-        }
-        if replacement.start() > occurred_at {
-            return Err(WorklogCorrectionError::StartAfterOccurredAt);
-        }
-        if replacement.end().is_some_and(|end| end > occurred_at) {
-            return Err(WorklogCorrectionError::EndAfterOccurredAt);
-        }
+        self.times().validate_correction(replacement, occurred_at)?;
         Ok(Self {
             id: self.id,
             task_id: self.task_id,
@@ -211,16 +228,6 @@ impl Worklog {
             start: self.start,
             end: self.end,
         })
-    }
-
-    fn validate_order(
-        start: DateTime<Utc>,
-        end: Option<DateTime<Utc>>,
-    ) -> Result<(), WorklogError> {
-        if end.is_some_and(|end| end < start) {
-            return Err(WorklogError::EndBeforeStart);
-        }
-        Ok(())
     }
 }
 
@@ -301,6 +308,47 @@ mod tests {
 
     fn at(seconds: i64) -> DateTime<Utc> {
         DateTime::from_timestamp(seconds, 0).unwrap()
+    }
+
+    #[test]
+    fn timestamp_pairs_validate_without_worklog_identity() {
+        assert_eq!(WorklogTimes::new(at(100), None).validate(), Ok(()));
+        assert_eq!(WorklogTimes::new(at(100), Some(at(100))).validate(), Ok(()));
+        assert_eq!(WorklogTimes::new(at(100), Some(at(200))).validate(), Ok(()));
+        assert_eq!(
+            WorklogTimes::new(at(200), Some(at(100))).validate(),
+            Err(WorklogError::EndBeforeStart)
+        );
+    }
+
+    #[test]
+    fn identity_free_correction_checks_preserve_error_precedence_and_boundaries() {
+        let original = WorklogTimes::new(at(100), Some(at(200)));
+        assert_eq!(
+            original.validate_correction(WorklogTimes::new(at(301), None), at(300)),
+            Err(WorklogCorrectionError::CompletionStateChanged)
+        );
+        assert_eq!(
+            original.validate_correction(WorklogTimes::new(at(302), Some(at(301))), at(300)),
+            Err(WorklogCorrectionError::EndBeforeStart)
+        );
+        assert_eq!(
+            original.validate_correction(WorklogTimes::new(at(301), Some(at(302))), at(300)),
+            Err(WorklogCorrectionError::StartAfterOccurredAt)
+        );
+        assert_eq!(
+            original.validate_correction(WorklogTimes::new(at(100), Some(at(301))), at(300)),
+            Err(WorklogCorrectionError::EndAfterOccurredAt)
+        );
+        assert_eq!(
+            original.validate_correction(WorklogTimes::new(at(300), Some(at(300))), at(300)),
+            Ok(())
+        );
+        assert_eq!(
+            WorklogTimes::new(at(100), None)
+                .validate_correction(WorklogTimes::new(at(300), None), at(300)),
+            Ok(())
+        );
     }
 
     #[test]
