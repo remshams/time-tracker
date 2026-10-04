@@ -117,10 +117,7 @@ fn inactive_preview_respects_creation_update_and_worklog_boundaries() {
         .iter()
         .map(Task::id)
         .collect();
-    assert_eq!(
-        ids,
-        vec![task_id(1), task_id(3), task_id(6), task_id(7), task_id(12)]
-    );
+    assert_eq!(ids, vec![task_id(1), task_id(3), task_id(7), task_id(12)]);
 }
 
 #[test]
@@ -169,6 +166,112 @@ fn renaming_after_preview_prevents_bulk_archive() {
     assert!(
         !repository
             .find_task(task_id(1))
+            .unwrap()
+            .unwrap()
+            .is_archived()
+    );
+}
+
+#[test]
+fn completed_work_at_or_after_preview_prevents_the_entire_bulk_archive() {
+    let as_of = at(2_000_000);
+    for start in [as_of, as_of + chrono::TimeDelta::seconds(1)] {
+        let repository = repo();
+        for id in 1..=2 {
+            repository
+                .create_task(stamped_task(id, "Old task", 100, 100))
+                .unwrap();
+        }
+        let expected: Vec<_> = repository
+            .preview_inactive_tasks(as_of)
+            .unwrap()
+            .tasks
+            .iter()
+            .map(Task::id)
+            .collect();
+        repository
+            .insert_worklog(
+                &Worklog::new(
+                    worklog_id(1),
+                    task_id(2),
+                    start,
+                    Some(start + chrono::TimeDelta::seconds(1)),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        assert!(matches!(
+            repository.archive_inactive_tasks(&expected, as_of),
+            Err(StorageError::InactiveTaskCandidatesChanged)
+        ));
+        assert!(
+            repository
+                .list_tasks()
+                .unwrap()
+                .iter()
+                .all(|task| !task.is_archived())
+        );
+    }
+}
+
+#[test]
+fn existing_future_work_is_excluded_from_a_preview_that_can_be_confirmed() {
+    let repository = repo();
+    let as_of = at(2_000_000);
+    for id in 1..=2 {
+        repository
+            .create_task(stamped_task(id, "Old task", 100, 100))
+            .unwrap();
+    }
+    repository
+        .insert_worklog(
+            &Worklog::new(worklog_id(1), task_id(2), as_of, Some(at(2_000_001))).unwrap(),
+        )
+        .unwrap();
+    let preview = repository.preview_inactive_tasks(as_of).unwrap();
+    let ids: Vec<_> = preview.tasks.iter().map(Task::id).collect();
+    assert_eq!(ids, vec![task_id(1)]);
+    let result = repository.archive_inactive_tasks(&ids, as_of).unwrap();
+    assert_eq!(result.tasks.len(), 1);
+    assert_eq!(result.tasks[0].id(), task_id(1));
+    assert!(result.tasks[0].is_archived());
+    assert!(
+        !repository
+            .find_task(task_id(2))
+            .unwrap()
+            .unwrap()
+            .is_archived()
+    );
+}
+
+#[test]
+fn archive_ignores_zero_duration_work_and_future_work_for_other_tasks() {
+    let repository = repo();
+    let as_of = at(2_000_000);
+    repository
+        .create_task(stamped_task(1, "Old task", 100, 100))
+        .unwrap();
+    repository
+        .create_task(stamped_task(2, "Recent task", 1_999_999, 1_999_999))
+        .unwrap();
+    let preview = repository.preview_inactive_tasks(as_of).unwrap();
+    assert_eq!(
+        preview.tasks.iter().map(Task::id).collect::<Vec<_>>(),
+        vec![task_id(1)]
+    );
+    for (id, task, end) in [(1, task_id(1), as_of), (2, task_id(2), at(2_000_001))] {
+        repository
+            .insert_worklog(&Worklog::new(worklog_id(id), task, as_of, Some(end)).unwrap())
+            .unwrap();
+    }
+    let archived = repository
+        .archive_inactive_tasks(&[task_id(1)], as_of)
+        .unwrap();
+    assert_eq!(archived.tasks.len(), 1);
+    assert!(archived.tasks[0].is_archived());
+    assert!(
+        !repository
+            .find_task(task_id(2))
             .unwrap()
             .unwrap()
             .is_archived()

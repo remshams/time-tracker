@@ -51,8 +51,8 @@ pub(crate) fn list_task_items_on(conn: &Connection) -> Result<Vec<TaskListItem>,
 
 const INACTIVE_WINDOW_US: i64 = 14 * 24 * 60 * 60 * 1_000_000;
 
-/// Half-open worklog intervals only overlap the window when they have
-/// positive duration. Running worklogs always prevent archiving.
+/// Running worklogs and positive-duration work after the cutoff prevent
+/// archiving, including work recorded after the preview's original time.
 const INACTIVE_TASKS_SQL: &str = "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us
      FROM tasks AS t
      WHERE t.archived = 0 AND t.created_at_us < ?1 AND t.updated_at_us < ?1
@@ -60,22 +60,20 @@ const INACTIVE_TASKS_SQL: &str = "SELECT t.id, t.name, t.archived, t.created_at_
          SELECT 1 FROM worklogs AS w
          WHERE w.task_id = t.id
            AND (w.end_us IS NULL
-                OR (w.start_us < ?2 AND w.end_us > ?1 AND w.end_us > w.start_us))
+                OR (w.end_us > ?1 AND w.end_us > w.start_us))
        )
      ORDER BY t.id";
 
-fn inactive_task_bounds(as_of: DateTime<Utc>) -> Result<(i64, i64), StorageError> {
-    let as_of_us = timestamp_to_us(as_of);
-    let cutoff_us = as_of_us
+fn inactive_task_cutoff(as_of: DateTime<Utc>) -> Result<i64, StorageError> {
+    timestamp_to_us(as_of)
         .checked_sub(INACTIVE_WINDOW_US)
-        .ok_or(StorageError::InvalidInactiveTaskTime)?;
-    Ok((cutoff_us, as_of_us))
+        .ok_or(StorageError::InvalidInactiveTaskTime)
 }
 
 fn inactive_tasks_on(conn: &Connection, as_of: DateTime<Utc>) -> Result<Vec<Task>, StorageError> {
-    let (cutoff_us, as_of_us) = inactive_task_bounds(as_of)?;
+    let cutoff_us = inactive_task_cutoff(as_of)?;
     let mut statement = conn.prepare(INACTIVE_TASKS_SQL)?;
-    let mut rows = statement.query(rusqlite::params![cutoff_us, as_of_us])?;
+    let mut rows = statement.query([cutoff_us])?;
     let mut tasks = Vec::new();
     while let Some(row) = rows.next()? {
         let (id, name, archived, created_us, updated_us) = raw_task(row)?;
@@ -91,64 +89,6 @@ impl SqliteRepository {
         task_by_id_on(&self.conn, id)
     }
 
-    /// Seeds the given default tasks when the database has no tasks at all.
-    ///
-    /// Every seeded task shares the given creation timestamp: they are
-    /// created together in one transaction, and a shared, ordered value keeps
-    /// the seed deterministic. The emptiness check and the inserts run
-    /// inside one immediate transaction: two processes calling this at the
-    /// same time serialize on the write lock, the second one rechecks and
-    /// finds the database no longer empty, and a failure anywhere rolls the
-    /// whole seed back.
-    ///
-    /// Returns whether this call seeded the database.
-    pub fn seed_default_tasks(
-        &self,
-        names: &[TaskName],
-        created_at: DateTime<Utc>,
-    ) -> Result<bool, StorageError> {
-        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
-        let seeded = Self::seed_within(&transaction, names, created_at)?;
-        transaction.commit()?;
-        Ok(seeded)
-    }
-
-    /// The emptiness check and inserts, inside the caller's transaction.
-    fn seed_within(
-        transaction: &Transaction<'_>,
-        names: &[TaskName],
-        created_at: DateTime<Utc>,
-    ) -> Result<bool, StorageError> {
-        let created_at = us_to_timestamp(timestamp_to_us(created_at))?;
-        let empty: bool =
-            transaction.query_row("SELECT NOT EXISTS (SELECT 1 FROM tasks)", [], |row| {
-                row.get(0)
-            })?;
-        if !empty {
-            return Ok(false);
-        }
-        for name in names {
-            let task = Task::create(TaskId::generate(), name.clone(), created_at);
-            transaction
-                .execute(
-                    "INSERT INTO tasks (id, name, archived, created_at_us, updated_at_us)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                    rusqlite::params![
-                        task.id().to_string(),
-                        task.name().as_str(),
-                        task.is_archived(),
-                        timestamp_to_us(task.created_at()),
-                        timestamp_to_us(task.updated_at()),
-                    ],
-                )
-                .map(|_| ())
-                .map_err(|error| error::create_task_error(error, task.id()))?;
-        }
-        Ok(true)
-    }
-}
-
-impl SqliteRepository {
     pub fn create_task(&self, task: Task) -> Result<(), StorageError> {
         self.conn
             .execute(
