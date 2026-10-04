@@ -75,6 +75,14 @@ class SwiftMutationTests(unittest.TestCase):
         log.write_text("Test Case 'SessionTests.testStart' started at 2026-10-04\n"
                        "*** Signal 11: Backtracing\n", encoding="utf-8")
         mutations.check_mutations(self.summarize(report, logs=logs))
+        log.write_text("error: Exited with unexpected signal code 4\n"
+                       "Test Case 'SessionTests.testStart' started.\nFatal error: invalid state\n", encoding="utf-8")
+        mutations.check_mutations(self.summarize(report, logs=logs))
+        log.write_text("error: Exited with unexpected signal code 4\n"
+                       "Test Case 'SessionTests.testStart' started.\n", encoding="utf-8")
+        with self.assertRaisesRegex(mutations.MutationError, "runtimeError"):
+            mutations.check_mutations(self.summarize(report, logs=logs))
+        log.write_text("Test Case 'SessionTests.testStart' started.\nFatal error: invalid state\n", encoding="utf-8")
         log.rename(logs / "Wrong.swift_RemoveSideEffects_0_1_1.log")
         with self.assertRaisesRegex(mutations.MutationError, "runtimeError"):
             mutations.check_mutations(self.summarize(report, logs=logs))
@@ -233,8 +241,8 @@ class SwiftMutationTests(unittest.TestCase):
             if arguments[0] == "muter":
                 self.assertFalse((package / ".build").exists())
                 config = json.loads((package / "muter.conf.yml").read_text(encoding="utf-8"))
-                self.assertEqual(config["mutationTestTimeout"], 60)
-                self.assertEqual(config["arguments"], ["test", "-j", "2"])
+                self.assertEqual(config["mutationTestTimeout"], 180)
+                self.assertEqual(config["arguments"], ["test", "-j", "2", "--parallel", "--num-workers", "4"])
                 self.assertIn("--skip-coverage", arguments)
                 self.assertIn("--skip-update-check", arguments)
                 copied = package / "Sources/TrackerClient/Session.swift"
@@ -247,7 +255,7 @@ class SwiftMutationTests(unittest.TestCase):
                 patch.object(mutations, "run", side_effect=fake_run):
             summary = mutations.collect("swift", "muter", ["Sources/TrackerClient/Session.swift"])
         self.assertEqual(summary["scope"], "focused")
-        self.assertEqual(calls[0], ["swift", "test", "-j", "2"])
+        self.assertEqual(calls[0], ["swift", "test", "-j", "2", "--parallel", "--num-workers", "4"])
         self.assertIn("--files-to-mutate", calls[1])
         self.assertEqual(self.source.read_text(encoding="utf-8"), "func start() {}\n")
         self.assertTrue((self.output / "report.json").is_file())

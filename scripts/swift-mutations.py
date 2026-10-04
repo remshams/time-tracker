@@ -74,9 +74,10 @@ def runtime_crash_evidence(point: dict, logs: Path | None) -> bool:
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
         started = re.search(r"(?m)^(?:Test Case .+ started(?: at |\.?$)|◇ Test .+ started\.)", text)
-        crashed = re.search(r"Fatal error:|(?:Program|Thread [0-9]+) crashed:|"
-                            r"\*\*\* Signal [0-9]+:|Exited with unexpected signal code [0-9]+", text)
-        if started and crashed and started.start() < crashed.start():
+        crashed = started and re.search(r"Fatal error:|(?:Program|Thread [0-9]+) crashed:|"
+                            r"\*\*\* Signal [0-9]+:|Exited with unexpected signal code [0-9]+",
+                            text[started.end():])
+        if crashed:
             return True
     return False
 
@@ -226,14 +227,15 @@ def collect(swift: str, muter: str, selected: list[str] | None = None, *, timeou
         shutil.copy2(PACKAGE / "Package.swift", package / "Package.swift")
         for name in ("Sources", "Tests"):
             shutil.copytree(PACKAGE / name, package / name)
-        configuration = {"executable": swift, "arguments": ["test", "-j", "2"],
-                         "exclude": ["/Tests/", "/Package.swift"], "mutationTestTimeout": 60}
+        test_arguments = ["test", "-j", "2", "--parallel", "--num-workers", "4"]
+        configuration = {"executable": swift, "arguments": test_arguments,
+                         "exclude": ["/Tests/", "/Package.swift"], "mutationTestTimeout": 180}
         configuration_path = package / "muter.conf.yml"
         configuration_path.write_text(json.dumps(configuration, indent=2) + "\n", encoding="utf-8")
         try:
             with (OUTPUT / "run.log").open("w", encoding="utf-8") as log:
                 print("Running TrackerClient baseline tests in an isolated package.", flush=True)
-                run([swift, "test", "-j", "2"], package, log)
+                run([swift, *test_arguments], package, log)
                 # Swift's module cache records absolute paths. Muter's sibling copy needs a fresh build.
                 if (package / ".build").exists():
                     shutil.rmtree(package / ".build")
