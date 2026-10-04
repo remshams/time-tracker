@@ -11,11 +11,12 @@ final class TrackerStore: ObservableObject {
     init() {
         session = TrackerSession(client: TrackerWorker(), clock: SystemTrackerClock(),
                                  scheduler: RunLoopTrackerScheduler(),
-                                 settings: UserDefaultsConnectionSettings())
+                                 settings: UserDefaultsConnectionSettings(),
+                                 trackingPreferences: UserDefaultsTrackingPreferences())
         session.onChange = { [weak self] in self?.objectWillChange.send() }
         lifecycle = MacLifecycleObserver(session: session)
-        session.start()
         lifecycle?.start()
+        session.start()
     }
 
     var tasks: [TaskItem] { session.tasks }
@@ -41,7 +42,10 @@ final class TrackerStore: ObservableObject {
     var runningTaskName: String { session.runningTaskName }
     var timerDisplayText: String { session.timerDisplayText }
     var elapsed: TimeInterval? { session.elapsed }
+    var pauseOnScreenLock: Bool { session.pauseOnScreenLock }
+    var autoPauseStatusText: String? { session.autoPauseStatusText }
 
+    func setPauseOnScreenLock(_ enabled: Bool) { session.setPauseOnScreenLock(enabled) }
     func changeTab(_ tab: TaskTab) { session.changeTab(tab) }
     func select(_ taskID: String?) { session.select(taskID) }
     func refresh() { session.refresh() }
