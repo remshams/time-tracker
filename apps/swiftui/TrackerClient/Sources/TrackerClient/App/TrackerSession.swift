@@ -509,7 +509,6 @@ public final class TrackerSession {
 
     private func beginReport() {
         guard let reports, running, !sleeping, let requested = dailyTotals.begin(clock: clock) else {
-            schedulePolling()
             return
         }
         let token = generation

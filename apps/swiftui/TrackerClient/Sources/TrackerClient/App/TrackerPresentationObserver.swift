@@ -10,37 +10,46 @@ public final class TrackerPresentationObserver {
     private var content: Content
     private var activity: Activity
     private var timerText: String
-    private var dailyTexts: [String: String]
+    private var daily: DailyPresentation
 
     public init(session: TrackerSession) {
         content = Content(session)
         activity = Activity(session)
         timerText = session.timerDisplayText
-        dailyTexts = Self.dailyTexts(session)
+        daily = DailyPresentation(session)
     }
 
     public func update(from session: TrackerSession) {
         let nextContent = Content(session)
         let nextActivity = Activity(session)
         let nextTimerText = session.timerDisplayText
-        let nextDailyTexts = Self.dailyTexts(session)
+        let nextDaily = DailyPresentation(session)
         let contentChanged = content != nextContent
         let activityChanged = activity != nextActivity
         let timerChanged = timerText != nextTimerText
-        let dailyChanged = dailyTexts != nextDailyTexts || content.dailyStatus != nextContent.dailyStatus ||
-            content.dailyError != nextContent.dailyError || content.dayStart != nextContent.dayStart
+        let dailyChanged = daily != nextDaily
         content = nextContent
         activity = nextActivity
         timerText = nextTimerText
-        dailyTexts = nextDailyTexts
+        daily = nextDaily
         if contentChanged { onContentChange?() }
         if activityChanged { onActivityChange?() }
         if timerChanged { onTimerChange?() }
         if dailyChanged { onDailyTotalsChange?() }
     }
 
-    private static func dailyTexts(_ session: TrackerSession) -> [String: String] {
-        Dictionary(uniqueKeysWithValues: session.tasks.map { ($0.id, session.dailyDurationText(taskID: $0.id)) })
+    private struct DailyPresentation: Equatable {
+        let texts: [String: String]
+        let status: DailyTotalsStatus
+        let error: String?
+        let dayStart: Date?
+
+        @MainActor init(_ session: TrackerSession) {
+            texts = Dictionary(uniqueKeysWithValues: session.tasks.map { ($0.id, session.dailyDurationText(taskID: $0.id)) })
+            status = session.dailyTotalsStatus
+            error = session.dailyTotalsError
+            dayStart = session.dailyTotalsDayStart
+        }
     }
 
     private struct Activity: Equatable {

@@ -176,6 +176,193 @@ final class DailyTotalsTests: XCTestCase {
 
 final class DailyTotalsSessionTests: XCTestCase {
     @MainActor
+    func testDailyObserverSurfacesChangedErrorWhileCachedStatusAndDurationStayTheSame() async throws {
+        let fixture = Fixture(reports: true, calendar: dailyCalendar())
+        defer { fixture.cleanup() }
+        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        try await fixture.start(snapshot, rows: [total(firstTask, 4)])
+        let observer = TrackerPresentationObserver(session: fixture.session)
+        var observedErrors: [String?] = []
+        var observedStatuses: [DailyTotalsStatus] = []
+        var observedTexts: [String] = []
+        observer.onDailyTotalsChange = {
+            observedErrors.append(fixture.session.dailyTotalsError)
+            observedStatuses.append(fixture.session.dailyTotalsStatus)
+            observedTexts.append(fixture.session.dailyDurationText(taskID: firstTask.id))
+        }
+        fixture.session.onChange = { observer.update(from: fixture.session) }
+        for message in ["First report failure", "Second report failure"] {
+            fixture.scheduler.poll?.fire()
+            let report = try await fixture.client.next()
+            report.fail(BridgeFailure(message: message))
+            let finished = Task { @MainActor in while fixture.session.isBusy && !Task.isCancelled { await Task.yield() } }
+            try await fixture.taskValue(finished)
+        }
+        XCTAssertEqual(observedErrors, ["First report failure", "Second report failure"])
+        XCTAssertEqual(observedStatuses, [.cached, .cached])
+        XCTAssertEqual(observedTexts, ["00:00:04", "00:00:04"])
+    }
+
+    @MainActor
+    func testDailyObserverSurfacesNewDayDuringEmptyStartupBeforeReportBecomesAvailable() async throws {
+        let fixture = Fixture(reports: true, calendar: dailyCalendar())
+        defer { fixture.cleanup() }
+        let observer = TrackerPresentationObserver(session: fixture.session)
+        var observedDays: [Date?] = []
+        var observedStatuses: [DailyTotalsStatus] = []
+        var observedErrors: [String?] = []
+        observer.onDailyTotalsChange = {
+            observedDays.append(fixture.session.dailyTotalsDayStart)
+            observedStatuses.append(fixture.session.dailyTotalsStatus)
+            observedErrors.append(fixture.session.dailyTotalsError)
+        }
+        fixture.session.onChange = { observer.update(from: fixture.session) }
+        fixture.session.start()
+        let open = try await fixture.client.next()
+        fixture.clock.now.addTimeInterval(86_400)
+        open.succeed(emptySnapshot)
+        let report = try await fixture.client.next()
+        XCTAssertEqual(observedDays.first ?? nil, fixture.clock.now)
+        XCTAssertEqual(observedStatuses.first, .unavailable,
+                       "The changed day must reach the daily observer before loading changes its status.")
+        XCTAssertNil(observedErrors.first ?? nil)
+        XCTAssertTrue(fixture.session.tasks.isEmpty)
+        report.succeed(TrackerReport(snapshot: emptySnapshot, rows: []))
+        let finished = Task { @MainActor in while fixture.session.isBusy && !Task.isCancelled { await Task.yield() } }
+        try await fixture.taskValue(finished)
+        XCTAssertEqual(observedStatuses.last, .current)
+        XCTAssertTrue(observedDays.allSatisfy { $0 == fixture.clock.now })
+    }
+
+    @MainActor
+    func testDelayedReportFailureAcrossMidnightImmediatelyRequestsTodaysTotals() async throws {
+        let fixture = Fixture(reports: true, calendar: dailyCalendar())
+        defer { fixture.cleanup() }
+        fixture.clock.now = dailyDate("2025-01-01T23:59:58.000Z")
+        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        try await fixture.start(snapshot, rows: [total(firstTask, 30)])
+        fixture.session.refresh()
+        let yesterday = try await fixture.client.next()
+        fixture.clock.now.addTimeInterval(2)
+        yesterday.fail(BridgeFailure(message: "Yesterday's report failed"))
+        let today = try await fixture.client.next()
+        guard case .report(_, let start, let end, let now) = today.operation else {
+            return XCTFail("A delayed failure crossing midnight must request today's report.")
+        }
+        XCTAssertEqual(start, "2025-01-02T00:00:00.000Z")
+        XCTAssertEqual(end, "2025-01-03T00:00:00.000Z")
+        XCTAssertEqual(now, "2025-01-02T00:00:00.000Z")
+        XCTAssertEqual(fixture.session.dailyTotalsDayStart, fixture.clock.now)
+        XCTAssertNil(fixture.session.dailyDuration(taskID: firstTask.id))
+        XCTAssertTrue(fixture.session.todayTasks.isEmpty)
+        XCTAssertFalse(fixture.session.isStale)
+        today.succeed(TrackerReport(snapshot: snapshot, rows: [total(firstTask, 2)]))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 2)
+        XCTAssertEqual(fixture.session.dailyTotalsStatus, .current)
+        XCTAssertNil(fixture.session.dailyTotalsError)
+    }
+
+    @MainActor
+    func testStaleRefreshClearsYesterdayDayAndErrorBeforeItsResponseArrives() async throws {
+        let fixture = Fixture(reports: true, calendar: dailyCalendar())
+        defer { fixture.cleanup() }
+        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        try await fixture.start(snapshot, rows: [total(firstTask, 4)])
+        fixture.scheduler.poll?.fire()
+        let failed = try await fixture.client.next()
+        failed.fail(BridgeFailure(message: "Yesterday unavailable", kind: "unavailable"))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.dailyTotalsError, "Yesterday unavailable")
+        fixture.clock.now.addTimeInterval(86_400)
+        fixture.session.refresh()
+        XCTAssertEqual(fixture.session.dailyTotalsDayStart, fixture.clock.now)
+        XCTAssertNil(fixture.session.dailyTotalsError)
+        XCTAssertTrue(fixture.session.todayTasks.isEmpty)
+        let refresh = try await fixture.client.next()
+        XCTAssertEqual(refresh.operation, .refresh(.local))
+        refresh.succeed(snapshot)
+        let report = try await fixture.client.next()
+        report.succeed(TrackerReport(snapshot: snapshot, rows: []))
+        try await fixture.settled()
+    }
+
+    @MainActor
+    func testTrackingAcknowledgmentAcrossMidnightPublishesTodaysDayAndClearsYesterdayError() async throws {
+        let fixture = Fixture(reports: true, calendar: dailyCalendar())
+        defer { fixture.cleanup() }
+        fixture.clock.now = dailyDate("2025-01-01T23:59:59.000Z")
+        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(snapshot, rows: [total(firstTask, 4)])
+        fixture.scheduler.poll?.fire()
+        let failed = try await fixture.client.next()
+        failed.fail(BridgeFailure(message: "Yesterday totals unavailable"))
+        try await fixture.settled()
+        fixture.session.stopTracking(worklogID: activeWorklog.id)
+        let stop = try await fixture.client.next()
+        fixture.clock.now.addTimeInterval(1)
+        var observedDays: [Date?] = []
+        var observedErrors: [String?] = []
+        fixture.session.onChange = {
+            if fixture.session.active == nil {
+                observedDays.append(fixture.session.dailyTotalsDayStart)
+                observedErrors.append(fixture.session.dailyTotalsError)
+            }
+        }
+        let stoppedSnapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        stop.succeed(stoppedSnapshot)
+        let report = try await fixture.client.next()
+        XCTAssertFalse(observedDays.isEmpty)
+        XCTAssertTrue(observedDays.allSatisfy { $0 == fixture.clock.now },
+                      "The acknowledged snapshot must publish today's day before its report arrives.")
+        XCTAssertTrue(observedErrors.allSatisfy { $0 == nil },
+                      "Yesterday's report error must disappear when the new day is published.")
+        report.succeed(TrackerReport(snapshot: stoppedSnapshot, rows: [total(firstTask, 5)]))
+        let history = try await fixture.client.next()
+        history.succeed(emptyPage)
+        try await fixture.settled()
+    }
+
+    @MainActor
+    func testHealthyReportAfterTimezoneChangeMovesRolloverToTheNewLocalMidnight() async throws {
+        let originalZone = NSTimeZone.default
+        defer { NSTimeZone.default = originalZone }
+        NSTimeZone.default = TimeZone(identifier: "UTC")!
+        let fixture = Fixture(reports: true)
+        defer { fixture.cleanup() }
+        fixture.clock.now = dailyDate("2025-01-01T12:00:00.000Z")
+        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        try await fixture.start(snapshot, rows: [total(firstTask, 4)])
+        let initialRollover = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
+        XCTAssertEqual(initialRollover.delay, 12 * 3_600)
+        NSTimeZone.default = TimeZone(identifier: "America/New_York")!
+        fixture.session.refresh()
+        let changedZone = try await fixture.client.next()
+        guard case .report(_, let start, let end, _) = changedZone.operation else {
+            return XCTFail("The changed timezone must refresh the authoritative report.")
+        }
+        XCTAssertEqual(start, "2025-01-01T05:00:00.000Z")
+        XCTAssertEqual(end, "2025-01-02T05:00:00.000Z")
+        changedZone.succeed(TrackerReport(snapshot: snapshot, rows: [total(firstTask, 6)]))
+        try await fixture.settled()
+        let localMidnight = try XCTUnwrap(fixture.scheduler.active.first { !$0.repeating && $0.tolerance == 0 })
+        XCTAssertEqual(localMidnight.delay, 17 * 3_600,
+                       "The rollover deadline must follow midnight in the new timezone.")
+        fixture.clock.now.addTimeInterval(17 * 3_600)
+        localMidnight.fire()
+        XCTAssertNil(fixture.session.dailyDuration(taskID: firstTask.id))
+        let nextDay = try await fixture.client.next()
+        guard case .report(_, let nextStart, let nextEnd, _) = nextDay.operation else {
+            return XCTFail("Local midnight must request the next day's report.")
+        }
+        XCTAssertEqual(nextStart, "2025-01-02T05:00:00.000Z")
+        XCTAssertEqual(nextEnd, "2025-01-03T05:00:00.000Z")
+        nextDay.succeed(TrackerReport(snapshot: snapshot, rows: []))
+        try await fixture.settled()
+        XCTAssertTrue(fixture.session.todayTasks.isEmpty)
+    }
+
+    @MainActor
     func testTodaysTasksSortByNameAndThenByIDForMatchingNames() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
