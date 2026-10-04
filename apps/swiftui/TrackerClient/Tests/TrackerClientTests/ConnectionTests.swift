@@ -4,6 +4,29 @@ import XCTest
 
 final class ConnectionTests: XCTestCase {
     @MainActor
+    func testSourceSwitchClearsCachedHistoryEvenWhenTaskIDsMatch() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        try await fixture.start(snapshot)
+        fixture.session.retryHistory()
+        let initial = try await fixture.client.next()
+        initial.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "old-source", reset: false))
+        try await fixture.settled()
+
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connect = try await fixture.client.next()
+        connect.succeed(snapshot)
+        let connected = try await fixture.taskValue(connecting)
+        XCTAssertTrue(connected)
+        let replacement = try await fixture.client.next()
+        XCTAssertTrue(fixture.session.worklogs.isEmpty)
+        XCTAssertNil(fixture.session.nextCursor)
+        replacement.succeed(emptyPage)
+        try await fixture.settled()
+    }
+
+    @MainActor
     func testEmptyReplacementSourceClearsHistoryWhenBothSourcesAreIdle() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
