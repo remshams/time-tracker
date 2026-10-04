@@ -2,8 +2,15 @@ import AppKit
 import SwiftUI
 import TrackerClient
 
+@MainActor
 struct ConnectionSummary: View {
     @ObservedObject var store: TrackerStore
+    @ObservedObject private var activity: TrackerActivityStore
+
+    init(store: TrackerStore) {
+        self.store = store
+        activity = store.activity
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -21,7 +28,7 @@ struct ConnectionSummary: View {
                     .help(store.connectionMessage ?? store.connectionStatusText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if store.isBusy {
+            if activity.isBusy {
                 ProgressView().controlSize(.small)
             } else if store.isStale {
                 Button("Retry") { store.refresh() }
