@@ -1,0 +1,31 @@
+[package]
+name = "tracker-cli"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "tt-cli"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+chrono-tz.workspace = true
+clap.workspace = true
+iana-time-zone.workspace = true
+libc.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracker-application = { path = "../../crates/tracker-application" }
+tracker-domain = { path = "../../crates/tracker-domain" }
+tracker-protocol = { path = "../../crates/tracker-protocol" }
+tracker-remote = { path = "../../crates/tracker-remote" }
+tracker-storage = { path = "../../crates/tracker-storage" }
+
+[dev-dependencies]
+axum.workspace = true
+tempfile.workspace = true
+tracker-server = { path = "../../crates/tracker-server" }

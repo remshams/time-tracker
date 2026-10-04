@@ -8,6 +8,7 @@ members = [
     "crates/tracker-server",
     "crates/tracker-remote",
     "apps/tui",
+    "apps/cli",
 ]
 
 [workspace.package]
@@ -18,6 +19,7 @@ publish = false
 [workspace.dependencies]
 chrono = "0.4.45"
 chrono-tz = "0.10.4"
+clap = { version = "4.6.1", features = ["derive"] }
 crossterm = "0.29.0"
 futures-util = "0.3.34"
 libc = "0.2.178"
