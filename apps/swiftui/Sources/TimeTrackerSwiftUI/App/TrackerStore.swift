@@ -26,6 +26,7 @@ final class TrackerStore: ObservableObject {
         presentation.onContentChange = { [weak self] in self?.objectWillChange.send() }
         session.onChange = { [weak self] in
             guard let self else { return }
+            dailyTotals.updateMenuBarTimer(isRunning: session.active != nil)
             presentation.update(from: session)
         }
         lifecycle = MacLifecycleObserver(session: session)
@@ -83,14 +84,41 @@ final class TrackerStore: ObservableObject {
 final class TrackerDailyTotalsStore: ObservableObject {
     let objectWillChange = ObservableObjectPublisher()
     private let session: TrackerSession
+    private var menuBarTimer: Timer?
 
     init(session: TrackerSession, presentation: TrackerPresentationObserver) {
         self.session = session
         presentation.onDailyTotalsChange = { [weak self] in self?.objectWillChange.send() }
     }
 
+    deinit { menuBarTimer?.invalidate() }
+
+    func updateMenuBarTimer(isRunning: Bool) {
+        guard isRunning else {
+            menuBarTimer?.invalidate()
+            menuBarTimer = nil
+            return
+        }
+        guard menuBarTimer == nil else { return }
+        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.objectWillChange.send() }
+        }
+        timer.tolerance = 5
+        menuBarTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
     func text(taskID: String) -> String {
         session.dailyDuration(taskID: taskID).map(clockDuration) ?? "-"
+    }
+
+    var totalText: String { session.totalDailyDurationText }
+
+    var menuBarText: String {
+        guard let duration = session.totalDailyDuration else { return "-" }
+        let minutes = Int(max(0, duration)) / 60
+        let text = String(format: "%02d:%02d", minutes / 60, minutes % 60)
+        return session.dailyTotalsStatus == .cached ? "~\(text)" : text
     }
 
     var explanation: String {
@@ -116,6 +144,7 @@ final class TrackerActivityStore: ObservableObject {
     var isBusy: Bool { session.isBusy }
     var canStartSelectedTask: Bool { session.canStartSelectedTask }
     var canStopTracking: Bool { session.canStopTracking }
+    func canStartTracking(taskID: String) -> Bool { session.canStartTracking(taskID: taskID) }
 }
 
 @MainActor

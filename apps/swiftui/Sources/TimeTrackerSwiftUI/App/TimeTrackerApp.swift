@@ -18,14 +18,29 @@ struct TimeTrackerApp: App {
         MenuBarExtra(isInserted: $menuBarInserted) {
             TrackerMenu(store: store)
         } label: {
-            Image(systemName: menuBarSymbol)
-                .accessibilityLabel(Text(menuBarStatus))
-                .help(menuBarStatus)
+            TrackerMenuBarLabel(store: store, totals: store.dailyTotals)
         }
 
         Settings {
             ConnectionSettingsView(store: store)
         }
+    }
+}
+
+private struct TrackerMenuBarLabel: View {
+    @ObservedObject var store: TrackerStore
+    @ObservedObject var totals: TrackerDailyTotalsStore
+
+    var body: some View {
+        Label {
+            Text(totals.menuBarText)
+                .monospacedDigit()
+        } icon: {
+            Image(systemName: menuBarSymbol)
+        }
+        .labelStyle(.titleAndIcon)
+        .accessibilityLabel(Text("\(menuBarStatus). Total today: \(totals.totalText)"))
+        .help("\(menuBarStatus)\nTotal today: \(totals.totalText)\n\(totals.explanation)")
     }
 
     private var menuBarSymbol: String {

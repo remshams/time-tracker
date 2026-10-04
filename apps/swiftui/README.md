@@ -28,6 +28,8 @@ Local mode uses this Mac's secured default `tt.db`, shared with the local termin
 
 Select an active task and click Start tracking in its details. The button changes to Stop tracking while that task is running. Select another task and click Switch tracking to end the previous worklog and begin the new one at the same instant. Archived tasks cannot start tracking.
 
+The menu also controls tracking. Click an active task in Today to start it or switch to it. Start tracking lists active tasks with no time logged today. The running task is marked Running and disabled; Stop tracking ends its current worklog. These actions leave the window's task selection unchanged. Archived entries show their totals and cannot start tracking.
+
 Commands capture the selected task, expected running worklog, and UTC time when you click. The server checks its revision and active worklog before accepting a change. If another client changes tracking first, the app reports the conflict and refreshes. A Stop command never stops a replacement worklog.
 
 While a request is running or state is stale, tracking buttons are disabled. If a write fails, the app refreshes authoritative state before allowing another write because the server may already have committed it. During an outage, the app labels its last confirmed state as unavailable. Before the first successful snapshot, the timer displays Unavailable rather than claiming Idle.
@@ -46,7 +48,7 @@ The server's conditional idle-start guard was also strengthened. Deploy the serv
 
 ## Today's totals
 
-Each sidebar task shows its time logged today. The menu's Today section lists tasks with time logged today, including archived tasks. Click an entry to open that task. Totals include the running worklog and only the portion of an overnight worklog that overlaps today.
+Each sidebar task shows its time logged today. The menu's Today section lists tasks with time logged today, including archived tasks, and shows the combined total with seconds. The status bar shows that combined total in hours and minutes beside the tracking icon. A `~` prefix marks cached totals; `-` means the total is unavailable. Totals include the running worklog and only the portion of an overnight worklog that overlaps today.
 
 Today follows the Mac's local calendar and time zone. Calendar boundaries account for daylight saving changes. A missing report shows an unavailable value instead of zero; failed updates label retained totals as cached. Connecting to a different data source clears the previous totals.
 
@@ -139,13 +141,13 @@ The app refreshes state every 5 seconds while a window is visible or an app menu
 
 After connection failures, visible polling backs off to 5, 10, 20, 40, then 60 seconds. Background polling stays at least 60 seconds. A protocol mismatch stops automatic retries until you reopen the UI or click Retry. Opening the UI and waking the Mac request an immediate refresh. Sleep pauses scheduled polling; an already running request may finish.
 
-The elapsed timer redraws once a second only while UI is visible and a timer is active. That tick makes no network request. Timers allow macOS to coalesce wakeups. These rules reduce unnecessary work, but battery impact has not been measured.
+The elapsed timer redraws once a second only while UI is visible and a timer is active. That tick makes no network request. The native daily totals adapter owns a separate one-minute clock while tracking runs, so the status bar total advances when windows and menus are closed. It reads the locally advancing total and does not enable foreground polling or the session's one-second display timer. The minute clock stops when tracking is idle and allows five seconds of tolerance for macOS to coalesce wakeups. These rules reduce unnecessary work, but battery impact has not been measured.
 
 ## Appearance and history
 
 The app follows macOS light and dark mode. Text, window backgrounds, worklog cards, and borders use system colors. The sidebar keeps macOS's native selection appearance. The task heading stays above the scrolling history and wraps to three lines. Hover over a task name to read its full text.
 
-The Active and Archived tabs remember their selections. Worklogs load 50 at a time. The menu bar clock shows the current task, elapsed time, connection status, today's task totals, and commands to open the window or quit. Closing the window leaves the menu bar item running.
+The Active and Archived tabs remember their selections. Worklogs load 50 at a time. The status bar shows today's combined total. Its menu shows the current task, elapsed time, connection status, today's task totals, tracking actions, and commands to open the window or quit. Closing the window leaves the menu bar item running.
 
 ## Check on a Mac
 
@@ -158,6 +160,7 @@ The Active and Archived tabs remember their selections. Worklogs load 50 at a ti
 7. Switch to Local, then back to Server. Confirm each data source retains its own tasks and history.
 8. Enable automatic pause in Settings > Tracking, start a task, lock the Mac for about 30 seconds, then unlock it. Confirm the same task resumes in a new worklog and the locked interval is excluded. Repeat with the app window closed and with lock followed by sleep. Wake while still locked and confirm tracking remains paused. Start a timer from another client before unlocking and confirm the Mac preserves it. Disable the setting and confirm locking leaves tracking unchanged.
 9. Keep a running task open for several server polls. Confirm elapsed labels advance while task and worklog rows remain stable. Change tracking from another client and confirm the updated history appears without briefly showing an empty list. Repeat with a slow connection; selecting a different task must clear the old task's history.
-10. Check sidebar totals against all of today's worklogs, including a running worklog and one crossing midnight. Confirm yesterday's time is excluded. Check the menu includes archived tasks with time today and opens each selected task. Stop the server and confirm totals are labelled cached. Change the data source and confirm old totals disappear. Repeat in Light and Dark appearance and with the sidebar narrowed.
+10. Check sidebar totals and the combined menu total against all of today's worklogs, including a running worklog and one crossing midnight. Confirm yesterday's time is excluded. Check the status bar matches the combined total in hours and minutes and advances with the window and menu closed. Check the menu includes archived tasks with time today as informational entries. Stop the server and confirm totals are labelled cached and the status bar uses `~`. Change the data source and confirm old totals disappear. Repeat in Light and Dark appearance and with the sidebar narrowed.
+11. Start an active task from the Today section, then click a different task to switch tracking. Check Start tracking includes tasks with no time today. Confirm the running entry is disabled and Stop tracking ends the current worklog. Keep a different task selected in the window and confirm menu actions do not change that selection. Repeat while requests are slow or state is stale and confirm tracking actions are disabled.
 
 Xcode compilation, native layout, and the lifecycle checks above require a Mac. Foundation package tests can run on Linux. If the build fails, send the error text from Xcode's Report navigator. The Build Rust bridge phase appears separately from Swift compilation and linking.
