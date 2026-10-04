@@ -4,6 +4,35 @@ import XCTest
 
 final class LifecycleTests: XCTestCase {
     @MainActor
+    func testShutdownFromStartupNotificationPreventsOpeningClient() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        fixture.session.onChange = {
+            if fixture.session.isBusy {
+                fixture.session.onChange = nil
+                fixture.session.shutdown()
+            }
+        }
+        let opened = XCTestExpectation(description: "Stopped session must not open the client")
+        opened.isInverted = true
+        let observer = Task {
+            do {
+                _ = try await fixture.client.next(timeout: 4)
+                opened.fulfill()
+            } catch {}
+        }
+
+        fixture.session.start()
+        let result = await XCTWaiter.fulfillment(of: [opened], timeout: 2)
+        XCTAssertEqual(result, .completed, "The client was opened after a startup observer stopped the session.")
+        XCTAssertTrue(fixture.client.operations.isEmpty)
+        XCTAssertFalse(fixture.session.isBusy)
+        XCTAssertTrue(fixture.scheduler.active.isEmpty)
+        fixture.cleanup()
+        try await fixture.taskValue(observer)
+    }
+
+    @MainActor
     func testPollingUsesVisibleBackoffAndProtocolFailureBlocksUntilExplicitRefresh() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
@@ -168,7 +197,7 @@ final class LifecycleTests: XCTestCase {
         XCTAssertTrue(tokens.allSatisfy { $0.cancelled })
         XCTAssertTrue(fixture.scheduler.active.isEmpty)
         candidate.succeed(TrackerSnapshot(tasks: [secondTask], active: nil))
-        let connected = await connecting.value
+        let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
         XCTAssertEqual(fixture.session.connectionSettings, .local)
         XCTAssertEqual(fixture.session.tasks, [firstTask])

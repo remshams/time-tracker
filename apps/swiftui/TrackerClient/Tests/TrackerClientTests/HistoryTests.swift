@@ -3,6 +3,56 @@ import XCTest
 
 final class HistoryTests: XCTestCase {
     @MainActor
+    func testIncompatibleHistoryDisablesTrackingAndStopsAutomaticPolling() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        XCTAssertTrue(fixture.session.canStartSelectedTask)
+        XCTAssertNotNil(fixture.scheduler.poll)
+        fixture.session.retryHistory()
+        let history = try await fixture.client.next()
+        history.fail(BridgeFailure(message: "Unsupported history version", kind: "protocol"))
+        try await fixture.settled()
+
+        XCTAssertTrue(fixture.session.historyUnavailable)
+        XCTAssertTrue(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.canStartSelectedTask)
+        XCTAssertEqual(fixture.session.connectionStatusText, "Incompatible server")
+        XCTAssertEqual(fixture.session.connectionMessage, "Unsupported history version")
+        XCTAssertNil(fixture.scheduler.poll)
+    }
+
+    @MainActor
+    func testHistoryRequiringRefreshDisablesTrackingUntilSnapshotIsConfirmed() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        try await fixture.start(snapshot)
+        XCTAssertTrue(fixture.session.canStartSelectedTask)
+        fixture.session.retryHistory()
+        let history = try await fixture.client.next()
+        history.fail(BridgeFailure(message: "Tracker state must be refreshed", requiresRefresh: true))
+        try await fixture.settled()
+
+        XCTAssertTrue(fixture.session.historyUnavailable)
+        XCTAssertTrue(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.canStartSelectedTask)
+        XCTAssertEqual(fixture.session.connectionStatusText, "Unavailable")
+        XCTAssertEqual(fixture.session.connectionMessage, "Tracker state must be refreshed")
+
+        fixture.session.refresh()
+        let refresh = try await fixture.client.next()
+        XCTAssertFalse(fixture.session.canStartSelectedTask)
+        refresh.succeed(snapshot)
+        let retry = try await fixture.client.next()
+        retry.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertFalse(fixture.session.historyUnavailable)
+        XCTAssertTrue(fixture.session.canStartSelectedTask)
+    }
+
+    @MainActor
     func testSelectionsAreRememberedPerTabAndRemovedSelectionFallsBack() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }

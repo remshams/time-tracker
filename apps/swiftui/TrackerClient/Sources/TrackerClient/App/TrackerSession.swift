@@ -201,7 +201,6 @@ public final class TrackerSession {
             let normalized = try connection.normalized(settings)
             let snapshot = try await client.connect(normalized)
             guard isCurrent(token) else { return false }
-            history.invalidate()
             pendingRefresh = false
             connection.settings = normalized
             settingsRepository.save(normalized)

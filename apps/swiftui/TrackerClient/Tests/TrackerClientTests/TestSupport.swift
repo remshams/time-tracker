@@ -200,6 +200,24 @@ final class Fixture {
 
     func settled() async throws { try await waitUntil("session to finish its current operation") { !self.session.isBusy } }
 
+    func taskValue<Value, Failure>(_ task: Task<Value, Failure>, timeout: TimeInterval = 2,
+                                   file: StaticString = #filePath, line: UInt = #line) async throws -> Value {
+        let expectation = XCTestExpectation(description: "Asynchronous test task at \(file):\(line)")
+        var completedResult: Result<Value, Failure>?
+        let observer = Task { @MainActor in
+            completedResult = await task.result
+            expectation.fulfill()
+        }
+        let result = await XCTWaiter.fulfillment(of: [expectation], timeout: timeout)
+        guard result == .completed, let completedResult else {
+            cleanup()
+            task.cancel()
+            observer.cancel()
+            throw TestTimeout(description: "Timed out waiting for asynchronous test task at \(file):\(line)")
+        }
+        return try completedResult.get()
+    }
+
     func waitUntil(_ description: String, timeout: TimeInterval = 2,
                    file: StaticString = #filePath, line: UInt = #line,
                    _ condition: @escaping @MainActor () -> Bool) async throws {

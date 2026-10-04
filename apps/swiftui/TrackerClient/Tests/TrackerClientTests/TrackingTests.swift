@@ -4,6 +4,29 @@ import XCTest
 
 final class TrackingTests: XCTestCase {
     @MainActor
+    func testStartButtonAllowsSwitchingTaskButRejectsRunningAndArchivedSelection() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
+        XCTAssertEqual(fixture.session.runningTaskName, firstTask.name)
+        XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
+        XCTAssertFalse(fixture.session.canStartSelectedTask)
+
+        fixture.session.select(secondTask.id)
+        let selected = try await fixture.client.next()
+        selected.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertTrue(fixture.session.canStartSelectedTask)
+
+        fixture.session.changeTab(.archived)
+        let archived = try await fixture.client.next()
+        archived.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.selectedTaskID, archivedTask.id)
+        XCTAssertFalse(fixture.session.canStartSelectedTask)
+    }
+
+    @MainActor
     func testStartCapturesExpectedActiveIDAndClickTimeAndIgnoresDoubleClick() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
@@ -28,6 +51,7 @@ final class TrackingTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TrackerSnapshot(tasks: [firstTask, archivedTask], active: nil))
+        XCTAssertTrue(fixture.session.canStartSelectedTask)
         fixture.session.startTracking(taskID: archivedTask.id)
         XCTAssertEqual(fixture.client.operations.count, 2)
         fixture.session.startTracking(taskID: firstTask.id)
@@ -68,7 +92,8 @@ final class TrackingTests: XCTestCase {
         fixture.session.select(secondTask.id)
         fixture.session.startTracking(taskID: firstTask.id)
         XCTAssertEqual(fixture.client.operations.count, 3)
-        let connected = await fixture.session.connect(serverSettings)
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
         refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
         let queuedRefresh = try await fixture.client.next()

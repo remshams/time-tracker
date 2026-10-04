@@ -3,6 +3,11 @@ import XCTest
 @testable import TrackerClient
 
 final class ModelsTests: XCTestCase {
+    func testConnectionModeLabelsNameLocalStorageAndServer() {
+        XCTAssertEqual(ConnectionMode.local.label, "Local database")
+        XCTAssertEqual(ConnectionMode.server.label, "Server")
+    }
+
     func testSnapshotDecodesRustCamelCaseFieldsAndFractionalTimestamps() throws {
         let json = #"{"tasks":[{"id":"task-one","name":"First task","archived":false,"latestStart":"2024-12-31T23:59:30.123456Z"}],"active":{"id":"worklog-one","taskId":"task-one","start":"2024-12-31T23:59:30.123456Z","end":null}}"#
         let snapshot = try JSONDecoder().decode(TrackerSnapshot.self, from: Data(json.utf8))
