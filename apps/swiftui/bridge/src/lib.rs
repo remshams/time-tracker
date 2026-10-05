@@ -301,6 +301,39 @@ unsafe fn read_identifier<T: std::str::FromStr>(
         .ok_or_else(|| message.to_owned())
 }
 
+/// Creates a task with a permanent Rust-generated ID at the submitted timestamp.
+/// Returns its task ID and the committed snapshot without another database read.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be null or valid
+/// C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_create_task_at(
+    bridge: *mut Bridge,
+    name: *const c_char,
+    occurred_at: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees exclusive access to the live bridge.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    let result = (|| {
+        // SAFETY: The caller supplies valid C strings or null.
+        let name = unsafe { read_identifier::<String>(name, "Invalid task name") }
+            .map_err(BridgeError::from)?;
+        let name = TaskName::new(&name).map_err(|error| BridgeError::from(error.to_string()))?;
+        // SAFETY: The caller supplies a valid C string or null.
+        let occurred_at = unsafe { read_identifier(occurred_at, "Invalid creation timestamp") }
+            .map_err(BridgeError::from)?;
+        let task = bridge.application.create_task(name, occurred_at)?;
+        Ok(json!({
+            "taskId": task.id().to_string(),
+            "snapshot": snapshot(&bridge.application)
+        }))
+    })();
+    encode(result)
+}
+
 /// Starts the requested task, or atomically switches from the running task.
 /// Returns the committed snapshot without a second database read.
 ///
@@ -617,6 +650,9 @@ mod automation_tests;
 
 #[cfg(test)]
 mod report_tests;
+
+#[cfg(test)]
+mod creation_tests;
 
 #[cfg(test)]
 mod tests {

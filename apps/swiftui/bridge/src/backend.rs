@@ -2,10 +2,11 @@ use chrono::{DateTime, Utc};
 use tokio::runtime::{Builder, Runtime};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, ReportQueries,
-    ReportTotals, RepositoryError, SetActiveTaskOutcome, TaskListItem, TaskOrdering, TaskQueries,
-    TrackerApplication, TrackingOperations, WorklogCursor, WorklogPage, WorklogQueries,
+    ReportTotals, RepositoryError, SetActiveTaskOutcome, TaskListItem, TaskOperations,
+    TaskOrdering, TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor, WorklogPage,
+    WorklogQueries,
 };
-use tracker_domain::{TaskId, TrackingState, WorklogId};
+use tracker_domain::{Task, TaskId, TaskName, TrackingState, WorklogId};
 use tracker_remote::{RemoteApplication, RemoteError, RemoteFailureKind};
 use tracker_storage::SqliteRepository;
 
@@ -104,6 +105,25 @@ impl Backend {
                 let result = remote
                     .runtime
                     .block_on(remote.application.set_active_task(task_id, occurred_at));
+                result.map_err(|error| remote.operation_error(error, true))
+            }
+        }
+    }
+
+    pub fn create_task(
+        &mut self,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, BridgeError> {
+        match self {
+            Self::Local(application) => application
+                .create_task(name, occurred_at)
+                .map_err(local_error),
+            Self::Remote(remote) => {
+                remote.check_write()?;
+                let result = remote
+                    .runtime
+                    .block_on(remote.application.create_task(name, occurred_at));
                 result.map_err(|error| remote.operation_error(error, true))
             }
         }
