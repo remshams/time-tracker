@@ -1,6 +1,6 @@
 # Native macOS proof of concept
 
-This SwiftUI app shows active and archived tasks, the running timer, and paged worklog history. You can start, switch, and stop tracking. Choose a local database or a tracker server in Connection settings.
+This SwiftUI app shows active and archived tasks, the running timer, and paged worklog history. You can create tasks and start, switch, and stop tracking. Choose a local database or a tracker server in Connection settings.
 
 ## Build and run on a Mac
 
@@ -23,6 +23,14 @@ For tabit, use its Tailscale IP and the actual port configured for the tracker s
 The Mac must be able to reach the server. If the server only listens on loopback, expose it through the project's server deployment setup first. The app checks the server protocol version before loading its tasks.
 
 Local mode uses this Mac's secured default `tt.db`, shared with the local terminal client. Server mode uses only the configured server. Switching modes does not copy or merge their data. An unavailable server never causes a fallback to local storage, and the app does not queue offline writes.
+
+## Create a task
+
+In the main window, click New task or choose File > New task with Command-N. Enter a name and click Create. The app selects the confirmed task in Active and loads its history. Creating a task leaves any running timer unchanged. Task creation is available in local and server mode.
+
+The sheet keeps the draft in memory. Rust validates the name and creates its permanent UUID before submitting it to the configured backend. SQLite stores that UUID as the task's primary key. Names may repeat; IDs must be unique. Names must contain text, cannot contain control characters, and cannot exceed 256 Unicode scalars.
+
+Create is disabled during submission. Validation and request errors appear in the sheet. If a server write has an uncertain outcome, the app retains the submitted name, ID, and timestamp for Retry. It checks authoritative state before sending another creation request, so a lost response does not create a second task. Connection changes are blocked until this creation is resolved. You can close and reopen the sheet to retry, but quitting loses the pending intent. This is an in-memory recovery flow and does not queue offline writes.
 
 ## Tracking
 
@@ -64,7 +72,7 @@ The `TrackerClient` package contains Foundation-only client state and XCTest tes
 swift test --package-path apps/swiftui/TrackerClient
 ```
 
-The tests use an in-memory settings repository, a manually advanced wall and monotonic clock, a manual scheduler, and an async client whose responses the test controls. They cover connection rollback and persistence, command serialization and captured click times, write reconciliation, selection and pagination, stale history responses, polling, display ticks, sleep/wake, and shutdown.
+The tests use an in-memory settings repository, a manually advanced wall and monotonic clock, a manual scheduler, and an async client whose responses the test controls. They cover connection rollback and persistence, command serialization and captured click times, task creation and retry, write reconciliation, selection and pagination, stale history responses, polling, display ticks, sleep/wake, and shutdown.
 
 You can also open `apps/swiftui/TrackerClient/Package.swift` in Xcode and run its package tests. The app remains a native Xcode project and links the local package. Native UI E2E tests are deferred; package tests do not exercise macOS windows, menus, notification delivery, or the rendered appearance.
 
@@ -105,13 +113,13 @@ These checks cover the portable client state. Native UI E2E tests will run on ma
 
 ## Architecture
 
-The Xcode target links a Rust static library through a C bridging header. The app's `TrackerStore` publishes changed content on the main actor. `TrackerPresentationObserver` compares content, request controls, formatted elapsed time, and daily totals separately. Timer labels, daily totals, and request controls have their own observable adapters, so clock ticks and unchanged server polls do not invalidate the task and worklog lists. A serial background queue owns every bridge operation, JSON decode, and handle release. HTTP requests and database work do not block the UI thread.
+The Xcode target links a Rust static library through a C bridging header. The app's `TrackerStore` publishes changed content on the main actor. `TrackerPresentationObserver` compares content, request controls, task creation, formatted elapsed time, and daily totals separately. The creation sheet, timer labels, daily totals, and request controls have their own observable adapters, so draft edits, clock ticks, and unchanged server polls do not invalidate the task and worklog lists. A serial background queue owns every bridge operation, JSON decode, and handle release. HTTP requests and database work do not block the UI thread.
 
 ```mermaid
 flowchart TD
     UI[SwiftUI window, settings and menu] --> Store[TrackerStore observable adapter]
     Store --> Session[TrackerClient package session]
-    Session --> Features[Connection, task catalog, tracking, daily totals and history state]
+    Session --> Features[Connection, task catalog, task creation, tracking, daily totals and history state]
     Lifecycle[AppKit notifications] --> Session
     Session --> Port[Injected TrackerClient and ReportClient interfaces]
     Port --> Worker[Serial background connection worker]
@@ -127,7 +135,7 @@ flowchart TD
 
 A candidate connection must return a valid snapshot before replacing the current backend. The session coordinates operations one at a time. Selection and connection generations prevent older history results from replacing the current selection. The Rust remote backend also blocks writes after failures until an explicit snapshot refresh succeeds.
 
-The package organizes state under `Features/Connection`, `Features/TaskCatalog`, `Features/Tracking`, `Features/DailyTotals`, and `Features/WorklogHistory`. `App/TrackerSession` coordinates them through injected client, clock, scheduler, and settings interfaces. The macOS app organizes its views by the same capabilities. Its `Infrastructure` directory owns Rust bridge calls, real timers, preferences, and AppKit lifecycle notifications. Rust remains responsible for domain rules and persistence.
+The package organizes state under `Features/Connection`, `Features/TaskCatalog`, `Features/TaskCreation`, `Features/Tracking`, `Features/DailyTotals`, and `Features/WorklogHistory`. `App/TrackerSession` coordinates them through injected client, clock, scheduler, and settings interfaces. The macOS app organizes its views by the same capabilities. Its `Infrastructure` directory owns Rust bridge calls, real timers, preferences, and AppKit lifecycle notifications. Rust remains responsible for domain rules and persistence.
 
 A session moves once from idle to running, then to stopped on shutdown. A running session distinguishes unconfirmed, confirmed, and stale snapshots. Writes require a confirmed current snapshot and an idle operation gate. Failed writes trigger an authoritative read before another write can proceed. Successful connection changes replace feature state and persist settings; failed changes retain the previous source.
 
@@ -170,5 +178,7 @@ The Active and Archived tabs remember their selections. Worklogs load 50 at a ti
 12. In Settings > Menu bar, turn Show today's total next to the icon off and on. Confirm the status bar switches immediately between icon-only and icon with total, the total inside the menu stays available, and the choice survives quitting and reopening the app.
 
 13. With tracking running, leave Start tracking open for at least 15 seconds and move between submenu entries. Confirm the submenu stays open at a stable size across timer ticks and server polls. Menu values remain fixed until closing. Reopen and confirm fresh elapsed time and totals. Repeat with the main window visible and closed, and with the status bar total enabled and disabled. While the menu is open, change tracking from another client, then confirm an old Stop tracking entry cannot stop the new worklog and reopening shows the latest state.
+
+14. Create a task using the toolbar and Command-N in local and server mode. Check field focus, Return to create, Escape to cancel, inline validation errors, and readable Light and Dark appearance. Confirm the returned task is selected and a running timer stays unchanged. Try a repeated name, a name over 256 Unicode scalars, and an unavailable server. During a slow submission, confirm repeated clicks do not submit again. After an uncertain write, restore the server and retry; confirm only one task exists. Close and reopen the sheet before retrying and confirm the submitted name is retained.
 
 Xcode compilation, native layout, and the lifecycle checks above require a Mac. Foundation package tests can run on Linux. If the build fails, send the error text from Xcode's Report navigator. The Build Rust bridge phase appears separately from Swift compilation and linking.

@@ -82,6 +82,12 @@ struct TrackerWindow: View {
             }
         }
         .frame(minWidth: 760, minHeight: 480)
+        .focusedSceneObject(store.creation)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                TaskCreationButton(creation: store.creation)
+            }
+        }
         .alert("Could not change tracking", isPresented: trackingFailurePresented) {
             Button("OK", role: .cancel) { store.dismissTrackingError() }
         } message: {

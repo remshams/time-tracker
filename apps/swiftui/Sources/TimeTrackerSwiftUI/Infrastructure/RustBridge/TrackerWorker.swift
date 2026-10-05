@@ -48,7 +48,7 @@ private final class RustBridge {
             envelope = try JSONDecoder().decode(BridgeEnvelope<Value>.self, from: Data(String(cString: pointer).utf8))
         } catch {
             guard requiresRefreshOnMalformed else { throw error }
-            throw malformed("The tracker bridge returned an invalid report: \(error.localizedDescription)")
+            throw malformed("The tracker bridge returned an invalid result: \(error.localizedDescription)")
         }
         if let error = envelope.error {
             throw BridgeFailure(message: error, kind: envelope.kind ?? "general",
@@ -60,6 +60,17 @@ private final class RustBridge {
     }
 
     func snapshot() throws -> TrackerSnapshot { try decode(tt_bridge_snapshot(handle, true)) }
+
+    func createTask(name: String, occurredAt: String) throws -> TaskCreationResult {
+        guard !name.utf8.contains(0) else {
+            throw BridgeFailure(message: "Task names must not contain control characters.")
+        }
+        return try name.withCString { name in
+            try occurredAt.withCString { instant in
+                try decode(tt_bridge_create_task_at(handle, name, instant), requiresRefreshOnMalformed: true)
+            }
+        }
+    }
 
     func report(start: String, end: String, now: String) throws -> TrackerReport {
         try start.withCString { start in
@@ -176,6 +187,10 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
 
     func snapshot() async throws -> TrackerSnapshot {
         try await perform { try $0.currentBridge().snapshot() }
+    }
+
+    func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult {
+        try await perform { try $0.currentBridge().createTask(name: name, occurredAt: occurredAt) }
     }
 
     func report(settings: ConnectionSettings, start: String, end: String, now: String) async throws -> TrackerReport {

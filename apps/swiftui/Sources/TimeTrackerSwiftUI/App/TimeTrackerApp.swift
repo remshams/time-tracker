@@ -15,6 +15,7 @@ struct TimeTrackerApp: App {
         }
         .defaultSize(width: 1100, height: 760)
         .windowToolbarStyle(.unifiedCompact)
+        .commands { TaskCreationCommands() }
 
         MenuBarExtra(isInserted: $menuBarInserted) {
             TrackerMenu(store: store, menu: store.menu)

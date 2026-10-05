@@ -21,6 +21,8 @@
 		E724446CA77190001E61A002 /* SystemDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EECD295169E48244028EE41 /* SystemDependencies.swift */; };
 		5F1D759FC3D354345CBF0671 /* TrackerWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0597366B0A0E2028788E2696 /* TrackerWorker.swift */; };
 		7E768477586D21659FFEC5F7 /* TrackerClient in Frameworks */ = {isa = PBXBuildFile; productRef = C8DF62E0CBC32AE617C1EA99 /* TrackerClient */; };
+		18D2319E48E082F857DD0A32 /* TaskCreationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B10C5FD690BABFF199F3775 /* TaskCreationStore.swift */; };
+		D2317EF3D3102BB20A00689F /* TaskCreationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20F8E9711E94B95EA2CFCD6 /* TaskCreationView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -42,6 +44,8 @@
 		804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLifecycleObserver.swift; sourceTree = "<group>"; };
 		7EECD295169E48244028EE41 /* SystemDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemDependencies.swift; sourceTree = "<group>"; };
 		0597366B0A0E2028788E2696 /* TrackerWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerWorker.swift; sourceTree = "<group>"; };
+		3B10C5FD690BABFF199F3775 /* TaskCreationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskCreationStore.swift; sourceTree = "<group>"; };
+		E20F8E9711E94B95EA2CFCD6 /* TaskCreationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskCreationView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -108,6 +112,7 @@
 		E64DA6756D6CF253E6CA6FFA /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				7B61613478C091D18A157689 /* TaskCreation */,
 				BC2C72DE80FA70B4405D048F /* Connection */,
 				DD8C138E5B09DE3D7D67AA06 /* TaskCatalog */,
 				8E70C3CFF05EE0815A3B9AD4 /* Tracking */,
@@ -174,6 +179,15 @@
 				0597366B0A0E2028788E2696 /* TrackerWorker.swift */,
 			);
 			path = RustBridge;
+			sourceTree = "<group>";
+		};
+		7B61613478C091D18A157689 /* TaskCreation */ = {
+			isa = PBXGroup;
+			children = (
+				3B10C5FD690BABFF199F3775 /* TaskCreationStore.swift */,
+				E20F8E9711E94B95EA2CFCD6 /* TaskCreationView.swift */,
+			);
+			path = TaskCreation;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -269,6 +283,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D2317EF3D3102BB20A00689F /* TaskCreationView.swift in Sources */,
+				18D2319E48E082F857DD0A32 /* TaskCreationStore.swift in Sources */,
 				B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */,
 				DE423B1658B6F34E52F7AF18 /* TrackerMenu.swift in Sources */,
 				3B56BC67EA3B3C706744AFC4 /* TrackerStore.swift in Sources */,

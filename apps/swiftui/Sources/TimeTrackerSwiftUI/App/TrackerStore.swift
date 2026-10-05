@@ -13,6 +13,7 @@ final class TrackerStore: ObservableObject {
     let timer: TrackerTimerStore
     let dailyTotals: TrackerDailyTotalsStore
     let menu: TrackerMenuStore
+    let creation: TaskCreationStore
     private var lifecycle: MacLifecycleObserver?
 
     init() {
@@ -29,6 +30,7 @@ final class TrackerStore: ObservableObject {
         timer = TrackerTimerStore(session: session, presentation: presentation)
         dailyTotals = TrackerDailyTotalsStore(session: session, presentation: presentation)
         menu = TrackerMenuStore(session: session, showDailyTotal: showDailyTotalInMenuBar)
+        creation = TaskCreationStore(session: session, presentation: presentation)
         dailyTotals.onMenuBarTick = { [weak self] in self?.menu.update() }
         presentation.onContentChange = { [weak self] in self?.objectWillChange.send() }
         session.onChange = { [weak self] in
