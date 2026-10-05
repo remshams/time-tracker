@@ -3,7 +3,7 @@ import Foundation
 import TrackerClient
 
 @MainActor
-final class TrackerStore: ObservableObject {
+final class TrackerStore {
     let objectWillChange = ObservableObjectPublisher()
     private let session: TrackerSession
     private let presentation: TrackerPresentationObserver
@@ -160,7 +160,7 @@ final class TrackerDailyTotalsStore {
 }
 
 @MainActor
-final class TrackerTaskDailyTotalStore: ObservableObject {
+final class TrackerTaskDailyTotalStore {
     let objectWillChange = ObservableObjectPublisher()
     private(set) var content: TaskDailyTotalPresentation?
 
@@ -174,7 +174,7 @@ final class TrackerTaskDailyTotalStore: ObservableObject {
 }
 
 @MainActor
-final class TrackerMenuStore: ObservableObject {
+final class TrackerMenuStore {
     let objectWillChange = ObservableObjectPublisher()
     let label: TrackerMenuLabelStore
     private let session: TrackerSession
@@ -203,7 +203,7 @@ final class TrackerMenuStore: ObservableObject {
 }
 
 @MainActor
-final class TrackerMenuLabelStore: ObservableObject {
+final class TrackerMenuLabelStore {
     let objectWillChange = ObservableObjectPublisher()
     private let presentation: TrackerMenuPresentationObserver
 
@@ -216,7 +216,7 @@ final class TrackerMenuLabelStore: ObservableObject {
 }
 
 @MainActor
-final class TrackerActivityStore: ObservableObject {
+final class TrackerActivityStore {
     let objectWillChange = ObservableObjectPublisher()
     private let session: TrackerSession
 
@@ -232,7 +232,7 @@ final class TrackerActivityStore: ObservableObject {
 }
 
 @MainActor
-final class TrackerTimerStore: ObservableObject {
+final class TrackerTimerStore {
     let objectWillChange = ObservableObjectPublisher()
     private let session: TrackerSession
 
@@ -243,3 +243,20 @@ final class TrackerTimerStore: ObservableObject {
 
     var text: String { session.timerDisplayText }
 }
+
+// Keep publisher access on the main actor with compilers that support isolated conformances.
+#if compiler(>=6.2)
+extension TrackerStore: @MainActor ObservableObject {}
+extension TrackerTaskDailyTotalStore: @MainActor ObservableObject {}
+extension TrackerMenuStore: @MainActor ObservableObject {}
+extension TrackerMenuLabelStore: @MainActor ObservableObject {}
+extension TrackerActivityStore: @MainActor ObservableObject {}
+extension TrackerTimerStore: @MainActor ObservableObject {}
+#else
+extension TrackerStore: ObservableObject {}
+extension TrackerTaskDailyTotalStore: ObservableObject {}
+extension TrackerMenuStore: ObservableObject {}
+extension TrackerMenuLabelStore: ObservableObject {}
+extension TrackerActivityStore: ObservableObject {}
+extension TrackerTimerStore: ObservableObject {}
+#endif
