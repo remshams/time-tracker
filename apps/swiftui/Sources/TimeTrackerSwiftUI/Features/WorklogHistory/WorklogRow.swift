@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 import TrackerClient
 
@@ -36,10 +35,10 @@ struct WorklogRow: View {
                 .fixedSize()
         }
         .padding(16)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                .stroke(.quaternary, lineWidth: 1)
         }
     }
 }
