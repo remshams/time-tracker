@@ -141,9 +141,15 @@ final class TrackerStatusItemController: NSObject {
 
     private func addTask(_ entry: TrackerMenuTask, title: String, help: String?,
                          isStale: Bool, appearance: NSAppearance, to menu: NSMenu) {
-        let item = addAction(title, action: .start(entry.id), enabled: entry.canStart, to: menu)
+        let isRunning = entry.isRunning && !isStale
+        let item = addAction(title, action: .start(entry.id), enabled: entry.canStart || isRunning, to: menu)
+        if isRunning {
+            item.attributedTitle = NSAttributedString(string: title, attributes: [
+                .font: NSFont.boldSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize)
+            ])
+        }
         item.image = TaskDotImage.make(color: TaskColor.forTaskID(entry.id),
-                                      isRunning: entry.isRunning && !isStale, appearance: appearance)
+                                      isRunning: isRunning, appearance: appearance)
         item.toolTip = help
         let status: String
         if isStale {
