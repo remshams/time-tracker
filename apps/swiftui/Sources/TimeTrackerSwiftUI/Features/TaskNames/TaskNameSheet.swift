@@ -33,7 +33,7 @@ struct TaskNameSheet: View {
 
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(Color(nsColor: .systemRed))
+                    .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
