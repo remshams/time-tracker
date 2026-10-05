@@ -3,13 +3,14 @@ import SwiftUI
 @MainActor
 struct TaskRenameDialog: View {
     @ObservedObject var rename: TaskRenameStore
+    let isPresentationOwner: Bool
 
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
             .sheet(isPresented: Binding(
-                get: { rename.state.isPresented },
-                set: { if !$0 { rename.cancel() } }
+                get: { isPresentationOwner && rename.state.isPresented },
+                set: { if isPresentationOwner && !$0 { rename.cancel() } }
             )) {
                 TaskRenameSheet(rename: rename)
             }

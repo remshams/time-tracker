@@ -4,13 +4,14 @@ import TrackerClient
 @MainActor
 struct TaskCreationDialog: View {
     @ObservedObject var creation: TaskCreationStore
+    let isPresentationOwner: Bool
 
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
             .sheet(isPresented: Binding(
-                get: { creation.state.isPresented },
-                set: { if !$0 { creation.cancel() } }
+                get: { isPresentationOwner && creation.state.isPresented },
+                set: { if isPresentationOwner && !$0 { creation.cancel() } }
             )) {
                 TaskCreationSheet(creation: creation)
             }
@@ -29,18 +30,5 @@ private struct TaskCreationSheet: View {
                       progressTitle: "Creating task...", isSubmitting: state.isSubmitting,
                       canEditName: state.canEditName, canSubmit: state.canSubmit, error: state.error,
                       cancel: creation.cancel, submit: creation.submit)
-    }
-}
-
-@MainActor
-struct TaskCreationCommands: Commands {
-    @FocusedObject private var creation: TaskCreationStore?
-
-    var body: some Commands {
-        CommandGroup(replacing: .newItem) {
-            Button("New task") { creation?.open() }
-                .keyboardShortcut("n", modifiers: .command)
-                .disabled(creation?.canOpen != true)
-        }
     }
 }

@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EEFD5BD538B369A492C794E7 /* TrackerApplicationMenus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */; };
+		C06F25F76FAA72DB1B696C6D /* TrackerApplicationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */; };
+		9766315AC90A7BB55587764A /* TrackerTaskPresentationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */; };
+		AE411419F1C0F0052BF95E49 /* TrackerWindowChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7743B5D772BC83C42D1261 /* TrackerWindowChrome.swift */; };
 		333EF1BA4C83793EFC92EAA7 /* TrackerPaneViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC73D609782A8AF9FCB2A64 /* TrackerPaneViewController.swift */; };
 		ED605C1B494E79DC7EF1215D /* TrackerSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 484979169FE35618CB437645 /* TrackerSidebar.swift */; };
 		3F7A03677BF75120A989F9AD /* TrackerSplitLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */; };
@@ -34,6 +38,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerApplicationMenus.swift; sourceTree = "<group>"; };
+		1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerApplicationDelegate.swift; sourceTree = "<group>"; };
+		A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerTaskPresentationCoordinator.swift; sourceTree = "<group>"; };
+		1C7743B5D772BC83C42D1261 /* TrackerWindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerWindowChrome.swift; sourceTree = "<group>"; };
 		EAC73D609782A8AF9FCB2A64 /* TrackerPaneViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerPaneViewController.swift; sourceTree = "<group>"; };
 		484979169FE35618CB437645 /* TrackerSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerSidebar.swift; sourceTree = "<group>"; };
 		323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerSplitLayout.swift; sourceTree = "<group>"; };
@@ -118,6 +126,10 @@
 			isa = PBXGroup;
 			children = (
 				EAC73D609782A8AF9FCB2A64 /* TrackerPaneViewController.swift */,
+				1C7743B5D772BC83C42D1261 /* TrackerWindowChrome.swift */,
+				A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */,
+				1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */,
+				522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */,
 				323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */,
 				F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */,
 				4EC372281DA1DF7ABC74910A /* TrackerStore.swift */,
@@ -341,6 +353,10 @@
 			files = (
 				ED605C1B494E79DC7EF1215D /* TrackerSidebar.swift in Sources */,
 				333EF1BA4C83793EFC92EAA7 /* TrackerPaneViewController.swift in Sources */,
+				AE411419F1C0F0052BF95E49 /* TrackerWindowChrome.swift in Sources */,
+				9766315AC90A7BB55587764A /* TrackerTaskPresentationCoordinator.swift in Sources */,
+				C06F25F76FAA72DB1B696C6D /* TrackerApplicationDelegate.swift in Sources */,
+				EEFD5BD538B369A492C794E7 /* TrackerApplicationMenus.swift in Sources */,
 				3F7A03677BF75120A989F9AD /* TrackerSplitLayout.swift in Sources */,
 				06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */,
 				DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */,

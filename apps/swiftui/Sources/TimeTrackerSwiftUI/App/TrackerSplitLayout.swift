@@ -3,24 +3,6 @@ import Combine
 import SwiftUI
 
 @MainActor
-struct TrackerSplitLayout: NSViewControllerRepresentable {
-    let store: TrackerStore
-    let openSettings: () -> Void
-
-    func makeNSViewController(context: Context) -> TrackerSplitViewController {
-        TrackerSplitViewController(store: store, openSettings: openSettings)
-    }
-
-    func updateNSViewController(_ controller: TrackerSplitViewController, context: Context) {
-        controller.openSettings = openSettings
-    }
-
-    static func dismantleNSViewController(_ controller: TrackerSplitViewController, coordinator: ()) {
-        controller.tearDown()
-    }
-}
-
-@MainActor
 final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate {
     private enum ItemID {
         static let sidebar = NSToolbarItem.Identifier("TrackerSidebarControls")
@@ -31,14 +13,6 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
         static let detail = NSToolbarItem.Identifier("TrackerTaskControls")
         static let rename = NSToolbarItem.Identifier("TrackerRenameTask")
         static let tracking = NSToolbarItem.Identifier("TrackerTracking")
-    }
-
-    private struct WindowPresentation {
-        let toolbar: NSToolbar?
-        let toolbarStyle: NSWindow.ToolbarStyle
-        let titleVisibility: NSWindow.TitleVisibility
-        let title: String
-        let hadFullSizeContentView: Bool
     }
 
     private struct ToolbarContent: Equatable {
@@ -57,7 +31,6 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
     private let sidebarItem: NSSplitViewItem
     private var subscriptions: Set<AnyCancellable> = []
     private weak var installedWindow: NSWindow?
-    private var previousWindowPresentation: WindowPresentation?
     private var renderedContent: ToolbarContent?
     private var isTornDown = false
     private var updatingSeparator = false
@@ -93,14 +66,15 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
         return toolbar
     }()
 
-    init(store: TrackerStore, openSettings: @escaping () -> Void) {
+    init(store: TrackerStore, presentation: TrackerTaskPresentationCoordinator,
+         window: NSWindow, openSettings: @escaping () -> Void) {
         self.store = store
         self.openSettings = openSettings
         let sidebar = TrackerPaneViewController(content: AnyView(
-            TrackerSidebar(store: store).focusedSceneObject(store.creation)
+            TrackerSidebar(store: store)
         ))
         let detail = TrackerPaneViewController(content: AnyView(
-            TaskDetails(store: store).focusedSceneObject(store.creation)
+            TrackerDetailPresentation(store: store, presentation: presentation, windowID: ObjectIdentifier(window))
         ))
         sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
         super.init(nibName: nil, bundle: nil)
@@ -150,30 +124,14 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
         detachToolbar()
         guard let window else { return }
         installedWindow = window
-        previousWindowPresentation = WindowPresentation(
-            toolbar: window.toolbar, toolbarStyle: window.toolbarStyle,
-            titleVisibility: window.titleVisibility, title: window.title,
-            hadFullSizeContentView: window.styleMask.contains(.fullSizeContentView)
-        )
-        window.styleMask.insert(.fullSizeContentView)
-        window.toolbarStyle = .unifiedCompact
-        window.titleVisibility = .hidden
         window.toolbar = nativeToolbar
         updateToolbarContent()
         updateSidebarSection()
     }
 
     private func detachToolbar() {
-        if let window = installedWindow, window.toolbar === nativeToolbar,
-           let previous = previousWindowPresentation {
-            window.toolbar = previous.toolbar
-            window.toolbarStyle = previous.toolbarStyle
-            window.titleVisibility = previous.titleVisibility
-            window.title = previous.title
-            if !previous.hadFullSizeContentView { window.styleMask.remove(.fullSizeContentView) }
-        }
+        if let window = installedWindow, window.toolbar === nativeToolbar { window.toolbar = nil }
         installedWindow = nil
-        previousWindowPresentation = nil
         renderedContent = nil
     }
 
@@ -224,8 +182,8 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
         }
         let content = ToolbarContent(
             title: task?.name ?? "Time Tracker", hasSelectedTask: task != nil,
-            isArchived: task?.archived ?? false, canCreate: store.creation.canOpen,
-            canRename: task != nil && store.rename.canOpen, isRunning: isRunning,
+            isArchived: task?.archived ?? false, canCreate: canOpenCreation,
+            canRename: task != nil && canOpenRename, isRunning: isRunning,
             canTrack: canTrack, hasActiveTimer: store.active != nil
         )
         guard renderedContent != content else { return }
@@ -296,13 +254,20 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
 
     @objc private func showSettings() { openSettings() }
 
+    private var hasTaskEditor: Bool {
+        store.creation.state.isPresented || store.rename.state.isPresented
+    }
+
+    private var canOpenCreation: Bool { store.creation.canOpen && !hasTaskEditor }
+    private var canOpenRename: Bool { store.rename.canOpen && !hasTaskEditor }
+
     @objc private func createTask() {
-        guard store.creation.canOpen else { return }
+        guard canOpenCreation else { return }
         store.creation.open()
     }
 
     @objc private func renameTask() {
-        guard store.rename.canOpen, let task = store.selectedTask else { return }
+        guard canOpenRename, let task = store.selectedTask else { return }
         store.rename.open(taskID: task.id)
     }
 

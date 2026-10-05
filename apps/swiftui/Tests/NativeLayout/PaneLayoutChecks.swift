@@ -13,9 +13,8 @@ enum PaneLayoutChecks {
     }
 
     private static func checkPane(insetParent: Bool) throws {
-        let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 1100, height: 760),
-                              styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
-                              backing: .buffered, defer: false)
+        let window = TrackerWindowChrome.makeWindow()
+        window.setFrameOrigin(NSPoint(x: 100, y: 100))
         window.isReleasedWhenClosed = false
         defer { window.close() }
         let root = NSViewController()
