@@ -6,6 +6,7 @@ struct TrackerWindow: View {
     @ObservedObject var store: TrackerStore
     let statusItem: TrackerStatusItemController
     @Environment(\.openWindow) private var openWindow
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     private var tabBinding: Binding<TaskTab> {
         Binding(get: { store.tab }, set: { store.changeTab($0) })
@@ -22,18 +23,56 @@ struct TrackerWindow: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Spacer()
+        navigation
+        .frame(minWidth: 760, minHeight: 480)
+        .focusedSceneObject(store.creation)
+        .background {
+            TaskCreationDialog(creation: store.creation)
+            TaskRenameDialog(rename: store.rename)
+        }
+        .onAppear {
+            statusItem.start { openWindow(id: "tracker") }
+        }
+        .alert("Could not change tracking", isPresented: trackingFailurePresented) {
+            Button("OK", role: .cancel) { store.dismissTrackingError() }
+        } message: {
+            Text(store.trackingError ?? "Please try again.")
+        }
+    }
+
+    @ViewBuilder
+    private var navigation: some View {
+        if #available(macOS 14, *) {
+            splitView
+                .toolbar(removing: .sidebarToggle)
+                .toolbar {
+                    ToolbarItemGroup(placement: .navigation) {
+                        Button {
+                            withAnimation {
+                                columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+                            }
+                        } label: {
+                            Label(columnVisibility == .detailOnly ? "Show sidebar" : "Hide sidebar",
+                                  systemImage: "sidebar.left")
+                        }
+                        .help(columnVisibility == .detailOnly ? "Show sidebar" : "Hide sidebar")
+                        ConnectionSettingsButton(store: store)
+                        TaskCreationButton(creation: store.creation)
+                    }
+                }
+        } else {
+            splitView.toolbar {
+                ToolbarItemGroup(placement: .navigation) {
                     ConnectionSettingsButton(store: store)
                     TaskCreationButton(creation: store.creation)
                 }
-                .buttonStyle(.borderless)
-                .font(.title3)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
+            }
+        }
+    }
 
+    private var splitView: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            VStack(spacing: 0) {
                 Picker("Tasks", selection: tabBinding) {
                     ForEach(TaskTab.allCases) { tab in
                         Text(tab.rawValue).tag(tab)
@@ -100,20 +139,6 @@ struct TrackerWindow: View {
                     }
                 }
             }
-        }
-        .frame(minWidth: 760, minHeight: 480)
-        .focusedSceneObject(store.creation)
-        .background {
-            TaskCreationDialog(creation: store.creation)
-            TaskRenameDialog(rename: store.rename)
-        }
-        .onAppear {
-            statusItem.start { openWindow(id: "tracker") }
-        }
-        .alert("Could not change tracking", isPresented: trackingFailurePresented) {
-            Button("OK", role: .cancel) { store.dismissTrackingError() }
-        } message: {
-            Text(store.trackingError ?? "Please try again.")
         }
     }
 }
