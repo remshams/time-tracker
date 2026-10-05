@@ -43,4 +43,37 @@ final class MenuTaskSelectionTests: XCTestCase {
         selection.moveDown()
         XCTAssertEqual(selection.selectedTaskID, "second")
     }
+
+    func testKeyboardScrollingDoesNotSelectTheRowUnderAStationaryPointer() {
+        var selection = MenuTaskSelection(taskIDs: ["first", "second", "third"])
+        selection.hover(taskID: "first", inside: true)
+        selection.moveDown()
+        selection.hover(taskID: "first", inside: false)
+        selection.hover(taskID: "third", inside: true)
+        XCTAssertEqual(selection.selectedTaskID, "second")
+        selection.moveDown()
+        XCTAssertEqual(selection.selectedTaskID, "third")
+        selection.hover(taskID: "first", inside: true)
+        XCTAssertEqual(selection.selectedTaskID, "third")
+        selection.pointerMoved()
+        XCTAssertEqual(selection.selectedTaskID, "first")
+        selection.hover(taskID: "second", inside: true)
+        XCTAssertEqual(selection.selectedTaskID, "second")
+    }
+
+    func testPointerExitCannotClearAnotherHoveredTaskOrSelectAnUnknownTask() {
+        var selection = MenuTaskSelection(taskIDs: ["first", "second"])
+        selection.moveDown()
+        selection.hover(taskID: "first", inside: true)
+        selection.hover(taskID: "second", inside: false)
+        selection.pointerMoved()
+        XCTAssertEqual(selection.selectedTaskID, "first")
+        selection.hover(taskID: "first", inside: false)
+        selection.select(taskID: "second")
+        selection.pointerMoved()
+        XCTAssertEqual(selection.selectedTaskID, "second")
+        selection.hover(taskID: "unknown", inside: true)
+        selection.pointerMoved()
+        XCTAssertEqual(selection.selectedTaskID, "second")
+    }
 }
