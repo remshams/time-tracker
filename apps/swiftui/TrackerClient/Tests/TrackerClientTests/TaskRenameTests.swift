@@ -206,9 +206,14 @@ final class TaskRenameTests: XCTestCase {
         try await fixture.settled()
         fixture.session.openTaskCreation()
         XCTAssertFalse(fixture.session.taskCreation.isPresented)
+        let observer = TrackerPresentationObserver(session: fixture.session)
+        var displayedConnectionMessages: [String?] = []
+        observer.onContentChange = { displayedConnectionMessages.append(fixture.session.connectionMessage) }
+        fixture.session.onChange = { observer.update(from: fixture.session) }
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
+        XCTAssertEqual(displayedConnectionMessages, ["Finish or retry task renaming before changing connections."])
         fixture.session.openTaskRename()
         XCTAssertEqual(fixture.session.taskRename.taskID, firstTask.id)
         XCTAssertEqual(fixture.session.taskRename.originalName, firstTask.name)
@@ -503,25 +508,37 @@ final class TaskRenameTests: XCTestCase {
 
     @MainActor
     func testMalformedRenameResultIsReconciledAndRetainsFrozenIntent() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
-        try await fixture.start(snapshot)
-        fixture.session.openTaskRename()
-        fixture.session.setTaskRenameName("Desired name")
-        fixture.session.submitTaskRename()
-        let preflight = try await fixture.client.next()
-        preflight.succeed(snapshot)
-        let rename = try await fixture.client.next()
-        rename.succeed(TrackerSnapshot(tasks: [secondTask], active: nil))
-        let reconciliation = try await fixture.client.next()
-        XCTAssertEqual(reconciliation.operation, .snapshot)
-        reconciliation.succeed(snapshot)
-        try await fixture.settled()
-        XCTAssertEqual(fixture.session.tasks, [firstTask])
-        XCTAssertEqual(fixture.session.taskRename.error, "The rename response does not contain the updated task.")
-        XCTAssertEqual(fixture.session.taskRename.name, "Desired name")
-        XCTAssertFalse(fixture.session.taskRename.canEditName)
+        let wrongTargetWithDesiredName = TaskItem(id: secondTask.id, name: "Desired name", archived: false, latestStart: nil)
+        for responseTask in [secondTask, firstTask, wrongTargetWithDesiredName] {
+            let fixture = Fixture()
+            defer { fixture.cleanup() }
+            let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+            try await fixture.start(snapshot)
+            fixture.session.openTaskRename()
+            fixture.session.setTaskRenameName("Desired name")
+            fixture.session.submitTaskRename()
+            let preflight = try await fixture.client.next()
+            preflight.succeed(snapshot)
+            let rename = try await fixture.client.next()
+            let observer = TrackerPresentationObserver(session: fixture.session)
+            var displayedErrors: [String?] = []
+            observer.onTaskRenameChange = { displayedErrors.append(fixture.session.taskRename.error) }
+            fixture.session.onChange = { observer.update(from: fixture.session) }
+            rename.succeed(TrackerSnapshot(tasks: [responseTask], active: nil))
+            let reconciliation = try await fixture.client.next()
+            XCTAssertEqual(reconciliation.operation, .snapshot)
+            reconciliation.succeed(snapshot)
+            let finished = Task { @MainActor in
+                while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
+            }
+            try await fixture.taskValue(finished)
+            XCTAssertEqual(fixture.session.tasks, [firstTask])
+            XCTAssertEqual(fixture.session.taskRename.error, "The rename response does not contain the updated task.")
+            XCTAssertEqual(displayedErrors.last, "The rename response does not contain the updated task.")
+            XCTAssertEqual(fixture.session.taskRename.name, "Desired name")
+            XCTAssertTrue(fixture.session.taskRename.isPresented)
+            XCTAssertFalse(fixture.session.taskRename.canEditName)
+        }
     }
 
     @MainActor
@@ -653,5 +670,26 @@ final class TaskRenameTests: XCTestCase {
         resumedHistory.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.runningTaskName, renamed.name)
+    }
+
+    @MainActor
+    func testCreationSheetUpdatesRenameButtonAvailabilityWithoutChangingRenameDraft() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        let originalPresentation = fixture.session.taskRename
+        let observer = TrackerPresentationObserver(session: fixture.session)
+        var enabledStates: [Bool] = []
+        var contentUpdates = 0
+        observer.onTaskRenameChange = { enabledStates.append(fixture.session.canOpenTaskRename) }
+        observer.onContentChange = { contentUpdates += 1 }
+        fixture.session.onChange = { observer.update(from: fixture.session) }
+        fixture.session.openTaskCreation()
+        XCTAssertEqual(enabledStates, [false])
+        XCTAssertEqual(fixture.session.taskRename, originalPresentation)
+        fixture.session.cancelTaskCreation()
+        XCTAssertEqual(enabledStates, [false, true])
+        XCTAssertEqual(fixture.session.taskRename, originalPresentation)
+        XCTAssertEqual(contentUpdates, 0)
     }
 }
