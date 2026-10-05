@@ -8,13 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */; };
-		DE423B1658B6F34E52F7AF18 /* TrackerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476B3C57830D1CBF6F0B675F /* TrackerMenu.swift */; };
 		3B56BC67EA3B3C706744AFC4 /* TrackerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC372281DA1DF7ABC74910A /* TrackerStore.swift */; };
 		FC2B643D35A2A957D3C0D7E8 /* TrackerWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E054EA2B878A02189368B9D /* TrackerWindow.swift */; };
 		547C118F7FB1E47BBCD519B9 /* ConnectionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF149CF30295C296B13AF32E /* ConnectionSettingsView.swift */; };
 		0A65C064D466FC9FA040A35B /* ConnectionSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5534AB05B3FFE276794F6960 /* ConnectionSummary.swift */; };
 		116FD31CDE5706ECFF597C6B /* TaskDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */; };
-		72A9DF3982DAC7B2F0166CD0 /* TimerSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F85615390A489E1BD026F82 /* TimerSummary.swift */; };
+		72A9DF3982DAC7B2F0166CD0 /* TrackingControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F85615390A489E1BD026F82 /* TrackingControls.swift */; };
 		9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */; };
 		03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C44057A177E810540FF857 /* WorklogRow.swift */; };
 		99855A0370850FBEBEE64BE3 /* MacLifecycleObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */; };
@@ -26,6 +25,9 @@
 		571C4049FF3FE8699EB2B9C6 /* TaskNameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2E5632984C1A5E1F29AED39 /* TaskNameSheet.swift */; };
 		E6DA1C7C47CC0387A8918374 /* TaskRenameStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6513C7EF1F6EF6F64D7705F /* TaskRenameStore.swift */; };
 		42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */; };
+		DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8778858BF38637F9573E8E50 /* TaskContextMenu.swift */; };
+		DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */; };
+		06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,13 +37,12 @@
 		000000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		000000000000000000000013 /* build-rust.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "build-rust.sh"; sourceTree = "<group>"; };
 		F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeTrackerApp.swift; sourceTree = "<group>"; };
-		476B3C57830D1CBF6F0B675F /* TrackerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerMenu.swift; sourceTree = "<group>"; };
 		4EC372281DA1DF7ABC74910A /* TrackerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStore.swift; sourceTree = "<group>"; };
 		9E054EA2B878A02189368B9D /* TrackerWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerWindow.swift; sourceTree = "<group>"; };
 		AF149CF30295C296B13AF32E /* ConnectionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSettingsView.swift; sourceTree = "<group>"; };
 		5534AB05B3FFE276794F6960 /* ConnectionSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSummary.swift; sourceTree = "<group>"; };
 		06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetails.swift; sourceTree = "<group>"; };
-		3F85615390A489E1BD026F82 /* TimerSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimerSummary.swift; sourceTree = "<group>"; };
+		3F85615390A489E1BD026F82 /* TrackingControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingControls.swift; sourceTree = "<group>"; };
 		E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogFormatting.swift; sourceTree = "<group>"; };
 		A8C44057A177E810540FF857 /* WorklogRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogRow.swift; sourceTree = "<group>"; };
 		804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLifecycleObserver.swift; sourceTree = "<group>"; };
@@ -52,6 +53,9 @@
 		A2E5632984C1A5E1F29AED39 /* TaskNameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskNameSheet.swift; sourceTree = "<group>"; };
 		F6513C7EF1F6EF6F64D7705F /* TaskRenameStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRenameStore.swift; sourceTree = "<group>"; };
 		88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRenameView.swift; sourceTree = "<group>"; };
+		8778858BF38637F9573E8E50 /* TaskContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskContextMenu.swift; sourceTree = "<group>"; };
+		D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskIndicatorView.swift; sourceTree = "<group>"; };
+		D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStatusItemController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -108,7 +112,6 @@
 			isa = PBXGroup;
 			children = (
 				F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */,
-				476B3C57830D1CBF6F0B675F /* TrackerMenu.swift */,
 				4EC372281DA1DF7ABC74910A /* TrackerStore.swift */,
 				9E054EA2B878A02189368B9D /* TrackerWindow.swift */,
 			);
@@ -118,6 +121,8 @@
 		E64DA6756D6CF253E6CA6FFA /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				67815C35FE40B6535CB0E7B6 /* MenuBar */,
+				AB152630AD047C1EBC9B65BC /* TaskIndicators */,
 				7B61613478C091D18A157689 /* TaskCreation */,
 				7896A35DF77F32F16827239B /* TaskNames */,
 				95106349D1A9FA32ACFC23AF /* TaskRename */,
@@ -141,6 +146,7 @@
 		DD8C138E5B09DE3D7D67AA06 /* TaskCatalog */ = {
 			isa = PBXGroup;
 			children = (
+				8778858BF38637F9573E8E50 /* TaskContextMenu.swift */,
 				06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */,
 			);
 			path = TaskCatalog;
@@ -149,7 +155,7 @@
 		8E70C3CFF05EE0815A3B9AD4 /* Tracking */ = {
 			isa = PBXGroup;
 			children = (
-				3F85615390A489E1BD026F82 /* TimerSummary.swift */,
+				3F85615390A489E1BD026F82 /* TrackingControls.swift */,
 			);
 			path = Tracking;
 			sourceTree = "<group>";
@@ -213,6 +219,22 @@
 				88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */,
 			);
 			path = TaskRename;
+			sourceTree = "<group>";
+		};
+		AB152630AD047C1EBC9B65BC /* TaskIndicators */ = {
+			isa = PBXGroup;
+			children = (
+				D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */,
+			);
+			path = TaskIndicators;
+			sourceTree = "<group>";
+		};
+		67815C35FE40B6535CB0E7B6 /* MenuBar */ = {
+			isa = PBXGroup;
+			children = (
+				D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */,
+			);
+			path = MenuBar;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -308,19 +330,21 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */,
+				DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */,
+				DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */,
 				D2317EF3D3102BB20A00689F /* TaskCreationView.swift in Sources */,
 				571C4049FF3FE8699EB2B9C6 /* TaskNameSheet.swift in Sources */,
 				E6DA1C7C47CC0387A8918374 /* TaskRenameStore.swift in Sources */,
 				42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */,
 				18D2319E48E082F857DD0A32 /* TaskCreationStore.swift in Sources */,
 				B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */,
-				DE423B1658B6F34E52F7AF18 /* TrackerMenu.swift in Sources */,
 				3B56BC67EA3B3C706744AFC4 /* TrackerStore.swift in Sources */,
 				FC2B643D35A2A957D3C0D7E8 /* TrackerWindow.swift in Sources */,
 				547C118F7FB1E47BBCD519B9 /* ConnectionSettingsView.swift in Sources */,
 				0A65C064D466FC9FA040A35B /* ConnectionSummary.swift in Sources */,
 				116FD31CDE5706ECFF597C6B /* TaskDetails.swift in Sources */,
-				72A9DF3982DAC7B2F0166CD0 /* TimerSummary.swift in Sources */,
+				72A9DF3982DAC7B2F0166CD0 /* TrackingControls.swift in Sources */,
 				9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */,
 				03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */,
 				99855A0370850FBEBEE64BE3 /* MacLifecycleObserver.swift in Sources */,

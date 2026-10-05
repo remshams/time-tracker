@@ -4,6 +4,8 @@ import TrackerClient
 
 struct TrackerWindow: View {
     @ObservedObject var store: TrackerStore
+    let statusItem: TrackerStatusItemController
+    @Environment(\.openWindow) private var openWindow
 
     private var tabBinding: Binding<TaskTab> {
         Binding(get: { store.tab }, set: { store.changeTab($0) })
@@ -33,9 +35,6 @@ struct TrackerWindow: View {
 
                 HStack {
                     Text("Tasks")
-                    TaskCreationButton(creation: store.creation)
-                        .buttonStyle(.borderless)
-                        .font(.body)
                     Spacer()
                     Text(store.dailyTotalsStatus == .cached ? "Today, cached" : "Today")
                 }
@@ -47,22 +46,25 @@ struct TrackerWindow: View {
                 List(selection: selectionBinding) {
                     ForEach(store.visibleTasks) { task in
                         HStack(spacing: 8) {
-                            Label {
-                                Text(task.name)
-                                    .lineLimit(2)
-                                    .padding(.vertical, 4)
-                            } icon: {
-                                Image(systemName: store.active?.taskId == task.id
-                                      ? "timer" : "checklist")
-                            }
+                            TaskIndicatorView(taskID: task.id,
+                                              isRunning: !store.isStale && store.active?.taskId == task.id)
+                            Text(task.name)
+                                .lineLimit(2)
+                                .padding(.vertical, 4)
                             Spacer(minLength: 4)
                             TrackerDailyTotalText(totals: store.dailyTotals, taskID: task.id)
                         }
                         .tag(task.id)
                         .help(task.name)
+                        .contextMenu {
+                            TaskContextMenu(creation: store.creation, rename: store.rename, taskID: task.id)
+                        }
                     }
                 }
                 .listStyle(.sidebar)
+                .contextMenu {
+                    TaskContextMenu(creation: store.creation, rename: store.rename, taskID: nil)
+                }
                 .overlay {
                     if store.visibleTasks.isEmpty {
                         VStack(spacing: 8) {
@@ -75,13 +77,30 @@ struct TrackerWindow: View {
             }
             .navigationTitle("Tasks")
             .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 480)
+            .toolbar {
+                ToolbarItemGroup(placement: .navigation) {
+                    ConnectionSettingsButton(store: store)
+                    TaskCreationButton(creation: store.creation)
+                }
+            }
         } detail: {
             VStack(spacing: 0) {
                 ConnectionSummary(store: store)
                 Divider()
-                TimerSummary(store: store)
-                Divider()
                 TaskDetails(store: store)
+            }
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    TrackerToolbarTitle(store: store)
+                }
+                ToolbarItemGroup(placement: .primaryAction) {
+                    if let task = store.selectedTask {
+                        TaskRenameButton(rename: store.rename, taskID: task.id)
+                        if !task.archived {
+                            TrackingTaskButton(store: store, activity: store.activity, taskID: task.id)
+                        }
+                    }
+                }
             }
         }
         .frame(minWidth: 760, minHeight: 480)
@@ -90,15 +109,34 @@ struct TrackerWindow: View {
             TaskCreationDialog(creation: store.creation)
             TaskRenameDialog(rename: store.rename)
         }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                TaskCreationButton(creation: store.creation)
-            }
+        .onAppear {
+            statusItem.start { openWindow(id: "tracker") }
         }
         .alert("Could not change tracking", isPresented: trackingFailurePresented) {
             Button("OK", role: .cancel) { store.dismissTrackingError() }
         } message: {
             Text(store.trackingError ?? "Please try again.")
+        }
+    }
+}
+
+private struct TrackerToolbarTitle: View {
+    @ObservedObject var store: TrackerStore
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(store.selectedTask?.name ?? "Time Tracker")
+                .font(.headline)
+                .lineLimit(1)
+                .help(store.selectedTask?.name ?? "Time Tracker")
+            if store.active != nil {
+                TrackerElapsedText(timer: store.timer)
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                    .help(store.isStale ? "Last confirmed timer: \(store.runningTaskName)"
+                          : "Tracking: \(store.runningTaskName)")
+            }
         }
     }
 }

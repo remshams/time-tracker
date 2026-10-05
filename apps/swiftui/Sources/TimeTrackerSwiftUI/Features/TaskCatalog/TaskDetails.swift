@@ -17,9 +17,6 @@ struct TaskDetails: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                             .help(task.name)
-                        Spacer(minLength: 0)
-                        TaskRenameButton(rename: store.rename, taskID: task.id)
-                            .fixedSize()
                     }
 
                     HStack(spacing: 12) {
@@ -34,10 +31,10 @@ struct TaskDetails: View {
                                 .foregroundStyle(.secondary)
                         }
 
-                        Spacer(minLength: 12)
-                        if !task.archived {
-                            TrackingTaskButton(store: store, activity: store.activity, taskID: task.id)
-                                .fixedSize()
+                        if let status = store.autoPauseStatusText {
+                            Text(status)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -107,32 +104,6 @@ struct TaskDetails: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
             }
-        }
-    }
-}
-
-private struct TrackingTaskButton: View {
-    @ObservedObject var store: TrackerStore
-    @ObservedObject var activity: TrackerActivityStore
-    let taskID: String
-
-    var body: some View {
-        if let active = store.active, active.taskId == taskID {
-            Button { store.stopTracking(worklogID: active.id) } label: {
-                Label("Stop tracking", systemImage: "stop.fill")
-            }
-            .buttonStyle(.bordered)
-            .disabled(!activity.canStopTracking)
-            .help("Stop the running timer and save this worklog.")
-        } else {
-            Button { store.startTracking(taskID: taskID) } label: {
-                Label(store.active == nil ? "Start tracking" : "Switch tracking", systemImage: "play.fill")
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!activity.canStartSelectedTask)
-            .help(store.active == nil
-                  ? "Start a timer for this task."
-                  : "Stop the current timer and start tracking this task.")
         }
     }
 }

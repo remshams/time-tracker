@@ -54,6 +54,24 @@ final class UserDefaultsMenuBarPreferences {
 }
 
 @MainActor
+final class UserDefaultsLastTrackedTasks: LastTrackedTaskRepository {
+    private let defaults: UserDefaults
+    private let key = "tracker.lastTrackedTasks"
+
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    func load(for settings: ConnectionSettings) -> String? {
+        defaults.dictionary(forKey: key)?[settings.trackingIdentityKey] as? String
+    }
+
+    func save(taskID: String, for settings: ConnectionSettings) {
+        var tasks = defaults.dictionary(forKey: key) ?? [:]
+        tasks[settings.trackingIdentityKey] = taskID
+        defaults.set(tasks, forKey: key)
+    }
+}
+
+@MainActor
 struct RunLoopTrackerScheduler: TrackerScheduler {
     func schedule(after interval: TimeInterval, repeating: Bool, tolerance: TimeInterval,
                   action: @escaping @MainActor () -> Void) -> any TrackerCancellation {

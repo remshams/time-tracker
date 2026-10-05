@@ -25,6 +25,7 @@ final class TrackerStore: ObservableObject {
                                  scheduler: RunLoopTrackerScheduler(),
                                  settings: UserDefaultsConnectionSettings(),
                                  trackingPreferences: UserDefaultsTrackingPreferences(),
+                                 lastTrackedTasks: UserDefaultsLastTrackedTasks(),
                                  reports: worker)
         presentation = TrackerPresentationObserver(session: session)
         activity = TrackerActivityStore(session: session, presentation: presentation)
@@ -41,7 +42,7 @@ final class TrackerStore: ObservableObject {
             presentation.update(from: session)
             menu.update()
         }
-        lifecycle = MacLifecycleObserver(session: session, menu: menu)
+        lifecycle = MacLifecycleObserver(session: session)
         lifecycle?.start()
         session.start()
     }
@@ -95,6 +96,17 @@ final class TrackerStore: ObservableObject {
     func startTracking(taskID: String) { session.startTracking(taskID: taskID) }
     func stopTracking(worklogID: String) { session.stopTracking(worklogID: worklogID) }
     func dismissTrackingError() { session.dismissTrackingError() }
+    func performMenuPrimaryAction() -> MenuPrimaryAction { session.performMenuPrimaryAction() }
+
+    func menuOpened() {
+        menu.menuOpened()
+        session.menuOpened()
+    }
+
+    func menuClosed() {
+        session.menuClosed()
+        menu.menuClosed()
+    }
     func testConnection(_ settings: ConnectionSettings) async throws {
         try await session.testConnection(settings)
     }

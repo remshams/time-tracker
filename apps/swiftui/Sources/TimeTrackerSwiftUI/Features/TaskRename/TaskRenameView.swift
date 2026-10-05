@@ -9,7 +9,8 @@ struct TaskRenameButton: View {
         Button { rename.open(taskID: taskID) } label: {
             Label("Edit name", systemImage: "pencil")
         }
-        .buttonStyle(.bordered)
+        .labelStyle(.iconOnly)
+        .accessibilityLabel("Edit task name")
         .disabled(!rename.canOpen)
         .help("Rename this task")
     }

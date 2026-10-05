@@ -15,11 +15,13 @@ struct ConnectionSummary: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: store.connectionSettings.mode == .local ? "internaldrive" : "network")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(store.isStale || store.isChangingConnection
+                                 ? Color.secondary : Color(nsColor: .systemGreen))
             VStack(alignment: .leading, spacing: 3) {
                 Text(store.connectionSettings.mode == .local
                      ? "Local database" : store.connectionSettings.serverURL)
                     .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .help(store.connectionSettings.serverURL)
                 Text(store.connectionStatusText)
@@ -33,8 +35,6 @@ struct ConnectionSummary: View {
             } else if store.isStale {
                 Button("Retry") { store.refresh() }
             }
-            ConnectionSettingsButton(store: store)
-                .buttonStyle(.borderless)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 12)
