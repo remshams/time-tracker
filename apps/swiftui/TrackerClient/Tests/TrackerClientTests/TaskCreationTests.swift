@@ -354,11 +354,16 @@ final class TaskCreationTests: XCTestCase {
         fixture.session.setTaskCreationName("Pending task")
         fixture.session.submitTaskCreation()
         let creation = try await fixture.client.next()
+        let observer = TrackerPresentationObserver(session: fixture.session)
+        var displayedConnectionMessages: [String?] = []
+        observer.onContentChange = { displayedConnectionMessages.append(fixture.session.connectionMessage) }
+        fixture.session.onChange = { observer.update(from: fixture.session) }
         let connect = Task { await fixture.session.connect(serverSettings) }
         let connected = try await fixture.taskValue(connect)
         XCTAssertFalse(connected)
         XCTAssertEqual(fixture.session.connectionSettings, .local)
         XCTAssertEqual(fixture.session.connectionMessage, "Finish or retry task creation before changing connections.")
+        XCTAssertEqual(displayedConnectionMessages, ["Finish or retry task creation before changing connections."])
         creation.fail(BridgeFailure(message: "Rejected", kind: "validation"))
         try await fixture.settled()
         fixture.session.cancelTaskCreation()
@@ -377,12 +382,17 @@ final class TaskCreationTests: XCTestCase {
         try await fixture.start()
         fixture.session.openTaskCreation()
         fixture.session.setTaskCreationName("Valid\u{0000}suffix")
+        let observer = TrackerPresentationObserver(session: fixture.session)
+        var displayedErrors: [String?] = []
+        observer.onTaskCreationChange = { displayedErrors.append(fixture.session.taskCreation.error) }
+        fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.session.submitTaskCreation()
         XCTAssertEqual(fixture.session.taskCreation.error, "Task names must not contain control characters.")
         XCTAssertEqual(fixture.session.taskCreation.name, "Valid\u{0000}suffix")
         XCTAssertTrue(fixture.session.taskCreation.canEditName)
         XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
         XCTAssertEqual(fixture.client.operations.count, 1)
+        XCTAssertEqual(displayedErrors, ["Task names must not contain control characters."])
     }
 
     @MainActor
@@ -474,5 +484,47 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertEqual(fixture.session.tab, .archived)
         XCTAssertEqual(fixture.session.selectedTaskID, archivedTask.id)
         XCTAssertEqual(fixture.client.operations.count, 3)
+    }
+
+    @MainActor
+    func testRecoveredCreationPublishesClosedSheetAndReusesSelectedTaskHistory() async throws {
+        let fixture = Fixture(saved: serverSettings)
+        defer { fixture.cleanup() }
+        try await fixture.start()
+        fixture.session.openTaskCreation()
+        fixture.session.setTaskCreationName(firstTask.name)
+        fixture.session.submitTaskCreation()
+        let creation = try await fixture.client.next()
+        creation.fail(BridgeFailure(message: "Response lost", uncertain: true))
+        let confirmed = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let reconciliation = try await fixture.client.next()
+        reconciliation.succeed(confirmed)
+        let history = try await fixture.client.next()
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
+        fixture.session.submitTaskCreation()
+        let recovery = try await fixture.client.next()
+
+        let observer = TrackerPresentationObserver(session: fixture.session)
+        var closedSheetUpdates = 0
+        observer.onTaskCreationChange = {
+            if !fixture.session.taskCreation.isPresented { closedSheetUpdates += 1 }
+        }
+        fixture.session.onChange = { observer.update(from: fixture.session) }
+        recovery.created(taskID: firstTask.id, snapshot: confirmed)
+        let finished = Task { @MainActor in
+            while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
+        }
+        try await fixture.taskValue(finished)
+        XCTAssertEqual(closedSheetUpdates, 1)
+        XCTAssertFalse(fixture.session.taskCreation.isPresented)
+        XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
+        XCTAssertFalse(fixture.session.isBusy)
+        XCTAssertTrue(fixture.session.canStartSelectedTask)
+        XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
+        XCTAssertEqual(fixture.session.worklogs, [])
+        XCTAssertEqual(fixture.client.operations.count, 5,
+                       "Recovering an already selected task must reuse its loaded history.")
     }
 }

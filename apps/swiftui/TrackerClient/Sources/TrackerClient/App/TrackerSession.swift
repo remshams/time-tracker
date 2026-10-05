@@ -443,7 +443,6 @@ public final class TrackerSession {
                 let changedSelection = catalog.select(result.taskId)
                 if changedTab || changedSelection { requestHistory() }
                 creation.reset()
-                publish()
             } catch {
                 guard isCurrent(token) else { return }
                 let unresolved = TaskCreationState.requiresRecovery(error)
