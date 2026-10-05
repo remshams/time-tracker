@@ -42,6 +42,18 @@ final class UserDefaultsTrackingPreferences: TrackingPreferencesRepository {
 }
 
 @MainActor
+final class UserDefaultsMenuBarPreferences {
+    private let defaults: UserDefaults
+    private let key = "tracker.showDailyTotalInMenuBar"
+
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    func load() -> Bool { defaults.object(forKey: key) as? Bool ?? true }
+
+    func save(_ showDailyTotal: Bool) { defaults.set(showDailyTotal, forKey: key) }
+}
+
+@MainActor
 struct RunLoopTrackerScheduler: TrackerScheduler {
     func schedule(after interval: TimeInterval, repeating: Bool, tolerance: TimeInterval,
                   action: @escaping @MainActor () -> Void) -> any TrackerCancellation {

@@ -7,12 +7,16 @@ final class TrackerStore: ObservableObject {
     let objectWillChange = ObservableObjectPublisher()
     private let session: TrackerSession
     private let presentation: TrackerPresentationObserver
+    private let menuBarPreferences: UserDefaultsMenuBarPreferences
+    private(set) var showDailyTotalInMenuBar: Bool
     let activity: TrackerActivityStore
     let timer: TrackerTimerStore
     let dailyTotals: TrackerDailyTotalsStore
     private var lifecycle: MacLifecycleObserver?
 
     init() {
+        menuBarPreferences = UserDefaultsMenuBarPreferences()
+        showDailyTotalInMenuBar = menuBarPreferences.load()
         let worker = TrackerWorker()
         session = TrackerSession(client: worker, clock: SystemTrackerClock(),
                                  scheduler: RunLoopTrackerScheduler(),
@@ -26,7 +30,7 @@ final class TrackerStore: ObservableObject {
         presentation.onContentChange = { [weak self] in self?.objectWillChange.send() }
         session.onChange = { [weak self] in
             guard let self else { return }
-            dailyTotals.updateMenuBarTimer(isRunning: session.active != nil)
+            updateMenuBarTimer()
             presentation.update(from: session)
         }
         lifecycle = MacLifecycleObserver(session: session)
@@ -62,6 +66,18 @@ final class TrackerStore: ObservableObject {
     var todayTasks: [TaskItem] { session.todayTasks }
     var dailyTotalsStatus: DailyTotalsStatus { session.dailyTotalsStatus }
     var dailyTotalsError: String? { session.dailyTotalsError }
+
+    func setShowDailyTotalInMenuBar(_ enabled: Bool) {
+        guard showDailyTotalInMenuBar != enabled else { return }
+        objectWillChange.send()
+        showDailyTotalInMenuBar = enabled
+        menuBarPreferences.save(enabled)
+        updateMenuBarTimer()
+    }
+
+    private func updateMenuBarTimer() {
+        dailyTotals.updateMenuBarTimer(isRunning: showDailyTotalInMenuBar && session.active != nil)
+    }
 
     func setPauseOnScreenLock(_ enabled: Bool) { session.setPauseOnScreenLock(enabled) }
     func changeTab(_ tab: TaskTab) { session.changeTab(tab) }

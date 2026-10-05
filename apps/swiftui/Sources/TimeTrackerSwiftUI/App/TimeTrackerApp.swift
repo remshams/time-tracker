@@ -32,15 +32,21 @@ private struct TrackerMenuBarLabel: View {
     @ObservedObject var totals: TrackerDailyTotalsStore
 
     var body: some View {
-        Label {
-            Text(totals.menuBarText)
-                .monospacedDigit()
-        } icon: {
+        if store.showDailyTotalInMenuBar {
+            Label {
+                Text(totals.menuBarText)
+                    .monospacedDigit()
+            } icon: {
+                Image(systemName: menuBarSymbol)
+            }
+            .labelStyle(.titleAndIcon)
+            .accessibilityLabel(Text("\(menuBarStatus). Total today: \(totals.totalText)"))
+            .help("\(menuBarStatus)\nTotal today: \(totals.totalText)\n\(totals.explanation)")
+        } else {
             Image(systemName: menuBarSymbol)
+                .accessibilityLabel(Text(menuBarStatus))
+                .help(menuBarStatus)
         }
-        .labelStyle(.titleAndIcon)
-        .accessibilityLabel(Text("\(menuBarStatus). Total today: \(totals.totalText)"))
-        .help("\(menuBarStatus)\nTotal today: \(totals.totalText)\n\(totals.explanation)")
     }
 
     private var menuBarSymbol: String {

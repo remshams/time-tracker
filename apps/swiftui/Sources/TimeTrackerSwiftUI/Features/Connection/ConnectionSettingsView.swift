@@ -64,6 +64,13 @@ struct ConnectionSettingsView: View {
                     }
                 }
 
+                Section("Menu bar") {
+                    Toggle("Show today's total next to the icon", isOn: Binding(
+                        get: { store.showDailyTotalInMenuBar },
+                        set: { store.setShowDailyTotalInMenuBar($0) }
+                    ))
+                }
+
                 Section {
                     HStack(spacing: 12) {
                         Button("Test connection") { testConnection() }
@@ -177,6 +184,6 @@ struct ConnectionSettingsButton: View {
             }
         }
         .labelStyle(.iconOnly)
-        .help("Change the connection and automatic tracking preferences.")
+        .help("Change connection, tracking, and menu bar settings.")
     }
 }

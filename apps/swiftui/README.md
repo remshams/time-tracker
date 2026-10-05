@@ -52,6 +52,8 @@ Each sidebar task shows its time logged today. The menu's Today section lists ta
 
 Today follows the Mac's local calendar and time zone. Calendar boundaries account for daylight saving changes. A missing report shows an unavailable value instead of zero; failed updates label retained totals as cached. Connecting to a different data source clears the previous totals.
 
+Settings > Menu bar > Show today's total next to the icon controls the status bar total. It is enabled by default, applies immediately, and is saved on this Mac. Turn it off to show just the tracking icon. The Today section inside the menu still shows the total. Hiding the status bar total stops its minute display clock.
+
 The Rust application report query aggregates the full day independently of paged worklog history. Its response includes totals and an authoritative tracker snapshot from the same read. Healthy synchronization uses this report instead of a separate snapshot request. Swift advances the matching running worklog's contribution locally between reports. Ordinary display ticks make no network request. One local day-boundary timer clears yesterday's totals and requests today's report, even while tracking is idle.
 
 ## Unit tests
@@ -141,7 +143,7 @@ The app refreshes state every 5 seconds while a window is visible or an app menu
 
 After connection failures, visible polling backs off to 5, 10, 20, 40, then 60 seconds. Background polling stays at least 60 seconds. A protocol mismatch stops automatic retries until you reopen the UI or click Retry. Opening the UI and waking the Mac request an immediate refresh. Sleep pauses scheduled polling; an already running request may finish.
 
-The elapsed timer redraws once a second only while UI is visible and a timer is active. That tick makes no network request. The native daily totals adapter owns a separate one-minute clock while tracking runs, so the status bar total advances when windows and menus are closed. It reads the locally advancing total and does not enable foreground polling or the session's one-second display timer. The minute clock stops when tracking is idle and allows five seconds of tolerance for macOS to coalesce wakeups. These rules reduce unnecessary work, but battery impact has not been measured.
+The elapsed timer redraws once a second only while UI is visible and a timer is active. That tick makes no network request. The native daily totals adapter owns a separate one-minute clock while tracking runs and the status bar total is enabled, so the status bar total advances when windows and menus are closed. It reads the locally advancing total and does not enable foreground polling or the session's one-second display timer. The minute clock stops when tracking is idle and allows five seconds of tolerance for macOS to coalesce wakeups. These rules reduce unnecessary work, but battery impact has not been measured.
 
 ## Appearance and history
 
@@ -162,5 +164,7 @@ The Active and Archived tabs remember their selections. Worklogs load 50 at a ti
 9. Keep a running task open for several server polls. Confirm elapsed labels advance while task and worklog rows remain stable. Change tracking from another client and confirm the updated history appears without briefly showing an empty list. Repeat with a slow connection; selecting a different task must clear the old task's history.
 10. Check sidebar totals and the combined menu total against all of today's worklogs, including a running worklog and one crossing midnight. Confirm yesterday's time is excluded. Check the status bar matches the combined total in hours and minutes and advances with the window and menu closed. Check the menu includes archived tasks with time today as informational entries. Stop the server and confirm totals are labelled cached and the status bar uses `~`. Change the data source and confirm old totals disappear. Repeat in Light and Dark appearance and with the sidebar narrowed.
 11. Start an active task from the Today section, then click a different task to switch tracking. Check Start tracking includes tasks with no time today. Confirm the running entry is disabled and Stop tracking ends the current worklog. Keep a different task selected in the window and confirm menu actions do not change that selection. Repeat while requests are slow or state is stale and confirm tracking actions are disabled.
+
+12. In Settings > Menu bar, turn Show today's total next to the icon off and on. Confirm the status bar switches immediately between icon-only and icon with total, the total inside the menu stays available, and the choice survives quitting and reopening the app.
 
 Xcode compilation, native layout, and the lifecycle checks above require a Mac. Foundation package tests can run on Linux. If the build fails, send the error text from Xcode's Report navigator. The Build Rust bridge phase appears separately from Swift compilation and linking.
