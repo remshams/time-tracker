@@ -3,38 +3,44 @@ import SwiftUI
 import TrackerClient
 
 struct TrackerMenu: View {
-    @ObservedObject var store: TrackerStore
+    let store: TrackerStore
+    @ObservedObject var menu: TrackerMenuStore
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Text(store.connectionStatusText)
-        if store.isStale { Text("Showing last confirmed state") }
-        Text(store.runningTaskName)
-        if let status = store.autoPauseStatusText { Text(status) }
-        if let error = store.trackingError { Text(error) }
-        if store.active != nil {
-            TrackerElapsedText(timer: store.timer)
+        let content = menu.content
+        Text(content.connectionStatusText)
+        if content.isStale { Text("Showing last confirmed state") }
+        Text(content.runningTaskName)
+        if let status = content.autoPauseStatusText { Text(status) }
+        if let error = content.trackingError { Text(error) }
+        if let elapsed = content.elapsedText { Text(elapsed).monospacedDigit() }
+        if let worklogID = content.activeWorklogID {
+            Button("Stop tracking") { store.stopTracking(worklogID: worklogID) }
+                .disabled(!content.canStopTracking)
         }
-        TrackerMenuStopAction(store: store, activity: store.activity)
         Divider()
-        Text(store.dailyTotalsStatus == .cached ? "Today, cached" : "Today")
-        TrackerMenuDailyTotal(totals: store.dailyTotals)
-        ForEach(store.todayTasks) { task in
-            TrackerDailyMenuEntry(store: store, totals: store.dailyTotals,
-                                  activity: store.activity, task: task)
+        Text(content.dailyTotalsStatus == .cached ? "Today, cached" : "Today")
+        Text("Total today: \(content.totalText)")
+            .help(content.totalsExplanation)
+        ForEach(content.todayTasks) { entry in
+            TrackerDailyMenuEntry(store: store, entry: entry, explanation: content.totalsExplanation)
         }
-        if store.todayTasks.isEmpty {
-            switch store.dailyTotalsStatus {
+        if content.todayTasks.isEmpty {
+            switch content.dailyTotalsStatus {
             case .current: Text("No time logged today")
             case .cached: Text("Last confirmed totals are empty")
             case .loading: Text("Loading today's totals")
             case .unavailable: Text("Today's totals are unavailable")
             }
         }
-        if !tasksWithoutTimeToday.isEmpty {
+        if !content.otherTasks.isEmpty {
             Menu("Start tracking") {
-                ForEach(tasksWithoutTimeToday) { task in
-                    TrackerMenuStartAction(store: store, activity: store.activity, task: task)
+                ForEach(content.otherTasks) { entry in
+                    Button(entry.isRunning ? "\(entry.task.name)  Running" : entry.task.name) {
+                        store.startTracking(taskID: entry.id)
+                    }
+                    .disabled(!entry.canStart)
                 }
             }
         }
@@ -42,70 +48,26 @@ struct TrackerMenu: View {
         Button("Open Time Tracker") { openWindow(id: "tracker") }
         Button("Quit Time Tracker") { NSApplication.shared.terminate(nil) }
     }
-
-    private var tasksWithoutTimeToday: [TaskItem] {
-        let todayIDs = Set(store.todayTasks.map(\.id))
-        return store.tasks.filter { !$0.archived && !todayIDs.contains($0.id) }
-            .sorted {
-                if $0.name == $1.name { return $0.id < $1.id }
-                return $0.name < $1.name
-            }
-    }
-}
-
-private struct TrackerMenuStopAction: View {
-    let store: TrackerStore
-    @ObservedObject var activity: TrackerActivityStore
-
-    var body: some View {
-        if let active = store.active {
-            Button("Stop tracking") { store.stopTracking(worklogID: active.id) }
-                .disabled(!activity.canStopTracking)
-        }
-    }
-}
-
-private struct TrackerMenuDailyTotal: View {
-    @ObservedObject var totals: TrackerDailyTotalsStore
-
-    var body: some View {
-        Text("Total today: \(totals.totalText)")
-            .help(totals.explanation)
-    }
 }
 
 private struct TrackerDailyMenuEntry: View {
     let store: TrackerStore
-    @ObservedObject var totals: TrackerDailyTotalsStore
-    @ObservedObject var activity: TrackerActivityStore
-    let task: TaskItem
+    let entry: TrackerMenuTask
+    let explanation: String
 
     var body: some View {
-        if task.archived {
-            Text("\(task.name)  \(totals.text(taskID: task.id))  Archived")
-                .help(totals.explanation)
+        if entry.task.archived {
+            Text("\(entry.task.name)  \(entry.durationText)  Archived")
+                .help(explanation)
         } else {
-            Button(label) { store.startTracking(taskID: task.id) }
-                .disabled(!activity.canStartTracking(taskID: task.id))
-                .help(totals.explanation)
+            Button(label) { store.startTracking(taskID: entry.id) }
+                .disabled(!entry.canStart)
+                .help(explanation)
         }
     }
 
     private var label: String {
-        let running = store.active?.taskId == task.id ? "  Running" : ""
-        return "\(task.name)  \(totals.text(taskID: task.id))\(running)"
-    }
-}
-
-private struct TrackerMenuStartAction: View {
-    let store: TrackerStore
-    @ObservedObject var activity: TrackerActivityStore
-    let task: TaskItem
-
-    var body: some View {
-        Button(store.active?.taskId == task.id ? "\(task.name)  Running" : task.name) {
-            store.startTracking(taskID: task.id)
-        }
-            .disabled(!activity.canStartTracking(taskID: task.id))
+        let running = entry.isRunning ? "  Running" : ""
+        return "\(entry.task.name)  \(entry.durationText)\(running)"
     }
 }

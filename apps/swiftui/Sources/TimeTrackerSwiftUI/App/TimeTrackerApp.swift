@@ -5,10 +5,11 @@ import TrackerClient
 @main
 @MainActor
 struct TimeTrackerApp: App {
-    @StateObject private var store = TrackerStore()
+    @StateObject private var model = TrackerAppModel()
     @State private var menuBarInserted = true
 
     var body: some Scene {
+        let store = model.store
         WindowGroup("Time Tracker", id: "tracker") {
             TrackerWindow(store: store)
         }
@@ -16,9 +17,9 @@ struct TimeTrackerApp: App {
         .windowToolbarStyle(.unifiedCompact)
 
         MenuBarExtra(isInserted: $menuBarInserted) {
-            TrackerMenu(store: store)
+            TrackerMenu(store: store, menu: store.menu)
         } label: {
-            TrackerMenuBarLabel(store: store, totals: store.dailyTotals)
+            TrackerMenuBarLabel(label: store.menu.label)
         }
 
         Settings {
@@ -27,36 +28,31 @@ struct TimeTrackerApp: App {
     }
 }
 
+@MainActor
+private final class TrackerAppModel: ObservableObject {
+    // Views observe their own adapters. Session updates must not rebuild the scenes.
+    let store = TrackerStore()
+}
+
 private struct TrackerMenuBarLabel: View {
-    @ObservedObject var store: TrackerStore
-    @ObservedObject var totals: TrackerDailyTotalsStore
+    @ObservedObject var label: TrackerMenuLabelStore
 
     var body: some View {
-        if store.showDailyTotalInMenuBar {
+        let content = label.content
+        if let total = content.totalText {
             Label {
-                Text(totals.menuBarText)
+                Text(total)
                     .monospacedDigit()
             } icon: {
-                Image(systemName: menuBarSymbol)
+                Image(systemName: content.symbol)
             }
             .labelStyle(.titleAndIcon)
-            .accessibilityLabel(Text("\(menuBarStatus). Total today: \(totals.totalText)"))
-            .help("\(menuBarStatus)\nTotal today: \(totals.totalText)\n\(totals.explanation)")
+            .accessibilityLabel(Text("\(content.status). Total today: \(total)"))
+            .help(content.help)
         } else {
-            Image(systemName: menuBarSymbol)
-                .accessibilityLabel(Text(menuBarStatus))
-                .help(menuBarStatus)
+            Image(systemName: content.symbol)
+                .accessibilityLabel(Text(content.status))
+                .help(content.help)
         }
-    }
-
-    private var menuBarSymbol: String {
-        if store.isStale { return "questionmark.circle" }
-        return store.active == nil ? "clock" : "play.circle.fill"
-    }
-
-    private var menuBarStatus: String {
-        if store.isStale { return "Time Tracker: Tracking status unavailable" }
-        if store.active != nil { return "Time Tracker: Tracking \(store.runningTaskName)" }
-        return "Time Tracker: \(store.autoPauseStatusText ?? "No timer running")"
     }
 }

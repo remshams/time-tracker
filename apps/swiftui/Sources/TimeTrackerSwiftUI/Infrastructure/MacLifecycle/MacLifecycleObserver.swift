@@ -4,9 +4,13 @@ import TrackerClient
 @MainActor
 final class MacLifecycleObserver {
     private weak var session: TrackerSession?
+    private weak var menu: TrackerMenuStore?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
 
-    init(session: TrackerSession) { self.session = session }
+    init(session: TrackerSession, menu: TrackerMenuStore) {
+        self.session = session
+        self.menu = menu
+    }
 
     func start() {
         guard observers.isEmpty else { return }
@@ -20,8 +24,14 @@ final class MacLifecycleObserver {
             NSApplication.didUnhideNotification
         ]
         for name in windowEvents { observe(center, name) { $0.updateVisibility() } }
-        observe(center, NSMenu.didBeginTrackingNotification) { $0.session?.menuOpened() }
-        observe(center, NSMenu.didEndTrackingNotification) { $0.session?.menuClosed() }
+        observe(center, NSMenu.didBeginTrackingNotification) {
+            $0.menu?.menuOpened()
+            $0.session?.menuOpened()
+        }
+        observe(center, NSMenu.didEndTrackingNotification) {
+            $0.session?.menuClosed()
+            $0.menu?.menuClosed()
+        }
         observe(center, NSApplication.willTerminateNotification) { $0.session?.shutdown() }
         let workspace = NSWorkspace.shared.notificationCenter
         observe(workspace, NSWorkspace.willSleepNotification) { $0.session?.sleep() }

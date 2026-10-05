@@ -12,6 +12,7 @@ final class TrackerStore: ObservableObject {
     let activity: TrackerActivityStore
     let timer: TrackerTimerStore
     let dailyTotals: TrackerDailyTotalsStore
+    let menu: TrackerMenuStore
     private var lifecycle: MacLifecycleObserver?
 
     init() {
@@ -27,13 +28,16 @@ final class TrackerStore: ObservableObject {
         activity = TrackerActivityStore(session: session, presentation: presentation)
         timer = TrackerTimerStore(session: session, presentation: presentation)
         dailyTotals = TrackerDailyTotalsStore(session: session, presentation: presentation)
+        menu = TrackerMenuStore(session: session, showDailyTotal: showDailyTotalInMenuBar)
+        dailyTotals.onMenuBarTick = { [weak self] in self?.menu.update() }
         presentation.onContentChange = { [weak self] in self?.objectWillChange.send() }
         session.onChange = { [weak self] in
             guard let self else { return }
             updateMenuBarTimer()
             presentation.update(from: session)
+            menu.update()
         }
-        lifecycle = MacLifecycleObserver(session: session)
+        lifecycle = MacLifecycleObserver(session: session, menu: menu)
         lifecycle?.start()
         session.start()
     }
@@ -63,15 +67,14 @@ final class TrackerStore: ObservableObject {
     var elapsed: TimeInterval? { session.elapsed }
     var pauseOnScreenLock: Bool { session.pauseOnScreenLock }
     var autoPauseStatusText: String? { session.autoPauseStatusText }
-    var todayTasks: [TaskItem] { session.todayTasks }
     var dailyTotalsStatus: DailyTotalsStatus { session.dailyTotalsStatus }
-    var dailyTotalsError: String? { session.dailyTotalsError }
 
     func setShowDailyTotalInMenuBar(_ enabled: Bool) {
         guard showDailyTotalInMenuBar != enabled else { return }
         objectWillChange.send()
         showDailyTotalInMenuBar = enabled
         menuBarPreferences.save(enabled)
+        menu.setShowDailyTotal(enabled)
         updateMenuBarTimer()
     }
 
@@ -99,6 +102,7 @@ final class TrackerStore: ObservableObject {
 @MainActor
 final class TrackerDailyTotalsStore: ObservableObject {
     let objectWillChange = ObservableObjectPublisher()
+    var onMenuBarTick: (() -> Void)?
     private let session: TrackerSession
     private var menuBarTimer: Timer?
 
@@ -117,7 +121,7 @@ final class TrackerDailyTotalsStore: ObservableObject {
         }
         guard menuBarTimer == nil else { return }
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.objectWillChange.send() }
+            MainActor.assumeIsolated { self?.onMenuBarTick?() }
         }
         timer.tolerance = 5
         menuBarTimer = timer
@@ -128,23 +132,49 @@ final class TrackerDailyTotalsStore: ObservableObject {
         session.dailyDuration(taskID: taskID).map(clockDuration) ?? "-"
     }
 
-    var totalText: String { session.totalDailyDurationText }
+    var explanation: String { session.dailyTotalsExplanation }
+}
 
-    var menuBarText: String {
-        guard let duration = session.totalDailyDuration else { return "-" }
-        let minutes = Int(max(0, duration)) / 60
-        let text = String(format: "%02d:%02d", minutes / 60, minutes % 60)
-        return session.dailyTotalsStatus == .cached ? "~\(text)" : text
+@MainActor
+final class TrackerMenuStore: ObservableObject {
+    let objectWillChange = ObservableObjectPublisher()
+    let label: TrackerMenuLabelStore
+    private let session: TrackerSession
+    private let presentation: TrackerMenuPresentationObserver
+    private var showDailyTotal: Bool
+
+    init(session: TrackerSession, showDailyTotal: Bool) {
+        self.session = session
+        self.showDailyTotal = showDailyTotal
+        presentation = TrackerMenuPresentationObserver(session: session, showDailyTotal: showDailyTotal)
+        label = TrackerMenuLabelStore(presentation: presentation)
+        presentation.onContentChange = { [weak self] in self?.objectWillChange.send() }
     }
 
-    var explanation: String {
-        switch session.dailyTotalsStatus {
-        case .current: return "Time logged today in your local time zone"
-        case .cached: return "Today's total uses cached tracker state. Running time may be unconfirmed."
-        case .loading: return "Loading today's totals"
-        case .unavailable: return session.dailyTotalsError ?? "Today's total is unavailable"
-        }
+    var content: TrackerMenuContent { presentation.content }
+
+    func update() { presentation.update(from: session, showDailyTotal: showDailyTotal) }
+
+    func setShowDailyTotal(_ enabled: Bool) {
+        showDailyTotal = enabled
+        update()
     }
+
+    func menuOpened() { presentation.menuOpened(from: session, showDailyTotal: showDailyTotal) }
+    func menuClosed() { presentation.menuClosed(from: session, showDailyTotal: showDailyTotal) }
+}
+
+@MainActor
+final class TrackerMenuLabelStore: ObservableObject {
+    let objectWillChange = ObservableObjectPublisher()
+    private let presentation: TrackerMenuPresentationObserver
+
+    init(presentation: TrackerMenuPresentationObserver) {
+        self.presentation = presentation
+        presentation.onLabelChange = { [weak self] in self?.objectWillChange.send() }
+    }
+
+    var content: TrackerMenuLabelContent { presentation.label }
 }
 
 @MainActor
