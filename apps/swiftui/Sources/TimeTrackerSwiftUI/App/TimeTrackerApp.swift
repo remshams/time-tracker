@@ -26,12 +26,6 @@ struct TimeTrackerApp: App {
         .defaultSize(width: 540, height: 680)
         .windowResizability(.contentSize)
         .commandsRemoved()
-
-        TrackerMenuBarExtra(
-            store: delegate.runtime.store,
-            showTracker: { delegate.runtime.showTracker() },
-            quit: { delegate.runtime.quit() }
-        )
     }
 }
 

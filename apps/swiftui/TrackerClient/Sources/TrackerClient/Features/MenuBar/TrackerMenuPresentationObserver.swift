@@ -6,7 +6,6 @@ public final class TrackerMenuPresentationObserver {
     public var onLabelChange: (() -> Void)?
     public private(set) var content: TrackerMenuContent
     public private(set) var label: TrackerMenuLabelContent
-    private var trackingDepth = 0
 
     public init(session: TrackerSession, showDailyTotal: Bool) {
         content = TrackerMenuContent(session)
@@ -14,8 +13,6 @@ public final class TrackerMenuPresentationObserver {
     }
 
     public func update(from session: TrackerSession, showDailyTotal: Bool) {
-        // Keep the presentation stable while the user navigates an open popup.
-        guard trackingDepth == 0 else { return }
         let nextContent = TrackerMenuContent(session)
         let nextLabel = TrackerMenuLabelContent(session, showDailyTotal: showDailyTotal)
         if content != nextContent {
@@ -26,15 +23,5 @@ public final class TrackerMenuPresentationObserver {
             label = nextLabel
             onLabelChange?()
         }
-    }
-
-    public func menuOpened(from session: TrackerSession, showDailyTotal: Bool) {
-        update(from: session, showDailyTotal: showDailyTotal)
-        trackingDepth += 1
-    }
-
-    public func menuClosed(from session: TrackerSession, showDailyTotal: Bool) {
-        trackingDepth = max(0, trackingDepth - 1)
-        update(from: session, showDailyTotal: showDailyTotal)
     }
 }
