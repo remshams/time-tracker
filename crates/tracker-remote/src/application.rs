@@ -4,8 +4,8 @@ use chrono::{DateTime, TimeDelta, Utc};
 use reqwest::{Method, StatusCode};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, GlobalWorklogCursor,
-    GlobalWorklogPage, ReportRow, ReportTotals, SetActiveTaskOutcome, TaskListItem, TaskOrdering,
-    TrackerSnapshot, WorklogCursor, WorklogPage, WorklogPageSnapshot,
+    GlobalWorklogPage, ReportRow, ReportTotals, RepositoryError, SetActiveTaskOutcome,
+    TaskListItem, TaskOrdering, TrackerSnapshot, WorklogCursor, WorklogPage, WorklogPageSnapshot,
 };
 use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingState, Worklog, WorklogId, WorklogTimes,
@@ -197,41 +197,39 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         if let Some(mut pending) = self.pending_create.clone() {
-            let recovering = matches!(self.last_failure, Some(RemoteFailureKind::Unavailable));
-            if recovering {
-                self.refresh()
-                    .await
-                    .map_err(|error| map_application_error(&error, None, None))?;
+            if pending.name != name.as_str() {
+                return Err(ApplicationError::semantic_failure(
+                    ApplicationFailureCategory::General,
+                    "Recover the pending task creation before creating another task",
+                ));
             }
+            // Pending intent survives polling, which can clear last_failure.
+            self.refresh()
+                .await
+                .map_err(|error| map_application_error(&error, None, None))?;
             let pending_id: TaskId = pending
                 .task_id
                 .parse()
                 .map_err(|_| protocol_failure("invalid pending task id"))?;
             if let Some(task) = self.task(pending_id).cloned() {
                 self.pending_create = None;
-                if pending.name == name.as_str() {
-                    return Ok(task);
-                }
-            } else if recovering && pending.name == name.as_str() {
+                return Ok(task);
+            } else {
                 // The server has no record of the uncertain create. Retain
                 // its task ID but use the freshly loaded server revision.
                 pending.guard = self.guard();
                 self.pending_create = Some(pending);
             }
         }
-        let body = self
-            .pending_create
-            .clone()
-            .filter(|pending| pending.name == name.as_str())
-            .unwrap_or_else(|| {
-                let id = TaskId::generate();
-                CreateTaskRequest {
-                    task_id: id.to_string(),
-                    name: name.as_str().to_owned(),
-                    occurred_at: canonical(occurred_at),
-                    guard: self.guard(),
-                }
-            });
+        let body = self.pending_create.clone().unwrap_or_else(|| {
+            let id = TaskId::generate();
+            CreateTaskRequest {
+                task_id: id.to_string(),
+                name: name.as_str().to_owned(),
+                occurred_at: canonical(occurred_at),
+                guard: self.guard(),
+            }
+        });
         let id: TaskId = body
             .task_id
             .parse()
@@ -241,8 +239,27 @@ impl RemoteApplication {
             .mutation(Method::POST, "v1/tasks", &body, None, Some(id), |result| {
                 task_result(result, id)
             })
-            .await;
-        if !matches!(self.last_failure, Some(RemoteFailureKind::Unavailable)) {
+            .await
+            .and_then(|task| {
+                if self.task(task.id()).is_none() {
+                    self.last_failure = Some(RemoteFailureKind::Protocol);
+                    Err(protocol_failure(
+                        "created task is missing from the returned snapshot",
+                    ))
+                } else {
+                    Ok(task)
+                }
+            });
+        let uncertain = result.as_ref().is_err_and(|error| {
+            matches!(
+                self.last_failure,
+                Some(RemoteFailureKind::Unavailable | RemoteFailureKind::Protocol)
+            ) || matches!(
+                error,
+                ApplicationError::Repository(RepositoryError::Backend { .. })
+            )
+        });
+        if !uncertain {
             self.pending_create = None;
         }
         result
@@ -1715,7 +1732,8 @@ mod mutation_tests {
 
     #[tokio::test]
     async fn pending_create_recognizes_a_committed_task_or_reuses_its_id_after_reconnect() {
-        for (committed, recovering) in [(false, true), (true, true), (false, false)] {
+        for (committed, recovering) in [(false, true), (true, true), (false, false), (true, false)]
+        {
             let pending_id = TaskId::generate();
             let pending_task = task(pending_id, false);
             let sent = Arc::new(Mutex::new(Vec::<CreateTaskRequest>::new()));
@@ -1808,8 +1826,20 @@ mod mutation_tests {
                 },
             });
             client.last_failure = recovering.then_some(RemoteFailureKind::Unavailable);
+            let different = client
+                .create_task(TaskName::new("Another project").unwrap(), at())
+                .await
+                .unwrap_err();
+            assert_eq!(
+                different.failure().message(),
+                "Recover the pending task creation before creating another task"
+            );
+            assert!(sent.lock().unwrap().is_empty());
             let result = client
-                .create_task(TaskName::new("Project").unwrap(), at())
+                .create_task(
+                    TaskName::new("Project").unwrap(),
+                    at() + chrono::TimeDelta::seconds(90),
+                )
                 .await
                 .unwrap();
             assert_eq!(result.id(), pending_id);
@@ -1818,16 +1848,153 @@ mod mutation_tests {
             assert_eq!(requests.len(), usize::from(!committed));
             if !committed {
                 assert_eq!(requests[0].task_id, pending_id.to_string());
-                assert_eq!(
-                    requests[0].guard.expected_revision,
-                    if recovering {
-                        "new-revision"
-                    } else {
-                        "previous-revision"
-                    }
-                );
+                assert_eq!(requests[0].guard.expected_revision, "new-revision");
+                assert_eq!(requests[0].occurred_at, at());
             }
             drop(requests);
+            shutdown_tx.send(()).unwrap();
+            server.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_creation_keeps_its_identity_after_a_successful_recovery_read() {
+        use axum::response::IntoResponse;
+
+        for committed in [false, true] {
+            let requests = Arc::new(Mutex::new(Vec::<CreateTaskRequest>::new()));
+            let saved = Arc::new(Mutex::new(None::<TaskDto>));
+            let healthy = Arc::new(Mutex::new(false));
+            let saved_for_get = Arc::clone(&saved);
+            let saved_for_post = Arc::clone(&saved);
+            let requests_for_post = Arc::clone(&requests);
+            let healthy_for_post = Arc::clone(&healthy);
+            let router = Router::new()
+                .route(
+                    "/v1/health",
+                    get(|| async {
+                        Json(HealthDto {
+                            status: "ok".into(),
+                            protocol_version: tracker_protocol::VERSION,
+                        })
+                    }),
+                )
+                .route(
+                    "/v1/snapshot",
+                    get(move || {
+                        let saved = Arc::clone(&saved_for_get);
+                        async move {
+                            Json(SnapshotDto {
+                                task_items: saved
+                                    .lock()
+                                    .unwrap()
+                                    .clone()
+                                    .into_iter()
+                                    .map(|task| TaskItemDto {
+                                        task,
+                                        latest_work_start: None,
+                                    })
+                                    .collect(),
+                                active_worklog: None,
+                                revision: "recovered".into(),
+                            })
+                        }
+                    }),
+                )
+                .route(
+                    "/v1/tasks",
+                    post(move |Json(body): Json<CreateTaskRequest>| {
+                        let saved = Arc::clone(&saved_for_post);
+                        let requests = Arc::clone(&requests_for_post);
+                        let healthy = Arc::clone(&healthy_for_post);
+                        async move {
+                            requests.lock().unwrap().push(body.clone());
+                            let task = TaskDto {
+                                id: body.task_id,
+                                name: body.name,
+                                archived: false,
+                                created_at: body.occurred_at,
+                                updated_at: body.occurred_at,
+                            };
+                            if committed || *healthy.lock().unwrap() {
+                                *saved.lock().unwrap() = Some(task.clone());
+                            }
+                            if !*healthy.lock().unwrap() {
+                                return (
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    "Response lost after execution",
+                                )
+                                    .into_response();
+                            }
+                            Json(MutationDto {
+                                result: MutationResultDto::Task(task.clone()),
+                                snapshot: SnapshotDto {
+                                    task_items: vec![TaskItemDto {
+                                        task,
+                                        latest_work_start: None,
+                                    }],
+                                    active_worklog: None,
+                                    revision: "created".into(),
+                                },
+                            })
+                            .into_response()
+                        }
+                    }),
+                );
+            let (address_tx, address_rx) = mpsc::channel::<SocketAddr>();
+            let (shutdown_tx, shutdown_rx) = oneshot::channel();
+            let server = thread::spawn(move || {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(async move {
+                        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                        address_tx.send(listener.local_addr().unwrap()).unwrap();
+                        axum::serve(listener, router)
+                            .with_graceful_shutdown(async {
+                                let _ = shutdown_rx.await;
+                            })
+                            .await
+                            .unwrap();
+                    });
+            });
+            let address = address_rx.recv().unwrap();
+            let mut client = RemoteApplication::connect(&format!("http://{address}"))
+                .await
+                .unwrap();
+            let failure = client
+                .create_task(TaskName::new("Project").unwrap(), at())
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                failure,
+                tracker_application::ApplicationError::Repository(
+                    tracker_application::RepositoryError::Backend { .. }
+                )
+            ));
+            assert_eq!(client.last_failure, None);
+            let first = requests.lock().unwrap()[0].clone();
+            assert_eq!(
+                client.pending_create.as_ref().unwrap().task_id,
+                first.task_id
+            );
+            client.refresh().await.unwrap();
+            *healthy.lock().unwrap() = true;
+            let created = client
+                .create_task(
+                    TaskName::new("Project").unwrap(),
+                    at() + Duration::seconds(90),
+                )
+                .await
+                .unwrap();
+            assert_eq!(created.id().to_string(), first.task_id);
+            assert_eq!(created.created_at(), at());
+            assert!(client.pending_create.is_none());
+            assert_eq!(
+                requests.lock().unwrap().len(),
+                if committed { 1 } else { 2 }
+            );
             shutdown_tx.send(()).unwrap();
             server.join().unwrap();
         }
