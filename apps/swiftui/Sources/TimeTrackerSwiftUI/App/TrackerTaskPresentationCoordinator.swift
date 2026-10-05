@@ -85,9 +85,9 @@ extension TrackerTaskPresentationCoordinator: ObservableObject {}
 struct TrackerDetailPresentation: View {
     @ObservedObject var store: TrackerStore
     @ObservedObject var presentation: TrackerTaskPresentationCoordinator
-    let windowID: ObjectIdentifier
+    let windowID: ObjectIdentifier?
 
-    private var isOwner: Bool { presentation.owns(windowID) }
+    private var isOwner: Bool { windowID.map(presentation.owns) ?? false }
     private var trackingFailurePresented: Binding<Bool> {
         Binding(get: { isOwner && store.trackingError != nil }, set: {
             if isOwner && !$0 { store.dismissTrackingError() }
