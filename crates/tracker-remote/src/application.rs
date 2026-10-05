@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, TimeDelta, Utc};
 use reqwest::{Method, StatusCode};
 use tracker_application::{
-    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, GlobalWorklogCursor,
-    GlobalWorklogPage, ReportRow, ReportTotals, RepositoryError, SetActiveTaskOutcome,
+    ApplicationError, ApplicationFailureCategory, ApplicationFailureSource, ClearActiveTaskOutcome,
+    GlobalWorklogCursor, GlobalWorklogPage, ReportRow, ReportTotals, SetActiveTaskOutcome,
     TaskListItem, TaskOrdering, TrackerSnapshot, WorklogCursor, WorklogPage, WorklogPageSnapshot,
 };
 use tracker_domain::{
@@ -252,11 +252,9 @@ impl RemoteApplication {
             });
         let uncertain = result.as_ref().is_err_and(|error| {
             matches!(
-                self.last_failure,
-                Some(RemoteFailureKind::Unavailable | RemoteFailureKind::Protocol)
-            ) || matches!(
-                error,
-                ApplicationError::Repository(RepositoryError::Backend { .. })
+                error.failure().source(),
+                ApplicationFailureSource::RemoteUnavailable
+                    | ApplicationFailureSource::RemoteProtocol
             )
         });
         if !uncertain {
@@ -1967,12 +1965,10 @@ mod mutation_tests {
                 .create_task(TaskName::new("Project").unwrap(), at())
                 .await
                 .unwrap_err();
-            assert!(matches!(
-                failure,
-                tracker_application::ApplicationError::Repository(
-                    tracker_application::RepositoryError::Backend { .. }
-                )
-            ));
+            assert_eq!(
+                failure.failure().source(),
+                tracker_application::ApplicationFailureSource::RemoteUnavailable
+            );
             assert_eq!(client.last_failure, None);
             let first = requests.lock().unwrap()[0].clone();
             assert_eq!(
