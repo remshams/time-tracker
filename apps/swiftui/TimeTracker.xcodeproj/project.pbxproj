@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		ED605C1B494E79DC7EF1215D /* TrackerSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 484979169FE35618CB437645 /* TrackerSidebar.swift */; };
+		3F7A03677BF75120A989F9AD /* TrackerSplitLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */; };
 		B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */; };
 		3B56BC67EA3B3C706744AFC4 /* TrackerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC372281DA1DF7ABC74910A /* TrackerStore.swift */; };
 		FC2B643D35A2A957D3C0D7E8 /* TrackerWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E054EA2B878A02189368B9D /* TrackerWindow.swift */; };
@@ -31,6 +33,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		484979169FE35618CB437645 /* TrackerSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerSidebar.swift; sourceTree = "<group>"; };
+		323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerSplitLayout.swift; sourceTree = "<group>"; };
 		000000000000000000000007 /* TimeTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TimeTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000010 /* TrackerBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TrackerBridge.h; sourceTree = "<group>"; };
 		000000000000000000000011 /* TimeTracker-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "TimeTracker-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -111,6 +115,7 @@
 		13C4608B5138EBE9B3A45A55 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */,
 				F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */,
 				4EC372281DA1DF7ABC74910A /* TrackerStore.swift */,
 				9E054EA2B878A02189368B9D /* TrackerWindow.swift */,
@@ -146,6 +151,7 @@
 		DD8C138E5B09DE3D7D67AA06 /* TaskCatalog */ = {
 			isa = PBXGroup;
 			children = (
+				484979169FE35618CB437645 /* TrackerSidebar.swift */,
 				8778858BF38637F9573E8E50 /* TaskContextMenu.swift */,
 				06B499A2444EA3FAAE07ED5E /* TaskDetails.swift */,
 			);
@@ -330,6 +336,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ED605C1B494E79DC7EF1215D /* TrackerSidebar.swift in Sources */,
+				3F7A03677BF75120A989F9AD /* TrackerSplitLayout.swift in Sources */,
 				06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */,
 				DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */,
 				DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */,

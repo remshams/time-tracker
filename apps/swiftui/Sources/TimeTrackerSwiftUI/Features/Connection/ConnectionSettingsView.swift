@@ -162,28 +162,3 @@ struct ConnectionSettingsView: View {
         }
     }
 }
-
-@MainActor
-struct ConnectionSettingsButton: View {
-    @ObservedObject var store: TrackerStore
-    @State private var showsSheet = false
-
-    var body: some View {
-        Group {
-            if #available(macOS 14, *) {
-                SettingsLink {
-                    Label("Settings", systemImage: "gearshape")
-                }
-            } else {
-                Button { showsSheet = true } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .sheet(isPresented: $showsSheet) {
-                    ConnectionSettingsView(store: store, showsDoneButton: true)
-                }
-            }
-        }
-        .labelStyle(.iconOnly)
-        .help("Change connection, tracking, and menu bar settings.")
-    }
-}

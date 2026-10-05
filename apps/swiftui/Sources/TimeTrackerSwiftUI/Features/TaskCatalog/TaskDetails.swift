@@ -79,7 +79,6 @@ struct TaskDetails: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
-        .navigationTitle(store.selectedTask?.name ?? "Time Tracker")
     }
 
     @ViewBuilder

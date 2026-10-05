@@ -2,21 +2,6 @@ import SwiftUI
 import TrackerClient
 
 @MainActor
-struct TaskCreationButton: View {
-    @ObservedObject var creation: TaskCreationStore
-
-    var body: some View {
-        Button(action: creation.open) {
-            Label("New task", systemImage: "plus")
-        }
-        .labelStyle(.iconOnly)
-        .accessibilityLabel("New task")
-        .disabled(!creation.canOpen)
-        .help("Create a task")
-    }
-}
-
-@MainActor
 struct TaskCreationDialog: View {
     @ObservedObject var creation: TaskCreationStore
 

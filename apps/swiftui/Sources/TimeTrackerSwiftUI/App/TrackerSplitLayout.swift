@@ -1,0 +1,367 @@
+import AppKit
+import Combine
+import SwiftUI
+
+@MainActor
+struct TrackerSplitLayout: NSViewControllerRepresentable {
+    let store: TrackerStore
+    let openSettings: () -> Void
+
+    func makeNSViewController(context: Context) -> TrackerSplitViewController {
+        TrackerSplitViewController(store: store, openSettings: openSettings)
+    }
+
+    func updateNSViewController(_ controller: TrackerSplitViewController, context: Context) {
+        controller.openSettings = openSettings
+    }
+
+    static func dismantleNSViewController(_ controller: TrackerSplitViewController, coordinator: ()) {
+        controller.tearDown()
+    }
+}
+
+@MainActor
+final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate {
+    private enum ItemID {
+        static let sidebar = NSToolbarItem.Identifier("TrackerSidebarControls")
+        static let collapse = NSToolbarItem.Identifier("TrackerToggleSidebar")
+        static let settings = NSToolbarItem.Identifier("TrackerSettings")
+        static let create = NSToolbarItem.Identifier("TrackerCreateTask")
+        static let separator = NSToolbarItem.Identifier("TrackerSidebarSeparator")
+        static let title = NSToolbarItem.Identifier("TrackerTaskTitle")
+        static let detail = NSToolbarItem.Identifier("TrackerTaskControls")
+        static let rename = NSToolbarItem.Identifier("TrackerRenameTask")
+        static let tracking = NSToolbarItem.Identifier("TrackerTracking")
+    }
+
+    private struct WindowPresentation {
+        let toolbar: NSToolbar?
+        let toolbarStyle: NSWindow.ToolbarStyle
+        let titleVisibility: NSWindow.TitleVisibility
+        let title: String
+        let hadFullSizeContentView: Bool
+    }
+
+    private struct ToolbarContent: Equatable {
+        let title: String
+        let hasSelectedTask: Bool
+        let isArchived: Bool
+        let canCreate: Bool
+        let canRename: Bool
+        let isRunning: Bool
+        let canTrack: Bool
+        let hasActiveTimer: Bool
+    }
+
+    let store: TrackerStore
+    var openSettings: () -> Void
+    private let sidebarItem: NSSplitViewItem
+    private var subscriptions: Set<AnyCancellable> = []
+    private weak var installedWindow: NSWindow?
+    private var previousWindowPresentation: WindowPresentation?
+    private var renderedContent: ToolbarContent?
+    private var isTornDown = false
+    private var updatingSeparator = false
+
+    private lazy var collapseItem = actionItem(
+        ItemID.collapse, label: "Hide sidebar", symbol: "sidebar.left", action: #selector(toggleSidebarAction)
+    )
+    private lazy var settingsItem = actionItem(
+        ItemID.settings, label: "Settings", symbol: "gearshape", action: #selector(showSettings)
+    )
+    private lazy var creationItem = actionItem(
+        ItemID.create, label: "New task", symbol: "plus", action: #selector(createTask)
+    )
+    private lazy var renameItem = actionItem(
+        ItemID.rename, label: "Edit task name", symbol: "pencil", action: #selector(renameTask)
+    )
+    private lazy var trackingItem = actionItem(
+        ItemID.tracking, label: "Start tracking", symbol: "play.fill", action: #selector(changeTracking)
+    )
+    private lazy var sidebarControls = group(
+        ItemID.sidebar, label: "Sidebar", items: [collapseItem, settingsItem, creationItem], priority: .user
+    )
+    private lazy var detailControls = group(
+        ItemID.detail, label: "Task", items: [renameItem, trackingItem], priority: .high
+    )
+    private lazy var titleLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "Time Tracker")
+        label.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+        label.lineBreakMode = .byTruncatingTail
+        label.maximumNumberOfLines = 1
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return label
+    }()
+    private lazy var titleItem: NSToolbarItem = {
+        let item = NSToolbarItem(itemIdentifier: ItemID.title)
+        let container = NSView()
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            titleLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            titleLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            container.heightAnchor.constraint(equalToConstant: 24),
+            container.widthAnchor.constraint(greaterThanOrEqualToConstant: 40),
+            container.widthAnchor.constraint(lessThanOrEqualToConstant: 420)
+        ])
+        item.view = container
+        item.label = "Task name"
+        item.visibilityPriority = .low
+        return item
+    }()
+    private lazy var nativeToolbar: NSToolbar = {
+        // AppKit synchronizes item changes between toolbars with the same identifier.
+        let toolbar = NSToolbar(identifier: NSToolbar.Identifier("TrackerWindow-\(UUID().uuidString)"))
+        toolbar.delegate = self
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        toolbar.displayMode = .iconOnly
+        return toolbar
+    }()
+
+    init(store: TrackerStore, openSettings: @escaping () -> Void) {
+        self.store = store
+        self.openSettings = openSettings
+        let sidebar = NSHostingController(rootView: AnyView(
+            TrackerSidebar(store: store).focusedSceneObject(store.creation)
+        ))
+        let detail = NSHostingController(rootView: AnyView(
+            TaskDetails(store: store).focusedSceneObject(store.creation)
+        ))
+        sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+        super.init(nibName: nil, bundle: nil)
+
+        let split = TrackerWindowSplitView()
+        split.isVertical = true
+        split.dividerStyle = .thin
+        split.onWindowChange = { [weak self] window in self?.attach(to: window) }
+        splitView = split
+
+        sidebarItem.minimumThickness = 280
+        sidebarItem.maximumThickness = 480
+        sidebarItem.holdingPriority = .defaultHigh
+        sidebarItem.canCollapse = true
+        sidebarItem.canCollapseFromWindowResize = false
+        let detailItem = NSSplitViewItem(viewController: detail)
+        detailItem.minimumThickness = 380
+        addSplitViewItem(sidebarItem)
+        addSplitViewItem(detailItem)
+
+        let preferredWidth = sidebar.view.widthAnchor.constraint(equalToConstant: 340)
+        preferredWidth.priority = .defaultLow
+        preferredWidth.isActive = true
+
+        for publisher in [store.objectWillChange, store.activity.objectWillChange,
+                          store.creation.objectWillChange, store.rename.objectWillChange] {
+            publisher.sink { [weak self] _ in self?.updateToolbarContent() }
+                .store(in: &subscriptions)
+        }
+        NotificationCenter.default.publisher(for: NSSplitView.didResizeSubviewsNotification, object: split)
+            .sink { [weak self] _ in self?.updateSidebarSection() }
+            .store(in: &subscriptions)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("TrackerSplitViewController requires a TrackerStore")
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        attach(to: view.window)
+    }
+
+    private func attach(to window: NSWindow?) {
+        guard !isTornDown else { return }
+        guard installedWindow !== window else { return }
+        detachToolbar()
+        guard let window else { return }
+        installedWindow = window
+        previousWindowPresentation = WindowPresentation(
+            toolbar: window.toolbar, toolbarStyle: window.toolbarStyle,
+            titleVisibility: window.titleVisibility, title: window.title,
+            hadFullSizeContentView: window.styleMask.contains(.fullSizeContentView)
+        )
+        window.styleMask.insert(.fullSizeContentView)
+        window.toolbarStyle = .unifiedCompact
+        window.titleVisibility = .hidden
+        window.toolbar = nativeToolbar
+        updateToolbarContent()
+        updateSidebarSection()
+    }
+
+    private func detachToolbar() {
+        if let window = installedWindow, window.toolbar === nativeToolbar,
+           let previous = previousWindowPresentation {
+            window.toolbar = previous.toolbar
+            window.toolbarStyle = previous.toolbarStyle
+            window.titleVisibility = previous.titleVisibility
+            window.title = previous.title
+            if !previous.hadFullSizeContentView { window.styleMask.remove(.fullSizeContentView) }
+        }
+        installedWindow = nil
+        previousWindowPresentation = nil
+        renderedContent = nil
+    }
+
+    func tearDown() {
+        isTornDown = true
+        subscriptions.removeAll()
+        detachToolbar()
+        nativeToolbar.delegate = nil
+        (splitView as? TrackerWindowSplitView)?.onWindowChange = nil
+        openSettings = {}
+    }
+
+    private func actionItem(_ id: NSToolbarItem.Identifier, label: String, symbol: String,
+                            action: Selector) -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: id)
+        item.label = label
+        item.paletteLabel = label
+        item.toolTip = label
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        item.target = self
+        item.action = action
+        item.autovalidates = false
+        return item
+    }
+
+    private func group(_ id: NSToolbarItem.Identifier, label: String, items: [NSToolbarItem],
+                       priority: NSToolbarItem.VisibilityPriority) -> NSToolbarItemGroup {
+        let group = NSToolbarItemGroup(itemIdentifier: id)
+        group.label = label
+        group.paletteLabel = label
+        group.selectionMode = .momentary
+        group.subitems = items
+        group.autovalidates = false
+        group.visibilityPriority = priority
+        return group
+    }
+
+    private func updateToolbarContent() {
+        guard !isTornDown, installedWindow != nil else { return }
+        let task = store.selectedTask
+        let isRunning = task != nil && store.active?.taskId == task?.id
+        let canTrack: Bool
+        if let task, !task.archived {
+            canTrack = isRunning ? store.activity.canStopTracking
+                : store.activity.canStartTracking(taskID: task.id)
+        } else {
+            canTrack = false
+        }
+        let content = ToolbarContent(
+            title: task?.name ?? "Time Tracker", hasSelectedTask: task != nil,
+            isArchived: task?.archived ?? false, canCreate: store.creation.canOpen,
+            canRename: task != nil && store.rename.canOpen, isRunning: isRunning,
+            canTrack: canTrack, hasActiveTimer: store.active != nil
+        )
+        guard renderedContent != content else { return }
+        renderedContent = content
+        if titleLabel.stringValue != content.title { titleLabel.stringValue = content.title }
+        titleLabel.toolTip = content.title
+        titleItem.toolTip = content.title
+        installedWindow?.title = content.title
+        creationItem.isEnabled = content.canCreate
+        renameItem.isEnabled = content.canRename
+        let detailIndex = nativeToolbar.items.firstIndex { $0.itemIdentifier == ItemID.detail }
+        if let task {
+            let items = task.archived ? [renameItem] : [renameItem, trackingItem]
+            if detailControls.subitems.map(\.itemIdentifier) != items.map(\.itemIdentifier) {
+                detailControls.subitems = items
+            }
+            if detailIndex == nil {
+                nativeToolbar.insertItem(withItemIdentifier: ItemID.detail, at: nativeToolbar.items.count)
+            }
+        } else if let detailIndex {
+            nativeToolbar.removeItem(at: detailIndex)
+        }
+        let trackingLabel = isRunning ? "Stop tracking" : "Start tracking"
+        if trackingItem.label != trackingLabel {
+            trackingItem.label = trackingLabel
+            trackingItem.image = NSImage(systemSymbolName: isRunning ? "stop.fill" : "play.fill",
+                                         accessibilityDescription: trackingLabel)
+        }
+        trackingItem.toolTip = isRunning ? "Stop tracking this task"
+            : store.active == nil ? "Start tracking this task"
+            : "Stop the current timer and start tracking this task"
+        trackingItem.isEnabled = content.canTrack
+    }
+
+    private func updateSidebarSection() {
+        guard !isTornDown, installedWindow != nil, !updatingSeparator else { return }
+        updatingSeparator = true
+        defer { updatingSeparator = false }
+        let collapsed = sidebarItem.isCollapsed
+        let label = collapsed ? "Show sidebar" : "Hide sidebar"
+        if collapseItem.label != label {
+            collapseItem.label = label
+            collapseItem.toolTip = label
+            collapseItem.image?.accessibilityDescription = label
+        }
+        let index = nativeToolbar.items.firstIndex { $0.itemIdentifier == ItemID.separator }
+        if collapsed, let index {
+            // A collapsed sidebar has no toolbar section. Keep its restore button visible.
+            nativeToolbar.removeItem(at: index)
+        } else if !collapsed, index == nil {
+            nativeToolbar.insertItem(withItemIdentifier: ItemID.separator, at: 1)
+        }
+    }
+
+    @objc private func toggleSidebarAction() {
+        toggleSidebar(nil)
+        updateSidebarSection()
+    }
+
+    @objc private func showSettings() { openSettings() }
+
+    @objc private func createTask() {
+        guard store.creation.canOpen else { return }
+        store.creation.open()
+    }
+
+    @objc private func renameTask() {
+        guard store.rename.canOpen, let task = store.selectedTask else { return }
+        store.rename.open(taskID: task.id)
+    }
+
+    @objc private func changeTracking() {
+        guard let task = store.selectedTask, !task.archived else { return }
+        if let active = store.active, active.taskId == task.id {
+            guard store.activity.canStopTracking else { return }
+            store.stopTracking(worklogID: active.id)
+        } else {
+            guard store.activity.canStartTracking(taskID: task.id) else { return }
+            store.startTracking(taskID: task.id)
+        }
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [ItemID.sidebar, ItemID.separator, ItemID.title, .flexibleSpace, ItemID.detail]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        switch itemIdentifier {
+        case ItemID.sidebar: return sidebarControls
+        case ItemID.separator:
+            return NSTrackingSeparatorToolbarItem(identifier: ItemID.separator, splitView: splitView, dividerIndex: 0)
+        case ItemID.title: return titleItem
+        case ItemID.detail: return detailControls
+        default: return nil
+        }
+    }
+}
+
+@MainActor
+private final class TrackerWindowSplitView: NSSplitView {
+    var onWindowChange: ((NSWindow?) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindowChange?(window)
+    }
+}

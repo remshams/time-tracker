@@ -1,22 +1,6 @@
 import SwiftUI
 
 @MainActor
-struct TaskRenameButton: View {
-    @ObservedObject var rename: TaskRenameStore
-    let taskID: String
-
-    var body: some View {
-        Button { rename.open(taskID: taskID) } label: {
-            Label("Edit name", systemImage: "pencil")
-        }
-        .labelStyle(.iconOnly)
-        .accessibilityLabel("Edit task name")
-        .disabled(!rename.canOpen)
-        .help("Rename this task")
-    }
-}
-
-@MainActor
 struct TaskRenameDialog: View {
     @ObservedObject var rename: TaskRenameStore
 

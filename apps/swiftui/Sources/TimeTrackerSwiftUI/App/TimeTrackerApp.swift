@@ -13,7 +13,6 @@ struct TimeTrackerApp: App {
             TrackerWindow(store: store, statusItem: model.statusItem)
         }
         .defaultSize(width: 1100, height: 760)
-        .windowToolbarStyle(.unifiedCompact)
         .commands { TaskCreationCommands() }
 
         Settings {
