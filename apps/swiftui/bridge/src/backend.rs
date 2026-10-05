@@ -129,6 +129,46 @@ impl Backend {
         }
     }
 
+    pub fn rename_task(
+        &mut self,
+        task_id: TaskId,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, BridgeError> {
+        match self {
+            Self::Local(application) => application
+                .rename_task(task_id, name, occurred_at)
+                .map_err(local_error),
+            Self::Remote(remote) => {
+                remote.check_write()?;
+                let expected_name = name.clone();
+                let result = remote.runtime.block_on(remote.application.rename_task(
+                    task_id,
+                    name,
+                    occurred_at,
+                ));
+                match result {
+                    Ok(task)
+                        if task.name() == &expected_name
+                            && remote.application.task(task_id) == Some(&task) =>
+                    {
+                        Ok(task)
+                    }
+                    Ok(_) => {
+                        remote.requires_refresh = true;
+                        Err(BridgeError {
+                            message: "Renamed task does not match returned server state".into(),
+                            kind: "protocol",
+                            uncertain: true,
+                            requires_refresh: true,
+                        })
+                    }
+                    Err(error) => Err(remote.operation_error(error, true)),
+                }
+            }
+        }
+    }
+
     pub fn clear_active_task(
         &mut self,
         worklog_id: WorklogId,

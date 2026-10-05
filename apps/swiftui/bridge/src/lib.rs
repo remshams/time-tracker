@@ -334,6 +334,41 @@ pub unsafe extern "C" fn tt_bridge_create_task_at(
     encode(result)
 }
 
+/// Renames an existing task at the submitted timestamp and returns its snapshot.
+/// Task identity, archive state, and worklogs remain intact.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be null or valid
+/// C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_rename_task_at(
+    bridge: *mut Bridge,
+    task_id: *const c_char,
+    name: *const c_char,
+    occurred_at: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees exclusive access to the live bridge.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    let result = (|| {
+        // SAFETY: The caller supplies valid C strings or null.
+        let task_id =
+            unsafe { read_identifier(task_id, "Invalid task ID") }.map_err(BridgeError::from)?;
+        // SAFETY: The caller supplies a valid C string or null.
+        let name = unsafe { read_identifier::<String>(name, "Invalid task name") }
+            .map_err(BridgeError::from)?;
+        let name = TaskName::new(&name).map_err(|error| BridgeError::from(error.to_string()))?;
+        // SAFETY: The caller supplies a valid C string or null.
+        let occurred_at = unsafe { read_identifier(occurred_at, "Invalid rename timestamp") }
+            .map_err(BridgeError::from)?;
+        bridge.application.rename_task(task_id, name, occurred_at)?;
+        serde_json::to_value(snapshot(&bridge.application))
+            .map_err(|error| error.to_string().into())
+    })();
+    encode(result)
+}
+
 /// Starts the requested task, or atomically switches from the running task.
 /// Returns the committed snapshot without a second database read.
 ///
@@ -653,6 +688,9 @@ mod report_tests;
 
 #[cfg(test)]
 mod creation_tests;
+
+#[cfg(test)]
+mod rename_tests;
 
 #[cfg(test)]
 mod tests {

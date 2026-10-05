@@ -10,7 +10,7 @@ use std::{
 use axum::{
     Json, Router,
     http::StatusCode,
-    routing::{get, post, put},
+    routing::{get, patch, post, put},
 };
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{Value, json};
@@ -21,8 +21,8 @@ use tracker_domain::{TaskName, TrackingState};
 use tracker_storage::SqliteRepository;
 use tracker_swift_bridge::{
     Bridge, tt_bridge_close, tt_bridge_create_task_at, tt_bridge_history, tt_bridge_open_remote,
-    tt_bridge_snapshot, tt_bridge_start_tracking_at, tt_bridge_start_tracking_if_active_at,
-    tt_bridge_stop_tracking_at, tt_bridge_string_free,
+    tt_bridge_rename_task_at, tt_bridge_snapshot, tt_bridge_start_tracking_at,
+    tt_bridge_start_tracking_if_active_at, tt_bridge_stop_tracking_at, tt_bridge_string_free,
 };
 
 struct Server {
@@ -127,6 +127,15 @@ impl Client {
         let at = CString::new(at.to_rfc3339()).unwrap();
         // SAFETY: The client owns the bridge and both strings remain live.
         response(unsafe { tt_bridge_create_task_at(self.0, name.as_ptr(), at.as_ptr()) })
+    }
+    fn rename(&mut self, id: &str, name: &str, at: DateTime<Utc>) -> Value {
+        let id = CString::new(id).unwrap();
+        let name = CString::new(name).unwrap();
+        let at = CString::new(at.to_rfc3339()).unwrap();
+        // SAFETY: The client owns the bridge and every input string remains live.
+        response(unsafe {
+            tt_bridge_rename_task_at(self.0, id.as_ptr(), name.as_ptr(), at.as_ptr())
+        })
     }
     fn start(&mut self, task: &str, at: DateTime<Utc>) -> Value {
         let task = CString::new(task).unwrap();
@@ -359,6 +368,123 @@ fn creation_conflicts_require_refresh_and_never_insert_a_second_task() {
             .len(),
         initial["data"]["tasks"].as_array().unwrap().len() + 2
     );
+}
+
+#[test]
+fn remote_rename_preserves_active_and_archived_tasks_and_existing_worklogs() {
+    let server = Server::start();
+    let mut client = Client::open(&server.endpoint());
+    let initial = client.snapshot(true);
+    let id = initial["data"]["tasks"][0]["id"].as_str().unwrap();
+    let archived_id = initial["data"]["tasks"][1]["id"].as_str().unwrap();
+    let started = client.start(id, at());
+    let history = client.history(id, None);
+    let renamed_at = Utc::now() + Duration::seconds(5);
+    let renamed = client.rename(id, "  Shared name 🛠  ", renamed_at);
+    assert!(renamed.get("error").is_none(), "{renamed}");
+    assert_eq!(renamed["data"]["active"], started["data"]["active"]);
+    assert_eq!(client.history(id, None)["data"], history["data"]);
+    let repository = SqliteRepository::open(server.path()).unwrap();
+    let mut application = TrackerApplication::load(repository).unwrap();
+    let stored = application.task(id.parse().unwrap()).unwrap();
+    assert_eq!(stored.name().as_str(), "Shared name 🛠");
+    assert_eq!(
+        stored.updated_at(),
+        DateTime::from_timestamp_micros(renamed_at.timestamp_micros()).unwrap()
+    );
+    application
+        .archive_task(archived_id.parse().unwrap(), renamed_at)
+        .unwrap();
+    drop(application);
+    client.snapshot(true);
+    let renamed_archived = client.rename(archived_id, "Shared name 🛠", renamed_at);
+    assert!(
+        renamed_archived.get("error").is_none(),
+        "{renamed_archived}"
+    );
+    let task = renamed_archived["data"]["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|task| task["id"] == archived_id)
+        .unwrap();
+    assert_eq!(task["name"], "Shared name 🛠");
+    assert_eq!(task["archived"], true);
+    assert_eq!(
+        renamed_archived["data"]["active"],
+        started["data"]["active"]
+    );
+}
+
+#[test]
+fn remote_rename_conflicts_and_outages_require_reconciliation_without_changing_confirmed_state() {
+    let mut server = Server::start();
+    let mut first = Client::open(&server.endpoint());
+    let mut second = Client::open(&server.endpoint());
+    let initial = first.snapshot(true);
+    second.snapshot(true);
+    let id = initial["data"]["tasks"][0]["id"].as_str().unwrap();
+    second.create("Other client change", at());
+    let conflict = first.rename(id, "Updated name", Utc::now());
+    assert_eq!(conflict["kind"], "conflict", "{conflict}");
+    assert_eq!(conflict["uncertain"], false);
+    assert_eq!(conflict["requiresRefresh"], true);
+    assert_eq!(
+        first.rename(id, "Updated name", Utc::now())["requiresRefresh"],
+        true
+    );
+    first.snapshot(true);
+    let renamed = first.rename(id, "Updated name", Utc::now());
+    assert!(renamed.get("error").is_none(), "{renamed}");
+    server.stop();
+    let offline = first.rename(id, "Offline name", Utc::now());
+    assert_eq!(offline["kind"], "unavailable");
+    assert_eq!(offline["uncertain"], true);
+    assert_eq!(offline["requiresRefresh"], true);
+    assert_eq!(first.snapshot(false)["data"], renamed["data"]);
+    assert_eq!(
+        first.rename(id, "Offline name", Utc::now())["uncertain"],
+        false
+    );
+    assert_eq!(first.snapshot(true)["kind"], "unavailable");
+}
+
+#[test]
+fn remote_rename_rejects_inconsistent_result_names_and_snapshot_tasks() {
+    for failure in ["missing", "snapshot-name", "result-name"] {
+        let id = tracker_domain::TaskId::generate().to_string();
+        let id_for_post = id.clone();
+        let initial_task =
+            json!({"id":id,"name":"Original","archived":false,"created_at":at(),"updated_at":at()});
+        let initial_snapshot = json!({"task_items":[{"task":initial_task,"latest_work_start":null}],"active_worklog":null,"revision":"initial"});
+        let server = Server::launch(
+            TempDir::new().unwrap(),
+            "127.0.0.1:0".parse().unwrap(),
+            move || {
+                Router::new()
+                .route("/v1/health", get(|| async { Json(json!({"status":"ok","protocol_version":tracker_protocol::VERSION})) }))
+                .route("/v1/snapshot", get(move || { let snapshot = initial_snapshot.clone(); async move { Json(snapshot) } }))
+                .route("/v1/tasks/{id}", patch(move || {
+                    let id = id_for_post.clone();
+                    async move {
+                        let result_task = json!({"id":id,"name":if failure == "result-name" {"Wrong name"} else {"Updated"},"archived":false,"created_at":at(),"updated_at":at()});
+                        let mut snapshot_task = result_task.clone();
+                        if failure == "snapshot-name" { snapshot_task["name"] = json!("Wrong name"); }
+                        let items = if failure == "missing" {vec![]} else {vec![json!({"task":snapshot_task,"latest_work_start":null})]};
+                        Json(json!({"result":{"kind":"task","value":result_task},"snapshot":{"task_items":items,"active_worklog":null,"revision":"renamed"}}))
+                    }
+                }))
+            },
+        );
+        let mut client = Client::open(&server.endpoint());
+        client.snapshot(true);
+        let rejected = client.rename(&id, "Updated", at());
+        assert_eq!(rejected["kind"], "protocol", "{failure}: {rejected}");
+        assert_eq!(rejected["uncertain"], true);
+        assert_eq!(rejected["requiresRefresh"], true);
+        assert_eq!(client.rename(&id, "Updated", at())["uncertain"], false);
+        assert!(client.snapshot(true).get("error").is_none());
+    }
 }
 
 #[test]
