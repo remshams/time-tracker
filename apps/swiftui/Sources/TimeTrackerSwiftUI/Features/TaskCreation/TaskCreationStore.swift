@@ -2,7 +2,7 @@ import Combine
 import TrackerClient
 
 @MainActor
-final class TaskCreationStore: ObservableObject {
+final class TaskCreationStore {
     let objectWillChange = ObservableObjectPublisher()
     private let session: TrackerSession
 
@@ -19,3 +19,10 @@ final class TaskCreationStore: ObservableObject {
     func cancel() { session.cancelTaskCreation() }
     func submit() { session.submitTaskCreation() }
 }
+
+// Keep publisher access on the main actor with compilers that support isolated conformances.
+#if compiler(>=6.2)
+extension TaskCreationStore: @MainActor ObservableObject {}
+#else
+extension TaskCreationStore: ObservableObject {}
+#endif
