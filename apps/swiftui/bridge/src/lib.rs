@@ -8,7 +8,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tracker_application::{
-    ApplicationFailureCategory, DEFAULT_TASK_NAMES, TaskOrdering, TrackerApplication, WorklogCursor,
+    ApplicationFailureCategory, TaskOrdering, TrackerApplication, WorklogCursor,
 };
 
 mod backend;
@@ -123,17 +123,24 @@ fn open() -> Result<Bridge, String> {
 
 fn open_at(path: &Path) -> Result<Bridge, String> {
     let repository = SqliteRepository::open(path).map_err(|error| error.to_string())?;
-    let names: Vec<TaskName> = DEFAULT_TASK_NAMES
-        .iter()
-        .map(|name| TaskName::new(name).expect("default task name is valid"))
-        .collect();
-    repository
-        .seed_default_tasks(&names, Utc::now())
-        .map_err(|error| error.to_string())?;
     let application = TrackerApplication::load(repository).map_err(|error| error.to_string())?;
     Ok(Bridge {
         application: Backend::Local(application),
     })
+}
+
+#[cfg(test)]
+fn open_fixture(path: &Path) -> Result<Bridge, String> {
+    let mut bridge = open_at(path)?;
+    if bridge.application.tasks(TaskOrdering::default()).is_empty() {
+        for name in ["Review backlog", "Plan release", "Write documentation"] {
+            bridge
+                .application
+                .create_task(TaskName::new(name).unwrap(), DateTime::UNIX_EPOCH)
+                .map_err(|error| error.message)?;
+        }
+    }
+    Ok(bridge)
 }
 
 /// Opens the same secured default database as the terminal client.
@@ -723,7 +730,7 @@ mod tests {
     fn tracking_commands_persist_one_worklog_and_repeated_commands_are_noops() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("tt.db");
-        let mut bridge = open_at(&path).unwrap();
+        let mut bridge = open_fixture(&path).unwrap();
         let task_id = bridge.application.tasks(TaskOrdering::default())[0]
             .task
             .id();
@@ -751,7 +758,7 @@ mod tests {
         assert_eq!(stop_tracking(&mut bridge, worklog_id), stopped);
         drop(bridge);
 
-        let mut reopened = open_at(&path).unwrap();
+        let mut reopened = open_fixture(&path).unwrap();
         assert!(matches!(
             reopened.application.current_tracking(),
             TrackingState::Idle
@@ -769,7 +776,7 @@ mod tests {
     #[test]
     fn switching_through_the_bridge_stops_and_starts_at_the_same_instant() {
         let directory = tempfile::tempdir().unwrap();
-        let mut bridge = open_at(&directory.path().join("tt.db")).unwrap();
+        let mut bridge = open_fixture(&directory.path().join("tt.db")).unwrap();
         let tasks = bridge.application.tasks(TaskOrdering::default());
         let first = tasks[0].task.id();
         let second = tasks[1].task.id();
@@ -797,11 +804,11 @@ mod tests {
     fn stale_stop_does_not_stop_another_clients_new_timer() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("tt.db");
-        let mut first = open_at(&path).unwrap();
+        let mut first = open_fixture(&path).unwrap();
         let tasks = first.application.tasks(TaskOrdering::default());
         let started = start_tracking(&mut first, tasks[0].task.id());
         let expected_id = started["data"]["active"]["id"].as_str().unwrap();
-        let mut second = open_at(&path).unwrap();
+        let mut second = open_fixture(&path).unwrap();
         let switched = start_tracking(&mut second, tasks[1].task.id());
 
         let rejected = stop_tracking(&mut first, expected_id);
@@ -825,10 +832,10 @@ mod tests {
     fn start_rejects_missing_and_newly_archived_tasks_without_switching() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("tt.db");
-        let mut bridge = open_at(&path).unwrap();
+        let mut bridge = open_fixture(&path).unwrap();
         let tasks = bridge.application.tasks(TaskOrdering::default());
         let started = start_tracking(&mut bridge, tasks[0].task.id());
-        let mut other = open_at(&path).unwrap();
+        let mut other = open_fixture(&path).unwrap();
         other
             .application
             .archive_task(tasks[1].task.id(), Utc::now())
@@ -852,7 +859,7 @@ mod tests {
     #[test]
     fn tracking_commands_reject_null_bridges_and_invalid_identifiers() {
         let directory = tempfile::tempdir().unwrap();
-        let mut bridge = open_at(&directory.path().join("tt.db")).unwrap();
+        let mut bridge = open_fixture(&directory.path().join("tt.db")).unwrap();
         let malformed = CString::new("not an ID").unwrap();
         let non_utf8 = CString::new(vec![0xff]).unwrap();
         // SAFETY: Null bridges are supported, and no identifiers are dereferenced.
@@ -912,18 +919,13 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_exposes_seeded_tasks_in_the_swift_schema() {
-        let repository = SqliteRepository::open_in_memory().unwrap();
-        let names: Vec<TaskName> = DEFAULT_TASK_NAMES
-            .iter()
-            .map(|name| TaskName::new(name).unwrap())
-            .collect();
-        repository.seed_default_tasks(&names, Utc::now()).unwrap();
-        let application = TrackerApplication::load(repository).unwrap();
+    fn snapshot_exposes_explicit_tasks_in_the_swift_schema() {
+        let directory = tempfile::tempdir().unwrap();
+        let bridge = open_fixture(&directory.path().join("tt.db")).unwrap();
 
-        let value = serde_json::to_value(snapshot(&Backend::Local(application))).unwrap();
+        let value = serde_json::to_value(snapshot(&bridge.application)).unwrap();
         let tasks = value["tasks"].as_array().unwrap();
-        assert_eq!(tasks.len(), DEFAULT_TASK_NAMES.len());
+        assert_eq!(tasks.len(), 3);
         assert_eq!(value["active"], Value::Null);
         assert!(tasks.iter().all(|task| {
             task["id"].is_string()
@@ -934,20 +936,26 @@ mod tests {
     }
 
     #[test]
-    fn opening_a_database_seeds_once_and_preserves_existing_tasks() {
+    fn opening_a_database_starts_empty_and_preserves_existing_tasks() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("tt.db");
-        let first = open_at(&path).unwrap();
-        assert_eq!(
-            snapshot(&first.application).tasks.len(),
-            DEFAULT_TASK_NAMES.len()
-        );
+        let mut first = open_at(&path).unwrap();
+        assert!(snapshot(&first.application).tasks.is_empty());
+        let task = first
+            .application
+            .create_task(TaskName::new("Saved project").unwrap(), Utc::now())
+            .unwrap_or_else(|error| panic!("{}", error.message));
+        let before = serde_json::to_value(snapshot(&first.application)).unwrap();
         drop(first);
 
         let second = open_at(&path).unwrap();
         assert_eq!(
-            snapshot(&second.application).tasks.len(),
-            DEFAULT_TASK_NAMES.len()
+            serde_json::to_value(snapshot(&second.application)).unwrap(),
+            before
+        );
+        assert_eq!(
+            snapshot(&second.application).tasks[0].id,
+            task.id().to_string()
         );
     }
 

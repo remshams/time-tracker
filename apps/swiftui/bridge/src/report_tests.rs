@@ -123,8 +123,8 @@ fn report_aggregates_all_history_and_clips_completed_and_active_work() {
 fn report_returns_the_snapshot_adopted_from_other_clients() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("tracker.db");
-    let mut first = open_at(&path).unwrap();
-    let mut second = open_at(&path).unwrap();
+    let mut first = open_fixture(&path).unwrap();
+    let mut second = open_fixture(&path).unwrap();
     let task_id = second.application.tasks(TaskOrdering::default())[0]
         .task
         .id();
@@ -320,7 +320,7 @@ fn remote_report_uses_server_totals_and_unblocks_tracking_with_the_returned_snap
     let path = directory.path().join("server.db");
     let server = Server::start(tracker_server::router_for_database(&path).unwrap());
     let mut bridge = server.client();
-    let mut writer = open_at(&path).unwrap();
+    let mut writer = open_fixture(&path).unwrap();
     let tasks = writer.application.tasks(TaskOrdering::default());
     let task_id = tasks[0].task.id();
     writer

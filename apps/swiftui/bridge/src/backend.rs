@@ -1,13 +1,13 @@
 use chrono::{DateTime, Utc};
 use tokio::runtime::{Builder, Runtime};
 use tracker_application::{
-    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, ReportQueries,
-    ReportTotals, RepositoryError, SetActiveTaskOutcome, TaskListItem, TaskOperations,
-    TaskOrdering, TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor, WorklogPage,
+    ApplicationError, ApplicationFailureCategory, ApplicationFailureSource, ClearActiveTaskOutcome,
+    ReportQueries, ReportTotals, SetActiveTaskOutcome, TaskListItem, TaskOperations, TaskOrdering,
+    TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor, WorklogPage,
     WorklogQueries,
 };
 use tracker_domain::{Task, TaskId, TaskName, TrackingState, WorklogId};
-use tracker_remote::{RemoteApplication, RemoteError, RemoteFailureKind};
+use tracker_remote::{RemoteApplication, RemoteError};
 use tracker_storage::SqliteRepository;
 
 pub(crate) enum Backend {
@@ -308,7 +308,7 @@ impl RemoteBackend {
 
     fn operation_error(&mut self, error: ApplicationError, write: bool) -> BridgeError {
         let failure = error.failure();
-        let kind = operation_error_kind(self.application.last_failure(), &error);
+        let kind = operation_error_kind(&error);
         let uncertain = write && matches!(kind, "unavailable" | "protocol");
         self.requires_refresh |= write || matches!(kind, "unavailable" | "protocol");
         BridgeError {
@@ -320,28 +320,18 @@ impl RemoteBackend {
     }
 }
 
-fn operation_error_kind(
-    last_failure: Option<RemoteFailureKind>,
-    error: &ApplicationError,
-) -> &'static str {
+fn operation_error_kind(error: &ApplicationError) -> &'static str {
     let failure = error.failure();
-    match last_failure {
-        Some(RemoteFailureKind::Unavailable) => "unavailable",
-        Some(RemoteFailureKind::Protocol) => "protocol",
-        Some(RemoteFailureKind::Conflict) => "conflict",
-        None if matches!(
-            error,
-            ApplicationError::Repository(RepositoryError::Backend { .. })
-        ) =>
-        {
-            "protocol"
-        }
-        None if failure.category() != ApplicationFailureCategory::General
-            || failure.message().contains("changed") =>
+    match failure.source() {
+        ApplicationFailureSource::RemoteUnavailable => "unavailable",
+        ApplicationFailureSource::RemoteProtocol => "protocol",
+        ApplicationFailureSource::Operation
+            if failure.category() != ApplicationFailureCategory::General
+                || failure.message().contains("changed") =>
         {
             "conflict"
         }
-        None => "general",
+        _ => "general",
     }
 }
 
@@ -381,13 +371,25 @@ mod tests {
             ),
         ] {
             let error = ApplicationError::semantic_failure(category, message);
-            assert_eq!(operation_error_kind(None, &error), expected);
+            assert_eq!(operation_error_kind(&error), expected);
         }
     }
 
     #[test]
-    fn recovered_backend_failures_still_require_an_uncertain_write_result() {
-        let error = ApplicationError::storage_failure("remote server error");
-        assert_eq!(operation_error_kind(None, &error), "protocol");
+    fn recovered_remote_failures_keep_their_source() {
+        assert_eq!(
+            operation_error_kind(&ApplicationError::RemoteUnavailable(
+                "remote server error".into()
+            )),
+            "unavailable"
+        );
+        assert_eq!(
+            operation_error_kind(&ApplicationError::RemoteProtocol("invalid response".into())),
+            "protocol"
+        );
+        assert_eq!(
+            operation_error_kind(&ApplicationError::storage_failure("local storage error")),
+            "general"
+        );
     }
 }

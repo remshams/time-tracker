@@ -32,7 +32,7 @@ fn refresh(bridge: &mut Bridge) -> Value {
 #[test]
 fn pause_owns_only_a_successful_stop_and_resume_excludes_the_locked_interval() {
     let directory = tempfile::tempdir().unwrap();
-    let mut bridge = open_at(&directory.path().join("tracker.db")).unwrap();
+    let mut bridge = open_fixture(&directory.path().join("tracker.db")).unwrap();
     let task_id = bridge.application.tasks(TaskOrdering::default())[0]
         .task
         .id();
@@ -74,11 +74,11 @@ fn pause_owns_only_a_successful_stop_and_resume_excludes_the_locked_interval() {
 fn local_automation_never_stops_or_switches_a_competing_clients_timer() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("tracker.db");
-    let mut first = open_at(&path).unwrap();
+    let mut first = open_fixture(&path).unwrap();
     let tasks = first.application.tasks(TaskOrdering::default());
     let started = resume(&mut first, tasks[0].task.id(), "2026-10-04T10:00:00Z");
     let old_id = started["data"]["active"]["id"].as_str().unwrap();
-    let mut second = open_at(&path).unwrap();
+    let mut second = open_fixture(&path).unwrap();
     second
         .application
         .set_active_task(tasks[1].task.id(), "2026-10-04T10:10:00Z".parse().unwrap())
@@ -103,9 +103,9 @@ fn local_automation_never_stops_or_switches_a_competing_clients_timer() {
 fn local_resume_rejects_a_timer_started_after_the_idle_snapshot() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("tracker.db");
-    let mut first = open_at(&path).unwrap();
+    let mut first = open_fixture(&path).unwrap();
     let tasks = first.application.tasks(TaskOrdering::default());
-    let mut second = open_at(&path).unwrap();
+    let mut second = open_fixture(&path).unwrap();
     let foreign = resume(&mut second, tasks[1].task.id(), "2026-10-04T10:00:00Z");
     let rejected = resume(&mut first, tasks[0].task.id(), "2026-10-04T10:10:00Z");
     assert!(rejected.get("error").is_some());
@@ -118,7 +118,7 @@ fn local_resume_rejects_a_timer_started_after_the_idle_snapshot() {
 #[test]
 fn local_resume_rejects_missing_and_archived_tasks() {
     let directory = tempfile::tempdir().unwrap();
-    let mut bridge = open_at(&directory.path().join("tracker.db")).unwrap();
+    let mut bridge = open_fixture(&directory.path().join("tracker.db")).unwrap();
     let task_id = bridge.application.tasks(TaskOrdering::default())[0]
         .task
         .id();
@@ -141,7 +141,7 @@ fn local_resume_rejects_missing_and_archived_tasks() {
 #[test]
 fn automation_commands_reject_null_bridges_identifiers_and_timestamps() {
     let directory = tempfile::tempdir().unwrap();
-    let mut bridge = open_at(&directory.path().join("tracker.db")).unwrap();
+    let mut bridge = open_fixture(&directory.path().join("tracker.db")).unwrap();
     let task_id = CString::new(
         bridge.application.tasks(TaskOrdering::default())[0]
             .task
@@ -227,6 +227,7 @@ struct Server {
 impl Server {
     fn start() -> Self {
         let directory = tempfile::tempdir().unwrap();
+        drop(open_fixture(&directory.path().join("server.db")).unwrap());
         let router =
             tracker_server::router_for_database(&directory.path().join("server.db")).unwrap();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

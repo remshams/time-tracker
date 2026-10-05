@@ -35,6 +35,14 @@ struct Server {
 impl Server {
     fn start() -> Self {
         let directory = TempDir::new().unwrap();
+        let repository = SqliteRepository::open(directory.path().join("server.db")).unwrap();
+        let mut application = TrackerApplication::load(repository).unwrap();
+        for name in ["Review backlog", "Plan release", "Write documentation"] {
+            application
+                .create_task(TaskName::new(name).unwrap(), at())
+                .unwrap();
+        }
+        drop(application);
         Self::with_database(directory, "127.0.0.1:0".parse().unwrap())
     }
 
@@ -626,7 +634,7 @@ fn failed_write_response_remains_uncertain_after_a_successful_recovery_read() {
     let mut client = Client::open(&server.endpoint());
     assert!(client.snapshot(true).get("error").is_none());
     let failure = client.start("00000000-0000-0000-0000-000000000001", at());
-    assert_eq!(failure["kind"], "protocol", "{failure}");
+    assert_eq!(failure["kind"], "unavailable", "{failure}");
     assert_eq!(failure["uncertain"], true);
     assert_eq!(failure["requiresRefresh"], true);
     let blocked = client.start("00000000-0000-0000-0000-000000000001", at());

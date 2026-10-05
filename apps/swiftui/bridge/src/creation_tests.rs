@@ -22,7 +22,7 @@ fn create(bridge: &mut Bridge, name: &str, at: &str) -> Value {
 fn local_creation_returns_a_permanent_id_and_snapshot_without_changing_tracking() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("creation.db");
-    let mut bridge = open_at(&path).unwrap();
+    let mut bridge = open_fixture(&path).unwrap();
     let first = bridge.application.tasks(TaskOrdering::default())[0]
         .task
         .id();
@@ -56,7 +56,7 @@ fn local_creation_returns_a_permanent_id_and_snapshot_without_changing_tracking(
 #[test]
 fn task_name_boundaries_are_validated_by_the_domain_without_writes() {
     let directory = tempfile::tempdir().unwrap();
-    let mut bridge = open_at(&directory.path().join("validation.db")).unwrap();
+    let mut bridge = open_fixture(&directory.path().join("validation.db")).unwrap();
     let count = bridge.application.tasks(TaskOrdering::default()).len();
     for (name, message) in [
         ("   ".to_owned(), "task name must not be empty"),
@@ -82,7 +82,7 @@ fn task_name_boundaries_are_validated_by_the_domain_without_writes() {
 #[test]
 fn creation_rejects_null_and_invalid_c_inputs_without_writes() {
     let directory = tempfile::tempdir().unwrap();
-    let mut bridge = open_at(&directory.path().join("inputs.db")).unwrap();
+    let mut bridge = open_fixture(&directory.path().join("inputs.db")).unwrap();
     let count = bridge.application.tasks(TaskOrdering::default()).len();
     let name = CString::new("Task").unwrap();
     let invalid = CString::new("invalid").unwrap();

@@ -23,7 +23,7 @@ fn rename(bridge: &mut Bridge, id: TaskId, name: &str, at: DateTime<Utc>) -> Val
 fn renaming_active_and_archived_tasks_preserves_ids_tracking_and_worklog_history() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("rename.db");
-    let mut bridge = open_at(&path).unwrap();
+    let mut bridge = open_fixture(&path).unwrap();
     let tasks = bridge.application.tasks(TaskOrdering::default());
     let active = tasks[0].task.id();
     let archived = tasks[1].task.id();
@@ -125,7 +125,7 @@ fn renaming_active_and_archived_tasks_preserves_ids_tracking_and_worklog_history
 #[test]
 fn rename_validates_task_names_and_missing_ids_without_changes() {
     let directory = tempfile::tempdir().unwrap();
-    let mut bridge = open_at(&directory.path().join("validation.db")).unwrap();
+    let mut bridge = open_fixture(&directory.path().join("validation.db")).unwrap();
     let before = serde_json::to_value(snapshot(&bridge.application)).unwrap();
     let id = bridge.application.tasks(TaskOrdering::default())[0]
         .task
@@ -161,7 +161,7 @@ fn rename_validates_task_names_and_missing_ids_without_changes() {
 #[test]
 fn rename_rejects_null_and_invalid_c_inputs() {
     let directory = tempfile::tempdir().unwrap();
-    let mut bridge = open_at(&directory.path().join("inputs.db")).unwrap();
+    let mut bridge = open_fixture(&directory.path().join("inputs.db")).unwrap();
     let before = serde_json::to_value(snapshot(&bridge.application)).unwrap();
     let id = CString::new(
         bridge.application.tasks(TaskOrdering::default())[0]
