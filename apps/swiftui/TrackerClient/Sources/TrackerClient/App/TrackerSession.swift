@@ -111,6 +111,14 @@ public final class TrackerSession {
     public var totalDailyDurationText: String {
         totalDailyDuration.map(clockDuration) ?? "Unavailable"
     }
+    public var dailyTotalsExplanation: String {
+        switch dailyTotalsStatus {
+        case .current: return "Time logged today in your local time zone"
+        case .cached: return "Today's total uses cached tracker state. Running time may be unconfirmed."
+        case .loading: return "Loading today's totals"
+        case .unavailable: return dailyTotalsError ?? "Today's total is unavailable"
+        }
+    }
     public var todayTasks: [TaskItem] {
         tasks.filter { (dailyDuration(taskID: $0.id) ?? 0) > 0 }
             .sorted {
