@@ -1,4 +1,6 @@
 import AppKit
+import SwiftUI
+import TrackerClient
 
 @MainActor
 final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
@@ -25,95 +27,74 @@ final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
 @MainActor
 final class TrackerAppRuntime {
     let store = TrackerStore()
-    private lazy var statusItem = TrackerStatusItemController(store: store)
     lazy var presentation = TrackerTaskPresentationCoordinator(
         store: store,
         presentingWindow: { [weak self] needsEditor in
             guard let self else { return nil }
             if needsEditor { return self.showTracker() }
             guard !NSApplication.shared.isHidden else { return nil }
-            return self.preferredWindow(visibleOnly: true)
+            return self.windows.activePresentationWindowID
         }
     )
-    private var windows: [TrackerWindowReference] = []
-    private var openTracker: (() -> Void)?
-    private var openingTracker = false
-    private var revealWhenAvailable = false
+    private var windows = TrackerWindowRoutingState()
+    private var openTracker: ((UUID) -> Void)?
+    private var deferredOpenID: UUID?
     private var isRunning = false
 
     func start() {
         guard !isRunning else { return }
         isRunning = true
-        statusItem.start { [weak self] in self?.showTracker() }
         presentation.start()
     }
 
     func stop() {
+        isRunning = false
         presentation.stop()
         openTracker = nil
+        deferredOpenID = nil
     }
 
-    func installSceneOpener(_ openTracker: @escaping () -> Void) {
+    func installSceneOpener(_ openTracker: @escaping (UUID) -> Void) {
         self.openTracker = openTracker
         start()
-        if revealWhenAvailable { showTracker() }
+        if let id = deferredOpenID {
+            deferredOpenID = nil
+            openTracker(id)
+        }
     }
 
-    func register(_ window: NSWindow) {
-        windows.removeAll { $0.window == nil || $0.window === window }
-        windows.append(TrackerWindowReference(window))
-        openingTracker = false
-        if revealWhenAvailable {
-            revealWhenAvailable = false
-            reveal(window)
-        }
+    func windowAppeared(_ id: UUID, phase: ScenePhase) {
+        windows.appeared(id, isActive: phase == .active)
         presentation.windowAvailable()
     }
 
-    func unregister(_ window: NSWindow) {
-        windows.removeAll { $0.window == nil || $0.window === window }
-        presentation.windowClosed(window)
+    func windowPhaseChanged(_ id: UUID, phase: ScenePhase) {
+        windows.setActive(id, isActive: phase == .active)
+        presentation.windowAvailable()
+    }
+
+    func windowDisappeared(_ id: UUID) {
+        windows.disappeared(id)
+        presentation.windowClosed(id)
+    }
+
+    func preferWindow(_ id: UUID) {
+        windows.prefer(id)
     }
 
     @discardableResult
-    func showTracker() -> NSWindow? {
-        if let window = preferredWindow(visibleOnly: false) {
-            revealWhenAvailable = false
-            reveal(window)
-            presentation.windowAvailable()
-            return window
+    func showTracker() -> UUID {
+        let request = windows.showTracker()
+        if request.shouldOpen {
+            if let openTracker { openTracker(request.id) }
+            else { deferredOpenID = request.id }
         }
-        revealWhenAvailable = true
-        if !openingTracker, let openTracker {
-            openingTracker = true
-            openTracker()
-        }
-        return nil
+        NSApplication.shared.activate()
+        presentation.windowAvailable()
+        return request.id
     }
 
-    private func preferredWindow(visibleOnly: Bool) -> NSWindow? {
-        let candidates = windows.compactMap(\.window).filter {
-            !visibleOnly || ($0.isVisible && !$0.isMiniaturized)
-        }
-        let app = NSApplication.shared
-        return candidates.first(where: { $0 === app.keyWindow })
-            ?? candidates.first(where: { $0 === app.mainWindow })
-            ?? candidates.last
+    func quit() {
+        NSApplication.shared.terminate(nil)
     }
-
-    private func reveal(_ window: NSWindow) {
-        if window.isMiniaturized { window.deminiaturize(nil) }
-        window.makeKeyAndOrderFront(nil)
-        if #available(macOS 14, *) {
-            NSApplication.shared.activate()
-        } else {
-            NSApplication.shared.activate(ignoringOtherApps: true)
-        }
-    }
-}
-
-@MainActor
-private final class TrackerWindowReference {
-    weak var window: NSWindow?
-    init(_ window: NSWindow) { self.window = window }
 }

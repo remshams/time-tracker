@@ -96,8 +96,6 @@ final class TrackerStore {
     func startTracking(taskID: String) { session.startTracking(taskID: taskID) }
     func stopTracking(worklogID: String) { session.stopTracking(worklogID: worklogID) }
     func dismissTrackingError() { session.dismissTrackingError() }
-    func performMenuPrimaryAction() -> MenuPrimaryAction { session.performMenuPrimaryAction() }
-
     func menuOpened() {
         menu.menuOpened()
         session.menuOpened()

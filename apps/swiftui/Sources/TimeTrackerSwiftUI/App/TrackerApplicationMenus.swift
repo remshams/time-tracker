@@ -30,7 +30,7 @@ struct TrackerApplicationMenus: Commands {
 
             Button("New Window") {
                 installSceneOpener()
-                openWindow(id: TrackerSceneID.tracker)
+                openWindow(id: TrackerSceneID.tracker, value: UUID())
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
         }
@@ -51,6 +51,6 @@ struct TrackerApplicationMenus: Commands {
 
     private func installSceneOpener() {
         let action = openWindow
-        runtime.installSceneOpener { action(id: TrackerSceneID.tracker) }
+        runtime.installSceneOpener { action(id: TrackerSceneID.tracker, value: $0) }
     }
 }

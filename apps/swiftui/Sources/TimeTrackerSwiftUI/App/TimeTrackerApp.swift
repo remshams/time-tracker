@@ -6,15 +6,19 @@ struct TimeTrackerApp: App {
     @NSApplicationDelegateAdaptor(TrackerApplicationDelegate.self) private var delegate
 
     var body: some Scene {
-        WindowGroup("Time Tracker", id: TrackerSceneID.tracker) {
-            TrackerWindow(runtime: delegate.runtime)
+        WindowGroup("Time Tracker", id: TrackerSceneID.tracker, for: UUID.self) { windowID in
+            let id: UUID? = windowID.wrappedValue
+            if let id {
+                TrackerWindow(runtime: delegate.runtime, windowID: id)
+            }
+        } defaultValue: {
+            UUID()
         }
         .defaultSize(width: 1100, height: 760)
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
         .commands { TrackerApplicationMenus(runtime: delegate.runtime) }
 
-        // Window gives the gear and menu command a public opening API on macOS 13.
         Window("Settings", id: TrackerSceneID.settings) {
             ConnectionSettingsView(store: delegate.runtime.store)
                 .frame(height: 680)
@@ -22,6 +26,12 @@ struct TimeTrackerApp: App {
         .defaultSize(width: 540, height: 680)
         .windowResizability(.contentSize)
         .commandsRemoved()
+
+        TrackerMenuBarExtra(
+            store: delegate.runtime.store,
+            showTracker: { delegate.runtime.showTracker() },
+            quit: { delegate.runtime.quit() }
+        )
     }
 }
 

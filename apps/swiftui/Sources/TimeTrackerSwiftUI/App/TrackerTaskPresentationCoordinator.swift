@@ -1,19 +1,18 @@
-import AppKit
+import Foundation
 import Combine
 import SwiftUI
 
 @MainActor
 final class TrackerTaskPresentationCoordinator {
     let objectWillChange = ObservableObjectPublisher()
-    private(set) var ownerID: ObjectIdentifier?
-    private weak var ownerWindow: NSWindow?
+    private(set) var ownerID: UUID?
     private let store: TrackerStore
-    private let presentingWindow: (Bool) -> NSWindow?
+    private let presentingWindow: (Bool) -> UUID?
     private var subscriptions = Set<AnyCancellable>()
     private var isRunning = false
     private var isChoosingOwner = false
 
-    init(store: TrackerStore, presentingWindow: @escaping (Bool) -> NSWindow?) {
+    init(store: TrackerStore, presentingWindow: @escaping (Bool) -> UUID?) {
         self.store = store
         self.presentingWindow = presentingWindow
     }
@@ -35,16 +34,16 @@ final class TrackerTaskPresentationCoordinator {
 
     func windowAvailable() { update() }
 
-    func owns(_ windowID: ObjectIdentifier) -> Bool {
-        ownerWindow != nil && ownerID == windowID
+    func owns(_ windowID: UUID) -> Bool {
+        ownerID == windowID
     }
 
-    func canClose(_ window: NSWindow) -> Bool {
-        !owns(ObjectIdentifier(window)) || !hasPresentation
+    func canClose(_ windowID: UUID) -> Bool {
+        !owns(windowID) || !hasPresentation
     }
 
-    func windowClosed(_ window: NSWindow) {
-        guard ownerID == ObjectIdentifier(window) else { return }
+    func windowClosed(_ windowID: UUID) {
+        guard ownerID == windowID else { return }
         setOwner(nil)
         update()
     }
@@ -59,19 +58,17 @@ final class TrackerTaskPresentationCoordinator {
             setOwner(nil)
             return
         }
-        guard ownerWindow == nil else { return }
+        guard ownerID == nil else { return }
         isChoosingOwner = true
         defer { isChoosingOwner = false }
         let needsEditor = store.creation.state.isPresented || store.rename.state.isPresented
         setOwner(presentingWindow(needsEditor))
     }
 
-    private func setOwner(_ window: NSWindow?) {
-        let next = window.map(ObjectIdentifier.init)
-        guard ownerID != next else { return }
+    private func setOwner(_ windowID: UUID?) {
+        guard ownerID != windowID else { return }
         objectWillChange.send()
-        ownerWindow = window
-        ownerID = next
+        ownerID = windowID
     }
 }
 
@@ -85,9 +82,9 @@ extension TrackerTaskPresentationCoordinator: ObservableObject {}
 struct TrackerDetailPresentation: View {
     @ObservedObject var store: TrackerStore
     @ObservedObject var presentation: TrackerTaskPresentationCoordinator
-    let windowID: ObjectIdentifier?
+    let windowID: UUID
 
-    private var isOwner: Bool { windowID.map(presentation.owns) ?? false }
+    private var isOwner: Bool { presentation.owns(windowID) }
     private var trackingFailurePresented: Binding<Bool> {
         Binding(get: { isOwner && store.trackingError != nil }, set: {
             if isOwner && !$0 { store.dismissTrackingError() }
