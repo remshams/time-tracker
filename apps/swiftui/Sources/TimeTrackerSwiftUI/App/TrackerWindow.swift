@@ -24,6 +24,16 @@ struct TrackerWindow: View {
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Spacer()
+                    ConnectionSettingsButton(store: store)
+                    TaskCreationButton(creation: store.creation)
+                }
+                .buttonStyle(.borderless)
+                .font(.title3)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+
                 Picker("Tasks", selection: tabBinding) {
                     ForEach(TaskTab.allCases) { tab in
                         Text(tab.rawValue).tag(tab)
@@ -74,25 +84,13 @@ struct TrackerWindow: View {
                         .foregroundStyle(.secondary)
                     }
                 }
-            }
-            .navigationTitle("Tasks")
-            .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 480)
-            .toolbar {
-                ToolbarItemGroup(placement: .navigation) {
-                    ConnectionSettingsButton(store: store)
-                    TaskCreationButton(creation: store.creation)
-                }
-            }
-        } detail: {
-            VStack(spacing: 0) {
-                ConnectionSummary(store: store)
                 Divider()
-                TaskDetails(store: store)
+                ConnectionSummary(store: store)
             }
+            .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 480)
+        } detail: {
+            TaskDetails(store: store)
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    TrackerToolbarTitle(store: store)
-                }
                 ToolbarItemGroup(placement: .primaryAction) {
                     if let task = store.selectedTask {
                         TaskRenameButton(rename: store.rename, taskID: task.id)
@@ -120,38 +118,22 @@ struct TrackerWindow: View {
     }
 }
 
-private struct TrackerToolbarTitle: View {
-    @ObservedObject var store: TrackerStore
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Text(store.selectedTask?.name ?? "Time Tracker")
-                .font(.headline)
-                .lineLimit(1)
-                .help(store.selectedTask?.name ?? "Time Tracker")
-            if store.active != nil {
-                TrackerElapsedText(timer: store.timer)
-                    .font(.body.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
-                    .help(store.isStale ? "Last confirmed timer: \(store.runningTaskName)"
-                          : "Tracking: \(store.runningTaskName)")
-            }
-        }
-    }
-}
-
+@MainActor
 struct TrackerDailyTotalText: View {
-    @ObservedObject var totals: TrackerDailyTotalsStore
-    let taskID: String
+    @ObservedObject private var task: TrackerTaskDailyTotalStore
+
+    init(totals: TrackerDailyTotalsStore, taskID: String) {
+        task = totals.task(taskID)
+    }
 
     var body: some View {
-        Text(totals.text(taskID: taskID))
+        let text = task.content?.text ?? "-"
+        Text(text)
             .font(.callout.monospacedDigit())
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
-            .help(totals.explanation)
-            .accessibilityLabel("Today's total: \(totals.text(taskID: taskID))")
+            .help(task.content?.explanation ?? "Today's total is unavailable")
+            .accessibilityLabel("Today's total: \(text)")
     }
 }

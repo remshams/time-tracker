@@ -84,12 +84,13 @@ final class TrackerStatusItemController: NSObject {
             store.menuClosed()
         }
         // Freeze the presentation for the entire synchronous AppKit tracking loop.
-        let menu = makeMenu(store.menu.content, appearance: button.effectiveAppearance)
+        let menu = makeMenu(store.menu.content, appearance: NSApplication.shared.effectiveAppearance)
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY), in: button)
     }
 
     private func makeMenu(_ content: TrackerMenuContent, appearance: NSAppearance) -> NSMenu {
         let menu = NSMenu()
+        menu.appearance = appearance
         menu.autoenablesItems = false
         addText(content.connectionStatusText, to: menu)
         if content.isStale { addText("Showing last confirmed state", to: menu) }
@@ -121,6 +122,7 @@ final class TrackerStatusItemController: NSObject {
         }
         if !content.otherTasks.isEmpty {
             let submenu = NSMenu(title: "Start tracking")
+            submenu.appearance = appearance
             submenu.autoenablesItems = false
             for entry in content.otherTasks {
                 addTask(entry, title: entry.task.name, help: nil, isStale: content.isStale,
@@ -154,7 +156,20 @@ final class TrackerStatusItemController: NSObject {
     private func addText(_ title: String, to menu: NSMenu, help: String? = nil) {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
-        item.toolTip = help
+        let label = NSTextField(labelWithString: title)
+        label.font = .menuFont(ofSize: 0)
+        label.textColor = .labelColor
+        label.lineBreakMode = .byTruncatingMiddle
+        label.toolTip = help ?? title
+        label.setAccessibilityLabel(title)
+        let size = label.fittingSize
+        let width = min(480, size.width + 40)
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: width, height: size.height + 8))
+        view.appearance = menu.appearance
+        label.frame = NSRect(x: 20, y: 4, width: width - 40, height: size.height)
+        label.autoresizingMask = [.width]
+        view.addSubview(label)
+        item.view = view
         menu.addItem(item)
     }
 

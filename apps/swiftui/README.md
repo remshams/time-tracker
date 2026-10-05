@@ -16,7 +16,7 @@ Xcode keeps build output in DerivedData. The project signs local builds ad hoc a
 
 ## Connect to a server
 
-Open Time Tracker > Settings, or click the gear in the sidebar toolbar. Choose Server and enter the full HTTP or HTTPS origin, including the server's port. Click Test connection to check it, then Connect to use it. The app saves the successful selection for the next launch. A failed connection change keeps the previous data source and saved settings.
+Open Time Tracker > Settings, or click the gear in the sidebar header. Choose Server and enter the full HTTP or HTTPS origin, including the server's port. Click Test connection to check it, then Connect to use it. The app saves the successful selection for the next launch. A failed connection change keeps the previous data source and saved settings.
 
 For tabit, use its Tailscale IP and the actual port configured for the tracker server, for example `http://<tabit-tailscale-ip>:<tracker-port>`. The existing server validates the HTTP Host header against its listening address. It rejects a DNS name such as `tabit` unless a reverse proxy rewrites Host to an accepted address. This integration does not change that server policy.
 
@@ -26,7 +26,7 @@ Local mode uses this Mac's secured default `tt.db`, shared with the local termin
 
 ## Create a task
 
-In the main window, click the plus button in the sidebar toolbar. You can also right-click the task list and choose New task, or choose File > New task with Command-N. Each opens the same dialog. Enter a name and click Create. The app selects the confirmed task in Active and loads its history. Creating a task leaves any running timer unchanged. Task creation is available in local and server mode.
+In the main window, click the plus button in the sidebar header. You can also right-click the task list and choose New task, or choose File > New task with Command-N. Each opens the same dialog. Enter a name and click Create. The app selects the confirmed task in Active and loads its history. Creating a task leaves any running timer unchanged. Task creation is available in local and server mode.
 
 The sheet keeps the draft in memory. Rust validates the name and creates its permanent UUID before submitting it to the configured backend. SQLite stores that UUID as the task's primary key. Names may repeat; IDs must be unique. Names must contain text, cannot contain control characters, and cannot exceed 256 Unicode scalars.
 
@@ -159,6 +159,8 @@ A session moves once from idle to running, then to stopped on shutdown. A runnin
 
 History responses carry the selection generation captured at request time. Timer callbacks carry their scheduling generation. Shutdown invalidates both, cancels scheduled timers, and rejects late results. An already running C call can finish on its queue and release its handle there. Sleep cancels timers while allowing an in-flight operation to finish; wake resets the elapsed anchor and refreshes.
 
+Task totals have one stable presentation adapter per task ID. The portable observer compares each formatted value and explanation, then notifies only changed IDs. Updating a running or server-refreshed total leaves completed task rows untouched. A cache-status change updates every affected tooltip. Routine synchronization does not show the connection spinner; it appears only during an explicit connection change. Command guards still reject conflicting writes during reads.
+
 Refreshing history for the same task retains its rows and pagination cursor until the replacement page arrives. Selecting another task or connecting to another data source clears that history immediately. Rows stay visible during synchronization without displaying another task's cached rows.
 
 The bridge passes JSON snapshots, daily reports, and history pages across an in-process function call. Its costs are serialization and decoding, with no separate bridge process or IPC. Server response time and network activity need measurement on a Mac before making battery or latency claims.
@@ -175,7 +177,7 @@ The elapsed timer redraws once a second only while UI is visible and a timer is 
 
 ## Appearance and history
 
-The app follows macOS light and dark mode. Text, window backgrounds, worklog cards, and borders use system colors. The sidebar keeps macOS's native selection appearance. The task heading stays above the scrolling history and wraps to three lines. Hover over a task name to read its full text.
+The app follows macOS light and dark mode. The popup menu and its submenu use the application appearance instead of inheriting the status bar button appearance. Informational menu labels use adaptive primary text instead of disabled-action styling. Text, window backgrounds, worklog cards, and borders use system colors. The sidebar keeps macOS's native selection appearance. The task heading stays above the scrolling history and wraps to three lines. Hover over a task name to read its full text.
 
 The Active and Archived tabs remember their selections. Worklogs load 50 at a time. The status bar shows today's combined total. Its menu shows the current task, elapsed time, connection status, today's task totals, tracking actions, and commands to open the window or quit. Closing the window leaves the menu bar item running.
 
@@ -199,8 +201,10 @@ The Active and Archived tabs remember their selections. Worklogs load 50 at a ti
 
 14. Create a task using the toolbar and Command-N in local and server mode. Check field focus, Return to create, Escape to cancel, inline validation errors, and readable Light and Dark appearance. Confirm the returned task is selected and a running timer stays unchanged. Try a repeated name, a name over 256 Unicode scalars, and an unavailable server. During a slow submission, confirm repeated clicks do not submit again. After an uncertain write, restore the server and retry; confirm only one task exists. Close and reopen the sheet before retrying and confirm the submitted name is retained.
 
-15. Use the single plus in the sidebar toolbar and New task in the context menu; confirm each opens one creation dialog. Select an active task, click the toolbar pencil, and save a changed name. Repeat with an archived task, with tracking running, and in local and server mode. Check the sidebar, heading, timer, and reopened menu show the new name, while the running worklog and its elapsed time remain intact. Check Cancel, unchanged names, invalid names, and slow or failed requests. Rename the same task from another client while editing and confirm Save asks you to reopen and review the latest name. After a lost response, retry and confirm a name already accepted by the server completes without another write. Repeat in Light and Dark appearance and at the minimum window size.
+15. Use the single plus in the sidebar header and New task in the context menu; confirm each opens one creation dialog. Select an active task, click the toolbar pencil, and save a changed name. Repeat with an archived task, with tracking running, and in local and server mode. Check the sidebar, heading, timer, and reopened menu show the new name, while the running worklog and its elapsed time remain intact. Check Cancel, unchanged names, invalid names, and slow or failed requests. Rename the same task from another client while editing and confirm Save asks you to reopen and review the latest name. After a lost response, retry and confirm a name already accepted by the server completes without another write. Repeat in Light and Dark appearance and at the minimum window size.
 
-16. Check the sidebar toolbar contains one plus and the settings gear, with edit and start/stop icons at the right and elapsed time beside the title. Right-click an unselected task and rename it; confirm the clicked task changes. Check all dots have matching colors in Light and Dark appearance. Left-click the status dot to stop and restart the last task without changing window selection. Right-click and Control-click to open its menu and keep a submenu open across polls. Check hover text while running, stopped, and offline. Quit and reopen while idle, then switch servers; confirm each source remembers its own task. Check no previous task and deleted/archived previous tasks open the menu.
+16. Check the sidebar header contains one plus and the settings gear, connection status sits at the sidebar bottom, and edit and start/stop icons remain in the window toolbar. Confirm no duplicate title or elapsed timer appears in the toolbar. Right-click an unselected task and rename it; confirm the clicked task changes. Check all dots have matching colors in Light and Dark appearance. Left-click the status dot to stop and restart the last task without changing window selection. Right-click and Control-click to open its menu and keep a submenu open across polls. Check hover text while running, stopped, and offline. Quit and reopen while idle, then switch servers; confirm each source remembers its own task. Check no previous task and deleted/archived previous tasks open the menu.
 
 Xcode compilation, native layout, and the lifecycle checks above require a Mac. Foundation package tests can run on Linux. If the build fails, send the error text from Xcode's Report navigator. The Build Rust bridge phase appears separately from Swift compilation and linking.
+
+17. Watch several healthy server polls and confirm the connection footer does not flash a spinner. Keep a completed task beside the running task and confirm only changing totals redraw. Right-click the dot in Light and Dark mode and check the menu background, informational labels, and submenu follow the app appearance.

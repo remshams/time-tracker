@@ -30,7 +30,7 @@ final class TrackerStore: ObservableObject {
         presentation = TrackerPresentationObserver(session: session)
         activity = TrackerActivityStore(session: session, presentation: presentation)
         timer = TrackerTimerStore(session: session, presentation: presentation)
-        dailyTotals = TrackerDailyTotalsStore(session: session, presentation: presentation)
+        dailyTotals = TrackerDailyTotalsStore(presentation: presentation)
         menu = TrackerMenuStore(session: session, showDailyTotal: showDailyTotalInMenuBar)
         creation = TaskCreationStore(session: session, presentation: presentation)
         rename = TaskRenameStore(session: session, presentation: presentation)
@@ -116,15 +116,22 @@ final class TrackerStore: ObservableObject {
 }
 
 @MainActor
-final class TrackerDailyTotalsStore: ObservableObject {
-    let objectWillChange = ObservableObjectPublisher()
+final class TrackerDailyTotalsStore {
     var onMenuBarTick: (() -> Void)?
-    private let session: TrackerSession
+    private let presentation: TrackerPresentationObserver
+    private var taskStores: [String: TrackerTaskDailyTotalStore] = [:]
     private var menuBarTimer: Timer?
 
-    init(session: TrackerSession, presentation: TrackerPresentationObserver) {
-        self.session = session
-        presentation.onDailyTotalsChange = { [weak self] in self?.objectWillChange.send() }
+    init(presentation: TrackerPresentationObserver) {
+        self.presentation = presentation
+        presentation.onTaskDailyTotalsChange = { [weak self] taskIDs in
+            guard let self else { return }
+            for id in taskIDs {
+                if let content = self.presentation.taskDailyTotals[id] {
+                    taskStores[id]?.update(content)
+                } else { taskStores.removeValue(forKey: id) }
+            }
+        }
     }
 
     deinit { menuBarTimer?.invalidate() }
@@ -144,11 +151,26 @@ final class TrackerDailyTotalsStore: ObservableObject {
         RunLoop.main.add(timer, forMode: .common)
     }
 
-    func text(taskID: String) -> String {
-        session.dailyDuration(taskID: taskID).map(clockDuration) ?? "-"
+    func task(_ taskID: String) -> TrackerTaskDailyTotalStore {
+        if let existing = taskStores[taskID] { return existing }
+        let store = TrackerTaskDailyTotalStore(content: presentation.taskDailyTotals[taskID])
+        taskStores[taskID] = store
+        return store
     }
+}
 
-    var explanation: String { session.dailyTotalsExplanation }
+@MainActor
+final class TrackerTaskDailyTotalStore: ObservableObject {
+    let objectWillChange = ObservableObjectPublisher()
+    private(set) var content: TaskDailyTotalPresentation?
+
+    init(content: TaskDailyTotalPresentation?) { self.content = content }
+
+    func update(_ next: TaskDailyTotalPresentation) {
+        guard content != next else { return }
+        content = next
+        objectWillChange.send()
+    }
 }
 
 @MainActor

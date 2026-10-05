@@ -20,24 +20,25 @@ struct ConnectionSummary: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(store.connectionSettings.mode == .local
                      ? "Local database" : store.connectionSettings.serverURL)
-                    .font(.subheadline.weight(.medium))
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .truncationMode(.middle)
                     .help(store.connectionSettings.serverURL)
                 Text(store.connectionStatusText)
-                    .font(.subheadline)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .help(store.connectionMessage ?? store.connectionStatusText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if activity.isBusy {
+            if store.isChangingConnection {
                 ProgressView().controlSize(.small)
             } else if store.isStale {
                 Button("Retry") { store.refresh() }
+                    .disabled(activity.isBusy)
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 }
