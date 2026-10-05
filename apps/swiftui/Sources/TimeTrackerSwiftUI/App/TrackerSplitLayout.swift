@@ -28,7 +28,6 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
         static let settings = NSToolbarItem.Identifier("TrackerSettings")
         static let create = NSToolbarItem.Identifier("TrackerCreateTask")
         static let separator = NSToolbarItem.Identifier("TrackerSidebarSeparator")
-        static let title = NSToolbarItem.Identifier("TrackerTaskTitle")
         static let detail = NSToolbarItem.Identifier("TrackerTaskControls")
         static let rename = NSToolbarItem.Identifier("TrackerRenameTask")
         static let tracking = NSToolbarItem.Identifier("TrackerTracking")
@@ -84,32 +83,6 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
     private lazy var detailControls = group(
         ItemID.detail, label: "Task", items: [renameItem, trackingItem], priority: .high
     )
-    private lazy var titleLabel: NSTextField = {
-        let label = NSTextField(labelWithString: "Time Tracker")
-        label.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
-        label.lineBreakMode = .byTruncatingTail
-        label.maximumNumberOfLines = 1
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return label
-    }()
-    private lazy var titleItem: NSToolbarItem = {
-        let item = NSToolbarItem(itemIdentifier: ItemID.title)
-        let container = NSView()
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(titleLabel)
-        NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            titleLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            titleLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            container.heightAnchor.constraint(equalToConstant: 24),
-            container.widthAnchor.constraint(greaterThanOrEqualToConstant: 40),
-            container.widthAnchor.constraint(lessThanOrEqualToConstant: 420)
-        ])
-        item.view = container
-        item.label = "Task name"
-        item.visibilityPriority = .low
-        return item
-    }()
     private lazy var nativeToolbar: NSToolbar = {
         // AppKit synchronizes item changes between toolbars with the same identifier.
         let toolbar = NSToolbar(identifier: NSToolbar.Identifier("TrackerWindow-\(UUID().uuidString)"))
@@ -123,10 +96,10 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
     init(store: TrackerStore, openSettings: @escaping () -> Void) {
         self.store = store
         self.openSettings = openSettings
-        let sidebar = NSHostingController(rootView: AnyView(
+        let sidebar = TrackerPaneViewController(content: AnyView(
             TrackerSidebar(store: store).focusedSceneObject(store.creation)
         ))
-        let detail = NSHostingController(rootView: AnyView(
+        let detail = TrackerPaneViewController(content: AnyView(
             TaskDetails(store: store).focusedSceneObject(store.creation)
         ))
         sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
@@ -257,9 +230,6 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
         )
         guard renderedContent != content else { return }
         renderedContent = content
-        if titleLabel.stringValue != content.title { titleLabel.stringValue = content.title }
-        titleLabel.toolTip = content.title
-        titleItem.toolTip = content.title
         installedWindow?.title = content.title
         creationItem.isEnabled = content.canCreate
         renameItem.isEnabled = content.canRename
@@ -298,12 +268,24 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
             collapseItem.toolTip = label
             collapseItem.image?.accessibilityDescription = label
         }
-        let index = nativeToolbar.items.firstIndex { $0.itemIdentifier == ItemID.separator }
-        if collapsed, let index {
-            // A collapsed sidebar has no toolbar section. Keep its restore button visible.
-            nativeToolbar.removeItem(at: index)
-        } else if !collapsed, index == nil {
-            nativeToolbar.insertItem(withItemIdentifier: ItemID.separator, at: 1)
+        if collapsed {
+            if let index = nativeToolbar.items.firstIndex(where: { $0.itemIdentifier == ItemID.separator }) {
+                nativeToolbar.removeItem(at: index)
+            }
+            if let groupIndex = nativeToolbar.items.firstIndex(where: { $0.itemIdentifier == ItemID.sidebar }),
+               groupIndex > 0, nativeToolbar.items[groupIndex - 1].itemIdentifier == .flexibleSpace {
+                // Keep the restore button at the leading edge when there is no sidebar section.
+                nativeToolbar.removeItem(at: groupIndex - 1)
+            }
+        } else {
+            if let groupIndex = nativeToolbar.items.firstIndex(where: { $0.itemIdentifier == ItemID.sidebar }),
+               groupIndex == 0 || nativeToolbar.items[groupIndex - 1].itemIdentifier != .flexibleSpace {
+                nativeToolbar.insertItem(withItemIdentifier: .flexibleSpace, at: groupIndex)
+            }
+            if !nativeToolbar.items.contains(where: { $0.itemIdentifier == ItemID.separator }),
+               let groupIndex = nativeToolbar.items.firstIndex(where: { $0.itemIdentifier == ItemID.sidebar }) {
+                nativeToolbar.insertItem(withItemIdentifier: ItemID.separator, at: groupIndex + 1)
+            }
         }
     }
 
@@ -336,7 +318,7 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ItemID.sidebar, ItemID.separator, ItemID.title, .flexibleSpace, ItemID.detail]
+        [.flexibleSpace, ItemID.sidebar, ItemID.separator, .flexibleSpace, ItemID.detail]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -349,7 +331,6 @@ final class TrackerSplitViewController: NSSplitViewController, NSToolbarDelegate
         case ItemID.sidebar: return sidebarControls
         case ItemID.separator:
             return NSTrackingSeparatorToolbarItem(identifier: ItemID.separator, splitView: splitView, dividerIndex: 0)
-        case ItemID.title: return titleItem
         case ItemID.detail: return detailControls
         default: return nil
         }

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		333EF1BA4C83793EFC92EAA7 /* TrackerPaneViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC73D609782A8AF9FCB2A64 /* TrackerPaneViewController.swift */; };
 		ED605C1B494E79DC7EF1215D /* TrackerSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 484979169FE35618CB437645 /* TrackerSidebar.swift */; };
 		3F7A03677BF75120A989F9AD /* TrackerSplitLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */; };
 		B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */; };
@@ -33,6 +34,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		EAC73D609782A8AF9FCB2A64 /* TrackerPaneViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerPaneViewController.swift; sourceTree = "<group>"; };
 		484979169FE35618CB437645 /* TrackerSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerSidebar.swift; sourceTree = "<group>"; };
 		323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerSplitLayout.swift; sourceTree = "<group>"; };
 		000000000000000000000007 /* TimeTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TimeTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -115,6 +117,7 @@
 		13C4608B5138EBE9B3A45A55 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				EAC73D609782A8AF9FCB2A64 /* TrackerPaneViewController.swift */,
 				323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */,
 				F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */,
 				4EC372281DA1DF7ABC74910A /* TrackerStore.swift */,
@@ -337,6 +340,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				ED605C1B494E79DC7EF1215D /* TrackerSidebar.swift in Sources */,
+				333EF1BA4C83793EFC92EAA7 /* TrackerPaneViewController.swift in Sources */,
 				3F7A03677BF75120A989F9AD /* TrackerSplitLayout.swift in Sources */,
 				06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */,
 				DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */,
