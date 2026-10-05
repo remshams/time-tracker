@@ -71,6 +71,31 @@ struct ConnectionSettingsView: View {
                     ))
                 }
 
+                Section("Keyboard shortcuts") {
+                    ForEach(MenuShortcutAction.allCases, id: \.self) { action in
+                        HStack {
+                            Text(action.title)
+                            Spacer()
+                            ShortcutRecorder(shortcut: store.menuShortcuts[action]) { shortcut in
+                                store.setMenuShortcut(action, shortcut: shortcut)
+                            }
+                            .frame(width: 160, height: 28)
+                            .accessibilityLabel("\(action.title) shortcut")
+                        }
+                    }
+                    Text("Click a shortcut and press its new keys. Escape cancels. Open menu opens the keyboard dropdown across apps. Mouse clicks keep the native menu. The other shortcuts work only in the keyboard dropdown. Arrow keys, Return and Escape keep their usual actions.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Exact time includes seconds. Rounded time uses the nearest 15 minutes. Both copy today's total for the highlighted task.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let error = store.menuShortcutError {
+                        Text(error).foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Button("Restore default shortcuts") { store.resetMenuShortcuts() }
+                }
+
                 Section {
                     HStack(spacing: 12) {
                         Button("Test connection") { testConnection() }

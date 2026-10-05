@@ -82,6 +82,20 @@ Settings > Menu bar > Show today's total next to the icon controls the status ba
 
 The Rust application report query aggregates the full day independently of paged worklog history. Its response includes totals and an authoritative tracker snapshot from the same read. Healthy synchronization uses this report instead of a separate snapshot request. Swift advances the matching running worklog's contribution locally between reports. Ordinary display ticks make no network request. One local day-boundary timer clears yesterday's totals and requests today's report, even while tracking is idle.
 
+## Menu keyboard shortcuts
+
+Settings > Keyboard shortcuts lets you record each shortcut. Click a binding and press its new keys; Escape cancels. Valid changes apply immediately and save on this Mac. Conflicting bindings are rejected. Restore default shortcuts resets all six actions.
+
+Control-Option-T opens the keyboard dropdown from any app while Time Tracker is running. Mouse clicks keep the native AppKit menu and the existing tracking actions. The global binding needs Command, Control, or Option. If macOS cannot register it, Settings shows the error and keeps the previous binding. A global registration error does not prevent changing the dropdown's local shortcuts. Bindings follow keyboard layout changes when the new layout can provide the chosen key.
+
+The keyboard dropdown uses a native popover with a scrollable task list. Up and Down, or the configurable `j` and `k` defaults, highlight tasks. The running task is highlighted when the dropdown opens, otherwise the first task is highlighted. Navigation stops at the ends of the list. Return starts the highlighted task when tracking is available; Escape closes the dropdown. Task clicks keep their existing start-tracking action. Archived tasks remain selectable for copying.
+
+With a task highlighted, `c` copies its name, `t` copies today's exact time, and `s` copies today's time rounded to the nearest 15 minutes. Exact time uses the TUI format, such as `1h 23m 45s`; rounded time uses `1h 30m`. The copy buttons show the current bindings and provide the same actions. Dropdown shortcuts apply only while it is open and do not intercept typing in other windows.
+
+Time copying reads the current daily total at the key press, including the running worklog's contribution. The displayed task list stays stable while open. Cached values can be copied, with a cached confirmation; unavailable values leave the clipboard unchanged. A task with a confirmed empty total copies `0s` or `0m`. Changing the data source makes the old dropdown's copy and tracking actions unavailable until it is reopened.
+
+Native keyboard checks require a Mac. Test the global shortcut while another app is active and with all tracker windows closed. Navigate a long list with arrows and `j`/`k`, then hover rows and confirm the list stays still. Copy each value, including an archived task, zero totals, cached state, and a running task after leaving the dropdown open for a minute. Tab to the Stop, Copy, Open and Quit buttons and confirm Space invokes the focused button. Record bindings, cancel with Escape, try duplicate bindings, and restart to verify persistence. Check a global registration conflict, change a local shortcut while that conflict remains, switch keyboard layouts, and confirm the status icon still supports primary-click tracking and right-click opening of the native menu. With the native menu open, press the global shortcut and confirm it switches to the keyboard dropdown.
+
 ## Unit tests
 
 The `TrackerClient` package contains Foundation-only client state and XCTest tests. It has no Rust, SwiftUI, AppKit, database, or network dependency. Run it from the repository root on a Mac or Linux machine with Swift 5.9 or newer:

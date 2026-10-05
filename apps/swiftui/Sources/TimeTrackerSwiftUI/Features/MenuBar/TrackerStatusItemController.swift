@@ -1,15 +1,22 @@
 import AppKit
 import Combine
+import Carbon
+import SwiftUI
 import TrackerClient
 
 @MainActor
-final class TrackerStatusItemController: NSObject {
+final class TrackerStatusItemController: NSObject, NSPopoverDelegate {
     private let store: TrackerStore
     private var statusItem: NSStatusItem?
     private var subscriptions = Set<AnyCancellable>()
     private var appearanceObservation: NSKeyValueObservation?
     private var openWindow: (() -> Void)?
-    private var showingMenu = false
+    private var popover: NSPopover?
+    private var nativeMenu: NSMenu?
+    private var openKeyboardMenuAfterNativeClose = false
+    private var menuState: MenuDropdownState?
+    private var keyMonitor: Any?
+    private var shortcutRegistration: GlobalMenuShortcutRegistration?
 
     init(store: TrackerStore) {
         self.store = store
@@ -36,10 +43,39 @@ final class TrackerStatusItemController: NSObject {
         NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.stop() } }
             .store(in: &subscriptions)
+        let registration = GlobalMenuShortcutRegistration { [weak self] in self?.toggleMenu() }
+        shortcutRegistration = registration
+        store.registerMenuShortcut = { [weak registration] shortcut in
+            do {
+                try registration?.register(shortcut)
+                return nil
+            } catch { return error.localizedDescription }
+        }
+        do { try registration.register(store.menuShortcuts.openMenu) }
+        catch { store.reportMenuGlobalShortcutError(error.localizedDescription) }
+        DistributedNotificationCenter.default()
+            .publisher(for: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    do {
+                        try self.shortcutRegistration?.register(self.store.menuShortcuts.openMenu)
+                        self.store.reportMenuGlobalShortcutError(nil)
+                    } catch { self.store.reportMenuGlobalShortcutError(error.localizedDescription) }
+                }
+            }.store(in: &subscriptions)
         updateLabel()
     }
 
     func stop() {
+        openKeyboardMenuAfterNativeClose = false
+        nativeMenu?.cancelTracking()
+        closeMenu()
+        releaseMenu()
+        shortcutRegistration?.unregister()
+        shortcutRegistration = nil
+        store.registerMenuShortcut = nil
         subscriptions.removeAll()
         appearanceObservation = nil
         if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
@@ -60,35 +96,162 @@ final class TrackerStatusItemController: NSObject {
         ])
         button.toolTip = label.help
         button.setAccessibilityLabel(label.status)
-        button.setAccessibilityHelp("\(label.help)\nClick to start or stop tracking. Right-click to open the menu.")
+        button.setAccessibilityHelp("\(label.help)\nClick to start or stop tracking. Right-click or use the Open menu shortcut to open the menu.")
     }
 
     @objc private func clicked() {
-        guard !showingMenu else { return }
+        guard nativeMenu == nil else { return }
+        if popover != nil {
+            closeMenu()
+            return
+        }
         let event = NSApplication.shared.currentEvent
         if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
-            showMenu()
+            showNativeMenu()
         } else if case .openMenu = store.performMenuPrimaryAction() {
-            showMenu()
+            showNativeMenu()
         }
     }
 
-    private func showMenu() {
-        guard !showingMenu, let button = statusItem?.button else { return }
-        showingMenu = true
+    private func toggleMenu() {
+        if let nativeMenu {
+            openKeyboardMenuAfterNativeClose = true
+            nativeMenu.cancelTracking()
+            return
+        }
+        if popover == nil { showMenu() } else { closeMenu() }
+    }
+
+    private func showNativeMenu() {
+        guard nativeMenu == nil, popover == nil, let button = statusItem?.button else { return }
         store.menuOpened()
+        let menu = makeMenu(store.menu.content, appearance: NSApplication.shared.effectiveAppearance)
+        nativeMenu = menu
         button.highlight(true)
         defer {
+            nativeMenu = nil
             button.highlight(false)
-            showingMenu = false
             store.menuClosed()
+            let openKeyboardMenu = openKeyboardMenuAfterNativeClose
+            openKeyboardMenuAfterNativeClose = false
+            if openKeyboardMenu { showMenu() }
         }
-        // Freeze the presentation for the entire synchronous AppKit tracking loop.
-        let menu = makeMenu(store.menu.content, appearance: NSApplication.shared.effectiveAppearance)
-        // In flipped views, maxY is the bottom edge beneath the menu bar.
         let bottomY = button.isFlipped ? button.bounds.maxY : button.bounds.minY
         let anchor = NSPoint(x: button.bounds.minX, y: bottomY)
         menu.popUp(positioning: nil, at: anchor, in: button)
+    }
+
+    private func showMenu() {
+        guard nativeMenu == nil, popover == nil, let button = statusItem?.button else { return }
+        store.menuOpened()
+        let content = store.menu.content
+        let state = MenuDropdownState(content: content, connection: store.connectionSettings)
+        menuState = state
+        let popover = NSPopover()
+        self.popover = popover
+        popover.behavior = .transient
+        popover.delegate = self
+        popover.contentViewController = NSHostingController(rootView: MenuDropdownView(
+            state: state, shortcuts: store.menuShortcuts,
+            activateTask: { [weak self] id in self?.activateTask(id) },
+            stopTracking: { [weak self] in self?.stopTracking() },
+            copyValue: { [weak self] action in self?.copyValue(action) },
+            openWindow: { [weak self] in self?.revealWindow() },
+            quit: { NSApplication.shared.terminate(nil) }
+        ))
+        button.highlight(true)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        guard let window = popover.contentViewController?.view.window else {
+            closeMenu()
+            releaseMenu()
+            return
+        }
+        window.makeKey()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak window] event in
+            MainActor.assumeIsolated {
+                guard let self, let window, event.window === window, self.popover?.isShown == true else { return event }
+                return self.handleKey(event) ? nil : event
+            }
+        }
+    }
+
+    func popoverDidClose(_ notification: Notification) { releaseMenu() }
+
+    private func closeMenu() { popover?.performClose(nil) }
+
+    private func releaseMenu() {
+        guard popover != nil else { return }
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+        popover?.delegate = nil
+        popover = nil
+        menuState = nil
+        statusItem?.button?.highlight(false)
+        store.menuClosed()
+    }
+
+    private func handleKey(_ event: NSEvent) -> Bool {
+        guard let state = menuState else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if modifiers.isEmpty {
+            switch event.keyCode {
+            case 125: state.moveDown(); return true
+            case 126: state.moveUp(); return true
+            case 36, 76:
+                guard state.allowsTaskActivation else { return false }
+                if let id = state.selection.selectedTaskID { activateTask(id) }
+                return true
+            case 53: closeMenu(); return true
+            default: break
+            }
+        }
+        guard let shortcut = MenuShortcut(event: event),
+              let action = store.menuShortcuts.action(forKey: shortcut.key, modifiers: shortcut.modifiers) else { return false }
+        switch action {
+        case .moveDown: state.moveDown()
+        case .moveUp: state.moveUp()
+        case .copyName, .copyExact, .copyRounded:
+            if !event.isARepeat { copyValue(action) }
+        case .openMenu: return false
+        }
+        return true
+    }
+
+    private func activateTask(_ id: String) {
+        guard let state = menuState,
+              state.connection == store.connectionSettings,
+              let entry = (state.content.todayTasks + state.content.otherTasks).first(where: { $0.id == id }),
+              entry.canStart else { return }
+        closeMenu()
+        store.startTracking(taskID: id)
+    }
+
+    private func stopTracking() {
+        guard let state = menuState, state.connection == store.connectionSettings,
+              state.content.canStopTracking, let id = state.content.activeWorklogID else { return }
+        closeMenu()
+        store.stopTracking(worklogID: id)
+    }
+
+    private func copyValue(_ action: MenuShortcutAction) {
+        guard let state = menuState, let id = state.selection.selectedTaskID else { return }
+        guard let value = store.menuCopyValue(action, taskID: id, connection: state.connection) else {
+            state.feedback = "This value is unavailable. Reopen the menu to refresh."
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        if pasteboard.setString(value, forType: .string) {
+            let cached = action != .copyName && store.dailyTotalsStatus == .cached
+            state.feedback = "Copied \(value)\(cached ? " from cached totals" : "")"
+        } else { state.feedback = "Could not copy to the clipboard." }
+    }
+
+    private func revealWindow() {
+        closeMenu()
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        openWindow?()
     }
 
     private func makeMenu(_ content: TrackerMenuContent, appearance: NSAppearance) -> NSMenu {

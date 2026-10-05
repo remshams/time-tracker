@@ -33,6 +33,9 @@
 		DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8778858BF38637F9573E8E50 /* TaskContextMenu.swift */; };
 		DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */; };
 		06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */; };
+		25C8A3D06E8274ADA6BBAC4F /* MenuKeyboardSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */; };
+		B54E8C7C53D2D09700847492 /* MenuKeyboardPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2346CBACB68448A001F56706 /* MenuKeyboardPreferences.swift */; };
+		00A9CD53DF3E9DE9A74EB234 /* MenuDropdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D052885AD0BAD60FCD17C95 /* MenuDropdownView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -66,6 +69,9 @@
 		8778858BF38637F9573E8E50 /* TaskContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskContextMenu.swift; sourceTree = "<group>"; };
 		D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskIndicatorView.swift; sourceTree = "<group>"; };
 		D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStatusItemController.swift; sourceTree = "<group>"; };
+		E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuKeyboardSupport.swift; sourceTree = "<group>"; };
+		2346CBACB68448A001F56706 /* MenuKeyboardPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuKeyboardPreferences.swift; sourceTree = "<group>"; };
+		4D052885AD0BAD60FCD17C95 /* MenuDropdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuDropdownView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -248,6 +254,9 @@
 			isa = PBXGroup;
 			children = (
 				D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */,
+				4D052885AD0BAD60FCD17C95 /* MenuDropdownView.swift */,
+				2346CBACB68448A001F56706 /* MenuKeyboardPreferences.swift */,
+				E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */,
 			);
 			path = MenuBar;
 			sourceTree = "<group>";
@@ -351,6 +360,9 @@
 				EEFD5BD538B369A492C794E7 /* TrackerApplicationMenus.swift in Sources */,
 				3F7A03677BF75120A989F9AD /* TrackerSplitLayout.swift in Sources */,
 				06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */,
+				00A9CD53DF3E9DE9A74EB234 /* MenuDropdownView.swift in Sources */,
+				B54E8C7C53D2D09700847492 /* MenuKeyboardPreferences.swift in Sources */,
+				25C8A3D06E8274ADA6BBAC4F /* MenuKeyboardSupport.swift in Sources */,
 				DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */,
 				DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */,
 				D2317EF3D3102BB20A00689F /* TaskCreationView.swift in Sources */,

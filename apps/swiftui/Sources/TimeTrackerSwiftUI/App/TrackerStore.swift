@@ -9,6 +9,12 @@ final class TrackerStore {
     private let presentation: TrackerPresentationObserver
     private let menuBarPreferences: UserDefaultsMenuBarPreferences
     private(set) var showDailyTotalInMenuBar: Bool
+    private let keyboardPreferences: UserDefaultsMenuKeyboardPreferences
+    private(set) var menuShortcuts: MenuKeyboardShortcuts
+    private var menuShortcutValidationError: String?
+    private(set) var menuGlobalShortcutError: String?
+    var registerMenuShortcut: ((MenuShortcut) -> String?)?
+    var menuShortcutError: String? { menuShortcutValidationError ?? menuGlobalShortcutError }
     let activity: TrackerActivityStore
     let timer: TrackerTimerStore
     let dailyTotals: TrackerDailyTotalsStore
@@ -20,6 +26,8 @@ final class TrackerStore {
     init() {
         menuBarPreferences = UserDefaultsMenuBarPreferences()
         showDailyTotalInMenuBar = menuBarPreferences.load()
+        keyboardPreferences = UserDefaultsMenuKeyboardPreferences()
+        menuShortcuts = keyboardPreferences.load()
         let worker = TrackerWorker()
         session = TrackerSession(client: worker, clock: SystemTrackerClock(),
                                  scheduler: RunLoopTrackerScheduler(),
@@ -85,6 +93,49 @@ final class TrackerStore {
     }
 
     func setPauseOnScreenLock(_ enabled: Bool) { session.setPauseOnScreenLock(enabled) }
+    func setMenuShortcut(_ action: MenuShortcutAction, shortcut: MenuShortcut) {
+        var candidate = menuShortcuts
+        candidate[action] = shortcut
+        setMenuShortcuts(candidate)
+    }
+
+    func resetMenuShortcuts() { setMenuShortcuts(.defaults, retryGlobal: true) }
+
+    private func setMenuShortcuts(_ candidate: MenuKeyboardShortcuts, retryGlobal: Bool = false) {
+        if let error = candidate.validationError {
+            reportMenuShortcutError(error)
+            return
+        }
+        let changesGlobal = retryGlobal || candidate.openMenu != menuShortcuts.openMenu
+        if changesGlobal {
+            if let error = registerMenuShortcut?(candidate.openMenu) {
+                reportMenuShortcutError(error)
+                return
+            }
+        }
+        objectWillChange.send()
+        menuShortcuts = candidate
+        menuShortcutValidationError = nil
+        if changesGlobal { menuGlobalShortcutError = nil }
+        keyboardPreferences.save(candidate)
+    }
+
+    func reportMenuShortcutError(_ message: String?) {
+        guard menuShortcutValidationError != message else { return }
+        objectWillChange.send()
+        menuShortcutValidationError = message
+    }
+
+    func reportMenuGlobalShortcutError(_ message: String?) {
+        guard menuGlobalShortcutError != message else { return }
+        objectWillChange.send()
+        menuGlobalShortcutError = message
+    }
+
+    func menuCopyValue(_ action: MenuShortcutAction, taskID: String,
+                       connection: ConnectionSettings) -> String? {
+        session.menuCopyValue(action, taskID: taskID, connection: connection)
+    }
     func changeTab(_ tab: TaskTab) { session.changeTab(tab) }
     func select(_ taskID: String?) { session.select(taskID) }
     func refresh() { session.refresh() }
