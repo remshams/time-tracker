@@ -15,6 +15,7 @@ final class FakeClient: TrackerClient, ReportClient {
         case refresh(ConnectionSettings)
         case snapshot
         case create(name: String, at: String)
+        case rename(task: String, name: String, at: String)
         case start(task: String, expected: String?, at: String)
         case stop(worklog: String, at: String)
         case pause(worklog: String, at: String)
@@ -140,6 +141,9 @@ final class FakeClient: TrackerClient, ReportClient {
             throw wrongReply("creation", operation: operation)
         }
         return value
+    }
+    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TrackerSnapshot {
+        try await snapshotReply(.rename(task: taskID, name: name, at: occurredAt))
     }
     func history(taskID: String, cursor: String?) async throws -> HistoryPage {
         guard case .history(let value) = try await perform(.history(task: taskID, cursor: cursor)) else {

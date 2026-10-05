@@ -28,15 +28,13 @@ final class TaskCreationState {
                                  isSubmitting: isSubmitting, error: error,
                                  canEditName: !isSubmitting && intent == nil,
                                  canSubmit: isPresented && !isSubmitting &&
-                                    !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                    !TaskNameEditingPolicy.normalized(name).isEmpty)
     }
 
     var blocksConnectionChange: Bool { isSubmitting || intent != nil }
 
     static func requiresRecovery(_ error: Error) -> Bool {
-        guard let failure = error as? BridgeFailure else { return true }
-        return failure.uncertain || failure.requiresRefresh ||
-            failure.kind == "unavailable" || failure.kind == "protocol"
+        TaskNameEditingPolicy.requiresRecovery(error)
     }
 
     func open() {
@@ -57,8 +55,8 @@ final class TaskCreationState {
 
     func submit(at occurredAt: String) -> Bool {
         guard presentation.canSubmit else { return false }
-        guard !name.unicodeScalars.contains(where: { $0.value == 0 }) else {
-            error = "Task names must not contain control characters."
+        if let message = TaskNameEditingPolicy.transportError(name) {
+            error = message
             return false
         }
         if intent == nil { intent = Intent(name: name, occurredAt: occurredAt) }

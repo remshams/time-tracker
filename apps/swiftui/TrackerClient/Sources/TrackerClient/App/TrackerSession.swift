@@ -20,6 +20,7 @@ public final class TrackerSession {
     private let tracking = TrackingState()
     private let history = WorklogHistoryState()
     private let creation = TaskCreationState()
+    private let rename = TaskRenameState()
     private let dailyTotals: DailyTotalsState
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
@@ -80,7 +81,14 @@ public final class TrackerSession {
     public var hasMoreHistory: Bool { nextCursor != nil }
     public var taskCreation: TaskCreationPresentation { creation.presentation }
     public var canOpenTaskCreation: Bool {
-        running && connection.confirmed && !connection.changing
+        running && connection.confirmed && !connection.changing &&
+            !rename.presentation.isPresented && !rename.blocksConnectionChange
+    }
+    public var taskRename: TaskRenamePresentation { rename.presentation }
+    public var canOpenTaskRename: Bool {
+        running && connection.confirmed && !connection.changing &&
+            !creation.presentation.isPresented && !creation.blocksConnectionChange &&
+            (selectedTask != nil || rename.intent != nil)
     }
     public var canStartSelectedTask: Bool {
         guard let selectedTaskID else { return false }
@@ -168,6 +176,7 @@ public final class TrackerSession {
         history.invalidate()
         automation.cancel()
         creation.reset()
+        rename.reset()
         pendingRefresh = false
         cancelTimers()
         isBusy = false
@@ -211,7 +220,11 @@ public final class TrackerSession {
         dailyTotals.reanchor(clock: clock)
         updateDisplayTimer()
         updateRolloverTimer()
-        if drainCreation() { return }
+        if rename.hasPendingIntent || creation.pending {
+            if drainAutomation() { return }
+            if drainRename() { return }
+            if drainCreation() { return }
+        }
         refresh()
     }
 
@@ -240,6 +253,36 @@ public final class TrackerSession {
             return
         }
         drainCreation()
+        publish()
+    }
+
+    public func openTaskRename(taskID: String? = nil) {
+        guard canOpenTaskRename else { return }
+        let target = taskID.flatMap { id in tasks.first { $0.id == id } } ??
+            (taskID == nil ? selectedTask : nil)
+        rename.open(target)
+        publish()
+    }
+
+    public func setTaskRenameName(_ name: String) {
+        guard running else { return }
+        rename.updateName(name)
+        publish()
+    }
+
+    public func cancelTaskRename() {
+        guard running else { return }
+        rename.cancel()
+        publish()
+    }
+
+    public func submitTaskRename() {
+        guard canOpenTaskRename else { return }
+        guard rename.submit(at: commandTimestamp(clock.now)) else {
+            publish()
+            return
+        }
+        drainRename()
         publish()
     }
 
@@ -301,6 +344,11 @@ public final class TrackerSession {
     }
 
     public func connect(_ settings: ConnectionSettings) async -> Bool {
+        guard !rename.blocksConnectionChange else {
+            connection.message = "Finish or retry task renaming before changing connections."
+            publish()
+            return false
+        }
         guard !creation.blocksConnectionChange else {
             connection.message = "Finish or retry task creation before changing connections."
             publish()
@@ -333,6 +381,7 @@ public final class TrackerSession {
             dailyTotals.clear(at: clock.now)
             settingsRepository.save(normalized)
             catalog.resetSelections()
+            rename.reset()
             history.request(selectedTaskID: nil)
             tracking.error = nil
             acceptSnapshot(snapshot)
@@ -386,6 +435,7 @@ public final class TrackerSession {
         guard isCurrent(token) else { return }
         isBusy = false
         if drainAutomation() { return }
+        if drainRename() { return }
         if drainCreation() { return }
         if !sleeping {
             if pendingRefresh {
@@ -455,18 +505,89 @@ public final class TrackerSession {
         return true
     }
 
-    private func reconcileWriteFailure(token: Int) async {
+    @discardableResult
+    private func reconcileWriteFailure(token: Int) async -> TrackerSnapshot? {
         connection.stale = true
         publish()
         do {
             // A lost write response can follow a committed change.
             let snapshot = try await client.snapshot()
-            guard isCurrent(token) else { return }
+            guard isCurrent(token) else { return nil }
             acceptSnapshot(snapshot)
+            return snapshot
         } catch {
-            guard isCurrent(token) else { return }
+            guard isCurrent(token) else { return nil }
             recordConnectionFailure(error)
+            return nil
         }
+    }
+
+    @discardableResult
+    private func drainRename() -> Bool {
+        guard running, !sleeping, !isBusy, let intent = rename.takePendingIntent() else { return false }
+        let token = generation
+        beginOperation()
+        Task { [weak self] in
+            guard let self, isCurrent(token) else { return }
+            defer { finishOperation(token: token) }
+            var commandStarted = false
+            do {
+                let snapshot: TrackerSnapshot
+                do {
+                    snapshot = try await client.snapshot()
+                } catch {
+                    guard isCurrent(token) else { return }
+                    recordConnectionFailure(error)
+                    throw error
+                }
+                guard isCurrent(token) else { return }
+                acceptSnapshot(snapshot)
+                guard renameCanApply(intent, snapshot: snapshot) else { return }
+                if sleeping {
+                    rename.deferUntilWake()
+                    return
+                }
+                commandStarted = true
+                let result = try await client.renameTask(taskID: intent.taskID, name: intent.name,
+                                                         occurredAt: intent.occurredAt)
+                guard isCurrent(token) else { return }
+                guard result.tasks.contains(where: { $0.id == intent.taskID && $0.name == intent.desiredName }) else {
+                    throw BridgeFailure(message: "The rename response does not contain the updated task.",
+                                        kind: "protocol", uncertain: true, requiresRefresh: true)
+                }
+                acceptSnapshot(result)
+                rename.reset()
+            } catch {
+                guard isCurrent(token) else { return }
+                let uncertain = TaskNameEditingPolicy.requiresRecovery(error)
+                let confirmed = commandStarted ? await reconcileWriteFailure(token: token) : nil
+                guard isCurrent(token) else { return }
+                if let confirmed, !renameCanApply(intent, snapshot: confirmed) { return }
+                if let failure = error as? BridgeFailure, failure.kind == "conflict" {
+                    rename.requireReview("The task changed on another client. Cancel and reopen the editor to review its current state.")
+                } else {
+                    rename.fail(error, retainIntent: uncertain || (commandStarted && confirmed == nil))
+                }
+                publish()
+            }
+        }
+        return true
+    }
+
+    private func renameCanApply(_ intent: TaskRenameState.Intent, snapshot: TrackerSnapshot) -> Bool {
+        guard let task = snapshot.tasks.first(where: { $0.id == intent.taskID }) else {
+            rename.requireReview("The task no longer exists. Cancel the editor and refresh the task list.")
+            return false
+        }
+        if task.name == intent.desiredName {
+            rename.reset()
+            return false
+        }
+        guard task.name == intent.originalName else {
+            rename.requireReview("The task name changed on another client. Cancel and reopen the editor to review its current name.")
+            return false
+        }
+        return true
     }
 
     @discardableResult

@@ -7,6 +7,7 @@ public final class TrackerPresentationObserver {
     public var onTimerChange: (() -> Void)?
     public var onDailyTotalsChange: (() -> Void)?
     public var onTaskCreationChange: (() -> Void)?
+    public var onTaskRenameChange: (() -> Void)?
 
     private var content: Content
     private var activity: Activity
@@ -14,6 +15,8 @@ public final class TrackerPresentationObserver {
     private var daily: DailyPresentation
     private var creation: TaskCreationPresentation
     private var canOpenCreation: Bool
+    private var rename: TaskRenamePresentation
+    private var canOpenRename: Bool
 
     public init(session: TrackerSession) {
         content = Content(session)
@@ -22,6 +25,8 @@ public final class TrackerPresentationObserver {
         daily = DailyPresentation(session)
         creation = session.taskCreation
         canOpenCreation = session.canOpenTaskCreation
+        rename = session.taskRename
+        canOpenRename = session.canOpenTaskRename
     }
 
     public func update(from session: TrackerSession) {
@@ -31,22 +36,28 @@ public final class TrackerPresentationObserver {
         let nextDaily = DailyPresentation(session)
         let nextCreation = session.taskCreation
         let nextCanOpenCreation = session.canOpenTaskCreation
+        let nextRename = session.taskRename
+        let nextCanOpenRename = session.canOpenTaskRename
         let contentChanged = content != nextContent
         let activityChanged = activity != nextActivity
         let timerChanged = timerText != nextTimerText
         let dailyChanged = daily != nextDaily
         let creationChanged = creation != nextCreation || canOpenCreation != nextCanOpenCreation
+        let renameChanged = rename != nextRename || canOpenRename != nextCanOpenRename
         content = nextContent
         activity = nextActivity
         timerText = nextTimerText
         daily = nextDaily
         creation = nextCreation
         canOpenCreation = nextCanOpenCreation
+        rename = nextRename
+        canOpenRename = nextCanOpenRename
         if contentChanged { onContentChange?() }
         if activityChanged { onActivityChange?() }
         if timerChanged { onTimerChange?() }
         if dailyChanged { onDailyTotalsChange?() }
         if creationChanged { onTaskCreationChange?() }
+        if renameChanged { onTaskRenameChange?() }
     }
 
     private struct DailyPresentation: Equatable {
