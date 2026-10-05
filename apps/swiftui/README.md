@@ -94,13 +94,13 @@ The tests use an in-memory settings repository, a manually advanced wall and mon
 
 You can also open `apps/swiftui/TrackerClient/Package.swift` in Xcode and run its package tests. The app remains a native Xcode project and links the local package. Native UI E2E tests are deferred; package tests do not exercise macOS windows, menus, notification delivery, or the rendered appearance.
 
-The previous AppKit pane geometry check remains available on a Mac with Xcode selected:
+On a Mac with Xcode selected, run the SwiftUI scene layout checks from the repository root:
 
 ```sh
 apps/swiftui/check-native-layout.sh
 ```
 
-This check covers the legacy AppKit window factory and pane container. Those helpers remain unchanged for the existing fixture and are excluded from the app target. The check opens temporary native windows and verifies pane containment at different sizes and toolbar styles. It requires a macOS desktop session and cannot run on Linux. It does not validate the migrated SwiftUI scenes or split layout. Build the app and use the manual checks below to validate toolbar placement, window commands, Settings, and dialog ownership.
+This check compiles the production `TrackerSplitLayout` without the Rust bridge or a server. A SwiftUI `App` and `WindowGroup` create two fixture windows. It checks that task headings and connection footers stay outside the window chrome at two window sizes, with compact and expanded toolbars and changes in toolbar visibility. It also hides and restores one sidebar, checks that detail width follows the change, and confirms that the other window keeps its layout. It requires a macOS desktop session and cannot run on Linux. It checks the shared split layout, not the complete app. Build the app and use the manual checks below to validate command routing, Settings, and dialog ownership.
 
 ## Coverage and mutation testing
 

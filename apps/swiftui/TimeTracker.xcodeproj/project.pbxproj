@@ -39,8 +39,6 @@
 		522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerApplicationMenus.swift; sourceTree = "<group>"; };
 		1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerApplicationDelegate.swift; sourceTree = "<group>"; };
 		A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerTaskPresentationCoordinator.swift; sourceTree = "<group>"; };
-		1C7743B5D772BC83C42D1261 /* TrackerWindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerWindowChrome.swift; sourceTree = "<group>"; };
-		EAC73D609782A8AF9FCB2A64 /* TrackerPaneViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerPaneViewController.swift; sourceTree = "<group>"; };
 		484979169FE35618CB437645 /* TrackerSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerSidebar.swift; sourceTree = "<group>"; };
 		323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerSplitLayout.swift; sourceTree = "<group>"; };
 		000000000000000000000007 /* TimeTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TimeTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -123,8 +121,6 @@
 		13C4608B5138EBE9B3A45A55 /* App */ = {
 			isa = PBXGroup;
 			children = (
-				EAC73D609782A8AF9FCB2A64 /* TrackerPaneViewController.swift */,
-				1C7743B5D772BC83C42D1261 /* TrackerWindowChrome.swift */,
 				A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */,
 				1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */,
 				522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */,
