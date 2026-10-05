@@ -131,3 +131,13 @@ public struct TrackingPauseResult: Decodable, Equatable, Sendable {
         self.didStop = didStop
     }
 }
+
+public struct TaskCreationResult: Decodable, Equatable, Sendable {
+    public let taskId: String
+    public let snapshot: TrackerSnapshot
+
+    public init(taskId: String, snapshot: TrackerSnapshot) {
+        self.taskId = taskId
+        self.snapshot = snapshot
+    }
+}

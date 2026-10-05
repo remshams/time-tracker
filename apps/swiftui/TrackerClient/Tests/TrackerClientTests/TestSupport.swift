@@ -14,6 +14,7 @@ final class FakeClient: TrackerClient, ReportClient {
         case connect(ConnectionSettings)
         case refresh(ConnectionSettings)
         case snapshot
+        case create(name: String, at: String)
         case start(task: String, expected: String?, at: String)
         case stop(worklog: String, at: String)
         case pause(worklog: String, at: String)
@@ -26,6 +27,7 @@ final class FakeClient: TrackerClient, ReportClient {
         case snapshot(TrackerSnapshot)
         case history(HistoryPage)
         case tested
+        case created(TaskCreationResult)
         case paused(TrackingPauseResult)
         case report(TrackerReport)
     }
@@ -40,6 +42,9 @@ final class FakeClient: TrackerClient, ReportClient {
         func succeed(_ report: TrackerReport) { complete(.success(.report(report))) }
         func paused(_ snapshot: TrackerSnapshot, didStop: Bool = true) {
             complete(.success(.paused(TrackingPauseResult(snapshot: snapshot, didStop: didStop))))
+        }
+        func created(taskID: String, snapshot: TrackerSnapshot) {
+            complete(.success(.created(TaskCreationResult(taskId: taskID, snapshot: snapshot))))
         }
         func tested() { complete(.success(.tested)) }
         func fail(_ error: Error) { complete(.failure(error)) }
@@ -128,6 +133,13 @@ final class FakeClient: TrackerClient, ReportClient {
     }
     func resumeTracking(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
         try await snapshotReply(.resume(task: taskID, at: occurredAt))
+    }
+    func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult {
+        let operation = Operation.create(name: name, at: occurredAt)
+        guard case .created(let value) = try await perform(operation) else {
+            throw wrongReply("creation", operation: operation)
+        }
+        return value
     }
     func history(taskID: String, cursor: String?) async throws -> HistoryPage {
         guard case .history(let value) = try await perform(.history(task: taskID, cursor: cursor)) else {

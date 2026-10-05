@@ -19,6 +19,7 @@ public final class TrackerSession {
     private let catalog = TaskCatalogState()
     private let tracking = TrackingState()
     private let history = WorklogHistoryState()
+    private let creation = TaskCreationState()
     private let dailyTotals: DailyTotalsState
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
@@ -77,6 +78,10 @@ public final class TrackerSession {
     public var visibleTasks: [TaskItem] { catalog.visibleTasks }
     public var selectedTask: TaskItem? { catalog.selectedTask }
     public var hasMoreHistory: Bool { nextCursor != nil }
+    public var taskCreation: TaskCreationPresentation { creation.presentation }
+    public var canOpenTaskCreation: Bool {
+        running && connection.confirmed && !connection.changing
+    }
     public var canStartSelectedTask: Bool {
         guard let selectedTaskID else { return false }
         return canStartTracking(taskID: selectedTaskID)
@@ -162,6 +167,7 @@ public final class TrackerSession {
         generation += 1
         history.invalidate()
         automation.cancel()
+        creation.reset()
         pendingRefresh = false
         cancelTimers()
         isBusy = false
@@ -205,7 +211,36 @@ public final class TrackerSession {
         dailyTotals.reanchor(clock: clock)
         updateDisplayTimer()
         updateRolloverTimer()
+        if drainCreation() { return }
         refresh()
+    }
+
+    public func openTaskCreation() {
+        guard canOpenTaskCreation else { return }
+        creation.open()
+        publish()
+    }
+
+    public func setTaskCreationName(_ name: String) {
+        guard running else { return }
+        creation.updateName(name)
+        publish()
+    }
+
+    public func cancelTaskCreation() {
+        guard running else { return }
+        creation.cancel()
+        publish()
+    }
+
+    public func submitTaskCreation() {
+        guard canOpenTaskCreation else { return }
+        guard creation.submit(at: commandTimestamp(clock.now)) else {
+            publish()
+            return
+        }
+        drainCreation()
+        publish()
     }
 
     public func setPauseOnScreenLock(_ enabled: Bool) {
@@ -266,6 +301,11 @@ public final class TrackerSession {
     }
 
     public func connect(_ settings: ConnectionSettings) async -> Bool {
+        guard !creation.blocksConnectionChange else {
+            connection.message = "Finish or retry task creation before changing connections."
+            publish()
+            return false
+        }
         automation.cancel()
         guard running, !isBusy else {
             if running {
@@ -346,6 +386,7 @@ public final class TrackerSession {
         guard isCurrent(token) else { return }
         isBusy = false
         if drainAutomation() { return }
+        if drainCreation() { return }
         if !sleeping {
             if pendingRefresh {
                 pendingRefresh = false
@@ -360,6 +401,73 @@ public final class TrackerSession {
             } else { schedulePolling() }
         }
         publish()
+    }
+
+    @discardableResult
+    private func drainCreation() -> Bool {
+        guard running, !sleeping, !isBusy, creation.pending, let intent = creation.intent else { return false }
+        creation.pending = false
+        let token = generation
+        beginOperation()
+        Task { [weak self] in
+            guard let self, isCurrent(token) else { return }
+            defer { finishOperation(token: token) }
+            var commandStarted = false
+            do {
+                if !connection.confirmed || connection.stale {
+                    let snapshot: TrackerSnapshot
+                    do {
+                        snapshot = try await client.snapshot()
+                    } catch {
+                        guard isCurrent(token) else { return }
+                        recordConnectionFailure(error)
+                        throw error
+                    }
+                    guard isCurrent(token) else { return }
+                    acceptSnapshot(snapshot)
+                }
+                if sleeping {
+                    creation.pending = true
+                    return
+                }
+                commandStarted = true
+                let result = try await client.createTask(name: intent.name, occurredAt: intent.occurredAt)
+                guard isCurrent(token) else { return }
+                guard !result.taskId.isEmpty,
+                      let created = result.snapshot.tasks.first(where: { $0.id == result.taskId }) else {
+                    throw BridgeFailure(message: "The creation response does not contain the created task.",
+                                        kind: "protocol", uncertain: true, requiresRefresh: true)
+                }
+                acceptSnapshot(result.snapshot)
+                let changedTab = catalog.changeTab(created.archived ? .archived : .active)
+                let changedSelection = catalog.select(result.taskId)
+                if changedTab || changedSelection { requestHistory() }
+                creation.reset()
+                publish()
+            } catch {
+                guard isCurrent(token) else { return }
+                let unresolved = TaskCreationState.requiresRecovery(error)
+                if unresolved && commandStarted { await reconcileWriteFailure(token: token) }
+                guard isCurrent(token) else { return }
+                creation.fail(error, retainIntent: unresolved)
+                publish()
+            }
+        }
+        return true
+    }
+
+    private func reconcileWriteFailure(token: Int) async {
+        connection.stale = true
+        publish()
+        do {
+            // A lost write response can follow a committed change.
+            let snapshot = try await client.snapshot()
+            guard isCurrent(token) else { return }
+            acceptSnapshot(snapshot)
+        } catch {
+            guard isCurrent(token) else { return }
+            recordConnectionFailure(error)
+        }
     }
 
     @discardableResult
@@ -432,16 +540,8 @@ public final class TrackerSession {
                 guard isCurrent(token) else { return }
                 if automationToken == automation.generation { automation.cancel() }
                 let message = error.localizedDescription
-                connection.stale = true
-                publish()
-                do {
-                    let snapshot = try await client.snapshot()
-                    guard isCurrent(token) else { return }
-                    acceptSnapshot(snapshot)
-                } catch {
-                    guard isCurrent(token) else { return }
-                    recordConnectionFailure(error)
-                }
+                await reconcileWriteFailure(token: token)
+                guard isCurrent(token) else { return }
                 tracking.error = message
             }
             publish()
@@ -491,17 +591,8 @@ public final class TrackerSession {
             } catch {
                 guard isCurrent(token) else { return }
                 let message = error.localizedDescription
-                connection.stale = true
-                publish()
-                do {
-                    // A failed write may have committed. Confirm before accepting another write.
-                    let snapshot = try await client.snapshot()
-                    guard isCurrent(token) else { return }
-                    acceptSnapshot(snapshot)
-                } catch {
-                    guard isCurrent(token) else { return }
-                    recordConnectionFailure(error)
-                }
+                await reconcileWriteFailure(token: token)
+                guard isCurrent(token) else { return }
                 tracking.error = message
             }
         }

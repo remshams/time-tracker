@@ -6,17 +6,22 @@ public final class TrackerPresentationObserver {
     public var onActivityChange: (() -> Void)?
     public var onTimerChange: (() -> Void)?
     public var onDailyTotalsChange: (() -> Void)?
+    public var onTaskCreationChange: (() -> Void)?
 
     private var content: Content
     private var activity: Activity
     private var timerText: String
     private var daily: DailyPresentation
+    private var creation: TaskCreationPresentation
+    private var canOpenCreation: Bool
 
     public init(session: TrackerSession) {
         content = Content(session)
         activity = Activity(session)
         timerText = session.timerDisplayText
         daily = DailyPresentation(session)
+        creation = session.taskCreation
+        canOpenCreation = session.canOpenTaskCreation
     }
 
     public func update(from session: TrackerSession) {
@@ -24,18 +29,24 @@ public final class TrackerPresentationObserver {
         let nextActivity = Activity(session)
         let nextTimerText = session.timerDisplayText
         let nextDaily = DailyPresentation(session)
+        let nextCreation = session.taskCreation
+        let nextCanOpenCreation = session.canOpenTaskCreation
         let contentChanged = content != nextContent
         let activityChanged = activity != nextActivity
         let timerChanged = timerText != nextTimerText
         let dailyChanged = daily != nextDaily
+        let creationChanged = creation != nextCreation || canOpenCreation != nextCanOpenCreation
         content = nextContent
         activity = nextActivity
         timerText = nextTimerText
         daily = nextDaily
+        creation = nextCreation
+        canOpenCreation = nextCanOpenCreation
         if contentChanged { onContentChange?() }
         if activityChanged { onActivityChange?() }
         if timerChanged { onTimerChange?() }
         if dailyChanged { onDailyTotalsChange?() }
+        if creationChanged { onTaskCreationChange?() }
     }
 
     private struct DailyPresentation: Equatable {
