@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 import TrackerClient
 
@@ -78,7 +77,7 @@ struct TaskDetails: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(.background)
     }
 
     @ViewBuilder
@@ -89,7 +88,7 @@ struct TaskDetails: View {
                     Text(error).textSelection(.enabled)
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Color(nsColor: .systemRed))
+                        .foregroundStyle(.red)
                 }
                 .foregroundStyle(.primary)
                 if store.historyUnavailable {
@@ -98,10 +97,10 @@ struct TaskDetails: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                    .stroke(.quaternary, lineWidth: 1)
             }
         }
     }
