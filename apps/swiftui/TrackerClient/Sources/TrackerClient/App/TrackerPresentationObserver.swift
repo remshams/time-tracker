@@ -1,11 +1,17 @@
 import Foundation
 
+public struct TaskDailyTotalPresentation: Equatable, Sendable {
+    public let text: String
+    public let explanation: String
+}
+
 @MainActor
 public final class TrackerPresentationObserver {
     public var onContentChange: (() -> Void)?
     public var onActivityChange: (() -> Void)?
     public var onTimerChange: (() -> Void)?
     public var onDailyTotalsChange: (() -> Void)?
+    public var onTaskDailyTotalsChange: ((Set<String>) -> Void)?
     public var onTaskCreationChange: (() -> Void)?
     public var onTaskRenameChange: (() -> Void)?
 
@@ -17,6 +23,8 @@ public final class TrackerPresentationObserver {
     private var canOpenCreation: Bool
     private var rename: TaskRenamePresentation
     private var canOpenRename: Bool
+
+    public var taskDailyTotals: [String: TaskDailyTotalPresentation] { daily.taskTotals }
 
     public init(session: TrackerSession) {
         content = Content(session)
@@ -42,6 +50,8 @@ public final class TrackerPresentationObserver {
         let activityChanged = activity != nextActivity
         let timerChanged = timerText != nextTimerText
         let dailyChanged = daily != nextDaily
+        let changedTaskTotals = Set(daily.taskTotals.keys).union(nextDaily.taskTotals.keys)
+            .filter { daily.taskTotals[$0] != nextDaily.taskTotals[$0] }
         let creationChanged = creation != nextCreation || canOpenCreation != nextCanOpenCreation
         let renameChanged = rename != nextRename || canOpenRename != nextCanOpenRename
         content = nextContent
@@ -56,19 +66,23 @@ public final class TrackerPresentationObserver {
         if activityChanged { onActivityChange?() }
         if timerChanged { onTimerChange?() }
         if dailyChanged { onDailyTotalsChange?() }
+        if !changedTaskTotals.isEmpty { onTaskDailyTotalsChange?(changedTaskTotals) }
         if creationChanged { onTaskCreationChange?() }
         if renameChanged { onTaskRenameChange?() }
     }
 
     private struct DailyPresentation: Equatable {
-        let texts: [String: String]
+        let taskTotals: [String: TaskDailyTotalPresentation]
         let totalText: String
         let status: DailyTotalsStatus
         let error: String?
         let dayStart: Date?
 
         @MainActor init(_ session: TrackerSession) {
-            texts = Dictionary(uniqueKeysWithValues: session.tasks.map { ($0.id, session.dailyDurationText(taskID: $0.id)) })
+            taskTotals = Dictionary(uniqueKeysWithValues: session.tasks.map {
+                ($0.id, TaskDailyTotalPresentation(text: session.dailyDuration(taskID: $0.id).map(clockDuration) ?? "-",
+                                                   explanation: session.dailyTotalsExplanation))
+            })
             totalText = session.totalDailyDurationText
             status = session.dailyTotalsStatus
             error = session.dailyTotalsError
