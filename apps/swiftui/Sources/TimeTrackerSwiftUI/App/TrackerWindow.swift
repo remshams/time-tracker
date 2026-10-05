@@ -237,12 +237,23 @@ private final class TrackerWindowDelegateProxy: NSObject, NSWindowDelegate {
         onClose?()
     }
 
-    override func responds(to selector: Selector!) -> Bool {
-        super.responds(to: selector) || forwardedDelegate?.responds(to: selector) == true
+    nonisolated override func responds(to selector: Selector!) -> Bool {
+        if super.responds(to: selector) { return true }
+        return MainActor.assumeIsolated {
+            forwardedDelegate?.responds(to: selector) == true
+        }
     }
 
-    override func forwardingTarget(for selector: Selector!) -> Any? {
-        if forwardedDelegate?.responds(to: selector) == true { return forwardedDelegate }
-        return super.forwardingTarget(for: selector)
+    nonisolated override func forwardingTarget(for selector: Selector!) -> Any? {
+        let target = MainActor.assumeIsolated {
+            TrackerForwardingTarget(value: forwardedDelegate?.responds(to: selector) == true
+                                    ? forwardedDelegate : nil)
+        }
+        return target.value ?? super.forwardingTarget(for: selector)
     }
+}
+
+// Objective-C forwarding returns this object synchronously on the main actor.
+private struct TrackerForwardingTarget: @unchecked Sendable {
+    let value: Any?
 }
