@@ -85,7 +85,10 @@ final class TrackerStatusItemController: NSObject {
         }
         // Freeze the presentation for the entire synchronous AppKit tracking loop.
         let menu = makeMenu(store.menu.content, appearance: NSApplication.shared.effectiveAppearance)
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY), in: button)
+        // In flipped views, maxY is the bottom edge beneath the menu bar.
+        let bottomY = button.isFlipped ? button.bounds.maxY : button.bounds.minY
+        let anchor = NSPoint(x: button.bounds.minX, y: bottomY)
+        menu.popUp(positioning: nil, at: anchor, in: button)
     }
 
     private func makeMenu(_ content: TrackerMenuContent, appearance: NSAppearance) -> NSMenu {
