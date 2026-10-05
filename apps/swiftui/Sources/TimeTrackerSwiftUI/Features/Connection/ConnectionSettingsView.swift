@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 import TrackerClient
 
@@ -92,7 +91,7 @@ struct ConnectionSettingsView: View {
                                 .textSelection(.enabled)
                         } icon: {
                             Image(systemName: resultSucceeded ? "checkmark.circle" : "exclamationmark.triangle")
-                                .foregroundStyle(resultSucceeded ? Color.accentColor : Color(nsColor: .systemRed))
+                                .foregroundStyle(resultSucceeded ? Color.accentColor : Color.red)
                         }
                     }
                 }

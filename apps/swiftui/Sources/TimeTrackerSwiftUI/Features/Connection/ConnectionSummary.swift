@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 import TrackerClient
 
@@ -16,7 +15,7 @@ struct ConnectionSummary: View {
         HStack(spacing: 12) {
             Image(systemName: store.connectionSettings.mode == .local ? "internaldrive" : "network")
                 .foregroundStyle(store.isStale || store.isChangingConnection
-                                 ? Color.secondary : Color(nsColor: .systemGreen))
+                                 ? Color.secondary : Color.green)
             VStack(alignment: .leading, spacing: 3) {
                 Text(store.connectionSettings.mode == .local
                      ? "Local database" : store.connectionSettings.serverURL)
