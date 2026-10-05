@@ -14,6 +14,7 @@ final class TrackerStore: ObservableObject {
     let dailyTotals: TrackerDailyTotalsStore
     let menu: TrackerMenuStore
     let creation: TaskCreationStore
+    let rename: TaskRenameStore
     private var lifecycle: MacLifecycleObserver?
 
     init() {
@@ -31,6 +32,7 @@ final class TrackerStore: ObservableObject {
         dailyTotals = TrackerDailyTotalsStore(session: session, presentation: presentation)
         menu = TrackerMenuStore(session: session, showDailyTotal: showDailyTotalInMenuBar)
         creation = TaskCreationStore(session: session, presentation: presentation)
+        rename = TaskRenameStore(session: session, presentation: presentation)
         dailyTotals.onMenuBarTick = { [weak self] in self?.menu.update() }
         presentation.onContentChange = { [weak self] in self?.objectWillChange.send() }
         session.onChange = { [weak self] in

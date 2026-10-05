@@ -72,6 +72,19 @@ private final class RustBridge {
         }
     }
 
+    func renameTask(taskID: String, name: String, occurredAt: String) throws -> TrackerSnapshot {
+        guard !name.utf8.contains(0) else {
+            throw BridgeFailure(message: "Task names must not contain control characters.")
+        }
+        return try taskID.withCString { task in
+            try name.withCString { name in
+                try occurredAt.withCString { instant in
+                    try decode(tt_bridge_rename_task_at(handle, task, name, instant), requiresRefreshOnMalformed: true)
+                }
+            }
+        }
+    }
+
     func report(start: String, end: String, now: String) throws -> TrackerReport {
         try start.withCString { start in
             try end.withCString { end in
@@ -191,6 +204,10 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
 
     func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult {
         try await perform { try $0.currentBridge().createTask(name: name, occurredAt: occurredAt) }
+    }
+
+    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TrackerSnapshot {
+        try await perform { try $0.currentBridge().renameTask(taskID: taskID, name: name, occurredAt: occurredAt) }
     }
 
     func report(settings: ConnectionSettings, start: String, end: String, now: String) async throws -> TrackerReport {

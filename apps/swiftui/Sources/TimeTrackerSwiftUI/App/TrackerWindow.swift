@@ -33,6 +33,9 @@ struct TrackerWindow: View {
 
                 HStack {
                     Text("Tasks")
+                    TaskCreationButton(creation: store.creation)
+                        .buttonStyle(.borderless)
+                        .font(.body)
                     Spacer()
                     Text(store.dailyTotalsStatus == .cached ? "Today, cached" : "Today")
                 }
@@ -83,6 +86,10 @@ struct TrackerWindow: View {
         }
         .frame(minWidth: 760, minHeight: 480)
         .focusedSceneObject(store.creation)
+        .background {
+            TaskCreationDialog(creation: store.creation)
+            TaskRenameDialog(rename: store.rename)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 TaskCreationButton(creation: store.creation)

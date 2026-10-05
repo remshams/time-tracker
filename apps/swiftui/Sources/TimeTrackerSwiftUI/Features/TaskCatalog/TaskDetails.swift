@@ -9,13 +9,18 @@ struct TaskDetails: View {
         VStack(alignment: .leading, spacing: 0) {
             if let task = store.selectedTask {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(task.name)
-                        .font(.system(size: 26, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                        .help(task.name)
+                    HStack(alignment: .top, spacing: 16) {
+                        Text(task.name)
+                            .font(.system(size: 26, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                            .help(task.name)
+                        Spacer(minLength: 0)
+                        TaskRenameButton(rename: store.rename, taskID: task.id)
+                            .fixedSize()
+                    }
 
                     HStack(spacing: 12) {
                         if task.archived {
