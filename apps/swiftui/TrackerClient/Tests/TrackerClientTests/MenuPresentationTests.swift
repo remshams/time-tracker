@@ -68,11 +68,11 @@ final class MenuPresentationTests: XCTestCase {
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         var changes = 0
         observer.onLabelChange = { changes += 1 }
-        XCTAssertEqual(observer.label.symbol, "play.circle.fill")
-        XCTAssertEqual(observer.label.status, "Time Tracker: Tracking First task")
+        XCTAssertEqual(observer.label.symbol, "circle.fill")
+        XCTAssertEqual(observer.label.status, "Tracking: First task")
         XCTAssertEqual(observer.label.totalText, "00:00")
         XCTAssertEqual(observer.label.help,
-                       "Time Tracker: Tracking First task\nTotal today: 00:00\nTime logged today in your local time zone")
+                       "Tracking: First task\nTotal today: 00:00\nTime logged today in your local time zone")
         fixture.clock.now.addTimeInterval(1)
         fixture.clock.uptime += 1
         observer.update(from: fixture.session, showDailyTotal: true)
@@ -185,8 +185,8 @@ final class MenuPresentationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
-        XCTAssertEqual(observer.label.symbol, "questionmark.circle")
-        XCTAssertEqual(observer.label.status, "Time Tracker: Tracking status unavailable")
+        XCTAssertEqual(observer.label.symbol, "circle")
+        XCTAssertEqual(observer.label.status, "Tracking status unavailable. No task tracked yet")
         XCTAssertEqual(observer.label.totalText, "-")
         XCTAssertEqual(observer.content.totalText, "Unavailable")
         XCTAssertEqual(observer.content.totalsExplanation, "Today's total is unavailable")
@@ -195,8 +195,8 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertTrue(observer.content.todayTasks.isEmpty)
         try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
         observer.update(from: fixture.session, showDailyTotal: true)
-        XCTAssertEqual(observer.label.symbol, "clock")
-        XCTAssertEqual(observer.label.status, "Time Tracker: No timer running")
+        XCTAssertEqual(observer.label.symbol, "circle")
+        XCTAssertEqual(observer.label.status, "No task tracked yet")
         XCTAssertEqual(observer.content.otherTasks.first?.durationText, "-")
         var contentChanges = 0
         var labelChanges = 0
@@ -239,8 +239,8 @@ final class MenuPresentationTests: XCTestCase {
         try await fixture.settled()
         observer.update(from: fixture.session, showDailyTotal: true)
         XCTAssertTrue(observer.content.isStale)
-        XCTAssertEqual(observer.label.symbol, "questionmark.circle")
-        XCTAssertEqual(observer.label.status, "Time Tracker: Tracking status unavailable")
+        XCTAssertEqual(observer.label.symbol, "circle")
+        XCTAssertEqual(observer.label.status, "Tracking status unavailable. Last confirmed task: First task")
         XCTAssertEqual(observer.label.totalText, "~00:01")
         XCTAssertEqual(observer.content.dailyTotalsStatus, .cached)
         XCTAssertEqual(observer.content.totalsExplanation,

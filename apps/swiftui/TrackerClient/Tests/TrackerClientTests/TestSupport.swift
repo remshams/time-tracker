@@ -223,14 +223,15 @@ final class Fixture {
     private let reportsEnabled: Bool
 
     init(saved: ConnectionSettings? = nil, pauseOnScreenLock: Bool = false,
-         reports: Bool = false, calendar: Calendar = .autoupdatingCurrent) {
+         reports: Bool = false, calendar: Calendar = .autoupdatingCurrent,
+         lastTrackedTasks: (any LastTrackedTaskRepository)? = nil) {
         reportsEnabled = reports
         let settings = MemorySettings(saved)
         self.settings = settings
         let preferences = MemoryTrackingPreferences(TrackingPreferences(pauseOnScreenLock: pauseOnScreenLock))
         self.preferences = preferences
         session = TrackerSession(client: client, clock: clock, scheduler: scheduler, settings: settings,
-                                 trackingPreferences: preferences, reports: reports ? client : nil, calendar: calendar)
+                                 trackingPreferences: preferences, lastTrackedTasks: lastTrackedTasks, reports: reports ? client : nil, calendar: calendar)
     }
 
     func cleanup() {

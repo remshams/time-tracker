@@ -18,6 +18,7 @@ public final class TrackerSession {
     private let connection: ConnectionState
     private let catalog = TaskCatalogState()
     private let tracking = TrackingState()
+    private let lastTracked: LastTrackedTaskState
     private let history = WorklogHistoryState()
     private let creation = TaskCreationState()
     private let rename = TaskRenameState()
@@ -40,6 +41,7 @@ public final class TrackerSession {
     public init(client: any TrackerClient, clock: any TrackerClock,
                 scheduler: any TrackerScheduler, settings: any ConnectionSettingsRepository,
                 trackingPreferences: (any TrackingPreferencesRepository)? = nil,
+                lastTrackedTasks: (any LastTrackedTaskRepository)? = nil,
                 reports: (any ReportClient)? = nil, calendar: Calendar = .autoupdatingCurrent) {
         self.client = client
         self.reports = reports
@@ -49,7 +51,9 @@ public final class TrackerSession {
         settingsRepository = settings
         trackingPreferencesRepository = trackingPreferences
         automation = TrackingAutomationState(preferences: trackingPreferences?.load() ?? TrackingPreferences())
-        connection = ConnectionState(settings: settings.load() ?? .local)
+        let initialSettings = settings.load() ?? .local
+        connection = ConnectionState(settings: initialSettings)
+        lastTracked = LastTrackedTaskState(repository: lastTrackedTasks, settings: initialSettings)
         now = clock.now
         dailyTotals.updateDay(at: clock.now)
     }
@@ -95,13 +99,34 @@ public final class TrackerSession {
         return canStartTracking(taskID: selectedTaskID)
     }
     public func canStartTracking(taskID: String) -> Bool {
-        guard running, !isBusy, !isStale, connection.confirmed,
+        guard running, !sleeping, !isBusy, !isStale, connection.confirmed,
               let task = tasks.first(where: { $0.id == taskID }) else { return false }
         return !task.archived && active?.taskId != task.id
     }
     public var canStopTracking: Bool {
-        running && !isBusy && !isStale && connection.confirmed && active != nil
+        running && !sleeping && !isBusy && !isStale && connection.confirmed && active != nil
     }
+    public var lastTrackedTaskID: String? { lastTracked.taskID }
+    public var lastTrackedTask: TaskItem? { tasks.first { $0.id == lastTrackedTaskID } }
+    public var menuPrimaryAction: MenuPrimaryAction {
+        guard running, !sleeping, !automation.locked, !isBusy, !isStale,
+              !connection.changing, connection.confirmed else { return .disabled }
+        if let active { return canStopTracking ? .stop(worklogID: active.id) : .disabled }
+        guard let task = lastTrackedTask, !task.archived else { return .openMenu }
+        return canStartTracking(taskID: task.id) ? .start(taskID: task.id) : .disabled
+    }
+
+    @discardableResult
+    public func performMenuPrimaryAction() -> MenuPrimaryAction {
+        let action = menuPrimaryAction
+        switch action {
+        case .stop(let worklogID): stopTracking(worklogID: worklogID)
+        case .start(let taskID): startTracking(taskID: taskID)
+        case .openMenu, .disabled: break
+        }
+        return action
+    }
+
     public var runningTaskName: String {
         guard connection.confirmed else { return "Waiting for tracker state" }
         guard let active else { return "No timer running" }
@@ -722,6 +747,7 @@ public final class TrackerSession {
         dailyTotals.updateDay(at: clock.now)
         let retryFailedHistory = connection.stale && history.unavailable
         connection.acceptSnapshot()
+        lastTracked.observe(snapshot, settings: connection.settings)
         let previousActive = active
         automation.observeActive(snapshot.active)
         tracking.apply(snapshot.active, clock: clock)

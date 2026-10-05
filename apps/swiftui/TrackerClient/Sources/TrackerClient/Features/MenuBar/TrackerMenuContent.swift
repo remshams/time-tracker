@@ -56,22 +56,29 @@ public struct TrackerMenuContent: Equatable {
 }
 
 public struct TrackerMenuLabelContent: Equatable {
-    public let symbol: String
+    public let indicator: TaskIndicator
+    public var taskColor: TaskColor? { indicator.color }
+    public var symbol: String { indicator.symbol }
     public let status: String
     public let totalText: String?
     public let help: String
 
     @MainActor
     init(_ session: TrackerSession, showDailyTotal: Bool) {
+        indicator = TaskIndicator(taskID: session.active?.taskId ?? session.lastTrackedTaskID,
+                                  isRunning: session.active != nil, isStale: session.isStale)
         if session.isStale {
-            symbol = "questionmark.circle"
-            status = "Time Tracker: Tracking status unavailable"
+            let name = session.lastTrackedTask?.name ?? (session.lastTrackedTaskID == nil ? nil : "Unavailable task")
+            status = name.map { "Tracking status unavailable. Last confirmed task: \($0)" }
+                ?? "Tracking status unavailable. No task tracked yet"
         } else if session.active != nil {
-            symbol = "play.circle.fill"
-            status = "Time Tracker: Tracking \(session.runningTaskName)"
+            status = "Tracking: \(session.runningTaskName)"
+        } else if let task = session.lastTrackedTask {
+            status = "Stopped. Last tracked: \(task.name)"
+        } else if session.lastTrackedTaskID != nil {
+            status = "Stopped. Last tracked task is no longer available"
         } else {
-            symbol = "clock"
-            status = "Time Tracker: \(session.autoPauseStatusText ?? "No timer running")"
+            status = "No task tracked yet"
         }
         if showDailyTotal {
             let total: String

@@ -46,3 +46,9 @@ public protocol TrackingPreferencesRepository {
     func load() -> TrackingPreferences
     func save(_ preferences: TrackingPreferences)
 }
+
+@MainActor
+public protocol LastTrackedTaskRepository {
+    func load(for settings: ConnectionSettings) -> String?
+    func save(taskID: String, for settings: ConnectionSettings)
+}
