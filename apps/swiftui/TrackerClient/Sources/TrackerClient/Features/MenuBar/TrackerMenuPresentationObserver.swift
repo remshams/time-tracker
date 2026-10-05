@@ -14,7 +14,7 @@ public final class TrackerMenuPresentationObserver {
     }
 
     public func update(from session: TrackerSession, showDailyTotal: Bool) {
-        // AppKit must keep the same menu items while a user navigates submenus.
+        // Keep the presentation stable while the user navigates an open popup.
         guard trackingDepth == 0 else { return }
         let nextContent = TrackerMenuContent(session)
         let nextLabel = TrackerMenuLabelContent(session, showDailyTotal: showDailyTotal)
