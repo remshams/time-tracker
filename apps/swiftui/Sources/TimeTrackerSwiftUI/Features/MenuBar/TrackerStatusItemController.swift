@@ -151,7 +151,7 @@ final class TrackerStatusItemController: NSObject, NSPopoverDelegate {
         self.popover = popover
         popover.behavior = .transient
         popover.delegate = self
-        popover.contentViewController = NSHostingController(rootView: MenuDropdownView(
+        let hostingController = NSHostingController(rootView: MenuDropdownView(
             state: state, shortcuts: store.menuShortcuts,
             activateTask: { [weak self] id in self?.activateTask(id) },
             stopTracking: { [weak self] in self?.stopTracking() },
@@ -159,6 +159,8 @@ final class TrackerStatusItemController: NSObject, NSPopoverDelegate {
             openWindow: { [weak self] in self?.revealWindow() },
             quit: { NSApplication.shared.terminate(nil) }
         ))
+        hostingController.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = hostingController
         button.highlight(true)
         NSApplication.shared.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -168,9 +170,14 @@ final class TrackerStatusItemController: NSObject, NSPopoverDelegate {
             return
         }
         window.makeKey()
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak window] event in
+        window.acceptsMouseMovedEvents = true
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .mouseMoved]) { [weak self, weak window] event in
             MainActor.assumeIsolated {
                 guard let self, let window, event.window === window, self.popover?.isShown == true else { return event }
+                if event.type == .mouseMoved {
+                    self.menuState?.pointerMoved()
+                    return event
+                }
                 return self.handleKey(event) ? nil : event
             }
         }

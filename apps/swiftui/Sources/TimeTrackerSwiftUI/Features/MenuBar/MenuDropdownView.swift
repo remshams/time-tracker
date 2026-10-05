@@ -3,7 +3,7 @@ import SwiftUI
 import TrackerClient
 
 @MainActor
-final class MenuDropdownState: ObservableObject {
+final class MenuDropdownState {
     let content: TrackerMenuContent
     let connection: ConnectionSettings
     @Published private(set) var selection: MenuTaskSelection
@@ -21,6 +21,8 @@ final class MenuDropdownState: ObservableObject {
     func moveDown() { selection.moveDown(); revealKeyboardSelection() }
     func moveUp() { selection.moveUp(); revealKeyboardSelection() }
     func select(_ id: String) { selection.select(taskID: id); feedback = nil }
+    func hover(_ id: String, inside: Bool) { selection.hover(taskID: id, inside: inside) }
+    func pointerMoved() { selection.pointerMoved() }
 
     private func revealKeyboardSelection() {
         keyboardNavigation += 1
@@ -28,6 +30,12 @@ final class MenuDropdownState: ObservableObject {
         feedback = nil
     }
 }
+
+#if compiler(>=6.2)
+extension MenuDropdownState: @MainActor ObservableObject {}
+#else
+extension MenuDropdownState: ObservableObject {}
+#endif
 
 @MainActor
 struct MenuDropdownView: View {
@@ -138,7 +146,7 @@ struct MenuDropdownView: View {
         }
         .id(entry.id)
         .focused($focusedControl, equals: .task(entry.id))
-        .onHover { hovering in if hovering { state.select(entry.id) } }
+        .onHover { state.hover(entry.id, inside: $0) }
         .help(entry.canStart ? "Start tracking \(entry.task.name)" : "Select \(entry.task.name) to copy its time")
         .accessibilityLabel("\(entry.task.name), \(entry.durationText)\(entry.task.archived ? ", archived" : "")")
         .accessibilityAddTraits(selected ? .isSelected : [])
