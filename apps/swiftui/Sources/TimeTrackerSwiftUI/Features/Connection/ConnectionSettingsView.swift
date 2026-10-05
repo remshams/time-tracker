@@ -10,6 +10,7 @@ struct ConnectionSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: ConnectionSettings
     @State private var operationPending = false
+    @State private var presentationGeneration = UUID()
     @State private var resultMessage: String?
     @State private var resultSucceeded = false
 
@@ -125,23 +126,30 @@ struct ConnectionSettingsView: View {
         }
         .frame(width: 540)
         .onAppear {
+            presentationGeneration = UUID()
             draft = store.connectionSettings
+            operationPending = false
             resultMessage = nil
+            resultSucceeded = false
         }
+        .onDisappear { presentationGeneration = UUID() }
         .onChange(of: draft) { _ in resultMessage = nil }
         .onChange(of: store.connectionSettings) { settings in draft = settings }
     }
 
     private func testConnection() {
         let settings = draft
+        let generation = presentationGeneration
         operationPending = true
         resultMessage = nil
         Task { @MainActor in
             do {
                 try await store.testConnection(settings)
+                guard presentationGeneration == generation else { return }
                 resultSucceeded = true
                 resultMessage = "Connection succeeded. Click Connect to use this data source."
             } catch {
+                guard presentationGeneration == generation else { return }
                 resultSucceeded = false
                 resultMessage = error.localizedDescription
             }
@@ -151,10 +159,13 @@ struct ConnectionSettingsView: View {
 
     private func connect() {
         let settings = draft
+        let generation = presentationGeneration
         operationPending = true
         resultMessage = nil
         Task { @MainActor in
-            resultSucceeded = await store.connect(settings)
+            let succeeded = await store.connect(settings)
+            guard presentationGeneration == generation else { return }
+            resultSucceeded = succeeded
             resultMessage = resultSucceeded
                 ? "Connected. This data source will be used next time you open the app."
                 : store.connectionMessage ?? "Could not connect. Please try again."
