@@ -810,7 +810,7 @@ public final class TrackerSession {
         }
         if resolveCommitted && intent.matchesReplacement(latest) {
             correction.reset()
-            history.clearAfterCorrection()
+            if selectedTaskID == intent.expected.taskId { history.clearAfterCorrection() }
             requestHistory()
             return false
         }
@@ -853,7 +853,7 @@ public final class TrackerSession {
                 }
                 correction.reset()
                 acceptSnapshot(result.snapshot)
-                history.clearAfterCorrection()
+                if selectedTaskID == intent.expected.taskId { history.clearAfterCorrection() }
                 requestHistory()
             } catch {
                 guard isCurrent(token) else { return }

@@ -412,6 +412,34 @@ final class WorklogCorrectionTests: XCTestCase {
     }
 
     @MainActor
+    func testCorrectionPreservesLoadedHistoryForAnotherSelectedTask() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let log = try await openCompleted(fixture)
+        fixture.session.select(secondTask.id)
+        let other = WorklogItem(id: "other-log", taskId: secondTask.id,
+                               start: log.start, end: log.end)
+        let selectedHistory = try await fixture.client.next()
+        selectedHistory.succeed(HistoryPage(worklogs: [other], nextCursor: "other-older", reset: false))
+        try await fixture.settled()
+        fixture.session.setWorklogCorrectionStart(timestamp("2024-12-30T08:00:00.000Z")!)
+        fixture.session.submitWorklogCorrection()
+        try await completePreflight(fixture, worklog: log)
+        let command = try await fixture.client.next()
+        let corrected = WorklogItem(id: log.id, taskId: log.taskId,
+                                   start: "2024-12-30T08:00:00.000000Z", end: log.end)
+        command.corrected(worklog: corrected, snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        let reload = try await fixture.client.next()
+        XCTAssertEqual(reload.operation, .history(task: secondTask.id, cursor: nil))
+        XCTAssertEqual(fixture.session.selectedTaskID, secondTask.id)
+        XCTAssertEqual(fixture.session.worklogs, [other])
+        XCTAssertEqual(fixture.session.nextCursor, "other-older")
+        reload.succeed(HistoryPage(worklogs: [other], nextCursor: nil, reset: false))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.worklogs, [other])
+    }
+
+    @MainActor
     func testCommittedResultComparisonPreservesSubmillisecondDifferences() {
         let state = WorklogCorrectionState()
         state.open(preciseLog, taskName: firstTask.name)
