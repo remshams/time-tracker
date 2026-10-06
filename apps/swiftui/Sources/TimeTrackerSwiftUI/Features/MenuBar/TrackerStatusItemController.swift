@@ -11,6 +11,9 @@ final class TrackerStatusItemController: NSObject {
     private var appearanceObservation: NSKeyValueObservation?
     private var openWindow: (() -> Void)?
     private var nativeMenu: NSMenu?
+    private var elapsedField: MenuValueField?
+    private var totalField: MenuValueField?
+    private var taskRows: [String: MenuTaskRow] = [:]
     private var shortcutRegistration: GlobalMenuShortcutRegistration?
 
     init(store: TrackerStore) {
@@ -34,6 +37,9 @@ final class TrackerStatusItemController: NSObject {
         }
         store.menu.label.objectWillChange.sink { [weak self] _ in
             MainActor.assumeIsolated { self?.updateLabel() }
+        }.store(in: &subscriptions)
+        store.menu.valuesDidChange.sink { [weak self] values in
+            MainActor.assumeIsolated { self?.updateMenuValues(values) }
         }.store(in: &subscriptions)
         NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.stop() } }
@@ -65,6 +71,7 @@ final class TrackerStatusItemController: NSObject {
 
     func stop() {
         nativeMenu?.cancelTracking()
+        clearMenuValues()
         shortcutRegistration?.unregister()
         shortcutRegistration = nil
         store.registerMenuShortcut = nil
@@ -115,6 +122,7 @@ final class TrackerStatusItemController: NSObject {
         let content = store.menu.content
         let menu = makeMenu(content, appearance: NSApplication.shared.effectiveAppearance)
         nativeMenu = menu
+        updateMenuValues(store.menu.values)
         button.highlight(true)
         defer {
             statusItem.menu = nil
@@ -122,12 +130,29 @@ final class TrackerStatusItemController: NSObject {
             button.action = #selector(clicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             nativeMenu = nil
+            clearMenuValues()
             button.highlight(false)
             store.menuClosed()
         }
         // AppKit positions status-item menus below the menu bar, including their outer padding.
         statusItem.menu = menu
         button.performClick(nil)
+    }
+
+    private func clearMenuValues() {
+        elapsedField = nil
+        totalField = nil
+        taskRows.removeAll()
+    }
+
+    private func updateMenuValues(_ values: TrackerMenuValues) {
+        guard nativeMenu != nil else { return }
+        elapsedField?.update(values.elapsedText ?? "Unavailable")
+        totalField?.update(values.totalText, help: values.totalsExplanation)
+        for (taskID, row) in taskRows {
+            guard let duration = values.taskDurationTexts[taskID] else { continue }
+            row.update(duration: duration, help: values.totalsExplanation)
+        }
     }
 
     private func copyValue(_ action: MenuShortcutAction, taskID: String, connection: ConnectionSettings) {
@@ -149,18 +174,23 @@ final class TrackerStatusItemController: NSObject {
             ? connection.serverURL.trimmingCharacters(in: .whitespacesAndNewlines) : nil
         addText(content.connectionStatusText, value: serverURL, to: menu)
         if content.isStale { addText("Showing last confirmed state", to: menu) }
-        addText(content.runningTaskName, value: content.elapsedText, to: menu)
+        elapsedField = addText(content.runningTaskName, value: content.elapsedText, to: menu, liveValue: true)
         if let status = content.autoPauseStatusText { addText(status, to: menu) }
         if let error = content.trackingError { addText(error, to: menu) }
         menu.addItem(.separator())
         addText(content.dailyTotalsStatus == .cached ? "Today, cached" : "Today", to: menu)
-        addText("Total", value: content.totalText, to: menu, help: content.totalsExplanation)
+        totalField = addText("Total", value: content.totalText, to: menu,
+                             help: content.totalsExplanation, liveValue: true)
         menu.addItem(.separator())
         for entry in content.todayTasks {
             let archived = entry.task.archived ? "  Archived" : ""
-            addTask(entry, title: "\(entry.task.name)  \(entry.durationText)\(archived)",
-                    help: content.totalsExplanation, content: content,
-                    appearance: appearance, to: menu)
+            let item = addTask(entry, title: "\(entry.task.name)  \(entry.durationText)\(archived)",
+                               help: content.totalsExplanation, content: content,
+                               appearance: appearance, to: menu)
+            let row = MenuTaskRow(item: item, entry: entry, isStale: content.isStale)
+            taskRows[entry.id] = row
+            row.setDurationFont(entry.durationText)
+            menu.minimumWidth = max(menu.minimumWidth, row.reservedWidth)
         }
         if content.todayTasks.isEmpty {
             let empty: String
@@ -191,8 +221,9 @@ final class TrackerStatusItemController: NSObject {
         return menu
     }
 
+    @discardableResult
     private func addTask(_ entry: TrackerMenuTask, title: String, help: String?,
-                         content: TrackerMenuContent, appearance: NSAppearance, to menu: NSMenu) {
+                         content: TrackerMenuContent, appearance: NSAppearance, to menu: NSMenu) -> NSMenuItem {
         let isRunning = entry.isRunning && !content.isStale
         let trackingAction = entry.trackingAction(in: content).map { action -> MenuAction in
             switch action {
@@ -235,9 +266,12 @@ final class TrackerStatusItemController: NSObject {
                 : "current tracking status unavailable"
         } else { status = entry.isRunning ? "tracking" : "not tracking" }
         item.setAccessibilityLabel("\(title), \(status)")
+        return item
     }
 
-    private func addText(_ title: String, value: String? = nil, to menu: NSMenu, help: String? = nil) {
+    @discardableResult
+    private func addText(_ title: String, value: String? = nil, to menu: NSMenu,
+                         help: String? = nil, liveValue: Bool = false) -> MenuValueField? {
         let text = value.map { "\(title), \($0)" } ?? title
         let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
         item.isEnabled = false
@@ -248,14 +282,20 @@ final class TrackerStatusItemController: NSObject {
         label.toolTip = help ?? title
         label.setAccessibilityLabel(title)
         let valueLabel = value.map { NSTextField(labelWithString: $0) }
-        valueLabel?.font = label.font
+        valueLabel?.font = liveValue
+            ? NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize,
+                                             weight: .regular) : label.font
         valueLabel?.textColor = .labelColor
         valueLabel?.alignment = .right
         valueLabel?.lineBreakMode = .byTruncatingMiddle
         valueLabel?.toolTip = help ?? value
         valueLabel?.setAccessibilityLabel(value ?? "")
         let valueSize = valueLabel?.fittingSize ?? .zero
-        let width = min(480, label.fittingSize.width + valueSize.width + (value == nil ? 40 : 56))
+        let valueWidth = liveValue && valueLabel != nil
+            ? max(valueSize.width, NSAttributedString(string: "~000000:00:00", attributes: [
+                .font: valueLabel?.font ?? NSFont.menuFont(ofSize: 0)
+            ]).size().width) : valueSize.width
+        let width = min(480, label.fittingSize.width + valueWidth + (value == nil ? 40 : 56))
         let height = max(label.fittingSize.height, valueSize.height) + 8
         let view = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         view.appearance = menu.appearance
@@ -273,14 +313,19 @@ final class TrackerStatusItemController: NSObject {
             NSLayoutConstraint.activate([
                 valueLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
                 valueLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-                valueLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, multiplier: 0.65),
                 label.trailingAnchor.constraint(lessThanOrEqualTo: valueLabel.leadingAnchor, constant: -16)
             ])
+            if liveValue {
+                valueLabel.widthAnchor.constraint(equalToConstant: valueWidth).isActive = true
+            } else {
+                valueLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, multiplier: 0.65).isActive = true
+            }
         } else {
             label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20).isActive = true
         }
         item.view = view
         menu.addItem(item)
+        return valueLabel.map { MenuValueField(item: item, label: $0, titleLabel: label, title: title) }
     }
 
     @discardableResult

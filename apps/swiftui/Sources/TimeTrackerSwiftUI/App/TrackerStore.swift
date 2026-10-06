@@ -230,6 +230,7 @@ final class TrackerTaskDailyTotalStore {
 @MainActor
 final class TrackerMenuStore {
     let label: TrackerMenuLabelStore
+    let valuesDidChange = PassthroughSubject<TrackerMenuValues, Never>()
     private let session: TrackerSession
     private let presentation: TrackerMenuPresentationObserver
     private var showDailyTotal: Bool
@@ -239,9 +240,14 @@ final class TrackerMenuStore {
         self.showDailyTotal = showDailyTotal
         presentation = TrackerMenuPresentationObserver(session: session, showDailyTotal: showDailyTotal)
         label = TrackerMenuLabelStore(presentation: presentation)
+        presentation.onValuesChange = { [weak self] in
+            guard let self else { return }
+            valuesDidChange.send(presentation.values)
+        }
     }
 
     var content: TrackerMenuContent { presentation.content }
+    var values: TrackerMenuValues { presentation.values }
 
     func update() { presentation.update(from: session, showDailyTotal: showDailyTotal) }
 

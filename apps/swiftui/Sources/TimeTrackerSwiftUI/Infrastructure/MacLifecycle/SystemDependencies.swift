@@ -76,7 +76,7 @@ struct RunLoopTrackerScheduler: TrackerScheduler {
     func schedule(after interval: TimeInterval, repeating: Bool, tolerance: TimeInterval,
                   action: @escaping @MainActor () -> Void) -> any TrackerCancellation {
         let timer = Timer(timeInterval: interval, repeats: repeating) { _ in
-            Task { @MainActor in action() }
+            MainActor.assumeIsolated { action() }
         }
         timer.tolerance = tolerance
         RunLoop.main.add(timer, forMode: .common)
