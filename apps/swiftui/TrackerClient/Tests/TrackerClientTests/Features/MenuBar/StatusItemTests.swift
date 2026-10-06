@@ -146,7 +146,7 @@ final class StatusItemTests: XCTestCase {
             let count = fixture.client.operations.count
             XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .openMenu)
             XCTAssertEqual(fixture.client.operations.count, count)
-            let label = TrackerMenuLabelContent(fixture.session, showDailyTotal: false)
+            let label = TrackerMenuLabelContent(fixture.session, display: .none)
             XCTAssertEqual(label.indicator.taskID, remembered)
             XCTAssertEqual(label.symbol, "circle")
             if remembered == nil { XCTAssertEqual(label.help, "No task tracked yet") }
@@ -167,7 +167,7 @@ final class StatusItemTests: XCTestCase {
         XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
         try await fixture.start(TrackerSnapshot(tasks: [renamed], active: nil))
-        let label = TrackerMenuLabelContent(fixture.session, showDailyTotal: false)
+        let label = TrackerMenuLabelContent(fixture.session, display: .none)
         XCTAssertEqual(label.help, "Stopped. Last tracked: Renamed task")
         XCTAssertEqual(label.taskColor, TaskColor.forTaskID(firstTask.id))
         XCTAssertEqual(fixture.session.menuPrimaryAction, .start(taskID: firstTask.id))
@@ -188,7 +188,7 @@ final class StatusItemTests: XCTestCase {
         refresh.fail(BridgeFailure(message: "Offline"))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
-        let label = TrackerMenuLabelContent(fixture.session, showDailyTotal: false)
+        let label = TrackerMenuLabelContent(fixture.session, display: .none)
         XCTAssertEqual(label.symbol, "circle")
         XCTAssertEqual(label.help, "Tracking status unavailable. Last confirmed task: First task")
         XCTAssertEqual(fixture.session.lastTrackedTaskID, firstTask.id)
@@ -252,9 +252,9 @@ final class StatusItemTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: false)
-        fixture.session.onChange = { observer.update(from: fixture.session, showDailyTotal: false) }
-        observer.menuOpened(from: fixture.session, showDailyTotal: false)
+        let observer = TrackerMenuPresentationObserver(session: fixture.session, display: .none)
+        fixture.session.onChange = { observer.update(from: fixture.session, display: .none) }
+        observer.menuOpened(from: fixture.session, display: .none)
         fixture.scheduler.poll?.fire()
         let refresh = try await fixture.client.next()
         let replacement = WorklogItem(id: "replacement", taskId: secondTask.id, start: activeWorklog.start, end: nil)
@@ -264,7 +264,7 @@ final class StatusItemTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(observer.label.indicator.taskID, firstTask.id)
         XCTAssertEqual(fixture.session.menuPrimaryAction, .stop(worklogID: replacement.id))
-        observer.menuClosed(from: fixture.session, showDailyTotal: false)
+        observer.menuClosed(from: fixture.session, display: .none)
         XCTAssertEqual(observer.label.indicator.taskID, secondTask.id)
         XCTAssertEqual(observer.label.status, "Tracking: Second task")
     }

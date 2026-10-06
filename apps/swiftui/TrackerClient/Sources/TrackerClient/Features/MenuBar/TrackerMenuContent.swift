@@ -63,18 +63,18 @@ public struct TrackerMenuLabelContent: Equatable {
     public var taskColor: TaskColor? { indicator.color }
     public var symbol: String { indicator.symbol }
     public let status: String
-    public let totalText: String?
+    public let display: MenuBarDisplay
+    public let text: String?
     public let help: String
 
     @MainActor
-    init(_ session: TrackerSession, showDailyTotal: Bool) {
-        indicator = TaskIndicator(
-            taskID: session.active?.taskId ?? session.lastTrackedTaskID,
-            isRunning: session.active != nil, isStale: session.isStale)
+    init(_ session: TrackerSession, display: MenuBarDisplay) {
+        self.display = display
+        indicator = TaskIndicator(taskID: session.active?.taskId ?? session.lastTrackedTaskID,
+                                  isRunning: session.active != nil, isStale: session.isStale)
         if session.isStale {
             let name = session.lastTrackedTask?.name ?? (session.lastTrackedTaskID == nil ? nil : "Unavailable task")
-            status =
-                name.map { "Tracking status unavailable. Last confirmed task: \($0)" }
+            status = name.map { "Tracking status unavailable. Last confirmed task: \($0)" }
                 ?? "Tracking status unavailable. No task tracked yet"
         } else if session.active != nil {
             status = "Tracking: \(session.runningTaskName)"
@@ -85,19 +85,22 @@ public struct TrackerMenuLabelContent: Equatable {
         } else {
             status = "No task tracked yet"
         }
-        if showDailyTotal {
+        switch display {
+        case .time:
             let total: String
             if let duration = session.totalDailyDuration {
                 let minutes = Int(max(0, duration)) / 60
                 let text = String(format: "%02d:%02d", minutes / 60, minutes % 60)
                 total = session.dailyTotalsStatus == .cached ? "~\(text)" : text
-            } else {
-                total = "-"
-            }
-            totalText = total
+            } else { total = "-" }
+            text = total
             help = "\(status)\nTotal today: \(total)\n\(session.dailyTotalsExplanation)"
-        } else {
-            totalText = nil
+        case .taskName:
+            let name = session.active.flatMap { active in session.tasks.first { $0.id == active.taskId }?.name }
+            text = name.map { $0.count > 24 ? String($0.prefix(23)) + "…" : $0 }
+            help = status
+        case .none:
+            text = nil
             help = status
         }
     }

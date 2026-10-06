@@ -83,9 +83,9 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
         try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
-        fixture.session.onChange = { observer.update(from: fixture.session, showDailyTotal: true) }
-        observer.menuOpened(from: fixture.session, showDailyTotal: true)
+        let observer = TrackerMenuPresentationObserver(session: fixture.session, display: .time)
+        fixture.session.onChange = { observer.update(from: fixture.session, display: .time) }
+        observer.menuOpened(from: fixture.session, display: .time)
         let captured = observer.content
         let entry = try XCTUnwrap((captured.todayTasks + captured.otherTasks).first)
         let changed = WorklogItem(
@@ -105,7 +105,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         fixture.session.stopTracking(worklogID: id)
         XCTAssertEqual(fixture.client.operations.count, count)
         XCTAssertEqual(fixture.session.active?.id, changed.id)
-        observer.menuClosed(from: fixture.session, showDailyTotal: true)
+        observer.menuClosed(from: fixture.session, display: .time)
         XCTAssertEqual(entry.trackingAction(in: observer.content), .stop(changed.id))
     }
 }
