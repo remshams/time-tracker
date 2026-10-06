@@ -60,7 +60,7 @@ final class TrackerStatusItemController: NSObject {
         ])
         button.toolTip = label.help
         button.setAccessibilityLabel(label.status)
-        button.setAccessibilityHelp("\(label.help)\nClick the dot's center to start or stop tracking. Click elsewhere, right-click, or Control-click to open the menu.")
+        button.setAccessibilityHelp("\(label.help)\nClick to start or stop tracking. Right-click to open the menu.")
     }
 
     @objc private func clicked() {
@@ -68,18 +68,7 @@ final class TrackerStatusItemController: NSObject {
         let event = NSApplication.shared.currentEvent
         if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
             showMenu()
-            return
-        }
-        if let event, event.type == .leftMouseUp {
-            guard let button = statusItem?.button,
-                  let imageFrame = button.cell?.imageRect(forBounds: button.bounds),
-                  TrackerStatusItemHitTest.containsDot(button.convert(event.locationInWindow, from: nil),
-                                                      in: imageFrame) else {
-                showMenu()
-                return
-            }
-        }
-        if case .openMenu = store.performMenuPrimaryAction() {
+        } else if case .openMenu = store.performMenuPrimaryAction() {
             showMenu()
         }
     }
@@ -244,10 +233,8 @@ private enum TaskDotImage {
             resolvedColor = resolvedColor.usingColorSpace(.deviceRGB) ?? resolvedColor
         }
         let drawingColor = resolvedColor
-        let side = TrackerStatusItemHitTest.imageSide
-        let inset = TrackerStatusItemHitTest.dotInset
-        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
-            let circle = NSBezierPath(ovalIn: rect.insetBy(dx: inset, dy: inset))
+        let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
+            let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 3, dy: 3))
             if isRunning {
                 drawingColor.setFill()
                 circle.fill()
