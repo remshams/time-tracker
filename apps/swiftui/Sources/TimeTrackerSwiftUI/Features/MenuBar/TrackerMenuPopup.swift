@@ -7,17 +7,21 @@ struct TrackerMenuPopup: View {
     let showTracker: () -> Void
     let quit: () -> Void
     let close: () -> Void
+    let width: CGFloat
+    let maximumHeight: CGFloat
     @ObservedObject private var menu: TrackerMenuStore
     @FocusState private var hasKeyboardFocus: Bool
     @State private var navigation = TrackerMenuNavigation()
     @State private var otherTasksExpanded = false
 
     init(store: TrackerStore, showTracker: @escaping () -> Void, quit: @escaping () -> Void,
-         close: @escaping () -> Void) {
+         close: @escaping () -> Void, width: CGFloat = 360, maximumHeight: CGFloat = 560) {
         self.store = store
         self.showTracker = showTracker
         self.quit = quit
         self.close = close
+        self.width = width
+        self.maximumHeight = maximumHeight
         menu = store.menu
     }
 
@@ -52,8 +56,8 @@ struct TrackerMenuPopup: View {
                 if let selection { scroll.scrollTo(selection) }
             }
         }
-        .frame(width: 360)
-        .frame(maxHeight: 560)
+        .frame(width: width)
+        .frame(maxHeight: maximumHeight)
         .fixedSize(horizontal: false, vertical: true)
         .focusable()
         .focusEffectDisabled()
