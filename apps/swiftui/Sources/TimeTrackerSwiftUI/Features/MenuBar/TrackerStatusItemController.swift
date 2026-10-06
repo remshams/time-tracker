@@ -110,20 +110,24 @@ final class TrackerStatusItemController: NSObject {
     }
 
     private func showNativeMenu() {
-        guard nativeMenu == nil, let button = statusItem?.button else { return }
+        guard nativeMenu == nil, let statusItem, let button = statusItem.button else { return }
         store.menuOpened()
         let content = store.menu.content
         let menu = makeMenu(content, appearance: NSApplication.shared.effectiveAppearance)
         nativeMenu = menu
         button.highlight(true)
         defer {
+            statusItem.menu = nil
+            button.target = self
+            button.action = #selector(clicked)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             nativeMenu = nil
             button.highlight(false)
             store.menuClosed()
         }
-        let bottomY = button.isFlipped ? button.bounds.maxY : button.bounds.minY
-        let anchor = NSPoint(x: button.bounds.minX, y: bottomY)
-        menu.popUp(positioning: nil, at: anchor, in: button)
+        // AppKit positions status-item menus below the menu bar, including their outer padding.
+        statusItem.menu = menu
+        button.performClick(nil)
     }
 
     private func copyValue(_ action: MenuShortcutAction, taskID: String, connection: ConnectionSettings) {
