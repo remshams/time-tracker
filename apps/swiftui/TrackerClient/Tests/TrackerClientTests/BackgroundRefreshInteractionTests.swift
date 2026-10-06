@@ -151,6 +151,65 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
     }
 
     @MainActor
+    func testQueuedTrackingAllowsClickAtWorklogStart() async throws {
+        for stop in [false, true] {
+            let fixture = Fixture()
+            defer { fixture.cleanup() }
+            let tasks = [firstTask, secondTask]
+            let current = WorklogItem(id: activeWorklog.id, taskId: firstTask.id,
+                                      start: "2025-01-01T00:00:00.000Z", end: nil)
+            let snapshot = TrackerSnapshot(tasks: tasks, active: current)
+            try await fixture.start(snapshot)
+            fixture.session.refresh()
+            let poll = try await fixture.client.next()
+            if stop { fixture.session.stopTracking(worklogID: current.id) }
+            else { fixture.session.startTracking(taskID: secondTask.id) }
+            poll.succeed(snapshot)
+            let command = try await fixture.client.next()
+            let expected: FakeClient.Operation = stop
+                ? .stop(worklog: current.id, at: "2025-01-01T00:00:00.000Z")
+                : .start(task: secondTask.id, expected: current.id, at: "2025-01-01T00:00:00.000Z")
+            XCTAssertEqual(command.operation, expected)
+            let started = WorklogItem(id: "started-second", taskId: secondTask.id,
+                                      start: current.start, end: nil)
+            command.succeed(TrackerSnapshot(tasks: tasks, active: stop ? nil : started))
+            let history = try await fixture.client.next()
+            history.succeed(emptyPage)
+            try await fixture.settled()
+            XCTAssertNil(fixture.session.trackingError)
+            XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
+        }
+    }
+
+    @MainActor
+    func testQueuedTrackingRejectsCorrectedStartAfterClickAndInvalidStart() async throws {
+        for start in ["2025-01-01T00:00:01.000Z", "invalid start"] {
+            for stop in [false, true] {
+                let fixture = Fixture()
+                defer { fixture.cleanup() }
+                let tasks = [firstTask, secondTask]
+                try await fixture.start(TrackerSnapshot(tasks: tasks, active: activeWorklog))
+                fixture.session.refresh()
+                let poll = try await fixture.client.next()
+                if stop { fixture.session.stopTracking(worklogID: activeWorklog.id) }
+                else { fixture.session.startTracking(taskID: secondTask.id) }
+                let corrected = WorklogItem(id: activeWorklog.id, taskId: firstTask.id, start: start, end: nil)
+                poll.succeed(TrackerSnapshot(tasks: tasks, active: corrected))
+                let history = try await fixture.client.next()
+                XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
+                history.succeed(emptyPage)
+                try await fixture.settled()
+                XCTAssertNotNil(fixture.session.trackingError)
+                XCTAssertFalse(fixture.client.operations.contains {
+                    switch $0 { case .start, .stop: return true; default: return false }
+                })
+                XCTAssertEqual(fixture.session.active, corrected)
+                XCTAssertFalse(fixture.session.isBlockingControls)
+            }
+        }
+    }
+
+    @MainActor
     func testFailedPollRejectsQueuedTrackingWithoutWriting() async throws {
         for stop in [false, true] {
             let fixture = Fixture()
