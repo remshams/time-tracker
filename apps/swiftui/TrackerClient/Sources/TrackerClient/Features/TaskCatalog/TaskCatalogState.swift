@@ -28,6 +28,11 @@ final class TaskCatalogState {
         return true
     }
 
+    func rememberRestoredTask(_ taskID: String) {
+        guard tasks.contains(where: { $0.id == taskID && !$0.archived }) else { return }
+        activeSelection = taskID
+    }
+
     func resetSelections() {
         activeSelection = nil
         archivedSelection = nil

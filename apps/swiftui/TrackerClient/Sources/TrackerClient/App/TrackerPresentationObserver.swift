@@ -13,6 +13,10 @@ public final class TrackerPresentationObserver {
     public var onDailyTotalsChange: (() -> Void)?
     public var onTaskDailyTotalsChange: ((Set<String>) -> Void)?
     public var onTaskCreationChange: (() -> Void)?
+    public var onTaskArchivingChange: (() -> Void)?
+    public private(set) var taskArchivingSheetContent: TaskArchivingPresentation
+    private var archiving: TaskArchivingPresentation
+    private var archiveAvailability: [String: Bool]
     public var onTaskRenameChange: (() -> Void)?
     public var onWorklogMoveChange: (() -> Void)?
     public private(set) var worklogMoveSheetContent: WorklogMovePresentation
@@ -35,6 +39,9 @@ public final class TrackerPresentationObserver {
     public var taskDailyTotals: [String: TaskDailyTotalPresentation] { daily.taskTotals }
 
     public init(session: TrackerSession) {
+        archiving = session.taskArchiving
+        taskArchivingSheetContent = archiving
+        archiveAvailability = session.taskArchivingAvailability
         move = session.worklogMove
         canOpenMove = session.canOpenWorklogMove
         worklogMoveSheetContent = move
@@ -52,6 +59,12 @@ public final class TrackerPresentationObserver {
     }
 
     public func update(from session: TrackerSession) {
+        let nextArchiving = session.taskArchiving
+        let nextArchiveAvailability = session.taskArchivingAvailability
+        let archivingChanged = archiving != nextArchiving || archiveAvailability != nextArchiveAvailability
+        archiving = nextArchiving
+        archiveAvailability = nextArchiveAvailability
+        if nextArchiving.isPresented { taskArchivingSheetContent = nextArchiving }
         let nextMove = session.worklogMove
         let nextCanOpenMove = session.canOpenWorklogMove
         let moveChanged = move != nextMove || canOpenMove != nextCanOpenMove
@@ -89,6 +102,7 @@ public final class TrackerPresentationObserver {
         // SwiftUI continues rendering the sheet while its dismissal animates.
         if nextCorrection.isPresented { worklogCorrectionSheetContent = nextCorrection }
         canOpenCorrection = nextCanOpenCorrection
+        if archivingChanged { onTaskArchivingChange?() }
         if moveChanged { onWorklogMoveChange?() }
         if contentChanged { onContentChange?() }
         if activityChanged { onActivityChange?() }

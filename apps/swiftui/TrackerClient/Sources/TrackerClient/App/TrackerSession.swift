@@ -7,7 +7,7 @@ public final class TrackerSession {
     // Background reads still serialize requests without disabling controls.
     public var isBlockingControls: Bool {
         (isBusy && operationBlocksControls) || pendingControlCommand != nil ||
-            rename.hasPendingIntent || creation.pending || correction.pending || move.pending
+            rename.hasPendingIntent || creation.pending || correction.pending || move.pending || archiving.pending
     }
     public private(set) var now: Date
 
@@ -27,6 +27,7 @@ public final class TrackerSession {
     private let history = WorklogHistoryState()
     private let creation = TaskCreationState()
     private let rename = TaskRenameState()
+    private let archiving = TaskArchivingState()
     private let correction = WorklogCorrectionState()
     private let move = WorklogMoveState()
     private let dailyTotals: DailyTotalsState
@@ -111,13 +112,13 @@ public final class TrackerSession {
     public var canOpenTaskCreation: Bool {
         running && connection.confirmed && !connection.changing &&
             !rename.presentation.isPresented && !rename.blocksConnectionChange &&
-            !correction.blocksConnectionChange && !move.blocksConnectionChange
+            !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.ownsPresentation
     }
     public var taskRename: TaskRenamePresentation { rename.presentation }
     public var canOpenTaskRename: Bool {
         running && connection.confirmed && !connection.changing &&
             !creation.presentation.isPresented && !creation.blocksConnectionChange &&
-            !correction.blocksConnectionChange && !move.blocksConnectionChange &&
+            !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.ownsPresentation &&
             (selectedTask != nil || rename.intent != nil)
     }
     public var worklogCorrection: WorklogCorrectionPresentation { correction.presentation }
@@ -125,7 +126,7 @@ public final class TrackerSession {
         running && connection.confirmed && !connection.changing &&
             !creation.presentation.isPresented && !creation.blocksConnectionChange &&
             !rename.presentation.isPresented && !rename.blocksConnectionChange &&
-            !move.blocksConnectionChange
+            !move.blocksConnectionChange && !archiving.ownsPresentation
     }
 
     public var worklogMove: WorklogMovePresentation { move.presentation }
@@ -133,7 +134,7 @@ public final class TrackerSession {
         running && connection.confirmed && !connection.changing &&
             !creation.presentation.isPresented && !creation.blocksConnectionChange &&
             !rename.presentation.isPresented && !rename.blocksConnectionChange &&
-            !correction.blocksConnectionChange
+            !correction.blocksConnectionChange && !archiving.ownsPresentation
     }
 
     public var canStartSelectedTask: Bool {
@@ -247,6 +248,7 @@ public final class TrackerSession {
         rename.reset()
         correction.reset()
         move.reset()
+        archiving.reset()
         pendingRefresh = false
         cancelTimers()
         isBusy = false
@@ -291,14 +293,85 @@ public final class TrackerSession {
         dailyTotals.reanchor(clock: clock)
         updateDisplayTimer()
         updateRolloverTimer()
-        if rename.hasPendingIntent || creation.pending || correction.pending || move.pending {
+        if rename.hasPendingIntent || creation.pending || correction.pending || move.pending || archiving.pending {
             if drainAutomation() { return }
+            if drainArchiving() { return }
             if drainRename() { return }
             if drainCreation() { return }
             if drainCorrection() { return }
             if drainMove() { return }
         }
         refresh()
+    }
+
+    public var taskArchiving: TaskArchivingPresentation { archiving.presentation }
+
+    private var canBeginTaskArchiving: Bool {
+        running && !sleeping && connection.confirmed && !connection.changing &&
+            (!isBusy || !operationBlocksControls) && pendingControlCommand == nil &&
+            !archiving.ownsPresentation &&
+            !creation.presentation.isPresented && !creation.blocksConnectionChange &&
+            !rename.presentation.isPresented && !rename.blocksConnectionChange &&
+            !correction.blocksConnectionChange && !move.blocksConnectionChange
+    }
+
+    var taskArchivingAvailability: [String: Bool] {
+        let available = canBeginTaskArchiving
+        let runningTaskID = active?.taskId
+        return Dictionary(uniqueKeysWithValues: tasks.map { task in
+            (task.id, available && (task.archived || task.id != runningTaskID))
+        })
+    }
+
+    public func canArchiveTask(taskID: String) -> Bool {
+        canBeginTaskArchiving && active?.taskId != taskID &&
+            tasks.contains { $0.id == taskID && !$0.archived }
+    }
+
+    public func canUnarchiveTask(taskID: String) -> Bool {
+        canBeginTaskArchiving && tasks.contains { $0.id == taskID && $0.archived }
+    }
+
+    public func openTaskArchive(taskID: String) {
+        guard canArchiveTask(taskID: taskID), let task = tasks.first(where: { $0.id == taskID }) else { return }
+        archiving.open(task, action: .archive)
+        publish()
+    }
+
+    public func unarchiveTask(taskID: String) {
+        guard canUnarchiveTask(taskID: taskID), let task = tasks.first(where: { $0.id == taskID }) else { return }
+        archiving.open(task, action: .unarchive)
+        guard archiving.submit(at: commandTimestamp(clock.now), immediate: true) else { return }
+        drainArchiving()
+        publish()
+    }
+
+    public func cancelTaskArchiving() {
+        guard running else { return }
+        archiving.cancel()
+        publish()
+    }
+
+    public func submitTaskArchiving() {
+        guard running, !sleeping, connection.confirmed, !connection.changing,
+              archiving.submit(at: commandTimestamp(clock.now)) else { return }
+        drainArchiving()
+        publish()
+    }
+
+    public func reopenTaskArchiving() {
+        guard running, !sleeping, !connection.changing,
+              !creation.presentation.isPresented, !creation.blocksConnectionChange,
+              !rename.presentation.isPresented, !rename.blocksConnectionChange,
+              !correction.blocksConnectionChange, !move.blocksConnectionChange else { return }
+        archiving.reopen()
+        publish()
+    }
+
+    public func reviewLatestTaskArchiving() {
+        guard running, let taskID = archiving.original?.id else { return }
+        archiving.reviewLatest(tasks.first { $0.id == taskID }, active: active)
+        publish()
     }
 
     public func openTaskCreation() {
@@ -518,6 +591,11 @@ public final class TrackerSession {
     }
 
     public func connect(_ settings: ConnectionSettings) async -> Bool {
+        guard !archiving.blocksConnectionChange else {
+            connection.message = "Finish or retry task archiving before changing connections."
+            publish()
+            return false
+        }
         guard !move.blocksConnectionChange else {
             connection.message = "Finish or retry worklog moving before changing connections."
             publish()
@@ -549,7 +627,7 @@ public final class TrackerSession {
         defer { finishOperation(token: token) }
         guard controlOperationIsCurrent(operation), !sleeping, !Task.isCancelled else { return false }
         guard !rename.blocksConnectionChange, !creation.blocksConnectionChange,
-              !correction.blocksConnectionChange && !move.blocksConnectionChange else {
+              !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.blocksConnectionChange else {
             connection.message = "Finish or retry task editing before changing connections."
             return false
         }
@@ -573,6 +651,7 @@ public final class TrackerSession {
             settingsRepository.save(normalized)
             catalog.resetSelections()
             rename.reset()
+            archiving.reset()
             history.request(selectedTaskID: nil)
             tracking.error = nil
             acceptSnapshot(snapshot)
@@ -692,6 +771,7 @@ public final class TrackerSession {
         guard isCurrent(token) else { return }
         isBusy = false
         if drainAutomation() { return }
+        if drainArchiving() { return }
         if drainRename() { return }
         if drainCreation() { return }
         if drainCorrection() { return }
@@ -781,6 +861,71 @@ public final class TrackerSession {
             recordConnectionFailure(error)
             return nil
         }
+    }
+
+    private func finishTaskArchiving(_ intent: TaskArchivingState.Intent) {
+        if intent.action == .unarchive { catalog.rememberRestoredTask(intent.taskID) }
+        archiving.reset()
+    }
+
+    @discardableResult
+    private func drainArchiving() -> Bool {
+        guard running, !sleeping, !isBusy, let intent = archiving.takePendingIntent() else { return false }
+        let token = generation
+        beginOperation()
+        Task { [weak self] in
+            guard let self, isCurrent(token) else { return }
+            defer { finishOperation(token: token) }
+            var commandStarted = false
+            do {
+                let snapshot: TrackerSnapshot
+                do { snapshot = try await client.snapshot() }
+                catch {
+                    guard isCurrent(token) else { return }
+                    recordConnectionFailure(error)
+                    throw error
+                }
+                guard isCurrent(token) else { return }
+                acceptSnapshot(snapshot)
+                switch archiving.preflight(intent, snapshot: snapshot) {
+                case .applied: finishTaskArchiving(intent); return
+                case .review: archiving.setStatusVisibility(windowVisible); return
+                case .apply: break
+                }
+                if sleeping { archiving.deferUntilWake(); return }
+                commandStarted = true
+                let result: TrackerSnapshot
+                switch intent.action {
+                case .archive:
+                    result = try await client.archiveTask(taskID: intent.taskID, occurredAt: intent.occurredAt)
+                case .unarchive:
+                    result = try await client.unarchiveTask(taskID: intent.taskID, occurredAt: intent.occurredAt)
+                }
+                guard isCurrent(token) else { return }
+                guard archiving.responseMatches(result, intent: intent) else {
+                    throw BridgeFailure(message: "The response does not confirm the task's archive state.",
+                                        kind: "protocol", uncertain: true, requiresRefresh: true)
+                }
+                acceptSnapshot(result)
+                finishTaskArchiving(intent)
+            } catch {
+                guard isCurrent(token) else { return }
+                let confirmed = commandStarted ? await reconcileWriteFailure(token: token) : nil
+                guard isCurrent(token) else { return }
+                if let confirmed {
+                    switch archiving.preflight(intent, snapshot: confirmed) {
+                    case .applied: finishTaskArchiving(intent); return
+                    case .review: archiving.setStatusVisibility(windowVisible); return
+                    case .apply: break
+                    }
+                }
+                archiving.fail(error, retainIntent: TaskArchivingState.requiresRecovery(error) ||
+                               (commandStarted && confirmed == nil))
+                archiving.setStatusVisibility(windowVisible)
+                publish()
+            }
+        }
+        return true
     }
 
     @discardableResult
