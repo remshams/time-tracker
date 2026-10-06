@@ -48,13 +48,17 @@ struct TrackerSidebar: View {
                     .tag(task.id)
                     .help(task.name)
                     .contextMenu {
-                        TaskContextMenu(creation: store.creation, rename: store.rename, taskID: task.id)
+                        TaskContextMenu(creation: store.creation, rename: store.rename,
+                                        archiving: store.archiving, taskID: task.id,
+                                        taskIsArchived: task.archived,
+                                        taskIsRunning: store.active?.taskId == task.id)
                     }
                 }
             }
             .listStyle(.sidebar)
             .contextMenu {
-                TaskContextMenu(creation: store.creation, rename: store.rename, taskID: nil)
+                TaskContextMenu(creation: store.creation, rename: store.rename,
+                                archiving: store.archiving, taskID: nil)
             }
             .overlay {
                 if store.visibleTasks.isEmpty {

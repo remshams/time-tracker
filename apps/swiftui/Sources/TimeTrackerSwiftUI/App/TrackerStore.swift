@@ -21,6 +21,7 @@ final class TrackerStore {
     let menu: TrackerMenuStore
     let creation: TaskCreationStore
     let rename: TaskRenameStore
+    let archiving: TaskArchivingStore
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore
     private var lifecycle: MacLifecycleObserver?
@@ -44,6 +45,7 @@ final class TrackerStore {
         menu = TrackerMenuStore(session: session, showDailyTotal: showDailyTotalInMenuBar)
         creation = TaskCreationStore(session: session, presentation: presentation)
         rename = TaskRenameStore(session: session, presentation: presentation)
+        archiving = TaskArchivingStore(session: session, presentation: presentation)
         correction = WorklogCorrectionStore(session: session, presentation: presentation)
         move = WorklogMoveStore(session: session, presentation: presentation)
         dailyTotals.onMenuBarTick = { [weak self] in self?.menu.update() }

@@ -97,6 +97,7 @@ private struct TrackerTaskToolbar: View {
     @ObservedObject private var activity: TrackerActivityStore
     @ObservedObject private var creation: TaskCreationStore
     @ObservedObject private var rename: TaskRenameStore
+    @ObservedObject private var archiving: TaskArchivingStore
 
     init(store: TrackerStore, preferWindow: @escaping () -> Void) {
         self.preferWindow = preferWindow
@@ -104,11 +105,15 @@ private struct TrackerTaskToolbar: View {
         activity = store.activity
         creation = store.creation
         rename = store.rename
+        archiving = store.archiving
     }
 
-    private var hasTaskEditor: Bool { creation.state.isPresented || rename.state.isPresented }
+    private var hasTaskEditor: Bool {
+        creation.state.isPresented || rename.state.isPresented || archiving.state.isPresented
+    }
 
     var body: some View {
+        PendingTaskArchivingButton(archiving: archiving)
         if let task = store.selectedTask {
             Button {
                 guard rename.canOpen, !hasTaskEditor else { return }
@@ -119,6 +124,22 @@ private struct TrackerTaskToolbar: View {
             }
             .disabled(!rename.canOpen || hasTaskEditor)
             .help("Edit task name")
+
+            let canChangeArchive = task.archived ? archiving.canUnarchive(taskID: task.id)
+                : archiving.canArchive(taskID: task.id)
+            Button {
+                guard canChangeArchive else { return }
+                preferWindow()
+                if task.archived { archiving.unarchive(taskID: task.id) }
+                else { archiving.openArchive(taskID: task.id) }
+            } label: {
+                Label(task.archived ? "Unarchive task" : "Archive task",
+                      systemImage: task.archived ? "archivebox.fill" : "archivebox")
+            }
+            .disabled(!canChangeArchive)
+            .help(!task.archived && store.active?.taskId == task.id
+                  ? "Stop tracking before archiving this task"
+                  : task.archived ? "Unarchive this task" : "Archive this task")
 
             if !task.archived {
                 let isRunning = store.active?.taskId == task.id
