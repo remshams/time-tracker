@@ -85,6 +85,22 @@ private final class RustBridge {
         }
     }
 
+    func archiveTask(taskID: String, occurredAt: String) throws -> TrackerSnapshot {
+        try taskID.withCString { task in
+            try occurredAt.withCString { instant in
+                try decode(tt_bridge_archive_task_at(handle, task, instant), requiresRefreshOnMalformed: true)
+            }
+        }
+    }
+
+    func unarchiveTask(taskID: String, occurredAt: String) throws -> TrackerSnapshot {
+        try taskID.withCString { task in
+            try occurredAt.withCString { instant in
+                try decode(tt_bridge_unarchive_task_at(handle, task, instant), requiresRefreshOnMalformed: true)
+            }
+        }
+    }
+
     func report(start: String, end: String, now: String) throws -> TrackerReport {
         try start.withCString { start in
             try end.withCString { end in
@@ -257,6 +273,14 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
 
     func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TrackerSnapshot {
         try await perform { try $0.currentBridge().renameTask(taskID: taskID, name: name, occurredAt: occurredAt) }
+    }
+
+    func archiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
+        try await perform { try $0.currentBridge().archiveTask(taskID: taskID, occurredAt: occurredAt) }
+    }
+
+    func unarchiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
+        try await perform { try $0.currentBridge().unarchiveTask(taskID: taskID, occurredAt: occurredAt) }
     }
 
     func report(settings: ConnectionSettings, start: String, end: String, now: String) async throws -> TrackerReport {

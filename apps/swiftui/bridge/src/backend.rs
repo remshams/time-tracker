@@ -21,6 +21,7 @@ pub(crate) struct RemoteBackend {
     requires_refresh: bool,
 }
 
+#[derive(Debug)]
 pub(crate) struct BridgeError {
     pub message: String,
     pub kind: &'static str,
@@ -413,16 +414,75 @@ impl Backend {
         }
     }
 
-    #[cfg(test)]
     pub fn archive_task(
         &mut self,
         task_id: TaskId,
         occurred_at: DateTime<Utc>,
-    ) -> Result<(), ApplicationError> {
-        use tracker_application::TaskOperations;
+    ) -> Result<Task, BridgeError> {
+        self.change_task_archive(task_id, occurred_at, true)
+    }
+
+    pub fn unarchive_task(
+        &mut self,
+        task_id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, BridgeError> {
+        self.change_task_archive(task_id, occurred_at, false)
+    }
+
+    fn change_task_archive(
+        &mut self,
+        task_id: TaskId,
+        occurred_at: DateTime<Utc>,
+        archived: bool,
+    ) -> Result<Task, BridgeError> {
         match self {
-            Self::Local(application) => application.archive_task(task_id, occurred_at).map(|_| ()),
-            Self::Remote(_) => panic!("test helper expects local backend"),
+            Self::Local(application) => {
+                let result = if archived {
+                    application.archive_task(task_id, occurred_at)
+                } else {
+                    application.unarchive_task(task_id, occurred_at)
+                };
+                result.map_err(local_archive_error)
+            }
+            Self::Remote(remote) => {
+                remote.check_write()?;
+                let previous_tracking = remote.application.current_tracking().clone();
+                let result = if archived {
+                    remote
+                        .runtime
+                        .block_on(remote.application.archive_task(task_id, occurred_at))
+                } else {
+                    remote
+                        .runtime
+                        .block_on(remote.application.unarchive_task(task_id, occurred_at))
+                };
+                match result {
+                    Ok(task)
+                        if task.is_archived() == archived
+                            && remote.application.task(task_id) == Some(&task)
+                            && remote.application.current_tracking() == &previous_tracking =>
+                    {
+                        Ok(task)
+                    }
+                    Ok(_) => {
+                        remote.requires_refresh = true;
+                        Err(BridgeError {
+                            message: "Task archive result does not match returned server state"
+                                .into(),
+                            kind: "protocol",
+                            uncertain: true,
+                            requires_refresh: true,
+                        })
+                    }
+                    Err(error) => {
+                        remote.requires_refresh = true;
+                        let mut mapped = archive_error(&error);
+                        mapped.requires_refresh = true;
+                        Err(mapped)
+                    }
+                }
+            }
         }
     }
 }
@@ -431,7 +491,7 @@ impl RemoteBackend {
     fn check_write(&self) -> Result<(), BridgeError> {
         if self.requires_refresh {
             return Err(BridgeError {
-                message: "Refresh server state before tracking again".into(),
+                message: "Refresh server state before changing tracker state".into(),
                 kind: "unavailable",
                 uncertain: false,
                 requires_refresh: true,
@@ -471,6 +531,36 @@ fn operation_error_kind(error: &ApplicationError) -> &'static str {
 
 fn local_error(error: ApplicationError) -> BridgeError {
     error.failure().message().to_owned().into()
+}
+
+fn local_archive_error(error: ApplicationError) -> BridgeError {
+    let committed = matches!(error, ApplicationError::TaskRecovery(_));
+    let mut mapped = archive_error(&error);
+    mapped.uncertain = committed;
+    mapped
+}
+
+fn archive_error(error: &ApplicationError) -> BridgeError {
+    let failure = error.failure();
+    let kind = match failure.category() {
+        ApplicationFailureCategory::ActiveTask => "task_active",
+        ApplicationFailureCategory::TaskNotFound => "task_not_found",
+        _ => match failure.source() {
+            ApplicationFailureSource::RemoteUnavailable => "unavailable",
+            ApplicationFailureSource::RemoteProtocol => "protocol",
+            _ => "general",
+        },
+    };
+    BridgeError {
+        message: failure.message().to_owned(),
+        kind,
+        uncertain: matches!(
+            failure.source(),
+            ApplicationFailureSource::RemoteUnavailable | ApplicationFailureSource::RemoteProtocol
+        ),
+        requires_refresh: failure.recovery_failed()
+            || matches!(kind, "task_active" | "task_not_found"),
+    }
 }
 
 fn correction_error_kind(error: &ApplicationError) -> Option<&'static str> {
@@ -596,5 +686,57 @@ mod tests {
             operation_error_kind(&ApplicationError::storage_failure("local storage error")),
             "general"
         );
+    }
+}
+
+#[cfg(test)]
+mod archive_mapping_tests {
+    use super::*;
+    use tracker_application::RepositoryError;
+
+    #[test]
+    fn task_error_mapping_preserves_primary_categories_and_failed_recovery() {
+        for (category, kind) in [
+            (ApplicationFailureCategory::ActiveTask, "task_active"),
+            (ApplicationFailureCategory::TaskNotFound, "task_not_found"),
+        ] {
+            let error =
+                tracker_application::ApplicationError::semantic_failure(category, "Failure")
+                    .with_recovery_failure(
+                        tracker_application::ApplicationError::RemoteUnavailable("offline".into()),
+                    );
+            let mapped = archive_error(&error);
+            assert_eq!(mapped.kind, kind);
+            assert!(mapped.requires_refresh);
+            assert!(mapped.uncertain);
+        }
+        let storage = ApplicationError::TaskRecovery(RepositoryError::Backend {
+            message: "read failed".into(),
+        });
+        let mapped = local_archive_error(storage);
+        assert_eq!(mapped.kind, "general");
+        assert!(mapped.requires_refresh);
+        assert!(mapped.uncertain);
+        let write_failure =
+            local_archive_error(ApplicationError::Repository(RepositoryError::Backend {
+                message: "write failed".into(),
+            }));
+        assert_eq!(write_failure.kind, "general");
+        assert!(!write_failure.requires_refresh);
+        assert!(!write_failure.uncertain);
+        for (error, kind) in [
+            (
+                ApplicationError::RemoteUnavailable("offline".into()),
+                "unavailable",
+            ),
+            (
+                ApplicationError::RemoteProtocol("malformed".into()),
+                "protocol",
+            ),
+        ] {
+            let mapped = archive_error(&error);
+            assert_eq!(mapped.kind, kind);
+            assert!(mapped.uncertain);
+        }
     }
 }

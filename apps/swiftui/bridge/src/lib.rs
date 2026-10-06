@@ -376,6 +376,64 @@ pub unsafe extern "C" fn tt_bridge_rename_task_at(
     encode(result)
 }
 
+/// Archives a stopped task and returns the committed snapshot.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be null or valid
+/// C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_archive_task_at(
+    bridge: *mut Bridge,
+    task_id: *const c_char,
+    occurred_at: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees the bridge and strings meet this contract.
+    unsafe { change_task_archive_at(bridge, task_id, occurred_at, true) }
+}
+
+/// Restores a task and returns the committed snapshot.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be null or valid
+/// C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_unarchive_task_at(
+    bridge: *mut Bridge,
+    task_id: *const c_char,
+    occurred_at: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees the bridge and strings meet this contract.
+    unsafe { change_task_archive_at(bridge, task_id, occurred_at, false) }
+}
+
+unsafe fn change_task_archive_at(
+    bridge: *mut Bridge,
+    task_id: *const c_char,
+    occurred_at: *const c_char,
+    archived: bool,
+) -> *mut c_char {
+    // SAFETY: The caller supplies exclusive access to a live bridge or null.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    let result = (|| {
+        // SAFETY: The caller supplies valid C strings or null.
+        let task_id =
+            unsafe { read_identifier(task_id, "Invalid task ID") }.map_err(BridgeError::from)?;
+        // SAFETY: The caller supplies valid C strings or null.
+        let occurred_at = unsafe { read_identifier(occurred_at, "Invalid archive timestamp") }
+            .map_err(BridgeError::from)?;
+        if archived {
+            bridge.application.archive_task(task_id, occurred_at)?;
+        } else {
+            bridge.application.unarchive_task(task_id, occurred_at)?;
+        }
+        serde_json::to_value(snapshot(&bridge.application))
+            .map_err(|error| error.to_string().into())
+    })();
+    encode(result)
+}
+
 /// Starts the requested task, or atomically switches from the running task.
 /// Returns the committed snapshot without a second database read.
 ///
@@ -838,6 +896,9 @@ mod correction_tests;
 
 #[cfg(test)]
 mod move_tests;
+
+#[cfg(test)]
+mod archive_tests;
 
 #[cfg(test)]
 mod tests {
