@@ -9,6 +9,7 @@ public struct TrackerMenuTask: Identifiable, Equatable {
 }
 
 public struct TrackerMenuContent: Equatable {
+    public let connectionSettings: ConnectionSettings
     public let connectionStatusText: String
     public let isStale: Bool
     public let runningTaskName: String
@@ -25,6 +26,7 @@ public struct TrackerMenuContent: Equatable {
 
     @MainActor
     init(_ session: TrackerSession) {
+        connectionSettings = session.connectionSettings
         connectionStatusText = session.connectionStatusText
         isStale = session.isStale
         runningTaskName = session.runningTaskName

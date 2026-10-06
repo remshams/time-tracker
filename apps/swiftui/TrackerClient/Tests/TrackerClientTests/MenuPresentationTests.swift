@@ -3,7 +3,7 @@ import XCTest
 
 final class MenuPresentationTests: XCTestCase {
     @MainActor
-    func testOpenSubmenuKeepsContentAndLabelStableAcrossTicksAndPolls() async throws {
+    func testOpenSubmenuKeepsNavigationStableWhileValuesAdvanceAcrossTicksAndPolls() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
         fixture.session.setWindowVisible(true)
@@ -13,8 +13,10 @@ final class MenuPresentationTests: XCTestCase {
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         var contentChanges = 0
         var labelChanges = 0
+        var valueChanges = 0
         observer.onContentChange = { contentChanges += 1 }
         observer.onLabelChange = { labelChanges += 1 }
+        observer.onValuesChange = { valueChanges += 1 }
         let window = TrackerPresentationObserver(session: fixture.session)
         var windowTicks = 0
         var windowControls = 0
@@ -33,6 +35,10 @@ final class MenuPresentationTests: XCTestCase {
             fixture.clock.now.addTimeInterval(60)
             fixture.clock.uptime += 60
             display.fire()
+            XCTAssertEqual(observer.values.elapsedText, fixture.session.timerDisplayText)
+            XCTAssertEqual(observer.values.totalText, fixture.session.totalDailyDurationText)
+            XCTAssertEqual(observer.values.taskDurationTexts[firstTask.id],
+                           fixture.session.dailyDurationText(taskID: firstTask.id))
             fixture.scheduler.poll?.fire()
             let poll = try await fixture.client.next()
             XCTAssertTrue(fixture.session.isBusy)
@@ -47,11 +53,13 @@ final class MenuPresentationTests: XCTestCase {
         }
         XCTAssertEqual(contentChanges, 0)
         XCTAssertEqual(labelChanges, 0)
+        XCTAssertGreaterThanOrEqual(valueChanges, 3)
         XCTAssertEqual(windowTicks, 3, "Freezing a menu must not freeze the window's clock.")
         XCTAssertEqual(windowControls, 0, "Background polls must keep the window's controls stable.")
         XCTAssertEqual(observer.label, originalLabel)
         observer.menuClosed(from: fixture.session, showDailyTotal: true)
         XCTAssertEqual(observer.content, originalContent, "Closing a submenu must not release the root menu's snapshot.")
+        XCTAssertEqual(observer.values.elapsedText, fixture.session.timerDisplayText)
         observer.menuClosed(from: fixture.session, showDailyTotal: true)
         XCTAssertEqual(contentChanges, 1)
         XCTAssertEqual(labelChanges, 1)
