@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 public enum TrackerMenuPanelPlacement {
     public static func frame(contentSize: CGSize, anchor: CGRect, visibleFrame: CGRect,
