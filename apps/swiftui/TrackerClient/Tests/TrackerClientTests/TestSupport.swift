@@ -55,6 +55,7 @@ final class FakeClient: TrackerClient, ReportClient {
     private var waiters: [(id: UUID, expectation: XCTestExpectation)] = []
     private var outstanding: [UUID: CheckedContinuation<Reply, Error>] = [:]
     private(set) var operations: [Operation] = []
+    private(set) var maximumOutstandingRequests = 0
 
     func next(timeout: TimeInterval = 2, file: StaticString = #filePath, line: UInt = #line) async throws -> Request {
         if !requests.isEmpty { return requests.removeFirst() }
@@ -88,6 +89,7 @@ final class FakeClient: TrackerClient, ReportClient {
         return try await withCheckedThrowingContinuation { continuation in
             let id = UUID()
             outstanding[id] = continuation
+            maximumOutstandingRequests = max(maximumOutstandingRequests, outstanding.count)
             let request = Request(operation: operation) { [weak self] result in
                 self?.outstanding.removeValue(forKey: id)?.resume(with: result)
             }
@@ -254,7 +256,7 @@ final class Fixture {
             let history = try await client.next()
             XCTAssertEqual(history.operation, .history(task: task.id, cursor: nil))
             guard session.isBusy else {
-                XCTFail("Fetching startup history must keep conflicting commands disabled.")
+                XCTFail("Startup history must use the session operation gate.")
                 throw TestTimeout(description: "Startup history ran outside the session operation gate.")
             }
             history.succeed(emptyPage)

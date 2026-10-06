@@ -91,12 +91,12 @@ public final class TrackerPresentationObserver {
     }
 
     private struct Activity: Equatable {
-        let busy: Bool
+        let blocksControls: Bool
         let canStart: Bool
         let canStop: Bool
 
         @MainActor init(_ session: TrackerSession) {
-            busy = session.isBusy
+            blocksControls = session.isBlockingControls
             canStart = session.canStartSelectedTask
             canStop = session.canStopTracking
         }

@@ -33,7 +33,7 @@ final class ObserverTests: XCTestCase {
     }
 
     @MainActor
-    func testRefreshImmediatelyNotifiesDisabledCommandsAndCancelsScheduledPoll() async throws {
+    func testRefreshKeepsCommandsEnabledAndCancelsScheduledPoll() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
@@ -51,7 +51,7 @@ final class ObserverTests: XCTestCase {
 
         fixture.session.refresh()
         XCTAssertEqual(observedBusy, true)
-        XCTAssertEqual(observedStartEnabled, false)
+        XCTAssertEqual(observedStartEnabled, true)
         XCTAssertEqual(observedPollCancelled, true)
         let request = try await fixture.client.next()
         request.succeed(snapshot)

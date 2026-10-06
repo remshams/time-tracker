@@ -48,7 +48,7 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertEqual(contentChanges, 0)
         XCTAssertEqual(labelChanges, 0)
         XCTAssertEqual(windowTicks, 3, "Freezing a menu must not freeze the window's clock.")
-        XCTAssertEqual(windowControls, 6, "Polling must still update the window's request controls.")
+        XCTAssertEqual(windowControls, 0, "Background polls must keep the window's controls stable.")
         XCTAssertEqual(observer.label, originalLabel)
         observer.menuClosed(from: fixture.session, showDailyTotal: true)
         XCTAssertEqual(observer.content, originalContent, "Closing a submenu must not release the root menu's snapshot.")

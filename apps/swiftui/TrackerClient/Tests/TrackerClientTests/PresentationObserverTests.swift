@@ -57,7 +57,7 @@ final class PresentationObserverTests: XCTestCase {
     }
 
     @MainActor
-    func testUnchangedServerPollsUpdateRequestControlsWithoutInvalidatingLists() async throws {
+    func testUnchangedServerPollsDoNotInvalidateControlsOrLists() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
         let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
@@ -75,7 +75,8 @@ final class PresentationObserverTests: XCTestCase {
             fixture.scheduler.poll?.fire()
             let refresh = try await fixture.client.next()
             XCTAssertTrue(fixture.session.isBusy)
-            XCTAssertFalse(fixture.session.canStopTracking)
+            XCTAssertTrue(fixture.session.canStopTracking)
+            XCTAssertFalse(fixture.session.isBlockingControls)
             refresh.succeed(snapshot)
             let settled = XCTestExpectation(description: "The poll finishes")
             let completed = Task { @MainActor in
@@ -90,6 +91,6 @@ final class PresentationObserverTests: XCTestCase {
         }
         XCTAssertEqual(contentUpdates, 0)
         XCTAssertEqual(timerUpdates, 0)
-        XCTAssertEqual(activityUpdates, 6)
+        XCTAssertEqual(activityUpdates, 0)
     }
 }

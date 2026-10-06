@@ -593,7 +593,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         refresh.succeed(snapshot)
         let replacement = try await fixture.client.next()
         guard case .report = replacement.operation else { return XCTFail("Recovery must reload totals before history.") }
-        XCTAssertFalse(fixture.session.canStopTracking)
+        XCTAssertTrue(fixture.session.canStopTracking)
         replacement.succeed(TrackerReport(snapshot: snapshot, rows: [total(firstTask, 15)]))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.isStale)
@@ -634,7 +634,7 @@ final class DailyTotalsSessionTests: XCTestCase {
             refresh.succeed(snapshot)
             let report = try await fixture.client.next()
             guard case .report = report.operation else { return XCTFail("Snapshot recovery must precede the next report.") }
-            XCTAssertFalse(fixture.session.canStartSelectedTask)
+            XCTAssertTrue(fixture.session.canStartSelectedTask)
             report.succeed(TrackerReport(snapshot: snapshot, rows: [total(firstTask, 8)]))
             try await fixture.settled()
             XCTAssertFalse(fixture.session.isStale, failure.message)

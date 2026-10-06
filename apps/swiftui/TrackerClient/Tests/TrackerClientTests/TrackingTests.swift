@@ -41,14 +41,14 @@ final class TrackingTests: XCTestCase {
     }
 
     @MainActor
-    func testTaskEligibilityDisablesCommandsDuringRefreshAfterFailureAndAfterShutdown() async throws {
+    func testTaskEligibilityAllowsRefreshButRejectsFailedStateAndShutdown() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
         XCTAssertTrue(fixture.session.canStartTracking(taskID: secondTask.id))
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
-        XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
+        XCTAssertTrue(fixture.session.canStartTracking(taskID: secondTask.id))
         let operationCount = fixture.client.operations.count
         fixture.session.startTracking(taskID: secondTask.id)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
@@ -151,11 +151,7 @@ final class TrackingTests: XCTestCase {
         fixture.session.refresh()
         fixture.session.refresh()
         fixture.session.select(secondTask.id)
-        fixture.session.startTracking(taskID: firstTask.id)
         XCTAssertEqual(fixture.client.operations.count, 3)
-        let connecting = Task { await fixture.session.connect(serverSettings) }
-        let connected = try await fixture.taskValue(connecting)
-        XCTAssertFalse(connected)
         refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
         let queuedRefresh = try await fixture.client.next()
         XCTAssertEqual(queuedRefresh.operation, .refresh(.local))

@@ -639,13 +639,13 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertEqual(fixture.client.operations.filter { if case .pause = $0 { return true }; return false }.count, 2)
     }
 
-    func testBusyHistoryBlocksManualWritesAndQueuesLockBeforeRefresh() async throws {
+    func testBackgroundHistoryQueuesManualIntentAndLockCancelsItBeforeRefresh() async throws {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
         try await fixture.start(running)
         fixture.session.retryHistory()
         guard fixture.session.isBusy else {
-            XCTFail("A history fetch must keep conflicting commands disabled.")
+            XCTFail("A history fetch must use the session operation gate.")
             return
         }
         let history = try await fixture.client.next()
@@ -660,7 +660,8 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.session.screenLocked(at: fixture.clock.now)
         XCTAssertTrue(fixture.session.isBusy)
         XCTAssertFalse(fixture.session.canStartSelectedTask)
-        XCTAssertFalse(fixture.session.canStopTracking)
+        XCTAssertTrue(fixture.session.canStopTracking)
+        XCTAssertNotNil(fixture.session.trackingError)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
         history.succeed(emptyPage)
         let snapshot = try await fixture.client.next()
