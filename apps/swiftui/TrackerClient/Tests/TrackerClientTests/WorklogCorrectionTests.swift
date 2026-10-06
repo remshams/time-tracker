@@ -34,6 +34,59 @@ final class WorklogCorrectionTests: XCTestCase {
     }
 
     @MainActor
+    func testCorrectionQueuedDuringRefreshBlocksTrackingAndRunsWithoutOverlappingRequests() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
+        try await fixture.start(snapshot)
+        fixture.session.refresh()
+        let poll = try await fixture.client.next()
+        XCTAssertFalse(fixture.session.isBlockingControls)
+        fixture.session.openWorklogCorrection(worklogID: activeWorklog.id)
+        fixture.session.setWorklogCorrectionStart(timestamp("2024-12-31T23:58:00.000Z")!)
+        fixture.session.submitWorklogCorrection()
+        XCTAssertTrue(fixture.session.isBlockingControls)
+        XCTAssertFalse(fixture.session.canStopTracking)
+        XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
+        fixture.session.stopTracking(worklogID: activeWorklog.id)
+        poll.succeed(snapshot)
+        try await completePreflight(fixture, worklog: activeWorklog, snapshot: snapshot)
+        let command = try await fixture.client.next()
+        XCTAssertEqual(command.operation, .correct(expected: activeWorklog, start: "2024-12-31T23:58:00.000Z",
+                                                   end: nil, at: "2025-01-01T00:00:00.000Z"))
+        let corrected = WorklogItem(id: activeWorklog.id, taskId: firstTask.id,
+                                   start: "2024-12-31T23:58:00.000000Z", end: nil)
+        command.corrected(worklog: corrected, snapshot: TrackerSnapshot(tasks: snapshot.tasks, active: corrected))
+        let history = try await fixture.client.next()
+        history.succeed(HistoryPage(worklogs: [corrected], nextCursor: nil, reset: false))
+        try await fixture.settled()
+        XCTAssertFalse(fixture.session.isBlockingControls)
+        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
+        XCTAssertFalse(fixture.client.operations.contains { if case .stop = $0 { return true }; return false })
+    }
+
+    @MainActor
+    func testCorrectionOpenedWhileConnectionChangeWaitsPreventsSourceSwitch() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(snapshot)
+        fixture.session.refresh()
+        let poll = try await fixture.client.next()
+        let connection = Task { await fixture.session.connect(.local) }
+        try await fixture.waitUntil("connection change to queue") { fixture.session.isBlockingControls }
+        XCTAssertTrue(fixture.session.isBlockingControls)
+        fixture.session.openWorklogCorrection(worklogID: activeWorklog.id)
+        XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
+        poll.succeed(snapshot)
+        let connected = try await fixture.taskValue(connection)
+        XCTAssertFalse(connected)
+        try await fixture.settled()
+        XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
+        XCTAssertFalse(fixture.client.operations.contains { if case .connect = $0 { return true }; return false })
+    }
+
+    @MainActor
     func testCompletedEditPreservesUntouchedMicrosecondsAndRefreshesNewestHistory() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
