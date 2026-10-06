@@ -34,7 +34,7 @@ struct ConnectionSummary: View {
                 ProgressView().controlSize(.small)
             } else if store.isStale {
                 Button("Retry") { store.refresh() }
-                    .disabled(activity.isBusy)
+                    .disabled(activity.isBlockingControls)
             }
         }
         .padding(.horizontal, 12)

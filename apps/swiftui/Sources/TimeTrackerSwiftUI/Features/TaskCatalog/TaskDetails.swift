@@ -112,6 +112,6 @@ private struct HistoryPaginationButton: View {
 
     var body: some View {
         Button("Load older worklogs") { store.loadOlder() }
-            .disabled(activity.isBusy || store.isStale)
+            .disabled(activity.isBlockingControls || store.isStale)
     }
 }

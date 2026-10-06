@@ -271,7 +271,7 @@ final class TrackerActivityStore {
         presentation.onActivityChange = { [weak self] in self?.objectWillChange.send() }
     }
 
-    var isBusy: Bool { session.isBusy }
+    var isBlockingControls: Bool { session.isBlockingControls }
     var canStartSelectedTask: Bool { session.canStartSelectedTask }
     var canStopTracking: Bool { session.canStopTracking }
     func canStartTracking(taskID: String) -> Bool { session.canStartTracking(taskID: taskID) }

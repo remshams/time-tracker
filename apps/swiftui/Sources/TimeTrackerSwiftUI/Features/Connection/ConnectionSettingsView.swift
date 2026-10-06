@@ -20,7 +20,7 @@ struct ConnectionSettingsView: View {
         _draft = State(initialValue: store.connectionSettings)
     }
 
-    private var controlsDisabled: Bool { operationPending || activity.isBusy }
+    private var controlsDisabled: Bool { operationPending || activity.isBlockingControls }
     private var missingEndpoint: Bool {
         draft.mode == .server && draft.serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
