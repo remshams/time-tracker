@@ -2,9 +2,9 @@ use chrono::{DateTime, Utc};
 use tokio::runtime::{Builder, Runtime};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ApplicationFailureSource, ClearActiveTaskOutcome,
-    ReportQueries, ReportTotals, SetActiveTaskOutcome, TaskListItem, TaskOperations, TaskOrdering,
-    TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor, WorklogOperations,
-    WorklogPage, WorklogQueries,
+    MoveCandidate, ReportQueries, ReportTotals, SetActiveTaskOutcome, TaskListItem, TaskOperations,
+    TaskOrdering, TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor,
+    WorklogOperations, WorklogPage, WorklogQueries,
 };
 use tracker_domain::{Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes};
 use tracker_remote::{RemoteApplication, RemoteError};
@@ -224,6 +224,106 @@ impl Backend {
         }
     }
 
+    pub fn move_candidates(&self, source_task_id: TaskId, query: &str) -> Vec<MoveCandidate> {
+        match self {
+            Self::Local(application) => application.move_candidates(source_task_id, query),
+            Self::Remote(remote) => remote.application.move_candidates(source_task_id, query),
+        }
+    }
+
+    pub fn move_worklog(
+        &mut self,
+        id: WorklogId,
+        expected_source_task_id: TaskId,
+        expected: WorklogTimes,
+        destination_task_id: TaskId,
+    ) -> Result<Worklog, BridgeError> {
+        // Refresh the revision while preserving the selected row's task and timestamps.
+        if matches!(self, Self::Remote(_)) {
+            self.refresh()?;
+        }
+        match self {
+            Self::Local(application) => application
+                .move_worklog(id, expected_source_task_id, expected, destination_task_id)
+                .map_err(|error| {
+                    let mut mapped = move_error(error);
+                    if mapped.kind == "general"
+                        && !mapped.requires_refresh
+                        && application
+                            .task(destination_task_id)
+                            .is_none_or(|task| task.is_archived())
+                    {
+                        mapped.kind = "destination_unavailable";
+                        mapped.requires_refresh = true;
+                    }
+                    mapped
+                }),
+            Self::Remote(remote) => {
+                let previous_tracking = remote.application.current_tracking().clone();
+                let result = remote.runtime.block_on(remote.application.move_worklog(
+                    id,
+                    expected_source_task_id,
+                    expected,
+                    destination_task_id,
+                ));
+                match result {
+                    Ok(worklog)
+                        if remote
+                            .application
+                            .task(destination_task_id)
+                            .is_some_and(|task| !task.is_archived())
+                            && moved_worklog_matches(
+                                &worklog,
+                                id,
+                                expected,
+                                destination_task_id,
+                                &previous_tracking,
+                                remote.application.current_tracking(),
+                            ) =>
+                    {
+                        Ok(worklog)
+                    }
+                    Ok(_) => {
+                        remote.requires_refresh = true;
+                        Err(BridgeError {
+                            message: "Moved worklog does not match returned server state".into(),
+                            kind: "protocol",
+                            uncertain: true,
+                            requires_refresh: true,
+                        })
+                    }
+                    Err(error) => {
+                        let recovery_failed = error.failure().recovery_failed();
+                        let kind =
+                            if error.failure().source() == ApplicationFailureSource::Operation {
+                                move_error_kind(&error)
+                            } else {
+                                None
+                            };
+                        let mut mapped = remote.operation_error(error, true);
+                        if !recovery_failed
+                            && matches!(mapped.kind, "general" | "worklog_not_found" | "conflict")
+                            && matches!(
+                                kind,
+                                None | Some("worklog_not_found") | Some("destination_unavailable")
+                            )
+                            && !mapped.uncertain
+                            && remote
+                                .application
+                                .task(destination_task_id)
+                                .is_none_or(|task| task.is_archived())
+                        {
+                            mapped.kind = "destination_unavailable";
+                        } else if let Some(kind) = kind {
+                            mapped.kind = kind;
+                        }
+                        Err(mapped)
+                    }
+                }
+            }
+        }
+    }
+
     pub fn resume_tracking(
         &mut self,
         task_id: TaskId,
@@ -388,6 +488,59 @@ fn correction_error(error: ApplicationError) -> BridgeError {
         kind,
         uncertain: false,
         requires_refresh: kind == "worklog_changed",
+    }
+}
+
+fn moved_worklog_matches(
+    worklog: &Worklog,
+    id: WorklogId,
+    expected: WorklogTimes,
+    destination_task_id: TaskId,
+    previous: &TrackingState,
+    current: &TrackingState,
+) -> bool {
+    let canonical = |value: DateTime<Utc>| value.timestamp_micros();
+    if worklog.id() != id
+        || worklog.task_id() != destination_task_id
+        || canonical(worklog.start()) != canonical(expected.start())
+        || worklog.end().map(canonical) != expected.end().map(canonical)
+    {
+        return false;
+    }
+    if expected.is_active() {
+        matches!(current, TrackingState::Running { worklog: active }
+            if active.id() == worklog.id()
+                && active.task_id() == worklog.task_id()
+                && active.start() == worklog.start())
+    } else {
+        current == previous
+            && !matches!(current, TrackingState::Running { worklog: active } if active.id() == id)
+    }
+}
+
+fn move_error_kind(error: &ApplicationError) -> Option<&'static str> {
+    match error.failure().category() {
+        ApplicationFailureCategory::WorklogNotFound => Some("worklog_not_found"),
+        ApplicationFailureCategory::WorklogChanged => Some("worklog_changed"),
+        ApplicationFailureCategory::WorklogOverlap => Some("worklog_overlap"),
+        ApplicationFailureCategory::TaskNotFound => Some("destination_unavailable"),
+        _ => None,
+    }
+}
+
+fn move_error(error: ApplicationError) -> BridgeError {
+    let failure = error.failure();
+    BridgeError {
+        message: failure.message().to_owned(),
+        kind: move_error_kind(&error).unwrap_or("general"),
+        uncertain: false,
+        requires_refresh: failure.recovery_failed()
+            || matches!(
+                failure.category(),
+                ApplicationFailureCategory::WorklogNotFound
+                    | ApplicationFailureCategory::WorklogChanged
+                    | ApplicationFailureCategory::TaskNotFound
+            ),
     }
 }
 

@@ -163,6 +163,32 @@ private final class RustBridge {
             return try decode(tt_bridge_history(handle, task, nil))
         }
     }
+
+    func moveCandidates(sourceTaskID: String, query: String) throws -> [WorklogMoveCandidate] {
+        guard !query.utf8.contains(0) else {
+            throw BridgeFailure(message: "Move search queries must not contain null characters.")
+        }
+        return try sourceTaskID.withCString { source in
+            try query.withCString { query in
+                try decode(tt_bridge_move_candidates(handle, source, query))
+            }
+        }
+    }
+
+    func moveWorklog(expected: WorklogItem, destinationTaskID: String) throws -> WorklogMoveResult {
+        try expected.id.withCString { worklog in
+            try expected.taskId.withCString { source in
+                try expected.start.withCString { start in
+                    try withOptionalCString(expected.end) { end in
+                        try destinationTaskID.withCString { destination in
+                            try decode(tt_bridge_move_worklog(handle, worklog, source, start, end, destination),
+                                       requiresRefreshOnMalformed: true)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // Every handle operation, including creation and destruction, belongs to this queue.
@@ -266,5 +292,13 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
 
     func history(taskID: String, cursor: String?) async throws -> HistoryPage {
         try await perform { try $0.currentBridge().history(taskID: taskID, cursor: cursor) }
+    }
+
+    func moveCandidates(sourceTaskID: String, query: String) async throws -> [WorklogMoveCandidate] {
+        try await perform { try $0.currentBridge().moveCandidates(sourceTaskID: sourceTaskID, query: query) }
+    }
+
+    func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult {
+        try await perform { try $0.currentBridge().moveWorklog(expected: expected, destinationTaskID: destinationTaskID) }
     }
 }

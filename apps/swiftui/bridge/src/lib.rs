@@ -641,6 +641,83 @@ pub unsafe extern "C" fn tt_bridge_correct_worklog_at(
     encode(result)
 }
 
+/// Returns destination identifiers and names from the last confirmed task cache.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be null or valid
+/// C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_move_candidates(
+    bridge: *mut Bridge,
+    source_task_id: *const c_char,
+    query: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees exclusive access to the live bridge.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    let result = (|| {
+        // SAFETY: The caller supplies valid C strings or null.
+        let source = unsafe { read_identifier(source_task_id, "Invalid source task ID") }?;
+        if query.is_null() {
+            return Err("Invalid move search query".to_owned().into());
+        }
+        // SAFETY: The non-null query is a valid C string under this contract.
+        let query = unsafe { CStr::from_ptr(query) }
+            .to_str()
+            .map_err(|_| "Invalid move search query".to_owned())?;
+        let candidates: Vec<Value> = bridge
+            .application
+            .move_candidates(source, query)
+            .into_iter()
+            .map(|candidate| json!({ "id": candidate.id.to_string(), "name": candidate.name }))
+            .collect();
+        Ok(json!(candidates))
+    })();
+    encode(result)
+}
+
+/// Moves a worklog only when its stored task and timestamps match the selection.
+/// A null expected end describes a running worklog.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be null or valid
+/// C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_move_worklog(
+    bridge: *mut Bridge,
+    worklog_id: *const c_char,
+    expected_task_id: *const c_char,
+    expected_start: *const c_char,
+    expected_end: *const c_char,
+    destination_task_id: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees exclusive access to the live bridge.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    let result = (|| {
+        // SAFETY: The caller supplies valid C strings or null for all inputs.
+        let (id, source, start, end, destination) = unsafe {
+            (
+                read_identifier(worklog_id, "Invalid worklog ID")?,
+                read_identifier(expected_task_id, "Invalid source task ID")?,
+                read_identifier(expected_start, "Invalid original start timestamp")?,
+                read_optional_timestamp(expected_end, "Invalid original end timestamp")?,
+                read_identifier(destination_task_id, "Invalid destination task ID")?,
+            )
+        };
+        let worklog = bridge.application.move_worklog(
+            id,
+            source,
+            WorklogTimes::new(start, end),
+            destination,
+        )?;
+        Ok(json!({ "worklog": worklog_json(&worklog), "snapshot": snapshot(&bridge.application) }))
+    })();
+    encode(result)
+}
+
 unsafe fn read_optional_timestamp(
     value: *const c_char,
     message: &str,
@@ -758,6 +835,9 @@ mod rename_tests;
 
 #[cfg(test)]
 mod correction_tests;
+
+#[cfg(test)]
+mod move_tests;
 
 #[cfg(test)]
 mod tests {

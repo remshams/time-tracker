@@ -21,6 +21,8 @@ char *tt_bridge_stop_tracking_at(Bridge *bridge, const char *worklog_id, const c
 char *tt_bridge_pause_tracking_at(Bridge *bridge, const char *worklog_id, const char *occurred_at);
 char *tt_bridge_resume_tracking_at(Bridge *bridge, const char *task_id, const char *occurred_at);
 char *tt_bridge_correct_worklog_at(Bridge *bridge, const char *worklog_id, const char *expected_start, const char *expected_end, const char *replacement_start, const char *replacement_end, const char *occurred_at);
+char *tt_bridge_move_candidates(Bridge *bridge, const char *source_task_id, const char *query);
+char *tt_bridge_move_worklog(Bridge *bridge, const char *worklog_id, const char *expected_task_id, const char *expected_start, const char *expected_end, const char *destination_task_id);
 char *tt_bridge_history(Bridge *bridge, const char *task_id, const char *cursor);
 
 #endif
