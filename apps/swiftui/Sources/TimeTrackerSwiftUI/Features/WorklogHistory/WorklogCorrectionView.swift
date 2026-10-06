@@ -36,18 +36,29 @@ private struct WorklogCorrectionSheet: View {
                 .lineLimit(3)
                 .help(state.taskName)
 
-            DatePicker("Start", selection: Binding(
-                get: { correction.state.start }, set: { correction.setStart($0) }
-            ), displayedComponents: [.date, .hourAndMinute])
-                .disabled(!state.canEdit)
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 16) {
+                GridRow {
+                    Text("Start")
+                    DatePicker("Start", selection: Binding(
+                        get: { correction.state.start }, set: { correction.setStart($0) }
+                    ), displayedComponents: [.date, .hourAndMinute])
+                        .labelsHidden()
+                }
 
-            if state.end != nil {
-                DatePicker("End", selection: Binding(
-                    get: { correction.state.end ?? correction.state.start },
-                    set: { correction.setEnd($0) }
-                ), displayedComponents: [.date, .hourAndMinute])
-                    .disabled(!state.canEdit)
-            } else {
+                if state.end != nil {
+                    GridRow {
+                        Text("End")
+                        DatePicker("End", selection: Binding(
+                            get: { correction.state.end ?? correction.state.start },
+                            set: { correction.setEnd($0) }
+                        ), displayedComponents: [.date, .hourAndMinute])
+                            .labelsHidden()
+                    }
+                }
+            }
+            .disabled(!state.canEdit)
+
+            if state.end == nil {
                 Label("This worklog is still running.", systemImage: "timer")
                     .foregroundStyle(.secondary)
             }
