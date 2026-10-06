@@ -132,6 +132,29 @@ private final class RustBridge {
         }
     }
 
+    private func withOptionalCString<Value>(_ value: String?, _ operation: (UnsafePointer<CChar>?) throws -> Value) rethrows -> Value {
+        if let value { return try value.withCString { try operation($0) } }
+        return try operation(nil)
+    }
+
+    func correctWorklog(expected: WorklogItem, replacementStart: String,
+                        replacementEnd: String?, occurredAt: String) throws -> WorklogCorrectionResult {
+        try expected.id.withCString { worklog in
+            try expected.start.withCString { originalStart in
+                try withOptionalCString(expected.end) { originalEnd in
+                    try replacementStart.withCString { start in
+                        try withOptionalCString(replacementEnd) { end in
+                            try occurredAt.withCString { instant in
+                                try decode(tt_bridge_correct_worklog_at(handle, worklog, originalStart, originalEnd,
+                                                                       start, end, instant), requiresRefreshOnMalformed: true)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func history(taskID: String, cursor: String?) throws -> HistoryPage {
         try taskID.withCString { task in
             if let cursor {
@@ -231,6 +254,14 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
 
     func resumeTracking(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
         try await perform { try $0.currentBridge().resumeTracking(taskID: taskID, occurredAt: occurredAt) }
+    }
+
+    func correctWorklog(expected: WorklogItem, replacementStart: String,
+                        replacementEnd: String?, occurredAt: String) async throws -> WorklogCorrectionResult {
+        try await perform {
+            try $0.currentBridge().correctWorklog(expected: expected, replacementStart: replacementStart,
+                                                 replacementEnd: replacementEnd, occurredAt: occurredAt)
+        }
     }
 
     func history(taskID: String, cursor: String?) async throws -> HistoryPage {

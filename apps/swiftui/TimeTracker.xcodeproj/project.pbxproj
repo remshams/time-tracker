@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		04FBC52E93CEB524F6B023B1 /* WorklogCorrectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373690BD6F341E81B72C511D /* WorklogCorrectionStore.swift */; };
+		EA53E0B162E3868C3E6CD353 /* WorklogCorrectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */; };
 		EEFD5BD538B369A492C794E7 /* TrackerApplicationMenus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */; };
 		C06F25F76FAA72DB1B696C6D /* TrackerApplicationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */; };
 		9766315AC90A7BB55587764A /* TrackerTaskPresentationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */; };
@@ -38,6 +40,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		373690BD6F341E81B72C511D /* WorklogCorrectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogCorrectionStore.swift; sourceTree = "<group>"; };
+		C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogCorrectionView.swift; sourceTree = "<group>"; };
 		522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerApplicationMenus.swift; sourceTree = "<group>"; };
 		1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerApplicationDelegate.swift; sourceTree = "<group>"; };
 		A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerTaskPresentationCoordinator.swift; sourceTree = "<group>"; };
@@ -182,6 +186,8 @@
 		3ABD701C8406AD405352A72E /* WorklogHistory */ = {
 			isa = PBXGroup;
 			children = (
+				373690BD6F341E81B72C511D /* WorklogCorrectionStore.swift */,
+				C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */,
 				E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */,
 				A8C44057A177E810540FF857 /* WorklogRow.swift */,
 			);
@@ -351,6 +357,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				04FBC52E93CEB524F6B023B1 /* WorklogCorrectionStore.swift in Sources */,
+				EA53E0B162E3868C3E6CD353 /* WorklogCorrectionView.swift in Sources */,
 				ED605C1B494E79DC7EF1215D /* TrackerSidebar.swift in Sources */,
 				9766315AC90A7BB55587764A /* TrackerTaskPresentationCoordinator.swift in Sources */,
 				C06F25F76FAA72DB1B696C6D /* TrackerApplicationDelegate.swift in Sources */,

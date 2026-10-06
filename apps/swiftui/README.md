@@ -40,6 +40,14 @@ The dialog captures the task you clicked and keeps its draft through background 
 
 Validation errors appear inline. Save is disabled during submission. An uncertain response retains the original target, name, and timestamp for Retry, and blocks changing connections until the outcome is resolved. If a fresh snapshot already confirms the requested name, the app completes without sending another rename. Pending recovery is kept in memory and does not survive quitting. Creation and renaming use one dialog at a time.
 
+## Edit worklog times
+
+Click the pencil on a worklog card, or right-click the card and choose Edit times. The sheet shows local dates and times and the time zone used. Completed worklogs expose Start and End with a duration preview. Running worklogs expose Start only and keep tracking after saving. Archived-task history supports the same editor.
+
+Changed fields use minute precision. Unchanged fields preserve their stored seconds and fractions. Save rejects future timestamps, an end before the start, and overlapping worklogs for the same task. Errors stay in the sheet with the draft. Enter saves and Escape cancels.
+
+The command sends the original timestamps alongside their replacements. The database checks those originals inside the update transaction, so another client's correction or stop cannot be overwritten. A conflict keeps the draft and asks you to review the latest entry before retrying. A lost response retains the submitted values for reconciliation. Connection changes are blocked while a save is unresolved. Successful edits refresh history, daily totals, and task ordering, and a changed running start resets the elapsed timer.
+
 ## Tracking
 
 Select an active task and click the play icon in the toolbar. The icon changes to stop while that task is running. Select another task and click play to end the previous worklog and begin the new one at the same instant. Archived tasks cannot start tracking.
@@ -250,3 +258,5 @@ Xcode compilation, native layout, and the lifecycle checks above require a Mac. 
 19. Start the app and confirm one toolbar row, with each toolbar action appearing once and the full task heading below the toolbar. Test Command-N, Command-comma, and Command-Shift-N. In a task-name field and the server URL field, test cut, copy, paste, select all, undo, and redo. With two tracker windows, open creation or rename and confirm exactly one sheet appears; other windows must not open a second editor. Test Escape, Return, and attempted close during submission. Close all tracker windows while tracking, then reopen through the status menu, Dock, and Spotlight. Confirm a background tracking error does not reopen a closed or hidden tracker window. Repeat in Light and Dark appearance, full screen, and after several server polls. Repeated Show Time Tracker actions must reuse a UUID scene, including a minimized scene. Confirm background errors wait until a tracker scene is active and that activating one scene does not move an editor already owned by another.
 
 20. Open the native menu from another app. Check arrow-key navigation, the Start tracking submenu, and Escape dismissal. Start, switch, and stop tasks through menu entries and confirm tracker windows stay behind the active app. Only Open Time Tracker should reveal a tracker window.
+
+21. Edit a completed worklog through its pencil and context menu, including an overnight entry and archived-task history. Check the duration preview, Enter, Escape, validation errors, and refreshed history and totals in local and server mode. Edit a running start and confirm tracking continues with the corrected elapsed time. Change or stop the same worklog from another client while its editor is open; confirm the draft remains and saving requires reviewing the latest entry. Test a lost response and retry without applying the correction twice. Open two windows and confirm only one correction sheet appears. Repeat in Light and Dark appearance and at the minimum window size.

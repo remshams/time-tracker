@@ -20,7 +20,8 @@ final class TrackerTaskPresentationCoordinator {
     func start() {
         guard !isRunning else { return }
         isRunning = true
-        for publisher in [store.objectWillChange, store.creation.objectWillChange, store.rename.objectWillChange] {
+        for publisher in [store.objectWillChange, store.creation.objectWillChange,
+                          store.rename.objectWillChange, store.correction.objectWillChange] {
             publisher.sink { [weak self] _ in self?.update() }.store(in: &subscriptions)
         }
         update()
@@ -49,7 +50,8 @@ final class TrackerTaskPresentationCoordinator {
     }
 
     private var hasPresentation: Bool {
-        store.creation.state.isPresented || store.rename.state.isPresented || store.trackingError != nil
+        store.creation.state.isPresented || store.rename.state.isPresented ||
+            store.correction.state.isPresented || store.trackingError != nil
     }
 
     private func update() {
@@ -61,7 +63,8 @@ final class TrackerTaskPresentationCoordinator {
         guard ownerID == nil else { return }
         isChoosingOwner = true
         defer { isChoosingOwner = false }
-        let needsEditor = store.creation.state.isPresented || store.rename.state.isPresented
+        let needsEditor = store.creation.state.isPresented || store.rename.state.isPresented ||
+            store.correction.state.isPresented
         setOwner(presentingWindow(needsEditor))
     }
 
@@ -96,6 +99,7 @@ struct TrackerDetailPresentation: View {
             .background {
                 TaskCreationDialog(creation: store.creation, isPresentationOwner: isOwner)
                 TaskRenameDialog(rename: store.rename, isPresentationOwner: isOwner)
+                WorklogCorrectionDialog(correction: store.correction, isPresentationOwner: isOwner)
             }
             .alert("Could not change tracking", isPresented: trackingFailurePresented) {
                 Button("OK", role: .cancel) { store.dismissTrackingError() }
