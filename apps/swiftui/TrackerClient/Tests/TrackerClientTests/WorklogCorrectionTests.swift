@@ -34,6 +34,70 @@ final class WorklogCorrectionTests: XCTestCase {
     }
 
     @MainActor
+    func testCancellationKeepsLastSheetContentUntilAnotherWorklogOpens() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        _ = try await openCompleted(fixture)
+        let observer = TrackerPresentationObserver(session: fixture.session)
+        fixture.session.onChange = { observer.update(from: fixture.session) }
+        fixture.session.setWorklogCorrectionStart(timestamp("2024-12-30T08:45:00.000Z")!)
+        let visible = fixture.session.worklogCorrection
+        XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
+
+        fixture.session.cancelWorklogCorrection()
+        XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
+        XCTAssertNil(fixture.session.worklogCorrection.original)
+        XCTAssertTrue(fixture.session.canOpenTaskCreation)
+        XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
+        fixture.session.refresh()
+        let refresh = try await fixture.client.next()
+        let running = WorklogItem(id: "running-log", taskId: secondTask.id,
+                                  start: "2024-12-31T23:58:12.123456Z", end: nil)
+        refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: running))
+        try await fixture.settled()
+        fixture.session.onChange = { observer.update(from: fixture.session) }
+        XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
+
+        fixture.session.openWorklogCorrection(worklogID: running.id)
+        XCTAssertEqual(observer.worklogCorrectionSheetContent, fixture.session.worklogCorrection)
+        XCTAssertEqual(observer.worklogCorrectionSheetContent.original, running)
+        XCTAssertEqual(observer.worklogCorrectionSheetContent.taskName, secondTask.name)
+        XCTAssertNil(observer.worklogCorrectionSheetContent.end)
+    }
+
+    @MainActor
+    func testSuccessfulSaveKeepsSubmittingSheetContentDuringDismissal() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let log = try await openCompleted(fixture)
+        let observer = TrackerPresentationObserver(session: fixture.session)
+        fixture.session.onChange = { observer.update(from: fixture.session) }
+        fixture.session.setWorklogCorrectionStart(timestamp("2024-12-30T08:45:00.000Z")!)
+        fixture.session.submitWorklogCorrection()
+        try await completePreflight(fixture, worklog: log)
+        let command = try await fixture.client.next()
+        let visible = fixture.session.worklogCorrection
+        XCTAssertTrue(visible.isSubmitting)
+        XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
+        let corrected = WorklogItem(id: log.id, taskId: log.taskId,
+                                   start: "2024-12-30T08:45:00.000000Z", end: log.end)
+        command.corrected(worklog: corrected, snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        let history = try await fixture.client.next()
+        XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
+        XCTAssertFalse(fixture.session.worklogCorrection.isSubmitting)
+        XCTAssertNil(fixture.session.worklogCorrection.original)
+        XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
+        history.succeed(HistoryPage(worklogs: [corrected], nextCursor: nil, reset: false))
+        try await fixture.settled()
+        fixture.session.onChange = { observer.update(from: fixture.session) }
+        XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
+        fixture.session.openWorklogCorrection(worklogID: corrected.id)
+        XCTAssertEqual(observer.worklogCorrectionSheetContent, fixture.session.worklogCorrection)
+        XCTAssertEqual(observer.worklogCorrectionSheetContent.original, corrected)
+        XCTAssertFalse(observer.worklogCorrectionSheetContent.isSubmitting)
+    }
+
+    @MainActor
     func testCorrectionQueuedDuringRefreshBlocksTrackingAndRunsWithoutOverlappingRequests() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }

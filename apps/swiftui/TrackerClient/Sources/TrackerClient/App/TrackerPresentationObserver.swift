@@ -15,6 +15,7 @@ public final class TrackerPresentationObserver {
     public var onTaskCreationChange: (() -> Void)?
     public var onTaskRenameChange: (() -> Void)?
     public var onWorklogCorrectionChange: (() -> Void)?
+    public private(set) var worklogCorrectionSheetContent: WorklogCorrectionPresentation
 
     private var content: Content
     private var activity: Activity
@@ -39,6 +40,7 @@ public final class TrackerPresentationObserver {
         rename = session.taskRename
         canOpenRename = session.canOpenTaskRename
         correction = session.worklogCorrection
+        worklogCorrectionSheetContent = correction
         canOpenCorrection = session.canOpenWorklogCorrection
     }
 
@@ -71,6 +73,8 @@ public final class TrackerPresentationObserver {
         rename = nextRename
         canOpenRename = nextCanOpenRename
         correction = nextCorrection
+        // SwiftUI continues rendering the sheet while its dismissal animates.
+        if nextCorrection.isPresented { worklogCorrectionSheetContent = nextCorrection }
         canOpenCorrection = nextCanOpenCorrection
         if contentChanged { onContentChange?() }
         if activityChanged { onActivityChange?() }
