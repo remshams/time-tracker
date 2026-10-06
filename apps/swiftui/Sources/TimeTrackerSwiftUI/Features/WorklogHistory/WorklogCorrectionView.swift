@@ -23,11 +23,11 @@ private struct WorklogCorrectionSheet: View {
     @ObservedObject var correction: WorklogCorrectionStore
 
     private var timezone: TimeZone {
-        TimeZone(identifier: correction.state.timezoneIdentifier) ?? .gmt
+        TimeZone(identifier: correction.sheetContent.timezoneIdentifier) ?? .gmt
     }
 
     var body: some View {
-        let state = correction.state
+        let state = correction.sheetContent
         VStack(alignment: .leading, spacing: 16) {
             Text("Edit worklog").font(.title2.bold())
             Text(state.taskName)
@@ -40,7 +40,7 @@ private struct WorklogCorrectionSheet: View {
                 GridRow {
                     Text("Start")
                     DatePicker("Start", selection: Binding(
-                        get: { correction.state.start }, set: { correction.setStart($0) }
+                        get: { correction.sheetContent.start }, set: { correction.setStart($0) }
                     ), displayedComponents: [.date, .hourAndMinute])
                         .labelsHidden()
                 }
@@ -49,7 +49,7 @@ private struct WorklogCorrectionSheet: View {
                     GridRow {
                         Text("End")
                         DatePicker("End", selection: Binding(
-                            get: { correction.state.end ?? correction.state.start },
+                            get: { correction.sheetContent.end ?? correction.sheetContent.start },
                             set: { correction.setEnd($0) }
                         ), displayedComponents: [.date, .hourAndMinute])
                             .labelsHidden()

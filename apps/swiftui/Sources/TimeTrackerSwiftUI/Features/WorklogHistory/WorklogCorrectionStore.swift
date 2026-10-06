@@ -6,13 +6,16 @@ import TrackerClient
 final class WorklogCorrectionStore {
     let objectWillChange = ObservableObjectPublisher()
     private let session: TrackerSession
+    private let presentation: TrackerPresentationObserver
 
     init(session: TrackerSession, presentation: TrackerPresentationObserver) {
         self.session = session
+        self.presentation = presentation
         presentation.onWorklogCorrectionChange = { [weak self] in self?.objectWillChange.send() }
     }
 
     var state: WorklogCorrectionPresentation { session.worklogCorrection }
+    var sheetContent: WorklogCorrectionPresentation { presentation.worklogCorrectionSheetContent }
     var canOpen: Bool { session.canOpenWorklogCorrection }
 
     func open(worklogID: String) { session.openWorklogCorrection(worklogID: worklogID) }
