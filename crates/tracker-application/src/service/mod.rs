@@ -5,6 +5,8 @@ mod tasks;
 mod tracking;
 mod worklogs;
 
+pub use worklogs::move_candidates_for_tasks;
+
 use chrono::{DateTime, Utc};
 use tracker_domain::{
     Task, TaskId, TaskName, Tracker, TrackingState, Worklog, WorklogId, WorklogTimes,
@@ -109,9 +111,19 @@ pub trait TrackingOperations {
     ) -> Result<ClearActiveTaskOutcome, ApplicationError>;
 }
 
-/// Queries for worklog history. Each call adopts the task and tracking
-/// snapshot read with its page before returning.
-pub trait WorklogQueries {
+/// Queries for worklog history and move destinations. History page reads
+/// adopt the task and tracking snapshot read with the page before returning.
+pub trait WorklogQueries: TaskQueries {
+    /// Eligible destinations from the current task snapshot, fuzzy matched and
+    /// ordered by recent activity, creation time, then task identity.
+    fn move_candidates(&self, source_task_id: TaskId, query: &str) -> Vec<crate::MoveCandidate> {
+        move_candidates_for_tasks(
+            &self.tasks(TaskOrdering::RecentlyWorked),
+            source_task_id,
+            query,
+        )
+    }
+
     /// One bounded page of the task's worklog history, continuing strictly
     /// after the optional cursor. The page size is the fixed
     /// [`crate::WORKLOG_PAGE_SIZE`]; callers cannot request more.

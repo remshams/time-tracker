@@ -8,9 +8,41 @@ use super::{
     canonical_worklog_times,
 };
 use crate::{
-    ApplicationError, GlobalWorklogCursor, GlobalWorklogPage, RepositoryError, TrackerRepository,
-    WorklogCursor, WorklogPage,
+    ApplicationError, GlobalWorklogCursor, GlobalWorklogPage, MoveCandidate, RepositoryError,
+    TaskListItem, TrackerRepository, WorklogCursor, WorklogPage,
 };
+
+/// Selects move destinations from a caller's cached task snapshot.
+/// Archived tasks and the source task are excluded even when the query is empty.
+pub fn move_candidates_for_tasks(
+    items: &[TaskListItem],
+    source_task_id: TaskId,
+    query: &str,
+) -> Vec<MoveCandidate> {
+    let mut matches = items
+        .iter()
+        .filter(|item| {
+            !item.task.is_archived()
+                && item.task.id() != source_task_id
+                && crate::task_search::fuzzy_match(item.task.name().as_str(), query)
+        })
+        .collect::<Vec<_>>();
+    matches.sort_by_key(|item| {
+        crate::task_search::SearchRank::from_task_activity(
+            item.task.id(),
+            item.task.created_at(),
+            item.task.updated_at(),
+            item.latest_work_start,
+        )
+    });
+    matches
+        .into_iter()
+        .map(|item| MoveCandidate {
+            id: item.task.id(),
+            name: item.task.name().to_string(),
+        })
+        .collect()
+}
 
 impl<R: TrackerRepository> WorklogQueries for TrackerApplication<R> {
     fn all_worklogs(

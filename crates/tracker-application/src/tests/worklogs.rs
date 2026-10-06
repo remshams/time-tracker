@@ -1120,3 +1120,92 @@ fn move_preserves_write_and_recovery_errors() {
         })
     );
 }
+
+#[test]
+fn move_candidates_exclude_source_and_archived_tasks_and_preserve_identity_and_names() {
+    let source = task(1, "Build release");
+    let destination = task(2, "Build release");
+    let mut archived = task(3, "Build release");
+    archived.archive(at(200));
+    let items = [source.clone(), destination.clone(), archived]
+        .into_iter()
+        .map(|task| TaskListItem {
+            task,
+            latest_work_start: None,
+        })
+        .collect::<Vec<_>>();
+    let before = items.clone();
+    let expected = vec![MoveCandidate {
+        id: destination.id(),
+        name: "Build release".to_owned(),
+    }];
+    assert_eq!(move_candidates_for_tasks(&items, source.id(), ""), expected);
+    assert_eq!(
+        move_candidates_for_tasks(&items, source.id(), "bRe"),
+        expected
+    );
+    assert!(move_candidates_for_tasks(&items, source.id(), "rB").is_empty());
+    assert!(move_candidates_for_tasks(&items, source.id(), "zz").is_empty());
+    assert_eq!(items, before);
+    assert!(move_candidates_for_tasks(&[], source.id(), "").is_empty());
+}
+
+#[test]
+fn move_candidates_order_latest_update_or_work_before_creation_and_identity() {
+    let source = task(1, "Source");
+    let items = [
+        (9, "Most recent update", 100, 500, Some(200)),
+        (8, "Most recent work", 100, 200, Some(600)),
+        (7, "Newer creation", 200, 400, None),
+        (6, "Later identity", 100, 400, None),
+        (5, "Earlier identity", 100, 400, Some(400)),
+        (4, "Oldest activity", 300, 300, None),
+    ]
+    .into_iter()
+    .map(|(id, name, created, updated, worked)| TaskListItem {
+        task: stamped_task(id, name, created, updated),
+        latest_work_start: worked.map(at),
+    })
+    .collect::<Vec<_>>();
+    assert_eq!(
+        move_candidates_for_tasks(&items, source.id(), "")
+            .into_iter()
+            .map(|candidate| candidate.name)
+            .collect::<Vec<_>>(),
+        [
+            "Most recent work",
+            "Most recent update",
+            "Newer creation",
+            "Earlier identity",
+            "Later identity",
+            "Oldest activity"
+        ],
+    );
+    assert_eq!(
+        move_candidates_for_tasks(&items, source.id(), "Recent")
+            .into_iter()
+            .map(|candidate| candidate.name)
+            .collect::<Vec<_>>(),
+        ["Most recent work", "Most recent update"],
+    );
+}
+
+#[test]
+fn move_candidates_match_unicode_lowercase_expansion_and_never_read_storage() {
+    let source = task(1, "Source");
+    let destination = task(2, "İssue");
+    let repository = MemoryRepository::with_tasks(vec![source.clone(), destination.clone()]);
+    let application = TrackerApplication::load(repository.clone()).unwrap();
+    repository.0.borrow_mut().fail_reads = true;
+    let expected = vec![MoveCandidate {
+        id: destination.id(),
+        name: "İssue".to_owned(),
+    }];
+    assert_eq!(
+        application.move_candidates(source.id(), "i\u{307}s"),
+        expected
+    );
+    assert_eq!(application.move_candidates(source.id(), "İs"), expected);
+    assert!(application.move_candidates(source.id(), "İz").is_empty());
+    assert_eq!(application.move_candidates(source.id(), ""), expected);
+}

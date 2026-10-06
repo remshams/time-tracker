@@ -61,6 +61,13 @@ pub struct TaskListItem {
     pub latest_work_start: Option<DateTime<Utc>>,
 }
 
+/// An eligible destination for moving an existing worklog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MoveCandidate {
+    pub id: TaskId,
+    pub name: String,
+}
+
 /// One task's time inside the requested report interval.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportRow {
