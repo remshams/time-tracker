@@ -50,7 +50,6 @@ final class TrackerStore {
     var tasks: [TaskItem] { session.tasks }
     var active: WorklogItem? { session.active }
     var worklogs: [WorklogItem] { session.worklogs }
-    var nextCursor: String? { session.nextCursor }
     var error: String? { session.error }
     var trackingError: String? { session.trackingError }
     var historyUnavailable: Bool { session.historyUnavailable }
@@ -65,10 +64,8 @@ final class TrackerStore {
     var visibleTasks: [TaskItem] { session.visibleTasks }
     var selectedTask: TaskItem? { session.selectedTask }
     var hasMoreHistory: Bool { session.hasMoreHistory }
-    var canStartSelectedTask: Bool { session.canStartSelectedTask }
     var canStopTracking: Bool { session.canStopTracking }
     var runningTaskName: String { session.runningTaskName }
-    var timerDisplayText: String { session.timerDisplayText }
     var elapsed: TimeInterval? { session.elapsed }
     var pauseOnScreenLock: Bool { session.pauseOnScreenLock }
     var autoPauseStatusText: String? { session.autoPauseStatusText }
