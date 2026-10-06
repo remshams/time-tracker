@@ -151,3 +151,23 @@ public struct WorklogCorrectionResult: Decodable, Equatable, Sendable {
         self.snapshot = snapshot
     }
 }
+
+public struct WorklogMoveCandidate: Decodable, Identifiable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+}
+
+public struct WorklogMoveResult: Decodable, Equatable, Sendable {
+    public let worklog: WorklogItem
+    public let snapshot: TrackerSnapshot
+
+    public init(worklog: WorklogItem, snapshot: TrackerSnapshot) {
+        self.worklog = worklog
+        self.snapshot = snapshot
+    }
+}

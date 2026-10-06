@@ -14,6 +14,10 @@ public final class TrackerPresentationObserver {
     public var onTaskDailyTotalsChange: ((Set<String>) -> Void)?
     public var onTaskCreationChange: (() -> Void)?
     public var onTaskRenameChange: (() -> Void)?
+    public var onWorklogMoveChange: (() -> Void)?
+    public private(set) var worklogMoveSheetContent: WorklogMovePresentation
+    private var move: WorklogMovePresentation
+    private var canOpenMove: Bool
     public var onWorklogCorrectionChange: (() -> Void)?
     public private(set) var worklogCorrectionSheetContent: WorklogCorrectionPresentation
 
@@ -31,6 +35,9 @@ public final class TrackerPresentationObserver {
     public var taskDailyTotals: [String: TaskDailyTotalPresentation] { daily.taskTotals }
 
     public init(session: TrackerSession) {
+        move = session.worklogMove
+        canOpenMove = session.canOpenWorklogMove
+        worklogMoveSheetContent = move
         content = Content(session)
         activity = Activity(session)
         timerText = session.timerDisplayText
@@ -45,6 +52,12 @@ public final class TrackerPresentationObserver {
     }
 
     public func update(from session: TrackerSession) {
+        let nextMove = session.worklogMove
+        let nextCanOpenMove = session.canOpenWorklogMove
+        let moveChanged = move != nextMove || canOpenMove != nextCanOpenMove
+        move = nextMove
+        canOpenMove = nextCanOpenMove
+        if nextMove.isPresented { worklogMoveSheetContent = nextMove }
         let nextContent = Content(session)
         let nextActivity = Activity(session)
         let nextTimerText = session.timerDisplayText
@@ -76,6 +89,7 @@ public final class TrackerPresentationObserver {
         // SwiftUI continues rendering the sheet while its dismissal animates.
         if nextCorrection.isPresented { worklogCorrectionSheetContent = nextCorrection }
         canOpenCorrection = nextCanOpenCorrection
+        if moveChanged { onWorklogMoveChange?() }
         if contentChanged { onContentChange?() }
         if activityChanged { onActivityChange?() }
         if timerChanged { onTimerChange?() }

@@ -24,27 +24,10 @@ final class WorklogCorrectionState {
         let occurredAt: String
         let historyPageLimit: Int
 
-        private func sameTimestamp(_ lhs: String?, _ rhs: String?) -> Bool {
-            if lhs == rhs { return true }
-            guard let lhs, let rhs else { return false }
-            func parts(_ value: String) -> (Int64, String)? {
-                guard let point = value.firstIndex(of: ".") else { return nil }
-                let digits = value[value.index(after: point)...].prefix { $0 >= "0" && $0 <= "9" }
-                guard !digits.isEmpty, digits.count <= 6 else { return nil }
-                let fraction = String(digits) + String(repeating: "0", count: 6 - digits.count)
-                let suffix = value.index(value.index(after: point), offsetBy: digits.count)
-                let wholeSecond = String(value[...point]) + "000" + String(value[suffix...])
-                guard let date = timestamp(wholeSecond) else { return nil }
-                return (Int64(date.timeIntervalSince1970.rounded()), fraction)
-            }
-            guard let left = parts(lhs), let right = parts(rhs) else { return false }
-            return left == right
-        }
-
         func matchesReplacement(_ worklog: WorklogItem) -> Bool {
             worklog.id == expected.id && worklog.taskId == expected.taskId &&
-                sameTimestamp(worklog.start, replacementStart) &&
-                sameTimestamp(worklog.end, replacementEnd)
+                sameWorklogTimestamp(worklog.start, replacementStart) &&
+                sameWorklogTimestamp(worklog.end, replacementEnd)
         }
     }
 

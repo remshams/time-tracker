@@ -17,6 +17,8 @@ final class FakeClient: TrackerClient, ReportClient {
         case create(name: String, at: String)
         case rename(task: String, name: String, at: String)
         case correct(expected: WorklogItem, start: String, end: String?, at: String)
+        case candidates(source: String, query: String)
+        case move(expected: WorklogItem, destination: String)
         case start(task: String, expected: String?, at: String)
         case stop(worklog: String, at: String)
         case pause(worklog: String, at: String)
@@ -31,6 +33,8 @@ final class FakeClient: TrackerClient, ReportClient {
         case tested
         case created(TaskCreationResult)
         case corrected(WorklogCorrectionResult)
+        case candidates([WorklogMoveCandidate])
+        case moved(WorklogMoveResult)
         case paused(TrackingPauseResult)
         case report(TrackerReport)
     }
@@ -51,6 +55,10 @@ final class FakeClient: TrackerClient, ReportClient {
         }
         func corrected(worklog: WorklogItem, snapshot: TrackerSnapshot) {
             complete(.success(.corrected(WorklogCorrectionResult(worklog: worklog, snapshot: snapshot))))
+        }
+        func candidates(_ values: [WorklogMoveCandidate]) { complete(.success(.candidates(values))) }
+        func moved(worklog: WorklogItem, snapshot: TrackerSnapshot) {
+            complete(.success(.moved(WorklogMoveResult(worklog: worklog, snapshot: snapshot))))
         }
         func tested() { complete(.success(.tested)) }
         func fail(_ error: Error) { complete(.failure(error)) }
@@ -158,6 +166,16 @@ final class FakeClient: TrackerClient, ReportClient {
         guard case .corrected(let value) = try await perform(operation) else {
             throw wrongReply("correction", operation: operation)
         }
+        return value
+    }
+    func moveCandidates(sourceTaskID: String, query: String) async throws -> [WorklogMoveCandidate] {
+        let operation = Operation.candidates(source: sourceTaskID, query: query)
+        guard case .candidates(let value) = try await perform(operation) else { throw wrongReply("candidates", operation: operation) }
+        return value
+    }
+    func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult {
+        let operation = Operation.move(expected: expected, destination: destinationTaskID)
+        guard case .moved(let value) = try await perform(operation) else { throw wrongReply("move", operation: operation) }
         return value
     }
     func history(taskID: String, cursor: String?) async throws -> HistoryPage {
