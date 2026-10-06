@@ -140,18 +140,18 @@ final class TrackerStatusItemController: NSObject {
         let menu = NSMenu()
         menu.appearance = appearance
         menu.autoenablesItems = false
-        addText(content.connectionStatusText, to: menu)
+        let connection = store.connectionSettings
+        let serverURL = connection.mode == .server
+            ? connection.serverURL.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        addText(content.connectionStatusText, value: serverURL, to: menu)
         if content.isStale { addText("Showing last confirmed state", to: menu) }
-        addText(content.runningTaskName, to: menu)
+        addText(content.runningTaskName, value: content.elapsedText, to: menu)
         if let status = content.autoPauseStatusText { addText(status, to: menu) }
         if let error = content.trackingError { addText(error, to: menu) }
-        if let elapsed = content.elapsedText { addText(elapsed, to: menu) }
-        if let id = content.activeWorklogID {
-            addAction("Stop tracking", action: .stop(id), enabled: content.canStopTracking, to: menu)
-        }
         menu.addItem(.separator())
         addText(content.dailyTotalsStatus == .cached ? "Today, cached" : "Today", to: menu)
-        addText("Total today: \(content.totalText)", to: menu, help: content.totalsExplanation)
+        addText("Total", value: content.totalText, to: menu, help: content.totalsExplanation)
+        menu.addItem(.separator())
         for entry in content.todayTasks {
             let archived = entry.task.archived ? "  Archived" : ""
             addTask(entry, title: "\(entry.task.name)  \(entry.durationText)\(archived)",
@@ -233,8 +233,9 @@ final class TrackerStatusItemController: NSObject {
         item.setAccessibilityLabel("\(title), \(status)")
     }
 
-    private func addText(_ title: String, to menu: NSMenu, help: String? = nil) {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+    private func addText(_ title: String, value: String? = nil, to menu: NSMenu, help: String? = nil) {
+        let text = value.map { "\(title), \($0)" } ?? title
+        let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
         item.isEnabled = false
         let label = NSTextField(labelWithString: title)
         label.font = .menuFont(ofSize: 0)
@@ -242,13 +243,38 @@ final class TrackerStatusItemController: NSObject {
         label.lineBreakMode = .byTruncatingMiddle
         label.toolTip = help ?? title
         label.setAccessibilityLabel(title)
-        let size = label.fittingSize
-        let width = min(480, size.width + 40)
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: width, height: size.height + 8))
+        let valueLabel = value.map { NSTextField(labelWithString: $0) }
+        valueLabel?.font = label.font
+        valueLabel?.textColor = .labelColor
+        valueLabel?.alignment = .right
+        valueLabel?.lineBreakMode = .byTruncatingMiddle
+        valueLabel?.toolTip = help ?? value
+        valueLabel?.setAccessibilityLabel(value ?? "")
+        let valueSize = valueLabel?.fittingSize ?? .zero
+        let width = min(480, label.fittingSize.width + valueSize.width + (value == nil ? 40 : 56))
+        let height = max(label.fittingSize.height, valueSize.height) + 8
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         view.appearance = menu.appearance
-        label.frame = NSRect(x: 20, y: 4, width: width - 40, height: size.height)
-        label.autoresizingMask = [.width]
+        view.autoresizingMask = [.width]
+        label.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+        if let valueLabel {
+            valueLabel.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(valueLabel)
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            NSLayoutConstraint.activate([
+                valueLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+                valueLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+                valueLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, multiplier: 0.65),
+                label.trailingAnchor.constraint(lessThanOrEqualTo: valueLabel.leadingAnchor, constant: -16)
+            ])
+        } else {
+            label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20).isActive = true
+        }
         item.view = view
         menu.addItem(item)
     }
