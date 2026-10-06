@@ -3,10 +3,10 @@ import XCTest
 
 final class MenuPresentationTests: XCTestCase {
     @MainActor
-    func testOpenMenuUpdatesElapsedTimeAndTotalsAcrossTicksAndPolls() async throws {
+    func testOpenSubmenuKeepsContentAndLabelStableAcrossTicksAndPolls() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
-        fixture.session.menuOpened()
+        fixture.session.setWindowVisible(true)
         let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
         let rows = [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)]
         try await fixture.start(snapshot, rows: rows)
@@ -24,19 +24,19 @@ final class MenuPresentationTests: XCTestCase {
             observer.update(from: fixture.session, showDailyTotal: true)
             window.update(from: fixture.session)
         }
+        observer.menuOpened(from: fixture.session, showDailyTotal: true)
+        observer.menuOpened(from: fixture.session, showDailyTotal: true)
         let originalContent = observer.content
+        let originalLabel = observer.label
         let display = try XCTUnwrap(fixture.scheduler.display)
         for step in 1...3 {
             fixture.clock.now.addTimeInterval(60)
             fixture.clock.uptime += 60
             display.fire()
-            XCTAssertNotEqual(observer.content.elapsedText, originalContent.elapsedText)
-            XCTAssertEqual(observer.content.totalText, clockDuration(TimeInterval(10 + step * 60)))
-            XCTAssertEqual(observer.content.todayTasks.first?.durationText, observer.content.totalText)
             fixture.scheduler.poll?.fire()
             let poll = try await fixture.client.next()
             XCTAssertTrue(fixture.session.isBusy)
-            XCTAssertFalse(observer.content.canStopTracking)
+            XCTAssertEqual(observer.content, originalContent)
             let updatedRows = [TaskReportTotal(taskId: firstTask.id,
                                               durationMicroseconds: Int64(10 + step * 60) * 1_000_000)]
             poll.succeed(TrackerReport(snapshot: snapshot, rows: updatedRows))
@@ -44,14 +44,17 @@ final class MenuPresentationTests: XCTestCase {
                 while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
             }
             try await fixture.taskValue(finished)
-            XCTAssertTrue(observer.content.canStopTracking)
         }
-        XCTAssertGreaterThanOrEqual(contentChanges, 3)
-        XCTAssertEqual(labelChanges, 3)
-        XCTAssertEqual(windowTicks, 3)
+        XCTAssertEqual(contentChanges, 0)
+        XCTAssertEqual(labelChanges, 0)
+        XCTAssertEqual(windowTicks, 3, "Freezing a menu must not freeze the window's clock.")
         XCTAssertEqual(windowControls, 6, "Polling must still update the window's request controls.")
-        XCTAssertEqual(observer.label.totalText, "00:03")
-        fixture.session.menuClosed()
+        XCTAssertEqual(observer.label, originalLabel)
+        observer.menuClosed(from: fixture.session, showDailyTotal: true)
+        XCTAssertEqual(observer.content, originalContent, "Closing a submenu must not release the root menu's snapshot.")
+        observer.menuClosed(from: fixture.session, showDailyTotal: true)
+        XCTAssertEqual(contentChanges, 1)
+        XCTAssertEqual(labelChanges, 1)
         XCTAssertEqual(observer.content.elapsedText, fixture.session.timerDisplayText)
         XCTAssertTrue(observer.content.canStopTracking)
     }
@@ -93,7 +96,7 @@ final class MenuPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testClockAndPreferenceChangesPublishImmediately() async throws {
+    func testOpeningCapturesFreshTimeAndNestedNotificationsKeepTheSnapshotUntilFinalClose() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
@@ -101,16 +104,23 @@ final class MenuPresentationTests: XCTestCase {
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         fixture.clock.now.addTimeInterval(60)
         fixture.clock.uptime += 60
-        observer.update(from: fixture.session, showDailyTotal: true)
+        observer.menuOpened(from: fixture.session, showDailyTotal: true)
         XCTAssertEqual(observer.content.totalText, "00:01:05")
         XCTAssertEqual(observer.label.totalText, "00:01")
         fixture.clock.now.addTimeInterval(60)
         fixture.clock.uptime += 60
-        observer.update(from: fixture.session, showDailyTotal: false)
+        observer.menuOpened(from: fixture.session, showDailyTotal: false)
+        XCTAssertEqual(observer.content.totalText, "00:01:05")
+        XCTAssertEqual(observer.label.totalText, "00:01")
+        observer.menuClosed(from: fixture.session, showDailyTotal: false)
+        XCTAssertEqual(observer.content.totalText, "00:01:05")
+        XCTAssertEqual(observer.label.totalText, "00:01")
+        observer.menuClosed(from: fixture.session, showDailyTotal: false)
         XCTAssertEqual(observer.content.totalText, "00:02:05")
         XCTAssertNil(observer.label.totalText)
+        observer.menuClosed(from: fixture.session, showDailyTotal: true)
+        XCTAssertEqual(observer.label.totalText, "00:02", "An unmatched close must not block later updates.")
         observer.update(from: fixture.session, showDailyTotal: true)
-        XCTAssertEqual(observer.label.totalText, "00:02")
         XCTAssertEqual(observer.content.totalText, "00:02:05")
     }
 
@@ -138,13 +148,13 @@ final class MenuPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testLiveMenuReplacesChangedTargetsAndSessionRejectsCapturedIdentities() async throws {
+    func testFrozenMenuTargetsAreRevalidatedAgainstChangedServerState() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
         try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         fixture.session.onChange = { observer.update(from: fixture.session, showDailyTotal: true) }
-        let capturedWorklogID = try XCTUnwrap(observer.content.activeWorklogID)
+        observer.menuOpened(from: fixture.session, showDailyTotal: true)
         let target = try XCTUnwrap(observer.content.otherTasks.first { $0.id == secondTask.id })
         XCTAssertTrue(target.canStart)
         let changed = WorklogItem(id: "worklog-from-other-client", taskId: firstTask.id,
@@ -160,10 +170,12 @@ final class MenuPresentationTests: XCTestCase {
         }
         try await fixture.taskValue(finished)
         let count = fixture.client.operations.count
-        fixture.session.stopTracking(worklogID: capturedWorklogID)
+        fixture.session.stopTracking(worklogID: try XCTUnwrap(observer.content.activeWorklogID))
         fixture.session.startTracking(taskID: target.id)
         XCTAssertEqual(fixture.client.operations.count, count)
         XCTAssertEqual(fixture.session.active?.id, changed.id)
+        XCTAssertEqual(observer.content.activeWorklogID, activeWorklog.id)
+        observer.menuClosed(from: fixture.session, showDailyTotal: true)
         XCTAssertEqual(observer.content.activeWorklogID, changed.id)
         XCTAssertFalse(observer.content.otherTasks.contains { $0.id == secondTask.id })
     }

@@ -95,15 +95,17 @@ final class TrackerStore {
     func loadOlder() { session.loadOlder() }
     func startTracking(taskID: String) { session.startTracking(taskID: taskID) }
     func stopTracking(worklogID: String) { session.stopTracking(worklogID: worklogID) }
-    @discardableResult
-    func performMenuPrimaryAction() -> MenuPrimaryAction { session.performMenuPrimaryAction() }
     func dismissTrackingError() { session.dismissTrackingError() }
+    func performMenuPrimaryAction() -> MenuPrimaryAction { session.performMenuPrimaryAction() }
+
     func menuOpened() {
+        menu.menuOpened()
         session.menuOpened()
     }
 
     func menuClosed() {
         session.menuClosed()
+        menu.menuClosed()
     }
     func testConnection(_ settings: ConnectionSettings) async throws {
         try await session.testConnection(settings)
@@ -195,6 +197,9 @@ final class TrackerMenuStore {
         showDailyTotal = enabled
         update()
     }
+
+    func menuOpened() { presentation.menuOpened(from: session, showDailyTotal: showDailyTotal) }
+    func menuClosed() { presentation.menuClosed(from: session, showDailyTotal: showDailyTotal) }
 }
 
 @MainActor

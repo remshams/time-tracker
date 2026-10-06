@@ -27,11 +27,7 @@ final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
 @MainActor
 final class TrackerAppRuntime {
     let store = TrackerStore()
-    private lazy var statusItem = TrackerStatusItemController(
-        store: store,
-        showTracker: { [weak self] in self?.showTracker() },
-        quit: { [weak self] in self?.quit() }
-    )
+    private lazy var statusItem = TrackerStatusItemController(store: store)
     lazy var presentation = TrackerTaskPresentationCoordinator(
         store: store,
         presentingWindow: { [weak self] needsEditor in
@@ -50,7 +46,7 @@ final class TrackerAppRuntime {
         guard !isRunning else { return }
         isRunning = true
         presentation.start()
-        statusItem.start()
+        statusItem.start { [weak self] in _ = self?.showTracker() }
     }
 
     func stop() {
@@ -99,9 +95,5 @@ final class TrackerAppRuntime {
         NSApplication.shared.activate()
         presentation.windowAvailable()
         return request.id
-    }
-
-    func quit() {
-        NSApplication.shared.terminate(nil)
     }
 }

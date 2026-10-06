@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		7E03C4DAE1C8422B9877DAAE /* TrackerStatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 985E16041BDF4A35B69FDEB7 /* TrackerStatusItemController.swift */; };
 		EEFD5BD538B369A492C794E7 /* TrackerApplicationMenus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */; };
 		C06F25F76FAA72DB1B696C6D /* TrackerApplicationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */; };
 		9766315AC90A7BB55587764A /* TrackerTaskPresentationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */; };
@@ -33,11 +32,10 @@
 		42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */; };
 		DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8778858BF38637F9573E8E50 /* TaskContextMenu.swift */; };
 		DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */; };
-		06BAC82F4057547A724AF1B1 /* TrackerMenuPopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D634B6DD1D5D0D366765B878 /* TrackerMenuPopup.swift */; };
+		06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		985E16041BDF4A35B69FDEB7 /* TrackerStatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStatusItemController.swift; sourceTree = "<group>"; };
 		522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerApplicationMenus.swift; sourceTree = "<group>"; };
 		1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerApplicationDelegate.swift; sourceTree = "<group>"; };
 		A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerTaskPresentationCoordinator.swift; sourceTree = "<group>"; };
@@ -67,7 +65,7 @@
 		88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRenameView.swift; sourceTree = "<group>"; };
 		8778858BF38637F9573E8E50 /* TaskContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskContextMenu.swift; sourceTree = "<group>"; };
 		D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskIndicatorView.swift; sourceTree = "<group>"; };
-		D634B6DD1D5D0D366765B878 /* TrackerMenuPopup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerMenuPopup.swift; sourceTree = "<group>"; };
+		D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStatusItemController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -249,8 +247,7 @@
 		67815C35FE40B6535CB0E7B6 /* MenuBar */ = {
 			isa = PBXGroup;
 			children = (
-				D634B6DD1D5D0D366765B878 /* TrackerMenuPopup.swift */,
-				985E16041BDF4A35B69FDEB7 /* TrackerStatusItemController.swift */,
+				D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */,
 			);
 			path = MenuBar;
 			sourceTree = "<group>";
@@ -353,8 +350,7 @@
 				C06F25F76FAA72DB1B696C6D /* TrackerApplicationDelegate.swift in Sources */,
 				EEFD5BD538B369A492C794E7 /* TrackerApplicationMenus.swift in Sources */,
 				3F7A03677BF75120A989F9AD /* TrackerSplitLayout.swift in Sources */,
-				06BAC82F4057547A724AF1B1 /* TrackerMenuPopup.swift in Sources */,
-				7E03C4DAE1C8422B9877DAAE /* TrackerStatusItemController.swift in Sources */,
+				06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */,
 				DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */,
 				DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */,
 				D2317EF3D3102BB20A00689F /* TaskCreationView.swift in Sources */,

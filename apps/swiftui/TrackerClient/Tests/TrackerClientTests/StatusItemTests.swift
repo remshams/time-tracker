@@ -244,27 +244,25 @@ final class StatusItemTests: XCTestCase {
     }
 
     @MainActor
-    func testOpenMenuUpdatesDotAndClickUsesLatestConfirmedWorklog() async throws {
+    func testOpenMenuFreezesDotButLiveClickUsesLatestConfirmedWorklog() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: false)
         fixture.session.onChange = { observer.update(from: fixture.session, showDailyTotal: false) }
-        fixture.session.menuOpened()
+        observer.menuOpened(from: fixture.session, showDailyTotal: false)
         fixture.scheduler.poll?.fire()
         let refresh = try await fixture.client.next()
         let replacement = WorklogItem(id: "replacement", taskId: secondTask.id, start: activeWorklog.start, end: nil)
         refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: replacement))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
-        let finished = Task { @MainActor in
-            while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
-        }
-        try await fixture.taskValue(finished)
+        try await fixture.settled()
+        XCTAssertEqual(observer.label.indicator.taskID, firstTask.id)
         XCTAssertEqual(fixture.session.menuPrimaryAction, .stop(worklogID: replacement.id))
+        observer.menuClosed(from: fixture.session, showDailyTotal: false)
         XCTAssertEqual(observer.label.indicator.taskID, secondTask.id)
         XCTAssertEqual(observer.label.status, "Tracking: Second task")
-        fixture.session.menuClosed()
     }
 
     @MainActor

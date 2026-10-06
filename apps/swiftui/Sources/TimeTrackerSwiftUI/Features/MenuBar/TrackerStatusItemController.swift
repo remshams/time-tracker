@@ -1,45 +1,31 @@
 import AppKit
 import Combine
-import SwiftUI
 import TrackerClient
 
 @MainActor
-final class TrackerStatusItemController: NSObject, NSWindowDelegate {
+final class TrackerStatusItemController: NSObject {
     private let store: TrackerStore
-    private let showTracker: () -> Void
-    private let quit: () -> Void
     private var statusItem: NSStatusItem?
-    private var panel: TrackerMenuPanel?
     private var subscriptions = Set<AnyCancellable>()
-    private var panelSubscriptions = Set<AnyCancellable>()
     private var appearanceObservation: NSKeyValueObservation?
-    private var panelSizeObservation: NSKeyValueObservation?
-    private var localMouseMonitor: Any?
-    private var globalMouseMonitor: Any?
-    private var menuIsOpen = false
-    private var controlClickInProgress = false
-    private var handledMenuMouseDown: (number: Int, timestamp: TimeInterval)?
+    private var openWindow: (() -> Void)?
+    private var showingMenu = false
 
-    init(store: TrackerStore, showTracker: @escaping () -> Void, quit: @escaping () -> Void) {
+    init(store: TrackerStore) {
         self.store = store
-        self.showTracker = showTracker
-        self.quit = quit
         super.init()
     }
 
-    func start() {
+    func start(openWindow: @escaping () -> Void) {
+        self.openWindow = openWindow
         guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem = item
         if let button = item.button {
             button.target = self
             button.action = #selector(clicked)
-            button.sendAction(on: [.leftMouseDown, .leftMouseUp, .rightMouseDown])
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.imagePosition = .imageLeading
-            button.setAccessibilityCustomActions([
-                NSAccessibilityCustomAction(name: "Open tracking menu", target: self,
-                                            selector: #selector(accessibilityOpenMenu))
-            ])
             appearanceObservation = button.observe(\.effectiveAppearance) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.updateLabel() }
             }
@@ -47,258 +33,206 @@ final class TrackerStatusItemController: NSObject, NSWindowDelegate {
         store.menu.label.objectWillChange.sink { [weak self] _ in
             MainActor.assumeIsolated { self?.updateLabel() }
         }.store(in: &subscriptions)
+        NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.stop() } }
+            .store(in: &subscriptions)
         updateLabel()
     }
 
     func stop() {
-        if let panel { closePopup(panel) }
         subscriptions.removeAll()
         appearanceObservation = nil
-        controlClickInProgress = false
-        handledMenuMouseDown = nil
-        if let statusItem {
-            statusItem.button?.target = nil
-            statusItem.button?.action = nil
-            statusItem.button?.setAccessibilityCustomActions(nil)
-            NSStatusBar.system.removeStatusItem(statusItem)
-        }
+        if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
         statusItem = nil
+        openWindow = nil
     }
 
     private func updateLabel() {
         guard let button = statusItem?.button else { return }
         let label = store.menu.label.content
-        button.image = StatusTaskDotImage.make(indicator: label.indicator,
-                                              appearance: button.effectiveAppearance)
-        panel?.appearance = button.effectiveAppearance
-        button.attributedTitle = NSAttributedString(string: label.totalText.map { " \($0)" } ?? "",
-                                                    attributes: [
+        button.image = TaskDotImage.make(color: label.indicator.color,
+                                        isRunning: label.indicator.isRunning,
+                                        appearance: button.effectiveAppearance)
+        let total = label.totalText.map { " \($0)" } ?? ""
+        button.attributedTitle = NSAttributedString(string: total, attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
             .foregroundColor: NSColor.labelColor
         ])
         button.toolTip = label.help
         button.setAccessibilityLabel(label.status)
-        button.setAccessibilityValue(label.totalText ?? "")
-        button.setAccessibilityHelp("\(label.help)\nClick to start or stop tracking. Right-click or Control-click to open the menu.")
+        button.setAccessibilityHelp("\(label.help)\nClick to start or stop tracking. Right-click to open the menu.")
     }
 
     @objc private func clicked() {
-        guard statusItem != nil else { return }
-        if let event = NSApplication.shared.currentEvent {
-            switch event.type {
-            case .leftMouseDown:
-                controlClickInProgress = event.modifierFlags.contains(.control)
-                guard controlClickInProgress else { return }
-                handleMenuMouseDown(event)
-                return
-            case .rightMouseDown:
-                controlClickInProgress = false
-                handleMenuMouseDown(event)
-                return
-            case .leftMouseUp:
-                if controlClickInProgress {
-                    controlClickInProgress = false
-                    return
-                }
-            default: break
-            }
+        guard !showingMenu else { return }
+        let event = NSApplication.shared.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            showMenu()
+        } else if case .openMenu = store.performMenuPrimaryAction() {
+            showMenu()
         }
-        if let panel { closePopup(panel) }
-        if case .openMenu = store.performMenuPrimaryAction() { showPopup() }
     }
 
-    private func handleMenuMouseDown(_ event: NSEvent) {
-        if let handledMenuMouseDown, handledMenuMouseDown.number == event.eventNumber,
-           handledMenuMouseDown.timestamp == event.timestamp {
-            self.handledMenuMouseDown = nil
-            return
-        }
-        handledMenuMouseDown = nil
-        togglePopup()
-    }
-
-    private func togglePopup() {
-        if let panel { closePopup(panel) }
-        else { showPopup() }
-    }
-
-    @objc private func accessibilityOpenMenu() -> Bool {
-        guard statusItem != nil else { return false }
-        if panel == nil { showPopup() }
-        return panel?.isVisible == true
-    }
-
-    private func showPopup() {
-        guard panel == nil, let button = statusItem?.button,
-              let anchor = statusButtonScreenFrame(), let screen = button.window?.screen else { return }
-        let frame = TrackerMenuPanelPlacement.frame(contentSize: CGSize(width: 360, height: 560),
-                                                   anchor: anchor, visibleFrame: screen.visibleFrame)
-        guard frame.width > 0, frame.height > 0 else { return }
-        let popup = TrackerMenuPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
-                                     backing: .buffered, defer: false)
-        popup.isReleasedWhenClosed = false
-        popup.isOpaque = false
-        popup.backgroundColor = .clear
-        popup.hasShadow = true
-        popup.isMovable = false
-        popup.isFloatingPanel = true
-        popup.hidesOnDeactivate = false
-        popup.becomesKeyOnlyIfNeeded = false
-        popup.isExcludedFromWindowsMenu = true
-        popup.level = .popUpMenu
-        popup.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        popup.animationBehavior = .none
-        popup.appearance = button.effectiveAppearance
-        popup.title = "Time Tracker menu"
-        popup.delegate = self
-        let shape = RoundedRectangle(cornerRadius: 12)
-        let hosting = NSHostingController(rootView: TrackerMenuPopup(
-            store: store, showTracker: showTracker, quit: quit,
-            close: { [weak self, weak popup] in
-                guard let popup else { return }
-                self?.closePopup(popup)
-            }, width: frame.width, maximumHeight: frame.height)
-            .background(.regularMaterial, in: shape)
-            .clipShape(shape))
-        hosting.sizingOptions = [.intrinsicContentSize, .preferredContentSize]
-        popup.contentViewController = hosting
-        panel = popup
-        resizePopup(popup, to: hosting.sizeThatFits(in: frame.size))
-        panelSizeObservation = hosting.observe(\.preferredContentSize, options: [.new]) { [weak self, weak popup] _, change in
-            MainActor.assumeIsolated {
-                guard let popup, let size = change.newValue else { return }
-                self?.resizePopup(popup, to: size)
-            }
-        }
-        installDismissalHandlers(for: popup)
-        menuIsOpen = true
-        button.highlight(true)
+    private func showMenu() {
+        guard !showingMenu, let button = statusItem?.button else { return }
+        showingMenu = true
         store.menuOpened()
-        popup.makeKeyAndOrderFront(nil)
-        if !popup.isVisible { closePopup(popup) }
-    }
-
-    private func installDismissalHandlers(for popup: TrackerMenuPanel) {
-        let mouseEvents: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseEvents) { [weak self, weak popup] event in
-            MainActor.assumeIsolated {
-                guard let self, let popup, self.panel === popup else { return event }
-                let isStatusClick = self.isStatusButtonEvent(event)
-                if isStatusClick && (event.type == .rightMouseDown ||
-                                    event.type == .leftMouseDown && event.modifierFlags.contains(.control)) {
-                    self.controlClickInProgress = event.type == .leftMouseDown
-                    self.handledMenuMouseDown = (event.eventNumber, event.timestamp)
-                    self.togglePopup()
-                    return event
-                }
-                guard event.window !== popup, !isStatusClick else { return event }
-                self.closePopup(popup)
-                return event
-            }
-        }
-        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseEvents) { [weak self, weak popup] event in
-            MainActor.assumeIsolated {
-                guard let self, let popup, self.panel === popup,
-                      !self.isStatusButtonEvent(event) else { return }
-                self.closePopup(popup)
-            }
-        }
-        for name in [NSApplication.didResignActiveNotification,
-                     NSApplication.didChangeScreenParametersNotification] {
-            NotificationCenter.default.publisher(for: name)
-                .receive(on: RunLoop.main)
-                .sink { [weak self, weak popup] _ in
-                    MainActor.assumeIsolated {
-                        guard let popup else { return }
-                        self?.closePopup(popup)
-                    }
-                }.store(in: &panelSubscriptions)
-        }
-        for name in [NSWorkspace.didActivateApplicationNotification,
-                     NSWorkspace.activeSpaceDidChangeNotification] {
-            NSWorkspace.shared.notificationCenter.publisher(for: name)
-                .receive(on: RunLoop.main)
-                .sink { [weak self, weak popup] _ in
-                    MainActor.assumeIsolated {
-                        guard let popup else { return }
-                        self?.closePopup(popup)
-                    }
-                }.store(in: &panelSubscriptions)
-        }
-    }
-
-    func windowDidResignKey(_ notification: Notification) {
-        guard let popup = notification.object as? TrackerMenuPanel, panel === popup else { return }
-        closePopup(popup)
-    }
-
-    private func resizePopup(_ popup: TrackerMenuPanel, to size: CGSize) {
-        guard panel === popup, size.width.isFinite, size.height.isFinite,
-              size.width > 0, size.height > 0, let anchor = statusButtonScreenFrame(),
-              let screen = statusItem?.button?.window?.screen else { return }
-        let boundedSize = CGSize(width: min(size.width, 360), height: min(size.height, 560))
-        let frame = TrackerMenuPanelPlacement.frame(contentSize: boundedSize, anchor: anchor,
-                                                   visibleFrame: screen.visibleFrame)
-        guard popup.frame != frame else { return }
-        popup.setFrame(frame, display: true)
-        popup.invalidateShadow()
-    }
-
-    private func statusButtonScreenFrame() -> CGRect? {
-        guard let button = statusItem?.button, let window = button.window else { return nil }
-        return window.convertToScreen(button.convert(button.bounds, to: nil))
-    }
-
-    private func isStatusButtonEvent(_ event: NSEvent) -> Bool {
-        switch event.type {
-        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
-            guard let anchor = statusButtonScreenFrame() else { return false }
-            let point: CGPoint
-            if let window = event.window {
-                point = window.convertToScreen(CGRect(origin: event.locationInWindow, size: .zero)).origin
-            } else { point = event.locationInWindow }
-            return anchor.contains(point)
-        default: return false
-        }
-    }
-
-    private func closePopup(_ popup: TrackerMenuPanel) {
-        guard panel === popup else { return }
-        panel = nil
-        panelSizeObservation = nil
-        panelSubscriptions.removeAll()
-        if let localMouseMonitor { NSEvent.removeMonitor(localMouseMonitor) }
-        if let globalMouseMonitor { NSEvent.removeMonitor(globalMouseMonitor) }
-        localMouseMonitor = nil
-        globalMouseMonitor = nil
-        popup.delegate = nil
-        popup.orderOut(nil)
-        popup.contentViewController = nil
-        popup.close()
-        statusItem?.button?.highlight(false)
-        if menuIsOpen {
-            menuIsOpen = false
+        button.highlight(true)
+        defer {
+            button.highlight(false)
+            showingMenu = false
             store.menuClosed()
         }
+        // Freeze the presentation for the entire synchronous AppKit tracking loop.
+        let menu = makeMenu(store.menu.content, appearance: NSApplication.shared.effectiveAppearance)
+        // In flipped views, maxY is the bottom edge beneath the menu bar.
+        let bottomY = button.isFlipped ? button.bounds.maxY : button.bounds.minY
+        let anchor = NSPoint(x: button.bounds.minX, y: bottomY)
+        menu.popUp(positioning: nil, at: anchor, in: button)
+    }
+
+    private func makeMenu(_ content: TrackerMenuContent, appearance: NSAppearance) -> NSMenu {
+        let menu = NSMenu()
+        menu.appearance = appearance
+        menu.autoenablesItems = false
+        addText(content.connectionStatusText, to: menu)
+        if content.isStale { addText("Showing last confirmed state", to: menu) }
+        addText(content.runningTaskName, to: menu)
+        if let status = content.autoPauseStatusText { addText(status, to: menu) }
+        if let error = content.trackingError { addText(error, to: menu) }
+        if let elapsed = content.elapsedText { addText(elapsed, to: menu) }
+        if let id = content.activeWorklogID {
+            addAction("Stop tracking", action: .stop(id), enabled: content.canStopTracking, to: menu)
+        }
+        menu.addItem(.separator())
+        addText(content.dailyTotalsStatus == .cached ? "Today, cached" : "Today", to: menu)
+        addText("Total today: \(content.totalText)", to: menu, help: content.totalsExplanation)
+        for entry in content.todayTasks {
+            let archived = entry.task.archived ? "  Archived" : ""
+            addTask(entry, title: "\(entry.task.name)  \(entry.durationText)\(archived)",
+                    help: content.totalsExplanation, isStale: content.isStale,
+                    appearance: appearance, to: menu)
+        }
+        if content.todayTasks.isEmpty {
+            let empty: String
+            switch content.dailyTotalsStatus {
+            case .current: empty = "No time logged today"
+            case .cached: empty = "Last confirmed totals are empty"
+            case .loading: empty = "Loading today's totals"
+            case .unavailable: empty = "Today's totals are unavailable"
+            }
+            addText(empty, to: menu)
+        }
+        if !content.otherTasks.isEmpty {
+            let submenu = NSMenu(title: "Start tracking")
+            submenu.appearance = appearance
+            submenu.autoenablesItems = false
+            for entry in content.otherTasks {
+                addTask(entry, title: entry.task.name, help: nil, isStale: content.isStale,
+                        appearance: appearance, to: submenu)
+            }
+            let parent = NSMenuItem(title: "Start tracking", action: nil, keyEquivalent: "")
+            parent.submenu = submenu
+            parent.isEnabled = true
+            menu.addItem(parent)
+        }
+        menu.addItem(.separator())
+        addAction("Open Time Tracker", action: .openWindow, to: menu)
+        addAction("Quit Time Tracker", action: .quit, to: menu)
+        return menu
+    }
+
+    private func addTask(_ entry: TrackerMenuTask, title: String, help: String?,
+                         isStale: Bool, appearance: NSAppearance, to menu: NSMenu) {
+        let isRunning = entry.isRunning && !isStale
+        let item = addAction(title, action: .start(entry.id), enabled: entry.canStart || isRunning, to: menu)
+        if isRunning {
+            item.attributedTitle = NSAttributedString(string: title, attributes: [
+                .font: NSFont.boldSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize)
+            ])
+        }
+        item.image = TaskDotImage.make(color: TaskColor.forTaskID(entry.id),
+                                      isRunning: isRunning, appearance: appearance)
+        item.toolTip = help
+        let status: String
+        if isStale {
+            status = entry.isRunning ? "last confirmed tracking, current status unavailable"
+                : "current tracking status unavailable"
+        } else { status = entry.isRunning ? "tracking" : "not tracking" }
+        item.setAccessibilityLabel("\(title), \(status)")
+    }
+
+    private func addText(_ title: String, to menu: NSMenu, help: String? = nil) {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        let label = NSTextField(labelWithString: title)
+        label.font = .menuFont(ofSize: 0)
+        label.textColor = .labelColor
+        label.lineBreakMode = .byTruncatingMiddle
+        label.toolTip = help ?? title
+        label.setAccessibilityLabel(title)
+        let size = label.fittingSize
+        let width = min(480, size.width + 40)
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: width, height: size.height + 8))
+        view.appearance = menu.appearance
+        label.frame = NSRect(x: 20, y: 4, width: width - 40, height: size.height)
+        label.autoresizingMask = [.width]
+        view.addSubview(label)
+        item.view = view
+        menu.addItem(item)
+    }
+
+    @discardableResult
+    private func addAction(_ title: String, action: MenuAction, enabled: Bool = true,
+                           to menu: NSMenu) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: #selector(selected(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = action
+        item.isEnabled = enabled
+        menu.addItem(item)
+        return item
+    }
+
+    private enum MenuAction { case start(String), stop(String), openWindow, quit }
+
+    @objc private func selected(_ item: NSMenuItem) {
+        guard let action = item.representedObject as? MenuAction else { return }
+        // The session validates these captured identities against its current snapshot.
+        switch action {
+        case .start(let id): store.startTracking(taskID: id)
+        case .stop(let id): store.stopTracking(worklogID: id)
+        case .openWindow:
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            openWindow?()
+        case .quit: NSApplication.shared.terminate(nil)
+        }
     }
 }
 
-@MainActor
-private final class TrackerMenuPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+private extension TaskColor {
+    var nativeColor: NSColor {
+        switch self {
+        case .blue: return .systemBlue
+        case .teal: return .systemTeal
+        case .green: return .systemGreen
+        case .orange: return .systemOrange
+        case .red: return .systemRed
+        case .purple: return .systemPurple
+        case .pink: return .systemPink
+        }
+    }
 }
 
-private enum StatusTaskDotImage {
-    static func make(indicator: TaskIndicator, appearance: NSAppearance) -> NSImage {
-        var color = indicator.color.map(nativeColor) ?? .secondaryLabelColor
+private enum TaskDotImage {
+    static func make(color: TaskColor?, isRunning: Bool, appearance: NSAppearance) -> NSImage {
+        var resolvedColor = color?.nativeColor ?? .secondaryLabelColor
         appearance.performAsCurrentDrawingAppearance {
-            color = color.usingColorSpace(.deviceRGB) ?? color
+            resolvedColor = resolvedColor.usingColorSpace(.deviceRGB) ?? resolvedColor
         }
-        let drawingColor = color
+        let drawingColor = resolvedColor
         let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
             let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 3, dy: 3))
-            if indicator.isRunning {
+            if isRunning {
                 drawingColor.setFill()
                 circle.fill()
             } else {
@@ -310,17 +244,5 @@ private enum StatusTaskDotImage {
         }
         image.isTemplate = false
         return image
-    }
-
-    private static func nativeColor(_ color: TaskColor) -> NSColor {
-        switch color {
-        case .blue: return .systemBlue
-        case .teal: return .systemTeal
-        case .green: return .systemGreen
-        case .orange: return .systemOrange
-        case .red: return .systemRed
-        case .purple: return .systemPurple
-        case .pink: return .systemPink
-        }
     }
 }
