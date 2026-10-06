@@ -251,7 +251,7 @@ fn report_rejects_null_malformed_and_invalid_ranges_and_returns_empty_totals() {
     );
 }
 
-struct Server {
+pub(super) struct Server {
     endpoint: String,
     shutdown: Option<tokio::sync::oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
@@ -259,7 +259,7 @@ struct Server {
 }
 
 impl Server {
-    fn start(router: axum::Router) -> Self {
+    pub(super) fn start(router: axum::Router) -> Self {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         listener.set_nonblocking(true).unwrap();
@@ -289,7 +289,7 @@ impl Server {
         }
     }
 
-    fn client(&self) -> Bridge {
+    pub(super) fn client(&self) -> Bridge {
         Bridge {
             application: Backend::remote(&self.endpoint).unwrap(),
         }

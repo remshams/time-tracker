@@ -3,10 +3,10 @@ use tokio::runtime::{Builder, Runtime};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ApplicationFailureSource, ClearActiveTaskOutcome,
     ReportQueries, ReportTotals, SetActiveTaskOutcome, TaskListItem, TaskOperations, TaskOrdering,
-    TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor, WorklogPage,
-    WorklogQueries,
+    TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor, WorklogOperations,
+    WorklogPage, WorklogQueries,
 };
-use tracker_domain::{Task, TaskId, TaskName, TrackingState, WorklogId};
+use tracker_domain::{Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes};
 use tracker_remote::{RemoteApplication, RemoteError};
 use tracker_storage::SqliteRepository;
 
@@ -190,6 +190,40 @@ impl Backend {
         }
     }
 
+    pub fn correct_worklog(
+        &mut self,
+        id: WorklogId,
+        expected: WorklogTimes,
+        replacement: WorklogTimes,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Worklog, BridgeError> {
+        // Refresh the remote revision without replacing the editor's original timestamps.
+        if matches!(self, Self::Remote(_)) {
+            self.refresh()?;
+        }
+        match self {
+            Self::Local(application) => application
+                .correct_worklog(id, expected, replacement, occurred_at)
+                .map_err(correction_error),
+            Self::Remote(remote) => {
+                let result = remote.runtime.block_on(remote.application.correct_worklog(
+                    id,
+                    expected,
+                    replacement,
+                    occurred_at,
+                ));
+                result.map_err(|error| {
+                    let kind = correction_error_kind(&error);
+                    let mut mapped = remote.operation_error(error, true);
+                    if let Some(kind) = kind {
+                        mapped.kind = kind;
+                    }
+                    mapped
+                })
+            }
+        }
+    }
+
     pub fn resume_tracking(
         &mut self,
         task_id: TaskId,
@@ -337,6 +371,24 @@ fn operation_error_kind(error: &ApplicationError) -> &'static str {
 
 fn local_error(error: ApplicationError) -> BridgeError {
     error.failure().message().to_owned().into()
+}
+
+fn correction_error_kind(error: &ApplicationError) -> Option<&'static str> {
+    match error.failure().category() {
+        ApplicationFailureCategory::WorklogChanged => Some("worklog_changed"),
+        ApplicationFailureCategory::WorklogOverlap => Some("worklog_overlap"),
+        _ => None,
+    }
+}
+
+fn correction_error(error: ApplicationError) -> BridgeError {
+    let kind = correction_error_kind(&error).unwrap_or("general");
+    BridgeError {
+        message: error.failure().message().to_owned(),
+        kind,
+        uncertain: false,
+        requires_refresh: kind == "worklog_changed",
+    }
 }
 
 fn remote_error_kind(error: &RemoteError) -> &'static str {

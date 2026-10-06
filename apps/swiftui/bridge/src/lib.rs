@@ -13,7 +13,7 @@ use tracker_application::{
 
 mod backend;
 use backend::{Backend, BridgeError};
-use tracker_domain::{TaskId, TaskName, TrackingState, WorklogId};
+use tracker_domain::{TaskId, TaskName, TrackingState, WorklogId, WorklogTimes};
 use tracker_storage::{SqliteRepository, default_database_path, ensure_app_data_dir};
 
 pub struct Bridge {
@@ -595,6 +595,63 @@ pub unsafe extern "C" fn tt_bridge_resume_tracking_at(
     }))
 }
 
+/// Corrects timestamps only when the stored worklog still matches the editor.
+/// Null end timestamps describe a running worklog.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be null or valid
+/// C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_correct_worklog_at(
+    bridge: *mut Bridge,
+    worklog_id: *const c_char,
+    expected_start: *const c_char,
+    expected_end: *const c_char,
+    replacement_start: *const c_char,
+    replacement_end: *const c_char,
+    occurred_at: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees exclusive access to the live bridge.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    let result = (|| {
+        // SAFETY: The caller supplies valid C strings or null for all inputs.
+        let (id, expected_start, expected_end, replacement_start, replacement_end, occurred_at) = unsafe {
+            (
+                read_identifier(worklog_id, "Invalid worklog ID")?,
+                read_identifier(expected_start, "Invalid original start timestamp")?,
+                read_optional_timestamp(expected_end, "Invalid original end timestamp")?,
+                read_identifier(replacement_start, "Invalid replacement start timestamp")?,
+                read_optional_timestamp(replacement_end, "Invalid replacement end timestamp")?,
+                read_identifier(occurred_at, "Invalid correction timestamp")?,
+            )
+        };
+        let worklog = bridge.application.correct_worklog(
+            id,
+            WorklogTimes::new(expected_start, expected_end),
+            WorklogTimes::new(replacement_start, replacement_end),
+            occurred_at,
+        )?;
+        Ok(json!({
+            "worklog": worklog_json(&worklog),
+            "snapshot": snapshot(&bridge.application)
+        }))
+    })();
+    encode(result)
+}
+
+unsafe fn read_optional_timestamp(
+    value: *const c_char,
+    message: &str,
+) -> Result<Option<DateTime<Utc>>, String> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    // SAFETY: The caller supplies a valid C string.
+    unsafe { read_identifier(value, message) }.map(Some)
+}
+
 fn parse_cursor(task_id: TaskId, text: &str) -> Result<WorklogCursor, String> {
     let value: Value =
         serde_json::from_str(text).map_err(|_| "Invalid history cursor".to_owned())?;
@@ -698,6 +755,9 @@ mod creation_tests;
 
 #[cfg(test)]
 mod rename_tests;
+
+#[cfg(test)]
+mod correction_tests;
 
 #[cfg(test)]
 mod tests {
