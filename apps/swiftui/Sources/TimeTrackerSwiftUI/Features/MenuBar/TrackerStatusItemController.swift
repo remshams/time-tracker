@@ -172,14 +172,15 @@ final class TrackerStatusItemController: NSObject, NSPopoverDelegate {
         window.makeKey()
         window.acceptsMouseMovedEvents = true
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .mouseMoved]) { [weak self, weak window] event in
-            MainActor.assumeIsolated {
-                guard let self, let window, event.window === window, self.popover?.isShown == true else { return event }
+            let handled = MainActor.assumeIsolated {
+                guard let self, let window, event.window === window, self.popover?.isShown == true else { return false }
                 if event.type == .mouseMoved {
                     self.menuState?.pointerMoved()
-                    return event
+                    return false
                 }
-                return self.handleKey(event) ? nil : event
+                return self.handleKey(event)
             }
+            return handled ? nil : event
         }
     }
 

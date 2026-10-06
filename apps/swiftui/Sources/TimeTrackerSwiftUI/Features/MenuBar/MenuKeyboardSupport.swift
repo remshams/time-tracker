@@ -102,7 +102,7 @@ final class GlobalMenuShortcutRegistration {
             var hotKeyID = EventHotKeyID()
             let status = GetEventParameter(event, EventParamName(kEventParamDirectObject),
                                            EventParamType(typeEventHotKeyID), nil,
-                                           UInt32(MemoryLayout<EventHotKeyID>.size), nil, &hotKeyID)
+                                           MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
             guard status == noErr else { return status }
             return MainActor.assumeIsolated {
                 let registration = Unmanaged<GlobalMenuShortcutRegistration>
@@ -244,11 +244,11 @@ final class ShortcutRecorderButton: NSButton {
         if eventMonitor == nil {
             // Capture before Settings buttons handle Return or Escape equivalents.
             eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                MainActor.assumeIsolated {
-                    guard let self, self.window === event.window,
-                          self.capture(event) else { return event }
-                    return nil
+                let captured = MainActor.assumeIsolated {
+                    guard let self, self.window === event.window else { return false }
+                    return self.capture(event)
                 }
+                return captured ? nil : event
             }
         }
         updateTitle()
