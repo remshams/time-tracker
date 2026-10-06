@@ -141,3 +141,13 @@ public struct TaskCreationResult: Decodable, Equatable, Sendable {
         self.snapshot = snapshot
     }
 }
+
+public struct WorklogCorrectionResult: Decodable, Equatable, Sendable {
+    public let worklog: WorklogItem
+    public let snapshot: TrackerSnapshot
+
+    public init(worklog: WorklogItem, snapshot: TrackerSnapshot) {
+        self.worklog = worklog
+        self.snapshot = snapshot
+    }
+}

@@ -22,6 +22,11 @@ final class WorklogHistoryState {
         pending = selectedTaskID != nil
     }
 
+    func clearAfterCorrection() {
+        worklogs = []
+        nextCursor = nil
+    }
+
     func invalidate() {
         generation += 1
         pending = false

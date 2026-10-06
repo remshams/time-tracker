@@ -16,6 +16,7 @@ final class FakeClient: TrackerClient, ReportClient {
         case snapshot
         case create(name: String, at: String)
         case rename(task: String, name: String, at: String)
+        case correct(expected: WorklogItem, start: String, end: String?, at: String)
         case start(task: String, expected: String?, at: String)
         case stop(worklog: String, at: String)
         case pause(worklog: String, at: String)
@@ -29,6 +30,7 @@ final class FakeClient: TrackerClient, ReportClient {
         case history(HistoryPage)
         case tested
         case created(TaskCreationResult)
+        case corrected(WorklogCorrectionResult)
         case paused(TrackingPauseResult)
         case report(TrackerReport)
     }
@@ -46,6 +48,9 @@ final class FakeClient: TrackerClient, ReportClient {
         }
         func created(taskID: String, snapshot: TrackerSnapshot) {
             complete(.success(.created(TaskCreationResult(taskId: taskID, snapshot: snapshot))))
+        }
+        func corrected(worklog: WorklogItem, snapshot: TrackerSnapshot) {
+            complete(.success(.corrected(WorklogCorrectionResult(worklog: worklog, snapshot: snapshot))))
         }
         func tested() { complete(.success(.tested)) }
         func fail(_ error: Error) { complete(.failure(error)) }
@@ -146,6 +151,14 @@ final class FakeClient: TrackerClient, ReportClient {
     }
     func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TrackerSnapshot {
         try await snapshotReply(.rename(task: taskID, name: name, at: occurredAt))
+    }
+    func correctWorklog(expected: WorklogItem, replacementStart: String, replacementEnd: String?,
+                        occurredAt: String) async throws -> WorklogCorrectionResult {
+        let operation = Operation.correct(expected: expected, start: replacementStart, end: replacementEnd, at: occurredAt)
+        guard case .corrected(let value) = try await perform(operation) else {
+            throw wrongReply("correction", operation: operation)
+        }
+        return value
     }
     func history(taskID: String, cursor: String?) async throws -> HistoryPage {
         guard case .history(let value) = try await perform(.history(task: taskID, cursor: cursor)) else {

@@ -7,7 +7,7 @@ public final class TrackerSession {
     // Background reads still serialize requests without disabling controls.
     public var isBlockingControls: Bool {
         (isBusy && operationBlocksControls) || pendingControlCommand != nil ||
-            rename.hasPendingIntent || creation.pending
+            rename.hasPendingIntent || creation.pending || correction.pending
     }
     public private(set) var now: Date
 
@@ -27,6 +27,7 @@ public final class TrackerSession {
     private let history = WorklogHistoryState()
     private let creation = TaskCreationState()
     private let rename = TaskRenameState()
+    private let correction = WorklogCorrectionState()
     private let dailyTotals: DailyTotalsState
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
@@ -108,14 +109,23 @@ public final class TrackerSession {
     public var taskCreation: TaskCreationPresentation { creation.presentation }
     public var canOpenTaskCreation: Bool {
         running && connection.confirmed && !connection.changing &&
-            !rename.presentation.isPresented && !rename.blocksConnectionChange
+            !rename.presentation.isPresented && !rename.blocksConnectionChange &&
+            !correction.blocksConnectionChange
     }
     public var taskRename: TaskRenamePresentation { rename.presentation }
     public var canOpenTaskRename: Bool {
         running && connection.confirmed && !connection.changing &&
             !creation.presentation.isPresented && !creation.blocksConnectionChange &&
+            !correction.blocksConnectionChange &&
             (selectedTask != nil || rename.intent != nil)
     }
+    public var worklogCorrection: WorklogCorrectionPresentation { correction.presentation }
+    public var canOpenWorklogCorrection: Bool {
+        running && connection.confirmed && !connection.changing &&
+            !creation.presentation.isPresented && !creation.blocksConnectionChange &&
+            !rename.presentation.isPresented && !rename.blocksConnectionChange
+    }
+
     public var canStartSelectedTask: Bool {
         guard let selectedTaskID else { return false }
         return canStartTracking(taskID: selectedTaskID)
@@ -225,6 +235,7 @@ public final class TrackerSession {
         automation.cancel()
         creation.reset()
         rename.reset()
+        correction.reset()
         pendingRefresh = false
         cancelTimers()
         isBusy = false
@@ -269,10 +280,11 @@ public final class TrackerSession {
         dailyTotals.reanchor(clock: clock)
         updateDisplayTimer()
         updateRolloverTimer()
-        if rename.hasPendingIntent || creation.pending {
+        if rename.hasPendingIntent || creation.pending || correction.pending {
             if drainAutomation() { return }
             if drainRename() { return }
             if drainCreation() { return }
+            if drainCorrection() { return }
         }
         refresh()
     }
@@ -332,6 +344,47 @@ public final class TrackerSession {
             return
         }
         drainRename()
+        publish()
+    }
+
+    public func openWorklogCorrection(worklogID: String) {
+        guard canOpenWorklogCorrection else { return }
+        let worklog = correction.original ?? worklogs.first { $0.id == worklogID } ?? (active?.id == worklogID ? active : nil)
+        guard let worklog else { return }
+        correction.open(worklog, taskName: tasks.first { $0.id == worklog.taskId }?.name ?? "Unknown task",
+                        historyPageLimit: max(1, (worklogs.count + 49) / 50) + 1)
+        publish()
+    }
+
+    public func setWorklogCorrectionStart(_ date: Date) {
+        guard running else { return }
+        correction.updateStart(date)
+        publish()
+    }
+
+    public func setWorklogCorrectionEnd(_ date: Date) {
+        guard running else { return }
+        correction.updateEnd(date)
+        publish()
+    }
+
+    public func cancelWorklogCorrection() {
+        guard running else { return }
+        correction.cancel()
+        publish()
+    }
+
+    public func submitWorklogCorrection() {
+        guard canOpenWorklogCorrection else { return }
+        guard correction.submit(at: clock.now) else { publish(); return }
+        drainCorrection()
+        publish()
+    }
+
+    public func reviewLatestWorklogCorrection() {
+        guard running else { return }
+        let taskID = correction.presentation.latest?.taskId
+        correction.reviewLatest(taskName: tasks.first { $0.id == taskID }?.name)
         publish()
     }
 
@@ -396,6 +449,11 @@ public final class TrackerSession {
     }
 
     public func connect(_ settings: ConnectionSettings) async -> Bool {
+        guard !correction.blocksConnectionChange else {
+            connection.message = "Finish worklog editing before changing connections."
+            publish()
+            return false
+        }
         guard !rename.blocksConnectionChange else {
             connection.message = "Finish or retry task renaming before changing connections."
             publish()
@@ -416,7 +474,8 @@ public final class TrackerSession {
         let token = operation.token
         defer { finishOperation(token: token) }
         guard controlOperationIsCurrent(operation), !sleeping, !Task.isCancelled else { return false }
-        guard !rename.blocksConnectionChange, !creation.blocksConnectionChange else {
+        guard !rename.blocksConnectionChange, !creation.blocksConnectionChange,
+              !correction.blocksConnectionChange else {
             connection.message = "Finish or retry task editing before changing connections."
             return false
         }
@@ -561,6 +620,7 @@ public final class TrackerSession {
         if drainAutomation() { return }
         if drainRename() { return }
         if drainCreation() { return }
+        if drainCorrection() { return }
         if drainControlCommand() { return }
         if !sleeping {
             if pendingRefresh {
@@ -711,6 +771,129 @@ public final class TrackerSession {
         guard task.name == intent.originalName else {
             rename.requireReview("The task name changed on another client. Cancel and reopen the editor to review its current name.")
             return false
+        }
+        return true
+    }
+
+    private func currentCorrectionWorklog(_ intent: WorklogCorrectionState.Intent,
+                                          snapshot: TrackerSnapshot, token: Int) async throws -> WorklogItem? {
+        if let active = snapshot.active, active.id == intent.expected.id { return active }
+        let taskID = intent.expected.taskId
+        if snapshot.tasks.contains(where: { $0.id == taskID }) {
+            var cursor: String?
+            var seen = Set<String>()
+            let loadedPages = selectedTaskID == taskID ? (worklogs.count + 49) / 50 : 0
+            let pageLimit = max(intent.historyPageLimit, loadedPages + 1)
+            var pagesRead = 0
+            repeat {
+                guard pagesRead < pageLimit else {
+                    throw BridgeFailure(message: "Could not verify this worklog within the history limit. Cancel and reopen the editor before retrying.")
+                }
+                pagesRead += 1
+                let page = try await client.history(taskID: taskID, cursor: cursor)
+                guard isCurrent(token), !sleeping else { return nil }
+                if let worklog = page.worklogs.first(where: { $0.id == intent.expected.id }) { return worklog }
+                cursor = page.nextCursor
+                if let cursor, !seen.insert(cursor).inserted {
+                    throw BridgeFailure(message: "Worklog history returned a repeated cursor.", kind: "protocol")
+                }
+            } while cursor != nil
+        }
+        return nil
+    }
+
+    private func correctionCanApply(_ intent: WorklogCorrectionState.Intent, latest: WorklogItem?,
+                                    resolveCommitted: Bool) -> Bool {
+        guard let latest else {
+            correction.requireReview(latest: nil, message: "This worklog was moved or deleted. Cancel the editor and refresh history.")
+            return false
+        }
+        if resolveCommitted && intent.matchesReplacement(latest) {
+            correction.reset()
+            history.clearAfterCorrection()
+            requestHistory()
+            return false
+        }
+        guard latest == intent.expected else {
+            correction.requireReview(latest: latest, message: "This worklog changed. Review its latest times before saving.")
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    private func drainCorrection() -> Bool {
+        guard running, !sleeping, !isBusy, let intent = correction.takePendingIntent() else { return false }
+        let token = generation
+        beginOperation()
+        Task { [weak self] in
+            guard let self, isCurrent(token) else { return }
+            defer { finishOperation(token: token) }
+            var commandStarted = false
+            do {
+                let snapshot = try await client.snapshot()
+                guard isCurrent(token) else { return }
+                acceptSnapshot(snapshot)
+                if sleeping { correction.deferUntilWake(); return }
+                let latest = try await currentCorrectionWorklog(intent, snapshot: snapshot, token: token)
+                guard isCurrent(token) else { return }
+                if sleeping { correction.deferUntilWake(); return }
+                guard correctionCanApply(intent, latest: latest, resolveCommitted: true) else { return }
+                commandStarted = true
+                let result = try await client.correctWorklog(expected: intent.expected,
+                                                              replacementStart: intent.replacementStart,
+                                                              replacementEnd: intent.replacementEnd,
+                                                              occurredAt: intent.occurredAt)
+                guard isCurrent(token) else { return }
+                guard intent.matchesReplacement(result.worklog),
+                      result.snapshot.tasks.contains(where: { $0.id == result.worklog.taskId }),
+                      (result.worklog.end == nil ? result.snapshot.active == result.worklog : result.snapshot.active?.id != result.worklog.id) else {
+                    throw BridgeFailure(message: "The correction response does not contain the updated worklog.",
+                                        kind: "protocol", uncertain: true, requiresRefresh: true)
+                }
+                correction.reset()
+                acceptSnapshot(result.snapshot)
+                history.clearAfterCorrection()
+                requestHistory()
+            } catch {
+                guard isCurrent(token) else { return }
+                let failure = error as? BridgeFailure
+                let uncertain = failure == nil || failure?.uncertain == true ||
+                    failure?.kind == "unavailable" || failure?.kind == "protocol"
+                var reconciled = false
+                if commandStarted {
+                    if let snapshot = await reconcileWriteFailure(token: token) {
+                        if sleeping {
+                            correction.fail(error, retainIntent: true)
+                            publish()
+                            return
+                        }
+                        do {
+                            let latest = try await currentCorrectionWorklog(intent, snapshot: snapshot, token: token)
+                            guard isCurrent(token) else { return }
+                            if sleeping {
+                                correction.fail(error, retainIntent: true)
+                                publish()
+                                return
+                            }
+                            reconciled = true
+                            guard correctionCanApply(intent, latest: latest, resolveCommitted: uncertain) else { return }
+                            if failure?.kind == "worklog_changed" {
+                                correction.requireReview(latest: latest,
+                                                         message: "This worklog changed. Review its latest times before saving.")
+                                publish()
+                                return
+                            }
+                        } catch {
+                            guard isCurrent(token) else { return }
+                            recordConnectionFailure(error)
+                        }
+                    }
+                } else if uncertain || failure?.requiresRefresh == true { recordConnectionFailure(error) }
+                guard isCurrent(token) else { return }
+                correction.fail(error, retainIntent: uncertain || (commandStarted && !reconciled))
+                publish()
+            }
         }
         return true
     }
@@ -898,6 +1081,7 @@ public final class TrackerSession {
         let previousActive = active
         automation.observeActive(snapshot.active)
         tracking.apply(snapshot.active, clock: clock)
+        if let active = snapshot.active { correction.observe(active) }
         if reports != nil && requestReport { dailyTotals.invalidate() }
         if catalog.apply(snapshot.tasks, previousActive: previousActive, active: active) {
             requestHistory()
@@ -962,6 +1146,7 @@ public final class TrackerSession {
                 let page = try await client.history(taskID: taskID, cursor: cursor)
                 guard isCurrent(token), historyToken == history.generation, taskID == selectedTaskID else { return }
                 history.accept(page, cursor: cursor)
+                for worklog in page.worklogs { correction.observe(worklog) }
             } catch {
                 guard isCurrent(token), historyToken == history.generation, taskID == selectedTaskID else { return }
                 history.unavailable = true

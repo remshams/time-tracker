@@ -14,6 +14,7 @@ public final class TrackerPresentationObserver {
     public var onTaskDailyTotalsChange: ((Set<String>) -> Void)?
     public var onTaskCreationChange: (() -> Void)?
     public var onTaskRenameChange: (() -> Void)?
+    public var onWorklogCorrectionChange: (() -> Void)?
 
     private var content: Content
     private var activity: Activity
@@ -23,6 +24,8 @@ public final class TrackerPresentationObserver {
     private var canOpenCreation: Bool
     private var rename: TaskRenamePresentation
     private var canOpenRename: Bool
+    private var correction: WorklogCorrectionPresentation
+    private var canOpenCorrection: Bool
 
     public var taskDailyTotals: [String: TaskDailyTotalPresentation] { daily.taskTotals }
 
@@ -35,6 +38,8 @@ public final class TrackerPresentationObserver {
         canOpenCreation = session.canOpenTaskCreation
         rename = session.taskRename
         canOpenRename = session.canOpenTaskRename
+        correction = session.worklogCorrection
+        canOpenCorrection = session.canOpenWorklogCorrection
     }
 
     public func update(from session: TrackerSession) {
@@ -46,6 +51,8 @@ public final class TrackerPresentationObserver {
         let nextCanOpenCreation = session.canOpenTaskCreation
         let nextRename = session.taskRename
         let nextCanOpenRename = session.canOpenTaskRename
+        let nextCorrection = session.worklogCorrection
+        let nextCanOpenCorrection = session.canOpenWorklogCorrection
         let contentChanged = content != nextContent
         let activityChanged = activity != nextActivity
         let timerChanged = timerText != nextTimerText
@@ -54,6 +61,7 @@ public final class TrackerPresentationObserver {
             .filter { daily.taskTotals[$0] != nextDaily.taskTotals[$0] }
         let creationChanged = creation != nextCreation || canOpenCreation != nextCanOpenCreation
         let renameChanged = rename != nextRename || canOpenRename != nextCanOpenRename
+        let correctionChanged = correction != nextCorrection || canOpenCorrection != nextCanOpenCorrection
         content = nextContent
         activity = nextActivity
         timerText = nextTimerText
@@ -62,6 +70,8 @@ public final class TrackerPresentationObserver {
         canOpenCreation = nextCanOpenCreation
         rename = nextRename
         canOpenRename = nextCanOpenRename
+        correction = nextCorrection
+        canOpenCorrection = nextCanOpenCorrection
         if contentChanged { onContentChange?() }
         if activityChanged { onActivityChange?() }
         if timerChanged { onTimerChange?() }
@@ -69,6 +79,7 @@ public final class TrackerPresentationObserver {
         if !changedTaskTotals.isEmpty { onTaskDailyTotalsChange?(changedTaskTotals) }
         if creationChanged { onTaskCreationChange?() }
         if renameChanged { onTaskRenameChange?() }
+        if correctionChanged { onWorklogCorrectionChange?() }
     }
 
     private struct DailyPresentation: Equatable {
