@@ -1,6 +1,6 @@
 use tracker_domain::{TaskId, TaskName, Worklog};
 
-use crate::support::task_search::{SearchRank, fuzzy_match};
+use tracker_application::{MoveCandidate, TaskListItem, move_candidates_for_tasks};
 
 /// Which part of the move dialog receives keyboard input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9,43 +9,22 @@ pub enum MoveFocus {
     Results,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MoveCandidate {
-    id: TaskId,
-    name: String,
-    rank: SearchRank,
-}
-
-impl MoveCandidate {
-    pub(crate) fn new(id: TaskId, name: String, rank: SearchRank) -> Self {
-        Self { id, name, rank }
-    }
-
-    pub(crate) fn id(&self) -> TaskId {
-        self.id
-    }
-
-    pub(crate) fn name(&self) -> &str {
-        &self.name
-    }
-}
-
 /// The selected worklog and filtered destination candidates for a move dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MoveDraft {
     worklog: Worklog,
-    candidates: Vec<MoveCandidate>,
+    tasks: Vec<TaskListItem>,
     query: String,
-    results: Vec<usize>,
+    results: Vec<MoveCandidate>,
     selected: Option<usize>,
     focus: MoveFocus,
 }
 
 impl MoveDraft {
-    pub(crate) fn new(worklog: Worklog, candidates: Vec<MoveCandidate>) -> Self {
+    pub(crate) fn new(worklog: Worklog, tasks: Vec<TaskListItem>) -> Self {
         let mut draft = Self {
             worklog,
-            candidates,
+            tasks,
             query: String::new(),
             results: Vec::new(),
             selected: None,
@@ -68,7 +47,7 @@ impl MoveDraft {
     }
 
     pub(crate) fn results(&self) -> impl Iterator<Item = &MoveCandidate> {
-        self.results.iter().map(|index| &self.candidates[*index])
+        self.results.iter()
     }
 
     pub(crate) fn result_count(&self) -> usize {
@@ -78,7 +57,7 @@ impl MoveDraft {
     pub(crate) fn selected_task_id(&self) -> Option<TaskId> {
         self.selected
             .and_then(|index| self.results.get(index))
-            .map(|index| self.candidates[*index].id())
+            .map(|candidate| candidate.id)
     }
 
     pub(crate) fn selected_result_index(&self) -> Option<usize> {
@@ -118,16 +97,7 @@ impl MoveDraft {
     }
 
     fn refilter(&mut self) {
-        let mut results = self
-            .candidates
-            .iter()
-            .enumerate()
-            .filter_map(|(index, candidate)| {
-                fuzzy_match(&candidate.name, &self.query).then_some(index)
-            })
-            .collect::<Vec<_>>();
-        results.sort_by_key(|index| self.candidates[*index].rank);
-        self.results = results;
+        self.results = move_candidates_for_tasks(&self.tasks, self.worklog.task_id(), &self.query);
         self.selected = (!self.results.is_empty()).then_some(0);
     }
 }
@@ -136,7 +106,8 @@ impl MoveDraft {
 mod tests {
     use super::*;
     use chrono::{DateTime, Utc};
-    use tracker_domain::{WorklogId, WorklogTimes};
+    use tracker_application::task_search::fuzzy_match;
+    use tracker_domain::{Task, WorklogId, WorklogTimes};
 
     fn worklog() -> Worklog {
         Worklog::new(
@@ -148,17 +119,18 @@ mod tests {
         .unwrap()
     }
 
-    fn candidate(name: &str, created_seconds: i64, activity_seconds: i64) -> MoveCandidate {
-        let id = TaskId::generate();
-        MoveCandidate::new(
-            id,
-            name.to_owned(),
-            SearchRank::new(
-                id,
+    fn candidate(name: &str, created_seconds: i64, activity_seconds: i64) -> TaskListItem {
+        TaskListItem {
+            task: Task::rehydrate(
+                TaskId::generate(),
+                TaskName::new(name).unwrap(),
+                false,
                 DateTime::<Utc>::from_timestamp(created_seconds, 0).unwrap(),
                 DateTime::<Utc>::from_timestamp(activity_seconds, 0).unwrap(),
-            ),
-        )
+            )
+            .unwrap(),
+            latest_work_start: None,
+        }
     }
 
     #[test]
@@ -169,8 +141,11 @@ mod tests {
         draft.insert('b');
         draft.insert('u');
         assert_eq!(
-            draft.results().map(MoveCandidate::id).collect::<Vec<_>>(),
-            vec![blue.id(), build.id()]
+            draft
+                .results()
+                .map(|candidate| candidate.id)
+                .collect::<Vec<_>>(),
+            vec![blue.task.id(), build.task.id()]
         );
         assert!(fuzzy_match("Build release", "BSE"));
         assert!(!fuzzy_match("Build release", "BX"));
@@ -178,20 +153,20 @@ mod tests {
 
     #[test]
     fn filtering_ranks_by_recent_activity_then_creation() {
-        let alpha = candidate("alpha", 2, 2);
-        let alpine = candidate("alpine", 3, 2);
+        let alpha = candidate("alpha", 2, 4);
+        let alpine = candidate("alpine", 3, 4);
         let beta = candidate("beta", 1, 1);
         let mut draft = MoveDraft::new(worklog(), vec![alpha.clone(), alpine.clone(), beta]);
-        assert_eq!(draft.selected_task_id(), Some(alpine.id()));
+        assert_eq!(draft.selected_task_id(), Some(alpine.task.id()));
         draft.move_down();
         draft.insert('a');
-        assert_eq!(draft.selected_task_id(), Some(alpine.id()));
+        assert_eq!(draft.selected_task_id(), Some(alpine.task.id()));
         draft.insert('l');
-        assert_eq!(draft.selected_task_id(), Some(alpine.id()));
+        assert_eq!(draft.selected_task_id(), Some(alpine.task.id()));
         draft.insert('z');
         assert_eq!(draft.selected_task_id(), None);
         draft.backspace();
-        assert_eq!(draft.selected_task_id(), Some(alpine.id()));
+        assert_eq!(draft.selected_task_id(), Some(alpine.task.id()));
     }
 
     #[test]

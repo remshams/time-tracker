@@ -2,7 +2,7 @@ use tracker_application::ApplicationFailureCategory;
 
 use crate::app::AppState;
 use crate::application_request::{ApplicationOutcome, ApplicationRequest};
-use crate::screens::worklog_history::move_worklog::{MoveCandidate, MoveDraft};
+use crate::screens::worklog_history::move_worklog::MoveDraft;
 use crate::screens::{Screen, TaskView};
 use crate::support::errors::application_error_text;
 
@@ -299,22 +299,10 @@ impl AppState {
         else {
             return;
         };
-        let candidates = self
-            .catalog()
-            .tasks(TaskView::Active)
-            .iter()
-            .filter(|task| task.id() != worklog.task_id())
-            .map(|task| {
-                MoveCandidate::new(
-                    task.id(),
-                    task.name().to_string(),
-                    self.catalog().search_rank(task.id()),
-                )
-            })
-            .collect();
+        let tasks = self.catalog().move_task_snapshot();
         let state = self.global_mut();
         state.move_draft_generation = state.move_draft_generation.wrapping_add(1);
-        state.move_draft = Some(MoveDraft::new(worklog, candidates));
+        state.move_draft = Some(MoveDraft::new(worklog, tasks));
         self.shell_mut().info("Choose a destination task");
     }
 
@@ -333,8 +321,8 @@ impl AppState {
                 let destination = draft.selected_task_id()?;
                 let name = draft
                     .results()
-                    .find(|candidate| candidate.id() == destination)?
-                    .name()
+                    .find(|candidate| candidate.id == destination)?
+                    .name
                     .to_owned();
                 Some((draft.worklog().clone(), destination, name))
             })

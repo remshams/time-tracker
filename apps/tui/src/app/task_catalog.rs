@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use chrono::{DateTime, Utc};
 use tracker_application::{TaskListItem, TaskOrdering};
 use tracker_domain::{Task, TaskId};
 
@@ -11,17 +12,20 @@ pub(crate) struct TaskCatalog {
     active_tasks: Vec<Task>,
     archived_tasks: Vec<Task>,
     search_ranks: HashMap<TaskId, SearchRank>,
+    latest_work_starts: HashMap<TaskId, Option<DateTime<Utc>>>,
     ordering: TaskOrdering,
 }
 
 impl TaskCatalog {
     pub(crate) fn new(items: Vec<TaskListItem>) -> Self {
         let search_ranks = search_ranks(&items);
+        let latest_work_starts = latest_work_starts(&items);
         let (active_tasks, archived_tasks) = split_tasks(items);
         Self {
             active_tasks,
             archived_tasks,
             search_ranks,
+            latest_work_starts,
             ordering: TaskOrdering::default(),
         }
     }
@@ -44,6 +48,16 @@ impl TaskCatalog {
             .collect::<Vec<_>>();
         matches.sort_by_key(|task| self.search_rank(task.id()));
         matches
+    }
+
+    pub(crate) fn move_task_snapshot(&self) -> Vec<TaskListItem> {
+        self.active_tasks
+            .iter()
+            .map(|task| TaskListItem {
+                task: task.clone(),
+                latest_work_start: self.latest_work_starts[&task.id()],
+            })
+            .collect()
     }
 
     pub(crate) fn search_rank(&self, id: TaskId) -> SearchRank {
@@ -86,6 +100,7 @@ impl TaskCatalog {
     ) -> Option<TaskId> {
         let previous_index = selected_index(self.tasks(view), selected);
         self.search_ranks = search_ranks(&items);
+        self.latest_work_starts = latest_work_starts(&items);
         (self.active_tasks, self.archived_tasks) = split_tasks(items);
         let visible = self.tasks(view);
         selected
@@ -97,6 +112,13 @@ impl TaskCatalog {
                     .map(Task::id)
             })
     }
+}
+
+fn latest_work_starts(items: &[TaskListItem]) -> HashMap<TaskId, Option<DateTime<Utc>>> {
+    items
+        .iter()
+        .map(|item| (item.task.id(), item.latest_work_start))
+        .collect()
 }
 
 fn search_ranks(items: &[TaskListItem]) -> HashMap<TaskId, SearchRank> {
@@ -206,6 +228,38 @@ mod tests {
             catalog.visible_tasks(TaskView::Active, Some("bt"))[0].id(),
             book_id
         );
+    }
+
+    #[test]
+    fn move_destinations_follow_work_activity_after_catalog_reload() {
+        let source = item("Source", 100, None);
+        let first = item("Build testing", 200, Some(900));
+        let second = item("Book travel", 300, None);
+        let source_id = source.task.id();
+        let first_id = first.task.id();
+        let second_id = second.task.id();
+        let mut catalog = TaskCatalog::new(vec![source.clone(), first.clone(), second.clone()]);
+        let destinations = |catalog: &TaskCatalog| {
+            tracker_application::move_candidates_for_tasks(
+                &catalog.move_task_snapshot(),
+                source_id,
+                "bt",
+            )
+            .into_iter()
+            .map(|candidate| candidate.id)
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(destinations(&catalog), vec![first_id, second_id]);
+        let refreshed = TaskListItem {
+            latest_work_start: Some(at(1_000)),
+            ..second
+        };
+        catalog.reload(
+            vec![source, first, refreshed],
+            TaskView::Active,
+            Some(source_id),
+        );
+        assert_eq!(destinations(&catalog), vec![second_id, first_id]);
     }
 
     #[test]

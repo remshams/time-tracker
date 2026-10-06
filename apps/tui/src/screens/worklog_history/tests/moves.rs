@@ -52,7 +52,7 @@ fn move_opens_for_completed_and_running_worklogs_with_active_destination_search(
         assert_eq!(draft.selected_task_id(), Some(beta.id()));
         let candidates = draft
             .results()
-            .map(|candidate| candidate.id())
+            .map(|candidate| candidate.id)
             .collect::<Vec<_>>();
         assert_eq!(candidates, vec![beta.id(), gamma.id()]);
         assert!(!candidates.contains(&source.id()));

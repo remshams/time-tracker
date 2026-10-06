@@ -114,7 +114,7 @@ pub(crate) fn render_move_modal(
                     } else {
                         "  "
                     };
-                    let name = format!("{marker}{}", candidate.name());
+                    let name = format!("{marker}{}", candidate.name);
                     if draft.focus() == MoveFocus::Results && selected == Some(index) {
                         Line::from(Span::styled(name, styles::selected()))
                     } else {
