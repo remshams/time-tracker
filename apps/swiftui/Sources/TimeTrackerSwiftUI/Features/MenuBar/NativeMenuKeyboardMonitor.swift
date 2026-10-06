@@ -37,7 +37,8 @@ final class NativeMenuKeyboardMonitor {
             }
         }
         self.observer = observer
-        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, RunLoop.Mode.eventTracking.rawValue as CFString)
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer,
+                             CFRunLoopMode(RunLoop.Mode.eventTracking.rawValue as CFString))
         // The queued block runs only after AppKit has entered its menu tracking loop.
         RunLoop.main.perform(inModes: [.eventTracking]) {
             MainActor.assumeIsolated {
@@ -52,7 +53,8 @@ final class NativeMenuKeyboardMonitor {
         session?.tracking = false
         session = nil
         if let observer {
-            CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, RunLoop.Mode.eventTracking.rawValue as CFString)
+            CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer,
+                                    CFRunLoopMode(RunLoop.Mode.eventTracking.rawValue as CFString))
         }
         observer = nil
     }
