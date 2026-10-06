@@ -87,20 +87,20 @@ final class TrackerStatusItemController: NSObject {
     private func updateLabel() {
         guard let button = statusItem?.button else { return }
         let label = store.menu.label.content
-        button.image = TaskDotImage.make(
-            color: label.indicator.color,
-            isRunning: label.indicator.isRunning,
-            appearance: button.effectiveAppearance)
-        let total = label.totalText.map { " \($0)" } ?? ""
-        button.attributedTitle = NSAttributedString(
-            string: total,
-            attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
-                .foregroundColor: NSColor.labelColor,
-            ])
+        button.image = TaskDotImage.make(color: label.indicator.color,
+                                        isRunning: label.indicator.isRunning,
+                                        appearance: button.effectiveAppearance)
+        let text = label.text.map { " \($0)" } ?? ""
+        let font = label.display == .time
+            ? NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+            : NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        button.attributedTitle = NSAttributedString(string: text, attributes: [
+            .font: font,
+            .foregroundColor: NSColor.labelColor
+        ])
         button.toolTip = label.help
         button.setAccessibilityLabel(label.status)
-        button.setAccessibilityValue(label.totalText ?? "")
+        button.setAccessibilityValue(label.text ?? "")
         button.setAccessibilityHelp(
             "\(label.help)\nClick to start or stop tracking. Right-click or use the Open menu shortcut to open the menu."
         )

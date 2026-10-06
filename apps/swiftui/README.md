@@ -303,13 +303,13 @@ The native menu uses a separate immutable presentation snapshot. The controller 
 
 After connection failures, visible polling backs off to 5, 10, 20, 40, then 60 seconds. Background polling stays at least 60 seconds. A protocol mismatch stops automatic retries until you reopen the UI or click Retry. Opening the UI and waking the Mac request an immediate refresh. Sleep pauses scheduled polling; an already running request may finish.
 
-The elapsed timer redraws once a second only while UI is visible and a timer is active. That tick makes no network request. The daily totals adapter owns a separate one-minute clock while tracking runs and the status bar total is enabled, so the status bar total advances when windows and menus are closed. It reads the locally advancing total and does not enable foreground polling or the session's one-second display timer. The minute clock stops when tracking is idle and allows five seconds of tolerance for macOS to coalesce wakeups. These rules reduce unnecessary work, but battery impact has not been measured.
+The elapsed timer redraws once a second only while UI is visible and a timer is active. That tick makes no network request. The daily totals adapter owns a separate one-minute clock while tracking runs and the menu bar display is set to Time, so the status bar total advances when windows and menus are closed. It reads the locally advancing total and does not enable foreground polling or the session's one-second display timer. The minute clock stops when tracking is idle and allows five seconds of tolerance for macOS to coalesce wakeups. These rules reduce unnecessary work, but battery impact has not been measured.
 
 ## Appearance and history
 
 The app follows macOS light and dark mode through SwiftUI colors and background styles. The AppKit menu uses the application appearance and adaptive text and task colors, with accessible tracking labels. The sidebar keeps macOS's native selection appearance. The task heading stays above the scrolling history and wraps to three lines. Hover over a task name to read its full text.
 
-The Active and Archived tabs remember their selections. Worklogs load 50 at a time. The status bar shows today's combined total. Its menu shows the current task, elapsed time, connection status, today's task totals, tracking actions, and commands to open the window or quit. Closing the window leaves the menu bar item running.
+The Active and Archived tabs remember their selections. Worklogs load 50 at a time. The status bar can show today's combined total, the running task name, or just the icon. Choose Time, Task name, or None in Settings > Menu bar. Long task names shorten to 24 characters with an ellipsis; hover over the icon to read the full name. Existing preferences keep their previous time or icon-only choice. Its menu shows the current task, elapsed time, connection status, today's task totals, tracking actions, and commands to open the window or quit. Closing the window leaves the menu bar item running.
 
 ## Check on a Mac
 

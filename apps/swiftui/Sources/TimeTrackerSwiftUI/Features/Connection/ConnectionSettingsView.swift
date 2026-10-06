@@ -73,14 +73,19 @@ struct ConnectionSettingsView: View {
                 }
 
                 Section("Menu bar") {
-                    Toggle(
-                        "Show today's total next to the icon",
-                        isOn: Binding(
-                            get: { store.showDailyTotalInMenuBar },
-                            set: { store.setShowDailyTotalInMenuBar($0) }
-                        )
-                    )
-                    .accessibilityIdentifier("menu.show-daily-total")
+                    Picker("Text next to the icon", selection: Binding(
+                        get: { store.menuBarDisplay },
+                        set: { store.setMenuBarDisplay($0) }
+                    )) {
+                        Text("Time").tag(MenuBarDisplay.time)
+                        Text("Task name").tag(MenuBarDisplay.taskName)
+                        Text("None").tag(MenuBarDisplay.none)
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityIdentifier("menu.display")
+                    Text("Time shows today's total. Task name shows the running task. Hover over the icon to read the full task name.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Section("Menu shortcut") {
