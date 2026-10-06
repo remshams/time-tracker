@@ -43,7 +43,7 @@ struct TaskDetails: View {
                 Divider()
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                        WorklogHistoryHeading(correction: store.correction)
+                        WorklogHistoryHeading(correction: store.correction, move: store.move)
                         errorView
 
                         if store.worklogs.isEmpty && store.error == nil {
@@ -54,7 +54,7 @@ struct TaskDetails: View {
 
                         ForEach(store.worklogs) { worklog in
                             WorklogRow(worklog: worklog, active: store.active, timer: store.timer,
-                                       correction: store.correction)
+                                       correction: store.correction, move: store.move)
                         }
 
                         if store.hasMoreHistory {
@@ -72,6 +72,7 @@ struct TaskDetails: View {
                         .font(.title3)
                         .foregroundStyle(.secondary)
                     PendingWorklogCorrectionButton(correction: store.correction)
+                    PendingWorklogMoveButton(move: store.move)
                 }
                 .padding(24)
             }

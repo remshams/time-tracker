@@ -6,6 +6,7 @@ struct WorklogRow: View {
     let active: WorklogItem?
     let timer: TrackerTimerStore
     let correction: WorklogCorrectionStore
+    let move: WorklogMoveStore
 
     private var duration: TimeInterval {
         guard let start = timestamp(worklog.start), let end = timestamp(worklog.end) else { return 0 }
@@ -34,7 +35,7 @@ struct WorklogRow: View {
                 .foregroundStyle(.primary)
                 .monospacedDigit()
                 .fixedSize()
-            WorklogEditButton(correction: correction, worklogID: worklog.id)
+            WorklogActionsMenu(correction: correction, move: move, worklogID: worklog.id)
         }
         .padding(16)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
@@ -43,36 +44,43 @@ struct WorklogRow: View {
                 .stroke(.quaternary, lineWidth: 1)
         }
         .contextMenu {
-            WorklogContextMenu(correction: correction, worklogID: worklog.id)
+            WorklogContextMenu(correction: correction, move: move, worklogID: worklog.id)
         }
     }
 }
 
 @MainActor
-private struct WorklogEditButton: View {
+private struct WorklogActionsMenu: View {
     @ObservedObject var correction: WorklogCorrectionStore
+    @ObservedObject var move: WorklogMoveStore
     let worklogID: String
 
     var body: some View {
-        Button {
-            correction.open(worklogID: worklogID)
+        Menu {
+            WorklogContextMenu(correction: correction, move: move, worklogID: worklogID)
         } label: {
-            Label("Edit times...", systemImage: "pencil")
+            Label("Worklog actions", systemImage: "ellipsis.circle")
                 .labelStyle(.iconOnly)
         }
-        .buttonStyle(.borderless)
-        .disabled(!correction.canOpen || correction.state.isPresented)
-        .help("Edit worklog times")
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(correction.state.isPresented || move.state.isPresented ||
+                  (!correction.canOpen && !move.canOpen))
+        .help("Worklog actions")
     }
 }
 
 @MainActor
 private struct WorklogContextMenu: View {
     @ObservedObject var correction: WorklogCorrectionStore
+    @ObservedObject var move: WorklogMoveStore
     let worklogID: String
 
     var body: some View {
         Button("Edit times...") { correction.open(worklogID: worklogID) }
             .disabled(!correction.canOpen || correction.state.isPresented)
+        Button("Move to task...") { move.open(worklogID: worklogID) }
+            .disabled(!move.canOpen || move.state.isPresented)
     }
 }

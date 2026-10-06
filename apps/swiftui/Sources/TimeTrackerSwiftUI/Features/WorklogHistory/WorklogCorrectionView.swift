@@ -131,12 +131,14 @@ private struct WorklogCorrectionSheet: View {
 @MainActor
 struct WorklogHistoryHeading: View {
     @ObservedObject var correction: WorklogCorrectionStore
+    @ObservedObject var move: WorklogMoveStore
 
     var body: some View {
         HStack {
             Text("Worklogs").font(.title3.weight(.semibold))
             Spacer()
             PendingWorklogCorrectionButton(correction: correction)
+            PendingWorklogMoveButton(move: move)
         }
         .padding(.bottom, 4)
     }
