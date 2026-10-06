@@ -4,18 +4,13 @@ import Carbon
 import TrackerClient
 
 @MainActor
-final class TrackerStatusItemController: NSObject, NSMenuDelegate {
+final class TrackerStatusItemController: NSObject {
     private let store: TrackerStore
     private var statusItem: NSStatusItem?
     private var subscriptions = Set<AnyCancellable>()
     private var appearanceObservation: NSKeyValueObservation?
     private var openWindow: (() -> Void)?
     private var nativeMenu: NSMenu?
-    private var menuContent: TrackerMenuContent?
-    private var menuConnection: ConnectionSettings?
-    private var openMenus: [NSMenu] = []
-    private var keyMonitor: NativeMenuKeyboardMonitor?
-    private var keyRouter = MenuTrackingKeyRouter()
     private var shortcutRegistration: GlobalMenuShortcutRegistration?
 
     init(store: TrackerStore) {
@@ -69,7 +64,6 @@ final class TrackerStatusItemController: NSObject, NSMenuDelegate {
     }
 
     func stop() {
-        keyMonitor?.stop()
         nativeMenu?.cancelTracking()
         shortcutRegistration?.unregister()
         shortcutRegistration = nil
@@ -121,25 +115,9 @@ final class TrackerStatusItemController: NSObject, NSMenuDelegate {
         let content = store.menu.content
         let menu = makeMenu(content, appearance: NSApplication.shared.effectiveAppearance)
         nativeMenu = menu
-        menuContent = content
-        menuConnection = store.connectionSettings
-        openMenus = [menu]
-        keyRouter.reset()
-        let monitor = NativeMenuKeyboardMonitor(
-            route: { [weak self] event in self?.routeKey(event) ?? .passThrough },
-            perform: { [weak self] action in self?.performKeyAction(action) }
-        )
-        keyMonitor = monitor
-        monitor.start()
         button.highlight(true)
         defer {
-            monitor.stop()
-            keyMonitor = nil
-            keyRouter.reset()
-            openMenus.removeAll()
             nativeMenu = nil
-            menuContent = nil
-            menuConnection = nil
             button.highlight(false)
             store.menuClosed()
         }
@@ -148,41 +126,8 @@ final class TrackerStatusItemController: NSObject, NSMenuDelegate {
         menu.popUp(positioning: nil, at: anchor, in: button)
     }
 
-    func menuWillOpen(_ menu: NSMenu) {
-        guard nativeMenu != nil, !openMenus.contains(where: { $0 === menu }) else { return }
-        openMenus.append(menu)
-    }
-
-    func menuDidClose(_ menu: NSMenu) {
-        if let index = openMenus.firstIndex(where: { $0 === menu }) {
-            openMenus.removeSubrange(index...)
-        }
-        if menu === nativeMenu { keyMonitor?.stop() }
-    }
-
-    private func routeKey(_ event: NSEvent) -> MenuTrackingKeyResult {
-        guard nativeMenu != nil, !openMenus.isEmpty else { return .passThrough }
-        let shortcut = MenuShortcut(event: event)
-        return keyRouter.route(keyCode: event.keyCode, key: shortcut?.key,
-                               modifiers: shortcut?.modifiers ?? [],
-                               phase: event.type == .keyUp ? .up : .down,
-                               isRepeat: event.isARepeat, shortcuts: store.menuShortcuts)
-    }
-
-    private func performKeyAction(_ action: MenuShortcutAction) {
-        switch action {
-        case .openMenu: nativeMenu?.cancelTracking()
-        case .copyName, .copyExact, .copyRounded: copyValue(action)
-        case .moveDown, .moveUp: break
-        }
-    }
-
-    private func copyValue(_ action: MenuShortcutAction) {
-        guard let item = openMenus.last?.highlightedItem,
-              let actionIdentity = item.representedObject as? MenuAction,
-              case .start(let id) = actionIdentity,
-              let connection = menuConnection,
-              let value = store.menuCopyValue(action, taskID: id, connection: connection) else {
+    private func copyValue(_ action: MenuShortcutAction, taskID: String, connection: ConnectionSettings) {
+        guard let value = store.menuCopyValue(action, taskID: taskID, connection: connection) else {
             NSSound.beep()
             return
         }
@@ -193,7 +138,6 @@ final class TrackerStatusItemController: NSObject, NSMenuDelegate {
 
     private func makeMenu(_ content: TrackerMenuContent, appearance: NSAppearance) -> NSMenu {
         let menu = NSMenu()
-        menu.delegate = self
         menu.appearance = appearance
         menu.autoenablesItems = false
         addText(content.connectionStatusText, to: menu)
@@ -211,7 +155,7 @@ final class TrackerStatusItemController: NSObject, NSMenuDelegate {
         for entry in content.todayTasks {
             let archived = entry.task.archived ? "  Archived" : ""
             addTask(entry, title: "\(entry.task.name)  \(entry.durationText)\(archived)",
-                    help: content.totalsExplanation, isStale: content.isStale,
+                    help: content.totalsExplanation, content: content,
                     appearance: appearance, to: menu)
         }
         if content.todayTasks.isEmpty {
@@ -226,11 +170,10 @@ final class TrackerStatusItemController: NSObject, NSMenuDelegate {
         }
         if !content.otherTasks.isEmpty {
             let submenu = NSMenu(title: "Start tracking")
-            submenu.delegate = self
             submenu.appearance = appearance
             submenu.autoenablesItems = false
             for entry in content.otherTasks {
-                addTask(entry, title: entry.task.name, help: nil, isStale: content.isStale,
+                addTask(entry, title: entry.task.name, help: nil, content: content,
                         appearance: appearance, to: submenu)
             }
             let parent = NSMenuItem(title: "Start tracking", action: nil, keyEquivalent: "")
@@ -245,10 +188,32 @@ final class TrackerStatusItemController: NSObject, NSMenuDelegate {
     }
 
     private func addTask(_ entry: TrackerMenuTask, title: String, help: String?,
-                         isStale: Bool, appearance: NSAppearance, to menu: NSMenu) {
-        let isRunning = entry.isRunning && !isStale
-        // All task rows can be highlighted for copying; activation is checked separately.
-        let item = addAction(title, action: .start(entry.id), to: menu)
+                         content: TrackerMenuContent, appearance: NSAppearance, to menu: NSMenu) {
+        let isRunning = entry.isRunning && !content.isStale
+        let trackingAction = entry.trackingAction(in: content).map { action -> MenuAction in
+            switch action {
+            case .start(let taskID): return .start(taskID)
+            case .stop(let worklogID): return .stop(worklogID)
+            }
+        }
+        let submenu = NSMenu(title: entry.task.name)
+        submenu.appearance = appearance
+        submenu.autoenablesItems = false
+        addAction(entry.isRunning ? "Stop tracking" : "Start tracking",
+                  action: trackingAction, enabled: trackingAction != nil, to: submenu)
+        submenu.addItem(.separator())
+        for action in [MenuShortcutAction.copyName, .copyExact, .copyRounded] {
+            let available = store.menuCopyValue(action, taskID: entry.id,
+                                                connection: store.connectionSettings) != nil
+            addAction(action.title, action: .copy(action, entry.id), enabled: available, to: submenu)
+        }
+        let item = addAction(title, action: trackingAction, to: menu)
+        item.submenu = submenu
+        if trackingAction != nil {
+            // Setting a submenu assigns submenuAction; restore the row's tracking action afterward.
+            item.target = self
+            item.action = #selector(selected(_:))
+        }
         if isRunning {
             item.attributedTitle = NSAttributedString(string: title, attributes: [
                 .font: NSFont.boldSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize)
@@ -259,9 +224,9 @@ final class TrackerStatusItemController: NSObject, NSMenuDelegate {
         if #available(macOS 27.0, *) {
             item.preferredImageVisibility = .visible
         }
-        item.toolTip = entry.canStart ? help : "Highlight this task and use a copy shortcut. Tracking is unavailable."
+        item.toolTip = trackingAction != nil ? help : "Open the submenu to copy this task's name or time. Tracking is unavailable."
         let status: String
-        if isStale {
+        if content.isStale {
             status = entry.isRunning ? "last confirmed tracking, current status unavailable"
                 : "current tracking status unavailable"
         } else { status = entry.isRunning ? "tracking" : "not tracking" }
@@ -289,31 +254,37 @@ final class TrackerStatusItemController: NSObject, NSMenuDelegate {
     }
 
     @discardableResult
-    private func addAction(_ title: String, action: MenuAction, enabled: Bool = true,
+    private func addAction(_ title: String, action: MenuAction?, enabled: Bool = true,
                            to menu: NSMenu) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: #selector(selected(_:)), keyEquivalent: "")
         item.target = self
-        item.representedObject = action
+        item.representedObject = action.map { MenuCommand(action: $0, connection: store.connectionSettings) }
         item.isEnabled = enabled
         menu.addItem(item)
         return item
     }
 
-    private enum MenuAction { case start(String), stop(String), openWindow, quit }
+    private enum MenuAction {
+        case start(String), stop(String), copy(MenuShortcutAction, String), openWindow, quit
+    }
+
+    private struct MenuCommand {
+        let action: MenuAction
+        let connection: ConnectionSettings
+    }
 
     @objc private func selected(_ item: NSMenuItem) {
-        guard let action = item.representedObject as? MenuAction else { return }
-        // The session validates these captured identities against its current snapshot.
-        switch action {
+        guard item.isEnabled, let command = item.representedObject as? MenuCommand else { return }
+        // The session also validates the captured task and worklog against its current state.
+        switch command.action {
         case .start(let id):
-            guard menuConnection == store.connectionSettings,
-                  let content = menuContent,
-                  (content.todayTasks + content.otherTasks).contains(where: { $0.id == id && $0.canStart }) else { return }
+            guard command.connection == store.connectionSettings else { return }
             store.startTracking(taskID: id)
         case .stop(let id):
-            guard menuConnection == store.connectionSettings,
-                  menuContent?.canStopTracking == true else { return }
+            guard command.connection == store.connectionSettings else { return }
             store.stopTracking(worklogID: id)
+        case .copy(let copyAction, let taskID):
+            copyValue(copyAction, taskID: taskID, connection: command.connection)
         case .openWindow:
             NSApplication.shared.activate(ignoringOtherApps: true)
             openWindow?()

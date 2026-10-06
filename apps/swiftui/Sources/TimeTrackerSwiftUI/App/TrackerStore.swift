@@ -94,7 +94,7 @@ final class TrackerStore {
 
     func setPauseOnScreenLock(_ enabled: Bool) { session.setPauseOnScreenLock(enabled) }
     func setMenuShortcut(_ action: MenuShortcutAction, shortcut: MenuShortcut) {
-        var candidate = menuShortcuts
+        var candidate = action == .openMenu ? MenuKeyboardShortcuts() : menuShortcuts
         candidate[action] = shortcut
         setMenuShortcuts(candidate)
     }

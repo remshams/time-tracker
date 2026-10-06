@@ -71,8 +71,8 @@ struct ConnectionSettingsView: View {
                     ))
                 }
 
-                Section("Keyboard shortcuts") {
-                    ForEach(MenuShortcutAction.allCases, id: \.self) { action in
+                Section("Menu shortcut") {
+                    ForEach([MenuShortcutAction.openMenu], id: \.self) { action in
                         HStack {
                             Text(action.title)
                             Spacer()
@@ -83,17 +83,17 @@ struct ConnectionSettingsView: View {
                             .accessibilityLabel("\(action.title) shortcut")
                         }
                     }
-                    Text("Click a shortcut and press its new keys. Escape cancels. Open menu opens the keyboard dropdown across apps. Mouse clicks keep the native menu. The other shortcuts work only in the keyboard dropdown. Arrow keys, Return and Escape keep their usual actions.")
+                    Text("Click the shortcut and press its new keys. Escape cancels. Open menu opens the native menu across apps. Use arrow keys to navigate and open task submenus for tracking and copying.")
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("Exact time includes seconds. Rounded time uses the nearest 15 minutes. Both copy today's total for the highlighted task.")
+                    Text("Task submenus can copy the task name, today's exact time, or today's time rounded to the nearest 15 minutes.")
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if let error = store.menuShortcutError {
                         Text(error).foregroundStyle(.red)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    Button("Restore default shortcuts") { store.resetMenuShortcuts() }
+                    Button("Restore default shortcut") { store.resetMenuShortcuts() }
                 }
 
                 Section {
