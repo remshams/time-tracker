@@ -4,8 +4,9 @@ use chrono::{DateTime, TimeDelta, Utc};
 use reqwest::{Method, StatusCode};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ApplicationFailureSource, ClearActiveTaskOutcome,
-    GlobalWorklogCursor, GlobalWorklogPage, ReportRow, ReportTotals, SetActiveTaskOutcome,
-    TaskListItem, TaskOrdering, TrackerSnapshot, WorklogCursor, WorklogPage, WorklogPageSnapshot,
+    GlobalWorklogCursor, GlobalWorklogPage, MoveCandidate, ReportRow, ReportTotals,
+    SetActiveTaskOutcome, TaskListItem, TaskOrdering, TrackerSnapshot, WorklogCursor, WorklogPage,
+    WorklogPageSnapshot,
 };
 use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingState, Worklog, WorklogId, WorklogTimes,
@@ -179,6 +180,15 @@ impl RemoteApplication {
         let mut items = self.snapshot.task_items.clone();
         ordering.sort_items(&mut items);
         items
+    }
+
+    /// Selects destinations from the last confirmed snapshot without network IO.
+    pub fn move_candidates(&self, source_task_id: TaskId, query: &str) -> Vec<MoveCandidate> {
+        tracker_application::move_candidates_for_tasks(
+            &self.snapshot.task_items,
+            source_task_id,
+            query,
+        )
     }
 
     pub fn task(&self, id: TaskId) -> Option<&Task> {
@@ -2026,6 +2036,32 @@ mod tests {
             created_at: at,
             updated_at: at,
         }
+    }
+
+    #[test]
+    fn move_candidates_use_the_last_confirmed_snapshot_without_network_access() {
+        let source = TaskId::generate();
+        let destination = TaskId::generate();
+        let archived = TaskId::generate();
+        let mut client = RemoteApplication::disconnected("http://127.0.0.1:1").unwrap();
+        assert!(client.move_candidates(source, "").is_empty());
+        let mut archived_task = task(archived);
+        archived_task.archived = true;
+        client.snapshot.task_items = vec![task(source), task(destination), archived_task]
+            .into_iter()
+            .map(|dto| TaskListItem {
+                task: decode_task(dto).unwrap(),
+                latest_work_start: None,
+            })
+            .collect();
+        let expected = vec![MoveCandidate {
+            id: destination,
+            name: "Project work".to_owned(),
+        }];
+        assert_eq!(client.move_candidates(source, ""), expected);
+        assert_eq!(client.move_candidates(source, "pW"), expected);
+        assert!(client.move_candidates(source, "zz").is_empty());
+        assert_eq!(client.last_failure, Some(RemoteFailureKind::Unavailable));
     }
 
     #[test]
