@@ -172,7 +172,6 @@ final class TrackerTaskDailyTotalStore {
 
 @MainActor
 final class TrackerMenuStore {
-    let objectWillChange = ObservableObjectPublisher()
     let label: TrackerMenuLabelStore
     private let session: TrackerSession
     private let presentation: TrackerMenuPresentationObserver
@@ -183,7 +182,6 @@ final class TrackerMenuStore {
         self.showDailyTotal = showDailyTotal
         presentation = TrackerMenuPresentationObserver(session: session, showDailyTotal: showDailyTotal)
         label = TrackerMenuLabelStore(presentation: presentation)
-        presentation.onContentChange = { [weak self] in self?.objectWillChange.send() }
     }
 
     var content: TrackerMenuContent { presentation.content }
@@ -245,14 +243,12 @@ final class TrackerTimerStore {
 #if compiler(>=6.2)
 extension TrackerStore: @MainActor ObservableObject {}
 extension TrackerTaskDailyTotalStore: @MainActor ObservableObject {}
-extension TrackerMenuStore: @MainActor ObservableObject {}
 extension TrackerMenuLabelStore: @MainActor ObservableObject {}
 extension TrackerActivityStore: @MainActor ObservableObject {}
 extension TrackerTimerStore: @MainActor ObservableObject {}
 #else
 extension TrackerStore: ObservableObject {}
 extension TrackerTaskDailyTotalStore: ObservableObject {}
-extension TrackerMenuStore: ObservableObject {}
 extension TrackerMenuLabelStore: ObservableObject {}
 extension TrackerActivityStore: ObservableObject {}
 extension TrackerTimerStore: ObservableObject {}

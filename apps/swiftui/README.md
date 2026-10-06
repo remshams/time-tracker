@@ -4,7 +4,7 @@ This SwiftUI app shows active and archived tasks, the running timer, and paged w
 
 ## Build and run on a Mac
 
-Use macOS 15 or newer, Xcode 16 or newer, and Rust 1.88 or newer. Open `apps/swiftui/TimeTracker.xcodeproj` in Xcode, select the `TimeTracker` scheme and `My Mac`, then press Run. Xcode builds the Rust library automatically. The build phase finds Rust installed with rustup or mise in their usual locations.
+Use macOS 15 or newer, Xcode with the macOS 27 SDK or newer, and Rust 1.88 or newer. Open `apps/swiftui/TimeTracker.xcodeproj` in Xcode, select the `TimeTracker` scheme and `My Mac`, then press Run. Xcode builds the Rust library automatically. The build phase finds Rust installed with rustup or mise in their usual locations.
 
 Debug builds use the Mac's active architecture. For a universal Release build, install both Rust targets first:
 
@@ -54,7 +54,7 @@ While a request is running or state is stale, tracking buttons are disabled. If 
 
 Right-click the menu bar dot to open its menu. Control-click also opens it. Left-click stops the current worklog, or starts the last tracked task when idle. If there is no previous task or that task was deleted or archived, left-click opens the menu. Click decisions use live confirmed state and the existing serialized commands. Busy, stale, sleeping, locked, or stopped sessions reject tracking clicks. The displayed dot never grants write permission.
 
-The dot is filled while tracking and outlined while idle. Both use the current or last tracked task's color. An unavailable connection shows an outline and labels the task as last confirmed. Hover shows the running task's name, the last tracked task when idle, or that no task has been tracked yet. Tooltips resolve names from the current catalog, so renaming is reflected there too.
+The dot is filled while tracking and outlined while idle. Both use the current or last tracked task's color. Task entries in Today and Start tracking show their own colored dots, including when macOS hides optional menu images. An unavailable connection shows an outline and labels the task as last confirmed. Hover shows the running task's name, the last tracked task when idle, or that no task has been tracked yet. Tooltips resolve names from the current catalog, so renaming is reflected there too.
 
 Task colors use a fixed palette selected by a stable hash of the permanent task ID. Sidebar rows and menu entries share the same mapping. Colors remain stable across restarts and devices; different tasks can share a palette color. System colors adapt to Light and Dark appearance. The last tracked task ID is saved on this Mac separately for each server URL and for the local database. It changes only from accepted snapshots. A newer completed worklog reported by another client can update the last task even when its running state was never observed.
 

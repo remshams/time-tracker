@@ -153,6 +153,9 @@ final class TrackerStatusItemController: NSObject {
         }
         item.image = TaskDotImage.make(color: TaskColor.forTaskID(entry.id),
                                       isRunning: isRunning, appearance: appearance)
+        if #available(macOS 27.0, *) {
+            item.preferredImageVisibility = .visible
+        }
         item.toolTip = help
         let status: String
         if isStale {
