@@ -357,7 +357,6 @@ impl RemoteApplication {
                 .iter()
                 .any(|name| TaskName::new(name).is_err())
             || preview.revision.is_empty()
-            || !valid_fingerprint(&preview.candidate_fingerprint)
         {
             self.last_failure = Some(RemoteFailureKind::Protocol);
             return Err(protocol_failure("invalid inactive task preview"));
@@ -371,18 +370,16 @@ impl RemoteApplication {
         &mut self,
         preview: &InactiveTaskPreviewDto,
     ) -> Result<usize, ApplicationError> {
-        if preview.revision.is_empty() || !valid_fingerprint(&preview.candidate_fingerprint) {
+        if preview.revision.is_empty() {
             return Err(protocol_failure("invalid inactive task preview"));
         }
         let body = ArchiveInactiveTasksRequest {
             as_of: preview.as_of,
-            candidate_fingerprint: preview.candidate_fingerprint.clone(),
             guard: WriteGuard {
                 expected_revision: preview.revision.clone(),
                 request_id: uuid::Uuid::now_v7().to_string(),
             },
         };
-        let count = preview.count;
         self.mutation(
             Method::POST,
             "v1/tasks/archive-inactive",
@@ -390,9 +387,7 @@ impl RemoteApplication {
             None,
             None,
             |result| match result {
-                MutationResultDto::ArchivedInactive { count: archived } if archived == count => {
-                    Ok(archived)
-                }
+                MutationResultDto::ArchivedInactive { count } => Ok(count),
                 _ => Err(protocol_failure("invalid inactive task archive result")),
             },
         )
@@ -942,13 +937,6 @@ fn protocol_failure(message: &str) -> ApplicationError {
     ApplicationError::RemoteProtocol(format!("invalid server response: {message}"))
 }
 
-fn valid_fingerprint(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
 fn classify_error(error: &RemoteError) -> RemoteFailureKind {
     match error {
         RemoteError::Unavailable(_) => RemoteFailureKind::Unavailable,
@@ -1060,7 +1048,6 @@ mod mutation_tests {
             count: 1,
             sample_names: vec!["Project".into()],
             revision: "before-archive".into(),
-            candidate_fingerprint: "a".repeat(64),
         }
     }
 
@@ -1132,14 +1119,6 @@ mod mutation_tests {
         empty_revision.revision.clear();
         cases.push(empty_revision);
 
-        let mut short_fingerprint = valid.clone();
-        short_fingerprint.candidate_fingerprint.pop();
-        cases.push(short_fingerprint);
-
-        let mut invalid_fingerprint = valid.clone();
-        invalid_fingerprint.candidate_fingerprint = "g".repeat(64);
-        cases.push(invalid_fingerprint);
-
         for preview in cases {
             let (endpoint, server) = serve_json_once(serde_json::to_vec(&preview).unwrap());
             let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
@@ -1161,37 +1140,44 @@ mod mutation_tests {
     }
 
     #[tokio::test]
-    async fn inactive_archive_rejects_invalid_preview_guards_before_sending() {
+    async fn inactive_archive_rejects_empty_preview_revision_before_sending() {
         let endpoint = "http://127.0.0.1:1/";
         let mut empty_revision = valid_inactive_preview();
         empty_revision.revision.clear();
-        let mut invalid_fingerprint = valid_inactive_preview();
-        invalid_fingerprint.candidate_fingerprint = "g".repeat(64);
-        for preview in [empty_revision, invalid_fingerprint] {
-            let mut client = RemoteApplication::disconnected(endpoint).unwrap();
-            assert_eq!(
-                client.archive_inactive_tasks(&preview).await.unwrap_err(),
-                ApplicationError::RemoteProtocol(
-                    "invalid server response: invalid inactive task preview".into()
-                )
-            );
-        }
+        let mut client = RemoteApplication::disconnected(endpoint).unwrap();
+        assert_eq!(
+            client
+                .archive_inactive_tasks(&empty_revision)
+                .await
+                .unwrap_err(),
+            ApplicationError::RemoteProtocol(
+                "invalid server response: invalid inactive task preview".into()
+            )
+        );
     }
 
     #[tokio::test]
-    async fn inactive_archive_rejects_result_counts_below_and_above_preview() {
+    async fn inactive_archive_accepts_actual_counts_below_and_above_preview() {
         let preview = valid_inactive_preview();
         let task_id = TaskId::generate();
+        let extra_task_id = TaskId::generate();
         for archived_count in [0, 2] {
+            let mut task_items = vec![TaskItemDto {
+                task: task(task_id, archived_count != 0),
+                latest_work_start: None,
+            }];
+            if archived_count == 2 {
+                task_items.push(TaskItemDto {
+                    task: task(extra_task_id, true),
+                    latest_work_start: None,
+                });
+            }
             let response = MutationDto {
                 result: MutationResultDto::ArchivedInactive {
                     count: archived_count,
                 },
                 snapshot: SnapshotDto {
-                    task_items: vec![TaskItemDto {
-                        task: task(task_id, true),
-                        latest_work_start: None,
-                    }],
+                    task_items,
                     active_worklog: None,
                     revision: "after-archive".into(),
                 },
@@ -1199,11 +1185,86 @@ mod mutation_tests {
             let (endpoint, server) = serve_json_once(serde_json::to_vec(&response).unwrap());
             let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
             assert_eq!(
-                client.archive_inactive_tasks(&preview).await.unwrap_err(),
-                ApplicationError::RemoteProtocol(
-                    "invalid server response: invalid inactive task archive result".into()
-                )
+                client.archive_inactive_tasks(&preview).await.unwrap(),
+                archived_count
             );
+            assert_eq!(
+                client.task(task_id).unwrap().is_archived(),
+                archived_count != 0
+            );
+            if archived_count == 2 {
+                assert!(client.task(extra_task_id).unwrap().is_archived());
+            } else {
+                assert!(client.task(extra_task_id).is_none());
+            }
+            assert_eq!(client.revision, "after-archive");
+            assert_eq!(client.last_failure(), None);
+            server.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn inactive_archive_accepts_replayed_count_after_tasks_are_restored() {
+        let task_id = TaskId::generate();
+        let response = MutationDto {
+            result: MutationResultDto::ArchivedInactive { count: 1 },
+            snapshot: SnapshotDto {
+                task_items: vec![TaskItemDto {
+                    task: task(task_id, false),
+                    latest_work_start: None,
+                }],
+                active_worklog: None,
+                revision: "after-restore".into(),
+            },
+        };
+        let (endpoint, server) = serve_json_once(serde_json::to_vec(&response).unwrap());
+        let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
+
+        assert_eq!(
+            client
+                .archive_inactive_tasks(&valid_inactive_preview())
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(!client.task(task_id).unwrap().is_archived());
+        assert_eq!(client.revision, "after-restore");
+        assert_eq!(client.last_failure(), None);
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn inactive_archive_rejects_wrong_result_variants_and_invalid_snapshots() {
+        let task_id = TaskId::generate();
+        let task_item = TaskItemDto {
+            task: task(task_id, true),
+            latest_work_start: None,
+        };
+        let valid_snapshot = SnapshotDto {
+            task_items: vec![task_item.clone()],
+            active_worklog: None,
+            revision: "after-archive".into(),
+        };
+        let wrong_result = MutationDto {
+            result: MutationResultDto::Task(task(task_id, true)),
+            snapshot: valid_snapshot.clone(),
+        };
+        let mut invalid_snapshot = valid_snapshot;
+        invalid_snapshot.task_items.push(task_item);
+        let wrong_snapshot = MutationDto {
+            result: MutationResultDto::ArchivedInactive { count: 1 },
+            snapshot: invalid_snapshot,
+        };
+
+        for response in [wrong_result, wrong_snapshot] {
+            let (endpoint, server) = serve_json_once(serde_json::to_vec(&response).unwrap());
+            let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
+            assert!(matches!(
+                client
+                    .archive_inactive_tasks(&valid_inactive_preview())
+                    .await,
+                Err(ApplicationError::RemoteProtocol(_))
+            ));
             assert!(client.task(task_id).is_none());
             assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
             server.join().unwrap();
@@ -1266,7 +1327,14 @@ mod mutation_tests {
                 }
                 let body = request[header_end..header_end + length].to_vec();
                 let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert!(payload.get("candidate_fingerprint").is_none());
+                assert_eq!(payload["expected_revision"], "before-archive");
+                assert_eq!(
+                    payload["as_of"],
+                    at().to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
+                );
                 let request_id = payload["request_id"].as_str().unwrap();
+                assert!(uuid::Uuid::parse_str(request_id).is_ok());
                 if completed_request_id.as_deref() != Some(request_id) {
                     committed += 1;
                     completed_request_id = Some(request_id.to_owned());
@@ -1292,7 +1360,6 @@ mod mutation_tests {
             count: 1,
             sample_names: vec!["Project".into()],
             revision: "before-archive".into(),
-            candidate_fingerprint: "a".repeat(64),
         };
         assert_eq!(client.archive_inactive_tasks(&preview).await.unwrap(), 1);
         assert!(client.task(task_id).unwrap().is_archived());

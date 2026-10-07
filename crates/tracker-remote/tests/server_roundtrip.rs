@@ -217,6 +217,10 @@ async fn remote_client_rejects_each_invalid_health_field_before_adopting_a_snaps
     for health in [
         HealthDto {
             status: "ok".into(),
+            protocol_version: VERSION - 1,
+        },
+        HealthDto {
+            status: "ok".into(),
             protocol_version: VERSION + 1,
         },
         HealthDto {
