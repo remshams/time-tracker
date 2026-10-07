@@ -7,6 +7,12 @@ Time Tracker is a Rust time-tracking application. It starts with a TUI and may l
 - Always apply the `unslop` skill when writing or editing any text (responses, code comments, docs, commit messages, etc.)
 - Use English text for test names, fixtures, inputs, and expected values. When a test needs a non-language Unicode glyph, such as a double-width terminal character, use a symbol or emoji instead of Chinese, Japanese, or Korean text.
 
+## Architecture documentation
+
+- The architecture diagrams are in `docs/architecture.html`. Open the file in a browser; its diagrams and controls work offline.
+- When implementing a feature that changes application components, dependencies, ownership, or communication paths, update the affected diagrams and method tables in the same change. Keep the source snapshot date and revision accurate, and state the scope and revision of any retained quality measurements.
+- Keep the HTML self-contained. Use portable source links and avoid machine-specific paths or links to temporary reports.
+
 ## Git
 
 - When pushing a branch, push it to every configured remote unless the user explicitly requests otherwise.
