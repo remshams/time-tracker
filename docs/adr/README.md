@@ -27,3 +27,4 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0011](0011-use-one-tui-event-loop-with-a-fixed-redraw-tick.md) | Use one TUI event loop with a fixed redraw tick | Accepted |
 | [0012](0012-share-client-query-and-failure-policies.md) | Share client query and failure policies | Partially superseded by ADR 0013; all other decisions remain accepted. |
 | [0013](0013-remove-remote-archive-candidate-fingerprints.md) | Remove remote archive candidate fingerprints | Accepted |
+| [0014](0014-scope-mutation-checks-to-task-changes.md) | Scope mutation checks to task changes | Accepted |
