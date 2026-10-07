@@ -22,15 +22,19 @@ use chrono::{DateTime, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, GlobalWorklogCursor,
-    ReportQueries, SetActiveTaskOutcome, TaskOperations, TaskOrdering, TaskQueries,
-    TrackerApplication, TrackingOperations, WorklogCursor, WorklogOperations, WorklogQueries,
+    InactiveTaskOperations, ReportQueries, SetActiveTaskOutcome, TaskOperations, TaskOrdering,
+    TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor, WorklogOperations,
+    WorklogQueries,
 };
-use tracker_domain::{Task, TaskId, TaskName, TrackingState, WorklogId, WorklogTimes};
+use tracker_domain::{
+    InactivityPeriod, Task, TaskId, TaskName, TrackingState, WorklogId, WorklogTimes,
+};
 use tracker_protocol::{
-    ArchiveInactiveTasksRequest, CreateTaskRequest, DeleteWorklogRequest, ErrorCode, ErrorDto,
-    GlobalWorklogPageDto, HealthDto, InactiveTaskPreviewDto, MutationDto, MutationResultDto,
-    ReportDto, SetTrackingRequest, SnapshotDto, TaskChangeRequest, TaskDto, WorklogChangeRequest,
-    WorklogDto, WorklogPageDto, WriteGuard, parse_task_id, parse_worklog_id,
+    ArchiveInactiveCandidatesRequest, ArchiveInactiveTasksRequest, CreateTaskRequest,
+    DeleteWorklogRequest, ErrorCode, ErrorDto, GlobalWorklogPageDto, HealthDto,
+    InactiveTaskCandidatesDto, InactiveTaskPreviewDto, MutationDto, MutationResultDto, ReportDto,
+    SetTrackingRequest, SnapshotDto, TaskChangeRequest, TaskDto, WorklogChangeRequest, WorklogDto,
+    WorklogPageDto, WriteGuard, parse_task_id, parse_worklog_id,
 };
 use tracker_storage::SqliteRepository;
 use uuid::Uuid;
@@ -327,6 +331,53 @@ async fn archive_inactive_tasks(
     Ok(Json(response))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InactiveCandidatesQuery {
+    as_of: DateTime<Utc>,
+    inactive_days: u32,
+}
+
+async fn inactive_candidates(
+    State(shared): State<Shared>,
+    Query(query): Query<InactiveCandidatesQuery>,
+) -> ApiResult<InactiveTaskCandidatesDto> {
+    validate_inactive_as_of(query.as_of, Utc::now())?;
+    let period = InactivityPeriod::new(query.inactive_days)
+        .map_err(|error| ApiError::invalid(&error.to_string()))?;
+    let mut core = lock(&shared)?;
+    let tasks = core
+        .app
+        .preview_inactive_tasks_with_period(query.as_of, period)?;
+    Ok(Json(InactiveTaskCandidatesDto {
+        as_of: query.as_of,
+        inactive_days: period.days(),
+        tasks: tasks.iter().map(TaskDto::from).collect(),
+        revision: core.revision(),
+    }))
+}
+
+async fn archive_inactive_candidates(
+    State(shared): State<Shared>,
+    input: Result<Json<ArchiveInactiveCandidatesRequest>, JsonRejection>,
+) -> ApiResult<MutationDto> {
+    let request = payload(input)?;
+    let key = fingerprint("POST /v1/tasks/archive-inactive-candidates", &request)?;
+    let mut core = lock(&shared)?;
+    let response = core.execute(&request.guard, key, |app| {
+        validate_inactive_as_of(request.as_of, Utc::now())?;
+        let period = InactivityPeriod::new(request.inactive_days)
+            .map_err(|error| ApiError::invalid(&error.to_string()))?;
+        let candidates = app.preview_inactive_tasks_with_period(request.as_of, period)?;
+        let ids: Vec<TaskId> = candidates.iter().map(Task::id).collect();
+        let archived = app.archive_inactive_tasks_with_period(&ids, request.as_of, period)?;
+        Ok(MutationResultDto::ArchivedInactive {
+            count: archived.len(),
+        })
+    })?;
+    Ok(Json(response))
+}
+
 fn payload<T>(value: Result<Json<T>, JsonRejection>) -> Result<T, ApiError> {
     value.map(|Json(value)| value).map_err(|rejection| {
         let mut error = ApiError::invalid("Invalid JSON request");
@@ -601,6 +652,11 @@ pub fn router_for_database(path: &Path) -> Result<Router, Box<dyn Error + Send +
         .route("/v1/health", get(health))
         .route("/v1/snapshot", get(snapshot))
         .route("/v1/tasks", post(create_task))
+        .route("/v1/tasks/inactive-candidates", get(inactive_candidates))
+        .route(
+            "/v1/tasks/archive-inactive-candidates",
+            post(archive_inactive_candidates),
+        )
         .route("/v1/tasks/inactive-preview", get(preview_inactive_tasks))
         .route("/v1/tasks/archive-inactive", post(archive_inactive_tasks))
         .route("/v1/tasks/{id}", axum::routing::patch(change_task))
