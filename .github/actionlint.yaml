@@ -1,5 +1,4 @@
+# actionlint 1.7.12 does not recognize GitHub's Xcode 27 preview label yet.
 self-hosted-runner:
   labels:
-    - blacksmith-2vcpu-ubuntu-2404
-    - blacksmith-4vcpu-ubuntu-2404
-    - blacksmith-6vcpu-macos-27
+    - xcode-27
