@@ -4,11 +4,13 @@
 //! invariants. It has no application, presentation, storage, or transport code.
 
 mod ids;
+mod inactivity;
 mod task;
 mod tracking;
 mod worklog;
 
 pub use ids::{TaskId, WorklogId};
+pub use inactivity::{InactivityPeriod, InactivityPeriodError};
 pub use task::{Task, TaskError, TaskName, TaskNameError};
 pub use tracking::{SwitchedWorklogs, Tracker, TrackingError, TrackingOutcome, TrackingState};
 pub use worklog::{
