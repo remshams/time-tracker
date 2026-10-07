@@ -177,6 +177,19 @@ fn remote_duplicate_confirmation_does_not_send_a_second_write() {
     tt.press(Key::Enter);
     proxy.wait_for_request();
     tt.press(Key::Enter);
+    // Echo a later key from the same input stream before releasing the response.
+    // Seeing it proves the duplicate Enter was handled while the write was pending.
+    tt.press_and_wait(Key::Char('!'), "the input acknowledgment", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_input_dialog()
+            .is_some_and(|dialog| dialog.text() == "One delayed write!")
+    });
+    // Restore the submitted name so the completion still matches this dialog.
+    tt.press_and_wait(Key::Backspace, "the restored task name", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_input_dialog()
+            .is_some_and(|dialog| dialog.text() == "One delayed write")
+    });
     proxy.release();
     let page = tt.wait_for("the saved task", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
