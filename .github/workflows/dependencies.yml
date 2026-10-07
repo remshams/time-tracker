@@ -1,0 +1,43 @@
+name: Dependency audit
+
+on:
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  audit:
+    name: Audit Rust dependencies
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: audit
+      - name: Cache cargo-audit
+        id: tools
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .build/audit-tools
+          key: audit-tools-${{ runner.os }}-${{ runner.arch }}-rust-${{ env.RUSTUP_TOOLCHAIN }}-audit-0.22.2
+      - name: Install cargo-audit
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: cargo install --locked --root .build/audit-tools --version 0.22.2 cargo-audit
+      - name: Add cargo-audit to PATH
+        run: echo "$GITHUB_WORKSPACE/.build/audit-tools/bin" >> "$GITHUB_PATH"
+      - name: Check Cargo.lock against RustSec advisories
+        run: cargo audit

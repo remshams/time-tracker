@@ -1,0 +1,84 @@
+name: Mutation tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  rust:
+    name: Rust mutation tests
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: mutations
+      - name: Cache cargo-mutants
+        id: tools
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .build/mutation-tools
+          key: mutation-tools-${{ runner.os }}-${{ runner.arch }}-rust-${{ env.RUSTUP_TOOLCHAIN }}-mutants-27.1.0
+      - name: Install cargo-mutants
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: cargo install --locked --root .build/mutation-tools --version 27.1.0 cargo-mutants
+      - name: Add cargo-mutants to PATH
+        run: echo "$GITHUB_WORKSPACE/.build/mutation-tools/bin" >> "$GITHUB_PATH"
+      - name: Test all Rust mutants
+        run: cargo mutants --workspace --all-features --jobs 2 --cargo-arg=--locked
+      - name: Upload Rust mutation results and logs
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: rust-mutations
+          path: mutants.out
+          retention-days: 7
+
+  swift:
+    name: Swift mutation tests
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
+        with:
+          swift-version: '6.1.3'
+      - name: Cache the pinned Muter binary
+        id: tools
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            .build/swift-tools/muter
+            .build/swift-tools/muter-revision.txt
+          key: muter-${{ runner.os }}-${{ runner.arch }}-swift-6.1.3-${{ hashFiles('scripts/install-swift-muter.py') }}
+      - name: Build the pinned Muter binary
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: python3 scripts/install-swift-muter.py
+      - name: Test all Swift mutants
+        run: python3 scripts/swift-mutations.py --timeout 7200
+      - name: Upload Swift mutation results and logs
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: swift-mutations
+          path: .build/swift-mutations
+          include-hidden-files: true
+          retention-days: 7
