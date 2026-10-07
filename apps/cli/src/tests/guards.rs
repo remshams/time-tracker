@@ -292,7 +292,10 @@ fn backend_paths_reject_non_utf8_and_resolve_missing_descendants_of_symlinks() {
     assert_eq!(before, after);
     assert_eq!(
         before,
-        format!("local:{}", real.join("missing/tt.db").display())
+        format!(
+            "local:{}",
+            real.canonicalize().unwrap().join("missing/tt.db").display()
+        )
     );
 }
 
