@@ -44,7 +44,20 @@
 		2507B5FE7BE977C63473174B /* TaskArchivingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */; };
 		BD73674A963DDEAA117CE002 /* BulkTaskArchivingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */; };
 		BD73674A963DDEAA117CE004 /* BulkTaskArchivingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */; };
+		A10000000000000000000001 /* ArchiveFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* ArchiveFixture.swift */; };
+		A10000000000000000000002 /* BulkTaskArchivingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* BulkTaskArchivingUITests.swift */; };
+		A10000000000000000000016 /* TrackerLaunchConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000017 /* TrackerLaunchConfiguration.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A10000000000000000000006 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000000000006;
+			remoteInfo = TimeTracker;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		373690BD6F341E81B72C511D /* WorklogCorrectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogCorrectionStore.swift; sourceTree = "<group>"; };
@@ -88,6 +101,10 @@
 		BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskArchivingView.swift; sourceTree = "<group>"; };
 		BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingStore.swift; sourceTree = "<group>"; };
 		BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingView.swift; sourceTree = "<group>"; };
+		A10000000000000000000003 /* ArchiveFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveFixture.swift; sourceTree = "<group>"; };
+		A10000000000000000000004 /* BulkTaskArchivingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingUITests.swift; sourceTree = "<group>"; };
+		A10000000000000000000005 /* TimeTrackerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimeTrackerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000017 /* TrackerLaunchConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerLaunchConfiguration.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +116,12 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -107,6 +130,7 @@
 			children = (
 				000000000000000000000003 /* TimeTrackerSwiftUI */,
 				000000000000000000000004 /* CTrackerBridge */,
+				A10000000000000000000009 /* UITests */,
 				000000000000000000000012 /* Info.plist */,
 				000000000000000000000013 /* build-rust.sh */,
 				000000000000000000000005 /* Products */,
@@ -136,6 +160,7 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000007 /* TimeTracker.app */,
+				A10000000000000000000005 /* TimeTrackerUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -148,6 +173,7 @@
 				522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */,
 				323F2748B9DC9666381AFC4F /* TrackerSplitLayout.swift */,
 				F6FD13916BDDA7B66974DD76 /* TimeTrackerApp.swift */,
+				A10000000000000000000017 /* TrackerLaunchConfiguration.swift */,
 				4EC372281DA1DF7ABC74910A /* TrackerStore.swift */,
 				9E054EA2B878A02189368B9D /* TrackerWindow.swift */,
 			);
@@ -301,6 +327,15 @@
             path = BulkTaskArchiving;
             sourceTree = "<group>";
         };
+		A10000000000000000000009 /* UITests */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000003 /* ArchiveFixture.swift */,
+				A10000000000000000000004 /* BulkTaskArchivingUITests.swift */,
+			);
+			path = Tests/UITests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -325,6 +360,21 @@
 			);
 			productType = "com.apple.product-type.application";
 		};
+		A10000000000000000000010 /* TimeTrackerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000011 /* Build configuration list for PBXNativeTarget "TimeTrackerUITests" */;
+			buildPhases = (
+				A10000000000000000000007 /* Sources */,
+				A10000000000000000000008 /* Frameworks */,
+				A10000000000000000000012 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = (A10000000000000000000013 /* PBXTargetDependency */,);
+			name = TimeTrackerUITests;
+			productName = TimeTrackerUITests;
+			productReference = A10000000000000000000005 /* TimeTrackerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -334,6 +384,10 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
+					A10000000000000000000010 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = 000000000000000000000006;
+					};
 					000000000000000000000006 = {
 						CreatedOnToolsVersion = 15.0;
 					};
@@ -356,6 +410,7 @@
 			projectRoot = "";
 			targets = (
 				000000000000000000000006 /* TimeTracker */,
+				A10000000000000000000010 /* TimeTrackerUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -366,6 +421,12 @@
 			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000012 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
@@ -419,6 +480,7 @@
 				BD73674A963DDEAA117CE002 /* BulkTaskArchivingStore.swift in Sources */,
 				18D2319E48E082F857DD0A32 /* TaskCreationStore.swift in Sources */,
 				B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */,
+				A10000000000000000000016 /* TrackerLaunchConfiguration.swift in Sources */,
 				3B56BC67EA3B3C706744AFC4 /* TrackerStore.swift in Sources */,
 				FC2B643D35A2A957D3C0D7E8 /* TrackerWindow.swift in Sources */,
 				547C118F7FB1E47BBCD519B9 /* ConnectionSettingsView.swift in Sources */,
@@ -433,7 +495,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* ArchiveFixture.swift in Sources */,
+				A10000000000000000000002 /* BulkTaskArchivingUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A10000000000000000000013 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000000000006 /* TimeTracker */;
+			targetProxy = A10000000000000000000006 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		000000000000000000000020 /* Debug */ = {
@@ -554,6 +633,38 @@
 			};
 			name = Release;
 		};
+		A10000000000000000000014 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks",);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.timetracker.swiftui.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = TimeTracker;
+			};
+			name = Debug;
+		};
+		A10000000000000000000015 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks",);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.timetracker.swiftui.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = TimeTracker;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -574,6 +685,15 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
+		};
+		A10000000000000000000011 /* Build configuration list for PBXNativeTarget "TimeTrackerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000014 /* Debug */,
+				A10000000000000000000015 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 /* Begin XCLocalSwiftPackageReference section */

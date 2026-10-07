@@ -146,7 +146,23 @@ swift test --package-path apps/swiftui/TrackerClient
 
 The tests use an in-memory settings repository, a manually advanced wall and monotonic clock, a manual scheduler, and an async client whose responses the test controls. They cover connection rollback and persistence, command serialization and captured click times, task creation and renaming, write reconciliation, selection and pagination, stale history responses, polling, display ticks, sleep/wake, and shutdown.
 
-You can also open `apps/swiftui/TrackerClient/Package.swift` in Xcode and run its package tests. The app remains a native Xcode project and links the local package. Native UI E2E tests are deferred; package tests do not exercise macOS windows, menus, notification delivery, or the rendered appearance.
+You can also open `apps/swiftui/TrackerClient/Package.swift` in Xcode and run its package tests. The app remains a native Xcode project and links the local package. Package tests do not exercise macOS windows, menus, notification delivery, or the rendered appearance.
+
+## Native UI end-to-end tests
+
+On a Mac with Xcode selected and an active desktop session, run:
+
+```sh
+apps/swiftui/check-native-ui.sh
+```
+
+The helper builds `tt-cli` and runs the `TimeTrackerUITests` target in the Debug app. Each test uses a fresh temporary SQLite database and an isolated preferences suite. The CLI creates fixtures through the real Rust application, and UI actions call the production Swift-to-Rust bridge. The suite does not touch your default database or saved connection settings.
+
+Bulk archive tests cover the default 14-day preview, changing the inactivity period, invalid input, cancellation, confirmation, running-session preservation, and persistence after relaunch. Tests wait for observable UI states rather than sleeping. Remote-server interactions and other feature workflows remain outside this first suite. The TUI tests are unchanged.
+
+The helper passes the absolute fixture CLI path to the test runner with `TEST_RUNNER_TT_UI_TEST_CLI`, using [Xcode's environment forwarding](https://developer.apple.com/documentation/xcode/environment-variable-reference). UI automation may request permission on your first local run. Allow Xcode to control the desktop when macOS asks. The macOS CI runner must provide an active desktop session with UI automation allowed.
+
+CI runs the suite alongside the existing native builds and layout checks. It uploads `.build/native-ui.log` and `.build/native-ui.xcresult` in the `native-macos-diagnostics` artifact, even after a failed test. Open the result bundle in Xcode to inspect failures and screenshot attachments. You can also run the target from Xcode after setting `TT_UI_TEST_CLI` to your built CLI's absolute path in the scheme's Test environment.
 
 On a Mac with Xcode selected, run the SwiftUI scene layout checks from the repository root:
 
@@ -191,7 +207,7 @@ Focused runs label their scope and satisfy the handoff requirement under the sco
 
 All commands accept `--swift` for a specific toolchain. Coverage also accepts `--llvm-cov`; mutation testing accepts `--muter` for another tool binary. Generated artifacts are ignored by Git.
 
-These checks cover the portable client state. Native UI E2E tests will run on macOS and remain deferred. Rust coverage, mutation testing, and CRAP checks continue to cover the Rust application and bridge separately.
+These checks cover the portable client state. The native UI end-to-end suite exercises bulk archiving on macOS through the real Rust bridge. Rust coverage, mutation testing, and CRAP checks cover the Rust application and bridge separately.
 
 ## Architecture
 

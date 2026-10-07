@@ -18,6 +18,7 @@ struct TrackerSidebar: View {
             Picker("Tasks", selection: tabBinding) {
                 ForEach(TaskTab.allCases) { tab in
                     Text(tab.rawValue).tag(tab)
+                        .accessibilityIdentifier("task-sidebar.tab.\(tab.rawValue)")
                 }
             }
             .pickerStyle(.segmented)
@@ -39,6 +40,8 @@ struct TrackerSidebar: View {
                     HStack(spacing: 8) {
                         TaskIndicatorView(taskID: task.id,
                                           isRunning: !store.isStale && store.active?.taskId == task.id)
+                            .accessibilityIdentifier(!store.isStale && store.active?.taskId == task.id
+                                                     ? "tracking.active-task" : "task-sidebar.indicator.\(task.id)")
                         Text(task.name)
                             .lineLimit(2)
                             .padding(.vertical, 4)
@@ -47,6 +50,8 @@ struct TrackerSidebar: View {
                     }
                     .tag(task.id)
                     .help(task.name)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("task-sidebar.task.\(task.id)")
                     .contextMenu {
                         TaskContextMenu(creation: store.creation, rename: store.rename,
                                         archiving: store.archiving, taskID: task.id,
@@ -56,6 +61,7 @@ struct TrackerSidebar: View {
                 }
             }
             .listStyle(.sidebar)
+            .accessibilityIdentifier("task-sidebar.list")
             .contextMenu {
                 TaskContextMenu(creation: store.creation, rename: store.rename,
                                 archiving: store.archiving, taskID: nil)

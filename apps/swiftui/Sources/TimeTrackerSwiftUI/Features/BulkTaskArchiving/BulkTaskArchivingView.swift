@@ -35,10 +35,12 @@ private struct BulkTaskArchivingSheet: View {
                     .textFieldStyle(.roundedBorder)
                     .disabled(state.isSubmitting)
                     .accessibilityLabel("Inactivity period in days")
+                    .accessibilityIdentifier("bulk-archive.days")
                 Text("days")
                 Spacer()
                 Button("Refresh preview") { archiving.refresh() }
                     .disabled(state.isSubmitting || state.isLoading)
+                    .accessibilityIdentifier("bulk-archive.refresh")
             }
             if state.isLoading {
                 HStack { ProgressView().controlSize(.small); Text("Loading eligible tasks...") }
@@ -46,18 +48,22 @@ private struct BulkTaskArchivingSheet: View {
             } else if let count = state.archivedCount {
                 Label("Archived \(count) \(count == 1 ? "task" : "tasks").", systemImage: "checkmark.circle")
                     .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
+                    .accessibilityIdentifier("bulk-archive.result")
             } else {
                 Text("\(state.tasks.count) \(state.tasks.count == 1 ? "task" : "tasks") to archive")
                     .font(.headline)
+                    .accessibilityIdentifier("bulk-archive.count")
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(state.tasks) { task in
                             Text(task.name).frame(maxWidth: .infinity, alignment: .leading)
                                 .textSelection(.enabled)
+                                .accessibilityIdentifier("bulk-archive.candidate.\(task.id)")
                             Divider()
                         }
                         if state.tasks.isEmpty, state.error == nil {
                             Text("No tasks match this inactivity period.").foregroundStyle(.secondary)
+                                .accessibilityIdentifier("bulk-archive.empty")
                         }
                     }
                     .padding(12)
@@ -70,6 +76,7 @@ private struct BulkTaskArchivingSheet: View {
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
+                    .accessibilityIdentifier("bulk-archive.error")
             }
             HStack(spacing: 12) {
                 if state.isSubmitting {
@@ -80,16 +87,20 @@ private struct BulkTaskArchivingSheet: View {
                 Button(state.archivedCount == nil ? "Cancel" : "Done") { archiving.cancel() }
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
+                    .accessibilityIdentifier("bulk-archive.cancel")
                 if state.archivedCount == nil {
                     Button("Archive all") { archiving.submit() }
                         .keyboardShortcut(.defaultAction)
                         .buttonStyle(.borderedProminent)
                         .disabled(!state.canSubmit)
+                        .accessibilityIdentifier("bulk-archive.confirm")
                 }
             }
         }
         .padding(24)
         .frame(width: 560)
         .interactiveDismissDisabled(state.isSubmitting)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("bulk-archive.dialog")
     }
 }

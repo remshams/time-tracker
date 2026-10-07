@@ -28,16 +28,17 @@ final class TrackerStore {
     private var lifecycle: MacLifecycleObserver?
 
     init() {
-        menuBarPreferences = UserDefaultsMenuBarPreferences()
+        let launch = TrackerLaunchConfiguration.current
+        menuBarPreferences = UserDefaultsMenuBarPreferences(defaults: launch.defaults)
         showDailyTotalInMenuBar = menuBarPreferences.load()
-        keyboardPreferences = UserDefaultsMenuKeyboardPreferences()
+        keyboardPreferences = UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults)
         menuShortcuts = keyboardPreferences.load()
-        let worker = TrackerWorker()
+        let worker = TrackerWorker(localDatabasePath: launch.localDatabasePath)
         session = TrackerSession(client: worker, clock: SystemTrackerClock(),
                                  scheduler: RunLoopTrackerScheduler(),
-                                 settings: UserDefaultsConnectionSettings(),
-                                 trackingPreferences: UserDefaultsTrackingPreferences(),
-                                 lastTrackedTasks: UserDefaultsLastTrackedTasks(),
+                                 settings: UserDefaultsConnectionSettings(defaults: launch.defaults),
+                                 trackingPreferences: UserDefaultsTrackingPreferences(defaults: launch.defaults),
+                                 lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
                                  reports: worker)
         presentation = TrackerPresentationObserver(session: session)
         activity = TrackerActivityStore(session: session, presentation: presentation)

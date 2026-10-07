@@ -99,6 +99,7 @@ private struct TrackerSidebarToolbar: View {
         }
         .disabled(!bulkArchiving.canOpen)
         .help("Archive inactive tasks")
+        .accessibilityIdentifier("bulk-archive.open")
     }
 }
 
