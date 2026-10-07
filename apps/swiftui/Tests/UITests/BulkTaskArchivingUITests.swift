@@ -26,7 +26,9 @@ final class BulkTaskArchivingUITests: XCTestCase {
                 screenshot.lifetime = .keepAlways
                 add(screenshot)
             }
-            let hierarchy = XCTAttachment(string: app.windows.debugDescription)
+            let hierarchy = XCTAttachment(string: app.windows.firstMatch.exists
+                                          ? app.windows.firstMatch.debugDescription
+                                          : "No tracker window exists.")
             hierarchy.name = "Tracker window accessibility hierarchy"
             hierarchy.lifetime = .keepAlways
             add(hierarchy)
@@ -79,7 +81,7 @@ final class BulkTaskArchivingUITests: XCTestCase {
         openDialog()
         replaceDays("45")
         XCTAssertTrue(element("bulk-archive.empty").waitForExistence(timeout: timeout))
-        XCTAssertEqual(element("bulk-archive.count").label, "0 tasks to archive")
+        XCTAssertEqual(element("bulk-archive.count").value as? String, "0 tasks to archive")
         XCTAssertFalse(confirm.isEnabled)
         cancelDialog()
         try assertArchived([])
@@ -152,10 +154,10 @@ final class BulkTaskArchivingUITests: XCTestCase {
     }
 
     private func assertCandidates(_ expected: [FixtureTask], count: Int, file: StaticString = #filePath, line: UInt = #line) {
-        let label = "\(count) \(count == 1 ? "task" : "tasks") to archive"
-        waitUntil("Preview displays \(label)", file: file, line: line) {
+        let text = "\(count) \(count == 1 ? "task" : "tasks") to archive"
+        waitUntil("Preview displays \(text)", file: file, line: line) {
             let value = self.element("bulk-archive.count")
-            return value.exists && value.label == label && expected.allSatisfy {
+            return value.exists && value.value as? String == text && expected.allSatisfy {
                 self.element("bulk-archive.candidate.\($0.id)").exists
             }
         }
@@ -168,7 +170,9 @@ final class BulkTaskArchivingUITests: XCTestCase {
     private func assertResult(_ text: String) {
         waitUntil("Archive reports its actual count") {
             let result = self.element("bulk-archive.result")
-            return result.exists && result.label == text
+            guard result.exists else { return false }
+            return result.value as? String == text
+                || result.staticTexts.matching(NSPredicate(format: "value == %@", text)).firstMatch.exists
         }
     }
 
