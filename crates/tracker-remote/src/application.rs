@@ -166,10 +166,10 @@ impl RemoteApplication {
             self.last_unavailable_at = Some(Instant::now());
         }
         let mapped = map_application_error(&error, worklog_id, task_id);
-        if matches!(error, RemoteError::Http { .. }) {
-            if let Err(recovery) = self.refresh().await {
-                return mapped.with_recovery_failure(map_application_error(&recovery, None, None));
-            }
+        if matches!(error, RemoteError::Http { .. })
+            && let Err(recovery) = self.refresh().await
+        {
+            return mapped.with_recovery_failure(map_application_error(&recovery, None, None));
         }
         mapped
     }
