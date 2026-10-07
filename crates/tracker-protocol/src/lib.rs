@@ -119,6 +119,24 @@ pub struct ArchiveInactiveTasksRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+pub struct InactiveTaskCandidatesDto {
+    pub as_of: DateTime<Utc>,
+    pub inactive_days: u32,
+    pub tasks: Vec<TaskDto>,
+    pub revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveInactiveCandidatesRequest {
+    pub as_of: DateTime<Utc>,
+    pub inactive_days: u32,
+    #[serde(flatten)]
+    pub guard: WriteGuard,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct CreateTaskRequest {
     pub task_id: String,
     pub name: String,
