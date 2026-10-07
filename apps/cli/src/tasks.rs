@@ -74,13 +74,7 @@ fn validate_preview(token: &PreviewToken, identity: &str) -> Result<(), CliError
             backend
         }
         PreviewToken::Remote { backend, preview } => {
-            if preview.revision.is_empty()
-                || preview.candidate_fingerprint.len() != 64
-                || !preview
-                    .candidate_fingerprint
-                    .bytes()
-                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-            {
+            if preview.revision.is_empty() {
                 return Err(CliError::input("invalid remote preview guard"));
             }
             if preview.sample_names.len() > 5

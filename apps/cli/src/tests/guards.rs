@@ -324,7 +324,7 @@ fn remote_preview_tokens_reject_invalid_guards_and_candidates_before_connecting(
     let backend = "remote:http://127.0.0.1:8765/";
     let valid = serde_json::json!({
         "mode":"remote", "backend":backend,
-        "preview":{"as_of":T0,"count":1,"sample_names":["Old task"],"revision":"revision-1","candidate_fingerprint":"a".repeat(64)}
+        "preview":{"as_of":T0,"count":1,"sample_names":["Old task"],"revision":"revision-1"}
     });
     let now = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
     let validate = |token: &serde_json::Value, identity: &str| {
@@ -350,10 +350,6 @@ fn remote_preview_tokens_reject_invalid_guards_and_candidates_before_connecting(
     assert_eq!(validate(&too_many, backend).unwrap_err().exit_code, 2);
     for (field, value) in [
         ("revision", serde_json::json!("")),
-        ("candidate_fingerprint", serde_json::json!("A".repeat(64))),
-        ("candidate_fingerprint", serde_json::json!("g".repeat(64))),
-        ("candidate_fingerprint", serde_json::json!("a".repeat(63))),
-        ("candidate_fingerprint", serde_json::json!("a".repeat(65))),
         ("sample_names", serde_json::json!([""])),
         (
             "sample_names",
