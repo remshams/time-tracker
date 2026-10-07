@@ -676,7 +676,6 @@ mod tests {
                 count: 1,
                 sample_names: vec!["remote legacy task".to_owned()],
                 revision: "revision".to_owned(),
-                candidate_fingerprint: "0".repeat(64),
             }),
         ];
 
