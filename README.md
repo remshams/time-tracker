@@ -187,6 +187,52 @@ Repeat `--file` for multiple files, or use `--package <name>` for an affected cr
 
 Missed and timed-out mutants fail the check, as do CRAP scores above 30. The pinned tool versions and full rules live in `AGENTS.md`.
 
+## Continuous integration
+
+GitHub Actions runs every regular check for every pull request, push to `main`,
+and manual CI run. There are no changed-file filters. Portable checks use
+Blacksmith Ubuntu 24.04 runners; macOS runners cover platform compatibility and
+the native app. The workflows use read-only repository permissions, pinned
+action revisions, dependency and build caches, and seven-day report retention.
+
+| # | Workflow | Checks | Trigger |
+|---|---|---|---|
+| 1 | [CI](.github/workflows/ci.yml) | Rust formatting, Clippy with warnings denied, Python script tests, and actionlint | Every PR, push to `main`, and manual run |
+| 2 | CI | Full Rust workspace tests on Linux and macOS, including existing integration and TUI E2E tests | Every PR, push to `main`, and manual run |
+| 3 | CI | Rust coverage and the configured CRAP threshold of 30 | Every PR, push to `main`, and manual run |
+| 4 | CI | Portable Swift tests and at least 95% executable line coverage on Linux | Every PR, push to `main`, and manual run |
+| 5 | CI | Swift package tests on macOS, native Debug and universal Release builds, and scene layout checks | Every PR, push to `main`, and manual run |
+| 6 | CI | `CI passed` requires every regular job to succeed, including both Rust test platforms | Every PR, push to `main`, and manual run |
+| 7 | [Mutation tests](.github/workflows/mutations.yml) | Full Rust and portable Swift mutation suites on Linux; missed, timed-out, and unresolved mutants fail their jobs | Manual only |
+| 8 | [Dependency audit](.github/workflows/dependencies.yml) | `cargo audit` checks `Cargo.lock` against RustSec advisories | Monday at 06:23 UTC and manual runs |
+
+CI pins Rust 1.98.1 in the [shared Rust setup action](.github/actions/setup-rust/action.yml),
+Swift 6.1.3 for Linux, and Xcode 27.0 for the native app. Coverage and mutation tool
+versions follow `AGENTS.md`. The macOS job uses
+`blacksmith-6vcpu-macos-27`, checks for the macOS 27 SDK, and requires a desktop
+session for the existing layout checks. Native UI E2E tests remain deferred.
+The universal build validates Apple Silicon and Intel slices without publishing
+or requiring an Apple Developer account.
+
+To enable these workflows:
+
+1. Create the GitHub repository in an organization. Blacksmith does not support
+   personal repositories. Install the Blacksmith GitHub App for that repository
+   and enable the Linux and macOS runners. See the
+   [Blacksmith quickstart](https://docs.blacksmith.sh/introduction/quickstart) and
+   [runner images](https://docs.blacksmith.sh/blacksmith-runners/overview).
+2. Add the GitHub remote and push `main` with these workflow files. If the default
+   branch has a different name, update the CI push branch filter. Manual workflows
+   must exist on the default branch before GitHub offers their Run workflow button.
+3. Run CI and confirm Xcode 27.0 and a desktop session are available on the selected
+   Blacksmith macOS image. The image is currently listed as public beta.
+4. Require `CI passed` in the default branch protection rule. Mutation tests and
+   the scheduled dependency audit are separate from that required check.
+
+Run mutation testing through Actions > Mutation tests > Run workflow, then
+select the branch to test. It has no pull-request, push, or scheduled trigger.
+This CI policy does not change the local before-handoff checks in `AGENTS.md`.
+
 ## Hooks
 
 The pre-commit hook checks formatting. After cloning, point Git at the repository-owned hooks:

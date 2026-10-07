@@ -1,0 +1,245 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Formatting, lint, and Python tests
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: lint
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+      - name: Check Rust lint
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Test Python scripts
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+      - name: Validate GitHub Actions workflows
+        run: |
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$RUNNER_TEMP/actionlint.tar.gz"
+          echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz' \
+            | (cd "$RUNNER_TEMP" && sha256sum --check)
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+
+  rust-tests:
+    name: Rust tests on ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            runner: blacksmith-4vcpu-ubuntu-2404
+          - platform: macOS
+            runner: blacksmith-6vcpu-macos-27
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: tests
+      - name: Test the full Rust workspace
+        run: cargo test --workspace --all-features --locked
+
+  rust-quality:
+    name: Rust coverage and CRAP
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: coverage
+          components: llvm-tools-preview
+      - name: Cache coverage tools
+        id: tools
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .build/coverage-tools
+          key: coverage-tools-${{ runner.os }}-${{ runner.arch }}-rust-${{ env.RUSTUP_TOOLCHAIN }}-llvm-cov-0.9.0-crap-0.4.3
+      - name: Install coverage tools
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: |
+          cargo install --locked --root .build/coverage-tools --version 0.9.0 cargo-llvm-cov
+          cargo install --locked --root .build/coverage-tools --version 0.4.3 cargo-crap
+      - name: Add coverage tools to PATH
+        run: echo "$GITHUB_WORKSPACE/.build/coverage-tools/bin" >> "$GITHUB_PATH"
+      - name: Collect Rust coverage
+        run: cargo llvm-cov --workspace --all-features --locked --lcov --output-path lcov.info
+      - name: Export readable coverage
+        run: cargo llvm-cov report --html --output-dir .build/rust-coverage
+      - name: Enforce the configured CRAP threshold
+        run: cargo crap --workspace --lcov lcov.info --format markdown --output .build/rust-coverage/crap.md
+      - name: Upload Rust coverage and CRAP reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: rust-coverage
+          path: |
+            lcov.info
+            .build/rust-coverage
+          include-hidden-files: true
+          retention-days: 7
+
+  swift-quality:
+    name: Swift tests and coverage on Linux
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
+        with:
+          swift-version: '6.1.3'
+      - name: Cache Swift build output
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            .build/swift-coverage/build
+            .build/swift-coverage/cache
+          key: swift-coverage-${{ runner.os }}-${{ runner.arch }}-6.1.3-${{ hashFiles('apps/swiftui/TrackerClient/**/*.swift') }}
+          restore-keys: |
+            swift-coverage-${{ runner.os }}-${{ runner.arch }}-6.1.3-
+      - name: Test Swift and enforce 95 percent line coverage
+        run: python3 scripts/swift-coverage.py
+      - name: Upload Swift coverage reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: swift-coverage
+          path: |
+            .build/swift-coverage/coverage.json
+            .build/swift-coverage/lcov.info
+            .build/swift-coverage/summary.json
+            .build/swift-coverage/html
+          include-hidden-files: true
+          retention-days: 7
+
+  native-macos:
+    name: Native macOS builds and layout
+    runs-on: blacksmith-6vcpu-macos-27
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Verify Xcode and the macOS SDK
+        run: |
+          xcodebuild -version
+          swift --version
+          sdk_major=$(xcrun --sdk macosx --show-sdk-version | cut -d. -f1)
+          if (( sdk_major < 27 )); then
+            echo 'The native app requires the macOS 27 SDK or newer.' >&2
+            exit 1
+          fi
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: native
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Cache native build output
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            .build/native-debug
+            .build/native-release
+            apps/swiftui/TrackerClient/.build
+          key: native-${{ runner.os }}-${{ runner.arch }}-xcode-27.0-rust-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/*.rs', 'apps/swiftui/**/*.swift', 'apps/swiftui/**/*.h', 'apps/swiftui/**/*.pbxproj', 'apps/swiftui/**/*.plist', 'apps/swiftui/**/*.sh') }}
+          restore-keys: |
+            native-${{ runner.os }}-${{ runner.arch }}-xcode-27.0-rust-${{ env.RUSTUP_TOOLCHAIN }}-
+      - name: Test the Swift package on macOS
+        run: swift test --package-path apps/swiftui/TrackerClient
+      - name: Build the native Debug app and Rust bridge
+        run: |
+          mkdir -p .build
+          xcodebuild -project apps/swiftui/TimeTracker.xcodeproj -scheme TimeTracker \
+            -configuration Debug -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath .build/native-debug -resultBundlePath .build/native-debug.xcresult \
+            CODE_SIGNING_ALLOWED=NO build | tee .build/native-debug.log
+      - name: Build the universal Release app and Rust bridge
+        run: |
+          xcodebuild -project apps/swiftui/TimeTracker.xcodeproj -scheme TimeTracker \
+            -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath .build/native-release -resultBundlePath .build/native-release.xcresult \
+            'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build \
+            | tee .build/native-release.log
+          lipo -verify_arch arm64 x86_64 \
+            .build/native-release/Build/Products/Release/TimeTracker.app/Contents/MacOS/TimeTracker
+      - name: Check native scene layout
+        run: apps/swiftui/check-native-layout.sh
+      - name: Upload native build diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-macos-diagnostics
+          path: |
+            .build/native-debug.log
+            .build/native-release.log
+            .build/native-debug.xcresult
+            .build/native-release.xcresult
+          include-hidden-files: true
+          retention-days: 7
+
+  ci-passed:
+    name: CI passed
+    needs: [lint, rust-tests, rust-quality, swift-quality, native-macos]
+    if: always()
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          jobs = json.loads(os.environ['JOB_RESULTS'])
+          failures = [name for name, job in jobs.items() if job['result'] != 'success']
+          for name, job in jobs.items():
+              print(f"{name}: {job['result']}")
+          if failures:
+              print('CI jobs did not succeed: ' + ', '.join(failures), file=sys.stderr)
+              sys.exit(1)
+          PY
