@@ -167,13 +167,15 @@ Mutation testing copies only the package manifest, source, and tests into a temp
 
 Surviving, timed-out, skipped, or failed-to-build mutants fail the command. An unexplained runtime error also fails; accepting a crash as a killed mutant requires a matching test log with evidence that a test started and crashed. A missing, empty, or inconsistent report fails. The mutation score alone does not decide success. Unit fixtures bound asynchronous waits so removed callbacks fail promptly.
 
-Results and logs go to `.build/swift-mutations`, including individual test logs under `test-logs` when Muter fails or times out. A focused diagnostic run accepts package-relative source paths:
+Results and logs go to `.build/swift-mutations`, including individual test logs under `test-logs` when Muter fails or times out. For task handoffs, select affected production files using package-relative source paths:
 
 ```sh
 python3 scripts/swift-mutations.py --files Sources/TrackerClient/Features/Connection/ConnectionState.swift
 ```
 
-Focused runs label their scope and do not replace a full package check. All commands accept `--swift` for a specific toolchain. Coverage also accepts `--llvm-cov`; mutation testing accepts `--muter` for another tool binary. Generated artifacts are ignored by Git.
+Focused runs label their scope and satisfy the handoff requirement under the scope rules in `AGENTS.md`. Include production files exercised by changed tests and run the full package when the affected files cannot be identified. Documentation-only changes skip mutation checks. Routine full mutation runs are deferred until CI is set up.
+
+All commands accept `--swift` for a specific toolchain. Coverage also accepts `--llvm-cov`; mutation testing accepts `--muter` for another tool binary. Generated artifacts are ignored by Git.
 
 These checks cover the portable client state. Native UI E2E tests will run on macOS and remain deferred. Rust coverage, mutation testing, and CRAP checks continue to cover the Rust application and bridge separately.
 
