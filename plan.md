@@ -161,10 +161,11 @@ Required handoff checks for each feature:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
-cargo mutants --workspace
 cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
 cargo crap --workspace --lcov lcov.info
 ```
+
+Run focused mutation checks using the file and crate scope rules in `AGENTS.md`. Include production code exercised by changed tests and expand the scope for shared code or build input changes. Documentation-only changes skip mutation checks. Routine full mutation runs are deferred until CI is set up.
 
 Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check. If Ratatui or Crossterm glue produces meaningless mutants, exclude only named functions and explain each exclusion in `AGENTS.md`.
 

@@ -173,10 +173,17 @@ python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
-cargo mutants --workspace
 cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
 cargo crap --workspace --lcov lcov.info
 ```
+
+Run mutation checks on the production files affected by the task:
+
+```sh
+cargo mutants --workspace --file crates/tracker-domain/src/task.rs
+```
+
+Repeat `--file` for multiple files, or use `--package <name>` for an affected crate. Add `--test-workspace true` when selected mutants rely on tests in other crates. Include production code exercised by changed tests and widen the scope for shared code or build input changes. Documentation-only changes skip mutation checks. The scope rules in `AGENTS.md` also cover the portable Swift client. Routine full mutation runs are deferred until CI is set up.
 
 Missed and timed-out mutants fail the check, as do CRAP scores above 30. The pinned tool versions and full rules live in `AGENTS.md`.
 
