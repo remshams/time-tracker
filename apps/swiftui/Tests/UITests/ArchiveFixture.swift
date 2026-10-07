@@ -74,7 +74,7 @@ final class ArchiveFixture {
         try FileManager.default.removeItem(at: directory)
     }
 
-    private func create(_ name: String, at date: Date) throws -> FixtureTask {
+    func create(_ name: String, at date: Date) throws -> FixtureTask {
         try command(["tasks", "create", name], at: date)
     }
 

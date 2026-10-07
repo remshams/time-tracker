@@ -48,13 +48,14 @@ final class BulkTaskArchivingUITests: XCTestCase {
         XCTAssertEqual(try fixture.activeWorklog(), seed.worklog)
     }
 
-    func testChangingPeriodAndRefreshingShowsUpdatedCandidates() {
+    func testChangingPeriodAndRefreshingShowsUpdatedCandidates() throws {
         openDialog()
         assertCandidates([seed.old, seed.medium], count: 2)
         replaceDays("30")
         assertCandidates([seed.old], count: 1)
+        let added = try fixture.create("Additional inactive task", at: Date().addingTimeInterval(-50 * 86_400))
         app.buttons["bulk-archive.refresh"].click()
-        assertCandidates([seed.old], count: 1)
+        assertCandidates([seed.old, added], count: 2)
         cancelDialog()
     }
 
