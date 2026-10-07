@@ -42,6 +42,8 @@
 		B54E8C7C53D2D09700847492 /* MenuKeyboardPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2346CBACB68448A001F56706 /* MenuKeyboardPreferences.swift */; };
 		8503050BDB83B0C4D676D937 /* TaskArchivingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B61905FCBC755118476CFF /* TaskArchivingStore.swift */; };
 		2507B5FE7BE977C63473174B /* TaskArchivingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */; };
+		BD73674A963DDEAA117CE002 /* BulkTaskArchivingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */; };
+		BD73674A963DDEAA117CE004 /* BulkTaskArchivingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -84,6 +86,8 @@
 		2346CBACB68448A001F56706 /* MenuKeyboardPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuKeyboardPreferences.swift; sourceTree = "<group>"; };
 		B3B61905FCBC755118476CFF /* TaskArchivingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskArchivingStore.swift; sourceTree = "<group>"; };
 		BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskArchivingView.swift; sourceTree = "<group>"; };
+		BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingStore.swift; sourceTree = "<group>"; };
+		BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -159,6 +163,7 @@
 				7896A35DF77F32F16827239B /* TaskNames */,
 				95106349D1A9FA32ACFC23AF /* TaskRename */,
 				96323D4C37A17D8DDEDEE31F /* TaskArchiving */,
+				BD73674A963DDEAA117CE005 /* BulkTaskArchiving */,
 				BC2C72DE80FA70B4405D048F /* Connection */,
 				DD8C138E5B09DE3D7D67AA06 /* TaskCatalog */,
 				8E70C3CFF05EE0815A3B9AD4 /* Tracking */,
@@ -287,6 +292,15 @@
 			path = TaskArchiving;
 			sourceTree = "<group>";
 		};
+        BD73674A963DDEAA117CE005 /* BulkTaskArchiving */ = {
+            isa = PBXGroup;
+            children = (
+                BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */,
+                BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */,
+            );
+            path = BulkTaskArchiving;
+            sourceTree = "<group>";
+        };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -401,6 +415,8 @@
 				42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */,
 				2507B5FE7BE977C63473174B /* TaskArchivingView.swift in Sources */,
 				8503050BDB83B0C4D676D937 /* TaskArchivingStore.swift in Sources */,
+				BD73674A963DDEAA117CE004 /* BulkTaskArchivingView.swift in Sources */,
+				BD73674A963DDEAA117CE002 /* BulkTaskArchivingStore.swift in Sources */,
 				18D2319E48E082F857DD0A32 /* TaskCreationStore.swift in Sources */,
 				B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */,
 				3B56BC67EA3B3C706744AFC4 /* TrackerStore.swift in Sources */,

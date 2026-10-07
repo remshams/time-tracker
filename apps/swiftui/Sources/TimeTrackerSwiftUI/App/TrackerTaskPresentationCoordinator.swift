@@ -22,7 +22,7 @@ final class TrackerTaskPresentationCoordinator {
         isRunning = true
         for publisher in [store.objectWillChange, store.creation.objectWillChange,
                           store.rename.objectWillChange, store.correction.objectWillChange,
-                          store.move.objectWillChange, store.archiving.objectWillChange] {
+                          store.move.objectWillChange, store.archiving.objectWillChange, store.bulkArchiving.objectWillChange] {
             publisher.sink { [weak self] _ in self?.update() }.store(in: &subscriptions)
         }
         update()
@@ -53,7 +53,7 @@ final class TrackerTaskPresentationCoordinator {
     private var hasPresentation: Bool {
         store.creation.state.isPresented || store.rename.state.isPresented ||
             store.correction.state.isPresented || store.move.state.isPresented ||
-            store.archiving.state.isPresented || store.trackingError != nil
+            store.archiving.state.isPresented || store.bulkArchiving.state.isPresented || store.trackingError != nil
     }
 
     private func update() {
@@ -66,7 +66,7 @@ final class TrackerTaskPresentationCoordinator {
         isChoosingOwner = true
         defer { isChoosingOwner = false }
         let needsEditor = store.creation.state.isPresented || store.rename.state.isPresented ||
-            store.correction.state.isPresented || store.move.state.isPresented || store.archiving.state.isPresented
+            store.correction.state.isPresented || store.move.state.isPresented || store.archiving.state.isPresented || store.bulkArchiving.state.isPresented
         setOwner(presentingWindow(needsEditor))
     }
 
@@ -103,6 +103,7 @@ struct TrackerDetailPresentation: View {
                 TaskRenameDialog(rename: store.rename, isPresentationOwner: isOwner)
                 WorklogCorrectionDialog(correction: store.correction, isPresentationOwner: isOwner)
                 WorklogMoveDialog(move: store.move, isPresentationOwner: isOwner)
+                BulkTaskArchivingDialog(archiving: store.bulkArchiving, isPresentationOwner: isOwner)
                 TaskArchivingDialog(archiving: store.archiving, isPresentationOwner: isOwner)
             }
             .alert("Could not change tracking", isPresented: trackingFailurePresented) {

@@ -21,6 +21,7 @@ final class TrackerStore {
     let menu: TrackerMenuStore
     let creation: TaskCreationStore
     let rename: TaskRenameStore
+    let bulkArchiving: BulkTaskArchivingStore
     let archiving: TaskArchivingStore
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore
@@ -45,6 +46,7 @@ final class TrackerStore {
         menu = TrackerMenuStore(session: session, showDailyTotal: showDailyTotalInMenuBar)
         creation = TaskCreationStore(session: session, presentation: presentation)
         rename = TaskRenameStore(session: session, presentation: presentation)
+        bulkArchiving = BulkTaskArchivingStore(session: session, presentation: presentation)
         archiving = TaskArchivingStore(session: session, presentation: presentation)
         correction = WorklogCorrectionStore(session: session, presentation: presentation)
         move = WorklogMoveStore(session: session, presentation: presentation)

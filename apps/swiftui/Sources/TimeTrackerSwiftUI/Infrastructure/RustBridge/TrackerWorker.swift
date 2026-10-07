@@ -85,6 +85,24 @@ private final class RustBridge {
         }
     }
 
+    func previewInactiveTasks(inactiveDays: Int, asOf: String) throws -> InactiveTaskPreview {
+        guard let days = UInt32(exactly: inactiveDays), days > 0, !asOf.utf8.contains(0) else {
+            throw BridgeFailure(message: "The archive period or date is invalid.")
+        }
+        return try asOf.withCString {
+            try decode(tt_bridge_preview_inactive_tasks_at(handle, days, $0), requiresRefreshOnMalformed: true)
+        }
+    }
+
+    func archiveInactiveTasks(preview: InactiveTaskPreview) throws -> InactiveTaskArchiveResult {
+        guard let days = UInt32(exactly: preview.inactiveDays), days > 0, !preview.asOf.utf8.contains(0) else {
+            throw BridgeFailure(message: "The archive period or date is invalid.")
+        }
+        return try preview.asOf.withCString {
+            try decode(tt_bridge_archive_inactive_tasks_at(handle, days, $0), requiresRefreshOnMalformed: true)
+        }
+    }
+
     func archiveTask(taskID: String, occurredAt: String) throws -> TrackerSnapshot {
         try taskID.withCString { task in
             try occurredAt.withCString { instant in
@@ -273,6 +291,14 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
 
     func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TrackerSnapshot {
         try await perform { try $0.currentBridge().renameTask(taskID: taskID, name: name, occurredAt: occurredAt) }
+    }
+
+    func previewInactiveTasks(inactiveDays: Int, asOf: String) async throws -> InactiveTaskPreview {
+        try await perform { try $0.currentBridge().previewInactiveTasks(inactiveDays: inactiveDays, asOf: asOf) }
+    }
+
+    func archiveInactiveTasks(preview: InactiveTaskPreview) async throws -> InactiveTaskArchiveResult {
+        try await perform { try $0.currentBridge().archiveInactiveTasks(preview: preview) }
     }
 
     func archiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {

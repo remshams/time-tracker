@@ -58,12 +58,14 @@ private struct TrackerSidebarToolbar: View {
     let preferWindow: () -> Void
     @ObservedObject private var creation: TaskCreationStore
     @ObservedObject private var rename: TaskRenameStore
+    @ObservedObject private var bulkArchiving: BulkTaskArchivingStore
     @Environment(\.openWindow) private var openWindow
 
     init(store: TrackerStore, preferWindow: @escaping () -> Void) {
         self.preferWindow = preferWindow
         creation = store.creation
         rename = store.rename
+        bulkArchiving = store.bulkArchiving
     }
 
     private var canCreate: Bool {
@@ -87,6 +89,16 @@ private struct TrackerSidebarToolbar: View {
         }
         .disabled(!canCreate)
         .help("New task")
+
+        Button {
+            guard bulkArchiving.canOpen else { return }
+            preferWindow()
+            bulkArchiving.open()
+        } label: {
+            Label("Archive inactive tasks", systemImage: "archivebox")
+        }
+        .disabled(!bulkArchiving.canOpen)
+        .help("Archive inactive tasks")
     }
 }
 
