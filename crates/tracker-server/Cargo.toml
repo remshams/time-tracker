@@ -10,7 +10,6 @@ chrono.workspace = true
 libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2 = "0.10.9"
 tokio.workspace = true
 tracker-application = { path = "../tracker-application" }
 tracker-domain = { path = "../tracker-domain" }

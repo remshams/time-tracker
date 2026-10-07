@@ -20,7 +20,6 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, GlobalWorklogCursor,
     ReportQueries, SetActiveTaskOutcome, TaskOperations, TaskOrdering, TaskQueries,
@@ -278,16 +277,6 @@ struct InactivePreviewQuery {
     as_of: DateTime<Utc>,
 }
 
-fn candidate_fingerprint(tasks: &[Task]) -> String {
-    let mut ids: Vec<TaskId> = tasks.iter().map(Task::id).collect();
-    ids.sort_unstable();
-    let mut digest = Sha256::new();
-    for id in ids {
-        digest.update(id.to_string().as_bytes());
-    }
-    format!("{:x}", digest.finalize())
-}
-
 fn validate_inactive_as_of(as_of: DateTime<Utc>, now: DateTime<Utc>) -> Result<(), ApiError> {
     let difference = as_of.signed_duration_since(now);
     if difference < -INACTIVE_AS_OF_TOLERANCE || difference > INACTIVE_AS_OF_TOLERANCE {
@@ -315,7 +304,6 @@ async fn preview_inactive_tasks(
             .map(|task| task.name().as_str().to_owned())
             .collect(),
         revision: core.revision(),
-        candidate_fingerprint: candidate_fingerprint(&tasks),
     }))
 }
 
@@ -324,24 +312,11 @@ async fn archive_inactive_tasks(
     input: Result<Json<ArchiveInactiveTasksRequest>, JsonRejection>,
 ) -> ApiResult<MutationDto> {
     let request = payload(input)?;
-    if request.candidate_fingerprint.len() != 64
-        || !request
-            .candidate_fingerprint
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err(ApiError::invalid("Invalid candidate fingerprint"));
-    }
     let key = fingerprint("POST /v1/tasks/archive-inactive", &request)?;
     let mut core = lock(&shared)?;
     let response = core.execute(&request.guard, key, |app| {
         validate_inactive_as_of(request.as_of, Utc::now())?;
         let candidates = app.preview_inactive_tasks(request.as_of)?;
-        if candidate_fingerprint(&candidates) != request.candidate_fingerprint {
-            return Err(ApiError::conflict(
-                "Inactive task preview changed. Preview again.",
-            ));
-        }
         let ids: Vec<TaskId> = candidates.iter().map(Task::id).collect();
         let archived = app.archive_inactive_tasks(&ids, request.as_of)?;
         Ok(MutationResultDto::ArchivedInactive {

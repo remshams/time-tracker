@@ -75,7 +75,6 @@ fn archive_request(preview: &InactiveTaskPreviewDto) -> Value {
     merge(
         json!({
             "as_of": preview.as_of,
-            "candidate_fingerprint": preview.candidate_fingerprint,
         }),
         guard(&preview.revision),
     )
@@ -101,12 +100,16 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
 
     let (status, body) = call(&router, Method::GET, &preview_uri(as_of), None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body.as_object().unwrap().len(), 4);
+    assert!(body.get("candidate_fingerprint").is_none());
     let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
     assert_eq!(preview.count, 1);
     assert_eq!(preview.sample_names, ["Old planning task"]);
-    assert_eq!(preview.candidate_fingerprint.len(), 64);
 
     let request = archive_request(&preview);
+    assert_eq!(request.as_object().unwrap().len(), 3);
+    assert_eq!(request["expected_revision"], preview.revision);
+    assert!(Uuid::parse_str(request["request_id"].as_str().unwrap()).is_ok());
     let (status, first) = call(
         &router,
         Method::POST,
@@ -131,11 +134,53 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
         &router,
         Method::POST,
         "/v1/tasks/archive-inactive",
-        Some(request),
+        Some(request.clone()),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(replay, first);
+
+    let mut changed_request = request.clone();
+    changed_request["as_of"] = json!(as_of + TimeDelta::seconds(1));
+    let (status, body) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive",
+        Some(changed_request),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "conflict");
+    assert_eq!(state(&router).await.revision, mutation.snapshot.revision);
+
+    let archived_id = &mutation.snapshot.task_items[0].task.id;
+    let restore = merge(
+        json!({"action": "restore", "occurred_at": as_of}),
+        guard(&mutation.snapshot.revision),
+    );
+    let (status, body) = call(
+        &router,
+        Method::PATCH,
+        &format!("/v1/tasks/{archived_id}"),
+        Some(restore),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let restored: MutationDto = serde_json::from_value(body).unwrap();
+    assert!(!restored.snapshot.task_items[0].task.archived);
+
+    let (status, body) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive",
+        Some(request),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let replay: MutationDto = serde_json::from_value(body).unwrap();
+    assert_eq!(replay.result, mutation.result);
+    assert_eq!(replay.snapshot, restored.snapshot);
+    assert_eq!(state(&router).await, restored.snapshot);
 }
 
 #[tokio::test]
@@ -162,54 +207,17 @@ async fn inactive_preview_bounds_sample_without_limiting_candidate_count() {
 }
 
 #[tokio::test]
-async fn inactive_archive_rejects_a_changed_candidate_set_without_writing() {
-    let directory = TempDir::new().unwrap();
-    let database = directory.path().join("tracker.db");
-    let router = tracker_server::router_for_database(&database).unwrap();
-    let as_of = Utc::now();
-    let (status, body) = call(&router, Method::GET, &preview_uri(as_of), None).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
-
-    let outside = SqliteRepository::open(&database).unwrap();
-    outside
-        .create_task(Task::create(
-            TaskId::generate(),
-            TaskName::new("Changed outside server").unwrap(),
-            as_of - TimeDelta::days(20),
-        ))
-        .unwrap();
-    let (status, body) = call(
-        &router,
-        Method::POST,
-        "/v1/tasks/archive-inactive",
-        Some(archive_request(&preview)),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CONFLICT, "{body}");
-    assert_eq!(body["code"], "conflict");
-    assert!(
-        !outside
-            .list_tasks()
-            .unwrap()
-            .into_iter()
-            .find(|task| task.name().as_str() == "Changed outside server")
-            .unwrap()
-            .is_archived()
-    );
-}
-
-#[tokio::test]
-async fn inactive_archive_rejects_a_tampered_fingerprint_without_writing() {
+async fn inactive_archive_uses_current_candidates_when_database_changes_after_preview() {
     let directory = TempDir::new().unwrap();
     let database = directory.path().join("tracker.db");
     let router = tracker_server::router_for_database(&database).unwrap();
     let as_of = Utc::now();
     let outside = SqliteRepository::open(&database).unwrap();
+    let changed_id = TaskId::generate();
     outside
         .create_task(Task::create(
-            TaskId::generate(),
-            TaskName::new("Old candidate").unwrap(),
+            changed_id,
+            TaskName::new("Previously inactive").unwrap(),
             as_of - TimeDelta::days(20),
         ))
         .unwrap();
@@ -218,39 +226,57 @@ async fn inactive_archive_rejects_a_tampered_fingerprint_without_writing() {
     let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
     assert_eq!(preview.count, 1);
 
-    let mut request = archive_request(&preview);
-    request["candidate_fingerprint"] = json!("0".repeat(64));
+    outside
+        .rename_task(
+            changed_id,
+            TaskName::new("Recently changed").unwrap(),
+            as_of,
+        )
+        .unwrap();
+    let candidate_ids = [TaskId::generate(), TaskId::generate()];
+    for (index, id) in candidate_ids.iter().enumerate() {
+        outside
+            .create_task(Task::create(
+                *id,
+                TaskName::new(&format!("New inactive candidate {index}")).unwrap(),
+                as_of - TimeDelta::days(20),
+            ))
+            .unwrap();
+    }
     let (status, body) = call(
         &router,
         Method::POST,
         "/v1/tasks/archive-inactive",
-        Some(request),
+        Some(archive_request(&preview)),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "{body}");
-    assert_eq!(body["code"], "conflict");
-    for fingerprint in ["a".repeat(63), "g".repeat(64)] {
-        let mut request = archive_request(&preview);
-        request["candidate_fingerprint"] = json!(fingerprint);
-        let (status, body) = call(
-            &router,
-            Method::POST,
-            "/v1/tasks/archive-inactive",
-            Some(request),
-        )
-        .await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-        assert_eq!(body["code"], "invalid_request");
-    }
-    assert!(
-        !outside
-            .list_tasks()
-            .unwrap()
-            .into_iter()
-            .find(|task| task.name().as_str() == "Old candidate")
-            .unwrap()
-            .is_archived()
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let result: MutationDto = serde_json::from_value(body).unwrap();
+    assert_eq!(
+        result.result,
+        MutationResultDto::ArchivedInactive { count: 2 }
     );
+    assert_ne!(result.snapshot.revision, preview.revision);
+    assert_eq!(result.snapshot.task_items.len(), 3);
+    for id in candidate_ids {
+        let task = outside.find_task(id).unwrap().unwrap();
+        assert!(task.is_archived());
+        assert!(
+            result
+                .snapshot
+                .task_items
+                .iter()
+                .any(|item| { item.task.id == id.to_string() && item.task.archived })
+        );
+    }
+    let changed = outside.find_task(changed_id).unwrap().unwrap();
+    assert!(!changed.is_archived());
+    assert_eq!(changed.name().as_str(), "Recently changed");
+    assert!(result.snapshot.task_items.iter().any(|item| {
+        item.task.id == changed_id.to_string()
+            && item.task.name == "Recently changed"
+            && !item.task.archived
+    }));
 }
 
 #[tokio::test]
@@ -304,7 +330,7 @@ async fn health_create_retry_and_stale_revision() {
     let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
     let (status, health) = call(&router, Method::GET, "/v1/health", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(health, json!({"status":"ok","protocol_version":1}));
+    assert_eq!(health, json!({"status":"ok","protocol_version":2}));
     let before = state(&router).await;
     assert!(before.task_items.is_empty());
     let task_id = Uuid::now_v7().to_string();
