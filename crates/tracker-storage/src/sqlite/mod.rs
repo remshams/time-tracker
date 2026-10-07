@@ -13,11 +13,11 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags};
 use tracker_application::{
     GlobalWorklogCursor, GlobalWorklogPage, InactiveTaskArchive, InactiveTaskPreviewRead,
-    ReportRead, ReportRepository, RepositoryError, TaskRepository, TrackerSnapshot,
-    TrackingRepository, WorklogCorrection, WorklogCursor, WorklogDeletion, WorklogMove,
-    WorklogPage, WorklogRepository,
+    InactiveTaskRepository, ReportRead, ReportRepository, RepositoryError, TaskRepository,
+    TrackerSnapshot, TrackingRepository, WorklogCorrection, WorklogCursor, WorklogDeletion,
+    WorklogMove, WorklogPage, WorklogRepository,
 };
-use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
+use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
 
 use crate::{StorageError, error, migrate, paths};
 
@@ -120,6 +120,27 @@ impl TaskRepository for SqliteRepository {
         as_of: DateTime<Utc>,
     ) -> Result<InactiveTaskArchive, RepositoryError> {
         SqliteRepository::archive_inactive_tasks(self, expected_ids, as_of).map_err(Into::into)
+    }
+}
+
+impl InactiveTaskRepository for SqliteRepository {
+    fn preview_inactive_tasks_with_period(
+        &self,
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
+    ) -> Result<InactiveTaskPreviewRead, RepositoryError> {
+        SqliteRepository::preview_inactive_tasks_with_period(self, as_of, period)
+            .map_err(Into::into)
+    }
+
+    fn archive_inactive_tasks_with_period(
+        &self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
+    ) -> Result<InactiveTaskArchive, RepositoryError> {
+        SqliteRepository::archive_inactive_tasks_with_period(self, expected_ids, as_of, period)
+            .map_err(Into::into)
     }
 }
 

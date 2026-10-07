@@ -5,7 +5,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 use tracker_application::{
     InactiveTaskArchive, InactiveTaskPreviewRead, TaskListItem, TrackerSnapshot,
 };
-use tracker_domain::{Task, TaskId, TaskName};
+use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName};
 
 use super::{
     SqliteRepository, error,
@@ -49,7 +49,7 @@ pub(crate) fn list_task_items_on(conn: &Connection) -> Result<Vec<TaskListItem>,
     Ok(items)
 }
 
-const INACTIVE_WINDOW_US: i64 = 14 * 24 * 60 * 60 * 1_000_000;
+const DAY_US: i64 = 24 * 60 * 60 * 1_000_000;
 
 /// Running worklogs and positive-duration work after the cutoff prevent
 /// archiving, including work recorded after the preview's original time.
@@ -64,14 +64,24 @@ const INACTIVE_TASKS_SQL: &str = "SELECT t.id, t.name, t.archived, t.created_at_
        )
      ORDER BY t.id";
 
-fn inactive_task_cutoff(as_of: DateTime<Utc>) -> Result<i64, StorageError> {
+fn inactive_task_cutoff(
+    as_of: DateTime<Utc>,
+    period: InactivityPeriod,
+) -> Result<i64, StorageError> {
+    let window_us = i64::from(period.days())
+        .checked_mul(DAY_US)
+        .ok_or(StorageError::InvalidInactiveTaskTime)?;
     timestamp_to_us(as_of)
-        .checked_sub(INACTIVE_WINDOW_US)
+        .checked_sub(window_us)
         .ok_or(StorageError::InvalidInactiveTaskTime)
 }
 
-fn inactive_tasks_on(conn: &Connection, as_of: DateTime<Utc>) -> Result<Vec<Task>, StorageError> {
-    let cutoff_us = inactive_task_cutoff(as_of)?;
+fn inactive_tasks_on(
+    conn: &Connection,
+    as_of: DateTime<Utc>,
+    period: InactivityPeriod,
+) -> Result<Vec<Task>, StorageError> {
+    let cutoff_us = inactive_task_cutoff(as_of, period)?;
     let mut statement = conn.prepare(INACTIVE_TASKS_SQL)?;
     let mut rows = statement.query([cutoff_us])?;
     let mut tasks = Vec::new();
@@ -210,8 +220,16 @@ impl SqliteRepository {
         &self,
         as_of: DateTime<Utc>,
     ) -> Result<InactiveTaskPreviewRead, StorageError> {
+        self.preview_inactive_tasks_with_period(as_of, InactivityPeriod::default())
+    }
+
+    pub fn preview_inactive_tasks_with_period(
+        &self,
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
+    ) -> Result<InactiveTaskPreviewRead, StorageError> {
         let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Deferred)?;
-        let tasks = inactive_tasks_on(&transaction, as_of)?;
+        let tasks = inactive_tasks_on(&transaction, as_of, period)?;
         let snapshot = TrackerSnapshot {
             task_items: list_task_items_on(&transaction)?,
             active_worklog: active_worklog_on(&transaction)?,
@@ -226,8 +244,17 @@ impl SqliteRepository {
         expected_ids: &[TaskId],
         as_of: DateTime<Utc>,
     ) -> Result<InactiveTaskArchive, StorageError> {
+        self.archive_inactive_tasks_with_period(expected_ids, as_of, InactivityPeriod::default())
+    }
+
+    pub fn archive_inactive_tasks_with_period(
+        &self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
+    ) -> Result<InactiveTaskArchive, StorageError> {
         let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
-        let mut tasks = inactive_tasks_on(&transaction, as_of)?;
+        let mut tasks = inactive_tasks_on(&transaction, as_of, period)?;
         if tasks.iter().map(Task::id).collect::<Vec<_>>() != expected_ids {
             return Err(StorageError::InactiveTaskCandidatesChanged);
         }
