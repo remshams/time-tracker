@@ -133,6 +133,8 @@ Ctrl+C quits from every mode.
 
 ## Architecture
 
+Open [the architecture diagrams](docs/architecture.html) in a browser for the system overview, Rust crate dependencies, Swift and AppKit structure, and Swift-to-Rust bridge call paths. The HTML works offline and includes the recorded CRAP and mutation annotations. Its date and source revision identify the snapshot it describes.
+
 The workspace has eight packages:
 
 - `apps/cli`: the `tt-cli` binary. Command parsing and handlers are grouped by tasks, tracking, worklogs, and reports. It uses the existing application services and remote client; it does not access raw SQL or set up a terminal.
