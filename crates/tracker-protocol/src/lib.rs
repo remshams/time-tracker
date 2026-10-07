@@ -8,7 +8,7 @@ use tracker_application::{
 };
 use tracker_domain::{Task, TaskId, Worklog, WorklogId, WorklogTimes};
 
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -107,14 +107,12 @@ pub struct InactiveTaskPreviewDto {
     pub count: usize,
     pub sample_names: Vec<String>,
     pub revision: String,
-    pub candidate_fingerprint: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ArchiveInactiveTasksRequest {
     pub as_of: DateTime<Utc>,
-    pub candidate_fingerprint: String,
     #[serde(flatten)]
     pub guard: WriteGuard,
 }
