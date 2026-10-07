@@ -12,8 +12,10 @@ use tracker_application::{
 };
 
 mod backend;
+mod database;
 mod inactive;
 use backend::{Backend, BridgeError, InactivePreview};
+pub use database::tt_bridge_open_path;
 pub use inactive::{tt_bridge_archive_inactive_tasks_at, tt_bridge_preview_inactive_tasks_at};
 use tracker_domain::{TaskId, TaskName, TrackingState, WorklogId, WorklogTimes};
 use tracker_storage::{SqliteRepository, default_database_path, ensure_app_data_dir};

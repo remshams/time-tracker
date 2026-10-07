@@ -7,6 +7,7 @@
 typedef struct Bridge Bridge;
 
 Bridge *tt_bridge_open(char **error);
+Bridge *tt_bridge_open_path(const char *path, char **error);
 Bridge *tt_bridge_open_remote(const char *endpoint, char **error);
 void tt_bridge_close(Bridge *bridge);
 void tt_bridge_string_free(char *value);
