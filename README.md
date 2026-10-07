@@ -191,7 +191,7 @@ Missed and timed-out mutants fail the check, as do CRAP scores above 30. The pin
 
 GitHub Actions runs every regular check for every pull request, push to `main`,
 and manual CI run. There are no changed-file filters. Portable checks use
-Blacksmith Ubuntu 24.04 runners; macOS runners cover platform compatibility and
+GitHub-hosted Ubuntu 24.04 runners; macOS runners cover platform compatibility and
 the native app. The workflows use read-only repository permissions, pinned
 action revisions, dependency and build caches, and seven-day report retention.
 
@@ -209,23 +209,27 @@ action revisions, dependency and build caches, and seven-day report retention.
 CI pins Rust 1.98.1 in the [shared Rust setup action](.github/actions/setup-rust/action.yml),
 Swift 6.1.3 for Linux, and Xcode 27.0 for the native app. Coverage and mutation tool
 versions follow `AGENTS.md`. The macOS job uses
-`blacksmith-6vcpu-macos-27`, checks for the macOS 27 SDK, and requires a desktop
-session for the existing layout checks. Native UI E2E tests remain deferred.
+GitHub's `xcode-27` public preview image, which includes macOS 27, Xcode 27.0,
+and the macOS 27 SDK. Rust platform tests use the stable `macos-26` image.
+The existing layout checks require a desktop session. Native UI E2E tests remain deferred.
 The universal build validates Apple Silicon and Intel slices without publishing
 or requiring an Apple Developer account.
 
 To enable these workflows:
 
-1. Create the GitHub repository in an organization. Blacksmith does not support
-   personal repositories. Install the Blacksmith GitHub App for that repository
-   and enable the Linux and macOS runners. See the
-   [Blacksmith quickstart](https://docs.blacksmith.sh/introduction/quickstart) and
-   [runner images](https://docs.blacksmith.sh/blacksmith-runners/overview).
-2. Add the GitHub remote and push `main` with these workflow files. If the default
-   branch has a different name, update the CI push branch filter. Manual workflows
-   must exist on the default branch before GitHub offers their Run workflow button.
-3. Run CI and confirm Xcode 27.0 and a desktop session are available on the selected
-   Blacksmith macOS image. The image is currently listed as public beta.
+1. Enable GitHub Actions for the repository under Settings > Actions > General.
+   GitHub-hosted runners support personal repositories and need no runner app
+   installation. Standard runners are free for public repositories; private
+   repositories use the account's included minutes and billing limits. See
+   [GitHub-hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+2. Push these workflow files to the default branch, then select Actions > CI >
+   Run workflow and choose the branch to test. Manual workflows must exist on
+   the default branch before GitHub offers their Run workflow button. A push to
+   `main` or a pull request also starts CI automatically. If the default branch
+   will keep a different name, update the CI push branch filter.
+3. Confirm the native build and layout checks pass on the `xcode-27` image.
+   This image is currently in public preview. Its installed software is listed in
+   [GitHub's Xcode 27 image manifest](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md).
 4. Require `CI passed` in the default branch protection rule. Mutation tests and
    the scheduled dependency audit are separate from that required check.
 
