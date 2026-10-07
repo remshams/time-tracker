@@ -9,7 +9,8 @@ pub use worklogs::move_candidates_for_tasks;
 
 use chrono::{DateTime, Utc};
 use tracker_domain::{
-    Task, TaskId, TaskName, Tracker, TrackingState, Worklog, WorklogId, WorklogTimes,
+    InactivityPeriod, Task, TaskId, TaskName, Tracker, TrackingState, Worklog, WorklogId,
+    WorklogTimes,
 };
 
 use crate::{
@@ -93,6 +94,22 @@ pub trait TaskOperations {
         &mut self,
         expected_ids: &[TaskId],
         as_of: DateTime<Utc>,
+    ) -> Result<Vec<Task>, ApplicationError>;
+}
+
+/// Bulk archive use cases with a configurable inactivity period.
+pub trait InactiveTaskOperations {
+    fn preview_inactive_tasks_with_period(
+        &mut self,
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
+    ) -> Result<Vec<Task>, ApplicationError>;
+
+    fn archive_inactive_tasks_with_period(
+        &mut self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
     ) -> Result<Vec<Task>, ApplicationError>;
 }
 

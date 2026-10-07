@@ -1,6 +1,113 @@
 use super::*;
 
 #[test]
+fn configurable_inactivity_period_flows_through_preview_and_atomic_archive() {
+    let as_of = at(4_000_000) + TimeDelta::nanoseconds(123);
+    let old = stamped_task(1, "Old planning", 100, 100);
+    let newer = stamped_task(2, "Recent planning", 3_000_000, 3_000_000);
+    let repository = MemoryRepository::with_tasks(vec![old.clone(), newer.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let week = InactivityPeriod::new(7).unwrap();
+    let month = InactivityPeriod::new(30).unwrap();
+    assert_eq!(
+        application
+            .preview_inactive_tasks_with_period(as_of, week)
+            .unwrap(),
+        vec![old.clone(), newer.clone()]
+    );
+    assert_eq!(
+        application
+            .preview_inactive_tasks_with_period(as_of, month)
+            .unwrap(),
+        vec![old.clone()]
+    );
+    assert_eq!(
+        repository.0.borrow().inactive_preview_request,
+        Some((at(4_000_000), month))
+    );
+    assert!(matches!(
+        application.archive_inactive_tasks_with_period(&[old.id(), newer.id()], as_of, month),
+        Err(ApplicationError::Repository(
+            RepositoryError::InactiveTaskCandidatesChanged
+        ))
+    ));
+    assert!(!application.task(old.id()).unwrap().is_archived());
+    let archived = application
+        .archive_inactive_tasks_with_period(&[old.id()], as_of, month)
+        .unwrap();
+    assert_eq!(
+        repository.0.borrow().inactive_archive_request,
+        Some((at(4_000_000), month))
+    );
+    assert_eq!(archived.len(), 1);
+    assert!(archived[0].is_archived());
+    assert_eq!(archived[0].updated_at(), at(4_000_000));
+    assert!(application.task(old.id()).unwrap().is_archived());
+    assert_eq!(application.task(newer.id()), Some(&newer));
+}
+
+#[test]
+fn configurable_preview_adopts_authoritative_tracking_and_preserves_state_on_read_failure() {
+    let old = stamped_task(1, "Old planning", 100, 100);
+    let repository = MemoryRepository::with_tasks(vec![old.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let running = worklog(10, old.id(), 200);
+    repository.insert_worklog(&running).unwrap();
+    let period = InactivityPeriod::new(7).unwrap();
+    assert!(
+        application
+            .preview_inactive_tasks_with_period(at(4_000_000), period)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        application.current_tracking(),
+        &TrackingState::Running {
+            worklog: ActiveWorklog::begin(running.id(), old.id(), running.start())
+        }
+    );
+    repository.0.borrow_mut().fail_reads = true;
+    assert!(
+        application
+            .preview_inactive_tasks_with_period(at(4_000_000), period)
+            .is_err()
+    );
+    assert_eq!(
+        application.current_tracking(),
+        &TrackingState::Running {
+            worklog: ActiveWorklog::begin(running.id(), old.id(), running.start())
+        }
+    );
+    assert_eq!(application.task(old.id()), Some(&old));
+}
+
+#[test]
+fn configurable_archive_recovers_authoritative_state_and_retains_recovery_failures() {
+    let old = stamped_task(1, "Old planning", 100, 100);
+    let repository = MemoryRepository::with_tasks(vec![old.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let newer = stamped_task(2, "New planning", 200, 200);
+    repository.create_task(newer.clone()).unwrap();
+    repository.0.borrow_mut().fail_next_write =
+        Some(RepositoryError::InactiveTaskCandidatesChanged);
+    let period = InactivityPeriod::new(7).unwrap();
+    assert!(
+        application
+            .archive_inactive_tasks_with_period(&[old.id()], at(4_000_000), period)
+            .is_err()
+    );
+    assert_eq!(application.task(newer.id()), Some(&newer));
+    repository.0.borrow_mut().fail_next_write =
+        Some(RepositoryError::InactiveTaskCandidatesChanged);
+    repository.fail_recovery_after_next_write();
+    let error = application
+        .archive_inactive_tasks_with_period(&[old.id()], at(4_000_000), period)
+        .unwrap_err();
+    assert!(error.failure().recovery_failed());
+    assert!(!application.task(old.id()).unwrap().is_archived());
+}
+
+#[test]
 fn inactive_preview_reads_current_worklogs_and_bulk_archive_rechecks_them() {
     let as_of = at(2_000_000);
     let old = stamped_task(1, "old task", 100, 100);

@@ -1,10 +1,15 @@
 //! Task queries and commands.
 
 use chrono::{DateTime, Utc};
-use tracker_domain::{Task, TaskId, TaskName, TrackingError};
+use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName, TrackingError};
 
-use super::{TaskOperations, TaskQueries, TrackerApplication, canonical_timestamp};
-use crate::{ApplicationError, RepositoryError, TaskListItem, TaskOrdering, TrackerRepository};
+use super::{
+    InactiveTaskOperations, TaskOperations, TaskQueries, TrackerApplication, canonical_timestamp,
+};
+use crate::{
+    ApplicationError, InactiveTaskRepository, RepositoryError, TaskListItem, TaskOrdering,
+    TrackerRepository,
+};
 
 impl<R: TrackerRepository> TaskQueries for TrackerApplication<R> {
     fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
@@ -113,6 +118,41 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
             .repository
             .archive_inactive_tasks(expected_ids, canonical_timestamp(as_of));
         match result {
+            Ok(archive) => {
+                self.adopt_snapshot(archive.snapshot)?;
+                Ok(archive.tasks)
+            }
+            Err(error) => Err(self.task_failure_with_recovery(error.into())),
+        }
+    }
+}
+
+impl<R: TrackerRepository + InactiveTaskRepository> InactiveTaskOperations
+    for TrackerApplication<R>
+{
+    fn preview_inactive_tasks_with_period(
+        &mut self,
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
+    ) -> Result<Vec<Task>, ApplicationError> {
+        let preview = self
+            .repository
+            .preview_inactive_tasks_with_period(canonical_timestamp(as_of), period)?;
+        self.adopt_snapshot(preview.snapshot)?;
+        Ok(preview.tasks)
+    }
+
+    fn archive_inactive_tasks_with_period(
+        &mut self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
+    ) -> Result<Vec<Task>, ApplicationError> {
+        match self.repository.archive_inactive_tasks_with_period(
+            expected_ids,
+            canonical_timestamp(as_of),
+            period,
+        ) {
             Ok(archive) => {
                 self.adopt_snapshot(archive.snapshot)?;
                 Ok(archive.tasks)
