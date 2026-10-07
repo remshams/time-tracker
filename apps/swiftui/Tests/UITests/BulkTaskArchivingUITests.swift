@@ -26,8 +26,8 @@ final class BulkTaskArchivingUITests: XCTestCase {
                 screenshot.lifetime = .keepAlways
                 add(screenshot)
             }
-            let hierarchy = XCTAttachment(string: app.debugDescription)
-            hierarchy.name = "Accessibility hierarchy"
+            let hierarchy = XCTAttachment(string: app.windows.debugDescription)
+            hierarchy.name = "Tracker window accessibility hierarchy"
             hierarchy.lifetime = .keepAlways
             add(hierarchy)
         }
@@ -128,6 +128,13 @@ final class BulkTaskArchivingUITests: XCTestCase {
 
     private func launch() {
         app.launch()
+        app.activate()
+        let windowMenu = app.menuBars.menuBarItems["Window"]
+        XCTAssertTrue(windowMenu.waitForExistence(timeout: timeout))
+        windowMenu.click()
+        let showTracker = app.menuItems["Show Time Tracker"]
+        XCTAssertTrue(showTracker.waitForExistence(timeout: timeout))
+        showTracker.click()
         let open = app.buttons["bulk-archive.open"]
         XCTAssertTrue(open.waitForExistence(timeout: timeout), "The tracker window did not open.")
         waitUntil("Archive action becomes available") { open.isEnabled }
