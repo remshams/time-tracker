@@ -171,3 +171,25 @@ public struct WorklogMoveResult: Decodable, Equatable, Sendable {
         self.snapshot = snapshot
     }
 }
+
+public struct InactiveTaskPreview: Decodable, Equatable, Sendable {
+    public let asOf: String
+    public let inactiveDays: Int
+    public let tasks: [TaskItem]
+
+    public init(asOf: String, inactiveDays: Int, tasks: [TaskItem]) {
+        self.asOf = asOf
+        self.inactiveDays = inactiveDays
+        self.tasks = tasks
+    }
+}
+
+public struct InactiveTaskArchiveResult: Decodable, Equatable, Sendable {
+    public let archivedCount: Int
+    public let snapshot: TrackerSnapshot
+
+    public init(archivedCount: Int, snapshot: TrackerSnapshot) {
+        self.archivedCount = archivedCount
+        self.snapshot = snapshot
+    }
+}

@@ -15,6 +15,8 @@ final class FakeClient: TrackerClient, ReportClient {
         case refresh(ConnectionSettings)
         case snapshot
         case create(name: String, at: String)
+        case inactivePreview(days: Int, at: String)
+        case archiveInactive(InactiveTaskPreview)
         case archive(task: String, at: String)
         case unarchive(task: String, at: String)
         case rename(task: String, name: String, at: String)
@@ -33,6 +35,8 @@ final class FakeClient: TrackerClient, ReportClient {
         case snapshot(TrackerSnapshot)
         case history(HistoryPage)
         case tested
+        case inactivePreview(InactiveTaskPreview)
+        case archivedInactive(InactiveTaskArchiveResult)
         case created(TaskCreationResult)
         case corrected(WorklogCorrectionResult)
         case candidates([WorklogMoveCandidate])
@@ -61,6 +65,10 @@ final class FakeClient: TrackerClient, ReportClient {
         func candidates(_ values: [WorklogMoveCandidate]) { complete(.success(.candidates(values))) }
         func moved(worklog: WorklogItem, snapshot: TrackerSnapshot) {
             complete(.success(.moved(WorklogMoveResult(worklog: worklog, snapshot: snapshot))))
+        }
+        func inactivePreview(_ preview: InactiveTaskPreview) { complete(.success(.inactivePreview(preview))) }
+        func archivedInactive(count: Int, snapshot: TrackerSnapshot) {
+            complete(.success(.archivedInactive(InactiveTaskArchiveResult(archivedCount: count, snapshot: snapshot))))
         }
         func tested() { complete(.success(.tested)) }
         func fail(_ error: Error) { complete(.failure(error)) }
@@ -157,6 +165,16 @@ final class FakeClient: TrackerClient, ReportClient {
         guard case .created(let value) = try await perform(operation) else {
             throw wrongReply("creation", operation: operation)
         }
+        return value
+    }
+    func previewInactiveTasks(inactiveDays: Int, asOf: String) async throws -> InactiveTaskPreview {
+        let operation = Operation.inactivePreview(days: inactiveDays, at: asOf)
+        guard case .inactivePreview(let value) = try await perform(operation) else { throw wrongReply("inactive preview", operation: operation) }
+        return value
+    }
+    func archiveInactiveTasks(preview: InactiveTaskPreview) async throws -> InactiveTaskArchiveResult {
+        let operation = Operation.archiveInactive(preview)
+        guard case .archivedInactive(let value) = try await perform(operation) else { throw wrongReply("inactive archive", operation: operation) }
         return value
     }
     func archiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
