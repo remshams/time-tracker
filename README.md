@@ -49,6 +49,8 @@ tt --server http://127.0.0.1:8765
 
 Use `--db PATH` after `serve` to choose the server database. Without it, the server uses `tt-server.db` in the application-data directory. The local TUI continues to use `tt.db`; starting either mode does not copy or merge data. The client uses the server for every task, timer, history, and report action and never opens the server database directly. It refreshes shared state about once a second and reconnects after interruptions. If a write loses its response, check the refreshed server state before repeating it; the server keeps the timer running while clients are disconnected.
 
+Clients and servers now use protocol version 2. Update both together. Bulk archive previews and requests no longer carry a candidate fingerprint; regenerate saved remote CLI previews after updating.
+
 The first remote release assumes a trusted Tailscale network or localhost. HTTP traffic has no application-level authentication or TLS, so bind only to an address available to trusted peers. The server rejects wildcard, public, and ordinary LAN bind addresses and checks non-loopback addresses against the device's current `tailscale ip` output. It also rejects unexpected HTTP Host names. To export or remove the data, stop the server and copy or delete its SQLite database file and associated SQLite sidecar files.
 
 ## Data and database location
@@ -125,7 +127,7 @@ Task text input (`a` and `e`):
 Archive confirmation:
 
 - `y` or Enter confirms, `n` or Escape cancels.
-- `D` on the Active tab previews the number of inactive tasks and sample names. A task qualifies only if it was created and its metadata last changed more than 14 days ago and has no worklog overlapping that UTC window or running timer. Confirmation uses the preview's original time, rechecks the same candidate set, and archives it in one transaction. Recorded positive-duration work starting at or after the preview time also prevents archiving. If another client changes the set or server revision, open a fresh preview before trying again. The server accepts the preview time only while it is within 15 minutes of its clock.
+- `D` on the Active tab previews the number of inactive tasks and sample names. A task qualifies only if it was created and its metadata last changed more than 14 days ago and has no worklog overlapping that UTC window or running timer. Confirmation uses the preview's original time and archives eligible tasks in one transaction. Local mode requires the candidate IDs to match the preview. Server mode retains the preview's revision, recomputes eligible candidates, and reports the actual archived count. Recorded positive-duration work starting at or after the preview time prevents a task from qualifying. If a candidate or revision guard fails, open a fresh preview before trying again. The server accepts the preview time only while it is within 15 minutes of its clock.
 
 Ctrl+C quits from every mode.
 

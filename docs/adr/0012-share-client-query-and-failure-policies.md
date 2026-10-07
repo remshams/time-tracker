@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Partially superseded by [ADR 0013](0013-remove-remote-archive-candidate-fingerprints.md) for remote bulk archive candidate-set checks; all other decisions remain accepted.
 
 ## Date
 
