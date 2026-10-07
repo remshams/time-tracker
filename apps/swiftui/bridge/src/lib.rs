@@ -12,12 +12,24 @@ use tracker_application::{
 };
 
 mod backend;
-use backend::{Backend, BridgeError};
+mod inactive;
+use backend::{Backend, BridgeError, InactivePreview};
+pub use inactive::{tt_bridge_archive_inactive_tasks_at, tt_bridge_preview_inactive_tasks_at};
 use tracker_domain::{TaskId, TaskName, TrackingState, WorklogId, WorklogTimes};
 use tracker_storage::{SqliteRepository, default_database_path, ensure_app_data_dir};
 
 pub struct Bridge {
     application: Backend,
+    inactive_preview: Option<InactivePreview>,
+}
+
+impl Bridge {
+    fn new(application: Backend) -> Self {
+        Self {
+            application,
+            inactive_preview: None,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -124,9 +136,7 @@ fn open() -> Result<Bridge, String> {
 fn open_at(path: &Path) -> Result<Bridge, String> {
     let repository = SqliteRepository::open(path).map_err(|error| error.to_string())?;
     let application = TrackerApplication::load(repository).map_err(|error| error.to_string())?;
-    Ok(Bridge {
-        application: Backend::Local(application),
-    })
+    Ok(Bridge::new(Backend::Local(application)))
 }
 
 #[cfg(test)]
@@ -195,7 +205,7 @@ pub unsafe extern "C" fn tt_bridge_open_remote(
     let result = unsafe { read_identifier::<String>(endpoint, "Invalid server URL") }
         .and_then(|endpoint| Backend::remote(&endpoint));
     match result {
-        Ok(application) => Box::into_raw(Box::new(Bridge { application })),
+        Ok(application) => Box::into_raw(Box::new(Bridge::new(application))),
         Err(message) => {
             let message = CString::new(message)
                 .unwrap_or_else(|_| c"Could not open remote client".to_owned());
@@ -1241,9 +1251,7 @@ mod tests {
                 .unwrap();
         }
 
-        let bridge = Box::into_raw(Box::new(Bridge {
-            application: Backend::Local(application),
-        }));
+        let bridge = Box::into_raw(Box::new(Bridge::new(Backend::Local(application))));
         let task_id = CString::new(task.id().to_string()).unwrap();
         // SAFETY: The bridge and input string are live for both calls.
         let first_ptr = unsafe { tt_bridge_history(bridge, task_id.as_ptr(), ptr::null()) };

@@ -207,9 +207,7 @@ fn automation_commands_reject_null_bridges_identifiers_and_timestamps() {
 
 #[test]
 fn remote_resume_requires_an_authoritative_snapshot_before_writing() {
-    let mut bridge = Bridge {
-        application: Backend::remote("http://127.0.0.1:12345").unwrap(),
-    };
+    let mut bridge = Bridge::new(Backend::remote("http://127.0.0.1:12345").unwrap());
     let rejected = resume(&mut bridge, TaskId::generate(), "2026-10-04T10:00:00Z");
     assert_eq!(rejected["kind"], "unavailable");
     assert_eq!(rejected["uncertain"], false);
@@ -261,9 +259,7 @@ impl Server {
     }
 
     fn client(&self) -> Bridge {
-        let mut bridge = Bridge {
-            application: Backend::remote(&self.endpoint).unwrap(),
-        };
+        let mut bridge = Bridge::new(Backend::remote(&self.endpoint).unwrap());
         let loaded = refresh(&mut bridge);
         assert!(loaded.get("error").is_none(), "{loaded}");
         bridge

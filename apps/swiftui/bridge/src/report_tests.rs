@@ -66,9 +66,7 @@ fn report_aggregates_all_history_and_clips_completed_and_active_work() {
     application.archive_task(archived.id(), at(1120)).unwrap();
     completed(&mut application, finished.id(), 1180, 1205);
     application.set_active_task(active.id(), at(1210)).unwrap();
-    let mut bridge = Bridge {
-        application: Backend::Local(application),
-    };
+    let mut bridge = Bridge::new(Backend::Local(application));
 
     let value = report(&mut bridge, 1000, 1200, 1190);
     assert!(value.get("error").is_none(), "{value}");
@@ -170,9 +168,7 @@ fn report_preserves_microseconds_and_accepts_utc_offsets() {
     application
         .clear_active_task(worklog.id(), "2026-10-04T00:00:00.987654Z".parse().unwrap())
         .unwrap();
-    let mut bridge = Bridge {
-        application: Backend::Local(application),
-    };
+    let mut bridge = Bridge::new(Backend::Local(application));
     let start = c"2026-10-04T02:00:00+02:00";
     let end = c"2026-10-05T02:00:00+02:00";
     let now = c"2026-10-04T00:00:00.500000Z";
@@ -191,9 +187,9 @@ fn report_preserves_microseconds_and_accepts_utc_offsets() {
 #[test]
 fn report_rejects_null_malformed_and_invalid_ranges_and_returns_empty_totals() {
     let repository = SqliteRepository::open_in_memory().unwrap();
-    let mut bridge = Bridge {
-        application: Backend::Local(TrackerApplication::load(repository).unwrap()),
-    };
+    let mut bridge = Bridge::new(Backend::Local(
+        TrackerApplication::load(repository).unwrap(),
+    ));
     let valid = c"2026-10-04T00:00:00Z";
     let malformed = c"invalid";
     let non_utf8 = CString::new(vec![0xff]).unwrap();
@@ -290,9 +286,7 @@ impl Server {
     }
 
     pub(super) fn client(&self) -> Bridge {
-        Bridge {
-            application: Backend::remote(&self.endpoint).unwrap(),
-        }
+        Bridge::new(Backend::remote(&self.endpoint).unwrap())
     }
 
     fn stop(&mut self) {
