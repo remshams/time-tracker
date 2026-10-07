@@ -159,6 +159,9 @@ impl Drop for ControlledProxy {
 
 fn forward(mut client: TcpStream, upstream: SocketAddr, shared: &Shared) {
     client
+        .set_nonblocking(false)
+        .expect("the accepted gate connection must use blocking reads");
+    client
         .set_read_timeout(Some(REQUEST_LIMIT))
         .expect("the gate must set a client timeout");
     let request = read_request(&mut client);
