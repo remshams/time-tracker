@@ -19,6 +19,11 @@ final class BulkTaskArchivingState {
         let asOf: String
     }
 
+    struct Submission {
+        let generation: Int
+        let preview: InactiveTaskPreview
+    }
+
     private(set) var isPresented = false
     private(set) var daysText = "14"
     private(set) var preview: InactiveTaskPreview?
@@ -29,6 +34,7 @@ final class BulkTaskArchivingState {
     private(set) var pendingSearch = false
     private(set) var pendingSubmit = false
     private var generation = 0
+    private var preparedSubmission = false
 
     var ownsPresentation: Bool { isPresented || isSubmitting }
     var days: Int? {
@@ -89,15 +95,17 @@ final class BulkTaskArchivingState {
         error = nil
         return true
     }
-    func takeSubmission() -> InactiveTaskPreview? {
+    func takeSubmission() -> Submission? {
         guard pendingSubmit, let preview else { return nil }
         pendingSubmit = false
-        return preview
+        preparedSubmission = true
+        return Submission(generation: generation, preview: preview)
     }
-    func cancelPreparedSubmission() {
-        isSubmitting = false
-        pendingSubmit = false
-        requestPreview()
+    func beginSubmission(_ submission: Submission) -> Bool {
+        guard isPresented, isSubmitting, preparedSubmission,
+              submission.generation == generation else { return false }
+        preparedSubmission = false
+        return true
     }
     func complete(count: Int) {
         isSubmitting = false
@@ -113,8 +121,9 @@ final class BulkTaskArchivingState {
     }
     func sleep() {
         guard isPresented, archivedCount == nil else { return }
-        if pendingSubmit {
+        if pendingSubmit || preparedSubmission {
             pendingSubmit = false
+            preparedSubmission = false
             isSubmitting = false
         }
         guard !isSubmitting else { return }
@@ -132,5 +141,6 @@ final class BulkTaskArchivingState {
         isSubmitting = false
         pendingSearch = false
         pendingSubmit = false
+        preparedSubmission = false
     }
 }

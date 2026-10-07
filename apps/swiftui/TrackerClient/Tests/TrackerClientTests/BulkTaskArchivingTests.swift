@@ -410,4 +410,28 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertTrue(fixture.session.bulkTaskArchiving.canSubmit)
     }
 
+    @MainActor
+    func testSleepAndWakeBeforeSubmissionTaskStartsInvalidatesPreparedWrite() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start()
+        fixture.session.openBulkTaskArchiving()
+        _ = try answerPreview(try await fixture.client.next())
+        try await fixture.settled()
+        fixture.session.submitBulkTaskArchiving()
+        fixture.session.sleep()
+        fixture.session.wake()
+        XCTAssertFalse(fixture.session.bulkTaskArchiving.isSubmitting)
+        XCTAssertFalse(fixture.session.bulkTaskArchiving.canSubmit)
+        let fresh = try await fixture.client.next()
+        XCTAssertFalse(fixture.client.operations.contains { if case .archiveInactive = $0 { return true }; return false })
+        _ = try answerPreview(fresh)
+        let refresh = try await fixture.client.next()
+        XCTAssertEqual(refresh.operation, .refresh(.local))
+        refresh.succeed(emptySnapshot)
+        try await fixture.settled()
+        XCTAssertTrue(fixture.session.bulkTaskArchiving.canSubmit)
+        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
+    }
+
 }

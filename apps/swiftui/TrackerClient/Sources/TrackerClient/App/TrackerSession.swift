@@ -878,18 +878,15 @@ public final class TrackerSession {
 
     @discardableResult
     private func drainBulkArchiving() -> Bool {
-        guard running, !sleeping, !isBusy, let preview = bulkArchiving.takeSubmission() else { return false }
+        guard running, !sleeping, !isBusy, let submission = bulkArchiving.takeSubmission() else { return false }
         let token = generation
         beginOperation()
         Task { [weak self] in
             guard let self, isCurrent(token) else { return }
             defer { finishOperation(token: token) }
-            guard !sleeping else {
-                bulkArchiving.cancelPreparedSubmission()
-                return
-            }
+            guard !sleeping, bulkArchiving.beginSubmission(submission) else { return }
             do {
-                let result = try await client.archiveInactiveTasks(preview: preview)
+                let result = try await client.archiveInactiveTasks(preview: submission.preview)
                 guard isCurrent(token) else { return }
                 guard result.archivedCount >= 0 else {
                     throw BridgeFailure(message: "The tracker returned an invalid archived count.", kind: "protocol", requiresRefresh: true)
