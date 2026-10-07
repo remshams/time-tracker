@@ -29,3 +29,4 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0013](0013-remove-remote-archive-candidate-fingerprints.md) | Remove remote archive candidate fingerprints | Accepted |
 | [0014](0014-scope-mutation-checks-to-task-changes.md) | Scope mutation checks to task changes | Partially superseded by ADR 0015; all other decisions remain accepted. |
 | [0015](0015-use-github-hosted-runners-for-ci.md) | Use GitHub-hosted runners for CI | Accepted |
+| [0016](0016-configurable-inactive-task-archiving.md) | Configurable inactive task archiving | Accepted |

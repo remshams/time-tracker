@@ -50,6 +50,18 @@ The command captures the clicked task, action, and timestamp and refreshes autho
 
 Dialog contents stay stable during dismissal. If an Unarchive request fails after the tracker window closes, the error stays pending. Reopen the tracker and use Review task action in the toolbar to resolve it.
 
+## Archive inactive tasks
+
+Use Archive inactive tasks in the sidebar toolbar to open the bulk archive dialog. The inactivity period starts at 14 days. Enter another positive whole number of days to load a new preview. The dialog lists every eligible task and disables confirmation until the current preview has finished loading.
+
+Rust applies the same eligibility rules in local and server mode. A task must be active, created and last updated before the cutoff, and have no positive-duration work ending after the cutoff. Running tasks are always excluded. Days mean consecutive 24-hour periods before the captured preview time. Tasks hidden by the sidebar's current filter are included.
+
+Confirmation archives all currently eligible tasks for the displayed period. Local storage rechecks the preview's candidate IDs atomically. Server mode uses the preview's revision and recomputes eligibility at confirmation without a candidate fingerprint. The result reports the actual archived count. Worklog history and the running session remain available.
+
+Changing the period or cancelling discards the preview. A failed confirmation requires a fresh preview before another submission. An uncertain response triggers a state refresh and never automatically repeats the archive command. Connection changes and other editors wait while the dialog owns the interaction. Dialog contents remain stable during dismissal.
+
+The configurable operation uses additional server endpoints and requires a server built with this feature. The existing protocol version and fixed 14-day TUI commands remain compatible. The TUI does not gain a configurable period.
+
 ## Edit worklog times
 
 Open the actions menu on a worklog card, or right-click the card, and choose Edit times. The sheet shows local dates and times and the time zone used. Completed worklogs expose Start and End with a duration preview. Running worklogs expose Start only and keep tracking after saving. Archived-task history supports the same editor.
