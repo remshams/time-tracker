@@ -311,7 +311,7 @@ fn remote_pause_reports_ownership_and_resume_commits_the_captured_timestamp() {
         resumed["data"]["active"]["start"],
         "2026-10-04T10:20:00.000000Z"
     );
-    let repository = SqliteRepository::open(&server.directory.path().join("server.db")).unwrap();
+    let repository = SqliteRepository::open(server.directory.path().join("server.db")).unwrap();
     assert_eq!(
         timestamp(
             repository
