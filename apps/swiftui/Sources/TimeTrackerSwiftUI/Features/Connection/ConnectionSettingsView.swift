@@ -116,7 +116,6 @@ struct ConnectionSettingsView: View {
                         if operationPending {
                             ProgressView().controlSize(.small)
                         }
-                        .accessibilityIdentifier("connection.result")
                     }
 
                     if let resultMessage {
@@ -128,6 +127,7 @@ struct ConnectionSettingsView: View {
                             Image(systemName: resultSucceeded ? "checkmark.circle" : "exclamationmark.triangle")
                                 .foregroundStyle(resultSucceeded ? Color.accentColor : Color.red)
                         }
+                        .accessibilityIdentifier("connection.result")
                     }
                 }
 
