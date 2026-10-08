@@ -488,25 +488,13 @@ impl RemoteApplication {
         {
             return Err(protocol_failure("cursor belongs to a different task"));
         }
-        self.tracking = tracking;
-        self.snapshot.active_worklog = active.clone();
-        if let Some(item) = self
-            .snapshot
-            .task_items
-            .iter_mut()
-            .find(|item| item.task.id() == task_id)
-        {
-            item.latest_work_start = dto.requested_task_latest_work_start;
-        }
-        if let Some(active) = &active
-            && let Some(item) = self
-                .snapshot
-                .task_items
-                .iter_mut()
-                .find(|item| item.task.id() == active.task_id())
-        {
-            item.latest_work_start = dto.active_task_latest_work_start;
-        }
+        self.update_worklog_page_tracking(
+            task_id,
+            tracking,
+            &active,
+            dto.requested_task_latest_work_start,
+            dto.active_task_latest_work_start,
+        );
         // This page contains only part of the task catalog. Keep the last
         // full-snapshot revision so a later write cannot overwrite task
         // changes made by another client without first refreshing.
@@ -520,6 +508,35 @@ impl RemoteApplication {
             },
             next_cursor,
         })
+    }
+
+    fn update_worklog_page_tracking(
+        &mut self,
+        task_id: TaskId,
+        tracking: TrackingState,
+        active: &Option<Worklog>,
+        requested_task_latest_work_start: Option<DateTime<Utc>>,
+        active_task_latest_work_start: Option<DateTime<Utc>>,
+    ) {
+        self.tracking = tracking;
+        self.snapshot.active_worklog = active.clone();
+        if let Some(item) = self
+            .snapshot
+            .task_items
+            .iter_mut()
+            .find(|item| item.task.id() == task_id)
+        {
+            item.latest_work_start = requested_task_latest_work_start;
+        }
+        if let Some(active) = active
+            && let Some(item) = self
+                .snapshot
+                .task_items
+                .iter_mut()
+                .find(|item| item.task.id() == active.task_id())
+        {
+            item.latest_work_start = active_task_latest_work_start;
+        }
     }
 
     pub async fn all_worklogs(
@@ -666,23 +683,7 @@ impl RemoteApplication {
             Ok(dto) => dto,
             Err(error) => return Err(self.operation_error(error, None, None).await),
         };
-        let mut rows = Vec::with_capacity(dto.rows.len());
-        let mut sum = 0_i64;
-        for row in dto.rows {
-            if row.duration_us <= 0 {
-                return Err(protocol_failure("report row has invalid duration"));
-            }
-            sum = sum
-                .checked_add(row.duration_us)
-                .ok_or(ApplicationError::ReportDurationOverflow)?;
-            rows.push(ReportRow {
-                task: app_decode_task(row.task)?,
-                duration: TimeDelta::microseconds(row.duration_us),
-            });
-        }
-        if sum != dto.total_us {
-            return Err(protocol_failure("report total does not match rows"));
-        }
+        let totals = decode_report_rows(dto.rows, dto.total_us)?;
         let (snapshot, tracking, revision) = match decode_snapshot(dto.snapshot) {
             Ok(snapshot) => snapshot,
             Err(error) => return Err(self.operation_error(error, None, None).await),
@@ -691,11 +692,35 @@ impl RemoteApplication {
         self.tracking = tracking;
         self.revision = revision;
         self.last_failure = None;
-        Ok(ReportTotals {
-            rows,
-            total: TimeDelta::microseconds(sum),
-        })
+        Ok(totals)
     }
+}
+
+fn decode_report_rows(
+    row_dtos: Vec<tracker_protocol::ReportRowDto>,
+    total_us: i64,
+) -> Result<ReportTotals, ApplicationError> {
+    let mut rows = Vec::with_capacity(row_dtos.len());
+    let mut sum = 0_i64;
+    for row in row_dtos {
+        if row.duration_us <= 0 {
+            return Err(protocol_failure("report row has invalid duration"));
+        }
+        sum = sum
+            .checked_add(row.duration_us)
+            .ok_or(ApplicationError::ReportDurationOverflow)?;
+        rows.push(ReportRow {
+            task: app_decode_task(row.task)?,
+            duration: TimeDelta::microseconds(row.duration_us),
+        });
+    }
+    if sum != total_us {
+        return Err(protocol_failure("report total does not match rows"));
+    }
+    Ok(ReportTotals {
+        rows,
+        total: TimeDelta::microseconds(sum),
+    })
 }
 
 fn report_cooldown_active(last_unavailable_at: Option<Instant>, now: Instant) -> bool {
@@ -881,27 +906,12 @@ fn set_tracking_result(
     match result {
         MutationResultDto::Worklog(dto) => {
             let worklog = app_decode_worklog(dto)?;
-            if old_active.is_some()
-                || worklog.id() != new_id
-                || worklog.task_id() != task_id
-                || !worklog.is_active()
-            {
-                return Err(protocol_failure("invalid started worklog"));
-            }
-            Ok(SetActiveTaskOutcome::Started { worklog })
+            started_tracking_result(worklog, task_id, new_id, old_active)
         }
         MutationResultDto::TrackingSwitched { stopped, started } => {
             let stopped = app_decode_worklog(stopped)?;
             let started = app_decode_worklog(started)?;
-            if old_active != Some(stopped.id())
-                || stopped.is_active()
-                || started.id() != new_id
-                || started.task_id() != task_id
-                || !started.is_active()
-            {
-                return Err(protocol_failure("invalid switched worklogs"));
-            }
-            Ok(SetActiveTaskOutcome::Switched { stopped, started })
+            switched_tracking_result(stopped, started, task_id, new_id, old_active)
         }
         MutationResultDto::TrackingAlreadyActive(dto) => {
             let worklog = app_decode_worklog(dto)?;
@@ -914,6 +924,40 @@ fn set_tracking_result(
         }
         _ => Err(protocol_failure("wrong tracking result")),
     }
+}
+
+fn started_tracking_result(
+    worklog: Worklog,
+    task_id: TaskId,
+    new_id: WorklogId,
+    old_active: Option<WorklogId>,
+) -> Result<SetActiveTaskOutcome, ApplicationError> {
+    if old_active.is_some()
+        || worklog.id() != new_id
+        || worklog.task_id() != task_id
+        || !worklog.is_active()
+    {
+        return Err(protocol_failure("invalid started worklog"));
+    }
+    Ok(SetActiveTaskOutcome::Started { worklog })
+}
+
+fn switched_tracking_result(
+    stopped: Worklog,
+    started: Worklog,
+    task_id: TaskId,
+    new_id: WorklogId,
+    old_active: Option<WorklogId>,
+) -> Result<SetActiveTaskOutcome, ApplicationError> {
+    if old_active != Some(stopped.id())
+        || stopped.is_active()
+        || started.id() != new_id
+        || started.task_id() != task_id
+        || !started.is_active()
+    {
+        return Err(protocol_failure("invalid switched worklogs"));
+    }
+    Ok(SetActiveTaskOutcome::Switched { stopped, started })
 }
 
 fn clear_tracking_result(
@@ -962,29 +1006,7 @@ fn map_application_error(
     }
     if let RemoteError::Http { status, body } = error {
         if let Ok(dto) = serde_json::from_slice::<ErrorDto>(body) {
-            let category = match dto.code {
-                ErrorCode::InvalidRequest | ErrorCode::Conflict | ErrorCode::StaleRevision => {
-                    ApplicationFailureCategory::General
-                }
-                ErrorCode::NotFound if worklog_id.is_some() => {
-                    ApplicationFailureCategory::WorklogNotFound
-                }
-                ErrorCode::NotFound => ApplicationFailureCategory::TaskNotFound,
-                ErrorCode::WorklogChanged => ApplicationFailureCategory::WorklogChanged,
-                ErrorCode::WorklogHistoryChanged => {
-                    ApplicationFailureCategory::WorklogHistoryChanged
-                }
-                ErrorCode::WorklogOverlap => ApplicationFailureCategory::WorklogOverlap,
-                ErrorCode::ActiveWorklog => ApplicationFailureCategory::ActiveWorklog,
-                ErrorCode::ActiveTask => ApplicationFailureCategory::ActiveTask,
-                ErrorCode::InactiveTaskCandidatesChanged => {
-                    ApplicationFailureCategory::InactiveTaskCandidatesChanged
-                }
-                ErrorCode::Internal => {
-                    return ApplicationError::RemoteUnavailable("remote server error".into());
-                }
-            };
-            return ApplicationError::semantic_failure(category, safe_message(&dto.message));
+            return map_server_error(dto, worklog_id);
         }
         if *status == StatusCode::CONFLICT {
             return ApplicationError::semantic_failure(
@@ -994,6 +1016,35 @@ fn map_application_error(
         }
     }
     ApplicationError::RemoteProtocol(error.to_string())
+}
+
+fn map_server_error(dto: ErrorDto, worklog_id: Option<WorklogId>) -> ApplicationError {
+    if dto.code == ErrorCode::Internal {
+        return ApplicationError::RemoteUnavailable("remote server error".into());
+    }
+    ApplicationError::semantic_failure(
+        error_category(dto.code, worklog_id),
+        safe_message(&dto.message),
+    )
+}
+
+fn error_category(code: ErrorCode, worklog_id: Option<WorklogId>) -> ApplicationFailureCategory {
+    match code {
+        ErrorCode::InvalidRequest | ErrorCode::Conflict | ErrorCode::StaleRevision => {
+            ApplicationFailureCategory::General
+        }
+        ErrorCode::NotFound if worklog_id.is_some() => ApplicationFailureCategory::WorklogNotFound,
+        ErrorCode::NotFound => ApplicationFailureCategory::TaskNotFound,
+        ErrorCode::WorklogChanged => ApplicationFailureCategory::WorklogChanged,
+        ErrorCode::WorklogHistoryChanged => ApplicationFailureCategory::WorklogHistoryChanged,
+        ErrorCode::WorklogOverlap => ApplicationFailureCategory::WorklogOverlap,
+        ErrorCode::ActiveWorklog => ApplicationFailureCategory::ActiveWorklog,
+        ErrorCode::ActiveTask => ApplicationFailureCategory::ActiveTask,
+        ErrorCode::InactiveTaskCandidatesChanged => {
+            ApplicationFailureCategory::InactiveTaskCandidatesChanged
+        }
+        ErrorCode::Internal => ApplicationFailureCategory::General,
+    }
 }
 
 #[cfg(test)]
@@ -1631,6 +1682,57 @@ mod mutation_tests {
                 .message(),
             "Tracker state changed. Refresh and retry."
         );
+    }
+
+    #[test]
+    fn remote_conflicts_keep_editor_and_archive_reasons_with_safe_messages() {
+        let cases = [
+            (
+                ErrorCode::WorklogHistoryChanged,
+                ApplicationFailureCategory::WorklogHistoryChanged,
+                "History changed\nRefresh the page".to_owned(),
+                "History changedRefresh the page".to_owned(),
+            ),
+            (
+                ErrorCode::WorklogOverlap,
+                ApplicationFailureCategory::WorklogOverlap,
+                "Worklog overlaps another entry".to_owned(),
+                "Worklog overlaps another entry".to_owned(),
+            ),
+            (
+                ErrorCode::ActiveWorklog,
+                ApplicationFailureCategory::ActiveWorklog,
+                "\tStop the active worklog\r".to_owned(),
+                "Stop the active worklog".to_owned(),
+            ),
+            (
+                ErrorCode::ActiveTask,
+                ApplicationFailureCategory::ActiveTask,
+                "\n\t\r".to_owned(),
+                "Server rejected the request".to_owned(),
+            ),
+            (
+                ErrorCode::InactiveTaskCandidatesChanged,
+                ApplicationFailureCategory::InactiveTaskCandidatesChanged,
+                "x".repeat(520),
+                "x".repeat(512),
+            ),
+        ];
+        for (code, category, message, expected_message) in cases {
+            let error = RemoteError::Http {
+                status: StatusCode::CONFLICT,
+                body: serde_json::to_vec(&ErrorDto { code, message }).unwrap(),
+            };
+            let failure =
+                map_application_error(&error, Some(WorklogId::generate()), None).failure();
+            assert_eq!(failure.category(), category);
+            assert_eq!(failure.message(), expected_message);
+            assert_eq!(
+                failure.source(),
+                tracker_application::ApplicationFailureSource::Operation
+            );
+            assert!(!failure.recovery_failed());
+        }
     }
 
     #[test]
