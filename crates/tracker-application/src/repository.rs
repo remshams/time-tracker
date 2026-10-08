@@ -17,7 +17,7 @@
 //! aggregate, without loading full worklogs.
 
 use chrono::{DateTime, Utc};
-use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
+use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
 
 use crate::{
     GlobalWorklogCursor, GlobalWorklogPage, ReportRow, TaskListItem, WorklogCursor, WorklogPage,
@@ -163,6 +163,23 @@ pub trait TaskRepository {
         &self,
         expected_ids: &[TaskId],
         as_of: DateTime<Utc>,
+    ) -> Result<InactiveTaskArchive, RepositoryError>;
+}
+
+/// Persistence for selecting and archiving tasks with a chosen inactivity period.
+pub trait InactiveTaskRepository {
+    fn preview_inactive_tasks_with_period(
+        &self,
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
+    ) -> Result<InactiveTaskPreviewRead, RepositoryError>;
+
+    /// Rechecks the exact eligible identifier set under the same write lock.
+    fn archive_inactive_tasks_with_period(
+        &self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
     ) -> Result<InactiveTaskArchive, RepositoryError>;
 }
 

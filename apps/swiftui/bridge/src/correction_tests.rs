@@ -501,9 +501,7 @@ fn remote_correction_preflight_failure_does_not_send_a_write() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     drop(listener);
-    let mut bridge = Bridge {
-        application: Backend::remote(&endpoint).unwrap(),
-    };
+    let mut bridge = Bridge::new(Backend::remote(&endpoint).unwrap());
     let failure = correct(&mut bridge, &original, 90, None);
     assert_eq!(failure["kind"], "unavailable");
     assert_eq!(failure["uncertain"], false);

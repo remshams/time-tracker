@@ -678,9 +678,7 @@ fn remote_move_preflight_failure_is_certain_and_does_not_write() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     drop(listener);
-    let mut bridge = Bridge {
-        application: Backend::remote(&endpoint).unwrap(),
-    };
+    let mut bridge = Bridge::new(Backend::remote(&endpoint).unwrap());
     let failure = move_to(&mut bridge, &original, tasks[1].task.id());
     assert_eq!(failure["kind"], "unavailable");
     assert_eq!(failure["uncertain"], false);

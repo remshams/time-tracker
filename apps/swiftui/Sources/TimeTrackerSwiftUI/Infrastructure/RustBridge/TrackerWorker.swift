@@ -12,11 +12,13 @@ private struct BridgeEnvelope<Value: Decodable>: Decodable {
 private final class RustBridge {
     private var handle: OpaquePointer?
 
-    init(settings: ConnectionSettings) throws {
+    init(settings: ConnectionSettings, localDatabasePath: String?) throws {
         var error: UnsafeMutablePointer<CChar>?
         let opened: OpaquePointer?
         if settings.mode == .server {
             opened = settings.serverURL.withCString { tt_bridge_open_remote($0, &error) }
+        } else if let localDatabasePath {
+            opened = localDatabasePath.withCString { tt_bridge_open_path($0, &error) }
         } else {
             opened = tt_bridge_open(&error)
         }
@@ -82,6 +84,24 @@ private final class RustBridge {
                     try decode(tt_bridge_rename_task_at(handle, task, name, instant), requiresRefreshOnMalformed: true)
                 }
             }
+        }
+    }
+
+    func previewInactiveTasks(inactiveDays: Int, asOf: String) throws -> InactiveTaskPreview {
+        guard let days = UInt32(exactly: inactiveDays), days > 0, !asOf.utf8.contains(0) else {
+            throw BridgeFailure(message: "The archive period or date is invalid.")
+        }
+        return try asOf.withCString {
+            try decode(tt_bridge_preview_inactive_tasks_at(handle, days, $0), requiresRefreshOnMalformed: true)
+        }
+    }
+
+    func archiveInactiveTasks(preview: InactiveTaskPreview) throws -> InactiveTaskArchiveResult {
+        guard let days = UInt32(exactly: preview.inactiveDays), days > 0, !preview.asOf.utf8.contains(0) else {
+            throw BridgeFailure(message: "The archive period or date is invalid.")
+        }
+        return try preview.asOf.withCString {
+            try decode(tt_bridge_archive_inactive_tasks_at(handle, days, $0), requiresRefreshOnMalformed: true)
         }
     }
 
@@ -210,7 +230,10 @@ private final class RustBridge {
 // Every handle operation, including creation and destruction, belongs to this queue.
 final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.timetracker.connection", qos: .utility)
+    private let localDatabasePath: String?
     private var bridge: RustBridge?
+
+    init(localDatabasePath: String? = nil) { self.localDatabasePath = localDatabasePath }
 
     deinit {
         let retainedBridge = bridge
@@ -235,21 +258,21 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
     func openConfigured(_ settings: ConnectionSettings) async throws -> TrackerSnapshot {
         try await perform { worker in
             // Keep a saved server handle when its first refresh fails. Never fall back to SQLite.
-            worker.bridge = try RustBridge(settings: settings)
+            worker.bridge = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
             return try worker.currentBridge().snapshot()
         }
     }
 
     func test(_ settings: ConnectionSettings) async throws {
-        let _: TrackerSnapshot = try await perform { _ in
-            let candidate = try RustBridge(settings: settings)
+        let _: TrackerSnapshot = try await perform { worker in
+            let candidate = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
             return try candidate.snapshot()
         }
     }
 
     func connect(_ settings: ConnectionSettings) async throws -> TrackerSnapshot {
         try await perform { worker in
-            let candidate = try RustBridge(settings: settings)
+            let candidate = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
             let snapshot = try candidate.snapshot()
             worker.bridge = candidate
             return snapshot
@@ -258,7 +281,9 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
 
     func refresh(settings: ConnectionSettings) async throws -> TrackerSnapshot {
         try await perform { worker in
-            if worker.bridge == nil { worker.bridge = try RustBridge(settings: settings) }
+            if worker.bridge == nil {
+                worker.bridge = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
+            }
             return try worker.currentBridge().snapshot()
         }
     }
@@ -275,6 +300,14 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         try await perform { try $0.currentBridge().renameTask(taskID: taskID, name: name, occurredAt: occurredAt) }
     }
 
+    func previewInactiveTasks(inactiveDays: Int, asOf: String) async throws -> InactiveTaskPreview {
+        try await perform { try $0.currentBridge().previewInactiveTasks(inactiveDays: inactiveDays, asOf: asOf) }
+    }
+
+    func archiveInactiveTasks(preview: InactiveTaskPreview) async throws -> InactiveTaskArchiveResult {
+        try await perform { try $0.currentBridge().archiveInactiveTasks(preview: preview) }
+    }
+
     func archiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
         try await perform { try $0.currentBridge().archiveTask(taskID: taskID, occurredAt: occurredAt) }
     }
@@ -285,7 +318,9 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
 
     func report(settings: ConnectionSettings, start: String, end: String, now: String) async throws -> TrackerReport {
         try await perform { worker in
-            if worker.bridge == nil { worker.bridge = try RustBridge(settings: settings) }
+            if worker.bridge == nil {
+                worker.bridge = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
+            }
             return try worker.currentBridge().report(start: start, end: end, now: now)
         }
     }

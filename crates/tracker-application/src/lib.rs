@@ -17,14 +17,14 @@ pub use model::{
     WorklogCursor, WorklogPage, WorklogPageSnapshot,
 };
 pub use repository::{
-    InactiveTaskArchive, InactiveTaskPreviewRead, ReportRead, ReportRepository, RepositoryError,
-    TaskRepository, TrackerRepository, TrackerSnapshot, TrackingRepository, WorklogCorrection,
-    WorklogDeletion, WorklogMove, WorklogRepository,
+    InactiveTaskArchive, InactiveTaskPreviewRead, InactiveTaskRepository, ReportRead,
+    ReportRepository, RepositoryError, TaskRepository, TrackerRepository, TrackerSnapshot,
+    TrackingRepository, WorklogCorrection, WorklogDeletion, WorklogMove, WorklogRepository,
 };
 pub use service::move_candidates_for_tasks;
 pub use service::{
-    ReportQueries, TaskOperations, TaskQueries, TrackerApplication, TrackerApplicationService,
-    TrackingOperations, WorklogOperations, WorklogQueries,
+    InactiveTaskOperations, ReportQueries, TaskOperations, TaskQueries, TrackerApplication,
+    TrackerApplicationService, TrackingOperations, WorklogOperations, WorklogQueries,
 };
 
 #[cfg(test)]

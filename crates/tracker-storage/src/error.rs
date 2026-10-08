@@ -48,7 +48,7 @@ pub enum StorageError {
     /// The candidate set changed after the caller previewed it.
     #[error("inactive task candidates changed since preview")]
     InactiveTaskCandidatesChanged,
-    /// Subtracting the 14-day window exceeded the supported timestamp range.
+    /// Subtracting the inactivity period exceeded the supported timestamp range.
     #[error("inactive task cutoff is outside the supported timestamp range")]
     InvalidInactiveTaskTime,
     /// A database constraint rejected the write, such as an end time that

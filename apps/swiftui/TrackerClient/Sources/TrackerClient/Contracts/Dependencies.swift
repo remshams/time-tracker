@@ -11,6 +11,8 @@ public protocol TrackerClient: Sendable {
     func refresh(settings: ConnectionSettings) async throws -> TrackerSnapshot
     func snapshot() async throws -> TrackerSnapshot
     func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult
+    func previewInactiveTasks(inactiveDays: Int, asOf: String) async throws -> InactiveTaskPreview
+    func archiveInactiveTasks(preview: InactiveTaskPreview) async throws -> InactiveTaskArchiveResult
     func archiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot
     func unarchiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot
     func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TrackerSnapshot

@@ -5,6 +5,169 @@ use super::*;
 const FORTNIGHT_SECONDS: i64 = 14 * 24 * 60 * 60;
 
 #[test]
+fn configurable_inactivity_period_uses_exact_metadata_and_work_boundaries() {
+    use tracker_domain::InactivityPeriod;
+    for days in [1, 7, 30] {
+        let repository = repo();
+        let as_of = at(4_000_000);
+        let cutoff = as_of.timestamp() - i64::from(days) * 86_400;
+        for (id, name, created, updated) in [
+            (1, "Old planning", cutoff - 100, cutoff - 1),
+            (2, "Created at cutoff", cutoff, cutoff),
+            (3, "Updated at cutoff", cutoff - 100, cutoff),
+            (4, "Work ends at cutoff", cutoff - 100, cutoff - 100),
+            (5, "Work ends after cutoff", cutoff - 100, cutoff - 100),
+            (6, "Running planning", cutoff - 100, cutoff - 100),
+            (7, "Archived planning", cutoff - 100, cutoff - 100),
+            (8, "Zero duration planning", cutoff - 100, cutoff - 100),
+        ] {
+            repository
+                .create_task(stamped_task(id, name, created, updated))
+                .unwrap();
+        }
+        repository
+            .insert_worklog(
+                &Worklog::new(worklog_id(4), task_id(4), at(cutoff - 50), Some(at(cutoff)))
+                    .unwrap(),
+            )
+            .unwrap();
+        repository
+            .insert_worklog(
+                &Worklog::new(
+                    worklog_id(5),
+                    task_id(5),
+                    at(cutoff - 50),
+                    Some(at(cutoff + 1)),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        repository
+            .insert_worklog(&Worklog::begin(worklog_id(6), task_id(6), at(cutoff - 50)))
+            .unwrap();
+        repository
+            .archive_task(task_id(7), at(cutoff - 10))
+            .unwrap();
+        repository
+            .insert_worklog(&Worklog::new(worklog_id(8), task_id(8), as_of, Some(as_of)).unwrap())
+            .unwrap();
+        let period = InactivityPeriod::new(days).unwrap();
+        let preview = repository
+            .preview_inactive_tasks_with_period(as_of, period)
+            .unwrap();
+        let ids = preview.tasks.iter().map(Task::id).collect::<Vec<_>>();
+        assert_eq!(ids, [task_id(1), task_id(4), task_id(8)]);
+        let archived = repository
+            .archive_inactive_tasks_with_period(&ids, as_of, period)
+            .unwrap();
+        assert_eq!(archived.tasks.iter().map(Task::id).collect::<Vec<_>>(), ids);
+        assert!(
+            archived
+                .tasks
+                .iter()
+                .all(|task| task.is_archived() && task.updated_at() == as_of)
+        );
+        assert_eq!(
+            archived.snapshot.active_worklog.as_ref().unwrap().task_id(),
+            task_id(6)
+        );
+        assert!(
+            !repository
+                .find_task(task_id(6))
+                .unwrap()
+                .unwrap()
+                .is_archived()
+        );
+        assert!(
+            repository
+                .preview_inactive_tasks_with_period(as_of, period)
+                .unwrap()
+                .tasks
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn configurable_archive_rejects_changed_period_and_recent_work_atomically() {
+    use tracker_domain::InactivityPeriod;
+    let repository = repo();
+    let as_of = at(4_000_000);
+    repository
+        .create_task(stamped_task(1, "Old planning", 100, 100))
+        .unwrap();
+    repository
+        .create_task(stamped_task(2, "Recent planning", 3_000_000, 3_000_000))
+        .unwrap();
+    let week = InactivityPeriod::new(7).unwrap();
+    let month = InactivityPeriod::new(30).unwrap();
+    assert_eq!(
+        repository
+            .preview_inactive_tasks_with_period(as_of, week)
+            .unwrap()
+            .tasks
+            .len(),
+        2
+    );
+    assert!(matches!(
+        repository.archive_inactive_tasks_with_period(&[task_id(1), task_id(2)], as_of, month),
+        Err(StorageError::InactiveTaskCandidatesChanged)
+    ));
+    repository
+        .insert_worklog(
+            &Worklog::new(
+                worklog_id(10),
+                task_id(2),
+                at(3_999_000),
+                Some(at(3_999_100)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert!(matches!(
+        repository.archive_inactive_tasks_with_period(&[task_id(1), task_id(2)], as_of, week),
+        Err(StorageError::InactiveTaskCandidatesChanged)
+    ));
+    assert!(
+        repository
+            .list_tasks()
+            .unwrap()
+            .iter()
+            .all(|task| !task.is_archived())
+    );
+}
+
+#[test]
+fn configurable_inactivity_cutoffs_reject_overflow_without_writing() {
+    use tracker_domain::InactivityPeriod;
+    let repository = repo();
+    repository
+        .create_task(stamped_task(1, "Old planning", 100, 100))
+        .unwrap();
+    for (as_of, days) in [
+        (at(4_000_000), u32::MAX),
+        (DateTime::<Utc>::MIN_UTC, 50_000_000),
+    ] {
+        let period = InactivityPeriod::new(days).unwrap();
+        assert!(matches!(
+            repository.preview_inactive_tasks_with_period(as_of, period),
+            Err(StorageError::InvalidInactiveTaskTime)
+        ));
+        assert!(matches!(
+            repository.archive_inactive_tasks_with_period(&[task_id(1)], as_of, period),
+            Err(StorageError::InvalidInactiveTaskTime)
+        ));
+        assert!(
+            !repository
+                .find_task(task_id(1))
+                .unwrap()
+                .unwrap()
+                .is_archived()
+        );
+    }
+}
+
+#[test]
 fn inactive_preview_respects_creation_update_and_worklog_boundaries() {
     let repository = repo();
     let as_of = at(2_000_000);

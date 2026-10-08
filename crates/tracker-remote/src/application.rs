@@ -9,13 +9,15 @@ use tracker_application::{
     WorklogPageSnapshot,
 };
 use tracker_domain::{
-    ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingState, Worklog, WorklogId, WorklogTimes,
+    ActiveWorklog, InactivityPeriod, Task, TaskId, TaskName, Tracker, TrackingState, Worklog,
+    WorklogId, WorklogTimes,
 };
 use tracker_protocol::{
-    ArchiveInactiveTasksRequest, CreateTaskRequest, DeleteWorklogRequest, ErrorCode, ErrorDto,
-    GlobalWorklogCursorDto, GlobalWorklogPageDto, HealthDto, InactiveTaskPreviewDto, MutationDto,
-    MutationResultDto, ReportDto, SetTrackingRequest, SnapshotDto, TaskChangeRequest, TaskDto,
-    WorklogChangeRequest, WorklogCursorDto, WorklogDto, WorklogPageDto, WriteGuard,
+    ArchiveInactiveCandidatesRequest, ArchiveInactiveTasksRequest, CreateTaskRequest,
+    DeleteWorklogRequest, ErrorCode, ErrorDto, GlobalWorklogCursorDto, GlobalWorklogPageDto,
+    HealthDto, InactiveTaskCandidatesDto, InactiveTaskPreviewDto, MutationDto, MutationResultDto,
+    ReportDto, SetTrackingRequest, SnapshotDto, TaskChangeRequest, TaskDto, WorklogChangeRequest,
+    WorklogCursorDto, WorklogDto, WorklogPageDto, WriteGuard,
 };
 
 use crate::{RemoteError, transport::Transport};
@@ -393,6 +395,87 @@ impl RemoteApplication {
         )
         .await
     }
+
+    /// Loads all inactive candidates for the chosen period from the server.
+    pub async fn preview_inactive_tasks_with_period(
+        &mut self,
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
+    ) -> Result<InactiveTaskCandidatesDto, ApplicationError> {
+        let as_of = canonical(as_of);
+        let mut url = self.transport.url("v1/tasks/inactive-candidates");
+        url.query_pairs_mut()
+            .append_pair("as_of", &as_of.to_rfc3339())
+            .append_pair("inactive_days", &period.days().to_string());
+        let response: Result<InactiveTaskCandidatesDto, RemoteError> =
+            self.transport.send(Method::GET, url, None::<&()>).await;
+        let preview = match response {
+            Ok(preview) => preview,
+            Err(error) => return Err(self.operation_error(error, None, None).await),
+        };
+        if preview.as_of != as_of
+            || preview.inactive_days != period.days()
+            || validate_inactive_candidates(&preview).is_err()
+        {
+            self.last_failure = Some(RemoteFailureKind::Protocol);
+            return Err(protocol_failure("invalid inactive task candidates"));
+        }
+        self.last_failure = None;
+        self.last_unavailable_at = None;
+        Ok(preview)
+    }
+
+    /// Archives the server's current candidates under the preview's revision.
+    pub async fn archive_inactive_tasks_with_period(
+        &mut self,
+        preview: &InactiveTaskCandidatesDto,
+    ) -> Result<usize, ApplicationError> {
+        validate_inactive_candidates(preview)?;
+        let body = ArchiveInactiveCandidatesRequest {
+            as_of: preview.as_of,
+            inactive_days: preview.inactive_days,
+            guard: WriteGuard {
+                expected_revision: preview.revision.clone(),
+                request_id: uuid::Uuid::now_v7().to_string(),
+            },
+        };
+        self.mutation(
+            Method::POST,
+            "v1/tasks/archive-inactive-candidates",
+            &body,
+            None,
+            None,
+            |result| match result {
+                MutationResultDto::ArchivedInactive { count } => Ok(count),
+                _ => Err(protocol_failure("invalid inactive task archive result")),
+            },
+        )
+        .await
+    }
+}
+
+fn validate_inactive_candidates(
+    preview: &InactiveTaskCandidatesDto,
+) -> Result<(), ApplicationError> {
+    if preview.revision.is_empty()
+        || InactivityPeriod::new(preview.inactive_days).is_err()
+        || preview.as_of != canonical(preview.as_of)
+    {
+        return Err(protocol_failure("invalid inactive task candidates"));
+    }
+    let mut ids = std::collections::HashSet::new();
+    for dto in &preview.tasks {
+        let task = decode_task(dto.clone())
+            .map_err(|_| protocol_failure("invalid inactive task candidates"))?;
+        if task.is_archived()
+            || task.id().to_string() != dto.id
+            || task.name().as_str() != dto.name
+            || !ids.insert(task.id())
+        {
+            return Err(protocol_failure("invalid inactive task candidates"));
+        }
+    }
+    Ok(())
 }
 
 impl RemoteApplication {
@@ -1049,6 +1132,7 @@ fn error_category(code: ErrorCode, worklog_id: Option<WorklogId>) -> Application
 
 #[cfg(test)]
 mod mutation_tests {
+    use super::{InactiveTaskCandidatesDto, InactivityPeriod, TaskOrdering, protocol_failure};
     use std::{
         io::{Read, Write},
         net::{SocketAddr, TcpListener, TcpStream},
@@ -1100,6 +1184,257 @@ mod mutation_tests {
             sample_names: vec!["Project".into()],
             revision: "before-archive".into(),
         }
+    }
+
+    fn valid_inactive_candidates() -> InactiveTaskCandidatesDto {
+        InactiveTaskCandidatesDto {
+            as_of: at(),
+            inactive_days: 7,
+            tasks: vec![task(TaskId::generate(), false)],
+            revision: "preview-revision".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn configurable_preview_rejects_invalid_context_and_candidate_metadata() {
+        let valid = valid_inactive_candidates();
+        let mut cases = Vec::new();
+        for index in 0..11 {
+            let mut preview = valid.clone();
+            match index {
+                0 => preview.as_of += Duration::seconds(1),
+                1 => preview.inactive_days = 14,
+                2 => preview.inactive_days = 0,
+                3 => preview.revision.clear(),
+                4 => preview.tasks[0].id = "invalid".into(),
+                5 => preview.tasks[0].id = preview.tasks[0].id.to_uppercase(),
+                6 => preview.tasks[0].name = "Bad\u{1b}name".into(),
+                7 => preview.tasks[0].name = " Project ".into(),
+                8 => preview.tasks[0].archived = true,
+                9 => preview.tasks[0].updated_at -= Duration::seconds(1),
+                10 => preview.tasks.push(preview.tasks[0].clone()),
+                _ => unreachable!(),
+            }
+            cases.push(preview);
+        }
+        for preview in cases {
+            let (endpoint, server) = serve_json_once(serde_json::to_vec(&preview).unwrap());
+            let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
+            assert_eq!(
+                client
+                    .preview_inactive_tasks_with_period(at(), InactivityPeriod::new(7).unwrap())
+                    .await,
+                Err(protocol_failure("invalid inactive task candidates")),
+            );
+            assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
+            server.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn configurable_preview_keeps_all_candidates_and_captured_revision_without_replacing_snapshot()
+     {
+        let mut preview = valid_inactive_candidates();
+        preview.tasks = (0..8).map(|_| task(TaskId::generate(), false)).collect();
+        for empty in [false, true] {
+            if empty {
+                preview.tasks.clear();
+            }
+            let (endpoint, server) = serve_json_once(serde_json::to_vec(&preview).unwrap());
+            let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
+            client.revision = "snapshot-revision".into();
+            client.last_unavailable_at = Some(Instant::now());
+            let actual = client
+                .preview_inactive_tasks_with_period(
+                    at() + Duration::nanoseconds(123),
+                    InactivityPeriod::new(7).unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(actual, preview);
+            assert_eq!(client.revision, "snapshot-revision");
+            assert!(client.tasks(TaskOrdering::default()).is_empty());
+            assert_eq!(client.last_failure(), None);
+            assert_eq!(client.last_unavailable_at, None);
+            server.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn configurable_archive_validates_preview_before_sending() {
+        for index in 0..4 {
+            let mut preview = valid_inactive_candidates();
+            match index {
+                0 => preview.revision.clear(),
+                1 => preview.inactive_days = 0,
+                2 => preview.tasks[0].archived = true,
+                3 => preview.as_of += Duration::nanoseconds(1),
+                _ => unreachable!(),
+            }
+            let mut client = RemoteApplication::disconnected("http://127.0.0.1:1/").unwrap();
+            assert_eq!(
+                client.archive_inactive_tasks_with_period(&preview).await,
+                Err(protocol_failure("invalid inactive task candidates"))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn configurable_archive_accepts_actual_count_and_replay_with_restored_tasks() {
+        let preview = valid_inactive_candidates();
+        let id = preview.tasks[0].id.parse().unwrap();
+        for count in [0, 1, 2] {
+            let response = MutationDto {
+                result: MutationResultDto::ArchivedInactive { count },
+                snapshot: SnapshotDto {
+                    task_items: vec![TaskItemDto {
+                        task: task(id, false),
+                        latest_work_start: None,
+                    }],
+                    active_worklog: None,
+                    revision: "current-revision".into(),
+                },
+            };
+            let (endpoint, server) = serve_json_once(serde_json::to_vec(&response).unwrap());
+            let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
+            assert_eq!(
+                client
+                    .archive_inactive_tasks_with_period(&preview)
+                    .await
+                    .unwrap(),
+                count
+            );
+            assert!(!client.task(id).unwrap().is_archived());
+            assert_eq!(client.revision, "current-revision");
+            server.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn configurable_archive_rejects_wrong_results_and_invalid_snapshots() {
+        let preview = valid_inactive_candidates();
+        let id = preview.tasks[0].id.parse().unwrap();
+        for invalid_result in [false, true] {
+            let item = TaskItemDto {
+                task: task(id, true),
+                latest_work_start: None,
+            };
+            let response = MutationDto {
+                result: if invalid_result {
+                    MutationResultDto::TrackingAlreadyIdle
+                } else {
+                    MutationResultDto::ArchivedInactive { count: 1 }
+                },
+                snapshot: SnapshotDto {
+                    task_items: if invalid_result {
+                        vec![item]
+                    } else {
+                        vec![item.clone(), item]
+                    },
+                    active_worklog: None,
+                    revision: "current-revision".into(),
+                },
+            };
+            let (endpoint, server) = serve_json_once(serde_json::to_vec(&response).unwrap());
+            let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
+            assert!(matches!(
+                client.archive_inactive_tasks_with_period(&preview).await,
+                Err(ApplicationError::RemoteProtocol(_))
+            ));
+            assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
+            server.join().unwrap();
+        }
+    }
+
+    fn read_request(stream: &mut TcpStream) -> (String, Vec<u8>) {
+        stream
+            .set_read_timeout(Some(StdDuration::from_secs(2)))
+            .unwrap();
+        let mut bytes = Vec::new();
+        let header_end = loop {
+            let mut chunk = [0_u8; 1024];
+            let count = stream.read(&mut chunk).unwrap();
+            assert!(count > 0);
+            bytes.extend_from_slice(&chunk[..count]);
+            if let Some(index) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
+                break index + 4;
+            }
+        };
+        let headers = String::from_utf8(bytes[..header_end].to_vec()).unwrap();
+        let length: usize = headers
+            .lines()
+            .find_map(|line| {
+                line.to_ascii_lowercase()
+                    .strip_prefix("content-length: ")
+                    .and_then(|value| value.parse().ok())
+            })
+            .unwrap();
+        while bytes.len() < header_end + length {
+            let mut chunk = [0_u8; 1024];
+            let count = stream.read(&mut chunk).unwrap();
+            assert!(count > 0);
+            bytes.extend_from_slice(&chunk[..count]);
+        }
+        (headers, bytes[header_end..header_end + length].to_vec())
+    }
+
+    #[tokio::test]
+    async fn configurable_archive_retries_identical_payload_with_captured_context() {
+        let preview = valid_inactive_candidates();
+        let expected = preview.clone();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        let reply = serde_json::to_vec(&MutationDto {
+            result: MutationResultDto::ArchivedInactive { count: 2 },
+            snapshot: SnapshotDto {
+                task_items: vec![],
+                active_worklog: None,
+                revision: "current-revision".into(),
+            },
+        })
+        .unwrap();
+        let server = thread::spawn(move || {
+            let mut bodies = Vec::new();
+            for attempt in 0..2 {
+                let mut stream = accept_with_deadline(&listener).expect("expected archive request");
+                let (headers, body) = read_request(&mut stream);
+                assert!(headers.starts_with("POST /v1/tasks/archive-inactive-candidates HTTP/1.1"));
+                let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(payload.as_object().unwrap().len(), 4);
+                assert_eq!(
+                    payload["as_of"],
+                    serde_json::to_value(expected.as_of).unwrap()
+                );
+                assert_eq!(payload["inactive_days"], expected.inactive_days);
+                assert_eq!(payload["expected_revision"], expected.revision);
+                assert!(uuid::Uuid::parse_str(payload["request_id"].as_str().unwrap()).is_ok());
+                bodies.push(body);
+                let headers = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    reply.len()
+                );
+                stream.write_all(headers.as_bytes()).unwrap();
+                stream
+                    .write_all(if attempt == 0 {
+                        &reply[..reply.len() / 2]
+                    } else {
+                        &reply
+                    })
+                    .unwrap();
+            }
+            assert_eq!(bodies[0], bodies[1]);
+        });
+        let mut client = RemoteApplication::disconnected(&endpoint).unwrap();
+        client.revision = "later-snapshot-revision".into();
+        assert_eq!(
+            client
+                .archive_inactive_tasks_with_period(&preview)
+                .await
+                .unwrap(),
+            2
+        );
+        assert_eq!(client.revision, "current-revision");
+        server.join().unwrap();
     }
 
     fn accept_with_deadline(listener: &TcpListener) -> Option<TcpStream> {

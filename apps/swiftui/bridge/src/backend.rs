@@ -2,12 +2,14 @@ use chrono::{DateTime, Utc};
 use tokio::runtime::{Builder, Runtime};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ApplicationFailureSource, ClearActiveTaskOutcome,
-    MoveCandidate, ReportQueries, ReportTotals, SetActiveTaskOutcome, TaskListItem, TaskOperations,
-    TaskOrdering, TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor,
-    WorklogOperations, WorklogPage, WorklogQueries,
+    InactiveTaskOperations, MoveCandidate, ReportQueries, ReportTotals, SetActiveTaskOutcome,
+    TaskListItem, TaskOperations, TaskOrdering, TaskQueries, TrackerApplication,
+    TrackingOperations, WorklogCursor, WorklogOperations, WorklogPage, WorklogQueries,
 };
-use tracker_domain::{Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes};
-use tracker_remote::{RemoteApplication, RemoteError};
+use tracker_domain::{
+    InactivityPeriod, Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes,
+};
+use tracker_remote::{InactiveTaskCandidatesDto, RemoteApplication, RemoteError};
 use tracker_storage::SqliteRepository;
 
 pub(crate) enum Backend {
@@ -19,6 +21,31 @@ pub(crate) struct RemoteBackend {
     application: RemoteApplication,
     runtime: Runtime,
     requires_refresh: bool,
+}
+
+pub(crate) enum InactivePreview {
+    Local {
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
+        tasks: Vec<Task>,
+    },
+    Remote(InactiveTaskCandidatesDto),
+}
+
+impl InactivePreview {
+    pub fn as_of(&self) -> DateTime<Utc> {
+        match self {
+            Self::Local { as_of, .. } => *as_of,
+            Self::Remote(preview) => preview.as_of,
+        }
+    }
+
+    pub fn days(&self) -> u32 {
+        match self {
+            Self::Local { period, .. } => period.days(),
+            Self::Remote(preview) => preview.inactive_days,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -41,6 +68,71 @@ impl From<String> for BridgeError {
 }
 
 impl Backend {
+    pub fn preview_inactive_tasks(
+        &mut self,
+        as_of: DateTime<Utc>,
+        period: InactivityPeriod,
+    ) -> Result<InactivePreview, BridgeError> {
+        match self {
+            Self::Local(application) => application
+                .preview_inactive_tasks_with_period(as_of, period)
+                .map(|tasks| InactivePreview::Local {
+                    as_of,
+                    period,
+                    tasks,
+                })
+                .map_err(local_archive_error),
+            Self::Remote(remote) => {
+                let result = remote.runtime.block_on(
+                    remote
+                        .application
+                        .preview_inactive_tasks_with_period(as_of, period),
+                );
+                result
+                    .map(InactivePreview::Remote)
+                    .map_err(|error| remote.operation_error(error, false))
+            }
+        }
+    }
+
+    pub fn archive_inactive_tasks(
+        &mut self,
+        preview: InactivePreview,
+    ) -> Result<usize, BridgeError> {
+        match (self, preview) {
+            (
+                Self::Local(application),
+                InactivePreview::Local {
+                    as_of,
+                    period,
+                    tasks,
+                },
+            ) => {
+                let ids: Vec<_> = tasks.iter().map(Task::id).collect();
+                application
+                    .archive_inactive_tasks_with_period(&ids, as_of, period)
+                    .map(|archived| archived.len())
+                    .map_err(|error| {
+                        let mut mapped = local_archive_error(error);
+                        mapped.requires_refresh = true;
+                        mapped
+                    })
+            }
+            (Self::Remote(remote), InactivePreview::Remote(preview)) => {
+                remote.check_write()?;
+                let result = remote.runtime.block_on(
+                    remote
+                        .application
+                        .archive_inactive_tasks_with_period(&preview),
+                );
+                result.map_err(|error| remote.operation_error(error, true))
+            }
+            _ => Err("Archive preview does not match the current data source"
+                .to_owned()
+                .into()),
+        }
+    }
+
     pub fn remote(endpoint: &str) -> Result<Self, String> {
         let application =
             RemoteApplication::disconnected(endpoint).map_err(|error| error.to_string())?;

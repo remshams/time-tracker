@@ -154,7 +154,7 @@ jobs:
           retention-days: 7
 
   native-macos:
-    name: Native macOS builds and layout
+    name: Native macOS builds, layout, and UI tests
     runs-on: xcode-27
     timeout-minutes: 60
     env:
@@ -195,6 +195,8 @@ jobs:
             -configuration Debug -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath .build/native-debug -resultBundlePath .build/native-debug.xcresult \
             CODE_SIGNING_ALLOWED=NO build | tee .build/native-debug.log
+      - name: Test bulk archiving through the native macOS UI
+        run: apps/swiftui/check-native-ui.sh
       - name: Build the universal Release app and Rust bridge
         run: |
           xcodebuild -project apps/swiftui/TimeTracker.xcodeproj -scheme TimeTracker \
@@ -216,8 +218,10 @@ jobs:
           path: |
             .build/native-debug.log
             .build/native-release.log
+            .build/native-ui.log
             .build/native-debug.xcresult
             .build/native-release.xcresult
+            .build/native-ui.xcresult
           include-hidden-files: true
           retention-days: 7
 

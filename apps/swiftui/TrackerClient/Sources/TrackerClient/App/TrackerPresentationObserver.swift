@@ -13,6 +13,10 @@ public final class TrackerPresentationObserver {
     public var onDailyTotalsChange: (() -> Void)?
     public var onTaskDailyTotalsChange: ((Set<String>) -> Void)?
     public var onTaskCreationChange: (() -> Void)?
+    public var onBulkTaskArchivingChange: (() -> Void)?
+    public private(set) var bulkTaskArchivingSheetContent: BulkTaskArchivingPresentation
+    private var bulkArchiving: BulkTaskArchivingPresentation
+    private var canOpenBulkArchiving: Bool
     public var onTaskArchivingChange: (() -> Void)?
     public private(set) var taskArchivingSheetContent: TaskArchivingPresentation
     private var archiving: TaskArchivingPresentation
@@ -39,6 +43,9 @@ public final class TrackerPresentationObserver {
     public var taskDailyTotals: [String: TaskDailyTotalPresentation] { daily.taskTotals }
 
     public init(session: TrackerSession) {
+        bulkArchiving = session.bulkTaskArchiving
+        bulkTaskArchivingSheetContent = bulkArchiving
+        canOpenBulkArchiving = session.canOpenBulkTaskArchiving
         archiving = session.taskArchiving
         taskArchivingSheetContent = archiving
         archiveAvailability = session.taskArchivingAvailability
@@ -59,6 +66,12 @@ public final class TrackerPresentationObserver {
     }
 
     public func update(from session: TrackerSession) {
+        let nextBulk = session.bulkTaskArchiving
+        let nextCanOpenBulk = session.canOpenBulkTaskArchiving
+        let bulkChanged = bulkArchiving != nextBulk || canOpenBulkArchiving != nextCanOpenBulk
+        bulkArchiving = nextBulk
+        canOpenBulkArchiving = nextCanOpenBulk
+        if nextBulk.isPresented { bulkTaskArchivingSheetContent = nextBulk }
         let nextArchiving = session.taskArchiving
         let nextArchiveAvailability = session.taskArchivingAvailability
         let archivingChanged = archiving != nextArchiving || archiveAvailability != nextArchiveAvailability
@@ -102,6 +115,7 @@ public final class TrackerPresentationObserver {
         // SwiftUI continues rendering the sheet while its dismissal animates.
         if nextCorrection.isPresented { worklogCorrectionSheetContent = nextCorrection }
         canOpenCorrection = nextCanOpenCorrection
+        if bulkChanged { onBulkTaskArchivingChange?() }
         if archivingChanged { onTaskArchivingChange?() }
         if moveChanged { onWorklogMoveChange?() }
         if contentChanged { onContentChange?() }

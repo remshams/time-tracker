@@ -7,7 +7,8 @@ public final class TrackerSession {
     // Background reads still serialize requests without disabling controls.
     public var isBlockingControls: Bool {
         (isBusy && operationBlocksControls) || pendingControlCommand != nil ||
-            rename.hasPendingIntent || creation.pending || correction.pending || move.pending || archiving.pending
+            bulkArchiving.ownsPresentation || rename.hasPendingIntent || creation.pending ||
+            correction.pending || move.pending || archiving.pending
     }
     public private(set) var now: Date
 
@@ -28,6 +29,7 @@ public final class TrackerSession {
     private let creation = TaskCreationState()
     private let rename = TaskRenameState()
     private let archiving = TaskArchivingState()
+    private let bulkArchiving = BulkTaskArchivingState()
     private let correction = WorklogCorrectionState()
     private let move = WorklogMoveState()
     private let dailyTotals: DailyTotalsState
@@ -112,13 +114,13 @@ public final class TrackerSession {
     public var canOpenTaskCreation: Bool {
         running && connection.confirmed && !connection.changing &&
             !rename.presentation.isPresented && !rename.blocksConnectionChange &&
-            !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.ownsPresentation
+            !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
     }
     public var taskRename: TaskRenamePresentation { rename.presentation }
     public var canOpenTaskRename: Bool {
         running && connection.confirmed && !connection.changing &&
             !creation.presentation.isPresented && !creation.blocksConnectionChange &&
-            !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.ownsPresentation &&
+            !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation &&
             (selectedTask != nil || rename.intent != nil)
     }
     public var worklogCorrection: WorklogCorrectionPresentation { correction.presentation }
@@ -126,7 +128,7 @@ public final class TrackerSession {
         running && connection.confirmed && !connection.changing &&
             !creation.presentation.isPresented && !creation.blocksConnectionChange &&
             !rename.presentation.isPresented && !rename.blocksConnectionChange &&
-            !move.blocksConnectionChange && !archiving.ownsPresentation
+            !move.blocksConnectionChange && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
     }
 
     public var worklogMove: WorklogMovePresentation { move.presentation }
@@ -134,7 +136,7 @@ public final class TrackerSession {
         running && connection.confirmed && !connection.changing &&
             !creation.presentation.isPresented && !creation.blocksConnectionChange &&
             !rename.presentation.isPresented && !rename.blocksConnectionChange &&
-            !correction.blocksConnectionChange && !archiving.ownsPresentation
+            !correction.blocksConnectionChange && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
     }
 
     public var canStartSelectedTask: Bool {
@@ -249,6 +251,7 @@ public final class TrackerSession {
         correction.reset()
         move.reset()
         archiving.reset()
+        bulkArchiving.reset()
         pendingRefresh = false
         cancelTimers()
         isBusy = false
@@ -280,6 +283,7 @@ public final class TrackerSession {
     public func sleep() {
         guard running else { return }
         sleeping = true
+        bulkArchiving.sleep()
         cancelPendingControlCommand("The command was cancelled because the computer went to sleep.")
         cancelTimers()
         publish()
@@ -293,8 +297,9 @@ public final class TrackerSession {
         dailyTotals.reanchor(clock: clock)
         updateDisplayTimer()
         updateRolloverTimer()
-        if rename.hasPendingIntent || creation.pending || correction.pending || move.pending || archiving.pending {
+        if rename.hasPendingIntent || creation.pending || correction.pending || move.pending || archiving.pending || bulkArchiving.pendingSubmit {
             if drainAutomation() { return }
+            if drainBulkArchiving() { return }
             if drainArchiving() { return }
             if drainRename() { return }
             if drainCreation() { return }
@@ -304,12 +309,45 @@ public final class TrackerSession {
         refresh()
     }
 
+    public var bulkTaskArchiving: BulkTaskArchivingPresentation { bulkArchiving.presentation }
+    public var canOpenBulkTaskArchiving: Bool { canBeginTaskArchiving }
+
+    public func openBulkTaskArchiving() {
+        guard canOpenBulkTaskArchiving else { return }
+        bulkArchiving.open()
+        drainBulkArchivePreview()
+        publish()
+    }
+    public func updateBulkArchiveDays(_ text: String) {
+        guard running else { return }
+        bulkArchiving.updateDays(text)
+        drainBulkArchivePreview()
+        publish()
+    }
+    public func refreshBulkArchivePreview() {
+        guard running else { return }
+        bulkArchiving.requestPreview()
+        drainBulkArchivePreview()
+        publish()
+    }
+    public func cancelBulkTaskArchiving() {
+        guard running else { return }
+        bulkArchiving.cancel()
+        publish()
+    }
+    public func submitBulkTaskArchiving() {
+        guard running, !sleeping, connection.confirmed, !connection.changing,
+              bulkArchiving.submit() else { return }
+        drainBulkArchiving()
+        publish()
+    }
+
     public var taskArchiving: TaskArchivingPresentation { archiving.presentation }
 
     private var canBeginTaskArchiving: Bool {
         running && !sleeping && connection.confirmed && !connection.changing &&
             (!isBusy || !operationBlocksControls) && pendingControlCommand == nil &&
-            !archiving.ownsPresentation &&
+            !archiving.ownsPresentation && !bulkArchiving.ownsPresentation &&
             !creation.presentation.isPresented && !creation.blocksConnectionChange &&
             !rename.presentation.isPresented && !rename.blocksConnectionChange &&
             !correction.blocksConnectionChange && !move.blocksConnectionChange
@@ -363,7 +401,7 @@ public final class TrackerSession {
         guard running, !sleeping, !connection.changing,
               !creation.presentation.isPresented, !creation.blocksConnectionChange,
               !rename.presentation.isPresented, !rename.blocksConnectionChange,
-              !correction.blocksConnectionChange, !move.blocksConnectionChange else { return }
+              !correction.blocksConnectionChange, !move.blocksConnectionChange, !bulkArchiving.ownsPresentation else { return }
         archiving.reopen()
         publish()
     }
@@ -583,14 +621,22 @@ public final class TrackerSession {
     }
 
     public func testConnection(_ settings: ConnectionSettings) async throws {
+        guard !bulkArchiving.ownsPresentation else {
+            throw BridgeFailure(message: "Close the archive dialog before testing a connection.")
+        }
         let operation = try await acquireControlOperation()
         defer { finishOperation(token: operation.token) }
         try Task.checkCancellation()
-        guard controlOperationIsCurrent(operation), !sleeping else { throw CancellationError() }
+        guard controlOperationIsCurrent(operation), !sleeping, !bulkArchiving.ownsPresentation else { throw CancellationError() }
         try await client.test(connection.normalized(settings))
     }
 
     public func connect(_ settings: ConnectionSettings) async -> Bool {
+        guard !bulkArchiving.ownsPresentation else {
+            connection.message = "Close the archive dialog before changing connections."
+            publish()
+            return false
+        }
         guard !archiving.blocksConnectionChange else {
             connection.message = "Finish or retry task archiving before changing connections."
             publish()
@@ -627,7 +673,7 @@ public final class TrackerSession {
         defer { finishOperation(token: token) }
         guard controlOperationIsCurrent(operation), !sleeping, !Task.isCancelled else { return false }
         guard !rename.blocksConnectionChange, !creation.blocksConnectionChange,
-              !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.blocksConnectionChange else {
+              !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.blocksConnectionChange && !bulkArchiving.ownsPresentation else {
             connection.message = "Finish or retry task editing before changing connections."
             return false
         }
@@ -652,6 +698,7 @@ public final class TrackerSession {
             catalog.resetSelections()
             rename.reset()
             archiving.reset()
+            bulkArchiving.reset()
             history.request(selectedTaskID: nil)
             tracking.error = nil
             acceptSnapshot(snapshot)
@@ -771,6 +818,7 @@ public final class TrackerSession {
         guard isCurrent(token) else { return }
         isBusy = false
         if drainAutomation() { return }
+        if drainBulkArchiving() { return }
         if drainArchiving() { return }
         if drainRename() { return }
         if drainCreation() { return }
@@ -778,6 +826,7 @@ public final class TrackerSession {
         if drainMove() { return }
         if drainControlCommand() { return }
         if !sleeping {
+            if drainBulkArchivePreview() { return }
             if drainMoveSearch() { return }
             if pendingRefresh {
                 pendingRefresh = false
@@ -792,6 +841,66 @@ public final class TrackerSession {
             } else { schedulePolling() }
         }
         publish()
+    }
+
+    @discardableResult
+    private func drainBulkArchivePreview() -> Bool {
+        guard running, !sleeping, !isBusy,
+              let search = bulkArchiving.takeSearch(asOf: commandTimestamp(clock.now)) else { return false }
+        let token = generation
+        beginOperation(blocksControls: false)
+        Task { [weak self] in
+            guard let self, isCurrent(token) else { return }
+            defer { finishOperation(token: token) }
+            do {
+                if connection.stale {
+                    let snapshot = try await client.snapshot()
+                    guard isCurrent(token), !sleeping else { return }
+                    acceptSnapshot(snapshot)
+                }
+                guard bulkArchiving.matches(search) else { return }
+                let currentSearch = BulkTaskArchivingState.Search(generation: search.generation, days: search.days,
+                                                                  asOf: commandTimestamp(clock.now))
+                let value = try await client.previewInactiveTasks(inactiveDays: currentSearch.days, asOf: currentSearch.asOf)
+                guard isCurrent(token), !sleeping else { return }
+                try bulkArchiving.accept(value, search: currentSearch)
+            } catch {
+                guard isCurrent(token), !sleeping else { return }
+                bulkArchiving.failSearch(error, search: search)
+                if bulkArchiving.matches(search), let failure = error as? BridgeFailure,
+                   failure.requiresRefresh || failure.uncertain || failure.kind == "unavailable" || failure.kind == "protocol" {
+                    recordConnectionFailure(error)
+                }
+            }
+        }
+        return true
+    }
+
+    @discardableResult
+    private func drainBulkArchiving() -> Bool {
+        guard running, !sleeping, !isBusy, let submission = bulkArchiving.takeSubmission() else { return false }
+        let token = generation
+        beginOperation()
+        Task { [weak self] in
+            guard let self, isCurrent(token) else { return }
+            defer { finishOperation(token: token) }
+            guard !sleeping, bulkArchiving.beginSubmission(submission) else { return }
+            do {
+                let result = try await client.archiveInactiveTasks(preview: submission.preview)
+                guard isCurrent(token) else { return }
+                guard result.archivedCount >= 0 else {
+                    throw BridgeFailure(message: "The tracker returned an invalid archived count.", kind: "protocol", requiresRefresh: true)
+                }
+                acceptSnapshot(result.snapshot)
+                bulkArchiving.complete(count: result.archivedCount)
+            } catch {
+                guard isCurrent(token) else { return }
+                await reconcileWriteFailure(token: token)
+                guard isCurrent(token) else { return }
+                bulkArchiving.failSubmission(error)
+            }
+        }
+        return true
     }
 
     @discardableResult

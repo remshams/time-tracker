@@ -668,3 +668,252 @@ async fn a_new_server_database_stays_empty_after_restart() {
     assert!(repository.list_tasks().unwrap().is_empty());
     assert!(repository.active_worklog().unwrap().is_none());
 }
+
+fn candidates_uri(as_of: DateTime<Utc>, days: u32) -> String {
+    format!(
+        "/v1/tasks/inactive-candidates?as_of={}&inactive_days={days}",
+        as_of.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    )
+}
+
+#[tokio::test]
+async fn configurable_candidates_include_every_task_and_archive_the_chosen_period() {
+    let directory = TempDir::new().unwrap();
+    let database = directory.path().join("tracker.db");
+    let router = tracker_server::router_for_database(&database).unwrap();
+    let outside = SqliteRepository::open(&database).unwrap();
+    let as_of = DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap();
+    for index in 0..8 {
+        outside
+            .create_task(Task::create(
+                TaskId::generate(),
+                TaskName::new(&format!("Planning task {index}")).unwrap(),
+                as_of - TimeDelta::days(10 + index),
+            ))
+            .unwrap();
+    }
+    let running_id = TaskId::generate();
+    outside
+        .create_task(Task::create(
+            running_id,
+            TaskName::new("Running planning").unwrap(),
+            as_of - TimeDelta::days(40),
+        ))
+        .unwrap();
+    let worklog = tracker_domain::Worklog::begin(
+        tracker_domain::WorklogId::generate(),
+        running_id,
+        as_of - TimeDelta::days(35),
+    );
+    outside.insert_worklog(&worklog).unwrap();
+    let (status, body) = call(&router, Method::GET, &candidates_uri(as_of, 7), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body.as_object().unwrap().len(), 4);
+    assert_eq!(body["inactive_days"], 7);
+    let preview: tracker_protocol::InactiveTaskCandidatesDto =
+        serde_json::from_value(body).unwrap();
+    assert_eq!(preview.as_of, as_of);
+    assert_eq!(preview.tasks.len(), 8);
+    assert!(
+        preview
+            .tasks
+            .iter()
+            .all(|task| !task.archived && task.created_at < as_of - TimeDelta::days(7))
+    );
+    let (status, body) = call(&router, Method::GET, &candidates_uri(as_of, 30), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["tasks"].as_array().unwrap().is_empty());
+    let request = merge(
+        json!({"as_of": preview.as_of, "inactive_days": preview.inactive_days}),
+        guard(&preview.revision),
+    );
+    let (status, body) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive-candidates",
+        Some(request),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let mutation: MutationDto = serde_json::from_value(body).unwrap();
+    assert_eq!(
+        mutation.result,
+        MutationResultDto::ArchivedInactive { count: 8 }
+    );
+    assert_eq!(
+        mutation.snapshot.active_worklog.as_ref().unwrap().id,
+        worklog.id().to_string()
+    );
+    assert_eq!(outside.active_worklog().unwrap(), Some(worklog));
+    assert!(
+        !outside
+            .find_task(running_id)
+            .unwrap()
+            .unwrap()
+            .is_archived()
+    );
+}
+
+#[tokio::test]
+async fn configurable_archive_recomputes_candidates_and_replays_historical_results_with_current_state()
+ {
+    let directory = TempDir::new().unwrap();
+    let database = directory.path().join("tracker.db");
+    let router = tracker_server::router_for_database(&database).unwrap();
+    let outside = SqliteRepository::open(&database).unwrap();
+    let as_of = Utc::now();
+    let old = Task::create(
+        TaskId::generate(),
+        TaskName::new("Old planning").unwrap(),
+        as_of - TimeDelta::days(20),
+    );
+    outside.create_task(old.clone()).unwrap();
+    let (status, body) = call(&router, Method::GET, &candidates_uri(as_of, 7), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let preview: tracker_protocol::InactiveTaskCandidatesDto =
+        serde_json::from_value(body).unwrap();
+    assert_eq!(preview.tasks.len(), 1);
+    outside
+        .rename_task(old.id(), TaskName::new("Updated planning").unwrap(), as_of)
+        .unwrap();
+    let added = Task::create(
+        TaskId::generate(),
+        TaskName::new("Added planning").unwrap(),
+        as_of - TimeDelta::days(10),
+    );
+    outside.create_task(added.clone()).unwrap();
+    let request = merge(
+        json!({"as_of": preview.as_of, "inactive_days": preview.inactive_days}),
+        guard(&preview.revision),
+    );
+    let (status, body) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive-candidates",
+        Some(request.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let first: MutationDto = serde_json::from_value(body).unwrap();
+    assert_eq!(
+        first.result,
+        MutationResultDto::ArchivedInactive { count: 1 }
+    );
+    assert!(!outside.find_task(old.id()).unwrap().unwrap().is_archived());
+    assert!(
+        outside
+            .find_task(added.id())
+            .unwrap()
+            .unwrap()
+            .is_archived()
+    );
+    let restore = merge(
+        json!({"action":"restore", "occurred_at": as_of}),
+        guard(&first.snapshot.revision),
+    );
+    let (status, body) = call(
+        &router,
+        Method::PATCH,
+        &format!("/v1/tasks/{}", added.id()),
+        Some(restore),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let restored: MutationDto = serde_json::from_value(body).unwrap();
+    let (status, body) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive-candidates",
+        Some(request.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let replay: MutationDto = serde_json::from_value(body).unwrap();
+    assert_eq!(replay.result, first.result);
+    assert_eq!(replay.snapshot, restored.snapshot);
+    let mut changed_request = request;
+    changed_request["inactive_days"] = json!(30);
+    let (status, body) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive-candidates",
+        Some(changed_request),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "conflict");
+    assert_eq!(state(&router).await, restored.snapshot);
+}
+
+#[tokio::test]
+async fn configurable_archive_validates_days_time_and_revision_without_writing() {
+    let directory = TempDir::new().unwrap();
+    let router = tracker_server::router_for_database(&directory.path().join("tracker.db")).unwrap();
+    create_fixture_task(&router, "Planning").await;
+    let before = state(&router).await;
+    let as_of = Utc::now();
+    for days in [0, u32::MAX] {
+        let (status, _) = call(&router, Method::GET, &candidates_uri(as_of, days), None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let request = merge(
+            json!({"as_of": as_of, "inactive_days": days}),
+            guard(&before.revision),
+        );
+        let (status, body) = call(
+            &router,
+            Method::POST,
+            "/v1/tasks/archive-inactive-candidates",
+            Some(request),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["code"], "invalid_request");
+        assert_eq!(state(&router).await, before);
+    }
+    for invalid_time in [
+        as_of - TimeDelta::minutes(16),
+        as_of + TimeDelta::minutes(16),
+    ] {
+        let (status, _) = call(&router, Method::GET, &candidates_uri(invalid_time, 7), None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let request = merge(
+            json!({"as_of": invalid_time, "inactive_days": 7}),
+            guard(&before.revision),
+        );
+        let (status, _) = call(
+            &router,
+            Method::POST,
+            "/v1/tasks/archive-inactive-candidates",
+            Some(request),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(state(&router).await, before);
+    }
+    let request = merge(json!({"as_of": as_of, "inactive_days": 7}), guard("stale"));
+    let (status, body) = call(
+        &router,
+        Method::POST,
+        "/v1/tasks/archive-inactive-candidates",
+        Some(request),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "stale_revision");
+    assert_eq!(state(&router).await, before);
+    for fields in [
+        json!({"as_of":as_of}),
+        json!({"as_of":as_of,"inactive_days":7,"unexpected":true}),
+        json!({"as_of":as_of,"inactive_days":-1}),
+    ] {
+        let (status, _) = call(
+            &router,
+            Method::POST,
+            "/v1/tasks/archive-inactive-candidates",
+            Some(merge(fields, guard(&before.revision))),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(state(&router).await, before);
+    }
+}
