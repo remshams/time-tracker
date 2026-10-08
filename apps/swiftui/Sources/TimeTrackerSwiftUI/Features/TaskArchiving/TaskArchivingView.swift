@@ -40,6 +40,7 @@ private struct TaskArchivingSheet: View {
 
             if let error = state.error {
                 Label(error, systemImage: "exclamationmark.triangle")
+                    .accessibilityIdentifier("task-archive.error")
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -52,6 +53,7 @@ private struct TaskArchivingSheet: View {
                     Text(latest.archived ? "Archived" : "Active")
                         .foregroundStyle(.secondary)
                     Button("Review latest task") { archiving.reviewLatest() }
+                        .accessibilityIdentifier("task-archive.review")
                         .disabled(state.isSubmitting)
                 }
                 .padding(12)
@@ -67,11 +69,13 @@ private struct TaskArchivingSheet: View {
                 }
                 Spacer()
                 Button("Cancel") { archiving.cancel() }
+                    .accessibilityIdentifier("task-archive.cancel")
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
                 Button(state.hasUnresolvedIntent && state.error != nil ? "Retry" : actionTitle) {
                     archiving.submit()
                 }
+                    .accessibilityIdentifier("task-archive.confirm")
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(!state.canSubmit)
