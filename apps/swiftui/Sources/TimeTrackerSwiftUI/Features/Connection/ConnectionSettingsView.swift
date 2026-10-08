@@ -34,12 +34,14 @@ struct ConnectionSettingsView: View {
                             Text(mode.label).tag(mode)
                         }
                     }
+                    .accessibilityIdentifier("connection.mode")
 
                     if draft.mode == .server {
                         TextField("Server URL", text: $draft.serverURL,
                                   prompt: Text("http://server-address:port"))
                             .textFieldStyle(.roundedBorder)
                             .disableAutocorrection(true)
+                            .accessibilityIdentifier("connection.server-url")
                         Text("Enter the full HTTP or HTTPS address of your tracker server.")
                             .foregroundStyle(.secondary)
                     } else {
@@ -54,6 +56,7 @@ struct ConnectionSettingsView: View {
                         get: { store.pauseOnScreenLock },
                         set: { store.setPauseOnScreenLock($0) }
                     ))
+                    .accessibilityIdentifier("tracking.pause-on-lock")
                     Text("Resume the same task when you unlock this Mac, unless another timer is already running.")
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -69,6 +72,7 @@ struct ConnectionSettingsView: View {
                         get: { store.showDailyTotalInMenuBar },
                         set: { store.setShowDailyTotalInMenuBar($0) }
                     ))
+                    .accessibilityIdentifier("menu.show-daily-total")
                 }
 
                 Section("Menu shortcut") {
@@ -81,6 +85,7 @@ struct ConnectionSettingsView: View {
                             }
                             .frame(width: 160, height: 28)
                             .accessibilityLabel("\(action.title) shortcut")
+                            .accessibilityIdentifier("menu.shortcut.open")
                         }
                     }
                     Text("Click the shortcut and press its new keys. Escape cancels. Open menu opens the native menu across apps. Use arrow keys to navigate and open task submenus for tracking and copying.")
@@ -92,21 +97,26 @@ struct ConnectionSettingsView: View {
                     if let error = store.menuShortcutError {
                         Text(error).foregroundStyle(.red)
                             .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("menu.shortcut.error")
                     }
                     Button("Restore default shortcut") { store.resetMenuShortcuts() }
+                        .accessibilityIdentifier("menu.shortcut.restore")
                 }
 
                 Section {
                     HStack(spacing: 12) {
                         Button("Test connection") { testConnection() }
                             .disabled(controlsDisabled || missingEndpoint)
+                            .accessibilityIdentifier("connection.test")
                         Button("Connect") { connect() }
                             .buttonStyle(.borderedProminent)
                             .disabled(controlsDisabled || missingEndpoint)
                             .keyboardShortcut(.defaultAction)
+                            .accessibilityIdentifier("connection.connect")
                         if operationPending {
                             ProgressView().controlSize(.small)
                         }
+                        .accessibilityIdentifier("connection.result")
                     }
 
                     if let resultMessage {
@@ -130,6 +140,7 @@ struct ConnectionSettingsView: View {
                     }
                     Text(store.connectionStatusText)
                         .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("connection.status")
                     if let message = store.connectionMessage {
                         Text(message)
                             .foregroundStyle(.secondary)

@@ -24,16 +24,19 @@ struct ConnectionSummary: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(store.connectionSettings.serverURL)
+                    .accessibilityIdentifier("connection-summary.source")
                 Text(store.connectionStatusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .help(store.connectionMessage ?? store.connectionStatusText)
+                    .accessibilityIdentifier("connection-summary.status")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if store.isChangingConnection {
                 ProgressView().controlSize(.small)
             } else if store.isStale {
                 Button("Retry") { store.refresh() }
+                    .accessibilityIdentifier("connection-summary.retry")
                     .disabled(activity.isBlockingControls)
             }
         }
