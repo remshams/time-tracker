@@ -101,6 +101,9 @@ final class TrackerFixture {
     }
     func start(_ task: FixtureTask, at date: Date = Date()) throws -> FixtureWorklog {
         let result: Started = try command(["tracking", "start", task.id], at: date)
+        guard result.worklog.taskID == task.id, result.worklog.end == nil else {
+            throw FixtureError("CLI start did not return the requested task's running worklog.")
+        }
         return result.worklog
     }
     func stop(_ worklog: FixtureWorklog, at date: Date = Date()) throws {
@@ -235,7 +238,27 @@ final class TrackerFixture {
 
     private struct Envelope<Result: Decodable>: Decodable { let ok: Bool; let data: Result }
     private struct Empty: Decodable {}
-    private struct Started: Decodable { let worklog: FixtureWorklog }
+    private struct Started: Decodable {
+        let worklog: FixtureWorklog
+        enum CodingKeys: String, CodingKey { case outcome, worklog, started, stopped }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            let outcome = try values.decode(String.self, forKey: .outcome)
+            switch outcome {
+            case "started", "already_active":
+                worklog = try values.decode(FixtureWorklog.self, forKey: .worklog)
+            case "switched":
+                let stopped = try values.decode(FixtureWorklog.self, forKey: .stopped)
+                worklog = try values.decode(FixtureWorklog.self, forKey: .started)
+                guard stopped.end != nil, stopped.id != worklog.id, stopped.taskID != worklog.taskID else {
+                    throw FixtureError("CLI switch did not close the previous timer and create a distinct timer.")
+                }
+            default:
+                throw FixtureError("Unexpected CLI tracking start outcome: \(outcome).")
+            }
+        }
+    }
     private struct TaskList: Decodable { let tasks: [Item]; struct Item: Decodable { let task: FixtureTask } }
     private struct Status: Decodable {
         let state: String; let activeWorklog: FixtureWorklog?
