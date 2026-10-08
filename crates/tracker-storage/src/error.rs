@@ -99,7 +99,6 @@ pub enum StorageError {
 impl From<StorageError> for RepositoryError {
     fn from(error: StorageError) -> Self {
         match error {
-            StorageError::TaskNotFound { id } => Self::TaskNotFound { id },
             StorageError::WorklogNotFound { id } => Self::WorklogNotFound { id },
             StorageError::WorklogAlreadyStopped { id } => Self::WorklogAlreadyStopped { id },
             StorageError::WorklogChanged { id } => Self::WorklogChanged { id },
@@ -110,23 +109,32 @@ impl From<StorageError> for RepositoryError {
             StorageError::GlobalWorklogHistoryChanged => Self::GlobalWorklogHistoryChanged,
             StorageError::SameTaskWorklogOverlap { id } => Self::SameTaskWorklogOverlap { id },
             StorageError::WorklogAlreadyExists { id } => Self::WorklogAlreadyExists { id },
-            StorageError::TaskAlreadyExists { id } => Self::TaskAlreadyExists { id },
             StorageError::ActiveWorklogExists => Self::ActiveWorklogExists,
-            StorageError::TaskArchived { id } => Self::TaskArchived { id },
-            StorageError::TaskIsActive { id } => Self::TaskIsActive { id },
-            StorageError::InactiveTaskCandidatesChanged => Self::InactiveTaskCandidatesChanged,
-            StorageError::InvalidInactiveTaskTime => Self::Constraint {
-                message: "inactive task cutoff is outside the supported timestamp range".to_owned(),
-            },
-            error @ StorageError::Constraint(_) => Self::Constraint {
-                message: error.to_string(),
-            },
-            StorageError::CorruptData(field) => Self::CorruptData { field },
-            StorageError::ReportDurationOverflow => Self::ReportDurationOverflow,
-            other => Self::Backend {
-                message: other.to_string(),
-            },
+            other => task_or_backend_error(other),
         }
+    }
+}
+
+fn task_or_backend_error(error: StorageError) -> RepositoryError {
+    match error {
+        StorageError::TaskNotFound { id } => RepositoryError::TaskNotFound { id },
+        StorageError::TaskAlreadyExists { id } => RepositoryError::TaskAlreadyExists { id },
+        StorageError::TaskArchived { id } => RepositoryError::TaskArchived { id },
+        StorageError::TaskIsActive { id } => RepositoryError::TaskIsActive { id },
+        StorageError::InactiveTaskCandidatesChanged => {
+            RepositoryError::InactiveTaskCandidatesChanged
+        }
+        StorageError::InvalidInactiveTaskTime => RepositoryError::Constraint {
+            message: "inactive task cutoff is outside the supported timestamp range".to_owned(),
+        },
+        error @ StorageError::Constraint(_) => RepositoryError::Constraint {
+            message: error.to_string(),
+        },
+        StorageError::CorruptData(field) => RepositoryError::CorruptData { field },
+        StorageError::ReportDurationOverflow => RepositoryError::ReportDurationOverflow,
+        other => RepositoryError::Backend {
+            message: other.to_string(),
+        },
     }
 }
 

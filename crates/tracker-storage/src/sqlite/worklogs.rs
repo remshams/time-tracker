@@ -42,6 +42,130 @@ fn latest_work_start_on(
     .transpose()
 }
 
+fn moved_worklog_result(
+    transaction: Transaction<'_>,
+    id: WorklogId,
+    source_task_id: TaskId,
+    destination_task_id: TaskId,
+) -> Result<WorklogMove, StorageError> {
+    let worklog =
+        worklog_by_id_on(&transaction, id)?.ok_or(StorageError::WorklogNotFound { id })?;
+    let source_task_latest_work_start = latest_work_start_on(&transaction, source_task_id)?;
+    let destination_task_latest_work_start =
+        latest_work_start_on(&transaction, destination_task_id)?;
+    let active_worklog = active_worklog_on(&transaction)?;
+    let active_task_latest_work_start = active_worklog
+        .as_ref()
+        .map(|active| latest_work_start_on(&transaction, active.task_id()))
+        .transpose()?
+        .flatten();
+    transaction.commit()?;
+    Ok(WorklogMove {
+        worklog,
+        source_task_latest_work_start,
+        destination_task_latest_work_start,
+        active_worklog,
+        active_task_latest_work_start,
+    })
+}
+
+fn corrected_worklog_result(
+    transaction: Transaction<'_>,
+    id: WorklogId,
+) -> Result<WorklogCorrection, StorageError> {
+    let worklog =
+        worklog_by_id_on(&transaction, id)?.ok_or(StorageError::WorklogNotFound { id })?;
+    let task_latest_work_start = latest_work_start_on(&transaction, worklog.task_id())?;
+    let active_worklog = active_worklog_on(&transaction)?;
+    let active_task_latest_work_start = match active_worklog.as_ref() {
+        Some(active) if active.task_id() == worklog.task_id() => task_latest_work_start,
+        Some(active) => latest_work_start_on(&transaction, active.task_id())?,
+        None => None,
+    };
+    transaction.commit()?;
+    Ok(WorklogCorrection {
+        worklog,
+        task_latest_work_start,
+        active_worklog,
+        active_task_latest_work_start,
+    })
+}
+
+fn global_worklog_rows_on(
+    conn: &Connection,
+    after: Option<&GlobalWorklogCursor>,
+) -> Result<Vec<RawWorklog>, StorageError> {
+    let limit = i64::try_from(WORKLOG_PAGE_SIZE + 1).expect("the page size plus one fits i64");
+    let rows = match after {
+        None => {
+            let mut statement = conn.prepare(
+                "SELECT id, task_id, start_us, end_us FROM worklogs
+                 ORDER BY start_us DESC, id ASC LIMIT ?1",
+            )?;
+            statement
+                .query_map([limit], raw_worklog)?
+                .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
+        }
+        Some(cursor) => {
+            let mut statement = conn.prepare(
+                "SELECT id, task_id, start_us, end_us FROM worklogs
+                 WHERE start_us < ?1 OR (start_us = ?1 AND id > ?2)
+                 ORDER BY start_us DESC, id ASC LIMIT ?3",
+            )?;
+            statement
+                .query_map(
+                    rusqlite::params![timestamp_to_us(cursor.start), cursor.id.to_string(), limit],
+                    raw_worklog,
+                )?
+                .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
+        }
+    };
+    Ok(rows)
+}
+
+fn task_worklog_rows_on(
+    conn: &Connection,
+    task_id: TaskId,
+    after: Option<&WorklogCursor>,
+) -> Result<Vec<RawWorklog>, StorageError> {
+    let limit =
+        i64::try_from(WORKLOG_PAGE_SIZE + 1).expect("the page size plus one always fits i64");
+    let rows = match after {
+        None => {
+            let mut statement = conn.prepare(
+                "SELECT id, task_id, start_us, end_us FROM worklogs
+                 WHERE task_id = ?1
+                 ORDER BY start_us DESC, id
+                 LIMIT ?2",
+            )?;
+            statement
+                .query_map(rusqlite::params![task_id.to_string(), limit], raw_worklog)?
+                .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
+        }
+        Some(cursor) => {
+            let mut statement = conn.prepare(
+                "SELECT id, task_id, start_us, end_us FROM worklogs
+                 WHERE task_id = ?1
+                   AND (start_us < ?2 OR (start_us = ?2 AND id > ?3))
+                 ORDER BY start_us DESC, id
+                 LIMIT ?4",
+            )?;
+            statement
+                .query_map(
+                    rusqlite::params![
+                        task_id.to_string(),
+                        timestamp_to_us(cursor.start),
+                        cursor.id.to_string(),
+                        limit
+                    ],
+                    raw_worklog,
+                )?
+                .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
+        }
+    };
+    Ok(rows)
+}
+
 #[cfg(any(test, feature = "test-support"))]
 fn list_worklogs_on(conn: &Connection, task_id: TaskId) -> Result<Vec<Worklog>, StorageError> {
     let mut statement = conn.prepare(
@@ -76,35 +200,7 @@ impl SqliteRepository {
         if after.is_some_and(|cursor| cursor.revision != revision) {
             return Err(StorageError::GlobalWorklogHistoryChanged);
         }
-        let limit = i64::try_from(WORKLOG_PAGE_SIZE + 1).expect("the page size plus one fits i64");
-        let raw = match after {
-            None => {
-                let mut statement = transaction.prepare(
-                    "SELECT id, task_id, start_us, end_us FROM worklogs
-                     ORDER BY start_us DESC, id ASC LIMIT ?1",
-                )?;
-                statement
-                    .query_map([limit], raw_worklog)?
-                    .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
-            }
-            Some(cursor) => {
-                let mut statement = transaction.prepare(
-                    "SELECT id, task_id, start_us, end_us FROM worklogs
-                     WHERE start_us < ?1 OR (start_us = ?1 AND id > ?2)
-                     ORDER BY start_us DESC, id ASC LIMIT ?3",
-                )?;
-                statement
-                    .query_map(
-                        rusqlite::params![
-                            timestamp_to_us(cursor.start),
-                            cursor.id.to_string(),
-                            limit
-                        ],
-                        raw_worklog,
-                    )?
-                    .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
-            }
-        };
+        let raw = global_worklog_rows_on(&transaction, after)?;
         let has_next = raw.len() > WORKLOG_PAGE_SIZE;
         let worklogs = raw
             .into_iter()
@@ -173,35 +269,16 @@ impl SqliteRepository {
         );
 
         match update {
-            Ok(1) => {
-                let moved = worklog_by_id_on(&transaction, id)?
-                    .ok_or(StorageError::WorklogNotFound { id })?;
-                let source_task_latest_work_start =
-                    latest_work_start_on(&transaction, expected_source_task_id)?;
-                let destination_task_latest_work_start =
-                    latest_work_start_on(&transaction, destination_task_id)?;
-                let active_worklog = active_worklog_on(&transaction)?;
-                let active_task_latest_work_start = active_worklog
-                    .as_ref()
-                    .map(|active| latest_work_start_on(&transaction, active.task_id()))
-                    .transpose()?
-                    .flatten();
-                transaction.commit()?;
-                Ok(WorklogMove {
-                    worklog: moved,
-                    source_task_latest_work_start,
-                    destination_task_latest_work_start,
-                    active_worklog,
-                    active_task_latest_work_start,
-                })
-            }
+            Ok(1) => moved_worklog_result(
+                transaction,
+                id,
+                expected_source_task_id,
+                destination_task_id,
+            ),
             Ok(0) => {
                 let current = worklog_by_id_on(&transaction, id)?
                     .ok_or(StorageError::WorklogNotFound { id })?;
-                let stored_expected = WorklogTimes::new(
-                    us_to_timestamp(expected_start_us)?,
-                    expected_end_us.map(us_to_timestamp).transpose()?,
-                );
+                let stored_expected = stored_worklog_times(expected_start_us, expected_end_us)?;
                 if current.task_id() != expected_source_task_id
                     || current.times() != stored_expected
                 {
@@ -254,33 +331,7 @@ impl SqliteRepository {
         );
 
         match update {
-            Ok(1) => {
-                let corrected = worklog_by_id_on(&transaction, id)?
-                    .ok_or(StorageError::WorklogNotFound { id })?;
-                let task_latest_work_start = transaction
-                    .query_row(
-                        "SELECT MAX(start_us) FROM worklogs WHERE task_id = ?1",
-                        [corrected.task_id().to_string()],
-                        |row| row.get::<_, Option<i64>>(0),
-                    )?
-                    .map(us_to_timestamp)
-                    .transpose()?;
-                let active_worklog = active_worklog_on(&transaction)?;
-                let active_task_latest_work_start = match active_worklog.as_ref() {
-                    Some(active) if active.task_id() == corrected.task_id() => {
-                        task_latest_work_start
-                    }
-                    Some(active) => latest_work_start_on(&transaction, active.task_id())?,
-                    None => None,
-                };
-                transaction.commit()?;
-                Ok(WorklogCorrection {
-                    worklog: corrected,
-                    task_latest_work_start,
-                    active_worklog,
-                    active_task_latest_work_start,
-                })
-            }
+            Ok(1) => corrected_worklog_result(transaction, id),
             Ok(0) => {
                 let current = worklog_by_id_on(&transaction, id)?
                     .ok_or(StorageError::WorklogNotFound { id })?;
@@ -339,11 +390,7 @@ impl SqliteRepository {
         };
 
         let Some(raw) = deleted_raw else {
-            return match worklog_by_id_on(&transaction, id)? {
-                None => Err(StorageError::WorklogNotFound { id }),
-                Some(worklog) if worklog.is_active() => Err(StorageError::WorklogIsActive { id }),
-                Some(_) => Err(StorageError::WorklogChanged { id }),
-            };
+            return Err(deletion_conflict_on(&transaction, id)?);
         };
         let worklog = worklog_from_raw(raw)?;
         let task_latest_work_start = latest_work_start_on(&transaction, worklog.task_id())?;
@@ -384,41 +431,7 @@ impl SqliteRepository {
         if after.is_some_and(|cursor| cursor.revision != revision) {
             return Err(StorageError::WorklogHistoryChanged { task_id });
         }
-        let limit =
-            i64::try_from(WORKLOG_PAGE_SIZE + 1).expect("the page size plus one always fits i64");
-        let raw = match after {
-            None => {
-                let mut statement = transaction.prepare(
-                    "SELECT id, task_id, start_us, end_us FROM worklogs
-                     WHERE task_id = ?1
-                     ORDER BY start_us DESC, id
-                     LIMIT ?2",
-                )?;
-                statement
-                    .query_map(rusqlite::params![task_id.to_string(), limit], raw_worklog)?
-                    .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
-            }
-            Some(cursor) => {
-                let mut statement = transaction.prepare(
-                    "SELECT id, task_id, start_us, end_us FROM worklogs
-                     WHERE task_id = ?1
-                       AND (start_us < ?2 OR (start_us = ?2 AND id > ?3))
-                     ORDER BY start_us DESC, id
-                     LIMIT ?4",
-                )?;
-                statement
-                    .query_map(
-                        rusqlite::params![
-                            task_id.to_string(),
-                            timestamp_to_us(cursor.start),
-                            cursor.id.to_string(),
-                            limit
-                        ],
-                        raw_worklog,
-                    )?
-                    .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
-            }
-        };
+        let raw = task_worklog_rows_on(&transaction, task_id, after)?;
         let has_next = raw.len() > WORKLOG_PAGE_SIZE;
         let worklogs = raw
             .into_iter()
@@ -461,4 +474,19 @@ impl SqliteRepository {
     pub fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, StorageError> {
         list_worklogs_on(&self.conn, task_id)
     }
+}
+
+fn stored_worklog_times(start_us: i64, end_us: Option<i64>) -> Result<WorklogTimes, StorageError> {
+    Ok(WorklogTimes::new(
+        us_to_timestamp(start_us)?,
+        end_us.map(us_to_timestamp).transpose()?,
+    ))
+}
+
+fn deletion_conflict_on(conn: &Connection, id: WorklogId) -> Result<StorageError, StorageError> {
+    Ok(match worklog_by_id_on(conn, id)? {
+        None => StorageError::WorklogNotFound { id },
+        Some(worklog) if worklog.is_active() => StorageError::WorklogIsActive { id },
+        Some(_) => StorageError::WorklogChanged { id },
+    })
 }
