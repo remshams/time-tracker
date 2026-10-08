@@ -203,7 +203,7 @@ action revisions, dependency and build caches, and seven-day report retention.
 | 2 | CI | Full Rust workspace tests on Linux and macOS, including existing integration and TUI E2E tests | Every PR, push to `main`, and manual run |
 | 3 | CI | Rust coverage and the configured CRAP threshold of 12 | Every PR, push to `main`, and manual run |
 | 4 | CI | Portable Swift tests and at least 95% executable line coverage on Linux | Every PR, push to `main`, and manual run |
-| 5 | CI | Swift package tests on macOS, native Debug and universal Release builds, and scene layout checks | Every PR, push to `main`, and manual run |
+| 5 | CI | Six required native UI E2E groups, Swift package tests on macOS, native Debug and universal Release builds, and scene layout checks | Every PR, push to `main`, and manual run |
 | 6 | CI | `CI passed` requires every regular job to succeed, including both Rust test platforms | Every PR, push to `main`, and manual run |
 | 7 | [Mutation tests](.github/workflows/mutations.yml) | Full Rust and portable Swift mutation suites on Linux; missed, timed-out, and unresolved mutants fail their jobs | Manual only |
 | 8 | [Dependency audit](.github/workflows/dependencies.yml) | `cargo audit` checks `Cargo.lock` against RustSec advisories | Monday at 06:23 UTC and manual runs |
@@ -213,7 +213,7 @@ Swift 6.1.3 for Linux, and Xcode 27.0 for the native app. Coverage and mutation 
 versions follow `AGENTS.md`. The macOS job uses
 GitHub's `xcode-27` public preview image, which includes macOS 27, Xcode 27.0,
 and the macOS 27 SDK. Rust platform tests use the stable `macos-26` image.
-The existing layout checks require a desktop session. Native UI E2E tests remain deferred.
+Native UI E2E and layout checks require a desktop session. The [native coverage map](apps/swiftui/e2e-coverage.md) records automated cases and dedicated-Mac acceptance checks.
 The universal build validates Apple Silicon and Intel slices without publishing
 or requiring an Apple Developer account.
 
