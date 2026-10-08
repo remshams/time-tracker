@@ -10,6 +10,7 @@ import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 from urllib.parse import urlsplit
 
 
@@ -17,6 +18,13 @@ def atomic_json(path, value):
     temporary = path.with_suffix(f".{threading.get_ident()}.tmp")
     temporary.write_text(json.dumps(value), encoding="utf-8")
     os.replace(temporary, path)
+
+
+class LoopbackHTTPServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # The loopback proxy does not need HTTPServer's reverse DNS lookup.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
 
 class ProxyState:
@@ -150,12 +158,13 @@ def main():
     parser.add_argument("--upstream", required=True)
     args = parser.parse_args()
     print("Starting controlled proxy.", flush=True)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
-    server.state = ProxyState(args.directory, args.upstream)
-    atomic_json(args.directory / "proxy-endpoint.json", {"endpoint": f"http://127.0.0.1:{server.server_port}"})
-    print(f"Controlled proxy listening on port {server.server_port}.", flush=True)
-    server.serve_forever(poll_interval=0.05)
+    with LoopbackHTTPServer(("127.0.0.1", 0), Handler) as server:
+        server.daemon_threads = True
+        server.state = ProxyState(args.directory, args.upstream)
+        atomic_json(args.directory / "proxy-endpoint.json", {"endpoint": f"http://127.0.0.1:{server.server_port}"})
+        print(f"Controlled proxy listening on port {server.server_port}.", flush=True)
+        server.serve_forever(poll_interval=0.05)
+
 
 
 if __name__ == "__main__":

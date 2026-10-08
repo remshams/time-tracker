@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -98,6 +99,19 @@ class ControlledProxyTests(unittest.TestCase):
 
     def release(self):
         PROXY.atomic_json(self.directory / "proxy-control.json", {"released": self.token})
+
+    def test_main_publishes_endpoint_without_reverse_dns(self):
+        original_close = PROXY.ThreadingHTTPServer.server_close
+        with mock.patch("sys.argv", [str(MODULE_PATH), "--directory", str(self.directory),
+                                     "--upstream", "http://127.0.0.1:1"]), \
+             mock.patch.object(PROXY.socket, "getfqdn", side_effect=AssertionError("Reverse DNS is unavailable")), \
+             mock.patch.object(PROXY.ThreadingHTTPServer, "serve_forever"), \
+             mock.patch.object(PROXY.ThreadingHTTPServer, "server_close", autospec=True,
+                               side_effect=original_close) as close:
+            PROXY.main()
+        endpoint = json.loads((self.directory / "proxy-endpoint.json").read_text())["endpoint"]
+        self.assertTrue(endpoint.startswith("http://127.0.0.1:"))
+        self.assertEqual(close.call_count, 1)
 
     def test_forwarding_preserves_body_and_records_upstream_status(self):
         payload = b'{"name":"Planning"}'
