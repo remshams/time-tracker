@@ -247,6 +247,31 @@ impl ApplicationError {
     /// unsanitized backend messages.
     pub fn failure(&self) -> ApplicationFailure {
         match self {
+            Self::RemoteUnavailable(_) | Self::RemoteProtocol(_) | Self::Recovery { .. } => {
+                self.remote_or_recovery_failure()
+            }
+            Self::Semantic { .. }
+            | Self::Domain(_)
+            | Self::InvalidWorklogCorrection(_)
+            | Self::InvalidWorklogMove(_)
+            | Self::TrackingStateChanged
+            | Self::InvalidReportRange
+            | Self::ReportDurationOverflow => self.operation_failure(),
+            Self::Repository(_)
+            | Self::TrackingWrite(_)
+            | Self::TrackingRecovery(_)
+            | Self::TaskRecovery(_) => self.repository_failure(),
+            Self::WorklogCorrectionWrite { .. }
+            | Self::WorklogMoveWrite { .. }
+            | Self::WorklogDeletionWrite { .. }
+            | Self::WorklogCorrectionRecovery { .. }
+            | Self::WorklogMoveRecovery { .. }
+            | Self::WorklogDeletionRecovery { .. } => self.worklog_write_failure(),
+        }
+    }
+
+    fn remote_or_recovery_failure(&self) -> ApplicationFailure {
+        match self {
             Self::RemoteUnavailable(_) => ApplicationFailure {
                 category: ApplicationFailureCategory::General,
                 message: "Tracker server is unavailable".to_owned(),
@@ -268,6 +293,12 @@ impl ApplicationError {
                 );
                 attach_recovery(failure, recovery)
             }
+            _ => unreachable!("only remote and recovery failures reach this classifier"),
+        }
+    }
+
+    fn operation_failure(&self) -> ApplicationFailure {
+        match self {
             Self::Semantic { category, message } => ApplicationFailure {
                 category: *category,
                 message: message.clone(),
@@ -295,24 +326,6 @@ impl ApplicationError {
                 source: ApplicationFailureSource::Operation,
                 recovery: None,
             },
-            Self::Repository(error) | Self::TrackingWrite(error) => repository_failure(error),
-            Self::TrackingRecovery(error) | Self::TaskRecovery(error) => {
-                let mut failure = repository_failure(error);
-                failure.recovery = Some((failure.category, failure.message.clone()));
-                failure
-            }
-            Self::WorklogCorrectionWrite { write }
-            | Self::WorklogMoveWrite { write }
-            | Self::WorklogDeletionWrite { write } => repository_failure(write),
-            Self::WorklogCorrectionRecovery { write, recovery } => {
-                failure_with_recovery("Correction", write, recovery)
-            }
-            Self::WorklogMoveRecovery { write, recovery } => {
-                failure_with_recovery("Move", write, recovery)
-            }
-            Self::WorklogDeletionRecovery { write, recovery } => {
-                failure_with_recovery("Deletion", write, recovery)
-            }
             Self::TrackingStateChanged => ApplicationFailure {
                 category: ApplicationFailureCategory::General,
                 message: "Tracking state changed in another client. Refreshed state.".to_owned(),
@@ -331,6 +344,37 @@ impl ApplicationError {
                 source: ApplicationFailureSource::Operation,
                 recovery: None,
             },
+            _ => unreachable!("only operation failures reach this classifier"),
+        }
+    }
+
+    fn repository_failure(&self) -> ApplicationFailure {
+        match self {
+            Self::Repository(error) | Self::TrackingWrite(error) => repository_failure(error),
+            Self::TrackingRecovery(error) | Self::TaskRecovery(error) => {
+                let mut failure = repository_failure(error);
+                failure.recovery = Some((failure.category, failure.message.clone()));
+                failure
+            }
+            _ => unreachable!("only repository failures reach this classifier"),
+        }
+    }
+
+    fn worklog_write_failure(&self) -> ApplicationFailure {
+        match self {
+            Self::WorklogCorrectionWrite { write }
+            | Self::WorklogMoveWrite { write }
+            | Self::WorklogDeletionWrite { write } => repository_failure(write),
+            Self::WorklogCorrectionRecovery { write, recovery } => {
+                failure_with_recovery("Correction", write, recovery)
+            }
+            Self::WorklogMoveRecovery { write, recovery } => {
+                failure_with_recovery("Move", write, recovery)
+            }
+            Self::WorklogDeletionRecovery { write, recovery } => {
+                failure_with_recovery("Deletion", write, recovery)
+            }
+            _ => unreachable!("only worklog write failures reach this classifier"),
         }
     }
 }
@@ -400,7 +444,29 @@ fn repository_error_category(error: &RepositoryError) -> ApplicationFailureCateg
 
 fn repository_error_message(error: &RepositoryError) -> &'static str {
     match error {
-        RepositoryError::TaskNotFound { .. } => "Task not found",
+        RepositoryError::WorklogNotFound { .. }
+        | RepositoryError::WorklogAlreadyStopped { .. }
+        | RepositoryError::WorklogChanged { .. }
+        | RepositoryError::WorklogIsActive { .. }
+        | RepositoryError::WorklogHistoryChanged { .. }
+        | RepositoryError::GlobalWorklogHistoryChanged
+        | RepositoryError::SameTaskWorklogOverlap { .. }
+        | RepositoryError::WorklogAlreadyExists { .. }
+        | RepositoryError::ActiveWorklogExists => worklog_error_message(error),
+        RepositoryError::TaskNotFound { .. }
+        | RepositoryError::TaskAlreadyExists { .. }
+        | RepositoryError::TaskArchived { .. }
+        | RepositoryError::TaskIsActive { .. }
+        | RepositoryError::InactiveTaskCandidatesChanged
+        | RepositoryError::Constraint { .. }
+        | RepositoryError::CorruptData { .. }
+        | RepositoryError::ReportDurationOverflow
+        | RepositoryError::Backend { .. } => task_or_storage_error_message(error),
+    }
+}
+
+fn worklog_error_message(error: &RepositoryError) -> &'static str {
+    match error {
         RepositoryError::WorklogNotFound { .. } => "Worklog not found",
         RepositoryError::WorklogAlreadyStopped { .. } => "Worklog is already stopped",
         RepositoryError::WorklogChanged { .. } => "Worklog changed in another client",
@@ -411,8 +477,15 @@ fn repository_error_message(error: &RepositoryError) -> &'static str {
         }
         RepositoryError::SameTaskWorklogOverlap { .. } => "The worklog overlaps another worklog",
         RepositoryError::WorklogAlreadyExists { .. } => "Worklog already exists",
-        RepositoryError::TaskAlreadyExists { .. } => "Task already exists",
         RepositoryError::ActiveWorklogExists => "Another worklog is active",
+        _ => unreachable!("only worklog failures reach this classifier"),
+    }
+}
+
+fn task_or_storage_error_message(error: &RepositoryError) -> &'static str {
+    match error {
+        RepositoryError::TaskNotFound { .. } => "Task not found",
+        RepositoryError::TaskAlreadyExists { .. } => "Task already exists",
         RepositoryError::TaskArchived { .. } => "Task is archived",
         RepositoryError::TaskIsActive { .. } => "Task has active work",
         RepositoryError::InactiveTaskCandidatesChanged => {
@@ -422,5 +495,6 @@ fn repository_error_message(error: &RepositoryError) -> &'static str {
         RepositoryError::CorruptData { .. } => "Stored data is invalid",
         RepositoryError::ReportDurationOverflow => "Report duration is too large",
         RepositoryError::Backend { .. } => "Storage error",
+        _ => unreachable!("worklog messages were classified above"),
     }
 }

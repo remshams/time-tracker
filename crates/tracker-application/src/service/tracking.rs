@@ -133,10 +133,25 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             .find(|item| item.task.id() == task_id)
             .map(|TaskListItem { task, .. }| task.clone())
             .ok_or_else(|| ApplicationError::from(RepositoryError::TaskNotFound { id: task_id }))?;
+        let (candidate, outcome) = self.persist_tracking_change(&task, worklog_id, occurred_at)?;
+        self.tracker = candidate;
+        // Starting or switching work makes this task the latest work on the
+        // snapshot; stopping never touches it.
+        self.note_work_start(task_id, occurred_at);
+        Ok(outcome)
+    }
+
+    fn persist_tracking_change(
+        &mut self,
+        task: &tracker_domain::Task,
+        worklog_id: WorklogId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<(tracker_domain::Tracker, SetActiveTaskOutcome), ApplicationError> {
+        let task_id = task.id();
         let mut candidate = self.tracker.clone();
         let outcome = match candidate.active() {
             None => {
-                let _ = candidate.start(&task, occurred_at)?;
+                let _ = candidate.start(task, occurred_at)?;
                 let worklog = tracker_domain::Worklog::begin(worklog_id, task_id, occurred_at);
                 candidate = tracker_domain::Tracker::resume(worklog.clone())?;
                 match self.repository.insert_worklog(&worklog) {
@@ -146,7 +161,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             }
             Some(_) => {
                 let SwitchedWorklogs { stopped, .. } =
-                    candidate.switch(&task, occurred_at, occurred_at)?;
+                    candidate.switch(task, occurred_at, occurred_at)?;
                 let started = tracker_domain::Worklog::begin(worklog_id, task_id, occurred_at);
                 candidate = tracker_domain::Tracker::resume(started.clone())?;
                 match self.repository.switch_worklog(
@@ -160,10 +175,6 @@ impl<R: TrackerRepository> TrackerApplication<R> {
                 }
             }
         };
-        self.tracker = candidate;
-        // Starting or switching work makes this task the latest work on the
-        // snapshot; stopping never touches it.
-        self.note_work_start(task_id, occurred_at);
-        Ok(outcome)
+        Ok((candidate, outcome))
     }
 }
