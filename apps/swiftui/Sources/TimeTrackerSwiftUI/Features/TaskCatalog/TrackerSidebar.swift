@@ -86,8 +86,10 @@ struct TrackerSidebar: View {
 @MainActor
 struct TrackerDailyTotalText: View {
     @ObservedObject private var task: TrackerTaskDailyTotalStore
+    private let taskID: String
 
     init(totals: TrackerDailyTotalsStore, taskID: String) {
+        self.taskID = taskID
         task = totals.task(taskID)
     }
 
@@ -100,5 +102,6 @@ struct TrackerDailyTotalText: View {
             .fixedSize(horizontal: true, vertical: false)
             .help(task.content?.explanation ?? "Today's total is unavailable")
             .accessibilityLabel("Today's total: \(text)")
+            .accessibilityIdentifier("task-sidebar.total.\(taskID)")
     }
 }
