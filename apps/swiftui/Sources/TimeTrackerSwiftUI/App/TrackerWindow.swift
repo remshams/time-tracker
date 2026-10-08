@@ -80,17 +80,71 @@ struct TrackerWindow: View {
 private struct TrackerWindowAppearanceProbe: NSViewRepresentable {
     let appearance: String
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField(labelWithString: appearance)
         field.textColor = .clear
         field.setAccessibilityIdentifier("tracker.window.appearance")
         field.setAccessibilityLabel("Window appearance")
+        context.coordinator.observeResize(for: field)
         return field
     }
 
     func updateNSView(_ field: NSTextField, context: Context) {
         field.stringValue = appearance
         field.setAccessibilityValue(appearance)
+    }
+
+    static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    @MainActor
+    final class Coordinator {
+        private weak var field: NSTextField?
+        private var resizeObserver: NSObjectProtocol?
+
+        deinit {
+            if let resizeObserver {
+                DistributedNotificationCenter.default().removeObserver(resizeObserver)
+            }
+        }
+
+        func observeResize(for field: NSTextField) {
+            guard TrackerLaunchConfiguration.current.localDatabasePath != nil,
+                  let suite = ProcessInfo.processInfo.environment["TT_UI_TEST_DEFAULTS_SUITE"] else { return }
+            self.field = field
+            resizeObserver = DistributedNotificationCenter.default().addObserver(
+                forName: Notification.Name("\(suite).resize"), object: nil, queue: .main
+            ) { [weak self] notification in
+                MainActor.assumeIsolated { self?.resize(notification) }
+            }
+        }
+
+        func stop() {
+            if let resizeObserver {
+                DistributedNotificationCenter.default().removeObserver(resizeObserver)
+            }
+            resizeObserver = nil
+            field = nil
+        }
+
+        private func resize(_ notification: Notification) {
+            guard let window = field?.window, window.isKeyWindow,
+                  let screen = window.screen,
+                  let width = notification.userInfo?["width"] as? NSNumber,
+                  let height = notification.userInfo?["height"] as? NSNumber,
+                  width.doubleValue.isFinite, height.doubleValue.isFinite,
+                  width.doubleValue > 0, height.doubleValue > 0 else { return }
+            let available = window.contentRect(forFrameRect: screen.visibleFrame).size
+            let minimum = window.contentMinSize
+            guard minimum.width <= available.width, minimum.height <= available.height else { return }
+            window.setContentSize(NSSize(
+                width: max(minimum.width, min(CGFloat(width.doubleValue), available.width)),
+                height: max(minimum.height, min(CGFloat(height.doubleValue), available.height))
+            ))
+        }
     }
 }
 #endif
