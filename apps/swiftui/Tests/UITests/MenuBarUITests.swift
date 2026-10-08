@@ -137,7 +137,7 @@ class MenuBarUITests: TrackerUITestCase {
         let secondFrame = menuTask(second).frame
         let initialRunningLabel = menuTask(first).label
         menuTask(first).hover()
-        XCTAssertTrue(app.menuItems["Stop tracking"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(menuTask(first).menuItems["Stop tracking"].waitForExistence(timeout: timeout))
         let deadline = Date().addingTimeInterval(2)
         waitUntil("A real display tick passes while the submenu remains open") { Date() >= deadline }
         XCTAssertNotEqual(menuTask(first).label, initialRunningLabel)
@@ -162,7 +162,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
         try proxy.arm(method: "GET", path: "/v1/reports", mode: .holdBefore)
         openStatusMenu()
         menuTask(first).hover()
-        XCTAssertTrue(app.menuItems["Stop tracking"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(menuTask(first).menuItems["Stop tracking"].waitForExistence(timeout: timeout))
         _ = try proxy.waitForHeldRequest()
         let replacement = try fixture.start(second)
         let baseline = try proxy.requests(method: "PUT", path: "/v1/tracking").count
@@ -173,7 +173,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
         }
         XCTAssertEqual(statusButton.label, "Tracking: \(first.name)")
         menuTask(first).hover()
-        let stop = app.menuItems["Stop tracking"]
+        let stop = menuTask(first).menuItems["Stop tracking"]
         waitUntil("The captured Stop action is reachable") { stop.exists && stop.isHittable }
         stop.click()
         XCTAssertEqual(try fixture.activeWorklog(), replacement)
@@ -216,7 +216,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
         withRestoredClipboard {
             openStatusMenu()
             menuTask(first).hover()
-            XCTAssertTrue(app.menuItems["Copy task name"].waitForExistence(timeout: timeout))
+            XCTAssertTrue(menuTask(first).menuItems["Copy task name"].waitForExistence(timeout: timeout))
             do {
                 _ = try proxy.waitForHeldRequest()
                 _ = try fixture.start(second)
@@ -228,13 +228,17 @@ final class ServerMenuBarUITests: MenuBarUITests {
             }
             XCTAssertEqual(self.statusButton.label, "Tracking: \(first.name)")
             menuTask(first).hover()
-            let copyName = app.menuItems["Copy task name"]
+            let copyName = menuTask(first).menuItems["Copy task name"]
             waitUntil("The captured Copy action is reachable") { copyName.exists && copyName.isHittable }
             copyName.click()
             XCTAssertEqual(NSPasteboard.general.string(forType: .string), first.name)
             openStatusMenu()
             menuTask(first).hover()
-            app.menuItems["Copy exact duration"].click()
+            let copyDuration = menuTask(first).menuItems["Copy exact duration"]
+            waitUntil("The captured duration Copy action is reachable") {
+                copyDuration.exists && copyDuration.isHittable
+            }
+            copyDuration.click()
             do {
                 let now = Date()
                 let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
