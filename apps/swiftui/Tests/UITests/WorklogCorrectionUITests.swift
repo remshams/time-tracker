@@ -1,4 +1,3 @@
-import AppKit
 import XCTest
 
 class WorklogCorrectionUITests: TrackerUITestCase {
@@ -33,29 +32,12 @@ class WorklogCorrectionUITests: TrackerUITestCase {
     func testCompletedEndCorrectionPreservesUntouchedStart() throws {
         let task = try fixture.create("End correction")
         let log = try fixture.completed(task, start: Date().addingTimeInterval(-3600.375), end: Date().addingTimeInterval(-1800.625))
+        // Include buttons in Tab navigation only for this app launch.
+        additionalLaunchArguments += ["-AppleKeyboardUIMode", "3"]
         launch()
         select(task)
         openCorrection(log)
         stepMinute("worklog-correction.end", direction: .downArrow)
-        let application = try XCTUnwrap(app)
-        let previousKeyboardNavigation = NSApplication.shared.isFullKeyboardAccessEnabled
-        let restoreKeyboardNavigation: @MainActor () -> Void = {
-            if NSApplication.shared.isFullKeyboardAccessEnabled != previousKeyboardNavigation {
-                application.typeKey(.F7, modifierFlags: .control)
-            }
-            let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                NSApplication.shared.isFullKeyboardAccessEnabled == previousKeyboardNavigation
-            }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 15), .completed,
-                           "Keyboard navigation returns to its original setting.")
-        }
-        addTeardownBlock { await restoreKeyboardNavigation() }
-        if !previousKeyboardNavigation {
-            app.typeKey(.F7, modifierFlags: .control)
-            waitUntil("Keyboard navigation includes buttons") {
-                NSApplication.shared.isFullKeyboardAccessEnabled
-            }
-        }
         let save = app.buttons["worklog-correction.save"]
         for _ in 0..<16 {
             if save.debugDescription.contains("Keyboard Focused") { break }
