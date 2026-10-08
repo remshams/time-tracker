@@ -80,12 +80,12 @@ final class GlobalMenuShortcutRegistration {
            process.environment["TT_UI_TEST_CONFLICT_KEY"] == shortcut.key {
             RegisterEventHotKey(keyCode, carbonModifiers(shortcut.modifiers),
                                 EventHotKeyID(signature: 0x54545549, id: 1),
-                                GetApplicationEventTarget(), 0, &testReservation)
+                                GetEventDispatcherTarget(), 0, &testReservation)
         }
         defer { if let testReservation { UnregisterEventHotKey(testReservation) } }
         #endif
         let status = RegisterEventHotKey(keyCode, carbonModifiers(shortcut.modifiers), hotKeyID,
-                                         GetApplicationEventTarget(), 0, &replacement)
+                                         GetEventDispatcherTarget(), 0, &replacement)
         guard status == noErr, let replacement else {
             throw GlobalMenuShortcutError.registration(shortcut.displayText, status)
         }
@@ -111,7 +111,7 @@ final class GlobalMenuShortcutRegistration {
         guard handler == nil else { return }
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
                                       eventKind: UInt32(kEventHotKeyPressed))
-        let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
+        let status = InstallEventHandler(GetEventDispatcherTarget(), { _, event, context in
             guard let event, let context else { return OSStatus(eventNotHandledErr) }
             var hotKeyID = EventHotKeyID()
             let status = GetEventParameter(event, EventParamName(kEventParamDirectObject),
@@ -129,7 +129,15 @@ final class GlobalMenuShortcutRegistration {
                    recorder.captureRegisteredShortcut(shortcut) {
                     return noErr
                 }
-                registration.action()
+                let triggeredID = hotKeyID.id
+                // Menu tracking starts a nested run loop. Return from Carbon before opening it.
+                RunLoop.main.perform(inModes: [.common]) { [weak registration] in
+                    MainActor.assumeIsolated {
+                        guard let registration, registration.hotKey != nil,
+                              registration.identifier == triggeredID else { return }
+                        registration.action()
+                    }
+                }
                 return noErr
             }
         }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), &handler)
