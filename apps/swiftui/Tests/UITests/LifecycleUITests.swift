@@ -92,14 +92,14 @@ final class ServerLifecycleUITests: LifecycleUITests {
         select(task)
         trackerWindow.buttons[XCUIIdentifierCloseWindow].click()
         waitUntil("Closing the window removes the visible UI") { self.trackerWindows.count == 0 }
-        let baseline = try proxy.requests(method: "GET", path: "/v1/snapshot").count
+        let baseline = try proxy.requests(method: "GET", path: "/v1/reports").count
         let deadline = Date().addingTimeInterval(6)
         waitUntil("A visible polling interval passes while the window is closed") { Date() >= deadline }
-        XCTAssertEqual(try proxy.requests(method: "GET", path: "/v1/snapshot").count, baseline)
+        XCTAssertEqual(try proxy.requests(method: "GET", path: "/v1/reports").count, baseline)
         let added = try fixture.create("Added while the window was closed")
         showTrackerViaShortcut()
         XCTAssertTrue(taskRow(added).waitForExistence(timeout: timeout))
-        XCTAssertGreaterThan(try proxy.requests(method: "GET", path: "/v1/snapshot").count, baseline)
+        XCTAssertGreaterThan(try proxy.requests(method: "GET", path: "/v1/reports").count, baseline)
     }
 
     func testControlledSleepSuspendsPollingAndWakeRefreshesWithoutStoppingTimer() throws {
@@ -110,14 +110,14 @@ final class ServerLifecycleUITests: LifecycleUITests {
         postScreenEvent("sleep")
         let delivery = Date().addingTimeInterval(1)
         waitUntil("The controlled sleep notification is delivered") { Date() >= delivery }
-        let baseline = try proxy.requests(method: "GET", path: "/v1/snapshot").count
+        let baseline = try proxy.requests(method: "GET", path: "/v1/reports").count
         let added = try fixture.create("Created during controlled sleep")
         let deadline = Date().addingTimeInterval(6)
         waitUntil("A visible polling interval passes during controlled sleep") { Date() >= deadline }
-        XCTAssertEqual(try proxy.requests(method: "GET", path: "/v1/snapshot").count, baseline)
+        XCTAssertEqual(try proxy.requests(method: "GET", path: "/v1/reports").count, baseline)
         postScreenEvent("wake")
         XCTAssertTrue(taskRow(added).waitForExistence(timeout: timeout))
-        XCTAssertGreaterThan(try proxy.requests(method: "GET", path: "/v1/snapshot").count, baseline)
+        XCTAssertGreaterThan(try proxy.requests(method: "GET", path: "/v1/reports").count, baseline)
         XCTAssertEqual(try fixture.activeWorklog(), original)
     }
 
@@ -129,13 +129,13 @@ final class ServerLifecycleUITests: LifecycleUITests {
         select(task)
         let elapsed = element("tracking.elapsed")
         XCTAssertTrue(elapsed.waitForExistence(timeout: timeout))
-        try proxy.arm(method: "GET", path: "/v1/snapshot", mode: .holdBefore)
+        try proxy.arm(method: "GET", path: "/v1/reports", mode: .holdBefore)
         _ = try proxy.waitForHeldRequest()
         defer { try? proxy.release() }
-        let initial = elapsed.label
+        let initial = elapsed.value as? String ?? elapsed.label
         let baseline = try proxy.requests().count
         let tick = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            elapsed.exists && elapsed.label != initial
+            elapsed.exists && (elapsed.value as? String ?? elapsed.label) != initial
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [tick], timeout: 2), .completed)
         XCTAssertEqual(try proxy.requests().count, baseline)

@@ -79,7 +79,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         let proxy = try fixture.enableProxy()
         launch()
         select(first)
-        try proxy.arm(method: "GET", path: "/v1/snapshot", mode: .holdAfter)
+        try proxy.arm(method: "GET", path: "/v1/reports", mode: .holdAfter)
         _ = try proxy.waitForHeldRequest()
         app.buttons["Start tracking"].click()
         select(second)
@@ -96,7 +96,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         let proxy = try fixture.enableProxy()
         launch()
         select(first)
-        try proxy.arm(method: "GET", path: "/v1/snapshot", mode: .holdAfter)
+        try proxy.arm(method: "GET", path: "/v1/reports", mode: .holdAfter)
         _ = try proxy.waitForHeldRequest()
         app.buttons["Stop tracking"].click()
         let replacement = try fixture.start(second)
@@ -114,7 +114,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         launch()
         openCreation()
         app.textFields["task-name.input"].typeText("Committed creation")
-        try proxy.arm(method: "POST", path: "/v1/tasks", mode: .dropAfter)
+        try proxy.dropWriteResponses(method: "POST", path: "/v1/tasks")
         app.buttons["task-name.submit"].click()
         XCTAssertTrue(element("task-name.error").waitForExistence(timeout: timeout))
         XCTAssertFalse(app.textFields["task-name.input"].isEnabled)
@@ -123,7 +123,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         let tasks = try fixture.tasks()
         XCTAssertEqual(tasks.count, 1)
         XCTAssertEqual(tasks.first?.name, "Committed creation")
-        XCTAssertEqual(try proxy.requests(method: "POST", path: "/v1/tasks").count, 1)
+        try assertAcceptedWriteIntent(proxy, method: "POST", path: "/v1/tasks")
         select(try XCTUnwrap(tasks.first))
     }
 
@@ -134,12 +134,12 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         launch()
         openRename(task)
         replaceText(app.textFields["task-name.input"], "Confirmed remote name")
-        try proxy.arm(method: "PATCH", path: "/v1/tasks/\(task.id)", mode: .dropAfter)
+        try proxy.dropWriteResponses(method: "PATCH", path: "/v1/tasks/\(task.id)")
         app.buttons["task-name.submit"].click()
         waitUntil("Accepted rename is reconciled") { !self.element("task-name.input").exists }
         XCTAssertEqual(try fixture.tasks().first?.name, "Confirmed remote name")
         XCTAssertEqual(try fixture.activeWorklog(), running)
-        XCTAssertEqual(try proxy.requests(method: "PATCH", path: "/v1/tasks/\(task.id)").count, 1)
+        try assertAcceptedWriteIntent(proxy, method: "PATCH", path: "/v1/tasks/\(task.id)")
     }
 
     func testLostArchiveResponseReconcilesWithoutRepeatingTheMutation() throws {
@@ -149,11 +149,11 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         select(task)
         app.buttons["Archive task"].click()
         XCTAssertTrue(app.buttons["task-archive.confirm"].waitForExistence(timeout: timeout))
-        try proxy.arm(method: "PATCH", path: "/v1/tasks/\(task.id)", mode: .dropAfter)
+        try proxy.dropWriteResponses(method: "PATCH", path: "/v1/tasks/\(task.id)")
         app.buttons["task-archive.confirm"].click()
         waitUntil("Accepted archive is reconciled") { !self.app.buttons["task-archive.confirm"].exists }
         XCTAssertTrue(try XCTUnwrap(fixture.tasks().first).archived)
-        XCTAssertEqual(try proxy.requests(method: "PATCH", path: "/v1/tasks/\(task.id)").count, 1)
+        try assertAcceptedWriteIntent(proxy, method: "PATCH", path: "/v1/tasks/\(task.id)")
         showTab("Archived")
         select(task)
     }
@@ -168,7 +168,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         openMove(log)
         XCTAssertTrue(element("worklog-move.candidate.\(destination.id)").waitForExistence(timeout: timeout))
         element("worklog-move.candidate.\(destination.id)").click()
-        try proxy.arm(method: "PATCH", path: "/v1/worklogs/\(log.id)", mode: .dropAfter)
+        try proxy.dropWriteResponses(method: "PATCH", path: "/v1/worklogs/\(log.id)")
         app.buttons["worklog-move.confirm"].click()
         waitUntil("Accepted move is reconciled") { !self.element("worklog-move.search").exists }
         let moved = try XCTUnwrap(fixture.activeWorklog())
@@ -176,7 +176,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         XCTAssertEqual(moved.start, log.start)
         XCTAssertEqual(moved.end, log.end)
         XCTAssertEqual(moved.taskID, destination.id)
-        XCTAssertEqual(try proxy.requests(method: "PATCH", path: "/v1/worklogs/\(log.id)").count, 1)
+        try assertAcceptedWriteIntent(proxy, method: "PATCH", path: "/v1/worklogs/\(log.id)")
     }
 
     func testUncertainCreationRetainsIntentAcrossEditorReopeningAndBlocksConnectionChanges() throws {
@@ -184,8 +184,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         launch()
         openCreation()
         app.textFields["task-name.input"].typeText("Retained creation intent")
-        try proxy.arm([
-            .init(method: "POST", path: "/v1/tasks", mode: .dropAfter),
+        try proxy.dropWriteResponses(method: "POST", path: "/v1/tasks", then: [
             .init(method: "GET", path: "/v1/snapshot", mode: .fail)
         ])
         app.buttons["task-name.submit"].click()
@@ -202,7 +201,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         app.buttons["task-name.submit"].click()
         waitUntil("Reopened creation reconciles its original intent") { !self.element("task-name.input").exists }
         XCTAssertEqual(try fixture.tasks().map(\.id), [committed.id])
-        XCTAssertEqual(try proxy.requests(method: "POST", path: "/v1/tasks").count, 1)
+        try assertAcceptedWriteIntent(proxy, method: "POST", path: "/v1/tasks")
         openConnectionSettings()
         XCTAssertTrue(app.buttons["connection.connect"].isEnabled)
     }
@@ -212,7 +211,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         launch()
         openCreation()
         app.textFields["task-name.input"].typeText("Committed before quitting")
-        try proxy.arm(method: "POST", path: "/v1/tasks", mode: .dropAfter)
+        try proxy.dropWriteResponses(method: "POST", path: "/v1/tasks")
         app.buttons["task-name.submit"].click()
         XCTAssertTrue(element("task-name.error").waitForExistence(timeout: timeout))
         let committed = try XCTUnwrap(fixture.tasks().first)
@@ -225,7 +224,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         XCTAssertEqual(app.textFields["task-name.input"].value as? String, "")
         XCTAssertTrue(app.textFields["task-name.input"].isEnabled)
         XCTAssertEqual(try fixture.tasks().map(\.id), [committed.id])
-        XCTAssertEqual(try proxy.requests(method: "POST", path: "/v1/tasks").count, 1)
+        try assertAcceptedWriteIntent(proxy, method: "POST", path: "/v1/tasks")
     }
 
     func testLostCorrectionResponseReconcilesWithoutRepeatingTheWrite() throws {
@@ -236,14 +235,14 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         select(task)
         openCorrection(log)
         stepMinute("worklog-correction.start")
-        try proxy.arm(method: "PATCH", path: "/v1/worklogs/\(log.id)", mode: .dropAfter)
+        try proxy.dropWriteResponses(method: "PATCH", path: "/v1/worklogs/\(log.id)")
         app.buttons["worklog-correction.save"].click()
         waitUntil("Accepted correction is reconciled") { !self.element("worklog-correction.start").exists }
         let corrected = try XCTUnwrap(fixture.worklogs(task).first)
         XCTAssertEqual(corrected.id, log.id)
         XCTAssertEqual(corrected.end, log.end)
         XCTAssertNotEqual(corrected.start, log.start)
-        XCTAssertEqual(try proxy.requests(method: "PATCH", path: "/v1/worklogs/\(log.id)").count, 1)
+        try assertAcceptedWriteIntent(proxy, method: "PATCH", path: "/v1/worklogs/\(log.id)")
     }
 
     func testDelayedPaginationRefreshesAnInvalidatedCursorWithoutLosingNewestHistory() throws {
@@ -287,7 +286,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         let proxy = try fixture.enableProxy()
         launch()
         select(selected)
-        try proxy.arm(method: "GET", path: "/v1/snapshot", mode: .holdBefore)
+        try proxy.arm(method: "GET", path: "/v1/reports", mode: .holdBefore)
         _ = try proxy.waitForHeldRequest()
         app.buttons["Start tracking"].click()
         let timer = try fixture.start(competing)
@@ -306,8 +305,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         launch()
         openRename(task)
         replaceText(app.textFields["task-name.input"], "Pending rename confirmed")
-        try proxy.arm([
-            .init(method: "PATCH", path: "/v1/tasks/\(task.id)", mode: .dropAfter),
+        try proxy.dropWriteResponses(method: "PATCH", path: "/v1/tasks/\(task.id)", then: [
             .init(method: "GET", path: "/v1/snapshot", mode: .fail)
         ])
         app.buttons["task-name.submit"].click()
@@ -320,7 +318,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         app.buttons["task-name.submit"].click()
         waitUntil("Pending rename reconciles") { !self.element("task-name.input").exists }
         XCTAssertEqual(try fixture.tasks().first?.name, "Pending rename confirmed")
-        XCTAssertEqual(try proxy.requests(method: "PATCH", path: "/v1/tasks/\(task.id)").count, 1)
+        try assertAcceptedWriteIntent(proxy, method: "PATCH", path: "/v1/tasks/\(task.id)")
     }
 
     func testUncertainArchiveReopensReviewAndDoesNotRepeatAcceptedWrite() throws {
@@ -330,8 +328,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         select(task)
         app.buttons["Archive task"].click()
         XCTAssertTrue(app.buttons["task-archive.confirm"].waitForExistence(timeout: timeout))
-        try proxy.arm([
-            .init(method: "PATCH", path: "/v1/tasks/\(task.id)", mode: .dropAfter),
+        try proxy.dropWriteResponses(method: "PATCH", path: "/v1/tasks/\(task.id)", then: [
             .init(method: "GET", path: "/v1/snapshot", mode: .fail)
         ])
         app.buttons["task-archive.confirm"].click()
@@ -344,7 +341,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         app.buttons["task-archive.confirm"].click()
         waitUntil("Pending archive reconciles") { !self.app.buttons["task-archive.confirm"].exists }
         XCTAssertTrue(try XCTUnwrap(fixture.tasks().first).archived)
-        XCTAssertEqual(try proxy.requests(method: "PATCH", path: "/v1/tasks/\(task.id)").count, 1)
+        try assertAcceptedWriteIntent(proxy, method: "PATCH", path: "/v1/tasks/\(task.id)")
     }
 
     func testUncertainCorrectionReopensOriginalIntentAndPreservesUntouchedEnd() throws {
@@ -355,8 +352,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         select(task)
         openCorrection(log)
         stepMinute("worklog-correction.start")
-        try proxy.arm([
-            .init(method: "PATCH", path: "/v1/worklogs/\(log.id)", mode: .dropAfter),
+        try proxy.dropWriteResponses(method: "PATCH", path: "/v1/worklogs/\(log.id)", then: [
             .init(method: "GET", path: "/v1/snapshot", mode: .fail)
         ])
         app.buttons["worklog-correction.save"].click()
@@ -372,7 +368,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         XCTAssertEqual(saved.id, log.id)
         XCTAssertEqual(saved.end, log.end)
         XCTAssertNotEqual(saved.start, log.start)
-        XCTAssertEqual(try proxy.requests(method: "PATCH", path: "/v1/worklogs/\(log.id)").count, 1)
+        try assertAcceptedWriteIntent(proxy, method: "PATCH", path: "/v1/worklogs/\(log.id)")
     }
 
     func testUncertainMoveReopensDestinationIntentWithoutRepeatingTheWrite() throws {
@@ -385,8 +381,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         openMove(log)
         XCTAssertTrue(element("worklog-move.candidate.\(destination.id)").waitForExistence(timeout: timeout))
         element("worklog-move.candidate.\(destination.id)").click()
-        try proxy.arm([
-            .init(method: "PATCH", path: "/v1/worklogs/\(log.id)", mode: .dropAfter),
+        try proxy.dropWriteResponses(method: "PATCH", path: "/v1/worklogs/\(log.id)", then: [
             .init(method: "GET", path: "/v1/snapshot", mode: .fail)
         ])
         app.buttons["worklog-move.confirm"].click()
@@ -402,7 +397,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         XCTAssertEqual(moved.id, log.id)
         XCTAssertEqual(moved.start, log.start)
         XCTAssertEqual(moved.taskID, destination.id)
-        XCTAssertEqual(try proxy.requests(method: "PATCH", path: "/v1/worklogs/\(log.id)").count, 1)
+        try assertAcceptedWriteIntent(proxy, method: "PATCH", path: "/v1/worklogs/\(log.id)")
     }
 
     private func assertPendingConnectionIsBlocked() {

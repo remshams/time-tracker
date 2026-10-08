@@ -56,6 +56,11 @@ final class ControlledProxy {
     func arm(method: String, path: String, mode: Mode) throws {
         try arm([Rule(method: method, path: path, mode: mode)])
     }
+    func dropWriteResponses(method: String, path: String, then following: [Rule] = []) throws {
+        // The remote transport retries an unavailable write once with the same request ID.
+        let drop = Rule(method: method, path: path, mode: .dropAfter)
+        try arm([drop, drop] + following)
+    }
     func arm(_ plan: [Rule]) throws {
         try reset()
         rules = plan.map { ["token": UUID().uuidString, "method": $0.method, "path": $0.path, "mode": $0.mode.rawValue] }

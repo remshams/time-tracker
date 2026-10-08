@@ -33,7 +33,7 @@ final class AppearanceUITests: TrackerUITestCase {
         }
     }
 
-    func testWindowMinimumSizeAndExpandedLayoutKeepControlsInsideContent() throws {
+    func testMinimumAndExpandedWindowLayoutsKeepControlsInsideContent() throws {
         let task = try fixture.create("Layout task")
         launch()
         select(task)
@@ -75,17 +75,14 @@ final class AppearanceUITests: TrackerUITestCase {
     }
 
     private func resizeWindow(to size: CGSize) {
-        let visibleSize = NSScreen.main?.visibleFrame.size ?? size
-        let width = min(size.width, visibleSize.width)
-        let rightEdge = trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
-            .withOffset(CGVector(dx: -1, dy: 0))
-        rightEdge.press(forDuration: 0.5, thenDragTo: rightEdge.withOffset(
-            CGVector(dx: width - trackerWindow.frame.width, dy: 0)))
-        let height = min(size.height, visibleSize.height)
-        let bottomEdge = trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1))
-            .withOffset(CGVector(dx: 0, dy: -1))
-        bottomEdge.press(forDuration: 0.5, thenDragTo: bottomEdge.withOffset(
-            CGVector(dx: 0, dy: height - trackerWindow.frame.height)))
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name("\(fixture.defaultsSuite).resize"), object: nil,
+            userInfo: ["width": size.width, "height": size.height], deliverImmediately: true
+        )
+        let width = min(size.width, NSScreen.main?.visibleFrame.width ?? size.width)
+        waitUntil("The real window reaches the requested layout width") {
+            abs(self.trackerWindow.frame.width - width) <= 2
+        }
     }
 
     private func assertControlsInsideWindow(file: StaticString = #filePath, line: UInt = #line) {
