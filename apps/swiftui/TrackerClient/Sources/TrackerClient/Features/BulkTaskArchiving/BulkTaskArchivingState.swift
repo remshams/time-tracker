@@ -5,6 +5,7 @@ public struct BulkTaskArchivingPresentation: Equatable, Sendable {
     public let daysText: String
     public let isLoading: Bool
     public let isSubmitting: Bool
+    public let hasPreview: Bool
     public let tasks: [TaskItem]
     public let error: String?
     public let archivedCount: Int?
@@ -44,7 +45,8 @@ final class BulkTaskArchivingState {
     }
     var presentation: BulkTaskArchivingPresentation {
         BulkTaskArchivingPresentation(isPresented: isPresented, daysText: daysText,
-            isLoading: isLoading, isSubmitting: isSubmitting, tasks: preview?.tasks ?? [],
+            isLoading: isLoading, isSubmitting: isSubmitting, hasPreview: preview != nil,
+            tasks: preview?.tasks ?? [],
             error: error, archivedCount: archivedCount,
             canSubmit: isPresented && !isLoading && !isSubmitting && archivedCount == nil &&
                 preview?.inactiveDays == days && !(preview?.tasks.isEmpty ?? true))
@@ -59,7 +61,7 @@ final class BulkTaskArchivingState {
     func requestPreview() {
         guard isPresented, !isSubmitting else { return }
         generation += 1
-        preview = nil
+        if preview?.inactiveDays != days { preview = nil }
         archivedCount = nil
         error = days == nil ? "Enter a positive whole number of days." : nil
         pendingSearch = days != nil
@@ -86,6 +88,7 @@ final class BulkTaskArchivingState {
     func failSearch(_ failure: Error, search: Search) {
         guard matches(search) else { return }
         isLoading = false
+        preview = nil
         error = failure.localizedDescription
     }
     func submit() -> Bool {
@@ -127,6 +130,7 @@ final class BulkTaskArchivingState {
             isSubmitting = false
         }
         guard !isSubmitting else { return }
+        preview = nil
         requestPreview()
     }
     func cancel() { guard !isSubmitting else { return }; reset() }
