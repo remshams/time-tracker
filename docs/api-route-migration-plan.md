@@ -4,7 +4,7 @@ Implement [ADR 0017](adr/0017-separate-http-resources-from-client-refreshes.md) 
 
 ## Status and scope
 
-Planned on 8 October 2026 against `main` revision `360430c`, including configurable bulk archiving and native macOS UI E2E tests. Production still uses `/v1`; this branch contains documentation only. The ADR owns the target contract. This plan owns the implementation sequence, client changes and acceptance checks.
+Planned on 8 October 2026, awaiting basic application E2E coverage. The source basis is `main` revision `360430c`, including configurable bulk archiving and native macOS UI E2E tests. Production still uses `/v1`; this branch contains documentation only. The ADR owns the target contract. This plan owns the implementation sequence, client changes and acceptance checks.
 
 Keep local SQLite mode, offline rejection in remote mode, existing search/ranking policies, tracking timestamps and domain validation. Introduce no database schema change, task deletion, manual worklog creation, push subscription or combined convenience read.
 
@@ -25,17 +25,24 @@ Keep local SQLite mode, offline rejection in remote mode, existing search/rankin
 
 Do not add `/v2/tasks/{id}/worklogs`, `/v2/reports`, `/v2/snapshot`, `/v2/tasks/inactive-candidates` or `/v2/tasks/archive-inactive-candidates` aliases. `/v1` retains its original routes and response shapes until a separate removal decision.
 
+## Prerequisite: basic application E2E coverage
+
+Complete basic application E2E coverage as separate work before starting route refactoring. Protocol/server changes, cache refactoring and client migration in steps 1 through 6 wait until the baseline tests are implemented, merged and passing in CI against the existing `/v1` application. Completion means merged baseline tests with passing CI results.
+
+`main` already includes TUI E2E scenarios and [native macOS bulk archive tests](../apps/swiftui/Tests/UITests/BulkTaskArchivingUITests.swift). The native suite drives the real app and Rust bridge against a temporary local SQLite database. It covers the 14-day preview, period changes, refresh, invalid input, empty candidates, cancellation, confirmation, dialog geometry, running-timer preservation and relaunch persistence. It runs through [check-native-ui.sh](../apps/swiftui/check-native-ui.sh) in the [native macOS CI job](../.github/workflows/ci.yml). It does not yet exercise a remote server or the other native feature workflows. The required basic application baseline extends this coverage to the remaining workflows.
+
+Before starting the refactoring:
+
+- Implement basic native application scenarios for task creation and display, starting/switching/stopping tracking, task history and daily totals, refresh/reconnect, and persistence after relaunch. Retain existing bulk archive scenarios.
+- Exercise the relevant basic workflows in local mode and remote mode against the unchanged `/v1` contract. Use isolated preferences and fixtures and a real server with a temporary database. Verify UI actions traverse the production bridge, HTTP adapter and server, and check server/storage outcomes.
+- Merge this baseline independently of the route refactoring and run it together with the existing TUI and native local-mode suites in CI. Keep native runs on macOS with Xcode and an active desktop session, bounded waits for observable state, process cleanup, logs, screenshots and result bundles.
+- Confirm CI covers the remaining basic workflows and the prerequisite has passed before beginning step 1.
+
+Existing E2E tests stay unchanged on this documentation branch. Obtain explicit consent before the prerequisite work adds or changes E2E tests, as required by `AGENTS.md`.
+
+Migration-specific E2E scenarios for stale previews, concurrent changes, receipt recovery and `/v2` resource composition are part of implementation acceptance. Extend the established baseline for those cases as the affected features migrate.
+
 ## Implementation sequence
-
-### 0. Existing E2E baseline and remote coverage
-
-`main` already includes TUI E2E scenarios and [native macOS bulk archive tests](../apps/swiftui/Tests/UITests/BulkTaskArchivingUITests.swift). The native suite drives the real app and Rust bridge against a temporary local SQLite database. It covers the 14-day preview, period changes, refresh, invalid input, empty candidates, cancellation, confirmation, dialog geometry, running-timer preservation and relaunch persistence. It runs through [check-native-ui.sh](../apps/swiftui/check-native-ui.sh) in the [native macOS CI job](../.github/workflows/ci.yml). It does not yet exercise a remote server or the other native feature workflows.
-
-- Run the existing TUI and native local-mode suites on the unmodified `/v1` application before changing the HTTP contract. Retain these scenarios as local-mode regression coverage.
-- Plan remote application E2E coverage before migrating clients. Reuse isolated preferences and fixtures, launch a real server with a temporary database and verify native UI actions traverse the production bridge, HTTP adapter and server. Establish `/v1` baselines for remote bulk archive and migrated workflows before switching them to `/v2`.
-- Verify remote configurable previews, cancellation, confirmation, stale previews, active-task protection and persisted results. Add native remote timer/sidebar/report, history/edit and reconnect scenarios where the migration changes those workflows. Use server/storage observations for outcomes instead of relying only on labels or mocked client responses.
-- Keep native UI runs on macOS with Xcode and an active desktop session. Use bounded waits for observable state, clean up server processes and retain logs, screenshots and result bundles on failure.
-- Existing E2E tests stay unchanged on this documentation branch. Obtain explicit consent before implementation adds or changes E2E tests, as required by `AGENTS.md`.
 
 ### 1. Protocol and server reads
 
@@ -94,7 +101,7 @@ Do not add `/v2/tasks/{id}/worklogs`, `/v2/reports`, `/v2/snapshot`, `/v2/tasks/
 - Anchor local running-total projection to a matching report/tracking revision and active worklog identity. Use echoed report `now`; freeze extrapolation on a mismatch until a coherent pair arrives. The independent timer may still advance.
 - Preserve sidebar, Today menu, visible/hidden refresh behavior, focus refresh, lock pause/resume and pending-write reconciliation.
 - Preserve configurable bulk archive dialog behavior from ADR 0016. Resolve all candidate metadata, preserve the reviewed time/period/revision, discard cancelled or replaced previews, serialize refresh/confirmation and report the actual count. Missing candidate metadata must not silently shorten the reviewed list.
-- Update portable Swift tests and the remote E2E scenarios planned in step 0 after obtaining consent. Run the existing native local bulk archive suite unchanged when its observable requirements remain the same. Validate native rendering and lifecycle behavior on macOS.
+- Update portable Swift tests and the established basic E2E scenarios and migration-specific remote scenarios after obtaining consent. Run the existing native local bulk archive suite unchanged when its observable requirements remain the same. Validate native rendering and lifecycle behavior on macOS.
 
 ### 6. Documentation and rollout
 
@@ -122,6 +129,7 @@ Do not add `/v2/tasks/{id}/worklogs`, `/v2/reports`, `/v2/snapshot`, `/v2/tasks/
 
 | # | Check | Required behavior |
 |---|---|---|
+| 0 | Start prerequisite | Basic application E2E coverage is implemented and merged separately, passes CI on `/v1`, and is confirmed before protocol, server or client refactoring starts |
 | 1 | Response boundaries | Reports and history have no snapshot/global attachments; writes return focused receipts; no overlapping `/v2` collection aliases |
 | 2 | Filtered history | Filtered and unfiltered pages preserve ordering, bounds and no omissions/duplicates; missing task is 404, empty existing task is an empty page; cross-filter cursor reuse is rejected |
 | 3 | Totals | Overnight, boundary, zero-duration, archived and running worklogs retain current aggregate semantics, including completed ends later than `now` |
