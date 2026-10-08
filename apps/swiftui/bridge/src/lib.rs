@@ -150,16 +150,24 @@ fn open_fixture(path: &Path) -> Result<Bridge, String> {
 /// the caller owns that string and must release it with `tt_bridge_string_free`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tt_bridge_open(error: *mut *mut c_char) -> *mut Bridge {
+    // SAFETY: The caller supplies writable error storage under this function's contract.
+    unsafe { open_bridge(error, open, c"Could not open database") }
+}
+
+unsafe fn open_bridge(
+    error: *mut *mut c_char,
+    opener: impl FnOnce() -> Result<Bridge, String>,
+    fallback: &CStr,
+) -> *mut Bridge {
     if error.is_null() {
         return ptr::null_mut();
     }
     // SAFETY: The caller supplies writable storage as required by this function.
     unsafe { *error = ptr::null_mut() };
-    match open() {
+    match opener() {
         Ok(bridge) => Box::into_raw(Box::new(bridge)),
         Err(message) => {
-            let message =
-                CString::new(message).unwrap_or_else(|_| c"Could not open database".to_owned());
+            let message = CString::new(message).unwrap_or_else(|_| fallback.to_owned());
             // SAFETY: The caller supplies writable storage as required by this function.
             unsafe { *error = message.into_raw() };
             ptr::null_mut()
@@ -904,6 +912,59 @@ mod archive_tests;
 mod tests {
     use super::*;
     use tracker_application::{TaskOperations, TrackingOperations};
+
+    #[test]
+    fn opening_without_error_storage_does_not_open_a_database() {
+        // SAFETY: Null storage is explicitly accepted and prevents the opener from running.
+        let bridge = unsafe {
+            open_bridge(
+                ptr::null_mut(),
+                || panic!("opener must not run"),
+                c"Fallback",
+            )
+        };
+        assert!(bridge.is_null());
+        // SAFETY: The public opener accepts null error storage.
+        assert!(unsafe { tt_bridge_open(ptr::null_mut()) }.is_null());
+    }
+
+    #[test]
+    fn opening_clears_error_storage_and_returns_an_owned_bridge() {
+        let directory = tempfile::tempdir().unwrap();
+        let sentinel = c"Old error".as_ptr().cast_mut();
+        let mut error = sentinel;
+        // SAFETY: Error storage is writable and the returned bridge is released once.
+        let bridge = unsafe {
+            open_bridge(
+                &mut error,
+                || open_at(&directory.path().join("tt.db")),
+                c"Fallback",
+            )
+        };
+        assert!(!bridge.is_null());
+        assert!(error.is_null());
+        // SAFETY: The helper returns ownership of a live bridge.
+        unsafe { tt_bridge_close(bridge) };
+    }
+
+    #[test]
+    fn opening_failure_returns_an_owned_error_string() {
+        for (message, expected) in [
+            ("Database failure", "Database failure"),
+            ("Bad\0message", "Fallback"),
+        ] {
+            let mut error = ptr::null_mut();
+            // SAFETY: Error storage is writable and the returned string is released once.
+            let bridge =
+                unsafe { open_bridge(&mut error, || Err(message.to_owned()), c"Fallback") };
+            assert!(bridge.is_null());
+            assert!(!error.is_null());
+            // SAFETY: A failed opener returns a live C string.
+            assert_eq!(unsafe { CStr::from_ptr(error) }.to_str().unwrap(), expected);
+            // SAFETY: The caller owns this string and releases it once.
+            unsafe { tt_bridge_string_free(error) };
+        }
+    }
 
     fn response(pointer: *mut c_char) -> Value {
         assert!(!pointer.is_null());
