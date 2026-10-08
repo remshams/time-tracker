@@ -27,6 +27,7 @@ final class TrackerStatusItemController: NSObject {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem = item
         if let button = item.button {
+            button.setAccessibilityIdentifier("menu.status")
             button.target = self
             button.action = #selector(clicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -95,6 +96,7 @@ final class TrackerStatusItemController: NSObject {
         ])
         button.toolTip = label.help
         button.setAccessibilityLabel(label.status)
+        button.setAccessibilityValue(label.totalText ?? "")
         button.setAccessibilityHelp("\(label.help)\nClick to start or stop tracking. Right-click or use the Open menu shortcut to open the menu.")
     }
 
@@ -243,6 +245,8 @@ final class TrackerStatusItemController: NSObject {
             addAction(action.title, action: .copy(action, entry.id), enabled: available, to: submenu)
         }
         let item = addAction(title, action: trackingAction, to: menu)
+        item.setAccessibilityIdentifier("menu.task.\(entry.id)")
+        item.setAccessibilityValue("Task color: \(TaskColor.forTaskID(entry.id).rawValue)")
         item.submenu = submenu
         if trackingAction != nil {
             // Setting a submenu assigns submenuAction; restore the row's tracking action afterward.
