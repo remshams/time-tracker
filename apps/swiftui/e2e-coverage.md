@@ -2,7 +2,7 @@
 
 The suite drives the shipped macOS application through XCUITest and the production Rust bridge. The CLI creates fixtures, acts as another client, and verifies stored results. It does not perform the UI action under test.
 
-Implementation checkpoint `ade14e5`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
+Implementation checkpoint `ea7181a`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
 
 ## Run the tests
 
@@ -82,6 +82,6 @@ Changing the data source through Settings closes an open native menu. Source-swi
 
 ## Local validation
 
-At checkpoint `bb8c431`, the Python suite passes 62 tests. Rust workspace tests and coverage pass, and all 1,174 reported functions are below the CRAP threshold of 12. Scoped `tracker-swift-bridge` mutations produce 87 caught and 43 unviable cases, with zero missed or timed-out cases. The bridge crate's unit and integration tests remain enabled.
+At checkpoint `ea7181a`, the Python suite passes 64 tests. Rust workspace tests and coverage pass, and all 1,174 reported functions are below the CRAP threshold of 12. Scoped `tracker-swift-bridge` mutations produce 87 caught and 43 unviable cases, with zero missed or timed-out cases. The bridge crate's unit and integration tests remain enabled.
 
-The change adds native Swift tests and accessibility observations. It does not change portable Swift state or Rust production behavior. Portable Swift mutations are therefore unchanged; the Rust bridge check covers the production boundary exercised by the native journeys. Native Swift line coverage is not inferred from the portable package's coverage percentage.
+The change adds native Swift tests, accessibility observations, and native menu shortcut delivery during AppKit tracking. It does not change portable Swift state or Rust production behavior. Portable Swift mutations are therefore unchanged; the Rust bridge check covers the production boundary exercised by the native journeys. Native Swift line coverage is not inferred from the portable package's coverage percentage.
