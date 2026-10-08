@@ -41,9 +41,12 @@ final class AppearanceUITests: TrackerUITestCase {
         XCTAssertGreaterThanOrEqual(trackerWindow.frame.width, 760)
         XCTAssertLessThanOrEqual(trackerWindow.frame.width, 780)
         XCTAssertGreaterThanOrEqual(trackerWindow.frame.height, 480)
+        XCTAssertLessThanOrEqual(trackerWindow.frame.height, 540)
+        let minimumHeight = trackerWindow.frame.height
         assertControlsInsideWindow()
         resizeWindow(to: CGSize(width: 1100, height: 720))
         XCTAssertGreaterThan(trackerWindow.frame.width, 900)
+        XCTAssertGreaterThan(trackerWindow.frame.height, minimumHeight + 100)
         assertControlsInsideWindow()
     }
 
