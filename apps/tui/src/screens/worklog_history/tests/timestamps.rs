@@ -193,6 +193,64 @@ fn correction_commands_adjust_and_edit_the_focused_timestamp() {
             .count()
     );
 }
+
+#[test]
+fn each_time_adjustment_changes_only_the_focused_field_without_writing() {
+    let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
+    let worklog = history_worklog(10, task_id, 100);
+    for (command, expected_start, expected_end) in [
+        (
+            WorklogHistoryCommand::AdjustForwardFiveMinutes,
+            "1970-01-01 02:06",
+            "1970-01-01 02:07",
+        ),
+        (
+            WorklogHistoryCommand::AdjustBackwardFiveMinutes,
+            "1970-01-01 01:56",
+            "1970-01-01 01:57",
+        ),
+        (
+            WorklogHistoryCommand::AdjustForwardOneHour,
+            "1970-01-01 03:01",
+            "1970-01-01 03:02",
+        ),
+        (
+            WorklogHistoryCommand::AdjustBackwardOneHour,
+            "1970-01-01 01:01",
+            "1970-01-01 01:02",
+        ),
+    ] {
+        for focus in [CorrectionField::Start, CorrectionField::End] {
+            let (mut app, spy) = correction_app_with_spy(worklog.clone(), vec![worklog.clone()]);
+            if focus == CorrectionField::End {
+                app.handle(Command::WorklogHistory(
+                    WorklogHistoryCommand::SwitchCorrectionField,
+                ));
+            }
+            app.handle(Command::WorklogHistory(command));
+            let draft = app.app_view().correction().unwrap();
+            assert_eq!(draft.focused(), focus);
+            assert_eq!(
+                draft.start().text(),
+                if focus == CorrectionField::Start {
+                    expected_start
+                } else {
+                    "1970-01-01 02:01"
+                }
+            );
+            assert_eq!(
+                draft.end().unwrap().text(),
+                if focus == CorrectionField::End {
+                    expected_end
+                } else {
+                    "1970-01-01 02:02"
+                }
+            );
+            assert!(spy.correction_calls().is_empty());
+        }
+    }
+}
+
 #[test]
 fn local_to_utc_range_overflow_is_not_reported_as_a_daylight_saving_gap() {
     assert_eq!(
