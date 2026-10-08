@@ -101,12 +101,19 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         app.buttons["Stop tracking"].click()
         let replacement = try fixture.start(second)
         try proxy.release()
-        waitUntil("Replacement survives captured Stop") {
-            self.element("connection-summary.status").exists && self.app.buttons["Start tracking"].exists
+        waitUntil("Captured Stop reports the replacement timer conflict") {
+            self.app.staticTexts.matching(NSPredicate(format: "value CONTAINS[c] 'changed' OR label CONTAINS[c] 'changed'"))
+                .firstMatch.exists
         }
         XCTAssertEqual(try fixture.activeWorklog(), replacement)
         XCTAssertNotEqual(replacement.id, original.id)
         XCTAssertNotNil(try fixture.worklogs(first).first?.end)
+        let writes = try proxy.requests(method: "PUT", path: "/v1/tracking")
+        XCTAssertEqual(writes.count, 1)
+        let rejected = try XCTUnwrap(writes.first)
+        XCTAssertEqual(rejected.status, 409)
+        let intent = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(rejected.body.utf8)) as? [String: Any])
+        XCTAssertEqual(intent["expected_active"] as? String, original.id)
     }
 
     func testLostCreationResponseReconcilesWithoutCreatingAnotherTask() throws {
@@ -192,9 +199,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         XCTAssertFalse(app.textFields["task-name.input"].isEnabled)
         let committed = try XCTUnwrap(fixture.tasks().first)
         app.buttons["task-name.cancel"].click()
-        openConnectionSettings()
-        XCTAssertFalse(app.buttons["connection.connect"].isEnabled)
-        closeConnectionSettings()
+        assertPendingConnectionIsBlocked("Finish or retry task creation before changing connections.")
         openCreation()
         XCTAssertEqual(app.textFields["task-name.input"].value as? String, committed.name)
         XCTAssertFalse(app.textFields["task-name.input"].isEnabled)
@@ -311,7 +316,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         app.buttons["task-name.submit"].click()
         XCTAssertTrue(element("task-name.error").waitForExistence(timeout: timeout))
         app.buttons["task-name.cancel"].click()
-        assertPendingConnectionIsBlocked()
+        assertPendingConnectionIsBlocked("Finish or retry task renaming before changing connections.")
         openRename(task)
         XCTAssertEqual(app.textFields["task-name.input"].value as? String, "Pending rename confirmed")
         XCTAssertFalse(app.textFields["task-name.input"].isEnabled)
@@ -334,7 +339,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         app.buttons["task-archive.confirm"].click()
         XCTAssertTrue(element("task-archive.error").waitForExistence(timeout: timeout))
         app.buttons["task-archive.cancel"].click()
-        assertPendingConnectionIsBlocked()
+        assertPendingConnectionIsBlocked("Finish or retry task archiving before changing connections.")
         let review = app.buttons["Review task action"]
         XCTAssertTrue(review.waitForExistence(timeout: timeout))
         review.click()
@@ -358,7 +363,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         app.buttons["worklog-correction.save"].click()
         XCTAssertTrue(element("worklog-correction.error").waitForExistence(timeout: timeout))
         app.buttons["worklog-correction.cancel"].click()
-        assertPendingConnectionIsBlocked()
+        assertPendingConnectionIsBlocked("Finish worklog editing before changing connections.")
         let reopen = app.buttons["Retry worklog edit"]
         XCTAssertTrue(reopen.waitForExistence(timeout: timeout))
         reopen.click()
@@ -387,7 +392,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         app.buttons["worklog-move.confirm"].click()
         XCTAssertTrue(element("worklog-move.error").waitForExistence(timeout: timeout))
         app.buttons["worklog-move.cancel"].click()
-        assertPendingConnectionIsBlocked()
+        assertPendingConnectionIsBlocked("Finish or retry worklog moving before changing connections.")
         let reopen = app.buttons["Retry worklog move"]
         XCTAssertTrue(reopen.waitForExistence(timeout: timeout))
         reopen.click()
@@ -400,9 +405,20 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         try assertAcceptedWriteIntent(proxy, method: "PATCH", path: "/v1/worklogs/\(log.id)")
     }
 
-    private func assertPendingConnectionIsBlocked() {
+    private func assertPendingConnectionIsBlocked(_ message: String,
+                                                  file: StaticString = #filePath, line: UInt = #line) {
         openConnectionSettings()
-        XCTAssertFalse(app.buttons["connection.connect"].isEnabled)
+        chooseConnection("Local database")
+        app.buttons["connection.connect"].click()
+        waitUntil("An unresolved intent rejects connection changes", file: file, line: line) {
+            self.element("connection.result").exists && self.displayedText("connection.result") == message
+        }
+        XCTAssertEqual(displayedText("connection.result"), message, file: file, line: line)
+        closeConnectionSettings()
+        openConnectionSettings()
+        XCTAssertEqual(element("connection.mode").value as? String, "Server", file: file, line: line)
+        XCTAssertEqual(app.textFields["connection.server-url"].value as? String, fixture.serverURL,
+                       file: file, line: line)
         closeConnectionSettings()
     }
 }
