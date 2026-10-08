@@ -1,3 +1,4 @@
+import CoreFoundation
 import XCTest
 
 class WorklogCorrectionUITests: TrackerUITestCase {
@@ -32,8 +33,7 @@ class WorklogCorrectionUITests: TrackerUITestCase {
     func testCompletedEndCorrectionPreservesUntouchedStart() throws {
         let task = try fixture.create("End correction")
         let log = try fixture.completed(task, start: Date().addingTimeInterval(-3600.375), end: Date().addingTimeInterval(-1800.625))
-        // Include buttons in Tab navigation only for this app launch.
-        additionalLaunchArguments += ["-AppleKeyboardUIMode", "3"]
+        enableButtonKeyboardNavigation()
         launch()
         select(task)
         openCorrection(log)
@@ -161,6 +161,42 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return try XCTUnwrap(formatter.date(from: timestamp) ?? ISO8601DateFormatter().date(from: timestamp))
+    }
+
+    private func enableButtonKeyboardNavigation() {
+        let key = "AppleKeyboardUIMode" as CFString
+        let applicationID = "com.timetracker.swiftui" as CFString
+        let user = kCFPreferencesCurrentUser!
+        let host = kCFPreferencesAnyHost!
+        XCTAssertTrue(CFPreferencesSynchronize(applicationID, user, host))
+        let previous = CFPreferencesCopyValue(key, applicationID, user, host)
+        let notify: @MainActor () -> Void = {
+            DistributedNotificationCenter.default().postNotificationName(
+                Notification.Name("com.apple.KeyboardUIModeDidChange"), object: nil,
+                userInfo: nil, deliverImmediately: true
+            )
+        }
+        let restore: @MainActor () -> Void = {
+            CFPreferencesSetValue(key, previous, applicationID, user, host)
+            XCTAssertTrue(CFPreferencesSynchronize(applicationID, user, host),
+                          "Restore the app's original keyboard-navigation preference.")
+            notify()
+            let restored = CFPreferencesCopyValue(key, applicationID, user, host)
+            if let previous {
+                XCTAssertNotNil(restored)
+                if let restored { XCTAssertTrue(CFEqual(previous, restored)) }
+            } else {
+                XCTAssertNil(restored)
+            }
+        }
+        addTeardownBlock { await restore() }
+        CFPreferencesSetValue(key, NSNumber(value: 3), applicationID, user, host)
+        XCTAssertTrue(CFPreferencesSynchronize(applicationID, user, host))
+        notify()
+        var valid: DarwinBoolean = false
+        let mode = CFPreferencesGetAppIntegerValue(key, applicationID, &valid)
+        XCTAssertTrue(valid.boolValue)
+        XCTAssertEqual(mode & 2, 2, "The app's native tab order includes buttons.")
     }
 
     private func assertMinutePrecision(_ timestamp: String, file: StaticString = #filePath, line: UInt = #line) {
