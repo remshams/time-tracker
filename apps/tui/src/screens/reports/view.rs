@@ -13,12 +13,6 @@ use crate::styles;
 use super::actions::format_exact;
 
 pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
-    let date_text = if state.from == state.to {
-        state.from.to_string()
-    } else {
-        format!("{} to {}", state.from, state.to)
-    };
-    let title = format!(" Period: {} · {} ", state.period_label(), date_text);
     let total = state
         .totals
         .as_ref()
@@ -32,26 +26,8 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
                 Style::default()
             },
         );
-    let rows = state
-        .totals
-        .as_ref()
-        .map_or(&[][..], |totals| totals.rows.as_slice());
     frame.render_widget(block, area);
-    let content = Rect {
-        x: area.x.saturating_add(1),
-        y: area.y.saturating_add(1),
-        width: area.width.saturating_sub(2),
-        height: area.height.saturating_sub(2),
-    };
-    let content = if content.height >= 5 {
-        Rect {
-            y: content.y.saturating_add(1),
-            height: content.height - 1,
-            ..content
-        }
-    } else {
-        content
-    };
+    let content = report_content(area);
     let (show_title, preset_offset, list_offset) = match content.height {
         0 | 1 => (false, None, 0),
         2 => (false, Some(0), 1),
@@ -59,8 +35,60 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
         _ => (true, Some(2), 3),
     };
     if show_title {
-        frame.render_widget(Paragraph::new(title), content);
+        frame.render_widget(Paragraph::new(report_title(state)), content);
     }
+    if let Some(offset) = preset_offset {
+        frame.render_widget(
+            Paragraph::new(Line::from(preset_spans(state))),
+            Rect {
+                y: content.y.saturating_add(offset),
+                ..content
+            },
+        );
+    }
+    let list_area = Rect {
+        y: content.y.saturating_add(list_offset),
+        height: content.height.saturating_sub(list_offset),
+        ..content
+    };
+    render_rows(frame, area, list_area, state);
+    render_tabs(frame, area, 3, state.focus == ReportFocus::TopTabs);
+    match &state.mode {
+        ReportMode::Custom { from, to, focus_to } => {
+            render_custom(frame, area, from, to, *focus_to)
+        }
+        ReportMode::Normal => {}
+    }
+}
+
+fn report_title(state: &ReportState) -> String {
+    let date_text = if state.from == state.to {
+        state.from.to_string()
+    } else {
+        format!("{} to {}", state.from, state.to)
+    };
+    format!(" Period: {} · {} ", state.period_label(), date_text)
+}
+
+fn report_content(area: Rect) -> Rect {
+    let content = Rect {
+        x: area.x.saturating_add(1),
+        y: area.y.saturating_add(1),
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    };
+    if content.height >= 5 {
+        Rect {
+            y: content.y.saturating_add(1),
+            height: content.height - 1,
+            ..content
+        }
+    } else {
+        content
+    }
+}
+
+fn preset_spans(state: &ReportState) -> Vec<Span<'static>> {
     let mut preset_spans = Vec::new();
     for (index, preset) in ReportPreset::ALL.iter().enumerate() {
         if index > 0 {
@@ -79,20 +107,14 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
         }
         preset_spans.push(Span::styled(preset.label(), style));
     }
-    if let Some(offset) = preset_offset {
-        frame.render_widget(
-            Paragraph::new(Line::from(preset_spans)),
-            Rect {
-                y: content.y.saturating_add(offset),
-                ..content
-            },
-        );
-    }
-    let list_area = Rect {
-        y: content.y.saturating_add(list_offset),
-        height: content.height.saturating_sub(list_offset),
-        ..content
-    };
+    preset_spans
+}
+
+fn render_rows(frame: &mut Frame, area: Rect, list_area: Rect, state: &ReportState) {
+    let rows = state
+        .totals
+        .as_ref()
+        .map_or(&[][..], |totals| totals.rows.as_slice());
     if rows.is_empty() {
         frame.render_widget(Paragraph::new("No tracked time in this period."), list_area);
     } else {
@@ -123,13 +145,6 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
                 .flatten(),
         );
         frame.render_stateful_widget(list, list_area, &mut selection);
-    }
-    render_tabs(frame, area, 3, state.focus == ReportFocus::TopTabs);
-    match &state.mode {
-        ReportMode::Custom { from, to, focus_to } => {
-            render_custom(frame, area, from, to, *focus_to)
-        }
-        ReportMode::Normal => {}
     }
 }
 

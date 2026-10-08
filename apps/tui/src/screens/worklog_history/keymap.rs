@@ -23,35 +23,60 @@ fn map_normal(
     state: &WorklogHistoryState,
     key: KeyEvent,
 ) -> Option<KeymapCommand<WorklogHistoryCommand>> {
-    if state.history().is_available() && key.modifiers == KeyModifiers::CONTROL {
+    if !state.history().is_available() {
+        return map_unavailable(key);
+    }
+    if key.modifiers == KeyModifiers::CONTROL {
         return match key.code {
             KeyCode::Char('d') => Some(KeymapCommand::Local(WorklogHistoryCommand::PageDown)),
             KeyCode::Char('u') => Some(KeymapCommand::Local(WorklogHistoryCommand::PageUp)),
             _ => None,
         };
     }
-    if state.history().is_available()
-        && key.code == KeyCode::Char('G')
-        && key.modifiers == KeyModifiers::SHIFT
-    {
+    if key.code == KeyCode::Char('G') && key.modifiers == KeyModifiers::SHIFT {
         return Some(KeymapCommand::Local(WorklogHistoryCommand::Last));
     }
-    if !state.history().is_available() || key.modifiers != KeyModifiers::NONE {
-        if !state.history().is_available() {
-            return match (key.code, key.modifiers) {
-                (KeyCode::Char('r'), KeyModifiers::NONE) => {
-                    Some(KeymapCommand::Local(WorklogHistoryCommand::RefreshWorklogs))
-                }
-                (KeyCode::Esc, KeyModifiers::NONE) => {
-                    Some(KeymapCommand::Local(WorklogHistoryCommand::BackToTaskList))
-                }
-                (KeyCode::Char('q'), KeyModifiers::NONE) => Some(KeymapCommand::Quit),
-                _ => None,
-            };
-        }
+    if key.modifiers != KeyModifiers::NONE {
         return None;
     }
-    let command = match key.code {
+    map_normal_plain(state, key.code)
+}
+
+fn map_unavailable(key: KeyEvent) -> Option<KeymapCommand<WorklogHistoryCommand>> {
+    match (key.code, key.modifiers) {
+        (KeyCode::Char('r'), KeyModifiers::NONE) => {
+            Some(KeymapCommand::Local(WorklogHistoryCommand::RefreshWorklogs))
+        }
+        (KeyCode::Esc, KeyModifiers::NONE) => {
+            Some(KeymapCommand::Local(WorklogHistoryCommand::BackToTaskList))
+        }
+        (KeyCode::Char('q'), KeyModifiers::NONE) => Some(KeymapCommand::Quit),
+        _ => None,
+    }
+}
+
+fn map_normal_plain(
+    state: &WorklogHistoryState,
+    code: KeyCode,
+) -> Option<KeymapCommand<WorklogHistoryCommand>> {
+    let command = match code {
+        KeyCode::Char('e') => WorklogHistoryCommand::OpenCorrection,
+        KeyCode::Char('d') => WorklogHistoryCommand::OpenDeletion,
+        KeyCode::Char('m') => WorklogHistoryCommand::OpenMove,
+        KeyCode::Char('o') => WorklogHistoryCommand::LoadOlderWorklogs,
+        KeyCode::Char('r') => WorklogHistoryCommand::RefreshWorklogs,
+        KeyCode::Esc => WorklogHistoryCommand::BackToTaskList,
+        KeyCode::Char('q') => return Some(KeymapCommand::Quit),
+        _ => return map_history_navigation(state, code).map(KeymapCommand::Local),
+    };
+    Some(KeymapCommand::Local(command))
+}
+
+fn map_history_navigation(
+    state: &WorklogHistoryState,
+    code: KeyCode,
+) -> Option<WorklogHistoryCommand> {
+    let command = match code {
         KeyCode::Char('j') | KeyCode::Down => WorklogHistoryCommand::MoveDown,
         KeyCode::Char('k') | KeyCode::Up => WorklogHistoryCommand::MoveUp,
         KeyCode::Char('g') => {
@@ -62,16 +87,9 @@ fn map_normal(
             }
         }
         KeyCode::Char('G') => WorklogHistoryCommand::Last,
-        KeyCode::Char('e') => WorklogHistoryCommand::OpenCorrection,
-        KeyCode::Char('d') => WorklogHistoryCommand::OpenDeletion,
-        KeyCode::Char('m') => WorklogHistoryCommand::OpenMove,
-        KeyCode::Char('o') => WorklogHistoryCommand::LoadOlderWorklogs,
-        KeyCode::Char('r') => WorklogHistoryCommand::RefreshWorklogs,
-        KeyCode::Esc => WorklogHistoryCommand::BackToTaskList,
-        KeyCode::Char('q') => return Some(KeymapCommand::Quit),
         _ => return None,
     };
-    Some(KeymapCommand::Local(command))
+    Some(command)
 }
 
 pub(crate) fn map_move(
@@ -86,6 +104,13 @@ pub(crate) fn map_move(
         | (KeyCode::BackTab, KeyModifiers::SHIFT) => WorklogHistoryCommand::ToggleMoveFocus,
         (KeyCode::Up, KeyModifiers::NONE) => WorklogHistoryCommand::MoveDestinationUp,
         (KeyCode::Down, KeyModifiers::NONE) => WorklogHistoryCommand::MoveDestinationDown,
+        _ => return map_move_query(focus, key).map(KeymapCommand::Local),
+    };
+    Some(KeymapCommand::Local(command))
+}
+
+fn map_move_query(focus: MoveFocus, key: KeyEvent) -> Option<WorklogHistoryCommand> {
+    let command = match (key.code, key.modifiers) {
         (KeyCode::Char('j'), KeyModifiers::NONE) if focus == MoveFocus::Results => {
             WorklogHistoryCommand::MoveDestinationDown
         }
@@ -104,7 +129,7 @@ pub(crate) fn map_move(
         }
         _ => return None,
     };
-    Some(KeymapCommand::Local(command))
+    Some(command)
 }
 
 fn map_confirm_deletion(key: KeyEvent) -> Option<KeymapCommand<WorklogHistoryCommand>> {
@@ -130,6 +155,13 @@ fn map_correction(key: KeyEvent) -> Option<KeymapCommand<WorklogHistoryCommand>>
         (KeyCode::Right, KeyModifiers::NONE) => WorklogHistoryCommand::MoveCursorRight,
         (KeyCode::Backspace, KeyModifiers::NONE) => WorklogHistoryCommand::Backspace,
         (KeyCode::Delete, KeyModifiers::NONE) => WorklogHistoryCommand::Delete,
+        _ => return map_correction_input(key).map(KeymapCommand::Local),
+    };
+    Some(KeymapCommand::Local(command))
+}
+
+fn map_correction_input(key: KeyEvent) -> Option<WorklogHistoryCommand> {
+    let command = match (key.code, key.modifiers) {
         (KeyCode::Char('j'), KeyModifiers::NONE) => WorklogHistoryCommand::AdjustForwardFiveMinutes,
         (KeyCode::Char('k'), KeyModifiers::NONE) => {
             WorklogHistoryCommand::AdjustBackwardFiveMinutes
@@ -152,7 +184,7 @@ fn map_correction(key: KeyEvent) -> Option<KeymapCommand<WorklogHistoryCommand>>
         }
         _ => return None,
     };
-    Some(KeymapCommand::Local(command))
+    Some(command)
 }
 
 pub(crate) fn footer_hints(state: &WorklogHistoryState, width: u16) -> &'static str {

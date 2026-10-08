@@ -26,24 +26,31 @@ fn map_normal(state: &TaskListState, key: KeyEvent) -> Option<KeymapCommand<Task
             _ => None,
         };
     }
-    if key.code == KeyCode::Char('G') && key.modifiers == KeyModifiers::SHIFT {
-        return Some(KeymapCommand::Local(TaskListCommand::Last));
-    }
-    if state.view() == TaskView::Active
-        && key.code == KeyCode::Char('D')
-        && key.modifiers == KeyModifiers::SHIFT
-    {
-        return Some(KeymapCommand::Local(
-            TaskListCommand::OpenInactiveArchivePreview,
-        ));
-    }
-    if key.modifiers == KeyModifiers::SHIFT && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
-        return Some(KeymapCommand::Local(previous_tab(state.view())));
+    if key.modifiers == KeyModifiers::SHIFT {
+        return map_normal_shift(state, key.code);
     }
     if key.modifiers != KeyModifiers::NONE {
         return None;
     }
     map_normal_plain(state, key.code)
+}
+
+fn map_normal_shift(
+    state: &TaskListState,
+    code: KeyCode,
+) -> Option<KeymapCommand<TaskListCommand>> {
+    if code == KeyCode::Char('G') {
+        return Some(KeymapCommand::Local(TaskListCommand::Last));
+    }
+    if state.view() == TaskView::Active && code == KeyCode::Char('D') {
+        return Some(KeymapCommand::Local(
+            TaskListCommand::OpenInactiveArchivePreview,
+        ));
+    }
+    if matches!(code, KeyCode::Tab | KeyCode::BackTab) {
+        return Some(KeymapCommand::Local(previous_tab(state.view())));
+    }
+    None
 }
 
 fn next_tab(view: TaskView) -> TaskListCommand {
@@ -64,7 +71,23 @@ fn map_normal_plain(
     state: &TaskListState,
     code: KeyCode,
 ) -> Option<KeymapCommand<TaskListCommand>> {
-    let view = state.view();
+    let command = match code {
+        KeyCode::Char('c') => TaskListCommand::CopySelectedName,
+        KeyCode::Char('s') => TaskListCommand::CycleOrdering,
+        KeyCode::Char('/') => TaskListCommand::OpenSearch,
+        KeyCode::Enter => TaskListCommand::OpenHistory,
+        KeyCode::Esc if state.search_query().is_some() => TaskListCommand::ClearSearch,
+        KeyCode::Char('q') | KeyCode::Esc => return Some(KeymapCommand::Quit),
+        _ => {
+            return map_task_navigation(state, code)
+                .or_else(|| map_task_action(state.view(), code))
+                .map(KeymapCommand::Local);
+        }
+    };
+    Some(KeymapCommand::Local(command))
+}
+
+fn map_task_navigation(state: &TaskListState, code: KeyCode) -> Option<TaskListCommand> {
     let command = match code {
         KeyCode::Char('j') | KeyCode::Down => TaskListCommand::MoveDown,
         KeyCode::Char('k') | KeyCode::Up => TaskListCommand::MoveUp,
@@ -76,22 +99,23 @@ fn map_normal_plain(
             }
         }
         KeyCode::Char('G') => TaskListCommand::Last,
-        KeyCode::Tab => next_tab(view),
-        KeyCode::BackTab => previous_tab(view),
-        KeyCode::Char('c') => TaskListCommand::CopySelectedName,
-        KeyCode::Char('s') => TaskListCommand::CycleOrdering,
-        KeyCode::Char('/') => TaskListCommand::OpenSearch,
-        KeyCode::Char(' ') if view == TaskView::Active => TaskListCommand::ToggleTracking,
-        KeyCode::Char('a') if view == TaskView::Active => TaskListCommand::OpenAdd,
-        KeyCode::Char('e') if view == TaskView::Active => TaskListCommand::OpenRename,
-        KeyCode::Char('d') if view == TaskView::Active => TaskListCommand::OpenArchiveConfirm,
-        KeyCode::Char('u') if view == TaskView::Archived => TaskListCommand::UnarchiveSelected,
-        KeyCode::Enter => TaskListCommand::OpenHistory,
-        KeyCode::Esc if state.search_query().is_some() => TaskListCommand::ClearSearch,
-        KeyCode::Char('q') | KeyCode::Esc => return Some(KeymapCommand::Quit),
+        KeyCode::Tab => next_tab(state.view()),
+        KeyCode::BackTab => previous_tab(state.view()),
         _ => return None,
     };
-    Some(KeymapCommand::Local(command))
+    Some(command)
+}
+
+fn map_task_action(view: TaskView, code: KeyCode) -> Option<TaskListCommand> {
+    let command = match (view, code) {
+        (TaskView::Active, KeyCode::Char(' ')) => TaskListCommand::ToggleTracking,
+        (TaskView::Active, KeyCode::Char('a')) => TaskListCommand::OpenAdd,
+        (TaskView::Active, KeyCode::Char('e')) => TaskListCommand::OpenRename,
+        (TaskView::Active, KeyCode::Char('d')) => TaskListCommand::OpenArchiveConfirm,
+        (TaskView::Archived, KeyCode::Char('u')) => TaskListCommand::UnarchiveSelected,
+        _ => return None,
+    };
+    Some(command)
 }
 
 fn map_search(key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
@@ -815,6 +839,40 @@ mod tests {
     fn a_110_column_footer_uses_the_expanded_bulk_archive_hint() {
         let footer = task_list_footer(TaskListMode::Normal, TaskView::Active, 110);
         assert!(footer.contains("D archive inactive"), "{footer:?}");
+    }
+
+    #[test]
+    fn wide_footers_describe_search_editing_and_each_bulk_archive_stage() {
+        use crate::screens::task_list::InactiveTaskPreview;
+
+        let as_of = chrono::DateTime::<chrono::Utc>::from_timestamp(0, 0).unwrap();
+        let preview = InactiveTaskPreview::Local {
+            as_of,
+            candidate_ids: Vec::new(),
+            sample_names: Vec::new(),
+        };
+        for (mode, expected) in [
+            (
+                TaskListMode::Search,
+                "type · ↑/↓ select · enter keep · esc cancel · ctrl+c quit",
+            ),
+            (
+                input(),
+                "type · backspace delete · enter save · esc cancel · ctrl+c quit",
+            ),
+            (confirm(), "y/enter confirm · n/esc cancel · ctrl+c quit"),
+            (
+                TaskListMode::PreviewingInactiveTasks { as_of },
+                "loading preview · esc cancel · ctrl+c quit",
+            ),
+            (
+                TaskListMode::ConfirmInactiveArchive { preview },
+                "enter/y confirm · n/esc cancel · ctrl+c quit",
+            ),
+            (archiving_mode(), "archive in progress · ctrl+c quit"),
+        ] {
+            assert_eq!(task_list_footer(mode, TaskView::Active, 110), expected);
+        }
     }
 
     #[test]

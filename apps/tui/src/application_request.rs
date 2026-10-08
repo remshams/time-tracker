@@ -93,96 +93,68 @@ impl ApplicationRequest {
     }
 
     pub(crate) fn same_write_intent(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::CreateTask { name: left, .. }, Self::CreateTask { name: right, .. }) => {
-                left == right
-            }
-            (
-                Self::RenameTask {
-                    id: left_id,
-                    name: left_name,
-                    ..
-                },
-                Self::RenameTask {
-                    id: right_id,
-                    name: right_name,
-                    ..
-                },
-            ) => left_id == right_id && left_name == right_name,
-            (Self::ArchiveTask { id: left, .. }, Self::ArchiveTask { id: right, .. })
-            | (Self::UnarchiveTask { id: left, .. }, Self::UnarchiveTask { id: right, .. }) => {
-                left == right
-            }
-            (
-                Self::ArchiveInactiveTasks { preview: left },
-                Self::ArchiveInactiveTasks { preview: right },
-            ) => left == right,
-            (
-                Self::SetActiveTask { task_id: left, .. },
-                Self::SetActiveTask { task_id: right, .. },
-            ) => left == right,
-            (
-                Self::ClearActiveTask {
-                    expected_active: left,
-                    ..
-                },
-                Self::ClearActiveTask {
-                    expected_active: right,
-                    ..
-                },
-            ) => left == right,
-            (
-                Self::MoveWorklog {
-                    id: left_id,
-                    expected_source_task_id: left_source,
-                    expected: left_expected,
-                    destination_task_id: left_destination,
-                },
-                Self::MoveWorklog {
-                    id: right_id,
-                    expected_source_task_id: right_source,
-                    expected: right_expected,
-                    destination_task_id: right_destination,
-                },
-            ) => {
-                left_id == right_id
-                    && left_source == right_source
-                    && left_expected == right_expected
-                    && left_destination == right_destination
-            }
-            (
-                Self::CorrectWorklog {
-                    id: left_id,
-                    expected: left_expected,
-                    replacement: left_replacement,
-                    ..
-                },
-                Self::CorrectWorklog {
-                    id: right_id,
-                    expected: right_expected,
-                    replacement: right_replacement,
-                    ..
-                },
-            ) => {
-                left_id == right_id
-                    && left_expected == right_expected
-                    && left_replacement == right_replacement
-            }
-            (
-                Self::DeleteCompletedWorklog {
-                    id: left_id,
-                    expected_task_id: left_task,
-                    expected: left_expected,
-                },
-                Self::DeleteCompletedWorklog {
-                    id: right_id,
-                    expected_task_id: right_task,
-                    expected: right_expected,
-                },
-            ) => left_id == right_id && left_task == right_task && left_expected == right_expected,
-            _ => false,
-        }
+        self.write_intent()
+            .is_some_and(|intent| Some(intent) == other.write_intent())
     }
+
+    fn write_intent(&self) -> Option<WriteIntent<'_>> {
+        let intent = match self {
+            Self::CreateTask { name, .. } => WriteIntent::CreateTask(name),
+            Self::RenameTask { id, name, .. } => WriteIntent::RenameTask(id, name),
+            Self::ArchiveTask { id, .. } => WriteIntent::ArchiveTask(id),
+            Self::UnarchiveTask { id, .. } => WriteIntent::UnarchiveTask(id),
+            Self::ArchiveInactiveTasks { preview } => WriteIntent::ArchiveInactiveTasks(preview),
+            Self::SetActiveTask { task_id, .. } => WriteIntent::SetActiveTask(task_id),
+            Self::ClearActiveTask {
+                expected_active, ..
+            } => WriteIntent::ClearActiveTask(expected_active),
+            Self::MoveWorklog { .. }
+            | Self::CorrectWorklog { .. }
+            | Self::DeleteCompletedWorklog { .. } => return self.worklog_write_intent(),
+            _ => return None,
+        };
+        Some(intent)
+    }
+
+    fn worklog_write_intent(&self) -> Option<WriteIntent<'_>> {
+        let intent = match self {
+            Self::MoveWorklog {
+                id,
+                expected_source_task_id,
+                expected,
+                destination_task_id,
+            } => {
+                WriteIntent::MoveWorklog(id, expected_source_task_id, expected, destination_task_id)
+            }
+            Self::CorrectWorklog {
+                id,
+                expected,
+                replacement,
+                ..
+            } => WriteIntent::CorrectWorklog(id, expected, replacement),
+            Self::DeleteCompletedWorklog {
+                id,
+                expected_task_id,
+                expected,
+            } => WriteIntent::DeleteCompletedWorklog(id, expected_task_id, expected),
+            _ => return None,
+        };
+        Some(intent)
+    }
+}
+
+#[derive(PartialEq, Eq)]
+enum WriteIntent<'a> {
+    CreateTask(&'a TaskName),
+    RenameTask(&'a TaskId, &'a TaskName),
+    ArchiveTask(&'a TaskId),
+    UnarchiveTask(&'a TaskId),
+    ArchiveInactiveTasks(&'a InactiveTaskPreview),
+    SetActiveTask(&'a TaskId),
+    ClearActiveTask(&'a WorklogId),
+    MoveWorklog(&'a WorklogId, &'a TaskId, &'a WorklogTimes, &'a TaskId),
+    CorrectWorklog(&'a WorklogId, &'a WorklogTimes, &'a WorklogTimes),
+    DeleteCompletedWorklog(&'a WorklogId, &'a TaskId, &'a WorklogTimes),
 }
 
 #[derive(Debug)]
@@ -232,51 +204,12 @@ pub(crate) fn execute_local<S: TrackerApplicationService>(
     request: ApplicationRequest,
 ) -> CompletedRequest {
     let outcome = match &request {
-        ApplicationRequest::CreateTask { name, occurred_at } => {
-            ApplicationOutcome::Task(application.create_task(name.clone(), *occurred_at))
-        }
-        ApplicationRequest::RenameTask {
-            id,
-            name,
-            occurred_at,
-        } => ApplicationOutcome::Task(application.rename_task(*id, name.clone(), *occurred_at)),
-        ApplicationRequest::ArchiveTask { id, occurred_at } => {
-            ApplicationOutcome::Task(application.archive_task(*id, *occurred_at))
-        }
-        ApplicationRequest::PreviewInactiveTasks { as_of } => {
-            ApplicationOutcome::InactiveTaskPreview(application.preview_inactive_tasks(*as_of).map(
-                |tasks| {
-                    let sample_names = tasks
-                        .iter()
-                        .take(3)
-                        .map(|task| task.name().to_string())
-                        .collect();
-                    InactiveTaskPreview::Local {
-                        as_of: *as_of,
-                        candidate_ids: tasks.iter().map(Task::id).collect(),
-                        sample_names,
-                    }
-                },
-            ))
-        }
-        ApplicationRequest::ArchiveInactiveTasks { preview } => {
-            let InactiveTaskPreview::Local {
-                as_of,
-                candidate_ids,
-                ..
-            } = preview
-            else {
-                unreachable!("local bulk archive uses a local preview")
-            };
-            ApplicationOutcome::ArchivedInactiveTasks(
-                application
-                    .archive_inactive_tasks(candidate_ids, *as_of)
-                    .map(|tasks| tasks.len()),
-            )
-        }
-        ApplicationRequest::UnarchiveTask { id, occurred_at } => {
-            ApplicationOutcome::Task(application.unarchive_task(*id, *occurred_at))
-        }
+        ApplicationRequest::CreateTask { .. }
+        | ApplicationRequest::RenameTask { .. }
+        | ApplicationRequest::ArchiveTask { .. }
+        | ApplicationRequest::PreviewInactiveTasks { .. }
+        | ApplicationRequest::ArchiveInactiveTasks { .. }
+        | ApplicationRequest::UnarchiveTask { .. } => execute_local_task(application, &request),
         ApplicationRequest::SetActiveTask {
             task_id,
             occurred_at,
@@ -341,39 +274,13 @@ pub(crate) async fn execute_remote(
     request: ApplicationRequest,
 ) -> CompletedRequest {
     let outcome = match &request {
-        ApplicationRequest::CreateTask { name, occurred_at } => {
-            ApplicationOutcome::Task(application.create_task(name.clone(), *occurred_at).await)
-        }
-        ApplicationRequest::RenameTask {
-            id,
-            name,
-            occurred_at,
-        } => ApplicationOutcome::Task(
-            application
-                .rename_task(*id, name.clone(), *occurred_at)
-                .await,
-        ),
-        ApplicationRequest::ArchiveTask { id, occurred_at } => {
-            ApplicationOutcome::Task(application.archive_task(*id, *occurred_at).await)
-        }
-        ApplicationRequest::PreviewInactiveTasks { as_of } => {
-            ApplicationOutcome::InactiveTaskPreview(
-                application
-                    .preview_inactive_tasks(*as_of)
-                    .await
-                    .map(InactiveTaskPreview::Remote),
-            )
-        }
-        ApplicationRequest::ArchiveInactiveTasks { preview } => {
-            let InactiveTaskPreview::Remote(preview) = preview else {
-                unreachable!("remote bulk archive uses a remote preview")
-            };
-            ApplicationOutcome::ArchivedInactiveTasks(
-                application.archive_inactive_tasks(preview).await,
-            )
-        }
-        ApplicationRequest::UnarchiveTask { id, occurred_at } => {
-            ApplicationOutcome::Task(application.unarchive_task(*id, *occurred_at).await)
+        ApplicationRequest::CreateTask { .. }
+        | ApplicationRequest::RenameTask { .. }
+        | ApplicationRequest::ArchiveTask { .. }
+        | ApplicationRequest::PreviewInactiveTasks { .. }
+        | ApplicationRequest::ArchiveInactiveTasks { .. }
+        | ApplicationRequest::UnarchiveTask { .. } => {
+            execute_remote_task(application, &request).await
         }
         ApplicationRequest::SetActiveTask {
             task_id,
@@ -443,6 +350,103 @@ pub(crate) async fn execute_remote(
     }
 }
 
+fn execute_local_task<S: TrackerApplicationService>(
+    application: &mut S,
+    request: &ApplicationRequest,
+) -> ApplicationOutcome {
+    match request {
+        ApplicationRequest::CreateTask { name, occurred_at } => {
+            ApplicationOutcome::Task(application.create_task(name.clone(), *occurred_at))
+        }
+        ApplicationRequest::RenameTask {
+            id,
+            name,
+            occurred_at,
+        } => ApplicationOutcome::Task(application.rename_task(*id, name.clone(), *occurred_at)),
+        ApplicationRequest::ArchiveTask { id, occurred_at } => {
+            ApplicationOutcome::Task(application.archive_task(*id, *occurred_at))
+        }
+        ApplicationRequest::PreviewInactiveTasks { as_of } => {
+            ApplicationOutcome::InactiveTaskPreview(application.preview_inactive_tasks(*as_of).map(
+                |tasks| {
+                    let sample_names = tasks
+                        .iter()
+                        .take(3)
+                        .map(|task| task.name().to_string())
+                        .collect();
+                    InactiveTaskPreview::Local {
+                        as_of: *as_of,
+                        candidate_ids: tasks.iter().map(Task::id).collect(),
+                        sample_names,
+                    }
+                },
+            ))
+        }
+        ApplicationRequest::ArchiveInactiveTasks { preview } => {
+            let InactiveTaskPreview::Local {
+                as_of,
+                candidate_ids,
+                ..
+            } = preview
+            else {
+                unreachable!("local bulk archive uses a local preview")
+            };
+            ApplicationOutcome::ArchivedInactiveTasks(
+                application
+                    .archive_inactive_tasks(candidate_ids, *as_of)
+                    .map(|tasks| tasks.len()),
+            )
+        }
+        ApplicationRequest::UnarchiveTask { id, occurred_at } => {
+            ApplicationOutcome::Task(application.unarchive_task(*id, *occurred_at))
+        }
+        _ => unreachable!("only task management requests reach this executor"),
+    }
+}
+
+async fn execute_remote_task(
+    application: &mut RemoteApplication,
+    request: &ApplicationRequest,
+) -> ApplicationOutcome {
+    match request {
+        ApplicationRequest::CreateTask { name, occurred_at } => {
+            ApplicationOutcome::Task(application.create_task(name.clone(), *occurred_at).await)
+        }
+        ApplicationRequest::RenameTask {
+            id,
+            name,
+            occurred_at,
+        } => ApplicationOutcome::Task(
+            application
+                .rename_task(*id, name.clone(), *occurred_at)
+                .await,
+        ),
+        ApplicationRequest::ArchiveTask { id, occurred_at } => {
+            ApplicationOutcome::Task(application.archive_task(*id, *occurred_at).await)
+        }
+        ApplicationRequest::PreviewInactiveTasks { as_of } => {
+            ApplicationOutcome::InactiveTaskPreview(
+                application
+                    .preview_inactive_tasks(*as_of)
+                    .await
+                    .map(InactiveTaskPreview::Remote),
+            )
+        }
+        ApplicationRequest::ArchiveInactiveTasks { preview } => {
+            let InactiveTaskPreview::Remote(preview) = preview else {
+                unreachable!("remote bulk archive uses a remote preview")
+            };
+            ApplicationOutcome::ArchivedInactiveTasks(
+                application.archive_inactive_tasks(preview).await,
+            )
+        }
+        ApplicationRequest::UnarchiveTask { id, occurred_at } => {
+            ApplicationOutcome::Task(application.unarchive_task(*id, *occurred_at).await)
+        }
+        _ => unreachable!("only task management requests reach this executor"),
+    }
+}
+
 #[cfg(test)]
 mod intent_tests {
     use chrono::{DateTime, TimeDelta, Utc};
@@ -451,6 +455,44 @@ mod intent_tests {
     use crate::screens::task_list::InactiveTaskPreview;
 
     use super::ApplicationRequest as Request;
+
+    #[test]
+    fn local_bulk_archive_uses_the_preview_and_returns_the_updated_snapshot() {
+        use super::{ApplicationOutcome, execute_local};
+        use crate::test_support::{TestService, at, task};
+
+        let old_task = task(1, "Old task");
+        let recent_task = task(2, "Recently tracked task");
+        let as_of = at(20 * 24 * 60 * 60);
+        let mut service = TestService::with_tasks(vec![old_task.clone(), recent_task.clone()]);
+        service.latest_work_starts.push((recent_task.id(), as_of));
+        let preview = execute_local(&mut service, Request::PreviewInactiveTasks { as_of });
+        let ApplicationOutcome::InactiveTaskPreview(Ok(preview)) = preview.outcome else {
+            panic!("local preview should succeed");
+        };
+        assert_eq!(preview.count(), 1);
+        assert_eq!(preview.sample_names(), &["Old task"]);
+
+        let completed = execute_local(&mut service, Request::ArchiveInactiveTasks { preview });
+        assert!(matches!(
+            completed.outcome,
+            ApplicationOutcome::ArchivedInactiveTasks(Ok(1))
+        ));
+        let archived = completed
+            .snapshot
+            .items
+            .iter()
+            .find(|item| item.task.id() == old_task.id())
+            .unwrap();
+        let active = completed
+            .snapshot
+            .items
+            .iter()
+            .find(|item| item.task.id() == recent_task.id())
+            .unwrap();
+        assert!(archived.task.is_archived());
+        assert!(!active.task.is_archived());
+    }
 
     #[test]
     fn write_intent_ignores_time_but_keeps_operation_target_and_expected_state() {

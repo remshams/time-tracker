@@ -11,6 +11,48 @@ use crate::support::errors::application_error_text;
 impl AppState {
     pub(crate) fn handle_worklog_history_command(&mut self, command: WorklogHistoryCommand) {
         match command {
+            WorklogHistoryCommand::MoveUp
+            | WorklogHistoryCommand::MoveDown
+            | WorklogHistoryCommand::First
+            | WorklogHistoryCommand::Last
+            | WorklogHistoryCommand::PageUp
+            | WorklogHistoryCommand::PageDown
+            | WorklogHistoryCommand::GPrefix
+            | WorklogHistoryCommand::LoadOlderWorklogs
+            | WorklogHistoryCommand::RefreshWorklogs
+            | WorklogHistoryCommand::BackToTaskList => self.handle_history_navigation(command),
+            WorklogHistoryCommand::OpenCorrection
+            | WorklogHistoryCommand::OpenDeletion
+            | WorklogHistoryCommand::OpenMove
+            | WorklogHistoryCommand::Confirm
+            | WorklogHistoryCommand::Cancel => self.handle_history_mode_command(command),
+            WorklogHistoryCommand::ToggleMoveFocus
+            | WorklogHistoryCommand::MoveDestinationUp
+            | WorklogHistoryCommand::MoveDestinationDown
+            | WorklogHistoryCommand::InsertMoveQuery(..)
+            | WorklogHistoryCommand::BackspaceMoveQuery => {
+                self.handle_history_move_command(command)
+            }
+            WorklogHistoryCommand::SwitchCorrectionField
+            | WorklogHistoryCommand::MoveCursorLeft
+            | WorklogHistoryCommand::MoveCursorRight
+            | WorklogHistoryCommand::Delete
+            | WorklogHistoryCommand::AdjustForwardFiveMinutes
+            | WorklogHistoryCommand::AdjustBackwardFiveMinutes
+            | WorklogHistoryCommand::AdjustForwardOneHour
+            | WorklogHistoryCommand::AdjustBackwardOneHour
+            | WorklogHistoryCommand::Insert(..)
+            | WorklogHistoryCommand::Backspace => self.handle_history_correction_command(command),
+        }
+        if command != WorklogHistoryCommand::GPrefix
+            && let Some(history) = self.history_state_mut()
+        {
+            history.set_g_prefix(false);
+        }
+    }
+
+    fn handle_history_navigation(&mut self, command: WorklogHistoryCommand) {
+        match command {
             WorklogHistoryCommand::MoveUp => self.move_history_up(),
             WorklogHistoryCommand::MoveDown => self.move_history_down(),
             WorklogHistoryCommand::First
@@ -21,47 +63,66 @@ impl AppState {
                 .history_state_mut()
                 .expect("history is open")
                 .set_g_prefix(true),
-            WorklogHistoryCommand::OpenCorrection => self.open_correction(),
-            WorklogHistoryCommand::OpenDeletion => self.open_deletion(),
-            WorklogHistoryCommand::OpenMove => self.open_move(),
-            WorklogHistoryCommand::SwitchCorrectionField => self.switch_correction_field(),
-            WorklogHistoryCommand::MoveCursorLeft => self.move_correction_cursor_left(),
-            WorklogHistoryCommand::MoveCursorRight => self.move_correction_cursor_right(),
-            WorklogHistoryCommand::ToggleMoveFocus => self.toggle_move_focus(),
-            WorklogHistoryCommand::MoveDestinationUp => self.move_destination_up(),
-            WorklogHistoryCommand::MoveDestinationDown => self.move_destination_down(),
-            WorklogHistoryCommand::Delete => self.delete_correction_character(),
-            WorklogHistoryCommand::AdjustForwardFiveMinutes => {
-                self.adjust_correction(TimeDelta::minutes(5));
-            }
-            WorklogHistoryCommand::AdjustBackwardFiveMinutes => {
-                self.adjust_correction(TimeDelta::minutes(-5));
-            }
-            WorklogHistoryCommand::AdjustForwardOneHour => {
-                self.adjust_correction(TimeDelta::hours(1));
-            }
-            WorklogHistoryCommand::AdjustBackwardOneHour => {
-                self.adjust_correction(TimeDelta::hours(-1));
-            }
             WorklogHistoryCommand::LoadOlderWorklogs => self.load_older_worklogs(),
             WorklogHistoryCommand::RefreshWorklogs => self.refresh_worklogs(),
             WorklogHistoryCommand::BackToTaskList => self.back_to_task_list(),
+            _ => unreachable!("only commands in this dispatch group reach this handler"),
+        }
+    }
+
+    fn handle_history_mode_command(&mut self, command: WorklogHistoryCommand) {
+        match command {
+            WorklogHistoryCommand::OpenCorrection => self.open_correction(),
+            WorklogHistoryCommand::OpenDeletion => self.open_deletion(),
+            WorklogHistoryCommand::OpenMove => self.open_move(),
             WorklogHistoryCommand::Confirm => self.confirm_history_mode(),
             WorklogHistoryCommand::Cancel => self.cancel_history_mode(),
-            WorklogHistoryCommand::Insert(character) => {
-                self.insert_correction_character(character);
-            }
-            WorklogHistoryCommand::Backspace => self.backspace_correction_character(),
+            _ => unreachable!("only commands in this dispatch group reach this handler"),
+        }
+    }
+
+    fn handle_history_move_command(&mut self, command: WorklogHistoryCommand) {
+        match command {
+            WorklogHistoryCommand::ToggleMoveFocus => self.toggle_move_focus(),
+            WorklogHistoryCommand::MoveDestinationUp => self.move_destination_up(),
+            WorklogHistoryCommand::MoveDestinationDown => self.move_destination_down(),
             WorklogHistoryCommand::InsertMoveQuery(character) => {
                 self.insert_move_query(character);
             }
             WorklogHistoryCommand::BackspaceMoveQuery => self.backspace_move_query(),
+            _ => unreachable!("only commands in this dispatch group reach this handler"),
         }
-        if command != WorklogHistoryCommand::GPrefix
-            && let Some(history) = self.history_state_mut()
-        {
-            history.set_g_prefix(false);
+    }
+
+    fn handle_history_correction_command(&mut self, command: WorklogHistoryCommand) {
+        match command {
+            WorklogHistoryCommand::SwitchCorrectionField => self.switch_correction_field(),
+            WorklogHistoryCommand::MoveCursorLeft => self.move_correction_cursor_left(),
+            WorklogHistoryCommand::MoveCursorRight => self.move_correction_cursor_right(),
+            WorklogHistoryCommand::Delete => self.delete_correction_character(),
+            WorklogHistoryCommand::AdjustForwardFiveMinutes
+            | WorklogHistoryCommand::AdjustBackwardFiveMinutes
+            | WorklogHistoryCommand::AdjustForwardOneHour
+            | WorklogHistoryCommand::AdjustBackwardOneHour => {
+                self.adjust_correction_by_command(command)
+            }
+            WorklogHistoryCommand::Insert(character) => {
+                self.insert_correction_character(character);
+            }
+            WorklogHistoryCommand::Backspace => self.backspace_correction_character(),
+            _ => unreachable!("command is handled by an earlier dispatch group"),
         }
+    }
+
+    fn adjust_correction_by_command(&mut self, command: WorklogHistoryCommand) {
+        let delta = match command {
+            WorklogHistoryCommand::AdjustForwardFiveMinutes => TimeDelta::minutes(5),
+            WorklogHistoryCommand::AdjustBackwardFiveMinutes => TimeDelta::minutes(-5),
+            WorklogHistoryCommand::AdjustForwardOneHour => TimeDelta::hours(1),
+            WorklogHistoryCommand::AdjustBackwardOneHour => TimeDelta::hours(-1),
+            _ => unreachable!("only time adjustment commands reach this handler"),
+        };
+        self.adjust_correction(delta);
     }
 
     fn jump_history(&mut self, command: WorklogHistoryCommand) {
