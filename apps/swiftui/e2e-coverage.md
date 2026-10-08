@@ -2,7 +2,7 @@
 
 The suite drives the shipped macOS application through XCUITest and the production Rust bridge. The CLI creates fixtures, acts as another client, and verifies stored results. It does not perform the UI action under test.
 
-Implementation checkpoint `a80d4d8`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
+Implementation checkpoint `0e5f931`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
 
 ## Run the tests
 
@@ -77,6 +77,8 @@ Record the macOS/Xcode version, application revision, backend, steps, result, an
 | 6 | Real day rollover and DST transition, alongside portable calendar tests | Open |
 | 7 | Visual readability and control geometry across supported macOS appearances | Automated geometry and identity checks; visual acceptance open |
 | 8 | Drag native window borders to the minimum size and expand them | Open. Hosted pointer drags did not resize the window; CI checks real AppKit window sizing and resulting control geometry through a guarded DEBUG fixture notification. |
+
+While a native popup tracks, its label and actions retain the captured task. Live durations continue updating, and the sidebar reconciles current state. Reopening the popup captures the current task.
 
 Changing the data source through Settings closes an open native menu. Source-switch/reopen journeys therefore cover the reachable native interaction. Captured-source invalidation while a menu snapshot exists remains covered by portable state tests rather than an artificial native session hook.
 
