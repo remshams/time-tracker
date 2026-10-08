@@ -2,7 +2,7 @@
 
 The suite drives the shipped macOS application through XCUITest and the production Rust bridge. The CLI creates fixtures, acts as another client, and verifies stored results. It does not perform the UI action under test.
 
-Implementation checkpoint `afd5a4e`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
+Implementation checkpoint `ade14e5`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
 
 ## Run the tests
 
@@ -12,7 +12,7 @@ apps/swiftui/check-native-ui.sh --smoke
 apps/swiftui/check-native-ui.sh --group server
 ```
 
-The full suite requires macOS, Xcode 27, and a desktop session. The runner builds `tt-cli` and `tt`, supplies an absolute Python 3 path, and disables parallel XCTest execution. CI runs six required groups on separate macOS runners. Every group remains serial because status items, menus, shortcuts, and the clipboard share its desktop. The CI gate requires all groups to pass.
+The full suite requires macOS, Xcode 27, and a desktop session. The runner builds `tt-cli` and `tt`, supplies an absolute Python 3 path, and disables parallel XCTest execution. CI runs six required groups on separate macOS runners. Every group remains serial because status items, menus, shortcuts, and the clipboard share its desktop. The CI gate requires all groups to pass. The Return correction case enables keyboard navigation when needed and verifies restoration of the original setting at teardown. Window layout cases resize the real AppKit window through an isolated DEBUG fixture event.
 
 The previous seven-test native UI step took 7 minutes 20 seconds in [CI run 37833088852](https://github.com/remshams/time-tracker/actions/runs/37833088852). The expanded suite is grouped to stay within the existing 60-minute job limit. Logs and result bundles are retained for every group.
 
@@ -76,6 +76,7 @@ Record the macOS/Xcode version, application revision, backend, steps, result, an
 | 5 | Keyboard-layout changes while the saved global shortcut is registered | Open |
 | 6 | Real day rollover and DST transition, alongside portable calendar tests | Open |
 | 7 | Visual readability and control geometry across supported macOS appearances | Automated geometry and identity checks; visual acceptance open |
+| 8 | Drag native window borders to the minimum size and expand them | Open. Hosted pointer drags did not resize the window; CI checks real AppKit window sizing and resulting control geometry through a guarded DEBUG fixture notification. |
 
 Changing the data source through Settings closes an open native menu. Source-switch/reopen journeys therefore cover the reachable native interaction. Captured-source invalidation while a menu snapshot exists remains covered by portable state tests rather than an artificial native session hook.
 
