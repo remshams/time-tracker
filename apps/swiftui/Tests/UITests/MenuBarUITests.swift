@@ -143,11 +143,8 @@ class MenuBarUITests: TrackerUITestCase {
         XCTAssertNotEqual(menuTask(first).label, initialRunningLabel)
         XCTAssertEqual(menuTask(first).frame, firstFrame)
         XCTAssertEqual(menuTask(second).frame, secondFrame)
-        menuTask(first).hover()
-        let stop = app.menuItems["Stop tracking"]
-        waitUntil("The captured submenu Stop action is reachable") { stop.exists && stop.isHittable }
-        XCTAssertTrue(stop.isEnabled)
-        stop.click()
+        XCTAssertTrue(menuTask(first).isEnabled)
+        menuTask(first).click()
         assertStopped()
     }
 }
@@ -175,7 +172,10 @@ final class ServerMenuBarUITests: MenuBarUITests {
                 .matching(identifier: "tracking.active-task").firstMatch.exists
         }
         XCTAssertEqual(statusButton.label, "Tracking: \(first.name)")
-        app.menuItems["Stop tracking"].click()
+        menuTask(first).hover()
+        let stop = app.menuItems["Stop tracking"]
+        waitUntil("The captured Stop action is reachable") { stop.exists && stop.isHittable }
+        stop.click()
         XCTAssertEqual(try fixture.activeWorklog(), replacement)
         XCTAssertEqual(try proxy.requests(method: "PUT", path: "/v1/tracking").count, baseline)
         openStatusMenu()
@@ -227,7 +227,10 @@ final class ServerMenuBarUITests: MenuBarUITests {
                     .matching(identifier: "tracking.active-task").firstMatch.exists
             }
             XCTAssertEqual(self.statusButton.label, "Tracking: \(first.name)")
-            app.menuItems["Copy task name"].click()
+            menuTask(first).hover()
+            let copyName = app.menuItems["Copy task name"]
+            waitUntil("The captured Copy action is reachable") { copyName.exists && copyName.isHittable }
+            copyName.click()
             XCTAssertEqual(NSPasteboard.general.string(forType: .string), first.name)
             openStatusMenu()
             menuTask(first).hover()
