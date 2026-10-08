@@ -128,7 +128,10 @@ final class BulkTaskArchivingUITests: XCTestCase {
             XCTAssertTrue(element("bulk-archive.empty").exists)
             XCTAssertEqual(element("bulk-archive.count").value as? String, "0 tasks to archive")
         }
-        waitUntil("Empty preview finishes refreshing") { self.app.buttons["bulk-archive.refresh"].isEnabled }
+        waitUntil("Empty preview finishes refreshing") {
+            let refresh = self.app.buttons["bulk-archive.refresh"]
+            return refresh.exists && refresh.isEnabled
+        }
         cancelDialog()
         try assertArchived([])
     }
@@ -200,7 +203,7 @@ final class BulkTaskArchivingUITests: XCTestCase {
     }
 
     private func assertLoading() {
-        let refresh = app.buttons["bulk-archive.refresh"]
+        let refresh = element("bulk-archive.refresh")
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             refresh.exists && refresh.label == "Refreshing preview" && !refresh.isEnabled
         }, object: nil)
