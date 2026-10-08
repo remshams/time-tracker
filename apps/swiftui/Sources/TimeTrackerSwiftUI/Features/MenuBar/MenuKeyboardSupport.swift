@@ -70,6 +70,20 @@ final class GlobalMenuShortcutRegistration {
         let nextIdentifier = identifier &+ 1
         let hotKeyID = EventHotKeyID(signature: Self.signature, id: nextIdentifier)
         var replacement: EventHotKeyRef?
+        #if DEBUG
+        var testReservation: EventHotKeyRef?
+        let process = ProcessInfo.processInfo
+        if process.arguments.contains("-tt-ui-testing"),
+           let suite = process.environment["TT_UI_TEST_DEFAULTS_SUITE"],
+           suite.hasPrefix("TimeTrackerUITests."),
+           UUID(uuidString: String(suite.dropFirst("TimeTrackerUITests.".count))) != nil,
+           process.environment["TT_UI_TEST_CONFLICT_KEY"] == shortcut.key {
+            RegisterEventHotKey(keyCode, carbonModifiers(shortcut.modifiers),
+                                EventHotKeyID(signature: 0x54545549, id: 1),
+                                GetApplicationEventTarget(), 0, &testReservation)
+        }
+        defer { if let testReservation { UnregisterEventHotKey(testReservation) } }
+        #endif
         let status = RegisterEventHotKey(keyCode, carbonModifiers(shortcut.modifiers), hotKeyID,
                                          GetApplicationEventTarget(), 0, &replacement)
         guard status == noErr, let replacement else {
