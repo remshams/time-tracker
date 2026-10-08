@@ -1,4 +1,5 @@
 use super::*;
+use tracker_domain::WorklogMoveError;
 
 #[test]
 fn repository_failures_have_stable_semantic_classifications_and_sanitized_messages() {
@@ -32,6 +33,11 @@ fn repository_failures_have_stable_semantic_classifications_and_sanitized_messag
         ),
         (
             RepositoryError::WorklogHistoryChanged { task_id },
+            ApplicationFailureCategory::WorklogHistoryChanged,
+            "Worklog history changed. Press r to refresh",
+        ),
+        (
+            RepositoryError::GlobalWorklogHistoryChanged,
             ApplicationFailureCategory::WorklogHistoryChanged,
             "Worklog history changed. Press r to refresh",
         ),
@@ -91,6 +97,11 @@ fn repository_failures_have_stable_semantic_classifications_and_sanitized_messag
             ApplicationFailureCategory::General,
             "Storage error",
         ),
+        (
+            RepositoryError::ReportDurationOverflow,
+            ApplicationFailureCategory::General,
+            "Report duration is too large",
+        ),
     ];
 
     for (error, category, message) in cases {
@@ -106,6 +117,39 @@ fn repository_failures_have_stable_semantic_classifications_and_sanitized_messag
         assert_eq!(failure.category(), category);
         assert_eq!(failure.message(), message);
         assert_eq!(failure.source(), source);
+        assert!(!failure.recovery_failed());
+    }
+}
+
+#[test]
+fn local_operation_failures_keep_their_safe_messages_without_recovery() {
+    let cases = [
+        (
+            ApplicationError::InvalidWorklogCorrection(WorklogCorrectionError::EndBeforeStart),
+            "corrected worklog end must not precede its start",
+        ),
+        (
+            ApplicationError::InvalidWorklogMove(WorklogMoveError::DestinationUnchanged),
+            "a worklog must move to a different task",
+        ),
+        (
+            ApplicationError::TrackingStateChanged,
+            "Tracking state changed in another client. Refreshed state.",
+        ),
+        (
+            ApplicationError::InvalidReportRange,
+            "Report end must be later than start",
+        ),
+        (
+            ApplicationError::ReportDurationOverflow,
+            "Report duration is too large",
+        ),
+    ];
+    for (error, message) in cases {
+        let failure = error.failure();
+        assert_eq!(failure.category(), ApplicationFailureCategory::General);
+        assert_eq!(failure.message(), message);
+        assert_eq!(failure.source(), crate::ApplicationFailureSource::Operation);
         assert!(!failure.recovery_failed());
     }
 }

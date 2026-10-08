@@ -36,15 +36,17 @@ pub fn preset_dates(preset: CalendarPreset, today: NaiveDate) -> Option<(NaiveDa
             ))?;
             Some((from, from.checked_add_signed(Duration::days(6))?))
         }
-        CalendarPreset::Month => {
-            let from = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)?;
-            Some((from, from.checked_add_months(Months::new(1))?.pred_opt()?))
-        }
+        CalendarPreset::Month => month_dates(today),
         CalendarPreset::Year => Some((
             NaiveDate::from_ymd_opt(today.year(), 1, 1)?,
             NaiveDate::from_ymd_opt(today.year(), 12, 31)?,
         )),
     }
+}
+
+fn month_dates(today: NaiveDate) -> Option<(NaiveDate, NaiveDate)> {
+    let from = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)?;
+    Some((from, from.checked_add_months(Months::new(1))?.pred_opt()?))
 }
 
 /// Converts inclusive local dates to a UTC interval with an exclusive end.
