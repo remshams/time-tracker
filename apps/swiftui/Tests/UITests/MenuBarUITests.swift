@@ -135,14 +135,19 @@ class MenuBarUITests: TrackerUITestCase {
         openStatusMenu()
         let firstFrame = menuTask(first).frame
         let secondFrame = menuTask(second).frame
+        let initialRunningLabel = menuTask(first).label
         menuTask(first).hover()
         XCTAssertTrue(app.menuItems["Stop tracking"].waitForExistence(timeout: timeout))
         let deadline = Date().addingTimeInterval(2)
         waitUntil("A real display tick passes while the submenu remains open") { Date() >= deadline }
+        XCTAssertNotEqual(menuTask(first).label, initialRunningLabel)
         XCTAssertEqual(menuTask(first).frame, firstFrame)
         XCTAssertEqual(menuTask(second).frame, secondFrame)
-        XCTAssertTrue(app.menuItems["Stop tracking"].isEnabled)
-        app.menuItems["Stop tracking"].click()
+        menuTask(first).hover()
+        let stop = app.menuItems["Stop tracking"]
+        waitUntil("The captured submenu Stop action is reachable") { stop.exists && stop.isHittable }
+        XCTAssertTrue(stop.isEnabled)
+        stop.click()
         assertStopped()
     }
 }
@@ -166,14 +171,16 @@ final class ServerMenuBarUITests: MenuBarUITests {
         let baseline = try proxy.requests(method: "PUT", path: "/v1/tracking").count
         try proxy.release()
         waitUntil("The open menu receives the replacement timer") {
-            self.statusButton.label == "Tracking: \(second.name)"
+            self.taskRow(second).descendants(matching: .any)
+                .matching(identifier: "tracking.active-task").firstMatch.exists
         }
+        XCTAssertEqual(statusButton.label, "Tracking: \(first.name)")
         app.menuItems["Stop tracking"].click()
         XCTAssertEqual(try fixture.activeWorklog(), replacement)
         XCTAssertEqual(try proxy.requests(method: "PUT", path: "/v1/tracking").count, baseline)
         openStatusMenu()
         XCTAssertTrue(menuTask(second).waitForExistence(timeout: timeout))
-        XCTAssertTrue(menuTask(second).label.contains("tracking"))
+        XCTAssertTrue(menuTask(second).label.hasSuffix(", tracking"))
         dismissStatusMenu()
     }
 
@@ -216,8 +223,10 @@ final class ServerMenuBarUITests: MenuBarUITests {
                 try proxy.release()
             } catch { XCTFail("Could not replace the timer through the real server: \(error)"); return }
             waitUntil("The open menu reconciles the replacement") {
-                self.statusButton.label == "Tracking: \(second.name)"
+                self.taskRow(second).descendants(matching: .any)
+                    .matching(identifier: "tracking.active-task").firstMatch.exists
             }
+            XCTAssertEqual(self.statusButton.label, "Tracking: \(first.name)")
             app.menuItems["Copy task name"].click()
             XCTAssertEqual(NSPasteboard.general.string(forType: .string), first.name)
             openStatusMenu()
