@@ -1,4 +1,7 @@
 import SwiftUI
+#if DEBUG
+import AppKit
+#endif
 
 @MainActor
 struct TrackerWindow: View {
@@ -25,7 +28,10 @@ struct TrackerWindow: View {
            let suite = ProcessInfo.processInfo.environment["TT_UI_TEST_DEFAULTS_SUITE"],
            suite.hasPrefix("TimeTrackerUITests."),
            UUID(uuidString: String(suite.dropFirst("TimeTrackerUITests.".count))) != nil {
-            content.accessibilityValue(colorScheme == .dark ? "Dark" : "Light")
+            content.background {
+                TrackerWindowAppearanceProbe(appearance: colorScheme == .dark ? "Dark" : "Light")
+                    .frame(width: 1, height: 1)
+            }
         } else {
             content
         }
@@ -52,7 +58,6 @@ struct TrackerWindow: View {
         }
         .navigationTitle(store.selectedTask?.name ?? "Time Tracker")
         .frame(minWidth: 760, minHeight: 480)
-        .accessibilityIdentifier("tracker.window.content")
         .windowDismissBehavior(presentation.canClose(windowID) ? .enabled : .disabled)
         .onAppear {
             let action = openWindow
@@ -69,6 +74,26 @@ struct TrackerWindow: View {
         .onDisappear { runtime.windowDisappeared(windowID) }
     }
 }
+
+#if DEBUG
+@MainActor
+private struct TrackerWindowAppearanceProbe: NSViewRepresentable {
+    let appearance: String
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(labelWithString: appearance)
+        field.textColor = .clear
+        field.setAccessibilityIdentifier("tracker.window.appearance")
+        field.setAccessibilityLabel("Window appearance")
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        field.stringValue = appearance
+        field.setAccessibilityValue(appearance)
+    }
+}
+#endif
 
 @MainActor
 private struct TrackerSidebarToolbar: View {
