@@ -1,10 +1,10 @@
 # API route refactoring and migration plan
 
-Implement [ADR 0016](adr/0016-separate-http-resources-from-client-refreshes.md) without changing tracking or worklog domain rules. Split HTTP resource reads, remove automatic snapshot attachments and migrate the CLI, TUI and macOS clients to explicit resource composition.
+Implement [ADR 0017](adr/0017-separate-http-resources-from-client-refreshes.md) without changing tracking or worklog domain rules. Split HTTP resource reads, remove automatic snapshot attachments and migrate the CLI, TUI and macOS clients to explicit resource composition.
 
 ## Status and scope
 
-Planned on 8 October 2026. Production still uses `/v1`; this branch contains documentation only. The ADR owns the target contract. This plan owns the implementation sequence, client changes and acceptance checks.
+Planned on 8 October 2026 against `main` revision `360430c`, including configurable bulk archiving and native macOS UI E2E tests. Production still uses `/v1`; this branch contains documentation only. The ADR owns the target contract. This plan owns the implementation sequence, client changes and acceptance checks.
 
 Keep local SQLite mode, offline rejection in remote mode, existing search/ranking policies, tracking timestamps and domain validation. Introduce no database schema change, task deletion, manual worklog creation, push subscription or combined convenience read.
 
@@ -19,11 +19,23 @@ Keep local SQLite mode, offline rejection in remote mode, existing search/rankin
 | 5 | `GET /v1/worklogs` | `GET /v2/worklogs` |
 | 6 | Cached worklog lookup | `GET /v2/worklogs/{id}` for inspection or guarded preflight |
 | 7 | `GET /v1/reports` | `GET /v2/reports/task-totals`, with IDs and durations only |
-| 8 | Existing preview and guarded writes | Same command routes under `/v2`; narrow command receipts replace snapshot responses |
+| 8 | `GET /v1/tasks/inactive-preview` and `GET /v1/tasks/inactive-candidates` | One `GET /v2/tasks/inactive-preview`, optional `inactive_days` defaulting to 14; complete candidate IDs and separately resolved task metadata |
+| 9 | `POST /v1/tasks/archive-inactive` and `POST /v1/tasks/archive-inactive-candidates` | One `POST /v2/tasks/archive-inactive`, reusing original preview time, period and revision |
+| 10 | Other existing guarded writes | Same command routes under `/v2`; narrow command receipts replace snapshot responses |
 
-Do not add `/v2/tasks/{id}/worklogs`, `/v2/reports` or `/v2/snapshot` aliases. `/v1` retains its original routes and response shapes until a separate removal decision.
+Do not add `/v2/tasks/{id}/worklogs`, `/v2/reports`, `/v2/snapshot`, `/v2/tasks/inactive-candidates` or `/v2/tasks/archive-inactive-candidates` aliases. `/v1` retains its original routes and response shapes until a separate removal decision.
 
 ## Implementation sequence
+
+### 0. Existing E2E baseline and remote coverage
+
+`main` already includes TUI E2E scenarios and [native macOS bulk archive tests](../apps/swiftui/Tests/UITests/BulkTaskArchivingUITests.swift). The native suite drives the real app and Rust bridge against a temporary local SQLite database. It covers the 14-day preview, period changes, refresh, invalid input, empty candidates, cancellation, confirmation, dialog geometry, running-timer preservation and relaunch persistence. It runs through [check-native-ui.sh](../apps/swiftui/check-native-ui.sh) in the [native macOS CI job](../.github/workflows/ci.yml). It does not yet exercise a remote server or the other native feature workflows.
+
+- Run the existing TUI and native local-mode suites on the unmodified `/v1` application before changing the HTTP contract. Retain these scenarios as local-mode regression coverage.
+- Plan remote application E2E coverage before migrating clients. Reuse isolated preferences and fixtures, launch a real server with a temporary database and verify native UI actions traverse the production bridge, HTTP adapter and server. Establish `/v1` baselines for remote bulk archive and migrated workflows before switching them to `/v2`.
+- Verify remote configurable previews, cancellation, confirmation, stale previews, active-task protection and persisted results. Add native remote timer/sidebar/report, history/edit and reconnect scenarios where the migration changes those workflows. Use server/storage observations for outcomes instead of relying only on labels or mocked client responses.
+- Keep native UI runs on macOS with Xcode and an active desktop session. Use bounded waits for observable state, clean up server processes and retain logs, screenshots and result bundles on failure.
+- Existing E2E tests stay unchanged on this documentation branch. Obtain explicit consent before implementation adds or changes E2E tests, as required by `AGENTS.md`.
 
 ### 1. Protocol and server reads
 
@@ -34,6 +46,7 @@ Do not add `/v2/tasks/{id}/worklogs`, `/v2/reports` or `/v2/snapshot` aliases. `
 - Dispatch the worklog collection to existing task or global history queries according to optional `task_id`. Validate task existence before returning filtered history.
 - Preserve the 50-entry page bound, current ordering and all-or-none continuation parameters. Bind cursors to their original collection/filter, reject cross-filter reuse and reset client pagination when `task_id` changes. The existing task and global cursor models can stay internal; include nullable `task_id` in the version-specific continuation DTO. Filtered continuations also submit `after_task_id`; require it to match the current `task_id`, and reject it on unfiltered requests. Reject incomplete or mismatched scope rather than silently applying a cursor to another collection.
 - Preserve normalized report parameters, half-open clipping, running cutoff, archived-task contributions and microsecond precision.
+- Consolidate both inactive preview routes. Accept `as_of` and optional positive `inactive_days` defaulting to 14; return echoed time/period, all candidate task IDs, count and revision. Preserve eligibility and checked cutoff arithmetic. Resolve complete candidate labels through task reads rather than embedding task metadata.
 
 ### 2. Commands and idempotency
 
@@ -42,6 +55,7 @@ Do not add `/v2/tasks/{id}/worklogs`, `/v2/reports` or `/v2/snapshot` aliases. `
 - Cache the complete original receipt. A replay after another command must retain its original revision and result. Do not attach a newly observed revision to a cached result.
 - Include API version in fingerprints and reject request-ID reuse across versions. Verify both versions share guarded access to the same database and deduplication policy.
 - Preserve the current successful-command cache bound and exact expected source values. A transport retry reuses the identical request body, ID and captured timestamp.
+- Consolidate both bulk archive commands. Confirmation uses the reviewed preview's original time, period and revision, recomputes eligibility and returns the actual archived count. Keep active-task protection, preview expiry and no automatic resubmission after uncertain results.
 - Preserve structured HTTP errors and recovery after a write that might have committed. No durable deduplication is added.
 
 ### 3. Remote adapter and cache coordination
@@ -62,7 +76,7 @@ Do not add `/v2/tasks/{id}/worklogs`, `/v2/reports` or `/v2/snapshot` aliases. `
 | 3 | Start, switch or stop | Tracking; also the target task for start or switch, at the same revision |
 | 4 | Correct or delete worklog | Target worklog and its revision, retaining its exact expected values |
 | 5 | Move worklog | Source worklog and destination task, at the same revision |
-| 6 | Archive inactive tasks | Preview and its original revision and `as_of` |
+| 6 | Archive inactive tasks | Complete preview, reviewed candidate metadata as needed, and original revision, `as_of` and `inactive_days` |
 
 ### 4. CLI and TUI
 
@@ -79,7 +93,8 @@ Do not add `/v2/tasks/{id}/worklogs`, `/v2/reports` or `/v2/snapshot` aliases. `
 - Resolve missing task names through task reads. Preserve valid totals while metadata is unavailable.
 - Anchor local running-total projection to a matching report/tracking revision and active worklog identity. Use echoed report `now`; freeze extrapolation on a mismatch until a coherent pair arrives. The independent timer may still advance.
 - Preserve sidebar, Today menu, visible/hidden refresh behavior, focus refresh, lock pause/resume and pending-write reconciliation.
-- Update portable Swift tests. Validate native macOS rendering and lifecycle behavior on macOS.
+- Preserve configurable bulk archive dialog behavior from ADR 0016. Resolve all candidate metadata, preserve the reviewed time/period/revision, discard cancelled or replaced previews, serialize refresh/confirmation and report the actual count. Missing candidate metadata must not silently shorten the reviewed list.
+- Update portable Swift tests and the remote E2E scenarios planned in step 0 after obtaining consent. Run the existing native local bulk archive suite unchanged when its observable requirements remain the same. Validate native rendering and lifecycle behavior on macOS.
 
 ### 6. Documentation and rollout
 
@@ -87,7 +102,7 @@ Do not add `/v2/tasks/{id}/worklogs`, `/v2/reports` or `/v2/snapshot` aliases. `
 - Deploy a server supporting both versions before migrating clients. Old clients continue checking `/v1/health`; new clients explicitly check `/v2/health` and decode `/v2` responses.
 - Verify mixed-version clients modify the same tracker safely. Do not silently reinterpret old response DTOs.
 - Measure request counts, bytes, refresh latency and behavior under concurrent writes after migration. Use those results to assess optional aggregate endpoints separately.
-- Propose a `/v1` removal release only after all supported clients have migrated. Mark ADR 0016 accepted and update the specific superseded clauses in ADRs 0004, 0005 and 0008 when the decision is accepted; preserve local-mode rules.
+- Propose a `/v1` removal release only after all supported clients have migrated. Mark ADR 0017 accepted and update the specific superseded clauses in ADRs 0004, 0005, 0008 and the HTTP-specific clauses of 0016 when the decision is accepted; preserve local-mode rules.
 
 ## Current use-case coverage
 
@@ -95,7 +110,7 @@ Do not add `/v2/tasks/{id}/worklogs`, `/v2/reports` or `/v2/snapshot` aliases. `
 |---|---|---|
 | 1 | Task list, archived list, search and sorting | Tasks with recent-activity metadata; client search/sorting |
 | 2 | Task creation, rename, archive and restore | Task commands and affected task/catalog refresh |
-| 3 | Bulk archive | Inactive preview and guarded archive confirmation |
+| 3 | Fixed and configurable bulk archive | One complete inactive preview with default or chosen period, task metadata resolution and guarded confirmation |
 | 4 | Timer, start, switch, stop and lock pause/resume | Tracking plus target task when needed |
 | 5 | Task and global history | Worklog collection with or without `task_id` |
 | 6 | Worklog correction, move and deletion | Individual worklog, destination task for moves, guarded command |
@@ -118,8 +133,10 @@ Do not add `/v2/tasks/{id}/worklogs`, `/v2/reports` or `/v2/snapshot` aliases. `
 | 9 | Client composition | Names resolve independently; mismatched report/tracking revisions stop total extrapolation; coherent pairs resume it without counting time twice |
 | 10 | Compatibility | `/v1` decoding remains unchanged; protocol numbers are correct; both versions share safe access to the same tracker |
 | 11 | Current workflows | CLI, TUI and macOS use cases above work through the migrated remote adapter; local mode retains its behavior |
+| 12 | Application E2E | Existing TUI and native local bulk archive suites pass; real-server native scenarios verify changed `/v2` workflows; logs and result bundles are available in CI |
+| 13 | Configurable archive | Default and chosen periods, complete candidate labels, invalid input, refresh/cancel, stale preview rejection, actual count, active timer and relaunch persistence remain correct |
 
-Use behavior and concurrency tests rather than tests that merely restate DTO construction. Existing E2E tests remain unchanged for this documentation branch. Obtain the repository-required explicit consent before implementation changes existing E2E tests for new observable behavior.
+Use behavior and concurrency tests rather than tests that merely restate DTO construction. Portable Swift state tests and server integration tests complement application E2E coverage; they do not replace native UI-to-server scenarios. Keep existing E2E tests unchanged for this documentation branch, and obtain explicit consent before implementation adds or modifies E2E tests.
 
 Run the repository's required checks for each implementation handoff:
 
@@ -129,6 +146,14 @@ cargo test
 cargo llvm-cov --lcov --output-path lcov.info
 cargo crap --workspace --lcov lcov.info
 ```
+
+For native application E2E checks, run on macOS with Xcode and an active desktop session:
+
+```sh
+apps/swiftui/check-native-ui.sh
+```
+
+Retain the current native macOS CI job and its `.build/native-ui.log` and `.build/native-ui.xcresult` artifacts. Extend the same automation to the planned real-server scenarios during implementation; a Linux-only test pass cannot verify native application E2E behavior.
 
 Use pinned tool versions and mutation scopes from [AGENTS.md](../AGENTS.md). Mutate all changed Rust production files and affected portable Swift files, including production code exercised by changed tests. Expand the scope for shared dependencies/build changes. Missed or timed-out mutants and CRAP scores above the configured threshold are failures. Documentation-only changes skip mutation checks.
 

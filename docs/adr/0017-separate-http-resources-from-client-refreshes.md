@@ -1,4 +1,4 @@
-# 0016: separate HTTP resources from client refreshes
+# 0017: separate HTTP resources from client refreshes
 
 ## Status
 
@@ -35,7 +35,7 @@ Use task IDs to connect resources. Report rows refer to tasks without embedding 
 | 5 | `GET /v2/worklogs` | `worklogs`, `next_cursor`, `revision` | Global history or task history through optional `task_id` |
 | 6 | `GET /v2/worklogs/{id}` | `worklog`, `revision` | One worklog for inspection or an edit preflight |
 | 7 | `GET /v2/reports/task-totals` | `start`, `end`, `now`, `rows`, `total_us`, `revision` | Time per task in the requested interval |
-| 8 | `GET /v2/tasks/inactive-preview` | `as_of`, `count`, `sample_names`, `revision` | Preview for bulk archive confirmation |
+| 8 | `GET /v2/tasks/inactive-preview` | `as_of`, `inactive_days`, `count`, `candidate_task_ids`, `revision` | Complete preview for fixed or configurable bulk archive |
 
 Successful reads return HTTP 200. Missing task or worklog IDs return HTTP 404 with the existing error envelope. Health has no resource revision.
 
@@ -46,6 +46,8 @@ Worklogs include `id`, `task_id`, `start` and nullable `end`. Use one collection
 Retain 50-entry pages, newest-first ordering and the existing `after_start`, `after_id` and `after_revision` continuation parameters. The integer history revision remains distinct from the opaque server revision. Continuation metadata identifies the original collection scope. Filtered continuations submit `after_task_id` matching their `task_id`; unfiltered continuations omit it. Reject incomplete or mismatched scope. Continuations stay bound to their original task filter or unfiltered collection. Invalidated cursors return HTTP 409. History can contain a running entry, but carries no additional global tracking or task aggregates. `/v2/tracking` remains authoritative for the active worklog.
 
 Name the existing report `/v2/reports/task-totals` to leave room for additional report types. There is no generic `/v2/reports` alias. Require RFC 3339 `start`, `end` and `now` parameters and echo their normalized values. Preserve half-open interval clipping, archived-task inclusion and integer microsecond durations. Running worklogs contribute through `now`; completed worklogs use their stored end even when it is later than `now`. Rows contain only `task_id` and positive `duration_us`. `total_us` is their sum. An absent row means zero time in the interval, not a missing task. Reports contain no task metadata, active worklog or history entries.
+
+Use one inactive-task preview for both existing archive workflows. Require `as_of`; optional positive `inactive_days` defaults to 14. Echo the chosen period and return all candidate task IDs, their count and the preview revision. Resolve names and other task metadata through task reads. Confirm with the preview's original `as_of`, `inactive_days` and revision, then recompute eligibility under the write lock. Keep expiry, active-task protection and checked cutoff arithmetic. `/v2/tasks/inactive-candidates` and `/v2/tasks/archive-inactive-candidates` do not exist as separate aliases.
 
 ### Guarded writes and original command receipts
 
@@ -58,7 +60,7 @@ Keep existing domain commands, client timestamps, expected values and UUID reque
 | 3 | `PUT /v2/tracking` | Start, switch or stop; return the affected worklog or tracking outcome |
 | 4 | `PATCH /v2/worklogs/{id}` | Correct or move using original expected values; return the committed worklog |
 | 5 | `DELETE /v2/worklogs/{id}` | Delete an exactly matched completed worklog; return the removed worklog |
-| 6 | `POST /v2/tasks/archive-inactive` | Confirm the preview; return the committed count |
+| 6 | `POST /v2/tasks/archive-inactive` | Confirm the fixed or configurable preview; return the committed count |
 
 Successful writes retain HTTP 200 and return `request_id`, `applied_revision`, `replayed` and the tagged domain `result`. Preserve switch, already-active and already-idle outcomes. Task outcomes use the same task representation as reads. A switch returns its stopped and started worklogs, not unrelated resources.
 
@@ -86,7 +88,7 @@ Retain `/v1` unchanged during migration. Both API versions use the same core, da
 
 Add no convenience endpoints initially. Consider a documented aggregate read only after request counts, response bytes, latency and concurrent-write behavior show a need. Any aggregate must identify its included resources and common revision.
 
-When accepted, this decision replaces remote HTTP expectations in ADRs [0004](0004-paginated-worklog-history.md), [0005](0005-worklog-correction.md) and [0008](0008-move-worklogs-between-tasks.md) for implicit tracking refresh, bundled recovery metadata and source/destination activity aggregates. Their domain rules, coherent repository reads and local-mode behavior remain. ADR [0013](0013-remove-remote-archive-candidate-fingerprints.md) still governs archive preview guards. Existing accepted statuses remain unchanged while this record is proposed.
+When accepted, this decision replaces remote HTTP expectations in ADRs [0004](0004-paginated-worklog-history.md), [0005](0005-worklog-correction.md) and [0008](0008-move-worklogs-between-tasks.md) for implicit tracking refresh, bundled recovery metadata and source/destination activity aggregates. Their domain rules, coherent repository reads and local-mode behavior remain. ADR [0013](0013-remove-remote-archive-candidate-fingerprints.md) still governs archive preview guards. ADR [0016](0016-configurable-inactive-task-archiving.md) retains its configurable-period domain and native-dialog decisions; this proposal replaces its separate HTTP routes and embedded candidate task metadata only when accepted. Existing accepted statuses remain unchanged while this record is proposed.
 
 ## Consequences
 
@@ -94,8 +96,8 @@ Clients can request tasks, tracking, history and calculations independently. Rep
 
 Clients become responsible for cache freshness and coherent combinations. Some views require more requests. Global revision conflicts remain conservative, and frequent writes can delay matching revisions. No performance improvement is assumed.
 
-Some repeated data remains intentional. A task appears in collection, individual and mutation responses. Tracking and history can both return the same running worklog. `latest_work_start` summarizes history, `total_us` summarizes report rows, and inactive previews include sample names. These do not require full-catalog attachments to unrelated responses.
+Some repeated data remains intentional. A task appears in collection, individual and mutation responses. Tracking and history can both return the same running worklog. `latest_work_start` summarizes history, `total_us` summarizes report rows, and inactive preview counts summarize their candidate IDs. These do not require full-catalog attachments to unrelated responses.
 
 This decision adds no resource-version database migration, task pagination, server-side search, push subscription or convenience endpoint. The [migration plan](../api-route-migration-plan.md) contains implementation order, examples and acceptance checks.
 
-Source basis: production code and client documentation at revision `74f465d`, inspected on 8 October 2026. The [communication diagrams](../client-server-communication.html) describe the implemented `/v1` API.
+Source basis: production code and client documentation on `main` at revision `360430c`, inspected on 8 October 2026. The [communication diagrams](../client-server-communication.html) retain their earlier `/v1` source snapshot at `3806193`; they predate configurable bulk archiving.
