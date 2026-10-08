@@ -195,37 +195,38 @@ impl From<ApplicationError> for ApiError {
         {
             return Self::internal();
         }
-        let (status, code) = match failure.category() {
-            ApplicationFailureCategory::WorklogNotFound
-            | ApplicationFailureCategory::TaskNotFound => {
-                (StatusCode::NOT_FOUND, ErrorCode::NotFound)
-            }
-            ApplicationFailureCategory::WorklogChanged => {
-                (StatusCode::CONFLICT, ErrorCode::WorklogChanged)
-            }
-            ApplicationFailureCategory::WorklogHistoryChanged => {
-                (StatusCode::CONFLICT, ErrorCode::WorklogHistoryChanged)
-            }
-            ApplicationFailureCategory::WorklogOverlap => {
-                (StatusCode::CONFLICT, ErrorCode::WorklogOverlap)
-            }
-            ApplicationFailureCategory::ActiveWorklog => {
-                (StatusCode::CONFLICT, ErrorCode::ActiveWorklog)
-            }
-            ApplicationFailureCategory::ActiveTask => (StatusCode::CONFLICT, ErrorCode::ActiveTask),
-            ApplicationFailureCategory::InactiveTaskCandidatesChanged => (
-                StatusCode::CONFLICT,
-                ErrorCode::InactiveTaskCandidatesChanged,
-            ),
-            ApplicationFailureCategory::General => {
-                (StatusCode::BAD_REQUEST, ErrorCode::InvalidRequest)
-            }
-        };
+        let (status, code) = failure_status(failure.category());
         Self {
             status,
             code,
             message: failure.message().to_owned(),
         }
+    }
+}
+
+fn failure_status(category: ApplicationFailureCategory) -> (StatusCode, ErrorCode) {
+    match category {
+        ApplicationFailureCategory::WorklogNotFound | ApplicationFailureCategory::TaskNotFound => {
+            (StatusCode::NOT_FOUND, ErrorCode::NotFound)
+        }
+        ApplicationFailureCategory::WorklogChanged => {
+            (StatusCode::CONFLICT, ErrorCode::WorklogChanged)
+        }
+        ApplicationFailureCategory::WorklogHistoryChanged => {
+            (StatusCode::CONFLICT, ErrorCode::WorklogHistoryChanged)
+        }
+        ApplicationFailureCategory::WorklogOverlap => {
+            (StatusCode::CONFLICT, ErrorCode::WorklogOverlap)
+        }
+        ApplicationFailureCategory::ActiveWorklog => {
+            (StatusCode::CONFLICT, ErrorCode::ActiveWorklog)
+        }
+        ApplicationFailureCategory::ActiveTask => (StatusCode::CONFLICT, ErrorCode::ActiveTask),
+        ApplicationFailureCategory::InactiveTaskCandidatesChanged => (
+            StatusCode::CONFLICT,
+            ErrorCode::InactiveTaskCandidatesChanged,
+        ),
+        ApplicationFailureCategory::General => (StatusCode::BAD_REQUEST, ErrorCode::InvalidRequest),
     }
 }
 
@@ -981,6 +982,21 @@ mod security_tests {
     }
 
     #[test]
+    fn run_reports_a_listener_bind_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let error = run(
+            listener.local_addr().unwrap(),
+            directory.path().join("tracker.db"),
+        )
+        .expect_err("an occupied port must fail startup");
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::AddrInUse
+        );
+    }
+
+    #[test]
     fn run_fails_closed_for_a_tailscale_range_address_not_assigned_to_this_host() {
         let directory = tempfile::tempdir().unwrap();
         let bind: SocketAddr = "100.100.100.100:0".parse().unwrap();
@@ -1119,6 +1135,67 @@ mod security_tests {
         assert_eq!(core.completion_order.len(), IDEMPOTENCY_CACHE_SIZE);
         assert!(core.completed.contains_key("cached-0"));
         assert!(core.completed.contains_key(&boundary_request_id));
+    }
+
+    #[test]
+    fn operation_errors_preserve_the_http_status_and_protocol_code() {
+        use tracker_application::{ApplicationError, ApplicationFailureCategory as Category};
+        use tracker_protocol::ErrorCode;
+
+        let cases = [
+            (
+                Category::General,
+                StatusCode::BAD_REQUEST,
+                ErrorCode::InvalidRequest,
+            ),
+            (
+                Category::TaskNotFound,
+                StatusCode::NOT_FOUND,
+                ErrorCode::NotFound,
+            ),
+            (
+                Category::WorklogNotFound,
+                StatusCode::NOT_FOUND,
+                ErrorCode::NotFound,
+            ),
+            (
+                Category::WorklogChanged,
+                StatusCode::CONFLICT,
+                ErrorCode::WorklogChanged,
+            ),
+            (
+                Category::WorklogHistoryChanged,
+                StatusCode::CONFLICT,
+                ErrorCode::WorklogHistoryChanged,
+            ),
+            (
+                Category::WorklogOverlap,
+                StatusCode::CONFLICT,
+                ErrorCode::WorklogOverlap,
+            ),
+            (
+                Category::ActiveWorklog,
+                StatusCode::CONFLICT,
+                ErrorCode::ActiveWorklog,
+            ),
+            (
+                Category::ActiveTask,
+                StatusCode::CONFLICT,
+                ErrorCode::ActiveTask,
+            ),
+            (
+                Category::InactiveTaskCandidatesChanged,
+                StatusCode::CONFLICT,
+                ErrorCode::InactiveTaskCandidatesChanged,
+            ),
+        ];
+        for (category, status, code) in cases {
+            let error = ApplicationError::semantic_failure(category, "Operation rejected");
+            let response = super::ApiError::from(error);
+            assert_eq!(response.status, status, "{category:?}");
+            assert_eq!(response.code, code, "{category:?}");
+            assert_eq!(response.message, "Operation rejected");
+        }
     }
 
     #[test]
