@@ -59,22 +59,26 @@ fn report_rows_on(
     let mut rows = statement.query(rusqlite::params![start_us, end_us, now_us])?;
     let mut result = Vec::new();
     while let Some(row) = rows.next().map_err(report_query_error)? {
-        let duration_us = match row.get_ref("duration_us")? {
-            ValueRef::Integer(value) => value,
-            _ => return Err(StorageError::ReportDurationOverflow),
-        };
-        result.push(ReportRow {
-            task: task_from_stored(
-                row.get("id")?,
-                row.get("name")?,
-                row.get("archived")?,
-                row.get("created_at_us")?,
-                row.get("updated_at_us")?,
-            )?,
-            duration: TimeDelta::microseconds(duration_us),
-        });
+        result.push(report_row(row)?);
     }
     Ok(result)
+}
+
+fn report_row(row: &rusqlite::Row<'_>) -> Result<ReportRow, StorageError> {
+    let duration_us = match row.get_ref("duration_us")? {
+        ValueRef::Integer(value) => value,
+        _ => return Err(StorageError::ReportDurationOverflow),
+    };
+    Ok(ReportRow {
+        task: task_from_stored(
+            row.get("id")?,
+            row.get("name")?,
+            row.get("archived")?,
+            row.get("created_at_us")?,
+            row.get("updated_at_us")?,
+        )?,
+        duration: TimeDelta::microseconds(duration_us),
+    })
 }
 
 fn report_query_error(error: rusqlite::Error) -> StorageError {
