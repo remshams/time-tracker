@@ -56,39 +56,13 @@ impl Transport {
             .map(serde_json::to_vec)
             .transpose()
             .map_err(|error| RemoteError::Protocol(format!("invalid request body: {error}")))?;
-        let send_once = || {
-            let mut request = self.client.request(method.clone(), url.clone());
-            if let Some(body) = &encoded {
-                request = request
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(body.clone());
-            }
-            request.send()
-        };
         let attempts = if retry_write { 2 } else { 1 };
-        'attempt: for attempt in 0..attempts {
-            let mut response = match send_once().await {
+        for attempt in 0..attempts {
+            let (status, bytes) = match self.send_once(&method, &url, encoded.as_deref()).await {
                 Ok(response) => response,
-                Err(_) if attempt + 1 < attempts => continue,
-                Err(error) => return Err(RemoteError::Unavailable(error.to_string())),
+                Err(RemoteError::Unavailable(_)) if attempt + 1 < attempts => continue,
+                Err(error) => return Err(error),
             };
-            let status = response.status();
-            let mut bytes = Vec::new();
-            loop {
-                match response.chunk().await {
-                    Ok(Some(chunk)) => {
-                        if chunk.len() as u64 > MAX_RESPONSE_BYTES - bytes.len() as u64 {
-                            return Err(RemoteError::Protocol(
-                                "server response is too large".into(),
-                            ));
-                        }
-                        bytes.extend_from_slice(&chunk);
-                    }
-                    Ok(None) => break,
-                    Err(_) if attempt + 1 < attempts => continue 'attempt,
-                    Err(error) => return Err(RemoteError::Unavailable(error.to_string())),
-                }
-            }
             if !status.is_success() {
                 return Err(RemoteError::Http {
                     status,
@@ -100,6 +74,37 @@ impl Transport {
             });
         }
         unreachable!("the loop returns after its last attempt")
+    }
+
+    async fn send_once(
+        &self,
+        method: &Method,
+        url: &Url,
+        body: Option<&[u8]>,
+    ) -> Result<(StatusCode, Vec<u8>), RemoteError> {
+        let mut request = self.client.request(method.clone(), url.clone());
+        if let Some(body) = body {
+            request = request
+                .header(CONTENT_TYPE, "application/json")
+                .body(body.to_vec());
+        }
+        let mut response = request
+            .send()
+            .await
+            .map_err(|error| RemoteError::Unavailable(error.to_string()))?;
+        let status = response.status();
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| RemoteError::Unavailable(error.to_string()))?
+        {
+            if chunk.len() as u64 > MAX_RESPONSE_BYTES - bytes.len() as u64 {
+                return Err(RemoteError::Protocol("server response is too large".into()));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok((status, bytes))
     }
 }
 
