@@ -51,6 +51,7 @@ final class GlobalMenuShortcutRegistration {
     private var menuEventMonitor: Any?
     private var menuRunLoopObserver: CFRunLoopObserver?
     private var dismissTrackedMenu: (@MainActor () -> Void)?
+    private var isConsumingTrackedShortcut = false
 
     init(action: @escaping @MainActor () -> Void) {
         self.action = action
@@ -60,7 +61,7 @@ final class GlobalMenuShortcutRegistration {
         if let menuEventMonitor { NSEvent.removeMonitor(menuEventMonitor) }
         if let menuRunLoopObserver {
             CFRunLoopRemoveObserver(CFRunLoopGetMain(), menuRunLoopObserver,
-                                    RunLoop.Mode.eventTracking.rawValue as CFString)
+                                    CFRunLoopMode(rawValue: RunLoop.Mode.eventTracking.rawValue as CFString))
         }
         if let hotKey { UnregisterEventHotKey(hotKey) }
         if let handler { RemoveEventHandler(handler) }
@@ -140,7 +141,8 @@ final class GlobalMenuShortcutRegistration {
         }
         if let observer {
             menuRunLoopObserver = observer
-            CFRunLoopAddObserver(CFRunLoopGetMain(), observer, RunLoop.Mode.eventTracking.rawValue as CFString)
+            CFRunLoopAddObserver(CFRunLoopGetMain(), observer,
+                                 CFRunLoopMode(rawValue: RunLoop.Mode.eventTracking.rawValue as CFString))
         }
     }
 
@@ -157,7 +159,7 @@ final class GlobalMenuShortcutRegistration {
         menuEventMonitor = nil
         if let menuRunLoopObserver {
             CFRunLoopRemoveObserver(CFRunLoopGetMain(), menuRunLoopObserver,
-                                    RunLoop.Mode.eventTracking.rawValue as CFString)
+                                    CFRunLoopMode(rawValue: RunLoop.Mode.eventTracking.rawValue as CFString))
         }
         menuRunLoopObserver = nil
         dismissTrackedMenu = nil
@@ -176,6 +178,9 @@ final class GlobalMenuShortcutRegistration {
     }
 
     private func consumeTrackedShortcut() {
+        guard !isConsumingTrackedShortcut else { return }
+        isConsumingTrackedShortcut = true
+        defer { isConsumingTrackedShortcut = false }
         let application = NSApplication.shared
         // Leave other keys and pointer events in their original queue order for the menu.
         guard let head = application.nextEvent(matching: .any, until: .distantPast,
