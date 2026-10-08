@@ -8,7 +8,7 @@
 </style></head>
 <body>
 <header><div class="eyebrow">Time Tracker / Communication</div><h1>When clients call the server.<br>What each request sends.</h1><p>Eight sequence diagrams trace startup, refreshes, tracking, history, edits and recovery. The tables list every implemented HTTP endpoint and the data it exchanges.</p><div class="meta"><span>Source snapshot · 8 October 2026</span><span>Source revision · 3806193</span><span>Protocol version · 2</span><a href="architecture.html">Architecture overview</a><button id="print" class="print">Print / save PDF</button></div></header>
-<nav class="nav" aria-label="Communication diagrams"><a href="#connect">01 Connect</a><a href="#poll">02 Refresh</a><a href="#tracking">03 Tracking</a><a href="#reads">04 History / reports</a><a href="#edit">05 Worklog edits</a><a href="#conflict">06 Stale writes</a><a href="#retry">07 Lost responses</a><a href="#preview">08 Bulk archive</a><a href="#timing">Timing</a><a href="#payloads">Payloads</a><a href="#wire">JSON examples</a><a href="#summary">Summary</a></nav>
+<nav class="nav" aria-label="Communication diagrams"><a href="#connect">01 Connect</a><a href="#poll">02 Refresh</a><a href="#tracking">03 Tracking</a><a href="#reads">04 History / reports</a><a href="#edit">05 Worklog edits</a><a href="#conflict">06 Stale writes</a><a href="#retry">07 Lost responses</a><a href="#preview">08 Bulk archive</a><a href="#timing">Timing</a><a href="#payloads">Payloads</a><a href="#read-examples">Response examples</a><a href="#wire">Write examples</a><a href="#summary">Summary</a></nav>
 <main>
 <section class="card table-card"><h2>Reading the diagrams</h2><div class="prose"><p>Read downward to follow time. Solid blue arrows are requests or calls. Dashed green arrows are responses. Gray boxes describe local work or scheduling. HTTP responses arrive only after a client request. The server has no WebSocket, event stream or subscription endpoint.</p><p>The TUI and CLI call <code>RemoteApplication</code> directly. Swift calls <code>TrackerWorker</code>, then the Rust C ABI bridge and its remote backend. The Swift/Rust boundary exchanges bridge JSON. The HTTP boundary uses the separate DTOs from <code>tracker-protocol</code>. In local mode, each client calls Rust and SQLite without these HTTP requests.</p><p class="callout">A snapshot contains all task records, each task's latest work start, the active worklog and a revision. It does not contain completed worklog history or report totals. Search, sorting and destination filtering use cached tasks. Elapsed time advances locally between reads.</p><p>This page describes source at <code>38061938bdad3ff1e18dbffccc612a8938568c9c</code>. Timing comes from source constants and scheduling rules, not a captured network trace. The linked architecture page and its quality measurements retain their own snapshot at <code>a0295f8</code> from 6 October 2026. This page adds no quality measurements.</p></div></section>
 <section class="card" id="connect"><div class="card-head"><div><span class="number">01 / 08</span><h2>Connect and load the first snapshot</h2><p class="subtitle">Shared remote startup. No write runs during this exchange.</p></div><div class="tools" aria-label="Diagram zoom"><button data-action="out" aria-label="Zoom out Connect and load the first snapshot">−</button><span class="zoom-label" aria-live="polite">100%</span><button data-action="in" aria-label="Zoom in Connect and load the first snapshot">+</button><button data-action="reset" aria-label="Fit Connect and load the first snapshot">Fit</button></div></div><div class="diagram-viewport"><div class="diagram sequence">
@@ -335,6 +335,123 @@
 <tr><td>11</td><td><code>GET /v1/reports</code></td><td>Report range / daily totals</td><td><code>start</code>, <code>end</code>, <code>now</code></td><td><code>rows</code> with task and <code>duration_us</code>, <code>total_us</code>, full <code>snapshot</code></td></tr>
 <tr><td>12</td><td><code>GET /v1/tasks/inactive-preview</code></td><td>Preview bulk archive</td><td><code>as_of</code></td><td><code>as_of</code>, <code>count</code>, <code>sample_names</code>, <code>revision</code></td></tr>
 <tr><td>13</td><td><code>POST /v1/tasks/archive-inactive</code></td><td>Confirm bulk archive</td><td><code>as_of</code>, preview <code>expected_revision</code>, <code>request_id</code></td><td><code>MutationDto</code> containing <code>result</code> and full <code>snapshot</code>; result kind <code>archived_inactive</code></td></tr></tbody></table></div></section><div class="prose"><p><a href="../crates/tracker-protocol/src/lib.rs">HTTP JSON DTO definitions</a> · <a href="../crates/tracker-server/src/lib.rs">Server routes, guards and idempotency cache</a> · <a href="../crates/tracker-remote/src/application.rs">RemoteApplication requests, cache and error recovery</a></p><p>A task has <code>id</code>, <code>name</code>, <code>archived</code>, <code>created_at</code> and <code>updated_at</code>. A task item wraps it as <code>{task, latest_work_start}</code>. A worklog has <code>id</code>, <code>task_id</code>, <code>start</code> and nullable <code>end</code>. Active worklogs have <code>end: null</code>. IDs and request IDs are UUID strings. Timestamps use RFC 3339; the remote adapter canonicalizes write times to microseconds. Durations use integer microseconds.</p><p>The server limits request bodies to 16 KiB; the remote transport limits responses to 16 MiB. Writes set <code>Content-Type: application/json</code>. The transport accepts root HTTP or HTTPS endpoints, disables redirects and configured proxies. The supplied server binds a loopback or assigned Tailscale address and validates Host. It serves plain HTTP; network protection comes from the deployment. There is no bearer-token field in this protocol.</p><p><a href="../crates/tracker-remote/src/transport.rs">Transport timeouts and retry rules</a></p></div>
+
+<section class="card table-card" id="read-examples"><h2>Compare task, worklog and report responses</h2><p>All three examples describe the same server state at 11:00 UTC on 8 October 2026. These are illustrative HTTP 200 JSON bodies with every field shown.</p><div class="prose"><p>The task list contains <strong>Investigate communication</strong> and <strong>Prepare release</strong>. The first task has the three worklogs below. The second has no worklogs. The report covers the UTC day from <code>2026-10-08T00:00:00Z</code> to <code>2026-10-09T00:00:00Z</code>, with <code>now=2026-10-08T11:00:00Z</code>.</p></div><div class="table-wrap">
+<table><thead><tr><th>#</th><th>Investigate communication worklog</th><th>Stored interval</th><th>Contribution to today's report</th></tr></thead><tbody>
+<tr><td>1</td><td>Overnight, completed</td><td>7 October 23:30 to 8 October 00:30 UTC</td><td>30 minutes. The report counts only the portion after midnight.</td></tr>
+<tr><td>2</td><td>Morning, completed</td><td>8 October 09:00 to 10:00 UTC</td><td>60 minutes.</td></tr>
+<tr><td>3</td><td>Running</td><td>8 October 10:30, with <code>end: null</code></td><td>30 minutes at the supplied <code>now</code> of 11:00 UTC.</td></tr>
+<tr><td>4</td><td>Report total</td><td>Three individual worklogs</td><td>120 minutes = 2 hours = <code>7,200,000,000</code> microseconds.</td></tr>
+</tbody></table></div><div class="prose"><h3>1. Tasks and active tracking</h3><p>Request <code>GET /v1/snapshot</code>. This is the task-list read endpoint. There is no <code>GET /v1/tasks</code> route. The response tells the sidebar which tasks exist and which worklog is running. It includes both tasks, including the task with no recorded time. It contains no daily totals or completed worklog history.</p>
+<pre id="example-snapshot"><code class="language-json">{
+  &quot;task_items&quot;: [
+    {
+      &quot;task&quot;: {
+        &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000102&quot;,
+        &quot;name&quot;: &quot;Prepare release&quot;,
+        &quot;archived&quot;: false,
+        &quot;created_at&quot;: &quot;2026-10-08T08:00:00Z&quot;,
+        &quot;updated_at&quot;: &quot;2026-10-08T08:00:00Z&quot;
+      },
+      &quot;latest_work_start&quot;: null
+    },
+    {
+      &quot;task&quot;: {
+        &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000101&quot;,
+        &quot;name&quot;: &quot;Investigate communication&quot;,
+        &quot;archived&quot;: false,
+        &quot;created_at&quot;: &quot;2026-10-07T09:00:00Z&quot;,
+        &quot;updated_at&quot;: &quot;2026-10-07T09:00:00Z&quot;
+      },
+      &quot;latest_work_start&quot;: &quot;2026-10-08T10:30:00Z&quot;
+    }
+  ],
+  &quot;active_worklog&quot;: {
+    &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000105&quot;,
+    &quot;task_id&quot;: &quot;019a6650-0000-7000-8000-000000000101&quot;,
+    &quot;start&quot;: &quot;2026-10-08T10:30:00Z&quot;,
+    &quot;end&quot;: null
+  },
+  &quot;revision&quot;: &quot;019a6650-0000-7000-8000-000000000106:7&quot;
+}</code></pre><h3>2. Individual worklogs for one task</h3><p>Request <code>GET /v1/tasks/019a6650-0000-7000-8000-000000000101/worklogs</code>. The response contains the stored intervals, newest first. It preserves the overnight worklog's original start, before today's report range. The history UI uses these entries to display or edit worklogs. The active worklog also appears in the tracking metadata. <code>next_cursor: null</code> means there is no older page in this example.</p>
+<pre id="example-worklogs"><code class="language-json">{
+  &quot;worklogs&quot;: [
+    {
+      &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000105&quot;,
+      &quot;task_id&quot;: &quot;019a6650-0000-7000-8000-000000000101&quot;,
+      &quot;start&quot;: &quot;2026-10-08T10:30:00Z&quot;,
+      &quot;end&quot;: null
+    },
+    {
+      &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000104&quot;,
+      &quot;task_id&quot;: &quot;019a6650-0000-7000-8000-000000000101&quot;,
+      &quot;start&quot;: &quot;2026-10-08T09:00:00Z&quot;,
+      &quot;end&quot;: &quot;2026-10-08T10:00:00Z&quot;
+    },
+    {
+      &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000103&quot;,
+      &quot;task_id&quot;: &quot;019a6650-0000-7000-8000-000000000101&quot;,
+      &quot;start&quot;: &quot;2026-10-07T23:30:00Z&quot;,
+      &quot;end&quot;: &quot;2026-10-08T00:30:00Z&quot;
+    }
+  ],
+  &quot;requested_task_latest_work_start&quot;: &quot;2026-10-08T10:30:00Z&quot;,
+  &quot;active_worklog&quot;: {
+    &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000105&quot;,
+    &quot;task_id&quot;: &quot;019a6650-0000-7000-8000-000000000101&quot;,
+    &quot;start&quot;: &quot;2026-10-08T10:30:00Z&quot;,
+    &quot;end&quot;: null
+  },
+  &quot;active_task_latest_work_start&quot;: &quot;2026-10-08T10:30:00Z&quot;,
+  &quot;next_cursor&quot;: null,
+  &quot;revision&quot;: &quot;019a6650-0000-7000-8000-000000000106:7&quot;
+}</code></pre><h3>3. Calculated report totals</h3><p>Request <code>GET /v1/reports?start=2026-10-08T00:00:00Z&amp;end=2026-10-09T00:00:00Z&amp;now=2026-10-08T11:00:00Z</code>. The response combines those three intervals into one task total. The macOS sidebar shows this task's 2 hours logged today. The menu's Today section and status-bar total use the same report. Report rows include only tasks with positive time in this range, so Prepare release has no row. The included snapshot still contains that task, allowing the sidebar to retain it and display a zero total.</p>
+<pre id="example-report"><code class="language-json">{
+  &quot;rows&quot;: [
+    {
+      &quot;task&quot;: {
+        &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000101&quot;,
+        &quot;name&quot;: &quot;Investigate communication&quot;,
+        &quot;archived&quot;: false,
+        &quot;created_at&quot;: &quot;2026-10-07T09:00:00Z&quot;,
+        &quot;updated_at&quot;: &quot;2026-10-07T09:00:00Z&quot;
+      },
+      &quot;duration_us&quot;: 7200000000
+    }
+  ],
+  &quot;total_us&quot;: 7200000000,
+  &quot;snapshot&quot;: {
+    &quot;task_items&quot;: [
+      {
+        &quot;task&quot;: {
+          &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000102&quot;,
+          &quot;name&quot;: &quot;Prepare release&quot;,
+          &quot;archived&quot;: false,
+          &quot;created_at&quot;: &quot;2026-10-08T08:00:00Z&quot;,
+          &quot;updated_at&quot;: &quot;2026-10-08T08:00:00Z&quot;
+        },
+        &quot;latest_work_start&quot;: null
+      },
+      {
+        &quot;task&quot;: {
+          &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000101&quot;,
+          &quot;name&quot;: &quot;Investigate communication&quot;,
+          &quot;archived&quot;: false,
+          &quot;created_at&quot;: &quot;2026-10-07T09:00:00Z&quot;,
+          &quot;updated_at&quot;: &quot;2026-10-07T09:00:00Z&quot;
+        },
+        &quot;latest_work_start&quot;: &quot;2026-10-08T10:30:00Z&quot;
+      }
+    ],
+    &quot;active_worklog&quot;: {
+      &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000105&quot;,
+      &quot;task_id&quot;: &quot;019a6650-0000-7000-8000-000000000101&quot;,
+      &quot;start&quot;: &quot;2026-10-08T10:30:00Z&quot;,
+      &quot;end&quot;: null
+    },
+    &quot;revision&quot;: &quot;019a6650-0000-7000-8000-000000000106:7&quot;
+  }
+}</code></pre><p>The report's task record repeats metadata from the snapshot. Its calculated duration is new data. Its snapshot matches the standalone snapshot above and lets one report refresh task names, ordering information and active tracking alongside the totals. Individual completed worklogs appear only in the worklog response.</p><p><a href="../crates/tracker-protocol/src/lib.rs">Response DTO definitions</a> · <a href="../crates/tracker-storage/src/sqlite/reports.rs">Report aggregation and range clipping</a> · <a href="../apps/swiftui/README.md">macOS sidebar and daily totals</a></p></div></section>
 <section class="card table-card" id="wire"><h2>Concrete JSON examples</h2><p>Illustrative values in the actual wire shape. Keys shown in the write guard are top-level JSON fields.</p><div class="prose"><h3>PUT /v1/tracking request</h3><pre>{
   &quot;task_id&quot;: &quot;019a6650-0000-7000-8000-000000000001&quot;,
   &quot;worklog_id&quot;: &quot;019a6650-0000-7000-8000-000000000002&quot;,
