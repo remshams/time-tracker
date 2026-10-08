@@ -742,6 +742,83 @@ mod tests {
     }
 
     #[test]
+    fn row_commands_move_selection_one_step_and_stop_at_both_ends() {
+        let source = task(1, "source");
+        let mut service = TestService::with_tasks(vec![source.clone()]);
+        service.authoritative_worklogs = (0..3).map(|start| worklog(source.id(), start)).collect();
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        app.handle(Command::TaskList(TaskListCommand::ShowAllWorklogs));
+        app.handle(Command::AllWorklogs(C::FocusRows));
+        let rows = app.shell().all_worklogs().unwrap().worklogs().to_vec();
+
+        for (command, expected) in [
+            (C::MoveUp, 0),
+            (C::MoveDown, 1),
+            (C::MoveDown, 2),
+            (C::MoveDown, 2),
+            (C::MoveUp, 1),
+            (C::MoveUp, 0),
+            (C::MoveUp, 0),
+        ] {
+            app.handle(Command::AllWorklogs(command));
+            let state = app.shell().all_worklogs().unwrap();
+            assert_eq!(state.selected_id(), Some(rows[expected].id()));
+            assert_eq!(state.selected_index(), Some(expected));
+            assert_eq!(state.worklogs(), rows);
+            assert_eq!(state.focus, AllWorklogsFocus::Rows);
+        }
+    }
+
+    #[test]
+    fn move_destination_commands_change_selection_without_changing_the_worklog_or_query() {
+        let source = task(1, "source");
+        let alpha = task(2, "Destination alpha");
+        let beta = task(3, "Destination beta");
+        let entry = worklog(source.id(), 10);
+        let mut service = TestService::with_tasks(vec![source, alpha, beta]);
+        service.authoritative_worklogs = vec![entry.clone()];
+        let spy = service.spy();
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        app.handle(Command::TaskList(TaskListCommand::ShowAllWorklogs));
+        app.handle(Command::AllWorklogs(C::FocusRows));
+        app.handle(Command::AllWorklogs(C::OpenMove));
+        app.handle(Command::AllWorklogs(C::InsertMoveQuery('d')));
+        app.handle(Command::AllWorklogs(C::ToggleMoveFocus));
+        let destinations = app
+            .shell()
+            .all_worklogs()
+            .unwrap()
+            .move_draft
+            .as_ref()
+            .unwrap()
+            .results()
+            .map(|candidate| candidate.id)
+            .collect::<Vec<_>>();
+        assert_eq!(destinations.len(), 2);
+
+        for (command, expected) in [
+            (C::MoveDestinationUp, 0),
+            (C::MoveDestinationDown, 1),
+            (C::MoveDestinationDown, 1),
+            (C::MoveDestinationUp, 0),
+            (C::MoveDestinationUp, 0),
+        ] {
+            app.handle(Command::AllWorklogs(command));
+            let state = app.shell().all_worklogs().unwrap();
+            let draft = state.move_draft.as_ref().unwrap();
+            assert_eq!(draft.selected_task_id(), Some(destinations[expected]));
+            assert_eq!(draft.query(), "d");
+            assert_eq!(
+                draft.focus(),
+                crate::screens::worklog_history::MoveFocus::Results
+            );
+            assert_eq!(draft.worklog(), &entry);
+            assert_eq!(state.selected_id(), Some(entry.id()));
+            assert!(spy.move_calls().is_empty());
+        }
+    }
+
+    #[test]
     fn older_pages_and_vim_navigation_keep_stable_selection() {
         let source = task(1, "source");
         let mut service = TestService::with_tasks(vec![source.clone()]);
