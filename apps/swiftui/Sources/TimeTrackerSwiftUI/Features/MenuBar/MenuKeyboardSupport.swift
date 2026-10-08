@@ -48,12 +48,20 @@ final class GlobalMenuShortcutRegistration {
     private var shortcut: MenuShortcut?
     private var registeredKeyCode: UInt32?
     private var identifier: UInt32 = 0
+    private var menuEventMonitor: Any?
+    private var menuRunLoopObserver: CFRunLoopObserver?
+    private var dismissTrackedMenu: (@MainActor () -> Void)?
 
     init(action: @escaping @MainActor () -> Void) {
         self.action = action
     }
 
     deinit {
+        if let menuEventMonitor { NSEvent.removeMonitor(menuEventMonitor) }
+        if let menuRunLoopObserver {
+            CFRunLoopRemoveObserver(CFRunLoopGetMain(), menuRunLoopObserver,
+                                    RunLoop.Mode.eventTracking.rawValue as CFString)
+        }
         if let hotKey { UnregisterEventHotKey(hotKey) }
         if let handler { RemoveEventHandler(handler) }
     }
@@ -96,15 +104,86 @@ final class GlobalMenuShortcutRegistration {
         registeredKeyCode = keyCode
         identifier = nextIdentifier
         if let previous { UnregisterEventHotKey(previous) }
+        if dismissTrackedMenu != nil {
+            UnregisterEventHotKey(replacement)
+            hotKey = nil
+        }
     }
 
     func unregister() {
+        stopMenuTracking()
         if let hotKey { UnregisterEventHotKey(hotKey) }
         hotKey = nil
         shortcut = nil
         registeredKeyCode = nil
         if let handler { RemoveEventHandler(handler) }
         handler = nil
+    }
+
+    func beginMenuTracking(dismiss: @escaping @MainActor () -> Void) {
+        guard dismissTrackedMenu == nil, shortcut != nil, registeredKeyCode != nil else { return }
+        // Menu tracking consumes keys before AppKit dispatch and suspends Carbon hotkey delivery.
+        if let hotKey { UnregisterEventHotKey(hotKey) }
+        hotKey = nil
+        dismissTrackedMenu = dismiss
+        menuEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, self.matchesTrackedShortcut(event) else { return event }
+                self.dismissTrackedMenu?()
+                return nil
+            }
+        }
+        let observer = CFRunLoopObserverCreateWithHandler(
+            nil, CFRunLoopActivity.beforeSources.rawValue, true, 0
+        ) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.consumeTrackedShortcut() }
+        }
+        if let observer {
+            menuRunLoopObserver = observer
+            CFRunLoopAddObserver(CFRunLoopGetMain(), observer, RunLoop.Mode.eventTracking.rawValue as CFString)
+        }
+    }
+
+    func endMenuTracking() throws -> Bool {
+        let wasTracking = dismissTrackedMenu != nil
+        stopMenuTracking()
+        guard wasTracking, let shortcut else { return false }
+        try register(shortcut)
+        return true
+    }
+
+    private func stopMenuTracking() {
+        if let menuEventMonitor { NSEvent.removeMonitor(menuEventMonitor) }
+        menuEventMonitor = nil
+        if let menuRunLoopObserver {
+            CFRunLoopRemoveObserver(CFRunLoopGetMain(), menuRunLoopObserver,
+                                    RunLoop.Mode.eventTracking.rawValue as CFString)
+        }
+        menuRunLoopObserver = nil
+        dismissTrackedMenu = nil
+    }
+
+    private func matchesTrackedShortcut(_ event: NSEvent) -> Bool {
+        guard dismissTrackedMenu != nil, let shortcut, let registeredKeyCode,
+              event.type == .keyDown, !event.isARepeat,
+              UInt32(event.keyCode) == registeredKeyCode else { return false }
+        var modifiers: MenuShortcut.Modifiers = []
+        if event.modifierFlags.contains(.command) { modifiers.insert(.command) }
+        if event.modifierFlags.contains(.control) { modifiers.insert(.control) }
+        if event.modifierFlags.contains(.option) { modifiers.insert(.option) }
+        if event.modifierFlags.contains(.shift) { modifiers.insert(.shift) }
+        return modifiers == shortcut.modifiers
+    }
+
+    private func consumeTrackedShortcut() {
+        let application = NSApplication.shared
+        // Leave other keys and pointer events in their original queue order for the menu.
+        guard let head = application.nextEvent(matching: .any, until: .distantPast,
+                                               inMode: .eventTracking, dequeue: false),
+              matchesTrackedShortcut(head),
+              application.nextEvent(matching: .keyDown, until: .distantPast,
+                                    inMode: .eventTracking, dequeue: true) != nil else { return }
+        dismissTrackedMenu?()
     }
 
     private func installHandler() throws {

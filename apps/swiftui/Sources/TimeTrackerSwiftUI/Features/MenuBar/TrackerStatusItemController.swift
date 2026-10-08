@@ -110,10 +110,6 @@ final class TrackerStatusItemController: NSObject {
         }
     }
 
-    @objc private func dismissNativeMenu() {
-        nativeMenu?.cancelTracking()
-    }
-
     private func toggleMenu() {
         if let nativeMenu { nativeMenu.cancelTracking() }
         else {
@@ -130,6 +126,7 @@ final class TrackerStatusItemController: NSObject {
         nativeMenu = menu
         updateMenuValues(store.menu.values)
         button.highlight(true)
+        shortcutRegistration?.beginMenuTracking { [weak menu] in menu?.cancelTracking() }
         defer {
             statusItem.menu = nil
             button.target = self
@@ -139,6 +136,11 @@ final class TrackerStatusItemController: NSObject {
             clearMenuValues()
             button.highlight(false)
             store.menuClosed()
+            do {
+                if try shortcutRegistration?.endMenuTracking() == true {
+                    store.reportMenuGlobalShortcutError(nil)
+                }
+            } catch { store.reportMenuGlobalShortcutError(error.localizedDescription) }
         }
         // AppKit positions status-item menus below the menu bar, including their outer padding.
         statusItem.menu = menu
@@ -175,19 +177,6 @@ final class TrackerStatusItemController: NSObject {
         let menu = NSMenu()
         menu.appearance = appearance
         menu.autoenablesItems = false
-        let shortcut = store.menuShortcuts.openMenu
-        let dismiss = NSMenuItem(title: "Close menu", action: #selector(dismissNativeMenu),
-                                 keyEquivalent: shortcut.key)
-        dismiss.target = self
-        dismiss.isHidden = true
-        dismiss.allowsKeyEquivalentWhenHidden = true
-        var modifiers: NSEvent.ModifierFlags = []
-        if shortcut.modifiers.contains(.command) { modifiers.insert(.command) }
-        if shortcut.modifiers.contains(.control) { modifiers.insert(.control) }
-        if shortcut.modifiers.contains(.option) { modifiers.insert(.option) }
-        if shortcut.modifiers.contains(.shift) { modifiers.insert(.shift) }
-        dismiss.keyEquivalentModifierMask = modifiers
-        menu.addItem(dismiss)
         let connection = store.connectionSettings
         let serverURL = connection.mode == .server
             ? connection.serverURL.trimmingCharacters(in: .whitespacesAndNewlines) : nil
