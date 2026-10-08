@@ -95,6 +95,7 @@ struct TaskDetails: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label {
                     Text(error).textSelection(.enabled)
+                        .accessibilityIdentifier("worklog-history.error")
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
@@ -105,7 +106,6 @@ struct TaskDetails: View {
                         .accessibilityIdentifier("worklog-history.retry")
                 }
             }
-            .accessibilityIdentifier("worklog-history.error")
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
