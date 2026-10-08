@@ -1,43 +1,19 @@
 import XCTest
 
-final class BulkTaskArchivingUITests: XCTestCase {
-    private var app: XCUIApplication!
-    private var fixture: ArchiveFixture!
+@MainActor
+final class BulkTaskArchivingUITests: TrackerUITestCase {
     private var seed: ArchiveSeed!
-    private let timeout: TimeInterval = 15
 
     override func setUpWithError() throws {
-        continueAfterFailure = false
-        fixture = try ArchiveFixture()
+        try super.setUpWithError()
         seed = try fixture.seed()
-        app = XCUIApplication()
-        app.launchArguments = ["-tt-ui-testing", "-ApplePersistenceIgnoreState", "YES",
-                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        app.launchEnvironment["TT_UI_TEST_DATABASE_PATH"] = fixture.database.path
-        app.launchEnvironment["TT_UI_TEST_DEFAULTS_SUITE"] = fixture.defaultsSuite
         launch()
+        waitUntil("Archive action becomes available") { self.app.buttons["bulk-archive.open"].isEnabled }
     }
 
     override func tearDownWithError() throws {
-        if let app, testRun?.hasSucceeded == false {
-            if app.windows.firstMatch.exists {
-                let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-                screenshot.name = "Bulk archive failure"
-                screenshot.lifetime = .keepAlways
-                add(screenshot)
-            }
-            let hierarchy = XCTAttachment(string: app.windows.firstMatch.exists
-                                          ? app.windows.firstMatch.debugDescription
-                                          : "No tracker window exists.")
-            hierarchy.name = "Tracker window accessibility hierarchy"
-            hierarchy.lifetime = .keepAlways
-            add(hierarchy)
-        }
-        app?.terminate()
-        try fixture?.cleanup()
-        app = nil
-        fixture = nil
         seed = nil
+        try super.tearDownWithError()
     }
 
     func testDefaultPreviewExcludesRecentAndRunningTasksAndCancelPreservesStorage() throws {
@@ -173,24 +149,6 @@ final class BulkTaskArchivingUITests: XCTestCase {
     private var days: XCUIElement { app.textFields["bulk-archive.days"] }
     private var confirm: XCUIElement { app.buttons["bulk-archive.confirm"] }
 
-    private func element(_ identifier: String) -> XCUIElement {
-        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
-    }
-
-    private func launch() {
-        app.launch()
-        app.activate()
-        let windowMenu = app.menuBars.menuBarItems["Window"]
-        XCTAssertTrue(windowMenu.waitForExistence(timeout: timeout))
-        windowMenu.click()
-        let showTracker = app.menuItems["Show Time Tracker"]
-        XCTAssertTrue(showTracker.waitForExistence(timeout: timeout))
-        showTracker.click()
-        let open = app.buttons["bulk-archive.open"]
-        XCTAssertTrue(open.waitForExistence(timeout: timeout), "The tracker window did not open.")
-        waitUntil("Archive action becomes available") { open.isEnabled }
-    }
-
     private func openDialog() {
         app.buttons["bulk-archive.open"].click()
         XCTAssertTrue(days.waitForExistence(timeout: timeout))
@@ -252,12 +210,6 @@ final class BulkTaskArchivingUITests: XCTestCase {
         waitUntil("Archive dialog closes") { !self.days.exists }
     }
 
-    private func showTab(_ name: String) {
-        let tab = element("task-sidebar.tab.\(name)")
-        XCTAssertTrue(tab.waitForExistence(timeout: timeout))
-        tab.click()
-    }
-
     private func assertSidebar(_ expected: [FixtureTask], excluded: [FixtureTask]) {
         waitUntil("Sidebar displays the selected task state") {
             expected.allSatisfy { self.element("task-sidebar.task.\($0.id)").exists }
@@ -280,8 +232,4 @@ final class BulkTaskArchivingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Stop tracking"].waitForExistence(timeout: timeout))
     }
 
-    private func waitUntil(_ description: String, file: StaticString = #filePath, line: UInt = #line, condition: @escaping () -> Bool) {
-        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: timeout), .completed, description, file: file, line: line)
-    }
 }
