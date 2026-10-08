@@ -7,6 +7,7 @@ struct TrackerWindow: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.colorScheme) private var colorScheme
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @ObservedObject private var presentation: TrackerTaskPresentationCoordinator
     let windowID: UUID
@@ -18,7 +19,22 @@ struct TrackerWindow: View {
         presentation = runtime.presentation
     }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-tt-ui-testing"),
+           let suite = ProcessInfo.processInfo.environment["TT_UI_TEST_DEFAULTS_SUITE"],
+           suite.hasPrefix("TimeTrackerUITests."),
+           UUID(uuidString: String(suite.dropFirst("TimeTrackerUITests.".count))) != nil {
+            content.accessibilityValue(colorScheme == .dark ? "Dark" : "Light")
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
+    }
+
+    private var content: some View {
         TrackerSplitLayout(columnVisibility: $columnVisibility) {
             TrackerSidebar(store: store)
                 .toolbar {
@@ -36,6 +52,7 @@ struct TrackerWindow: View {
         }
         .navigationTitle(store.selectedTask?.name ?? "Time Tracker")
         .frame(minWidth: 760, minHeight: 480)
+        .accessibilityIdentifier("tracker.window.content")
         .windowDismissBehavior(presentation.canClose(windowID) ? .enabled : .disabled)
         .onAppear {
             let action = openWindow
