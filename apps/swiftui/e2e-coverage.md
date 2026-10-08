@@ -2,7 +2,7 @@
 
 The suite drives the shipped macOS application through XCUITest and the production Rust bridge. The CLI creates fixtures, acts as another client, and verifies stored results. It does not perform the UI action under test.
 
-Implementation checkpoint `ea7181a`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
+Implementation checkpoint `a80d4d8`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
 
 ## Run the tests
 
@@ -12,7 +12,7 @@ apps/swiftui/check-native-ui.sh --smoke
 apps/swiftui/check-native-ui.sh --group server
 ```
 
-The full suite requires macOS, Xcode 27, and a desktop session. The runner builds `tt-cli` and `tt`, supplies an absolute Python 3 path, and disables parallel XCTest execution. CI runs six required groups on separate macOS runners. Every group remains serial because status items, menus, shortcuts, and the clipboard share its desktop. The CI gate requires all groups to pass. The Return correction case enables keyboard navigation when needed and verifies restoration of the original setting at teardown. Window layout cases resize the real AppKit window through an isolated DEBUG fixture event.
+The full suite requires macOS, Xcode 27, and a desktop session. The runner builds `tt-cli` and `tt`, supplies an absolute Python 3 path, and disables parallel XCTest execution. CI runs six required groups on separate macOS runners. Every group remains serial because status items, menus, shortcuts, and the clipboard share its desktop. The CI gate requires all groups to pass. The Return correction case enables button navigation through a volatile app launch argument, then Tabs to the native Save button and presses Return. Window layout cases resize the real AppKit window through an isolated DEBUG fixture event.
 
 The previous seven-test native UI step took 7 minutes 20 seconds in [CI run 37833088852](https://github.com/remshams/time-tracker/actions/runs/37833088852). The expanded suite is grouped to stay within the existing 60-minute job limit. Logs and result bundles are retained for every group.
 
@@ -82,6 +82,6 @@ Changing the data source through Settings closes an open native menu. Source-swi
 
 ## Local validation
 
-At checkpoint `ea7181a`, the Python suite passes 64 tests. Rust workspace tests and coverage pass, and all 1,174 reported functions are below the CRAP threshold of 12. Scoped `tracker-swift-bridge` mutations produce 87 caught and 43 unviable cases, with zero missed or timed-out cases. The bridge crate's unit and integration tests remain enabled.
+At checkpoint `a80d4d8`, the Python suite passes 64 tests. Rust workspace tests and coverage pass, and all 1,174 reported functions are below the CRAP threshold of 12. Scoped `tracker-swift-bridge` mutations produce 87 caught and 43 unviable cases, with zero missed or timed-out cases. The bridge crate's unit and integration tests remain enabled.
 
 The change adds native Swift tests, accessibility observations, and native menu shortcut delivery during AppKit tracking. It does not change portable Swift state or Rust production behavior. Portable Swift mutations are therefore unchanged; the Rust bridge check covers the production boundary exercised by the native journeys. Native Swift line coverage is not inferred from the portable package's coverage percentage.
