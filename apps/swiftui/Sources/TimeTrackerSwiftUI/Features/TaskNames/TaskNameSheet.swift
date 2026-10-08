@@ -29,10 +29,12 @@ struct TaskNameSheet: View {
                 .textFieldStyle(.roundedBorder)
                 .disableAutocorrection(true)
                 .focused($nameFocused)
+                .accessibilityIdentifier("task-name.input")
                 .disabled(!canEditName)
 
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle")
+                    .accessibilityIdentifier("task-name.error")
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -45,9 +47,11 @@ struct TaskNameSheet: View {
                 }
                 Spacer()
                 Button("Cancel", action: cancel)
+                    .accessibilityIdentifier("task-name.cancel")
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSubmitting)
                 Button(actionTitle, action: submit)
+                    .accessibilityIdentifier("task-name.submit")
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(!canSubmit)
