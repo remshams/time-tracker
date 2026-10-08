@@ -43,6 +43,7 @@ private struct WorklogCorrectionSheet: View {
                         get: { correction.sheetContent.start }, set: { correction.setStart($0) }
                     ), displayedComponents: [.date, .hourAndMinute])
                         .labelsHidden()
+                        .accessibilityIdentifier("worklog-correction.start")
                 }
 
                 if state.end != nil {
@@ -53,6 +54,7 @@ private struct WorklogCorrectionSheet: View {
                             set: { correction.setEnd($0) }
                         ), displayedComponents: [.date, .hourAndMinute])
                             .labelsHidden()
+                            .accessibilityIdentifier("worklog-correction.end")
                     }
                 }
             }
@@ -64,11 +66,14 @@ private struct WorklogCorrectionSheet: View {
             }
 
             Text("Time zone: \(state.timezoneIdentifier)")
+                .accessibilityIdentifier("worklog-correction.timezone")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             if let end = state.end, end >= state.start {
                 LabeledContent("Duration", value: clockDuration(end.timeIntervalSince(state.start)))
+                    .accessibilityIdentifier("worklog-correction.duration")
+                    .accessibilityValue(clockDuration(end.timeIntervalSince(state.start)))
                     .monospacedDigit()
             } else if state.end == nil {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -81,6 +86,7 @@ private struct WorklogCorrectionSheet: View {
 
             if let error = state.error {
                 Label(error, systemImage: "exclamationmark.triangle")
+                    .accessibilityIdentifier("worklog-correction.error")
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -92,6 +98,7 @@ private struct WorklogCorrectionSheet: View {
                     Text("Start: \(formatted(latest.start))")
                     Text(latest.end.map { "End: \(formatted($0))" } ?? "Still running")
                     Button("Review latest entry") { correction.reviewLatest() }
+                        .accessibilityIdentifier("worklog-correction.review")
                         .disabled(state.isSubmitting)
                 }
                 .padding(12)
@@ -106,11 +113,13 @@ private struct WorklogCorrectionSheet: View {
                 }
                 Spacer()
                 Button("Cancel") { correction.cancel() }
+                    .accessibilityIdentifier("worklog-correction.cancel")
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
                 Button(state.error != nil && !state.canEdit && state.canSubmit ? "Retry" : "Save") {
                     correction.submit()
                 }
+                    .accessibilityIdentifier("worklog-correction.save")
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(!state.canSubmit)

@@ -37,6 +37,8 @@ struct WorklogRow: View {
                 .fixedSize()
             WorklogActionsMenu(correction: correction, move: move, worklogID: worklog.id)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("worklog-history.row.\(worklog.id)")
         .padding(16)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
         .overlay {
@@ -68,6 +70,7 @@ private struct WorklogActionsMenu: View {
         .disabled(correction.state.isPresented || move.state.isPresented ||
                   (!correction.canOpen && !move.canOpen))
         .help("Worklog actions")
+        .accessibilityIdentifier("worklog-history.actions.\(worklogID)")
     }
 }
 
