@@ -1,0 +1,81 @@
+import XCTest
+
+@MainActor
+final class AppearanceUITests: TrackerUITestCase {
+    func testLightAndDarkAppearanceKeepTaskNamesErrorsAndControlsReachable() throws {
+        let task = try fixture.create("Planning with a long task name that wraps across the narrow sidebar")
+        for appearance in ["Light", "Dark"] {
+            additionalLaunchArguments = ["-AppleInterfaceStyle", appearance]
+            launch()
+            XCTAssertEqual(element("tracker.window.content").value as? String, appearance)
+            select(task)
+            XCTAssertTrue(taskRow(task).isHittable)
+            XCTAssertTrue(app.buttons["Start tracking"].isHittable)
+            XCTAssertTrue(app.buttons["Edit task name"].isHittable)
+            let screenshot = XCTAttachment(screenshot: trackerWindow.screenshot())
+            screenshot.name = "\(appearance) appearance"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+            openSettings()
+            let recorder = element("menu.shortcut.open")
+            recorder.click()
+            app.typeKey("x", modifierFlags: [])
+            let error = element("menu.shortcut.error")
+            XCTAssertTrue(error.waitForExistence(timeout: timeout))
+            XCTAssertTrue(error.isHittable)
+            app.terminate()
+        }
+    }
+
+    func testWindowMinimumSizeAndExpandedLayoutKeepControlsInsideContent() throws {
+        let task = try fixture.create("Layout task")
+        launch()
+        select(task)
+        resizeWindow(to: CGSize(width: 760, height: 480))
+        XCTAssertGreaterThanOrEqual(trackerWindow.frame.width, 760)
+        XCTAssertGreaterThanOrEqual(trackerWindow.frame.height, 480)
+        assertControlsInsideWindow()
+        resizeWindow(to: CGSize(width: 1100, height: 720))
+        XCTAssertGreaterThan(trackerWindow.frame.width, 900)
+        assertControlsInsideWindow()
+    }
+
+    func testSidebarCollapsesAndRestoresAndRunningStatusHasText() throws {
+        let task = try fixture.create("Accessible running task")
+        _ = try fixture.start(task)
+        launch()
+        select(task)
+        XCTAssertEqual(element("tracking.active-task").label, "Tracking")
+        let color = try XCTUnwrap(element("tracking.active-task").value as? String)
+        XCTAssertTrue(color.hasPrefix("Task color: "))
+        XCTAssertEqual(statusButton.label, "Tracking: \(task.name)")
+        openStatusMenu()
+        XCTAssertEqual(menuTask(task).value as? String, color)
+        dismissStatusMenu()
+        let sidebar = app.buttons["Toggle Sidebar"].firstMatch
+        XCTAssertTrue(sidebar.waitForExistence(timeout: timeout))
+        sidebar.click()
+        waitUntil("The sidebar collapses") { !self.element("task-sidebar.list").isHittable }
+        XCTAssertTrue(app.buttons["Stop tracking"].isHittable)
+        sidebar.click()
+        XCTAssertTrue(taskRow(task).waitForExistence(timeout: timeout))
+        XCTAssertTrue(taskRow(task).isHittable)
+    }
+
+    private func resizeWindow(to size: CGSize) {
+        let frame = trackerWindow.frame
+        let corner = trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
+            .withOffset(CGVector(dx: -2, dy: -2))
+        let target = corner.withOffset(CGVector(dx: size.width - frame.width, dy: size.height - frame.height))
+        corner.press(forDuration: 0.1, thenDragTo: target)
+    }
+
+    private func assertControlsInsideWindow(file: StaticString = #filePath, line: UInt = #line) {
+        let frame = trackerWindow.frame
+        for control in [app.buttons["Start tracking"], app.buttons["Edit task name"],
+                        app.buttons["bulk-archive.open"], element("task-sidebar.tab.Active")] {
+            XCTAssertTrue(control.isHittable, file: file, line: line)
+            XCTAssertTrue(frame.contains(control.frame), file: file, line: line)
+        }
+    }
+}
