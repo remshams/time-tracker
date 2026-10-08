@@ -9,6 +9,7 @@ struct TaskIndicatorView: View {
         TaskIndicatorDot(indicator: TaskIndicator(taskID: taskID, isRunning: isRunning))
             .frame(width: 16)
             .accessibilityLabel(isRunning ? "Tracking" : "Not tracking")
+            .accessibilityValue("Task color: \(TaskColor.forTaskID(taskID).rawValue)")
     }
 }
 
