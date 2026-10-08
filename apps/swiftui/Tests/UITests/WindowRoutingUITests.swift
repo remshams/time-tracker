@@ -6,12 +6,12 @@ final class WindowRoutingUITests: TrackerUITestCase {
         _ = try fixture.create("Window task")
         launch()
         trackerWindow.buttons[XCUIIdentifierCloseWindow].click()
-        waitUntil("The tracker window closes") { !self.element("tracker.window.content").exists }
+        waitUntil("The tracker window closes") { self.trackerWindows.count == 0 }
         XCTAssertEqual(app.state, .runningForeground)
         XCTAssertTrue(statusButton.exists)
         openStatusMenu()
         app.menuItems["Open Time Tracker"].click()
-        XCTAssertTrue(element("tracker.window.content").waitForExistence(timeout: timeout))
+        XCTAssertTrue(trackerWindow.waitForExistence(timeout: timeout))
         trackerWindow.buttons[XCUIIdentifierCloseWindow].click()
         showTrackerViaShortcut()
     }
@@ -36,9 +36,9 @@ final class WindowRoutingUITests: TrackerUITestCase {
         select(task)
         app.typeKey("n", modifierFlags: [.command, .shift])
         waitUntil("New Window creates a second tracker window") {
-            self.app.windows.containing(.any, identifier: "tracker.window.content").count == 2
+            self.trackerWindows.count == 2
         }
-        let windows = app.windows.containing(.any, identifier: "tracker.window.content")
+        let windows = trackerWindows
         let owner = windows.element(boundBy: 1)
         owner.click()
         let row = owner.descendants(matching: .any).matching(identifier: "task-sidebar.task.\(task.id)").firstMatch

@@ -5,9 +5,8 @@ import XCTest
 extension TrackerUITestCase {
     var statusButton: XCUIElement { element("menu.status") }
 
-    var trackerWindow: XCUIElement {
-        app.windows.containing(.any, identifier: "tracker.window.content").firstMatch
-    }
+    var trackerWindows: XCUIElementQuery { app.windows.containing(.button, identifier: "bulk-archive.open") }
+    var trackerWindow: XCUIElement { trackerWindows.firstMatch }
 
     func openSettings() {
         app.activate()
@@ -18,7 +17,7 @@ extension TrackerUITestCase {
     func showTrackerViaShortcut() {
         app.activate()
         app.typeKey("0", modifierFlags: .command)
-        XCTAssertTrue(element("tracker.window.content").waitForExistence(timeout: timeout))
+        XCTAssertTrue(trackerWindow.waitForExistence(timeout: timeout))
     }
 
     func openStatusMenu() {

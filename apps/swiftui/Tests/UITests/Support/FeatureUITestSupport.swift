@@ -2,6 +2,24 @@ import XCTest
 
 @MainActor
 extension TrackerUITestCase {
+    var taskDetailsName: XCUIElement {
+        let heading = element("task-details.name")
+        let nativeText = heading.staticTexts.firstMatch
+        return nativeText.exists ? nativeText : heading
+    }
+
+    var taskDetailsNameText: String {
+        let text = taskDetailsName
+        return text.value as? String ?? text.label
+    }
+
+    func displayedText(_ identifier: String) -> String {
+        let parent = element(identifier)
+        let child = parent.staticTexts.firstMatch
+        let text = child.exists ? child : parent
+        return text.value as? String ?? text.label
+    }
+
     func openCreation() {
         let button = app.buttons["New task"]
         waitUntil("Creation becomes available") { button.exists && button.isEnabled }
@@ -39,10 +57,11 @@ extension TrackerUITestCase {
 
     func stepMinute(_ identifier: String, direction: XCUIKeyboardKey = .upArrow) {
         let picker = element(identifier)
-        picker.click()
-        for _ in 0..<8 { picker.typeKey(.leftArrow, modifierFlags: []) }
-        for _ in 0..<4 { picker.typeKey(.rightArrow, modifierFlags: []) }
+        // The en_US picker exposes one element; its minute segment precedes AM/PM and the stepper.
+        picker.coordinate(withNormalizedOffset: CGVector(dx: 0.70, dy: 0.5)).click()
         picker.typeKey(direction, modifierFlags: [])
+        // Move past AM/PM to commit the edited segment without submitting the sheet.
+        app.typeKey(.tab, modifierFlags: [])
         app.typeKey(.tab, modifierFlags: [])
     }
 }

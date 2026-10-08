@@ -6,16 +6,17 @@ class TaskRenameUITests: TrackerUITestCase {
         let log = try fixture.start(task)
         launch()
         openRename(task)
-        replaceText(app.textFields["task-name.input"], "  Renamed task  ")
+        replaceText(app.textFields["task-name.input"], " Renamed task ")
+        XCTAssertEqual(app.textFields["task-name.input"].value as? String, " Renamed task ")
         app.typeKey(.return, modifierFlags: [])
         waitUntil("Rename sheet closes") { !self.element("task-name.input").exists }
-        waitUntil("Confirmed details display the new name") { self.element("task-details.name").value as? String == "Renamed task" }
+        waitUntil("Confirmed details display the new name") { self.taskDetailsNameText == "Renamed task" }
         XCTAssertEqual(try fixture.activeWorklog(), log)
         XCTAssertEqual(try fixture.worklogs(task), [log])
         XCTAssertEqual(try fixture.tasks().first?.id, task.id)
         relaunch()
         select(try XCTUnwrap(fixture.tasks().first { $0.id == task.id }))
-        XCTAssertEqual(element("task-details.name").value as? String, "Renamed task")
+        XCTAssertEqual(taskDetailsNameText, "Renamed task")
     }
 
     func testContextRenameTargetsUnselectedArchivedTaskAndCancelKeepsItsName() throws {
@@ -45,9 +46,11 @@ class TaskRenameUITests: TrackerUITestCase {
         launch()
         openRename(task)
         XCTAssertFalse(app.buttons["task-name.submit"].isEnabled)
-        replaceText(app.textFields["task-name.input"], "  Existing name  ")
+        replaceText(app.textFields["task-name.input"], " Existing name ")
+        XCTAssertEqual(app.textFields["task-name.input"].value as? String, " Existing name ")
         XCTAssertFalse(app.buttons["task-name.submit"].isEnabled)
-        replaceText(app.textFields["task-name.input"], "   ")
+        replaceText(app.textFields["task-name.input"], " ")
+        XCTAssertEqual(app.textFields["task-name.input"].value as? String, " ")
         XCTAssertFalse(app.buttons["task-name.submit"].isEnabled)
         app.buttons["task-name.cancel"].click()
         XCTAssertEqual(try fixture.tasks().first?.name, task.name)

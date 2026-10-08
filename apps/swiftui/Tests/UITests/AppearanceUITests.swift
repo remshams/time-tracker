@@ -7,7 +7,9 @@ final class AppearanceUITests: TrackerUITestCase {
         for appearance in ["Light", "Dark"] {
             additionalLaunchArguments = ["-AppleInterfaceStyle", appearance]
             launch()
-            XCTAssertEqual(element("tracker.window.content").value as? String, appearance)
+            let resolvedAppearance = element("tracker.window.appearance")
+            XCTAssertTrue(resolvedAppearance.waitForExistence(timeout: timeout))
+            XCTAssertEqual(resolvedAppearance.value as? String, appearance)
             select(task)
             XCTAssertTrue(taskRow(task).isHittable)
             XCTAssertTrue(app.buttons["Start tracking"].isHittable)
@@ -33,6 +35,7 @@ final class AppearanceUITests: TrackerUITestCase {
         select(task)
         resizeWindow(to: CGSize(width: 760, height: 480))
         XCTAssertGreaterThanOrEqual(trackerWindow.frame.width, 760)
+        XCTAssertLessThanOrEqual(trackerWindow.frame.width, 780)
         XCTAssertGreaterThanOrEqual(trackerWindow.frame.height, 480)
         assertControlsInsideWindow()
         resizeWindow(to: CGSize(width: 1100, height: 720))
@@ -52,12 +55,17 @@ final class AppearanceUITests: TrackerUITestCase {
         openStatusMenu()
         XCTAssertEqual(menuTask(task).value as? String, color)
         dismissStatusMenu()
-        let sidebar = app.buttons["Toggle Sidebar"].firstMatch
+        let sidebar = trackerWindow.buttons["Hide Sidebar"]
         XCTAssertTrue(sidebar.waitForExistence(timeout: timeout))
         sidebar.click()
-        waitUntil("The sidebar collapses") { !self.element("task-sidebar.list").isHittable }
+        waitUntil("The sidebar collapses") {
+            let list = self.element("task-sidebar.list")
+            return !list.exists || !list.isHittable
+        }
         XCTAssertTrue(app.buttons["Stop tracking"].isHittable)
-        sidebar.click()
+        let restore = trackerWindow.buttons["Show Sidebar"]
+        XCTAssertTrue(restore.waitForExistence(timeout: timeout))
+        restore.click()
         XCTAssertTrue(taskRow(task).waitForExistence(timeout: timeout))
         XCTAssertTrue(taskRow(task).isHittable)
     }

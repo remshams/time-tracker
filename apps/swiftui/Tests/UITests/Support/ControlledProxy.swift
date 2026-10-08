@@ -36,6 +36,7 @@ final class ControlledProxy {
         let output = directory.appendingPathComponent("proxy-endpoint.json")
         var discovered: String?
         while Date() < limit {
+            guard process.process.isRunning else { break }
             if let data = try? Data(contentsOf: output),
                let value = try? JSONDecoder().decode(Endpoint.self, from: data) {
                 discovered = value.endpoint
@@ -43,7 +44,12 @@ final class ControlledProxy {
             }
             Thread.sleep(forTimeInterval: 0.02)
         }
-        guard let discovered else { process.stop(); throw FixtureError("Proxy did not start.") }
+        guard let discovered else {
+            process.stop()
+            let log = (try? String(contentsOf: process.log, encoding: .utf8)) ?? "No proxy log."
+            let status = process.process.isRunning ? "still running" : String(process.process.terminationStatus)
+            throw FixtureError("Proxy did not start using \(python), status \(status): \(log)")
+        }
         endpoint = discovered
     }
 

@@ -16,6 +16,8 @@ class MenuBarUITests: TrackerUITestCase {
         openStatusMenu()
         app.typeKey("t", modifierFlags: [.control, .option])
         waitUntil("The shortcut toggles the menu closed") { !self.app.menuItems["Open Time Tracker"].exists }
+        openStatusMenu()
+        dismissStatusMenu()
     }
 
     func testPrimaryClickWithoutLastTaskOpensMenuAndOutsideClickDismisses() throws {
@@ -49,7 +51,7 @@ class MenuBarUITests: TrackerUITestCase {
         openStatusMenu()
         menuTask(second).click()
         assertStopped()
-        XCTAssertEqual(element("task-details.name").label, selected.name)
+        XCTAssertEqual(taskDetailsNameText, selected.name)
     }
 
     func testStartTrackingSubmenuAndKeyboardReturnStartUnusedTask() throws {

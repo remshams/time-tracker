@@ -90,13 +90,18 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         openCorrection(log)
         stepMinute("worklog-correction.start")
         stepMinute("worklog-correction.start")
+        app.buttons["worklog-correction.save"].click()
         XCTAssertTrue(element("worklog-correction.error").waitForExistence(timeout: timeout))
-        XCTAssertFalse(app.buttons["worklog-correction.save"].isEnabled)
+        XCTAssertEqual(displayedText("worklog-correction.error"), "End must not be before Start.")
+        XCTAssertTrue(element("worklog-correction.start").exists)
+        XCTAssertEqual(try fixture.worklogs(task).sorted { $0.id < $1.id },
+                       [log, following].sorted { $0.id < $1.id })
         app.buttons["worklog-correction.cancel"].click()
         openCorrection(log)
         stepMinute("worklog-correction.end")
         app.buttons["worklog-correction.save"].click()
         XCTAssertTrue(element("worklog-correction.error").waitForExistence(timeout: timeout))
+        XCTAssertEqual(displayedText("worklog-correction.error"), "The worklog overlaps another worklog")
         XCTAssertEqual(try fixture.worklogs(task).sorted { $0.id < $1.id },
                        [log, following].sorted { $0.id < $1.id })
         app.buttons["worklog-correction.cancel"].click()
@@ -131,8 +136,10 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         select(task)
         openCorrection(log)
         for _ in 0..<5 { stepMinute("worklog-correction.start") }
+        app.buttons["worklog-correction.save"].click()
         XCTAssertTrue(element("worklog-correction.error").waitForExistence(timeout: timeout))
-        XCTAssertFalse(app.buttons["worklog-correction.save"].isEnabled)
+        XCTAssertEqual(displayedText("worklog-correction.error"), "Start must not be in the future.")
+        XCTAssertTrue(element("worklog-correction.start").exists)
         XCTAssertEqual(try fixture.activeWorklog(), log)
         app.buttons["worklog-correction.cancel"].click()
     }

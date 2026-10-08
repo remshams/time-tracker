@@ -16,8 +16,8 @@ class TrackerUITestCase: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        if testRun?.hasSucceeded == false {
-            if let app {
+        if (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0) > 0 {
+            if let app, app.state != .notRunning {
                 for window in app.windows.allElementsBoundByIndex where window.exists {
                     let screenshot = XCTAttachment(screenshot: window.screenshot())
                     screenshot.name = "Failed UI test window"

@@ -23,10 +23,10 @@ class TaskCatalogUITests: TrackerUITestCase {
         select(archived)
         XCTAssertFalse(taskRow(first).exists)
         showTab("Active")
-        XCTAssertEqual(element("task-details.name").value as? String, second.name)
+        XCTAssertEqual(taskDetailsNameText, second.name)
         XCTAssertTrue(element("task-details.task.\(second.id)").exists)
         showTab("Archived")
-        XCTAssertEqual(element("task-details.name").value as? String, archived.name)
+        XCTAssertEqual(taskDetailsNameText, archived.name)
     }
 
     func testActivityReorderingKeepsTheSelectedTaskAndItsHistory() throws {
@@ -41,7 +41,7 @@ class TaskCatalogUITests: TrackerUITestCase {
             self.taskRow(other).descendants(matching: .any)
                 .matching(identifier: "tracking.active-task").firstMatch.exists
         }
-        XCTAssertEqual(element("task-details.name").value as? String, selected.name)
+        XCTAssertEqual(taskDetailsNameText, selected.name)
         XCTAssertTrue(element("worklog-history.row.\(log.id)").exists)
     }
 }

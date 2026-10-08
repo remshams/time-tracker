@@ -12,7 +12,11 @@ class TaskArchivingUITests: TrackerUITestCase {
         app.buttons["task-archive.confirm"].click()
         waitUntil("Archived task leaves Active") { !self.taskRow(target).exists }
         XCTAssertTrue(taskRow(fallback).exists)
-        XCTAssertEqual(element("task-details.name").value as? String, fallback.name)
+        waitUntil("Details select the remaining active task") {
+            self.element("task-details.task.\(fallback.id)").exists
+                && self.taskDetailsNameText == fallback.name
+        }
+        XCTAssertEqual(taskDetailsNameText, fallback.name)
         showTab("Archived")
         select(target)
         XCTAssertTrue(element("worklog-history.row.\(log.id)").waitForExistence(timeout: timeout))
