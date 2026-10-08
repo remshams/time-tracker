@@ -47,7 +47,10 @@ private struct BulkTaskArchivingSheet: View {
                         }
                     }
                     .frame(width: 16, height: 16)
+                    .padding(4)
+                    .contentShape(Rectangle())
                 }
+                    .buttonStyle(.plain)
                     .disabled(state.isSubmitting || state.isLoading)
                     .help("Refresh preview")
                     .accessibilityLabel(state.isLoading ? "Refreshing preview" : "Refresh preview")
@@ -58,32 +61,39 @@ private struct BulkTaskArchivingSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: 20)
                 .accessibilityIdentifier("bulk-archive.count")
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    if let error = state.error {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.red)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                            .accessibilityIdentifier("bulk-archive.error")
-                    } else if let count = state.archivedCount {
-                        Label("Archived \(count) \(count == 1 ? "task" : "tasks").", systemImage: "checkmark.circle")
-                            .accessibilityIdentifier("bulk-archive.result")
-                    } else {
-                        ForEach(state.tasks) { task in
-                            Text(task.name).frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
-                                .accessibilityIdentifier("bulk-archive.candidate.\(task.id)")
-                            Divider()
+            Group {
+                if let error = state.error {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("bulk-archive.error")
+                        .padding(12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            if let count = state.archivedCount {
+                                Label("Archived \(count) \(count == 1 ? "task" : "tasks").", systemImage: "checkmark.circle")
+                                    .accessibilityIdentifier("bulk-archive.result")
+                            } else {
+                                ForEach(state.tasks) { task in
+                                    Text(task.name).frame(maxWidth: .infinity, alignment: .leading)
+                                        .textSelection(.enabled)
+                                        .accessibilityIdentifier("bulk-archive.candidate.\(task.id)")
+                                    Divider()
+                                }
+                                if state.tasks.isEmpty, state.hasPreview {
+                                    Text("No tasks match this inactivity period.").foregroundStyle(.secondary)
+                                        .accessibilityIdentifier("bulk-archive.empty")
+                                }
+                            }
                         }
-                        if state.tasks.isEmpty, state.hasPreview {
-                            Text("No tasks match this inactivity period.").foregroundStyle(.secondary)
-                                .accessibilityIdentifier("bulk-archive.empty")
-                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
             }
             .frame(height: 220)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
