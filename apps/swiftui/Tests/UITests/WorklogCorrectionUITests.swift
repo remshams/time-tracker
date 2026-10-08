@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 class WorklogCorrectionUITests: TrackerUITestCase {
@@ -36,14 +37,33 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         select(task)
         openCorrection(log)
         stepMinute("worklog-correction.end", direction: .downArrow)
-        let heading = app.sheets.firstMatch.staticTexts["Edit worklog"]
-        XCTAssertTrue(heading.exists)
-        heading.click()
-        waitUntil("The date editors release keyboard focus before Return") {
-            !self.element("worklog-correction.start").debugDescription.contains("Keyboard Focused")
-                && !self.element("worklog-correction.end").debugDescription.contains("Keyboard Focused")
+        let application = try XCTUnwrap(app)
+        let previousKeyboardNavigation = NSApplication.shared.isFullKeyboardAccessEnabled
+        addTeardownBlock {
+            MainActor.assumeIsolated {
+                if NSApplication.shared.isFullKeyboardAccessEnabled != previousKeyboardNavigation {
+                    application.typeKey(.F7, modifierFlags: .control)
+                }
+                let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    NSApplication.shared.isFullKeyboardAccessEnabled == previousKeyboardNavigation
+                }, object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 15), .completed,
+                               "Keyboard navigation returns to its original setting.")
+            }
         }
-        XCTAssertTrue(app.buttons["worklog-correction.save"].isEnabled)
+        if !previousKeyboardNavigation {
+            app.typeKey(.F7, modifierFlags: .control)
+            waitUntil("Keyboard navigation includes buttons") {
+                NSApplication.shared.isFullKeyboardAccessEnabled
+            }
+        }
+        let save = app.buttons["worklog-correction.save"]
+        for _ in 0..<16 {
+            if save.debugDescription.contains("Keyboard Focused") { break }
+            app.typeKey(.tab, modifierFlags: [])
+        }
+        XCTAssertTrue(save.debugDescription.contains("Keyboard Focused"), "Tab reaches the Save button.")
+        XCTAssertTrue(save.isEnabled)
         app.typeKey(.return, modifierFlags: [])
         waitUntil("Return saves corrected end") { !self.element("worklog-correction.start").exists }
         let saved = try XCTUnwrap(fixture.worklogs(task).first)

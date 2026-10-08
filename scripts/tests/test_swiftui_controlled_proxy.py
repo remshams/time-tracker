@@ -172,6 +172,28 @@ class ControlledProxyTests(unittest.TestCase):
         self.assertEqual(self.call(), (200, {"writes": 1}))
         self.assertEqual(self.backend.writes, 1)
 
+    def test_fault_plan_drops_both_transport_attempts_before_reconciliation(self):
+        rules = [{"token": token, "mode": "dropAfter", "method": "POST", "path": "/v1/tasks"}
+                 for token in ("initial", "transport-retry")]
+        rules.append({"token": "refresh", "mode": "fail", "method": "GET", "path": "/v1/snapshot"})
+        PROXY.atomic_json(self.directory / "proxy-control.json", {"rules": rules})
+        payload = b'{"request_id":"retained-write","name":"Planning"}'
+        for attempt in range(2):
+            with self.assertRaises(http.client.RemoteDisconnected):
+                self.call("POST", "/v1/tasks", payload)
+            self.assertEqual(self.backend.writes, attempt + 1)
+            # An intervening read must not consume the next write fault.
+            if attempt == 0:
+                self.assertEqual(self.call(), (200, {"writes": 1}))
+        reads = self.backend.reads
+        self.assertEqual(self.call()[0], 503)
+        self.assertEqual(self.backend.reads, reads)
+        self.assertEqual(self.call(), (200, {"writes": 2}))
+        requests = json.loads((self.directory / "proxy-requests.json").read_text())
+        writes = [request for request in requests if request["method"] == "POST"]
+        self.assertEqual([request["body"] for request in writes], [payload.decode()] * 2)
+        self.assertEqual([request["status"] for request in writes], [200, 200])
+
     def test_replacing_fault_plan_releases_previous_held_request(self):
         self.arm("holdBefore")
         future = self.executor.submit(self.call)
