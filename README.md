@@ -187,7 +187,7 @@ cargo mutants --workspace --file crates/tracker-domain/src/task.rs
 
 Repeat `--file` for multiple files, or use `--package <name>` for an affected crate. Add `--test-workspace true` when selected mutants rely on tests in other crates. Include production code exercised by changed tests and widen the scope for shared code or build input changes. Documentation-only changes skip mutation checks. The scope rules in `AGENTS.md` also cover the portable Swift client. Routine full mutation runs are deferred until CI is set up.
 
-Missed and timed-out mutants fail the check, as do CRAP scores above 30. The pinned tool versions and full rules live in `AGENTS.md`.
+Missed and timed-out mutants fail the check, as do CRAP scores above 12. The pinned tool versions and full rules live in `AGENTS.md`.
 
 ## Continuous integration
 
@@ -201,7 +201,7 @@ action revisions, dependency and build caches, and seven-day report retention.
 |---|---|---|---|
 | 1 | [CI](.github/workflows/ci.yml) | Rust formatting, Clippy with warnings denied, Python script tests, and actionlint | Every PR, push to `main`, and manual run |
 | 2 | CI | Full Rust workspace tests on Linux and macOS, including existing integration and TUI E2E tests | Every PR, push to `main`, and manual run |
-| 3 | CI | Rust coverage and the configured CRAP threshold of 30 | Every PR, push to `main`, and manual run |
+| 3 | CI | Rust coverage and the configured CRAP threshold of 12 | Every PR, push to `main`, and manual run |
 | 4 | CI | Portable Swift tests and at least 95% executable line coverage on Linux | Every PR, push to `main`, and manual run |
 | 5 | CI | Swift package tests on macOS, native Debug and universal Release builds, and scene layout checks | Every PR, push to `main`, and manual run |
 | 6 | CI | `CI passed` requires every regular job to succeed, including both Rust test platforms | Every PR, push to `main`, and manual run |

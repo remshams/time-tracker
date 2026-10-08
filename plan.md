@@ -147,7 +147,7 @@ Set up the same workflow categories requested for this project, using independen
 - Run tests with `cargo test --workspace --all-features`.
 - Configure `.cargo/mutants.toml` with `minimum_test_timeout = 20.0`.
 - Generate coverage with `cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info`.
-- Configure `.cargo-crap.toml` with a maximum CRAP score of 30, pessimistic handling of missing coverage, and failure above the threshold.
+- Configure `.cargo-crap.toml` with a maximum CRAP score of 12, pessimistic handling of missing coverage, and failure above the threshold.
 - Add `target/`, `mutants.out*`, and `lcov.info` to `.gitignore`.
 - Keep the validation rules copied from the Jira adapter in `AGENTS.md`, including its pinned versions:
   - `cargo-mutants` 27.1.0
@@ -167,7 +167,7 @@ cargo crap --workspace --lcov lcov.info
 
 Run focused mutation checks using the file and crate scope rules in `AGENTS.md`. Include production code exercised by changed tests and expand the scope for shared code or build input changes. Documentation-only changes skip mutation checks. Routine full mutation runs are deferred until CI is set up.
 
-Missed and timed-out mutants fail the check. CRAP scores above 30 fail the check. If Ratatui or Crossterm glue produces meaningless mutants, exclude only named functions and explain each exclusion in `AGENTS.md`.
+Missed and timed-out mutants fail the check. CRAP scores above 12 fail the check. If Ratatui or Crossterm glue produces meaningless mutants, exclude only named functions and explain each exclusion in `AGENTS.md`.
 
 ## Implementation steps
 
