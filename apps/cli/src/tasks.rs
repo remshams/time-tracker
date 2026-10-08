@@ -61,31 +61,14 @@ fn validate_preview(token: &PreviewToken, identity: &str) -> Result<(), CliError
         PreviewToken::Local {
             backend, task_ids, ..
         } => {
-            let mut seen = HashSet::new();
-            for id in task_ids {
-                let id: TaskId = id.parse().map_err(CliError::input)?;
-                if !seen.insert(id) {
-                    return Err(CliError::input("preview contains duplicate task IDs"));
-                }
-            }
+            validate_local_candidates(task_ids)?;
             if !identity.starts_with("local:") {
                 return Err(CliError::input("local preview requires a local database"));
             }
             backend
         }
         PreviewToken::Remote { backend, preview } => {
-            if preview.revision.is_empty() {
-                return Err(CliError::input("invalid remote preview guard"));
-            }
-            if preview.sample_names.len() > 5
-                || preview.sample_names.len() > preview.count
-                || preview
-                    .sample_names
-                    .iter()
-                    .any(|name| TaskName::new(name).is_err())
-            {
-                return Err(CliError::input("invalid remote preview candidates"));
-            }
+            validate_remote_candidates(preview)?;
             if !identity.starts_with("remote:") {
                 return Err(CliError::input("remote preview requires a server"));
             }
@@ -94,6 +77,33 @@ fn validate_preview(token: &PreviewToken, identity: &str) -> Result<(), CliError
     };
     if backend != identity {
         return Err(CliError::input("preview belongs to a different backend"));
+    }
+    Ok(())
+}
+
+fn validate_local_candidates(task_ids: &[String]) -> Result<(), CliError> {
+    let mut seen = HashSet::new();
+    for id in task_ids {
+        let id: TaskId = id.parse().map_err(CliError::input)?;
+        if !seen.insert(id) {
+            return Err(CliError::input("preview contains duplicate task IDs"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_remote_candidates(preview: &InactiveTaskPreviewDto) -> Result<(), CliError> {
+    if preview.revision.is_empty() {
+        return Err(CliError::input("invalid remote preview guard"));
+    }
+    if preview.sample_names.len() > 5
+        || preview.sample_names.len() > preview.count
+        || preview
+            .sample_names
+            .iter()
+            .any(|name| TaskName::new(name).is_err())
+    {
+        return Err(CliError::input("invalid remote preview candidates"));
     }
     Ok(())
 }
@@ -109,33 +119,46 @@ pub(crate) async fn execute(
             sort,
             search,
         } => list(backend, state, sort, search.as_deref()),
-        Tasks::Get { task_id } => {
-            let task = backend.task(task_id).ok_or_else(|| {
-                CliError::application(
-                    tracker_application::RepositoryError::TaskNotFound { id: task_id }.into(),
-                )
-            })?;
-            crate::json(TaskDto::from(task))
-        }
-        Tasks::Create { name } => crate::json(TaskDto::from(
-            &backend
-                .create_task(TaskName::new(&name).map_err(CliError::input)?, now)
-                .await?,
-        )),
-        Tasks::Rename { task_id, name } => crate::json(TaskDto::from(
-            &backend
-                .rename_task(task_id, TaskName::new(&name).map_err(CliError::input)?, now)
-                .await?,
-        )),
-        Tasks::Archive { task_id } => {
-            crate::json(TaskDto::from(&backend.archive_task(task_id, now).await?))
-        }
-        Tasks::Restore { task_id } => {
-            crate::json(TaskDto::from(&backend.unarchive_task(task_id, now).await?))
-        }
+        Tasks::Get { task_id } => get(backend, task_id),
         Tasks::PreviewInactive => preview(backend, now).await,
         Tasks::ArchiveInactive { preview, .. } => archive(backend, read_json(&preview)?).await,
+        change @ (Tasks::Create { .. }
+        | Tasks::Rename { .. }
+        | Tasks::Archive { .. }
+        | Tasks::Restore { .. }) => change_task(backend, change, now).await,
     }
+}
+
+fn get(backend: &Backend, task_id: TaskId) -> Result<Value, CliError> {
+    let task = backend.task(task_id).ok_or_else(|| {
+        CliError::application(
+            tracker_application::RepositoryError::TaskNotFound { id: task_id }.into(),
+        )
+    })?;
+    crate::json(TaskDto::from(task))
+}
+
+async fn change_task(
+    backend: &mut Backend,
+    command: Tasks,
+    now: DateTime<Utc>,
+) -> Result<Value, CliError> {
+    let task = match command {
+        Tasks::Create { name } => {
+            backend
+                .create_task(TaskName::new(&name).map_err(CliError::input)?, now)
+                .await
+        }
+        Tasks::Rename { task_id, name } => {
+            backend
+                .rename_task(task_id, TaskName::new(&name).map_err(CliError::input)?, now)
+                .await
+        }
+        Tasks::Archive { task_id } => backend.archive_task(task_id, now).await,
+        Tasks::Restore { task_id } => backend.unarchive_task(task_id, now).await,
+        _ => unreachable!("task reads and bulk archive are handled before task changes"),
+    }?;
+    crate::json(TaskDto::from(&task))
 }
 
 fn list(
