@@ -8,15 +8,15 @@ final class SettingsUITests: TrackerUITestCase {
         openSettings()
         let total = element("menu.show-daily-total")
         let pause = element("tracking.pause-on-lock")
-        XCTAssertEqual(total.value as? String, "1")
-        XCTAssertEqual(pause.value as? String, "0")
+        XCTAssertEqual((total.value as? NSNumber)?.boolValue, true)
+        XCTAssertEqual((pause.value as? NSNumber)?.boolValue, false)
         total.click()
         pause.click()
         waitUntil("The status item removes its total immediately") { self.statusButton.value as? String == "" }
         relaunch()
         openSettings()
-        XCTAssertEqual(element("menu.show-daily-total").value as? String, "0")
-        XCTAssertEqual(element("tracking.pause-on-lock").value as? String, "1")
+        XCTAssertEqual((element("menu.show-daily-total").value as? NSNumber)?.boolValue, false)
+        XCTAssertEqual((element("tracking.pause-on-lock").value as? NSNumber)?.boolValue, true)
         element("menu.show-daily-total").click()
         waitUntil("The status item restores its total immediately") { self.statusButton.value as? String != "" }
     }

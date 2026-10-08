@@ -91,7 +91,7 @@ final class ServerLifecycleUITests: LifecycleUITests {
         launch()
         select(task)
         trackerWindow.buttons[XCUIIdentifierCloseWindow].click()
-        waitUntil("Closing the window removes the visible UI") { !self.element("tracker.window.content").exists }
+        waitUntil("Closing the window removes the visible UI") { self.trackerWindows.count == 0 }
         let baseline = try proxy.requests(method: "GET", path: "/v1/snapshot").count
         let deadline = Date().addingTimeInterval(6)
         waitUntil("A visible polling interval passes while the window is closed") { Date() >= deadline }

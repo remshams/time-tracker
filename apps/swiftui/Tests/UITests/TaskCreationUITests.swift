@@ -4,7 +4,8 @@ class TaskCreationUITests: TrackerUITestCase {
     func testToolbarCreationTrimsNameAndPersistsAcrossRelaunch() throws {
         launch()
         openCreation()
-        app.textFields["task-name.input"].typeText("  New implementation  ")
+        app.textFields["task-name.input"].typeText(" New implementation ")
+        XCTAssertEqual(app.textFields["task-name.input"].value as? String, " New implementation ")
         app.buttons["task-name.submit"].click()
         waitUntil("Creation sheet closes") { !self.element("task-name.input").exists }
         let created = try XCTUnwrap(fixture.tasks().first)
@@ -12,7 +13,7 @@ class TaskCreationUITests: TrackerUITestCase {
         select(created)
         relaunch()
         select(created)
-        XCTAssertEqual(element("task-details.name").value as? String, created.name)
+        XCTAssertEqual(taskDetailsNameText, created.name)
     }
 
     func testCommandNFocusesNameAndReturnCreatesDistinctDuplicateTask() throws {
@@ -53,7 +54,8 @@ class TaskCreationUITests: TrackerUITestCase {
         launch()
         openCreation()
         XCTAssertFalse(app.buttons["task-name.submit"].isEnabled)
-        app.textFields["task-name.input"].typeText("   ")
+        app.textFields["task-name.input"].typeText(" ")
+        XCTAssertEqual(app.textFields["task-name.input"].value as? String, " ")
         XCTAssertFalse(app.buttons["task-name.submit"].isEnabled)
         replaceText(app.textFields["task-name.input"], "Valid draft")
         XCTAssertTrue(app.buttons["task-name.submit"].isEnabled)

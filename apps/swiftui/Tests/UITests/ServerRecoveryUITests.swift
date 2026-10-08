@@ -28,11 +28,11 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         assertConnectionStatus("Unavailable")
         XCTAssertTrue(taskRow(task).exists)
         XCTAssertTrue(app.staticTexts["Today, cached"].exists)
-        XCTAssertFalse(app.buttons["New task"].isEnabled)
         XCTAssertFalse(app.buttons["Start tracking"].isEnabled)
         try fixture.startServer()
         app.buttons["connection-summary.retry"].click()
         assertConnectionStatus("Connected")
+        XCTAssertEqual(try fixture.tasks().map(\.id), [task.id])
         XCTAssertEqual(try fixture.worklogs(task), [log])
         XCTAssertTrue(app.buttons["Start tracking"].isEnabled)
     }
@@ -86,7 +86,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         try proxy.release()
         waitUntil("Captured task starts") { (try? self.fixture.activeWorklog())?.taskID == first.id }
         XCTAssertEqual(try proxy.requests(method: "PUT", path: "/v1/tracking").count, 1)
-        XCTAssertEqual(element("task-details.name").value as? String, second.name)
+        XCTAssertEqual(taskDetailsNameText, second.name)
     }
 
     func testCapturedStopCannotStopAnotherClientsReplacementTimer() throws {

@@ -149,10 +149,12 @@ def main():
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--upstream", required=True)
     args = parser.parse_args()
+    print("Starting controlled proxy.", flush=True)
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.daemon_threads = True
     server.state = ProxyState(args.directory, args.upstream)
     atomic_json(args.directory / "proxy-endpoint.json", {"endpoint": f"http://127.0.0.1:{server.server_port}"})
+    print(f"Controlled proxy listening on port {server.server_port}.", flush=True)
     server.serve_forever(poll_interval=0.05)
 
 

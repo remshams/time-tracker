@@ -52,9 +52,10 @@ class DailyTotalsUITests: TrackerUITestCase {
         let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: before))
         let report = try fixture.reports(start: day.start, end: day.end, at: before)
         let lower = Double(report.totalMicroseconds) / 1_000_000
-        let total = taskRow(task).staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Today's total:")).firstMatch
+        let total = element("task-sidebar.total.\(task.id)")
         XCTAssertTrue(total.waitForExistence(timeout: timeout))
-        let actual = try XCTUnwrap(parseDuration(total.label.replacingOccurrences(of: "Today's total: ", with: "")))
+        let text = try XCTUnwrap(total.value as? String)
+        let actual = try XCTUnwrap(parseDuration(text.replacingOccurrences(of: "Today's total: ", with: "")))
         XCTAssertGreaterThanOrEqual(actual, floor(lower))
         XCTAssertLessThanOrEqual(actual, lower + Date().timeIntervalSince(before) + 2)
         let worklog = try XCTUnwrap(fixture.activeWorklog())
