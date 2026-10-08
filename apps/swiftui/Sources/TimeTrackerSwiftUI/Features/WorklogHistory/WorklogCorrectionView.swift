@@ -71,10 +71,11 @@ private struct WorklogCorrectionSheet: View {
                 .foregroundStyle(.secondary)
 
             if let end = state.end, end >= state.start {
-                LabeledContent("Duration", value: clockDuration(end.timeIntervalSince(state.start)))
-                    .accessibilityIdentifier("worklog-correction.duration")
-                    .accessibilityValue(clockDuration(end.timeIntervalSince(state.start)))
-                    .monospacedDigit()
+                LabeledContent("Duration") {
+                    Text(clockDuration(end.timeIntervalSince(state.start)))
+                        .accessibilityIdentifier("worklog-correction.duration")
+                        .monospacedDigit()
+                }
             } else if state.end == nil {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     LabeledContent("Elapsed after save", value: clockDuration(
