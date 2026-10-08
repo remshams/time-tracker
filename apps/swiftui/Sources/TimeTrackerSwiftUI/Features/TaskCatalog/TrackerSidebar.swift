@@ -71,6 +71,7 @@ struct TrackerSidebar: View {
                     VStack(spacing: 8) {
                         Image(systemName: "tray")
                         Text("No \(store.tab.rawValue.lowercased()) tasks")
+                            .accessibilityIdentifier("task-sidebar.empty")
                     }
                     .foregroundStyle(.secondary)
                 }
