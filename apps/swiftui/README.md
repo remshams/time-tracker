@@ -160,6 +160,8 @@ The helper builds `tt-cli` and runs the `TimeTrackerUITests` target in the Debug
 
 Bulk archive tests cover the default 14-day preview, changing the inactivity period, invalid input, cancellation, confirmation, running-session preservation, and persistence after relaunch. Tests wait for observable UI states rather than sleeping. Remote-server interactions and other feature workflows remain outside this first suite. The TUI tests are unchanged.
 
+The [SwiftUI E2E coverage roadmap](e2e-roadmap.md) lists the remaining workflows, delivery order, fixture requirements, and acceptance checks for complete application coverage.
+
 The helper passes the absolute fixture CLI path to the test runner with `TEST_RUNNER_TT_UI_TEST_CLI`, using [Xcode's environment forwarding](https://developer.apple.com/documentation/xcode/environment-variable-reference). UI automation may request permission on your first local run. Allow Xcode to control the desktop when macOS asks. The macOS CI runner must provide an active desktop session with UI automation allowed.
 
 CI runs the suite alongside the existing native builds and layout checks. It uploads `.build/native-ui.log` and `.build/native-ui.xcresult` in the `native-macos-diagnostics` artifact, even after a failed test. Open the result bundle in Xcode to inspect failures and screenshot attachments. You can also run the target from Xcode after setting `TT_UI_TEST_CLI` to your built CLI's absolute path in the scheme's Test environment.
