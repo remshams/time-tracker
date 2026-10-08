@@ -36,13 +36,25 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         select(task)
         openCorrection(log)
         stepMinute("worklog-correction.end", direction: .downArrow)
+        let heading = app.sheets.firstMatch.staticTexts["Edit worklog"]
+        XCTAssertTrue(heading.exists)
+        heading.click()
+        waitUntil("The date editors release keyboard focus before Return") {
+            !self.element("worklog-correction.start").debugDescription.contains("Keyboard Focused")
+                && !self.element("worklog-correction.end").debugDescription.contains("Keyboard Focused")
+        }
+        XCTAssertTrue(app.buttons["worklog-correction.save"].isEnabled)
         app.typeKey(.return, modifierFlags: [])
         waitUntil("Return saves corrected end") { !self.element("worklog-correction.start").exists }
         let saved = try XCTUnwrap(fixture.worklogs(task).first)
         XCTAssertEqual(saved.id, log.id)
         XCTAssertEqual(saved.start, log.start)
         XCTAssertNotEqual(saved.end, log.end)
-        assertMinutePrecision(try XCTUnwrap(saved.end))
+        let savedEnd = try XCTUnwrap(saved.end)
+        assertMinutePrecision(savedEnd)
+        let originalEnd = try parsed(try XCTUnwrap(log.end))
+        XCTAssertEqual(try parsed(savedEnd).timeIntervalSince1970,
+                       floor(originalEnd.timeIntervalSince1970 / 60) * 60 - 60, accuracy: 0.001)
     }
 
     func testRunningStartCorrectionKeepsExactTimerIdentityAndTracking() throws {

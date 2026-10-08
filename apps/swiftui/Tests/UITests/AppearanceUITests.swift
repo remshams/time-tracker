@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @MainActor
@@ -5,10 +6,13 @@ final class AppearanceUITests: TrackerUITestCase {
     func testLightAndDarkAppearanceKeepTaskNamesErrorsAndControlsReachable() throws {
         let task = try fixture.create("Planning with a long task name that wraps across the narrow sidebar")
         for appearance in ["Light", "Dark"] {
-            additionalLaunchArguments = ["-AppleInterfaceStyle", appearance]
+            app.launchEnvironment["TT_UI_TEST_APPEARANCE"] = appearance
             launch()
             let resolvedAppearance = element("tracker.window.appearance")
             XCTAssertTrue(resolvedAppearance.waitForExistence(timeout: timeout))
+            waitUntil("Window resolves the requested appearance") {
+                resolvedAppearance.value as? String == appearance
+            }
             XCTAssertEqual(resolvedAppearance.value as? String, appearance)
             select(task)
             XCTAssertTrue(taskRow(task).isHittable)
@@ -71,11 +75,17 @@ final class AppearanceUITests: TrackerUITestCase {
     }
 
     private func resizeWindow(to size: CGSize) {
-        let frame = trackerWindow.frame
-        let corner = trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
-            .withOffset(CGVector(dx: -2, dy: -2))
-        let target = corner.withOffset(CGVector(dx: size.width - frame.width, dy: size.height - frame.height))
-        corner.press(forDuration: 0.1, thenDragTo: target)
+        let visibleSize = NSScreen.main?.visibleFrame.size ?? size
+        let width = min(size.width, visibleSize.width)
+        let rightEdge = trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
+            .withOffset(CGVector(dx: -1, dy: 0))
+        rightEdge.press(forDuration: 0.5, thenDragTo: rightEdge.withOffset(
+            CGVector(dx: width - trackerWindow.frame.width, dy: 0)))
+        let height = min(size.height, visibleSize.height)
+        let bottomEdge = trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1))
+            .withOffset(CGVector(dx: 0, dy: -1))
+        bottomEdge.press(forDuration: 0.5, thenDragTo: bottomEdge.withOffset(
+            CGVector(dx: 0, dy: height - trackerWindow.frame.height)))
     }
 
     private func assertControlsInsideWindow(file: StaticString = #filePath, line: UInt = #line) {
