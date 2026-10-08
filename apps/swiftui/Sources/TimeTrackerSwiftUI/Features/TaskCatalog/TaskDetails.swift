@@ -16,17 +16,21 @@ struct TaskDetails: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                             .help(task.name)
+                            .accessibilityIdentifier("task-details.name")
                     }
 
                     HStack(spacing: 12) {
                         if task.archived {
                             Label("Archived", systemImage: "archivebox")
+                                .accessibilityIdentifier("task-details.state")
                                 .foregroundStyle(.secondary)
                         } else if let active = store.active, active.taskId == task.id {
                             Label("Running since \(localTimestamp(active.start))", systemImage: "timer")
+                                .accessibilityIdentifier("task-details.state")
                                 .foregroundStyle(.secondary)
                         } else {
                             Label("Active", systemImage: "checklist")
+                                .accessibilityIdentifier("task-details.state")
                                 .foregroundStyle(.secondary)
                         }
 
@@ -39,6 +43,8 @@ struct TaskDetails: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("task-details.task.\(task.id)")
 
                 Divider()
                 ScrollView {
@@ -48,6 +54,7 @@ struct TaskDetails: View {
 
                         if store.worklogs.isEmpty && store.error == nil {
                             Label("No worklogs yet", systemImage: "clock")
+                                .accessibilityIdentifier("worklog-history.empty")
                                 .foregroundStyle(.secondary)
                                 .padding(.vertical, 12)
                         }
@@ -65,6 +72,7 @@ struct TaskDetails: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(24)
                 }
+                .accessibilityIdentifier("worklog-history.scroll")
             } else {
                 VStack(alignment: .leading, spacing: 16) {
                     errorView
@@ -94,8 +102,10 @@ struct TaskDetails: View {
                 .foregroundStyle(.primary)
                 if store.historyUnavailable {
                     Button("Retry") { store.retryHistory() }
+                        .accessibilityIdentifier("worklog-history.retry")
                 }
             }
+            .accessibilityIdentifier("worklog-history.error")
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
@@ -113,6 +123,7 @@ private struct HistoryPaginationButton: View {
 
     var body: some View {
         Button("Load older worklogs") { store.loadOlder() }
+            .accessibilityIdentifier("worklog-history.load-older")
             .disabled(activity.isBlockingControls || store.isStale)
     }
 }
