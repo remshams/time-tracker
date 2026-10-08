@@ -15,6 +15,44 @@ use crate::support::errors::application_error_text;
 impl AppState {
     pub(crate) fn handle_task_list_command(&mut self, command: TaskListCommand) {
         match command {
+            TaskListCommand::MoveUp
+            | TaskListCommand::MoveDown
+            | TaskListCommand::First
+            | TaskListCommand::Last
+            | TaskListCommand::PageUp
+            | TaskListCommand::PageDown
+            | TaskListCommand::GPrefix
+            | TaskListCommand::ShowActiveTasks
+            | TaskListCommand::ShowArchivedTasks
+            | TaskListCommand::ShowReports
+            | TaskListCommand::ShowAllWorklogs => self.handle_task_navigation(command),
+            TaskListCommand::OpenSearch
+            | TaskListCommand::CommitSearch
+            | TaskListCommand::CancelSearch
+            | TaskListCommand::ClearSearch
+            | TaskListCommand::InsertSearch(..)
+            | TaskListCommand::BackspaceSearch => self.handle_task_search_command(command),
+            TaskListCommand::CopySelectedName
+            | TaskListCommand::CycleOrdering
+            | TaskListCommand::UnarchiveSelected
+            | TaskListCommand::ToggleTracking
+            | TaskListCommand::OpenHistory => self.handle_task_action(command),
+            TaskListCommand::OpenAdd
+            | TaskListCommand::OpenRename
+            | TaskListCommand::OpenArchiveConfirm
+            | TaskListCommand::OpenInactiveArchivePreview
+            | TaskListCommand::Insert(..)
+            | TaskListCommand::Backspace
+            | TaskListCommand::Confirm
+            | TaskListCommand::Cancel => self.handle_task_edit_command(command),
+        }
+        if command != TaskListCommand::GPrefix {
+            self.shell_mut().task_list_mut().set_g_prefix(false);
+        }
+    }
+
+    fn handle_task_navigation(&mut self, command: TaskListCommand) {
+        match command {
             TaskListCommand::MoveUp => self.move_task_up(),
             TaskListCommand::MoveDown => self.move_task_down(),
             TaskListCommand::First
@@ -26,8 +64,12 @@ impl AppState {
             TaskListCommand::ShowArchivedTasks => self.show_tasks(TaskView::Archived),
             TaskListCommand::ShowReports => self.open_reports(),
             TaskListCommand::ShowAllWorklogs => self.open_all_worklogs(),
-            TaskListCommand::CopySelectedName => self.copy_selected_task_name(),
-            TaskListCommand::CycleOrdering => self.cycle_ordering(),
+            _ => unreachable!("only commands in this dispatch group reach this handler"),
+        }
+    }
+
+    fn handle_task_search_command(&mut self, command: TaskListCommand) {
+        match command {
             TaskListCommand::OpenSearch => self.open_task_search(),
             TaskListCommand::CommitSearch => self.commit_task_search(),
             TaskListCommand::CancelSearch => self.cancel_task_search(),
@@ -38,8 +80,23 @@ impl AppState {
             TaskListCommand::BackspaceSearch => {
                 self.edit_task_search(|state| state.backspace_search())
             }
+            _ => unreachable!("only commands in this dispatch group reach this handler"),
+        }
+    }
+
+    fn handle_task_action(&mut self, command: TaskListCommand) {
+        match command {
+            TaskListCommand::CopySelectedName => self.copy_selected_task_name(),
+            TaskListCommand::CycleOrdering => self.cycle_ordering(),
             TaskListCommand::UnarchiveSelected => self.unarchive_selected(),
             TaskListCommand::ToggleTracking => self.toggle_tracking(),
+            TaskListCommand::OpenHistory => self.open_history(),
+            _ => unreachable!("only commands in this dispatch group reach this handler"),
+        }
+    }
+
+    fn handle_task_edit_command(&mut self, command: TaskListCommand) {
+        match command {
             TaskListCommand::OpenAdd => self.open_add(),
             TaskListCommand::OpenRename => self.open_rename(),
             TaskListCommand::OpenArchiveConfirm => self.open_archive_confirm(),
@@ -51,10 +108,7 @@ impl AppState {
             TaskListCommand::Backspace => self.shell_mut().task_list_mut().backspace_name(),
             TaskListCommand::Confirm => self.confirm_task_list(),
             TaskListCommand::Cancel => self.cancel_task_list_mode(),
-            TaskListCommand::OpenHistory => self.open_history(),
-        }
-        if command != TaskListCommand::GPrefix {
-            self.shell_mut().task_list_mut().set_g_prefix(false);
+            _ => unreachable!("command is handled by an earlier dispatch group"),
         }
     }
 

@@ -72,6 +72,21 @@ fn rows(state: &ReportState, key: KeyEvent) -> Option<KeymapCommand<ReportComman
 
 fn rows_plain(state: &ReportState, code: KeyCode) -> Option<KeymapCommand<ReportCommand>> {
     let command = match code {
+        KeyCode::Char('h') | KeyCode::Left => ReportCommand::PreviousPeriod,
+        KeyCode::Char('l') | KeyCode::Right => ReportCommand::NextPeriod,
+        KeyCode::Char('r') => ReportCommand::Refresh,
+        KeyCode::Char('c') => ReportCommand::CopyName,
+        KeyCode::Char('t') => ReportCommand::CopyExact,
+        KeyCode::Char('s') => ReportCommand::CopyRounded,
+        KeyCode::Enter => ReportCommand::OpenHistory,
+        KeyCode::Char('q') => return Some(KeymapCommand::Quit),
+        _ => return row_navigation(state, code).map(KeymapCommand::Local),
+    };
+    Some(KeymapCommand::Local(command))
+}
+
+fn row_navigation(state: &ReportState, code: KeyCode) -> Option<ReportCommand> {
+    let command = match code {
         KeyCode::Tab | KeyCode::BackTab => ReportCommand::FocusPresets,
         KeyCode::Char('j') | KeyCode::Down => ReportCommand::MoveDown,
         KeyCode::Char('k') | KeyCode::Up => ReportCommand::MoveUp,
@@ -83,18 +98,10 @@ fn rows_plain(state: &ReportState, code: KeyCode) -> Option<KeymapCommand<Report
                 ReportCommand::GPrefix
             }
         }
-        KeyCode::Char('h') | KeyCode::Left => ReportCommand::PreviousPeriod,
-        KeyCode::Char('l') | KeyCode::Right => ReportCommand::NextPeriod,
-        KeyCode::Char('r') => ReportCommand::Refresh,
-        KeyCode::Char('c') => ReportCommand::CopyName,
-        KeyCode::Char('t') => ReportCommand::CopyExact,
-        KeyCode::Char('s') => ReportCommand::CopyRounded,
-        KeyCode::Enter => ReportCommand::OpenHistory,
         KeyCode::Esc => ReportCommand::FocusTabs,
-        KeyCode::Char('q') => return Some(KeymapCommand::Quit),
         _ => return None,
     };
-    Some(KeymapCommand::Local(command))
+    Some(command)
 }
 
 fn custom(key: KeyEvent) -> Option<KeymapCommand<ReportCommand>> {

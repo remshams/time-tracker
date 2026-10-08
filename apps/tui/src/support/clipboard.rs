@@ -30,25 +30,37 @@ fn copy_with_program(program: &OsStr, value: &str, timeout: Duration) -> io::Res
         let _ = sender.send(result);
     });
     let deadline = Instant::now() + timeout;
+    wait_for_write(&mut child, receiver, deadline)?;
+    wait_for_exit(&mut child, deadline)
+}
+
+fn wait_for_write(
+    child: &mut Child,
+    receiver: mpsc::Receiver<io::Result<()>>,
+    deadline: Instant,
+) -> io::Result<()> {
     let remaining = deadline.saturating_duration_since(Instant::now());
     match receiver.recv_timeout(remaining) {
-        Ok(Ok(())) => {}
+        Ok(Ok(())) => Ok(()),
         Ok(Err(error)) => {
-            terminate_and_reap(&mut child);
-            return Err(error);
+            terminate_and_reap(child);
+            Err(error)
         }
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            terminate_and_reap(&mut child);
-            return Err(io::Error::new(
+            terminate_and_reap(child);
+            Err(io::Error::new(
                 io::ErrorKind::TimedOut,
                 "clipboard write timed out",
-            ));
+            ))
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
-            terminate_and_reap(&mut child);
-            return Err(io::Error::other("clipboard write failed"));
+            terminate_and_reap(child);
+            Err(io::Error::other("clipboard write failed"))
         }
     }
+}
+
+fn wait_for_exit(child: &mut Child, deadline: Instant) -> io::Result<()> {
     loop {
         match child.try_wait() {
             Ok(Some(status)) if status.success() => return Ok(()),
@@ -59,7 +71,7 @@ fn copy_with_program(program: &OsStr, value: &str, timeout: Duration) -> io::Res
                 if Instant::now().checked_duration_since(deadline).is_none() {
                     thread::sleep(Duration::from_millis(10));
                 } else {
-                    terminate_and_reap(&mut child);
+                    terminate_and_reap(child);
                     return Err(io::Error::new(
                         io::ErrorKind::TimedOut,
                         "clipboard timed out",
@@ -67,7 +79,7 @@ fn copy_with_program(program: &OsStr, value: &str, timeout: Duration) -> io::Res
                 }
             }
             Err(error) => {
-                terminate_and_reap(&mut child);
+                terminate_and_reap(child);
                 return Err(error);
             }
         }
@@ -84,6 +96,38 @@ mod tests {
     use super::*;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn a_failed_writer_terminates_and_reaps_the_helper() {
+        let mut child = Command::new("sleep").arg("10").spawn().unwrap();
+        let (sender, receiver) = mpsc::channel();
+        sender
+            .send(Err(io::Error::from(io::ErrorKind::BrokenPipe)))
+            .unwrap();
+        let error = wait_for_write(
+            &mut child,
+            receiver,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+        assert!(child.try_wait().unwrap().is_some());
+    }
+
+    #[test]
+    fn a_disconnected_writer_terminates_and_reaps_the_helper() {
+        let mut child = Command::new("sleep").arg("10").spawn().unwrap();
+        let (sender, receiver) = mpsc::channel();
+        drop(sender);
+        let error = wait_for_write(
+            &mut child,
+            receiver,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "clipboard write failed");
+        assert!(child.try_wait().unwrap().is_some());
+    }
 
     #[test]
     fn a_hanging_clipboard_helper_is_terminated() {
@@ -116,6 +160,7 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert_eq!(error.to_string(), "clipboard write timed out");
         assert!(started.elapsed() < Duration::from_secs(2));
     }
 

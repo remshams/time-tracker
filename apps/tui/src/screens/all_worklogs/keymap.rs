@@ -88,13 +88,7 @@ fn map_rows_plain(g_prefix: bool, code: KeyCode) -> Option<KeymapCommand<C>> {
     let command = match code {
         KeyCode::Char('j') | KeyCode::Down => C::MoveDown,
         KeyCode::Char('k') | KeyCode::Up => C::MoveUp,
-        KeyCode::Char('g') => {
-            if g_prefix {
-                C::First
-            } else {
-                C::GPrefix
-            }
-        }
+        KeyCode::Char('g') => g_prefix_command(g_prefix),
         KeyCode::Char('G') => C::Last,
         KeyCode::Char('m') => C::OpenMove,
         KeyCode::Char('o') => C::LoadOlder,
@@ -104,6 +98,10 @@ fn map_rows_plain(g_prefix: bool, code: KeyCode) -> Option<KeymapCommand<C>> {
         _ => return None,
     };
     Some(KeymapCommand::Local(command))
+}
+
+fn g_prefix_command(g_prefix: bool) -> C {
+    if g_prefix { C::First } else { C::GPrefix }
 }
 
 pub(crate) fn footer_hints(state: &AllWorklogsState, width: u16) -> &'static str {

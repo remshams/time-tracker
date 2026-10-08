@@ -158,4 +158,12 @@ mod tests {
         let error: Box<dyn Error> = "something broke".into();
         assert_eq!(report(Err(error)), ExitCode::FAILURE);
     }
+
+    #[test]
+    fn server_startup_reports_an_invalid_database_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let bind = "127.0.0.1:0".parse().unwrap();
+        let error = run_server(bind, Some(directory.path().to_owned())).unwrap_err();
+        assert!(!error.to_string().is_empty());
+    }
 }

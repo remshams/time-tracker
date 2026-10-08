@@ -128,6 +128,44 @@ impl AppState {
             return;
         }
         match command {
+            ReportCommand::ShowActive
+            | ReportCommand::ShowAllWorklogs
+            | ReportCommand::MoveUp
+            | ReportCommand::MoveDown
+            | ReportCommand::First
+            | ReportCommand::Last
+            | ReportCommand::PageUp
+            | ReportCommand::PageDown
+            | ReportCommand::PreviousPeriod
+            | ReportCommand::NextPeriod
+            | ReportCommand::Refresh
+            | ReportCommand::FocusPresets
+            | ReportCommand::FocusRows
+            | ReportCommand::FocusTabs
+            | ReportCommand::PresetPrevious
+            | ReportCommand::PresetNext
+            | ReportCommand::ChoosePreset => self.handle_report_navigation_command(command),
+            ReportCommand::OpenHistory
+            | ReportCommand::CopyName
+            | ReportCommand::CopyExact
+            | ReportCommand::CopyRounded
+            | ReportCommand::GPrefix => self.handle_report_row_command(command),
+            ReportCommand::SwitchField
+            | ReportCommand::ShiftCustomDate(..)
+            | ReportCommand::Insert(..)
+            | ReportCommand::Backspace
+            | ReportCommand::ConfirmCustom
+            | ReportCommand::Cancel => self.handle_report_custom_command(command),
+        }
+        if command != ReportCommand::GPrefix
+            && let Some(report) = self.shell_mut().report_mut()
+        {
+            report.g_prefix = false;
+        }
+    }
+
+    fn handle_report_navigation_command(&mut self, command: ReportCommand) {
+        match command {
             ReportCommand::ShowActive => self.leave_reports(TaskView::Active),
             ReportCommand::ShowAllWorklogs => self.open_all_worklogs(),
             ReportCommand::MoveUp
@@ -137,19 +175,7 @@ impl AppState {
             | ReportCommand::PageUp
             | ReportCommand::PageDown => self.move_report(command),
             ReportCommand::PreviousPeriod | ReportCommand::NextPeriod => {
-                let direction = if command == ReportCommand::PreviousPeriod {
-                    -1
-                } else {
-                    1
-                };
-                if self
-                    .shell_mut()
-                    .report_mut()
-                    .expect("report is open")
-                    .step(direction)
-                {
-                    self.refresh_reports_now();
-                }
+                self.step_report_period(command)
             }
             ReportCommand::Refresh => self.refresh_reports_now(),
             ReportCommand::FocusPresets
@@ -162,6 +188,44 @@ impl AppState {
                     ReportPreset::ALL[self.shell().report().expect("report is open").preset_cursor];
                 self.choose_report_preset(preset);
             }
+            _ => unreachable!("only commands in this dispatch group reach this handler"),
+        }
+    }
+
+    fn step_report_period(&mut self, command: ReportCommand) {
+        let direction = if command == ReportCommand::PreviousPeriod {
+            -1
+        } else {
+            1
+        };
+        if self
+            .shell_mut()
+            .report_mut()
+            .expect("report is open")
+            .step(direction)
+        {
+            self.refresh_reports_now();
+        }
+    }
+
+    fn handle_report_row_command(&mut self, command: ReportCommand) {
+        match command {
+            ReportCommand::OpenHistory => self.open_report_history(),
+            ReportCommand::CopyName | ReportCommand::CopyExact | ReportCommand::CopyRounded => {
+                self.copy_report_value(command)
+            }
+            ReportCommand::GPrefix => {
+                self.shell_mut()
+                    .report_mut()
+                    .expect("report is open")
+                    .g_prefix = true
+            }
+            _ => unreachable!("only commands in this dispatch group reach this handler"),
+        }
+    }
+
+    fn handle_report_custom_command(&mut self, command: ReportCommand) {
+        match command {
             ReportCommand::SwitchField => {
                 if let ReportMode::Custom { focus_to, .. } =
                     &mut self.shell_mut().report_mut().expect("report is open").mode
@@ -183,23 +247,7 @@ impl AppState {
             ReportCommand::Backspace => self.edit_custom(|field| {
                 field.pop();
             }),
-            ReportCommand::ConfirmCustom => {
-                let result = self
-                    .shell_mut()
-                    .report_mut()
-                    .expect("report is open")
-                    .apply_custom();
-                match result {
-                    Ok(()) => self.refresh_reports_now(),
-                    Err(message) => {
-                        self.shell_mut()
-                            .report_mut()
-                            .expect("report is open")
-                            .report_error = true;
-                        self.shell_mut().error(message);
-                    }
-                }
-            }
+            ReportCommand::ConfirmCustom => self.confirm_custom_report_period(),
             ReportCommand::Cancel => {
                 let report = self.shell_mut().report_mut().expect("report is open");
                 if matches!(report.mode, ReportMode::Custom { .. }) {
@@ -209,21 +257,25 @@ impl AppState {
                     report.focus = ReportFocus::TopTabs;
                 }
             }
-            ReportCommand::OpenHistory => self.open_report_history(),
-            ReportCommand::CopyName | ReportCommand::CopyExact | ReportCommand::CopyRounded => {
-                self.copy_report_value(command)
-            }
-            ReportCommand::GPrefix => {
+            _ => unreachable!("command is handled by an earlier dispatch group"),
+        }
+    }
+
+    fn confirm_custom_report_period(&mut self) {
+        let result = self
+            .shell_mut()
+            .report_mut()
+            .expect("report is open")
+            .apply_custom();
+        match result {
+            Ok(()) => self.refresh_reports_now(),
+            Err(message) => {
                 self.shell_mut()
                     .report_mut()
                     .expect("report is open")
-                    .g_prefix = true
+                    .report_error = true;
+                self.shell_mut().error(message);
             }
-        }
-        if command != ReportCommand::GPrefix
-            && let Some(report) = self.shell_mut().report_mut()
-        {
-            report.g_prefix = false;
         }
     }
 

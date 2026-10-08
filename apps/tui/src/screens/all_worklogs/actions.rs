@@ -58,6 +58,36 @@ impl AppState {
 
     pub(crate) fn handle_all_worklogs_command(&mut self, command: C) {
         match command {
+            C::ShowArchived | C::ShowReports => self.handle_global_tab_command(command),
+            C::FocusRows
+            | C::FocusTabs
+            | C::MoveUp
+            | C::MoveDown
+            | C::First
+            | C::Last
+            | C::PageUp
+            | C::PageDown
+            | C::GPrefix
+            | C::LoadOlder
+            | C::Refresh => self.handle_global_navigation(command),
+            C::OpenMove
+            | C::ToggleMoveFocus
+            | C::MoveDestinationUp
+            | C::MoveDestinationDown
+            | C::InsertMoveQuery(..)
+            | C::BackspaceMoveQuery
+            | C::ConfirmMove
+            | C::CancelMove => self.handle_global_move_command(command),
+        }
+        if command != C::GPrefix
+            && let Some(state) = self.shell_mut().all_worklogs_mut()
+        {
+            state.g_prefix = false;
+        }
+    }
+
+    fn handle_global_tab_command(&mut self, command: C) {
+        match command {
             C::ShowArchived => {
                 let first = self
                     .catalog()
@@ -75,6 +105,12 @@ impl AppState {
                     .leave_all_worklogs_for_reports(chrono::Utc::now());
                 self.refresh_reports_now();
             }
+            _ => unreachable!("only tab commands reach this handler"),
+        }
+    }
+
+    fn handle_global_navigation(&mut self, command: C) {
+        match command {
             C::FocusRows => self.global_mut().focus = AllWorklogsFocus::Rows,
             C::FocusTabs => self.global_mut().focus = AllWorklogsFocus::Tabs,
             C::MoveUp => self.global_mut().move_selection(false),
@@ -83,6 +119,12 @@ impl AppState {
             C::GPrefix => self.global_mut().g_prefix = true,
             C::LoadOlder => self.load_older_global(),
             C::Refresh => self.refresh_global(),
+            _ => unreachable!("only commands in this dispatch group reach this handler"),
+        }
+    }
+
+    fn handle_global_move_command(&mut self, command: C) {
+        match command {
             C::OpenMove => self.open_global_move(),
             C::ToggleMoveFocus => self.edit_global_move(MoveDraft::toggle_focus),
             C::MoveDestinationUp => self.edit_global_move(MoveDraft::move_up),
@@ -104,11 +146,7 @@ impl AppState {
                 state.move_draft = None;
                 self.shell_mut().info("Move cancelled");
             }
-        }
-        if command != C::GPrefix
-            && let Some(state) = self.shell_mut().all_worklogs_mut()
-        {
-            state.g_prefix = false;
+            _ => unreachable!("command is handled by an earlier dispatch group"),
         }
     }
 
