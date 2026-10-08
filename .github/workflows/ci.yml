@@ -154,7 +154,11 @@ jobs:
           retention-days: 7
 
   native-macos:
-    name: Native macOS builds, layout, and UI tests
+    name: Native macOS UI tests, ${{ matrix.group }}
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [core, tasks, worklogs, server, menu, mac]
     runs-on: xcode-27
     timeout-minutes: 60
     env:
@@ -187,6 +191,7 @@ jobs:
           restore-keys: |
             native-${{ runner.os }}-${{ runner.arch }}-xcode-27.0-rust-${{ env.RUSTUP_TOOLCHAIN }}-
       - name: Test the Swift package on macOS
+        if: matrix.group == 'mac'
         run: swift test --package-path apps/swiftui/TrackerClient
       - name: Build the native Debug app and Rust bridge
         run: |
@@ -195,9 +200,10 @@ jobs:
             -configuration Debug -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath .build/native-debug -resultBundlePath .build/native-debug.xcresult \
             CODE_SIGNING_ALLOWED=NO build | tee .build/native-debug.log
-      - name: Test bulk archiving through the native macOS UI
-        run: apps/swiftui/check-native-ui.sh
+      - name: Test SwiftUI workflows through the native macOS UI
+        run: apps/swiftui/check-native-ui.sh --group "${{ matrix.group }}"
       - name: Build the universal Release app and Rust bridge
+        if: matrix.group == 'mac'
         run: |
           xcodebuild -project apps/swiftui/TimeTracker.xcodeproj -scheme TimeTracker \
             -configuration Release -destination 'generic/platform=macOS' \
@@ -209,12 +215,13 @@ jobs:
             xcrun lipo "$native_binary" -verify_arch "$architecture"
           done
       - name: Check native scene layout
+        if: matrix.group == 'mac'
         run: apps/swiftui/check-native-layout.sh
       - name: Upload native build diagnostics
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: native-macos-diagnostics
+          name: native-macos-diagnostics-${{ matrix.group }}
           path: |
             .build/native-debug.log
             .build/native-release.log
