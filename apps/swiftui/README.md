@@ -156,13 +156,13 @@ On a Mac with Xcode selected and an active desktop session, run:
 apps/swiftui/check-native-ui.sh
 ```
 
-The helper builds `tt-cli` and runs the `TimeTrackerUITests` target in the Debug app. Each test uses a fresh temporary SQLite database and an isolated preferences suite. The CLI creates fixtures through the real Rust application, and UI actions call the production Swift-to-Rust bridge. The suite does not touch your default database or saved connection settings.
+The helper builds `tt-cli` and `tt`, then runs the `TimeTrackerUITests` target in the Debug app. Each test uses a fresh SQLite database and an isolated preferences suite. Server cases start a real `tt` server; an ordered fault proxy exercises delays, outages, and uncertain writes. The CLI creates fixtures and verifies stored results while UI actions call the production Swift-to-Rust bridge.
 
-Bulk archive tests cover the default 14-day preview, changing the inactivity period, invalid input, cancellation, confirmation, running-session preservation, and persistence after relaunch. Tests wait for observable UI states rather than sleeping. Remote-server interactions and other feature workflows remain outside this first suite. The TUI tests are unchanged.
+The suite covers task creation, selection, tracking, history, rename, archive, correction, move, connection recovery, native menus, clipboard actions, settings, windows, totals, lifecycle delivery, and appearance. The seven original bulk archive scenarios are retained. See the [coverage map and dedicated-Mac acceptance checklist](e2e-coverage.md) for the cases and remaining platform evidence.
 
-The helper passes the absolute fixture CLI path to the test runner with `TEST_RUNNER_TT_UI_TEST_CLI`, using [Xcode's environment forwarding](https://developer.apple.com/documentation/xcode/environment-variable-reference). UI automation may request permission on your first local run. Allow Xcode to control the desktop when macOS asks. The macOS CI runner must provide an active desktop session with UI automation allowed.
+Use `--smoke` for launch checks or `--group core`, `tasks`, `worklogs`, `server`, `menu`, or `mac` for a focused run. CI requires all six groups, each running serially on its own desktop. It retains logs and result bundles in `native-macos-diagnostics-<group>` artifacts, including after failure. Open the result bundle in Xcode to inspect screenshots and accessibility diagnostics.
 
-CI runs the suite alongside the existing native builds and layout checks. It uploads `.build/native-ui.log` and `.build/native-ui.xcresult` in the `native-macos-diagnostics` artifact, even after a failed test. Open the result bundle in Xcode to inspect failures and screenshot attachments. You can also run the target from Xcode after setting `TT_UI_TEST_CLI` to your built CLI's absolute path in the scheme's Test environment.
+The runner forwards absolute CLI, server, proxy, and Python paths using `TEST_RUNNER_` environment variables. UI automation may request permission on your first local run. Allow Xcode to control the desktop when macOS asks. Native tests require an active desktop session; real lock, sleep, multiple-display, and keyboard-layout acceptance checks require a dedicated Mac.
 
 On a Mac with Xcode selected, run the SwiftUI scene layout checks from the repository root:
 
@@ -207,7 +207,7 @@ Focused runs label their scope and satisfy the handoff requirement under the sco
 
 All commands accept `--swift` for a specific toolchain. Coverage also accepts `--llvm-cov`; mutation testing accepts `--muter` for another tool binary. Generated artifacts are ignored by Git.
 
-These checks cover the portable client state. The native UI end-to-end suite exercises bulk archiving on macOS through the real Rust bridge. Rust coverage, mutation testing, and CRAP checks cover the Rust application and bridge separately.
+These checks cover the portable client state. The native UI end-to-end suite exercises local and server workflows on macOS through the real Rust bridge. Rust coverage, mutation testing, and CRAP checks cover the Rust application and bridge separately.
 
 ## Architecture
 
