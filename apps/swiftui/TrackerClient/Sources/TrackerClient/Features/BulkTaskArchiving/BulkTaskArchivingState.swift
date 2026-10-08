@@ -52,7 +52,7 @@ final class BulkTaskArchivingState {
                 preview?.inactiveDays == days && !(preview?.tasks.isEmpty ?? true))
     }
 
-    func open() { reset(); isPresented = true; requestPreview() }
+    func open() { isPresented = true; requestPreview() }
     func updateDays(_ text: String) {
         guard isPresented, !isSubmitting, text != daysText else { return }
         daysText = text

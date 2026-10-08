@@ -126,6 +126,12 @@ final class BulkTaskArchivingTests: XCTestCase {
         fixture.session.updateBulkArchiveDays("0")
         XCTAssertFalse(fixture.session.bulkTaskArchiving.hasPreview)
         XCTAssertTrue(fixture.session.bulkTaskArchiving.tasks.isEmpty)
+        fixture.session.cancelBulkTaskArchiving()
+        fixture.session.openBulkTaskArchiving()
+        XCTAssertEqual(fixture.session.bulkTaskArchiving.daysText, "14")
+        XCTAssertFalse(fixture.session.bulkTaskArchiving.hasPreview)
+        _ = try answerPreview(try await fixture.client.next())
+        try await fixture.settled()
     }
 
     @MainActor
@@ -169,7 +175,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         _ = try answerPreview(try await fixture.client.next())
         try await fixture.settled()
         let count = fixture.client.operations.count
-        for text in ["", "0", "-1", "1.5", " 14", "4294967296", "abc", "💠"] {
+        for text in ["", "0", "-1", "+14", "1.5", " 14", "4294967296", "abc", "💠"] {
             fixture.session.updateBulkArchiveDays(text)
             XCTAssertFalse(fixture.session.bulkTaskArchiving.canSubmit, text)
             XCTAssertTrue(fixture.session.bulkTaskArchiving.tasks.isEmpty, text)
@@ -273,7 +279,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
         XCTAssertFalse(fixture.session.canStopTracking)
         XCTAssertFalse(fixture.session.canOpenBulkTaskArchiving)
-        let changed = await fixture.session.connect(.local)
+        let changed = try await fixture.taskValue(Task { await fixture.session.connect(.local) })
         XCTAssertFalse(changed)
         do { try await fixture.session.testConnection(.local); XCTFail("Connection test must be blocked") }
         catch { XCTAssertTrue(error.localizedDescription.contains("Close the archive dialog")) }
