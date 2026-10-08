@@ -73,6 +73,10 @@ final class BulkTaskArchivingUITests: XCTestCase {
         let refreshFrame = try fixture.withLockedDatabase {
             app.buttons["bulk-archive.refresh"].click()
             assertLoading()
+            XCTAssertEqual(element("bulk-archive.count").value as? String, "2 tasks to archive")
+            XCTAssertTrue(element("bulk-archive.candidate.\(seed.old.id)").exists)
+            XCTAssertTrue(element("bulk-archive.candidate.\(seed.medium.id)").exists)
+            XCTAssertFalse(confirm.isEnabled)
             return app.sheets.firstMatch.frame
         }
         assertFrame(refreshFrame, equals: loadingFrame)
@@ -118,6 +122,13 @@ final class BulkTaskArchivingUITests: XCTestCase {
         XCTAssertTrue(element("bulk-archive.empty").waitForExistence(timeout: timeout))
         XCTAssertEqual(element("bulk-archive.count").value as? String, "0 tasks to archive")
         XCTAssertFalse(confirm.isEnabled)
+        try fixture.withLockedDatabase {
+            app.buttons["bulk-archive.refresh"].click()
+            assertLoading()
+            XCTAssertTrue(element("bulk-archive.empty").exists)
+            XCTAssertEqual(element("bulk-archive.count").value as? String, "0 tasks to archive")
+        }
+        waitUntil("Empty preview finishes refreshing") { self.app.buttons["bulk-archive.refresh"].isEnabled }
         cancelDialog()
         try assertArchived([])
     }
@@ -189,8 +200,12 @@ final class BulkTaskArchivingUITests: XCTestCase {
     }
 
     private func assertLoading() {
-        let loading = app.staticTexts.matching(NSPredicate(format: "value == %@", "Loading eligible tasks...")).firstMatch
-        XCTAssertTrue(loading.waitForExistence(timeout: 3), "The locked database must hold the preview in its loading state.")
+        let refresh = app.buttons["bulk-archive.refresh"]
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            refresh.exists && refresh.label == "Refreshing preview" && !refresh.isEnabled
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 3), .completed,
+                       "The refresh icon must indicate loading while the database is locked.")
     }
 
     private func assertDialogFrame(_ expected: CGRect, file: StaticString = #filePath, line: UInt = #line) {
