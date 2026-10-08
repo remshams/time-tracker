@@ -61,6 +61,41 @@ final class BulkTaskArchivingUITests: XCTestCase {
         cancelDialog()
     }
 
+    func testDialogFrameStaysStableDuringLoadingRefreshValidationAndCompletion() throws {
+        let loadingFrame = try fixture.withLockedDatabase {
+            openDialog()
+            assertLoading()
+            return app.sheets.firstMatch.frame
+        }
+        assertCandidates([seed.old, seed.medium], count: 2)
+        assertDialogFrame(loadingFrame)
+
+        let refreshFrame = try fixture.withLockedDatabase {
+            app.buttons["bulk-archive.refresh"].click()
+            assertLoading()
+            return app.sheets.firstMatch.frame
+        }
+        assertFrame(refreshFrame, equals: loadingFrame)
+        assertCandidates([seed.old, seed.medium], count: 2)
+        assertDialogFrame(loadingFrame)
+
+        replaceDays("0")
+        XCTAssertTrue(element("bulk-archive.error").waitForExistence(timeout: timeout))
+        assertDialogFrame(loadingFrame)
+        replaceDays("45")
+        XCTAssertTrue(element("bulk-archive.empty").waitForExistence(timeout: timeout))
+        assertDialogFrame(loadingFrame)
+        replaceDays("14")
+        assertCandidates([seed.old, seed.medium], count: 2)
+        assertDialogFrame(loadingFrame)
+        confirm.click()
+        assertResult("Archived 2 tasks.")
+        assertDialogFrame(loadingFrame)
+        cancelDialog()
+        try assertArchived([seed.old, seed.medium])
+        try assertRunningTimer()
+    }
+
     func testInvalidPeriodsDisableConfirmationAndValidInputRecovers() throws {
         openDialog()
         assertCandidates([seed.old, seed.medium], count: 2)
@@ -151,6 +186,24 @@ final class BulkTaskArchivingUITests: XCTestCase {
         days.click()
         days.typeKey("a", modifierFlags: .command)
         days.typeText(text)
+    }
+
+    private func assertLoading() {
+        let loading = app.staticTexts.matching(NSPredicate(format: "value == %@", "Loading eligible tasks...")).firstMatch
+        XCTAssertTrue(loading.waitForExistence(timeout: 3), "The locked database must hold the preview in its loading state.")
+    }
+
+    private func assertDialogFrame(_ expected: CGRect, file: StaticString = #filePath, line: UInt = #line) {
+        assertFrame(app.sheets.firstMatch.frame, equals: expected, file: file, line: line)
+    }
+
+    private func assertFrame(_ actual: CGRect, equals expected: CGRect, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertGreaterThan(expected.width, 0, file: file, line: line)
+        XCTAssertGreaterThan(expected.height, 0, file: file, line: line)
+        XCTAssertEqual(actual.width, expected.width, accuracy: 1, "Dialog width changed.", file: file, line: line)
+        XCTAssertEqual(actual.height, expected.height, accuracy: 1, "Dialog height changed.", file: file, line: line)
+        XCTAssertEqual(actual.minX, expected.minX, accuracy: 1, "Dialog moved horizontally.", file: file, line: line)
+        XCTAssertEqual(actual.minY, expected.minY, accuracy: 1, "Dialog moved vertically.", file: file, line: line)
     }
 
     private func assertCandidates(_ expected: [FixtureTask], count: Int, file: StaticString = #filePath, line: UInt = #line) {

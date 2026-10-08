@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import SQLite3
 
 struct FixtureTask: Decodable {
     let id: String
@@ -76,6 +77,19 @@ final class ArchiveFixture {
 
     func create(_ name: String, at date: Date) throws -> FixtureTask {
         try command(["tasks", "create", name], at: date)
+    }
+
+    func withLockedDatabase<Result>(_ operation: () throws -> Result) throws -> Result {
+        var connection: OpaquePointer?
+        let status = sqlite3_open_v2(database.path, &connection, SQLITE_OPEN_READWRITE, nil)
+        guard let connection else { throw FixtureError("Could not open the fixture database for locking.") }
+        defer { sqlite3_close(connection) }
+        guard status == SQLITE_OK,
+              sqlite3_exec(connection, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK else {
+            throw FixtureError("Could not lock the fixture database: \(String(cString: sqlite3_errmsg(connection)))")
+        }
+        defer { sqlite3_exec(connection, "ROLLBACK", nil, nil, nil) }
+        return try operation()
     }
 
     private func command<Result: Decodable>(_ arguments: [String], at date: Date = Date()) throws -> Result {
