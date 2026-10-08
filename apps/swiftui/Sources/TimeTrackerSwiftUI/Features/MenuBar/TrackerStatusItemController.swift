@@ -110,6 +110,10 @@ final class TrackerStatusItemController: NSObject {
         }
     }
 
+    @objc private func dismissNativeMenu() {
+        nativeMenu?.cancelTracking()
+    }
+
     private func toggleMenu() {
         if let nativeMenu { nativeMenu.cancelTracking() }
         else {
@@ -171,6 +175,19 @@ final class TrackerStatusItemController: NSObject {
         let menu = NSMenu()
         menu.appearance = appearance
         menu.autoenablesItems = false
+        let shortcut = store.menuShortcuts.openMenu
+        let dismiss = NSMenuItem(title: "Close menu", action: #selector(dismissNativeMenu),
+                                 keyEquivalent: shortcut.key)
+        dismiss.target = self
+        dismiss.isHidden = true
+        dismiss.allowsKeyEquivalentWhenHidden = true
+        var modifiers: NSEvent.ModifierFlags = []
+        if shortcut.modifiers.contains(.command) { modifiers.insert(.command) }
+        if shortcut.modifiers.contains(.control) { modifiers.insert(.control) }
+        if shortcut.modifiers.contains(.option) { modifiers.insert(.option) }
+        if shortcut.modifiers.contains(.shift) { modifiers.insert(.shift) }
+        dismiss.keyEquivalentModifierMask = modifiers
+        menu.addItem(dismiss)
         let connection = store.connectionSettings
         let serverURL = connection.mode == .server
             ? connection.serverURL.trimmingCharacters(in: .whitespacesAndNewlines) : nil
