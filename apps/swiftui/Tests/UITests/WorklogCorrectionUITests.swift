@@ -166,8 +166,8 @@ class WorklogCorrectionUITests: TrackerUITestCase {
     private func enableButtonKeyboardNavigation() {
         let key = "AppleKeyboardUIMode" as CFString
         let applicationID = "com.timetracker.swiftui" as CFString
-        let user = kCFPreferencesCurrentUser!
-        let host = kCFPreferencesAnyHost!
+        let user = kCFPreferencesCurrentUser
+        let host = kCFPreferencesAnyHost
         XCTAssertTrue(CFPreferencesSynchronize(applicationID, user, host))
         let previous = CFPreferencesCopyValue(key, applicationID, user, host)
         let notify: @MainActor () -> Void = {
