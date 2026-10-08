@@ -47,6 +47,7 @@ private struct WorklogMoveSheet: View {
                 .textFieldStyle(.roundedBorder)
                 .disableAutocorrection(true)
                 .focused($searchFocused)
+                .accessibilityIdentifier("worklog-move.search")
                 .disabled(!state.canEdit)
                 .onKeyPress(.upArrow) {
                     move.moveSelection(by: -1)
@@ -67,6 +68,7 @@ private struct WorklogMoveSheet: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if state.candidates.isEmpty {
                     Text(state.query.isEmpty ? "No available destination tasks." : "No matching tasks.")
+                        .accessibilityIdentifier("worklog-move.empty")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -79,6 +81,7 @@ private struct WorklogMoveSheet: View {
                                 Text(candidate.name)
                                     .lineLimit(2)
                                     .help(candidate.name)
+                                    .accessibilityIdentifier("worklog-move.candidate.\(candidate.id)")
                                     .tag(candidate.id)
                                     .id(candidate.id)
                             }
@@ -95,6 +98,7 @@ private struct WorklogMoveSheet: View {
 
             if let error = state.error {
                 Label(error, systemImage: "exclamationmark.triangle")
+                    .accessibilityIdentifier("worklog-move.error")
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -109,6 +113,7 @@ private struct WorklogMoveSheet: View {
                     Text("Start: \(localTimestamp(latest.start))")
                     Text(latest.end.map { "End: \(localTimestamp($0))" } ?? "Still running")
                     Button("Review latest entry") { move.reviewLatest() }
+                        .accessibilityIdentifier("worklog-move.review")
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -122,11 +127,13 @@ private struct WorklogMoveSheet: View {
                 }
                 Spacer()
                 Button("Cancel") { move.cancel() }
+                    .accessibilityIdentifier("worklog-move.cancel")
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
                 Button(state.error != nil && !state.canEdit && state.canSubmit ? "Retry" : "Move") {
                     move.submit()
                 }
+                    .accessibilityIdentifier("worklog-move.confirm")
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(!state.canSubmit)
