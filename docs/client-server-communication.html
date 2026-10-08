@@ -1,0 +1,412 @@
+<!doctype html><html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Time Tracker client and server communication</title><meta name="description" content="Source-based sequence diagrams, request timing and JSON payloads for all three Time Tracker clients.">
+<style>
+:root{color-scheme:light;--ink:#182b40;--muted:#53677c;--line:#d9e1e9;--paper:#fff;--canvas:#f3f5f7;--accent:#345bcc}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:90px}body{margin:0;background:var(--canvas);color:var(--ink);font:15px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}header{background:#142a42;color:#fff;padding:58px max(28px,calc((100vw - 1260px)/2)) 42px}header .eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#a6c2df}h1{font-size:clamp(32px,4vw,52px);letter-spacing:-.035em;line-height:1.15;margin:12px 0 18px}header p{max-width:780px;font-size:17px;color:#d2dfec;margin:0 0 22px}.meta{font-size:12px;color:#b8cde1;display:flex;gap:16px;flex-wrap:wrap}.nav{position:sticky;top:0;z-index:5;background:#fffefb;border-bottom:1px solid var(--line);padding:13px 24px;display:flex;gap:9px;overflow:auto}.nav a{white-space:nowrap;padding:5px 12px;border-radius:5px;text-decoration:none;color:var(--muted);font-size:12px}.nav a:hover{background:#e9eefc;color:var(--accent)}main{max-width:1316px;margin:28px auto;padding:0 28px}.intro{display:flex;flex-wrap:wrap;gap:15px;align-items:center;margin-bottom:25px;color:var(--muted);font-size:12px}.swatch{display:inline-block;width:11px;height:11px;border-radius:3px;border:1px solid #a6b4c6;margin-right:6px}.card{background:var(--paper);border:1px solid var(--line);border-radius:13px;margin:0 0 28px;overflow:hidden;box-shadow:0 4px 20px #142a4205}.card-head{padding:25px 28px 18px;display:flex;align-items:start;justify-content:space-between;gap:15px}.number{font-size:12px;font-weight:600;letter-spacing:.08em;color:var(--accent)}h2{font-size:24px;letter-spacing:-.02em;line-height:1.3;margin:6px 0}h3{font-size:17px;margin:0 0 12px}.subtitle{margin:5px 0 0;color:var(--muted);font-size:13px}.tools{display:flex;align-items:center;gap:6px;padding-top:7px;white-space:nowrap}button{cursor:pointer;border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--ink);font:inherit;font-size:12px;padding:5px 10px}button:hover{border-color:var(--accent);color:var(--accent)}button:focus-visible,a:focus-visible{outline:3px solid #80a1f6;outline-offset:2px}.zoom-label{min-width:40px;text-align:center;font-size:11px;color:var(--muted)}.diagram-viewport{overflow:auto;background:#fcfdff;border-top:1px solid #eef1f5;border-bottom:1px solid #eef1f5;padding:16px}.diagram{min-width:640px;width:100%;margin:auto}.diagram svg{width:100%;height:auto;display:block;font-family:system-ui,sans-serif}.notes{padding:23px 28px 25px;display:grid;grid-template-columns:1.3fr 1fr;gap:30px}.notes ul{margin:0;padding-left:19px;color:var(--muted);font-size:13px}.notes li+li{margin-top:9px}details{font-size:12px;color:var(--muted)}summary{cursor:pointer;font-weight:600;color:var(--ink);margin-bottom:10px}details a{display:block;overflow-wrap:anywhere;color:var(--accent);margin:6px 0;line-height:1.45}table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:12px 15px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;background:#f8fafc}td:first-child{color:var(--accent);width:48px}.table-wrap{overflow:auto}.table-card h2,.table-card p{padding:0 28px}.table-card h2{padding-top:24px}.table-card p{font-size:13px;color:var(--muted)}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.9em}footer{font-size:12px;color:var(--muted);margin:28px 0 40px}.print{background:#264764;border-color:#47637e;color:#fff}header .print:hover{color:#fff;border-color:#b8cde1}@media(max-width:750px){header{padding:35px 22px}.nav{padding:10px}main{padding:0 12px}.card-head{padding:20px 18px;flex-direction:column}.notes{grid-template-columns:1fr;padding:20px 18px;gap:17px}.diagram-viewport{padding:8px}h2{font-size:21px}}@media print{@page{size:A3 landscape;margin:12mm}body{background:white;font-size:12px}header{background:white;color:var(--ink);padding:0 0 15px}header p,header .meta,header .eyebrow{color:var(--muted)}.nav,.tools,.print{display:none!important}main{padding:0;max-width:none;margin:0}.card{break-before:page;box-shadow:none;border-radius:0;break-inside:avoid}.card:first-of-type{break-before:auto}.diagram-viewport{overflow:visible;padding:3px}.diagram{width:100%!important;min-width:0}.diagram svg{max-height:650px}details{display:none}.notes{display:block}.card-head{padding:10px 15px}.notes{padding:10px 15px}.table-card{break-before:page}}
+.sequence{min-width:1000px}.sequence .lane{stroke:#b7c3d0;stroke-dasharray:5 5}.sequence .message{stroke:#345bcc;stroke-width:1.7}.sequence .response{stroke:#2d7955;stroke-width:1.7;stroke-dasharray:6 4}.sequence .label{font-size:14px;fill:#182b40}.sequence .detail{font-size:12px;fill:#53677c}.sequence .event{fill:#f3f5f7;stroke:#d9e1e9}.prose{padding:0 28px 24px}.prose p{max-width:1050px}.prose a,.notes a,td a{color:var(--accent)}pre{padding:18px;background:#f3f5f7;overflow:auto;font:13px/1.6 ui-monospace,monospace;border-radius:7px}.catalog table{min-width:1050px}.catalog td:first-child{width:40px}.catalog td:nth-child(2){min-width:190px}.catalog td:nth-child(3){min-width:160px}.catalog td:nth-child(4){min-width:280px}.meta a{color:#d2dfec}.callout{border-left:3px solid #345bcc;padding-left:16px}h3{margin-top:24px}.notes p{font-size:13px;color:var(--muted)}@media print{.sequence{min-width:0}.prose{padding:0 15px 15px}pre{white-space:pre-wrap}.table-card{break-inside:auto}}
+</style></head>
+<body>
+<header><div class="eyebrow">Time Tracker / Communication</div><h1>When clients call the server.<br>What each request sends.</h1><p>Eight sequence diagrams trace startup, refreshes, tracking, history, edits and recovery. The tables list every implemented HTTP endpoint and the data it exchanges.</p><div class="meta"><span>Source snapshot · 8 October 2026</span><span>Source revision · 3806193</span><span>Protocol version · 2</span><a href="architecture.html">Architecture overview</a><button id="print" class="print">Print / save PDF</button></div></header>
+<nav class="nav" aria-label="Communication diagrams"><a href="#connect">01 Connect</a><a href="#poll">02 Refresh</a><a href="#tracking">03 Tracking</a><a href="#reads">04 History / reports</a><a href="#edit">05 Worklog edits</a><a href="#conflict">06 Stale writes</a><a href="#retry">07 Lost responses</a><a href="#preview">08 Bulk archive</a><a href="#timing">Timing</a><a href="#payloads">Payloads</a><a href="#wire">JSON examples</a><a href="#summary">Summary</a></nav>
+<main>
+<section class="card table-card"><h2>Reading the diagrams</h2><div class="prose"><p>Read downward to follow time. Solid blue arrows are requests or calls. Dashed green arrows are responses. Gray boxes describe local work or scheduling. HTTP responses arrive only after a client request. The server has no WebSocket, event stream or subscription endpoint.</p><p>The TUI and CLI call <code>RemoteApplication</code> directly. Swift calls <code>TrackerWorker</code>, then the Rust C ABI bridge and its remote backend. The Swift/Rust boundary exchanges bridge JSON. The HTTP boundary uses the separate DTOs from <code>tracker-protocol</code>. In local mode, each client calls Rust and SQLite without these HTTP requests.</p><p class="callout">A snapshot contains all task records, each task's latest work start, the active worklog and a revision. It does not contain completed worklog history or report totals. Search, sorting and destination filtering use cached tasks. Elapsed time advances locally between reads.</p><p>This page describes source at <code>38061938bdad3ff1e18dbffccc612a8938568c9c</code>. Timing comes from source constants and scheduling rules, not a captured network trace. The linked architecture page and its quality measurements retain their own snapshot at <code>a0295f8</code> from 6 October 2026. This page adds no quality measurements.</p></div></section>
+<section class="card" id="connect"><div class="card-head"><div><span class="number">01 / 08</span><h2>Connect and load the first snapshot</h2><p class="subtitle">Shared remote startup. No write runs during this exchange.</p></div><div class="tools" aria-label="Diagram zoom"><button data-action="out" aria-label="Zoom out Connect and load the first snapshot">−</button><span class="zoom-label" aria-live="polite">100%</span><button data-action="in" aria-label="Zoom in Connect and load the first snapshot">+</button><button data-action="reset" aria-label="Fit Connect and load the first snapshot">Fit</button></div></div><div class="diagram-viewport"><div class="diagram sequence">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 689" role="img" aria-labelledby="title-connect desc-connect">
+<title id="title-connect">Connect and load the first snapshot</title>
+<desc id="desc-connect">Shared remote startup. No write runs during this exchange. Time advances downward. Solid arrows are requests, dashed arrows are responses.</desc>
+<defs>
+<marker id="req-connect" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#345bcc"/></marker>
+<marker id="res-connect" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#2d7955"/></marker></defs>
+<rect x="15" y="15" width="200" height="46" rx="7" fill="#e9eefc" stroke="#a6b4c6"/>
+<text x="115" y="44" text-anchor="middle" class="label">Client adapter</text>
+<line x1="115" x2="115" y1="65" y2="669" class="lane"/>
+<rect x="450" y="15" width="200" height="46" rx="7" fill="#e6f3ec" stroke="#a6b4c6"/>
+<text x="550" y="44" text-anchor="middle" class="label">RemoteApplication</text>
+<line x1="550" x2="550" y1="65" y2="669" class="lane"/>
+<rect x="885" y="15" width="200" height="46" rx="7" fill="#edf1f5" stroke="#a6b4c6"/>
+<text x="985" y="44" text-anchor="middle" class="label">HTTP server</text>
+<line x1="985" x2="985" y1="65" y2="669" class="lane"/>
+<text x="332.5" y="86" text-anchor="middle" class="label">connect or refresh</text>
+<text x="332.5" y="103" text-anchor="middle" class="detail">TUI starts disconnected. CLI connects. Swift refreshes its new bridge handle.</text>
+<line x1="115" x2="550" y1="113" y2="113" class="message" marker-end="url(#req-connect)"/>
+<text x="767.5" y="168" text-anchor="middle" class="label">GET /v1/health</text>
+<text x="767.5" y="185" text-anchor="middle" class="detail">No JSON request body</text>
+<line x1="550" x2="985" y1="195" y2="195" class="message" marker-end="url(#req-connect)"/>
+<text x="767.5" y="250" text-anchor="middle" class="label">200 HealthDto</text>
+<text x="767.5" y="267" text-anchor="middle" class="detail">{ status: &quot;ok&quot;, protocol_version: 2 }</text>
+<line x1="985" x2="550" y1="277" y2="277" class="response" marker-end="url(#res-connect)"/>
+<text x="767.5" y="332" text-anchor="middle" class="label">GET /v1/snapshot</text>
+<text x="767.5" y="349" text-anchor="middle" class="detail">Only after a compatible health response</text>
+<line x1="550" x2="985" y1="359" y2="359" class="message" marker-end="url(#req-connect)"/>
+<text x="767.5" y="414" text-anchor="middle" class="label">200 SnapshotDto</text>
+<text x="767.5" y="431" text-anchor="middle" class="detail">task_items[], active_worklog or null, revision</text>
+<line x1="985" x2="550" y1="441" y2="441" class="response" marker-end="url(#res-connect)"/>
+<rect x="25" y="495" width="1050" height="58" rx="6" class="event"/>
+<text x="550.0" y="516" text-anchor="middle" class="label">Validate and replace the cached state</text>
+<text x="550.0" y="536" text-anchor="middle" class="detail">Remember revision; mark version_checked only after snapshot succeeds.</text>
+<text x="332.5" y="578" text-anchor="middle" class="label">Present tasks and current tracking</text>
+<text x="332.5" y="595" text-anchor="middle" class="detail">Swift converts the Rust state to its bridge JSON model.</text>
+<line x1="550" x2="115" y1="605" y2="605" class="response" marker-end="url(#res-connect)"/></svg></div></div><div class="notes"><ul><li>A protocol mismatch stops startup before the snapshot request. Failed startup attempts may repeat the health request.</li><li>Once a remote instance has completed its first refresh, later refreshes call only <code>GET /v1/snapshot</code>. A new instance checks health again.</li><li>A connected CLI task-list or tracking-status command reads this cache without another HTTP request.</li></ul><details><summary>Source references</summary><a href="../crates/tracker-remote/src/application.rs">RemoteApplication requests, cache and error recovery</a><a href="../crates/tracker-protocol/src/lib.rs">HTTP JSON DTO definitions</a><a href="../apps/cli/src/backend.rs">CLI backend connection</a><a href="../apps/swiftui/Sources/TimeTrackerSwiftUI/Infrastructure/RustBridge/TrackerWorker.swift">Swift worker and C ABI calls</a></details></div></section>
+<section class="card" id="poll"><div class="card-head"><div><span class="number">02 / 08</span><h2>Refreshes while a client is open</h2><p class="subtitle">Each client schedules reads. The server does not initiate an update.</p></div><div class="tools" aria-label="Diagram zoom"><button data-action="out" aria-label="Zoom out Refreshes while a client is open">−</button><span class="zoom-label" aria-live="polite">100%</span><button data-action="in" aria-label="Zoom in Refreshes while a client is open">+</button><button data-action="reset" aria-label="Fit Refreshes while a client is open">Fit</button></div></div><div class="diagram-viewport"><div class="diagram sequence">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 689" role="img" aria-labelledby="title-poll desc-poll">
+<title id="title-poll">Refreshes while a client is open</title>
+<desc id="desc-poll">Each client schedules reads. The server does not initiate an update. Time advances downward. Solid arrows are requests, dashed arrows are responses.</desc>
+<defs>
+<marker id="req-poll" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#345bcc"/></marker>
+<marker id="res-poll" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#2d7955"/></marker></defs>
+<rect x="15" y="15" width="200" height="46" rx="7" fill="#e9eefc" stroke="#a6b4c6"/>
+<text x="115" y="44" text-anchor="middle" class="label">TUI remote client</text>
+<line x1="115" x2="115" y1="65" y2="669" class="lane"/>
+<rect x="450" y="15" width="200" height="46" rx="7" fill="#e6f3ec" stroke="#a6b4c6"/>
+<text x="550" y="44" text-anchor="middle" class="label">HTTP server</text>
+<line x1="550" x2="550" y1="65" y2="669" class="lane"/>
+<rect x="885" y="15" width="200" height="46" rx="7" fill="#edf1f5" stroke="#a6b4c6"/>
+<text x="985" y="44" text-anchor="middle" class="label">Swift remote client</text>
+<line x1="985" x2="985" y1="65" y2="669" class="lane"/>
+<rect x="25" y="85" width="1050" height="58" rx="6" class="event"/>
+<text x="550.0" y="106" text-anchor="middle" class="label">TUI tick checks whether refresh is due</text>
+<text x="550.0" y="126" text-anchor="middle" class="detail">250 ms UI tick; snapshot refresh requested after 1 second from the last refresh start.</text>
+<text x="332.5" y="168" text-anchor="middle" class="label">GET /v1/snapshot</text>
+<text x="332.5" y="185" text-anchor="middle" class="detail">Terminal focus also requests a refresh; application requests take priority.</text>
+<line x1="115" x2="550" y1="195" y2="195" class="message" marker-end="url(#req-poll)"/>
+<text x="332.5" y="250" text-anchor="middle" class="label">200 SnapshotDto</text>
+<text x="332.5" y="267" text-anchor="middle" class="detail">Full task catalog, active worklog and revision, even if unchanged</text>
+<line x1="550" x2="115" y1="277" y2="277" class="response" marker-end="url(#res-poll)"/>
+<rect x="25" y="331" width="1050" height="58" rx="6" class="event"/>
+<text x="550.0" y="352" text-anchor="middle" class="label">Swift one-shot poll becomes due</text>
+<text x="550.0" y="372" text-anchor="middle" class="detail">5 seconds visible or menu open; 60 seconds hidden, scheduled after work completes.</text>
+<text x="767.5" y="414" text-anchor="middle" class="label">GET /v1/reports?start=...&amp;end=...&amp;now=...</text>
+<text x="767.5" y="431" text-anchor="middle" class="detail">Healthy installed app requests daily totals; stale recovery requests /v1/snapshot.</text>
+<line x1="985" x2="550" y1="441" y2="441" class="message" marker-end="url(#req-poll)"/>
+<text x="767.5" y="496" text-anchor="middle" class="label">200 ReportDto</text>
+<text x="767.5" y="513" text-anchor="middle" class="detail">rows[], total_us and a full snapshot</text>
+<line x1="550" x2="985" y1="523" y2="523" class="response" marker-end="url(#res-poll)"/>
+<rect x="25" y="577" width="1050" height="58" rx="6" class="event"/>
+<text x="550.0" y="598" text-anchor="middle" class="label">Both clients advance displayed elapsed time locally</text>
+<text x="550.0" y="618" text-anchor="middle" class="detail">TUI draws on 250 ms ticks. Swift display ticks every second while visible.</text></svg></div></div><div class="notes"><ul><li>The TUI runs one application request or background refresh at a time. Slow requests and queued work can delay polling. It continues polling while the terminal lacks focus.</li><li>The Swift worker implements <code>ReportClient</code>, so normal refreshes request daily reports. A snapshot-only injected client follows the fallback path. See the <a href="client-server-swift-notes.md">Swift investigation</a>.</li><li>Swift pauses polls during sleep and busy work. Becoming visible, waking, manual refresh and local day rollover can request a read. The CLI has no background poll.</li></ul><details><summary>Source references</summary><a href="../apps/tui/src/runtime.rs">TUI event loop and refresh scheduling</a><a href="../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift">Swift session, reads and reconciliation</a><a href="../apps/swiftui/TrackerClient/Sources/TrackerClient/Features/Connection/ConnectionState.swift">Swift polling policy</a><a href="../apps/swiftui/Sources/TimeTrackerSwiftUI/Infrastructure/RustBridge/TrackerWorker.swift">Swift worker and C ABI calls</a></details></div></section>
+<section class="card" id="tracking"><div class="card-head"><div><span class="number">03 / 08</span><h2>Start, switch or stop tracking</h2><p class="subtitle">Example starts a new worklog. Task creation and task changes use the same guard and response pattern.</p></div><div class="tools" aria-label="Diagram zoom"><button data-action="out" aria-label="Zoom out Start, switch or stop tracking">−</button><span class="zoom-label" aria-live="polite">100%</span><button data-action="in" aria-label="Zoom in Start, switch or stop tracking">+</button><button data-action="reset" aria-label="Fit Start, switch or stop tracking">Fit</button></div></div><div class="diagram-viewport"><div class="diagram sequence">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 689" role="img" aria-labelledby="title-tracking desc-tracking">
+<title id="title-tracking">Start, switch or stop tracking</title>
+<desc id="desc-tracking">Example starts a new worklog. Task creation and task changes use the same guard and response pattern. Time advances downward. Solid arrows are requests, dashed arrows are responses.</desc>
+<defs>
+<marker id="req-tracking" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#345bcc"/></marker>
+<marker id="res-tracking" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#2d7955"/></marker></defs>
+<rect x="15" y="15" width="200" height="46" rx="7" fill="#e9eefc" stroke="#a6b4c6"/>
+<text x="115" y="44" text-anchor="middle" class="label">Client / remote cache</text>
+<line x1="115" x2="115" y1="65" y2="669" class="lane"/>
+<rect x="450" y="15" width="200" height="46" rx="7" fill="#e6f3ec" stroke="#a6b4c6"/>
+<text x="550" y="44" text-anchor="middle" class="label">HTTP server</text>
+<line x1="550" x2="550" y1="65" y2="669" class="lane"/>
+<rect x="885" y="15" width="200" height="46" rx="7" fill="#edf1f5" stroke="#a6b4c6"/>
+<text x="985" y="44" text-anchor="middle" class="label">Rust / SQLite</text>
+<line x1="985" x2="985" y1="65" y2="669" class="lane"/>
+<rect x="25" y="85" width="1050" height="58" rx="6" class="event"/>
+<text x="550.0" y="106" text-anchor="middle" class="label">User chooses a task</text>
+<text x="550.0" y="126" text-anchor="middle" class="detail">Use cached active ID and revision; generate the new worklog ID and request ID.</text>
+<text x="332.5" y="168" text-anchor="middle" class="label">PUT /v1/tracking</text>
+<text x="332.5" y="185" text-anchor="middle" class="detail">task_id, worklog_id, expected_active, occurred_at, expected_revision, request_id</text>
+<line x1="115" x2="550" y1="195" y2="195" class="message" marker-end="url(#req-tracking)"/>
+<rect x="25" y="249" width="1050" height="58" rx="6" class="event"/>
+<text x="550.0" y="270" text-anchor="middle" class="label">Lock core; check request ID, revision and expected active worklog</text>
+<text x="550.0" y="290" text-anchor="middle" class="detail">The server serializes guarded commands and application reads through its core mutex.</text>
+<text x="767.5" y="332" text-anchor="middle" class="label">Start or switch the active worklog</text>
+<text x="767.5" y="349" text-anchor="middle" class="detail">Switch closes the previous worklog and starts the new one at occurred_at.</text>
+<line x1="550" x2="985" y1="359" y2="359" class="message" marker-end="url(#req-tracking)"/>
+<text x="767.5" y="414" text-anchor="middle" class="label">Committed outcome</text>
+<text x="767.5" y="431" text-anchor="middle" class="detail">worklog, tracking_switched, tracking_already_active or tracking_already_idle</text>
+<line x1="985" x2="550" y1="441" y2="441" class="response" marker-end="url(#res-tracking)"/>
+<text x="332.5" y="496" text-anchor="middle" class="label">200 MutationDto</text>
+<text x="332.5" y="513" text-anchor="middle" class="detail">result plus snapshot; a successful command advances the revision sequence</text>
+<line x1="550" x2="115" y1="523" y2="523" class="response" marker-end="url(#res-tracking)"/>
+<rect x="25" y="577" width="1050" height="58" rx="6" class="event"/>
+<text x="550.0" y="598" text-anchor="middle" class="label">Validate result; replace cache; redraw</text>
+<text x="550.0" y="618" text-anchor="middle" class="detail">No extra /v1/snapshot request is needed to apply this successful response.</text></svg></div></div><div class="notes"><ul><li>Start while idle sends <code>expected_active: null</code>. Switching sends the previous active worklog ID. Selecting an already active task can return <code>tracking_already_active</code>.</li><li>Stop sends <code>task_id: null</code>, <code>worklog_id: null</code> and the expected active worklog ID. Idle requests can return <code>tracking_already_idle</code>.</li><li>The client supplies the event timestamp. Advancing a timer display sends no write. Swift may issue preflight snapshot reads and a later report read around this shared wire exchange.</li></ul><details><summary>Source references</summary><a href="../crates/tracker-remote/src/application.rs">RemoteApplication requests, cache and error recovery</a><a href="../crates/tracker-server/src/lib.rs">Server routes, guards and idempotency cache</a><a href="../crates/tracker-protocol/src/lib.rs">HTTP JSON DTO definitions</a><a href="../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift">Swift session, reads and reconciliation</a></details></div></section>
+<section class="card" id="reads"><div class="card-head"><div><span class="number">04 / 08</span><h2>Read history and report totals</h2><p class="subtitle">History uses separate page reads. A report carries totals and a full snapshot.</p></div><div class="tools" aria-label="Diagram zoom"><button data-action="out" aria-label="Zoom out Read history and report totals">−</button><span class="zoom-label" aria-live="polite">100%</span><button data-action="in" aria-label="Zoom in Read history and report totals">+</button><button data-action="reset" aria-label="Fit Read history and report totals">Fit</button></div></div><div class="diagram-viewport"><div class="diagram sequence">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 771" role="img" aria-labelledby="title-reads desc-reads">
+<title id="title-reads">Read history and report totals</title>
+<desc id="desc-reads">History uses separate page reads. A report carries totals and a full snapshot. Time advances downward. Solid arrows are requests, dashed arrows are responses.</desc>
+<defs>
+<marker id="req-reads" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#345bcc"/></marker>
+<marker id="res-reads" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#2d7955"/></marker></defs>
+<rect x="15" y="15" width="200" height="46" rx="7" fill="#e9eefc" stroke="#a6b4c6"/>
+<text x="115" y="44" text-anchor="middle" class="label">Client / cache</text>
+<line x1="115" x2="115" y1="65" y2="751" class="lane"/>
+<rect x="885" y="15" width="200" height="46" rx="7" fill="#e6f3ec" stroke="#a6b4c6"/>
+<text x="985" y="44" text-anchor="middle" class="label">HTTP server</text>
+<line x1="985" x2="985" y1="65" y2="751" class="lane"/>
+<text x="550.0" y="86" text-anchor="middle" class="label">GET /v1/tasks/{id}/worklogs</text>
+<text x="550.0" y="103" text-anchor="middle" class="detail">Open or refresh task history; first page has no cursor</text>
+<line x1="115" x2="985" y1="113" y2="113" class="message" marker-end="url(#req-reads)"/>
+<text x="550.0" y="168" text-anchor="middle" class="label">200 WorklogPageDto</text>
+<text x="550.0" y="185" text-anchor="middle" class="detail">Up to 50 worklogs, tracking fields, next_cursor and revision</text>
+<line x1="985" x2="115" y1="195" y2="195" class="response" marker-end="url(#res-reads)"/>
+<text x="550.0" y="250" text-anchor="middle" class="label">GET /v1/tasks/{id}/worklogs?after_start=...&amp;after_id=...&amp;after_revision=...</text>
+<text x="550.0" y="267" text-anchor="middle" class="detail">Load the next page using all three returned cursor values</text>
+<line x1="115" x2="985" y1="277" y2="277" class="message" marker-end="url(#req-reads)"/>
+<text x="550.0" y="332" text-anchor="middle" class="label">200 WorklogPageDto</text>
+<text x="550.0" y="349" text-anchor="middle" class="detail">More worklogs; next_cursor: null ends pagination</text>
+<line x1="985" x2="115" y1="359" y2="359" class="response" marker-end="url(#res-reads)"/>
+<text x="550.0" y="414" text-anchor="middle" class="label">GET /v1/worklogs</text>
+<text x="550.0" y="431" text-anchor="middle" class="detail">Global history; later pages use the same three query parameters</text>
+<line x1="115" x2="985" y1="441" y2="441" class="message" marker-end="url(#req-reads)"/>
+<text x="550.0" y="496" text-anchor="middle" class="label">200 GlobalWorklogPageDto</text>
+<text x="550.0" y="513" text-anchor="middle" class="detail">Up to 50 worklogs, full snapshot and next_cursor</text>
+<line x1="985" x2="115" y1="523" y2="523" class="response" marker-end="url(#res-reads)"/>
+<text x="550.0" y="578" text-anchor="middle" class="label">GET /v1/reports?start=...&amp;end=...&amp;now=...</text>
+<text x="550.0" y="595" text-anchor="middle" class="detail">Requested range and client time, all RFC 3339 timestamps</text>
+<line x1="115" x2="985" y1="605" y2="605" class="message" marker-end="url(#req-reads)"/>
+<text x="550.0" y="660" text-anchor="middle" class="label">200 ReportDto</text>
+<text x="550.0" y="677" text-anchor="middle" class="detail">rows[{task, duration_us}], total_us, snapshot</text>
+<line x1="985" x2="115" y1="687" y2="687" class="response" marker-end="url(#res-reads)"/></svg></div></div><div class="notes"><ul><li>These are independent feature reads, shown consecutively for comparison. A client does not always issue all of them.</li><li>Task history updates cached tracking and relevant latest-work timestamps, but retains the previous full-snapshot write revision. Its response does not include the full task catalog. Global history and reports replace the full snapshot and revision.</li><li>The integer cursor revision tracks history consistency. It differs from the string server revision used by writes. A changed history can produce HTTP 409 with <code>worklog_history_changed</code>; restart pagination.</li><li>TUI live reports enqueue reads at most once per wall-clock second while the range contains now, plus calendar rollover and user refreshes. Historical ranges wait for user refresh. After an unavailable error, remote report reads have a 5-second cooldown.</li></ul><details><summary>Source references</summary><a href="../crates/tracker-remote/src/application.rs">RemoteApplication requests, cache and error recovery</a><a href="../crates/tracker-protocol/src/lib.rs">HTTP JSON DTO definitions</a><a href="../crates/tracker-server/src/lib.rs">Server routes, guards and idempotency cache</a><a href="../crates/tracker-application/src/model.rs">50-row page size and cursor models</a><a href="../apps/tui/src/screens/reports/actions.rs">TUI report refresh rules</a></details></div></section>
+<section class="card" id="edit"><div class="card-head"><div><span class="number">05 / 08</span><h2>Correct, move or delete a worklog</h2><p class="subtitle">Expected worklog values protect the edit in addition to the global revision.</p></div><div class="tools" aria-label="Diagram zoom"><button data-action="out" aria-label="Zoom out Correct, move or delete a worklog">−</button><span class="zoom-label" aria-live="polite">100%</span><button data-action="in" aria-label="Zoom in Correct, move or delete a worklog">+</button><button data-action="reset" aria-label="Fit Correct, move or delete a worklog">Fit</button></div></div><div class="diagram-viewport"><div class="diagram sequence">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 689" role="img" aria-labelledby="title-edit desc-edit">
+<title id="title-edit">Correct, move or delete a worklog</title>
+<desc id="desc-edit">Expected worklog values protect the edit in addition to the global revision. Time advances downward. Solid arrows are requests, dashed arrows are responses.</desc>
+<defs>
+<marker id="req-edit" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#345bcc"/></marker>
+<marker id="res-edit" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#2d7955"/></marker></defs>
+<rect x="15" y="15" width="200" height="46" rx="7" fill="#e9eefc" stroke="#a6b4c6"/>
+<text x="115" y="44" text-anchor="middle" class="label">Client / editor</text>
+<line x1="115" x2="115" y1="65" y2="669" class="lane"/>
+<rect x="450" y="15" width="200" height="46" rx="7" fill="#e6f3ec" stroke="#a6b4c6"/>
+<text x="550" y="44" text-anchor="middle" class="label">HTTP server</text>
+<line x1="550" x2="550" y1="65" y2="669" class="lane"/>
+<rect x="885" y="15" width="200" height="46" rx="7" fill="#edf1f5" stroke="#a6b4c6"/>
+<text x="985" y="44" text-anchor="middle" class="label">Rust / SQLite</text>
+<line x1="985" x2="985" y1="65" y2="669" class="lane"/>
+<rect x="25" y="85" width="1050" height="58" rx="6" class="event"/>
+<text x="550.0" y="106" text-anchor="middle" class="label">Review a worklog from history or the active snapshot</text>
+<text x="550.0" y="126" text-anchor="middle" class="detail">Keep its ID, original times and, for move/delete, original task ID.</text>
+<text x="332.5" y="168" text-anchor="middle" class="label">PATCH /v1/worklogs/{id}</text>
+<text x="332.5" y="185" text-anchor="middle" class="detail">action: correct or move; expected values, replacement values and write guard</text>
+<line x1="115" x2="550" y1="195" y2="195" class="message" marker-end="url(#req-edit)"/>
+<text x="767.5" y="250" text-anchor="middle" class="label">Check expected values and apply edit</text>
+<text x="767.5" y="267" text-anchor="middle" class="detail">Reject changed worklogs or overlap; move changes the owning task.</text>
+<line x1="550" x2="985" y1="277" y2="277" class="message" marker-end="url(#req-edit)"/>
+<text x="767.5" y="332" text-anchor="middle" class="label">Updated worklog</text>
+<text x="767.5" y="349" text-anchor="middle" class="detail">Storage and application enforce worklog constraints.</text>
+<line x1="985" x2="550" y1="359" y2="359" class="response" marker-end="url(#res-edit)"/>
+<text x="332.5" y="414" text-anchor="middle" class="label">200 MutationDto</text>
+<text x="332.5" y="431" text-anchor="middle" class="detail">result.kind: worklog; result.value is the edited worklog; full snapshot</text>
+<line x1="550" x2="115" y1="441" y2="441" class="response" marker-end="url(#res-edit)"/>
+<text x="332.5" y="496" text-anchor="middle" class="label">DELETE /v1/worklogs/{id}</text>
+<text x="332.5" y="513" text-anchor="middle" class="detail">Separate delete action: expected_task_id, expected_start, expected_end, guard</text>
+<line x1="115" x2="550" y1="523" y2="523" class="message" marker-end="url(#req-edit)"/>
+<text x="332.5" y="578" text-anchor="middle" class="label">200 MutationDto</text>
+<text x="332.5" y="595" text-anchor="middle" class="detail">Deleted worklog as result; full snapshot after deletion</text>
+<line x1="550" x2="115" y1="605" y2="605" class="response" marker-end="url(#res-edit)"/></svg></div></div><div class="notes"><ul><li>PATCH and DELETE are alternatives. Deletion requires a completed worklog, so <code>expected_end</code> must be a timestamp.</li><li>Correction sends original and replacement start/end plus <code>occurred_at</code>. Move sends original task/start/end and destination task ID. Both allow null end times for active worklogs.</li><li>Swift correction and move preflight with snapshot and, when needed, bounded history reads. The bridge also refreshes just before the mutation. A preflight cannot prevent a later race; the server guard still decides whether the write is safe.</li><li>Successful mutation snapshots contain no completed history. Clients refresh affected history separately when needed.</li></ul><details><summary>Source references</summary><a href="../crates/tracker-protocol/src/lib.rs">HTTP JSON DTO definitions</a><a href="../crates/tracker-remote/src/application.rs">RemoteApplication requests, cache and error recovery</a><a href="../crates/tracker-server/src/lib.rs">Server routes, guards and idempotency cache</a><a href="../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift">Swift session, reads and reconciliation</a><a href="../apps/swiftui/bridge/src/backend.rs">Rust bridge preflight and remote calls</a></details></div></section>
+<section class="card" id="conflict"><div class="card-head"><div><span class="number">06 / 08</span><h2>A second client makes the write stale</h2><p class="subtitle">A stale command is rejected and state is refreshed. The client does not automatically replay it.</p></div><div class="tools" aria-label="Diagram zoom"><button data-action="out" aria-label="Zoom out A second client makes the write stale">−</button><span class="zoom-label" aria-live="polite">100%</span><button data-action="in" aria-label="Zoom in A second client makes the write stale">+</button><button data-action="reset" aria-label="Fit A second client makes the write stale">Fit</button></div></div><div class="diagram-viewport"><div class="diagram sequence">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 771" role="img" aria-labelledby="title-conflict desc-conflict">
+<title id="title-conflict">A second client makes the write stale</title>
+<desc id="desc-conflict">A stale command is rejected and state is refreshed. The client does not automatically replay it. Time advances downward. Solid arrows are requests, dashed arrows are responses.</desc>
+<defs>
+<marker id="req-conflict" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#345bcc"/></marker>
+<marker id="res-conflict" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#2d7955"/></marker></defs>
+<rect x="15" y="15" width="200" height="46" rx="7" fill="#e9eefc" stroke="#a6b4c6"/>
+<text x="115" y="44" text-anchor="middle" class="label">Client A</text>
+<line x1="115" x2="115" y1="65" y2="751" class="lane"/>
+<rect x="450" y="15" width="200" height="46" rx="7" fill="#e6f3ec" stroke="#a6b4c6"/>
+<text x="550" y="44" text-anchor="middle" class="label">HTTP server</text>
+<line x1="550" x2="550" y1="65" y2="751" class="lane"/>
+<rect x="885" y="15" width="200" height="46" rx="7" fill="#edf1f5" stroke="#a6b4c6"/>
+<text x="985" y="44" text-anchor="middle" class="label">Client B</text>
+<line x1="985" x2="985" y1="65" y2="751" class="lane"/>
+<text x="332.5" y="86" text-anchor="middle" class="label">GET /v1/snapshot</text>
+<text x="332.5" y="103" text-anchor="middle" class="detail">Client A loads revision epoch:7</text>
+<line x1="115" x2="550" y1="113" y2="113" class="message" marker-end="url(#req-conflict)"/>
+<text x="332.5" y="168" text-anchor="middle" class="label">200 SnapshotDto</text>
+<text x="332.5" y="185" text-anchor="middle" class="detail">revision: epoch:7</text>
+<line x1="550" x2="115" y1="195" y2="195" class="response" marker-end="url(#res-conflict)"/>
+<text x="767.5" y="250" text-anchor="middle" class="label">Guarded write</text>
+<text x="767.5" y="267" text-anchor="middle" class="detail">Client B supplies expected_revision: epoch:7</text>
+<line x1="985" x2="550" y1="277" y2="277" class="message" marker-end="url(#req-conflict)"/>
+<text x="767.5" y="332" text-anchor="middle" class="label">200 MutationDto</text>
+<text x="767.5" y="349" text-anchor="middle" class="detail">New snapshot revision: epoch:8</text>
+<line x1="550" x2="985" y1="359" y2="359" class="response" marker-end="url(#res-conflict)"/>
+<text x="332.5" y="414" text-anchor="middle" class="label">Guarded write</text>
+<text x="332.5" y="431" text-anchor="middle" class="detail">Client A still supplies expected_revision: epoch:7</text>
+<line x1="115" x2="550" y1="441" y2="441" class="message" marker-end="url(#req-conflict)"/>
+<text x="332.5" y="496" text-anchor="middle" class="label">409 ErrorDto</text>
+<text x="332.5" y="513" text-anchor="middle" class="detail">{ code: &quot;stale_revision&quot;, message: &quot;Tracker state changed. Refresh and retry.&quot; }</text>
+<line x1="550" x2="115" y1="523" y2="523" class="response" marker-end="url(#res-conflict)"/>
+<text x="332.5" y="578" text-anchor="middle" class="label">GET /v1/snapshot</text>
+<text x="332.5" y="595" text-anchor="middle" class="detail">RemoteApplication.operation_error refreshes after an HTTP error.</text>
+<line x1="115" x2="550" y1="605" y2="605" class="message" marker-end="url(#req-conflict)"/>
+<text x="332.5" y="660" text-anchor="middle" class="label">200 SnapshotDto</text>
+<text x="332.5" y="677" text-anchor="middle" class="detail">revision: epoch:8; user reviews current state before another write</text>
+<line x1="550" x2="115" y1="687" y2="687" class="response" marker-end="url(#res-conflict)"/></svg></div></div><div class="notes"><ul><li>All new guarded writes share one server revision, so a write to an unrelated task can make a command stale. Matching idempotency-cache entries are checked before the revision.</li><li>An HTTP error triggers a Rust snapshot refresh for application operations. A transport outage does not trigger that same automatic refresh. Swift can add its own reconciliation read. Refresh itself reports errors directly.</li><li>Active-state mismatches return <code>conflict</code>. Worklog and history conflicts have more specific codes. A server restart creates a new revision epoch and an empty idempotency cache.</li><li>The labels epoch:7 and epoch:8 abbreviate the actual revision format <code>&lt;server-start UUID&gt;:&lt;sequence&gt;</code>. If error recovery also fails, the caller receives that recovery failure with the original error.</li></ul><details><summary>Source references</summary><a href="../crates/tracker-server/src/lib.rs">Server routes, guards and idempotency cache</a><a href="../crates/tracker-remote/src/application.rs">RemoteApplication requests, cache and error recovery</a><a href="../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift">Swift session, reads and reconciliation</a></details></div></section>
+<section class="card" id="retry"><div class="card-head"><div><span class="number">07 / 08</span><h2>The server commits, but the response is lost</h2><p class="subtitle">Transport retries a write once with identical bytes. The server can recognize a completed request.</p></div><div class="tools" aria-label="Diagram zoom"><button data-action="out" aria-label="Zoom out The server commits, but the response is lost">−</button><span class="zoom-label" aria-live="polite">100%</span><button data-action="in" aria-label="Zoom in The server commits, but the response is lost">+</button><button data-action="reset" aria-label="Fit The server commits, but the response is lost">Fit</button></div></div><div class="diagram-viewport"><div class="diagram sequence">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 689" role="img" aria-labelledby="title-retry desc-retry">
+<title id="title-retry">The server commits, but the response is lost</title>
+<desc id="desc-retry">Transport retries a write once with identical bytes. The server can recognize a completed request. Time advances downward. Solid arrows are requests, dashed arrows are responses.</desc>
+<defs>
+<marker id="req-retry" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#345bcc"/></marker>
+<marker id="res-retry" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#2d7955"/></marker></defs>
+<rect x="15" y="15" width="200" height="46" rx="7" fill="#e9eefc" stroke="#a6b4c6"/>
+<text x="115" y="44" text-anchor="middle" class="label">Remote transport</text>
+<line x1="115" x2="115" y1="65" y2="669" class="lane"/>
+<rect x="450" y="15" width="200" height="46" rx="7" fill="#e6f3ec" stroke="#a6b4c6"/>
+<text x="550" y="44" text-anchor="middle" class="label">HTTP server</text>
+<line x1="550" x2="550" y1="65" y2="669" class="lane"/>
+<rect x="885" y="15" width="200" height="46" rx="7" fill="#edf1f5" stroke="#a6b4c6"/>
+<text x="985" y="44" text-anchor="middle" class="label">Rust / SQLite</text>
+<line x1="985" x2="985" y1="65" y2="669" class="lane"/>
+<text x="332.5" y="86" text-anchor="middle" class="label">POST /v1/tasks</text>
+<text x="332.5" y="103" text-anchor="middle" class="detail">Client-generated task_id, name, occurred_at and guard with request_id K</text>
+<line x1="115" x2="550" y1="113" y2="113" class="message" marker-end="url(#req-retry)"/>
+<text x="767.5" y="168" text-anchor="middle" class="label">Create task</text>
+<text x="767.5" y="185" text-anchor="middle" class="detail">Valid new request, matching revision</text>
+<line x1="550" x2="985" y1="195" y2="195" class="message" marker-end="url(#req-retry)"/>
+<text x="767.5" y="250" text-anchor="middle" class="label">Commit succeeds</text>
+<text x="767.5" y="267" text-anchor="middle" class="detail">Server increments sequence and caches K, fingerprint and result.</text>
+<line x1="985" x2="550" y1="277" y2="277" class="response" marker-end="url(#res-retry)"/>
+<text x="332.5" y="332" text-anchor="middle" class="label">Response lost or body read fails</text>
+<text x="332.5" y="349" text-anchor="middle" class="detail">The client has no confirmed MutationDto.</text>
+<line x1="550" x2="115" y1="359" y2="359" class="response" marker-end="url(#res-retry)"/>
+<text x="332.5" y="414" text-anchor="middle" class="label">POST /v1/tasks again</text>
+<text x="332.5" y="431" text-anchor="middle" class="detail">Same body, same request_id K, same expected_revision</text>
+<line x1="115" x2="550" y1="441" y2="441" class="message" marker-end="url(#req-retry)"/>
+<rect x="25" y="495" width="1050" height="58" rx="6" class="event"/>
+<text x="550.0" y="516" text-anchor="middle" class="label">Check completed request before checking revision</text>
+<text x="550.0" y="536" text-anchor="middle" class="detail">Matching K and fingerprint returns cached result without executing the command.</text>
+<text x="332.5" y="578" text-anchor="middle" class="label">200 MutationDto</text>
+<text x="332.5" y="595" text-anchor="middle" class="detail">Cached result plus a current snapshot; snapshot may include later writes</text>
+<line x1="550" x2="115" y1="605" y2="605" class="response" marker-end="url(#res-retry)"/></svg></div></div><div class="notes"><ul><li>The transport uses at most two attempts for writes on send or body-read failures. GET and HEAD use one attempt. It does not retry an HTTP error response, invalid JSON or an oversized response.</li><li>The timeout is 5 seconds per attempt, with a 2-second connect timeout. There is no retry backoff. A client can wait for nearly two request timeouts on a write.</li><li>The server keeps the latest 1,024 successful request IDs in memory. Reusing an ID with a different route or payload returns HTTP 409. Restart or eviction removes this protection, so it is not a durable exactly-once guarantee.</li><li>After an uncertain create, RemoteApplication retains the task ID. A later same-name retry refreshes state first. It accepts an existing matching ID, or sends the same creation intent with a fresh revision and request ID.</li></ul><details><summary>Source references</summary><a href="../crates/tracker-remote/src/transport.rs">Transport timeouts and retry rules</a><a href="../crates/tracker-server/src/lib.rs">Server routes, guards and idempotency cache</a><a href="../crates/tracker-remote/src/application.rs">RemoteApplication requests, cache and error recovery</a></details></div></section>
+<section class="card" id="preview"><div class="card-head"><div><span class="number">08 / 08</span><h2>Preview and confirm bulk archive</h2><p class="subtitle">The confirmation uses the preview revision, even if background polling has fetched a newer snapshot.</p></div><div class="tools" aria-label="Diagram zoom"><button data-action="out" aria-label="Zoom out Preview and confirm bulk archive">−</button><span class="zoom-label" aria-live="polite">100%</span><button data-action="in" aria-label="Zoom in Preview and confirm bulk archive">+</button><button data-action="reset" aria-label="Fit Preview and confirm bulk archive">Fit</button></div></div><div class="diagram-viewport"><div class="diagram sequence">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 607" role="img" aria-labelledby="title-preview desc-preview">
+<title id="title-preview">Preview and confirm bulk archive</title>
+<desc id="desc-preview">The confirmation uses the preview revision, even if background polling has fetched a newer snapshot. Time advances downward. Solid arrows are requests, dashed arrows are responses.</desc>
+<defs>
+<marker id="req-preview" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#345bcc"/></marker>
+<marker id="res-preview" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#2d7955"/></marker></defs>
+<rect x="15" y="15" width="200" height="46" rx="7" fill="#e9eefc" stroke="#a6b4c6"/>
+<text x="115" y="44" text-anchor="middle" class="label">TUI / remote client</text>
+<line x1="115" x2="115" y1="65" y2="587" class="lane"/>
+<rect x="885" y="15" width="200" height="46" rx="7" fill="#e6f3ec" stroke="#a6b4c6"/>
+<text x="985" y="44" text-anchor="middle" class="label">HTTP server</text>
+<line x1="985" x2="985" y1="65" y2="587" class="lane"/>
+<text x="550.0" y="86" text-anchor="middle" class="label">GET /v1/tasks/inactive-preview?as_of=...</text>
+<text x="550.0" y="103" text-anchor="middle" class="detail">Client supplies the preview timestamp.</text>
+<line x1="115" x2="985" y1="113" y2="113" class="message" marker-end="url(#req-preview)"/>
+<text x="550.0" y="168" text-anchor="middle" class="label">200 InactiveTaskPreviewDto</text>
+<text x="550.0" y="185" text-anchor="middle" class="detail">as_of, count, sample_names, revision R</text>
+<line x1="985" x2="115" y1="195" y2="195" class="response" marker-end="url(#res-preview)"/>
+<rect x="25" y="249" width="1050" height="58" rx="6" class="event"/>
+<text x="550.0" y="270" text-anchor="middle" class="label">User reviews the preview</text>
+<text x="550.0" y="290" text-anchor="middle" class="detail">Keep R and as_of with the confirmation intent.</text>
+<text x="550.0" y="332" text-anchor="middle" class="label">POST /v1/tasks/archive-inactive</text>
+<text x="550.0" y="349" text-anchor="middle" class="detail">as_of, expected_revision: R, new request_id</text>
+<line x1="115" x2="985" y1="359" y2="359" class="message" marker-end="url(#req-preview)"/>
+<rect x="25" y="413" width="1050" height="58" rx="6" class="event"/>
+<text x="550.0" y="434" text-anchor="middle" class="label">Validate revision and timestamp; recalculate candidates</text>
+<text x="550.0" y="454" text-anchor="middle" class="detail">Preview time must be within 15 minutes of server time.</text>
+<text x="550.0" y="496" text-anchor="middle" class="label">200 MutationDto or 409 ErrorDto</text>
+<text x="550.0" y="513" text-anchor="middle" class="detail">Success: result.kind archived_inactive with count, plus snapshot</text>
+<line x1="985" x2="115" y1="523" y2="523" class="response" marker-end="url(#res-preview)"/></svg></div></div><div class="notes"><ul><li>Preview sends at most five sample names and a count, rather than all candidate task IDs.</li><li>A changed revision rejects confirmation, even if the current client cache has already moved forward. Refresh and obtain a new preview.</li><li>The server validates the 15-minute timestamp tolerance during both preview and confirmation. A delayed confirmation can also fail with HTTP 400.</li></ul><details><summary>Source references</summary><a href="../crates/tracker-remote/src/application.rs">RemoteApplication requests, cache and error recovery</a><a href="../crates/tracker-server/src/lib.rs">Server routes, guards and idempotency cache</a><a href="../crates/tracker-protocol/src/lib.rs">HTTP JSON DTO definitions</a></details></div></section>
+<section class="card table-card catalog" id="timing"><h2>When requests run</h2><p>Intervals are scheduling rules. Busy work and network latency change the time between observed requests.</p><div class="table-wrap">
+<table>
+<thead>
+<tr><th>#</th><th>Client / trigger</th><th>What crosses HTTP</th><th>Timing / conditions</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>All remote clients, first refresh</td><td><code>GET /v1/health</code>, then <code>GET /v1/snapshot</code></td><td>Health repeats until a full first refresh succeeds; later refreshes skip health.</td></tr>
+<tr><td>2</td><td>TUI, background and terminal focus</td><td><code>GET /v1/snapshot</code></td><td>Request after 1 second from previous refresh start, checked on 250 ms ticks; focus requests it immediately. Runs when no application effect is waiting.</td></tr>
+<tr><td>3</td><td>TUI, report screen</td><td><code>GET /v1/reports</code></td><td>On opening, choosing a range, explicit refresh and after relevant changes. Live ranges and calendar rollover enqueue at most once per second; pending reports are coalesced.</td></tr>
+<tr><td>4</td><td>Swift, healthy daily totals</td><td><code>GET /v1/reports</code></td><td>5 seconds with a visible window or open menu, 60 seconds hidden. Timer schedules after work completes, with tolerance up to 20%, capped at 5 seconds.</td></tr>
+<tr><td>5</td><td>Swift, failures and reconnect</td><td><code>GET /v1/snapshot</code>, then reports after recovery</td><td>Visible failure delays: 5, 10, 20, 40, 60 seconds; hidden: 60 seconds. Protocol block stops scheduled polling.</td></tr>
+<tr><td>6</td><td>Swift, UI and lifecycle</td><td>Snapshot or report, depending on connection state</td><td>Manual refresh, settings apply/test, becoming visible, wake and local day rollover. Sleep and busy operations suspend polls.</td></tr>
+<tr><td>7</td><td>CLI, each valid remote command</td><td>Initial health + snapshot, then command-specific request</td><td>Task list/status/search can finish from cache. History, reports and mutations add their route calls. No recurring poll.</td></tr>
+<tr><td>8</td><td>All clients, local presentation</td><td>No request for cached search, sorting or elapsed time</td><td>A display tick does not update stored worklog timestamps. History, totals and writes cross HTTP only when their operation runs.</td></tr></tbody></table></div></section><div class="prose"><a href="../apps/tui/src/runtime.rs">TUI event loop and refresh scheduling</a> · <a href="../apps/tui/src/screens/reports/actions.rs">TUI report refresh rules</a> · <a href="../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift">Swift session, reads and reconciliation</a> · <a href="../apps/swiftui/TrackerClient/Sources/TrackerClient/Features/Connection/ConnectionState.swift">Swift polling policy</a> · <a href="../apps/cli/src/backend.rs">CLI backend connection</a></div>
+<section class="card table-card catalog" id="payloads"><h2>Endpoint and payload catalog</h2><p>GET inputs are URL query parameters and have no body. Every write guard is flattened into the top-level JSON object. Successful handlers return HTTP 200.</p><div class="table-wrap">
+<table>
+<thead>
+<tr><th>#</th><th>Method / route</th><th>When</th><th>Client sends</th><th>Server sends</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>GET /v1/health</code></td><td>First refresh</td><td>No parameters</td><td><code>status</code>, <code>protocol_version</code></td></tr>
+<tr><td>2</td><td><code>GET /v1/snapshot</code></td><td>Startup, refresh, recovery</td><td>No parameters</td><td><code>task_items</code>, <code>active_worklog</code>, <code>revision</code></td></tr>
+<tr><td>3</td><td><code>POST /v1/tasks</code></td><td>Create task</td><td><code>task_id</code>, <code>name</code>, <code>occurred_at</code>, <code>expected_revision</code>, <code>request_id</code></td><td><code>MutationDto</code> containing <code>result</code> and full <code>snapshot</code>; result kind <code>task</code></td></tr>
+<tr><td>4</td><td><code>PATCH /v1/tasks/{id}</code></td><td>Rename / archive / restore</td><td><code>action</code>: <code>rename</code>, <code>archive</code> or <code>restore</code>; <code>name</code> for rename; <code>occurred_at</code>, <code>expected_revision</code>, <code>request_id</code></td><td><code>MutationDto</code> containing <code>result</code> and full <code>snapshot</code>; result kind <code>task</code></td></tr>
+<tr><td>5</td><td><code>PUT /v1/tracking</code></td><td>Start / switch / stop</td><td><code>task_id</code>, <code>worklog_id</code>, <code>expected_active</code>, <code>occurred_at</code>, <code>expected_revision</code>, <code>request_id</code></td><td><code>MutationDto</code> containing <code>result</code> and full <code>snapshot</code>; worklog or tracking outcome</td></tr>
+<tr><td>6</td><td><code>GET /v1/tasks/{id}/worklogs</code></td><td>Task history page</td><td>Optional complete cursor: <code>after_start</code>, <code>after_id</code>, <code>after_revision</code></td><td><code>worklogs</code>, <code>requested_task_latest_work_start</code>, <code>active_worklog</code>, <code>active_task_latest_work_start</code>, <code>next_cursor</code>, <code>revision</code></td></tr>
+<tr><td>7</td><td><code>GET /v1/worklogs</code></td><td>Global history page</td><td>Same optional complete cursor</td><td><code>worklogs</code>, full <code>snapshot</code>, <code>next_cursor</code></td></tr>
+<tr><td>8</td><td><code>PATCH /v1/worklogs/{id}</code></td><td>Move worklog</td><td><code>action: "move"</code>, <code>expected_task_id</code>, <code>expected_start</code>, nullable <code>expected_end</code>, <code>destination_task_id</code>, <code>expected_revision</code>, <code>request_id</code></td><td><code>MutationDto</code> containing <code>result</code> and full <code>snapshot</code>; result kind <code>worklog</code></td></tr>
+<tr><td>9</td><td><code>PATCH /v1/worklogs/{id}</code></td><td>Correct worklog</td><td><code>action: "correct"</code>, <code>expected_start</code>, nullable <code>expected_end</code>, <code>replacement_start</code>, nullable <code>replacement_end</code>, <code>occurred_at</code>, <code>expected_revision</code>, <code>request_id</code></td><td><code>MutationDto</code> containing <code>result</code> and full <code>snapshot</code>; result kind <code>worklog</code></td></tr>
+<tr><td>10</td><td><code>DELETE /v1/worklogs/{id}</code></td><td>Delete completed worklog</td><td><code>expected_task_id</code>, <code>expected_start</code>, non-null <code>expected_end</code>, <code>expected_revision</code>, <code>request_id</code></td><td><code>MutationDto</code> containing <code>result</code> and full <code>snapshot</code>; deleted <code>worklog</code> result</td></tr>
+<tr><td>11</td><td><code>GET /v1/reports</code></td><td>Report range / daily totals</td><td><code>start</code>, <code>end</code>, <code>now</code></td><td><code>rows</code> with task and <code>duration_us</code>, <code>total_us</code>, full <code>snapshot</code></td></tr>
+<tr><td>12</td><td><code>GET /v1/tasks/inactive-preview</code></td><td>Preview bulk archive</td><td><code>as_of</code></td><td><code>as_of</code>, <code>count</code>, <code>sample_names</code>, <code>revision</code></td></tr>
+<tr><td>13</td><td><code>POST /v1/tasks/archive-inactive</code></td><td>Confirm bulk archive</td><td><code>as_of</code>, preview <code>expected_revision</code>, <code>request_id</code></td><td><code>MutationDto</code> containing <code>result</code> and full <code>snapshot</code>; result kind <code>archived_inactive</code></td></tr></tbody></table></div></section><div class="prose"><p><a href="../crates/tracker-protocol/src/lib.rs">HTTP JSON DTO definitions</a> · <a href="../crates/tracker-server/src/lib.rs">Server routes, guards and idempotency cache</a> · <a href="../crates/tracker-remote/src/application.rs">RemoteApplication requests, cache and error recovery</a></p><p>A task has <code>id</code>, <code>name</code>, <code>archived</code>, <code>created_at</code> and <code>updated_at</code>. A task item wraps it as <code>{task, latest_work_start}</code>. A worklog has <code>id</code>, <code>task_id</code>, <code>start</code> and nullable <code>end</code>. Active worklogs have <code>end: null</code>. IDs and request IDs are UUID strings. Timestamps use RFC 3339; the remote adapter canonicalizes write times to microseconds. Durations use integer microseconds.</p><p>The server limits request bodies to 16 KiB; the remote transport limits responses to 16 MiB. Writes set <code>Content-Type: application/json</code>. The transport accepts root HTTP or HTTPS endpoints, disables redirects and configured proxies. The supplied server binds a loopback or assigned Tailscale address and validates Host. It serves plain HTTP; network protection comes from the deployment. There is no bearer-token field in this protocol.</p><p><a href="../crates/tracker-remote/src/transport.rs">Transport timeouts and retry rules</a></p></div>
+<section class="card table-card" id="wire"><h2>Concrete JSON examples</h2><p>Illustrative values in the actual wire shape. Keys shown in the write guard are top-level JSON fields.</p><div class="prose"><h3>PUT /v1/tracking request</h3><pre>{
+  &quot;task_id&quot;: &quot;019a6650-0000-7000-8000-000000000001&quot;,
+  &quot;worklog_id&quot;: &quot;019a6650-0000-7000-8000-000000000002&quot;,
+  &quot;expected_active&quot;: null,
+  &quot;occurred_at&quot;: &quot;2026-10-08T10:00:00Z&quot;,
+  &quot;expected_revision&quot;: &quot;019a6650-0000-7000-8000-000000000003:7&quot;,
+  &quot;request_id&quot;: &quot;019a6650-0000-7000-8000-000000000004&quot;
+}</pre><h3>Successful tracking response</h3><pre>{
+  &quot;result&quot;: {
+    &quot;kind&quot;: &quot;worklog&quot;,
+    &quot;value&quot;: {
+      &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000002&quot;,
+      &quot;task_id&quot;: &quot;019a6650-0000-7000-8000-000000000001&quot;,
+      &quot;start&quot;: &quot;2026-10-08T10:00:00Z&quot;,
+      &quot;end&quot;: null
+    }
+  },
+  &quot;snapshot&quot;: {
+    &quot;task_items&quot;: [
+      {
+        &quot;task&quot;: {
+          &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000001&quot;,
+          &quot;name&quot;: &quot;Investigate communication&quot;,
+          &quot;archived&quot;: false,
+          &quot;created_at&quot;: &quot;2026-10-08T09:00:00Z&quot;,
+          &quot;updated_at&quot;: &quot;2026-10-08T09:00:00Z&quot;
+        },
+        &quot;latest_work_start&quot;: &quot;2026-10-08T10:00:00Z&quot;
+      }
+    ],
+    &quot;active_worklog&quot;: {
+      &quot;id&quot;: &quot;019a6650-0000-7000-8000-000000000002&quot;,
+      &quot;task_id&quot;: &quot;019a6650-0000-7000-8000-000000000001&quot;,
+      &quot;start&quot;: &quot;2026-10-08T10:00:00Z&quot;,
+      &quot;end&quot;: null
+    },
+    &quot;revision&quot;: &quot;019a6650-0000-7000-8000-000000000003:8&quot;
+  }
+}</pre><h3>Stop request after accepting that snapshot</h3><pre>{
+  &quot;task_id&quot;: null,
+  &quot;worklog_id&quot;: null,
+  &quot;expected_active&quot;: &quot;019a6650-0000-7000-8000-000000000002&quot;,
+  &quot;occurred_at&quot;: &quot;2026-10-08T10:15:00Z&quot;,
+  &quot;expected_revision&quot;: &quot;019a6650-0000-7000-8000-000000000003:8&quot;,
+  &quot;request_id&quot;: &quot;019a6650-0000-7000-8000-000000000005&quot;
+}</pre><h3>HTTP 409 stale revision response</h3><pre>{
+  &quot;code&quot;: &quot;stale_revision&quot;,
+  &quot;message&quot;: &quot;Tracker state changed. Refresh and retry.&quot;
+}</pre><p>Mutation result variants serialize as <code>{kind, value}</code> when they carry a value. <code>tracking_already_idle</code> has only <code>kind</code>. <code>tracking_switched</code> carries <code>value: {stopped, started}</code>. <code>archived_inactive</code> carries <code>value: {count}</code>.</p></div></section>
+<section class="card table-card catalog" id="errors"><h2>Errors and recovery</h2><p>Application API errors use {code, message}. Framework rejections, missing routes and Host rejection can have a different body.</p><div class="table-wrap">
+<table>
+<thead>
+<tr><th>#</th><th>HTTP / code</th><th>Meaning</th><th>Client behavior</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>400 <code>invalid_request</code></td><td>Invalid JSON, IDs, inputs or preview time</td><td>Surface failure. Application operations attempt a snapshot refresh after HTTP errors.</td></tr>
+<tr><td>2</td><td>404 <code>not_found</code></td><td>Requested task or worklog does not exist</td><td>Refresh state and present the error.</td></tr>
+<tr><td>3</td><td>409 <code>stale_revision</code> / <code>conflict</code></td><td>Global state or expected active worklog changed; request ID reused with different payload</td><td>Refresh and review; no automatic command replay.</td></tr>
+<tr><td>4</td><td>409 worklog / task codes</td><td><code>worklog_changed</code>, <code>worklog_history_changed</code>, <code>worklog_overlap</code>, <code>active_worklog</code>, <code>active_task</code>, <code>inactive_task_candidates_changed</code></td><td>Refresh affected state or restart history as appropriate; retain user intent for review.</td></tr>
+<tr><td>5</td><td>413 <code>invalid_request</code></td><td>JSON body exceeds 16 KiB</td><td>Surface failure; no transport retry for the HTTP response.</td></tr>
+<tr><td>6</td><td>500 <code>internal</code></td><td>Storage or recovery failure</td><td>Sanitized message. Server may advance revision because a failed command might have committed; recover state before another write.</td></tr>
+<tr><td>7</td><td>Transport failure / HTTP 408 or 5xx</td><td>Unavailable server or incomplete response</td><td>Retain last confirmed cache. Only transport send/body failures retry writes once. HTTP 408/5xx classify as unavailable but do not trigger transport retry.</td></tr>
+<tr><td>8</td><td>Protocol failure</td><td>Incompatible health, invalid JSON/DTOs or oversized response</td><td>Surface protocol failure; no automatic transport retry.</td></tr></tbody></table></div></section><div class="prose"><a href="../crates/tracker-server/src/lib.rs">Server routes, guards and idempotency cache</a> · <a href="../crates/tracker-remote/src/application.rs">RemoteApplication requests, cache and error recovery</a> · <a href="../crates/tracker-remote/src/transport.rs">Transport timeouts and retry rules</a></div>
+<section class="card table-card catalog" id="summary"><h2>Investigation summary</h2><p>The behavior documented above is implemented in the inspected source.</p><div class="table-wrap">
+<table>
+<thead>
+<tr><th>#</th><th>Area</th><th>Finding</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Ownership</td><td>The server owns its SQLite database. All three remote clients use the same Rust transport and HTTP DTOs.</td></tr>
+<tr><td>2</td><td>Updates</td><td>TUI snapshot polls, Swift daily-report polls and explicit reads bring other clients' changes into local caches.</td></tr>
+<tr><td>3</td><td>Write safety</td><td>Every write carries a revision and UUID request ID; tracking and worklog edits also carry expected state.</td></tr>
+<tr><td>4</td><td>Payload size</td><td>Snapshots carry the whole task catalog; completed history is paginated in batches of 50; reports carry totals and a snapshot.</td></tr>
+<tr><td>5</td><td>Recovery</td><td>HTTP operation failures refresh state; transport retries writes once with identical bytes; server deduplication is bounded and in memory.</td></tr>
+<tr><td>6</td><td>Evidence</td><td>Portable links point to the owning source files. Swift-specific call sequences are detailed in <a href="client-server-swift-notes.md">the companion investigation</a>. No live traffic measurements are included.</td></tr></tbody></table></div></section>
+<footer>Source snapshot 3806193 · 8 October 2026. Diagrams and controls work offline. Source links are relative to this repository checkout.</footer></main>
+<script>document.querySelectorAll('.card .tools').forEach(tools=>{let scale=1;tools.addEventListener('click',event=>{const action=event.target.closest('button')?.dataset.action;if(!action)return;scale=action==='reset'?1:Math.max(.75,Math.min(3,scale+(action==='in'?.25:-.25)));const diagram=tools.closest('.card').querySelector('.diagram');diagram.style.width=(scale*100)+'%';tools.querySelector('.zoom-label').textContent=Math.round(scale*100)+'%';});});document.getElementById('print').addEventListener('click',()=>window.print());</script></body></html>
