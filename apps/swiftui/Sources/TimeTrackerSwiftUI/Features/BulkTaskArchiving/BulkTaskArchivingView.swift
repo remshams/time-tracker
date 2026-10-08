@@ -42,42 +42,46 @@ private struct BulkTaskArchivingSheet: View {
                     .disabled(state.isSubmitting || state.isLoading)
                     .accessibilityIdentifier("bulk-archive.refresh")
             }
-            if state.isLoading {
-                HStack { ProgressView().controlSize(.small); Text("Loading eligible tasks...") }
-                    .frame(maxWidth: .infinity, minHeight: 150)
-            } else if let count = state.archivedCount {
-                Label("Archived \(count) \(count == 1 ? "task" : "tasks").", systemImage: "checkmark.circle")
-                    .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
-                    .accessibilityIdentifier("bulk-archive.result")
-            } else {
-                Text("\(state.tasks.count) \(state.tasks.count == 1 ? "task" : "tasks") to archive")
+            HStack {
+                Text(state.isLoading ? "Loading eligible tasks..." : state.archivedCount != nil
+                     ? "Archive complete" : "\(state.tasks.count) \(state.tasks.count == 1 ? "task" : "tasks") to archive")
                     .font(.headline)
                     .accessibilityIdentifier("bulk-archive.count")
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
+                Spacer()
+                if state.isLoading {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .frame(height: 20)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    if let error = state.error {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                            .accessibilityIdentifier("bulk-archive.error")
+                    } else if let count = state.archivedCount {
+                        Label("Archived \(count) \(count == 1 ? "task" : "tasks").", systemImage: "checkmark.circle")
+                            .accessibilityIdentifier("bulk-archive.result")
+                    } else {
                         ForEach(state.tasks) { task in
                             Text(task.name).frame(maxWidth: .infinity, alignment: .leading)
                                 .textSelection(.enabled)
                                 .accessibilityIdentifier("bulk-archive.candidate.\(task.id)")
                             Divider()
                         }
-                        if state.tasks.isEmpty, state.error == nil {
+                        if state.tasks.isEmpty, !state.isLoading {
                             Text("No tasks match this inactivity period.").foregroundStyle(.secondary)
                                 .accessibilityIdentifier("bulk-archive.empty")
                         }
                     }
-                    .padding(12)
                 }
-                .frame(height: 220)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
             }
-            if let error = state.error {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .accessibilityIdentifier("bulk-archive.error")
-            }
+            .frame(height: 220)
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
             HStack(spacing: 12) {
                 if state.isSubmitting {
                     ProgressView().controlSize(.small)
@@ -96,6 +100,7 @@ private struct BulkTaskArchivingSheet: View {
                         .accessibilityIdentifier("bulk-archive.confirm")
                 }
             }
+            .frame(height: 24)
         }
         .padding(24)
         .frame(width: 560)
