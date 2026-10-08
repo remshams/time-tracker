@@ -55,13 +55,23 @@ final class TrackerFixture {
     func startServer() throws {
         guard server == nil else { return }
         let serverExecutable = try Self.environmentExecutable("TT_UI_TEST_SERVER")
-        if serverEndpoint == nil { serverEndpoint = "http://127.0.0.1:\(try Self.availablePort())" }
-        let endpoint = URL(string: serverEndpoint!)!
-        server = try ManagedProcess(executable: serverExecutable,
-                                    arguments: ["serve", "--bind", "127.0.0.1:\(endpoint.port!)", "--db", database.path],
-                                    log: directory.appendingPathComponent("server-\(UUID().uuidString).log"))
-        do { try Self.waitForHealth(serverEndpoint!) }
-        catch { stopServer(); throw error }
+        let existingEndpoint = serverEndpoint
+        let attempts = existingEndpoint == nil ? 3 : 1
+        for attempt in 1...attempts {
+            serverEndpoint = try existingEndpoint ?? "http://127.0.0.1:\(Self.availablePort())"
+            let endpoint = URL(string: serverEndpoint!)!
+            let child = try ManagedProcess(executable: serverExecutable,
+                                           arguments: ["serve", "--bind", "127.0.0.1:\(endpoint.port!)", "--db", database.path],
+                                           log: directory.appendingPathComponent("server-\(UUID().uuidString).log"))
+            server = child
+            do {
+                try Self.waitForHealth(serverEndpoint!, child: child)
+                return
+            } catch {
+                stopServer()
+                if attempt == attempts { throw error }
+            }
+        }
     }
 
     func stopServer() { server?.stop(); server = nil }
@@ -199,9 +209,13 @@ final class TrackerFixture {
         guard read == 0 else { throw FixtureError("Could not read a loopback port.") }
         return UInt16(bigEndian: address.sin_port)
     }
-    static func waitForHealth(_ endpoint: String) throws {
+    static func waitForHealth(_ endpoint: String, child: ManagedProcess) throws {
         let limit = Date().addingTimeInterval(15)
         while Date() < limit {
+            guard child.process.isRunning else {
+                let log = (try? String(contentsOf: child.log, encoding: .utf8)) ?? "No server log."
+                throw FixtureError("Server exited before becoming healthy: \(log)")
+            }
             let semaphore = DispatchSemaphore(value: 0)
             let success = LockedFlag()
             var request = URLRequest(url: URL(string: endpoint + "/v1/health")!)
@@ -213,7 +227,7 @@ final class TrackerFixture {
             task.resume()
             _ = semaphore.wait(timeout: .now() + 2)
             task.cancel()
-            if success.value { return }
+            if success.value && child.process.isRunning { return }
             Thread.sleep(forTimeInterval: 0.05)
         }
         throw FixtureError("Server did not become healthy at \(endpoint).")
