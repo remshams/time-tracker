@@ -6,9 +6,9 @@ use tracker_application::{
     GlobalWorklogCursor, GlobalWorklogPage, ReportTotals, TaskListItem, TrackerSnapshot,
     WorklogCursor, WorklogPage,
 };
-use tracker_domain::{Task, TaskId, Worklog, WorklogId, WorklogTimes};
+use tracker_domain::{Task, TaskId, Worklog, WorklogId};
 
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -25,6 +25,7 @@ pub struct TaskDto {
     pub archived: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub latest_work_start: Option<DateTime<Utc>>,
 }
 
 impl From<&Task> for TaskDto {
@@ -35,8 +36,46 @@ impl From<&Task> for TaskDto {
             archived: task.is_archived(),
             created_at: task.created_at(),
             updated_at: task.updated_at(),
+            latest_work_start: None,
         }
     }
+}
+
+impl From<&TaskListItem> for TaskDto {
+    fn from(item: &TaskListItem) -> Self {
+        Self {
+            latest_work_start: item.latest_work_start,
+            ..Self::from(&item.task)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TasksDto {
+    pub tasks: Vec<TaskDto>,
+    pub revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TaskResourceDto {
+    pub task: TaskDto,
+    pub revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TrackingDto {
+    pub active_worklog: Option<WorklogDto>,
+    pub revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct WorklogResourceDto {
+    pub worklog: WorklogDto,
+    pub revision: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -104,31 +143,15 @@ pub struct WriteGuard {
 #[serde(deny_unknown_fields)]
 pub struct InactiveTaskPreviewDto {
     pub as_of: DateTime<Utc>,
+    pub inactive_days: u32,
     pub count: usize,
-    pub sample_names: Vec<String>,
+    pub candidate_task_ids: Vec<String>,
     pub revision: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ArchiveInactiveTasksRequest {
-    pub as_of: DateTime<Utc>,
-    #[serde(flatten)]
-    pub guard: WriteGuard,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct InactiveTaskCandidatesDto {
-    pub as_of: DateTime<Utc>,
-    pub inactive_days: u32,
-    pub tasks: Vec<TaskDto>,
-    pub revision: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct ArchiveInactiveCandidatesRequest {
     pub as_of: DateTime<Utc>,
     pub inactive_days: u32,
     #[serde(flatten)]
@@ -251,14 +274,16 @@ pub enum MutationResultDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct MutationDto {
+    pub request_id: String,
+    pub applied_revision: String,
+    pub replayed: bool,
     pub result: MutationResultDto,
-    pub snapshot: SnapshotDto,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct WorklogCursorDto {
-    pub task_id: String,
+    pub task_id: Option<String>,
     pub start: DateTime<Utc>,
     pub id: String,
     pub revision: i64,
@@ -267,7 +292,7 @@ pub struct WorklogCursorDto {
 impl From<WorklogCursor> for WorklogCursorDto {
     fn from(cursor: WorklogCursor) -> Self {
         Self {
-            task_id: cursor.task_id.to_string(),
+            task_id: Some(cursor.task_id.to_string()),
             start: cursor.start,
             id: cursor.id.to_string(),
             revision: cursor.revision,
@@ -293,13 +318,21 @@ impl From<GlobalWorklogCursor> for GlobalWorklogCursorDto {
     }
 }
 
+impl From<GlobalWorklogCursor> for WorklogCursorDto {
+    fn from(cursor: GlobalWorklogCursor) -> Self {
+        Self {
+            task_id: None,
+            start: cursor.start,
+            id: cursor.id.to_string(),
+            revision: cursor.revision,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct WorklogPageDto {
     pub worklogs: Vec<WorklogDto>,
-    pub requested_task_latest_work_start: Option<DateTime<Utc>>,
-    pub active_worklog: Option<WorklogDto>,
-    pub active_task_latest_work_start: Option<DateTime<Utc>>,
     pub next_cursor: Option<WorklogCursorDto>,
     pub revision: String,
 }
@@ -308,9 +341,14 @@ impl WorklogPageDto {
     pub fn from_page(page: &WorklogPage, revision: String) -> Self {
         Self {
             worklogs: page.worklogs.iter().map(WorklogDto::from).collect(),
-            requested_task_latest_work_start: page.snapshot.requested_task_latest_work_start,
-            active_worklog: page.snapshot.active_worklog.as_ref().map(WorklogDto::from),
-            active_task_latest_work_start: page.snapshot.active_task_latest_work_start,
+            next_cursor: page.next_cursor.map(Into::into),
+            revision,
+        }
+    }
+
+    pub fn from_global_page(page: &GlobalWorklogPage, revision: String) -> Self {
+        Self {
+            worklogs: page.worklogs.iter().map(WorklogDto::from).collect(),
             next_cursor: page.next_cursor.map(Into::into),
             revision,
         }
@@ -319,45 +357,39 @@ impl WorklogPageDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct GlobalWorklogPageDto {
-    pub worklogs: Vec<WorklogDto>,
-    pub snapshot: SnapshotDto,
-    pub next_cursor: Option<GlobalWorklogCursorDto>,
-}
-
-impl GlobalWorklogPageDto {
-    pub fn from_page(page: &GlobalWorklogPage, revision: String) -> Self {
-        Self {
-            worklogs: page.worklogs.iter().map(WorklogDto::from).collect(),
-            snapshot: SnapshotDto::from_snapshot(&page.snapshot, revision),
-            next_cursor: page.next_cursor.map(Into::into),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct ReportRowDto {
-    pub task: TaskDto,
+    pub task_id: String,
     pub duration_us: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ReportDto {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub now: DateTime<Utc>,
     pub rows: Vec<ReportRowDto>,
     pub total_us: i64,
-    pub snapshot: SnapshotDto,
+    pub revision: String,
 }
 
 impl ReportDto {
-    pub fn from_totals(totals: &ReportTotals, snapshot: SnapshotDto) -> Self {
+    pub fn from_totals(
+        totals: &ReportTotals,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+        revision: String,
+    ) -> Self {
         Self {
+            start,
+            end,
+            now,
             rows: totals
                 .rows
                 .iter()
                 .map(|row| ReportRowDto {
-                    task: TaskDto::from(&row.task),
+                    task_id: row.task.id().to_string(),
                     duration_us: row
                         .duration
                         .num_microseconds()
@@ -368,7 +400,7 @@ impl ReportDto {
                 .total
                 .num_microseconds()
                 .expect("report duration validated by application"),
-            snapshot,
+            revision,
         }
     }
 }
@@ -402,8 +434,4 @@ pub fn parse_task_id(value: &str) -> Result<TaskId, &'static str> {
 
 pub fn parse_worklog_id(value: &str) -> Result<WorklogId, &'static str> {
     value.parse().map_err(|_| "invalid worklog id")
-}
-
-pub fn worklog_times(start: DateTime<Utc>, end: Option<DateTime<Utc>>) -> WorklogTimes {
-    WorklogTimes::new(start, end)
 }
