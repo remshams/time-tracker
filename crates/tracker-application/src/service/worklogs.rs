@@ -57,7 +57,12 @@ impl<R: TrackerRepository> WorklogQueries for TrackerApplication<R> {
         after: Option<&GlobalWorklogCursor>,
     ) -> Result<GlobalWorklogPage, ApplicationError> {
         let page = self.repository.global_worklog_page(after)?;
-        self.adopt_snapshot(page.snapshot.clone())?;
+        if let Some(tracking) = page.tracking.clone() {
+            self.adopt_tracking_read(tracking)?;
+        }
+        for item in &page.task_items {
+            self.adopt_task_item(item.clone());
+        }
         Ok(page)
     }
 
@@ -67,7 +72,9 @@ impl<R: TrackerRepository> WorklogQueries for TrackerApplication<R> {
         after: Option<&WorklogCursor>,
     ) -> Result<WorklogPage, ApplicationError> {
         let page = self.repository.worklog_page(task_id, after)?;
-        self.adopt_worklog_page_snapshot(task_id, page.snapshot.clone())?;
+        if let Some(adoption) = page.snapshot.clone() {
+            self.adopt_worklog_page_snapshot(task_id, adoption)?;
+        }
         Ok(page)
     }
 }

@@ -212,8 +212,8 @@ fn snapshot_alignment_keeps_an_active_task_recently_worked() {
     let active_task = stamped_task(1, "active", 100, 100);
     let other_task = stamped_task(2, "other", 500, 500);
     let active = worklog(10, active_task.id(), 200);
-    let (items, _) = TrackerApplication::<MemoryRepository>::state_from_snapshot(TrackerSnapshot {
-        task_items: vec![
+    let (items, _) = TrackerApplication::<MemoryRepository>::state_from_resources(
+        vec![
             TaskListItem {
                 task: active_task.clone(),
                 latest_work_start: None,
@@ -223,8 +223,8 @@ fn snapshot_alignment_keeps_an_active_task_recently_worked() {
                 latest_work_start: None,
             },
         ],
-        active_worklog: Some(active),
-    })
+        Some(active),
+    )
     .unwrap();
     assert_eq!(
         items
@@ -234,4 +234,78 @@ fn snapshot_alignment_keeps_an_active_task_recently_worked() {
             .latest_work_start,
         Some(at(200))
     );
+}
+
+#[test]
+fn independent_resource_refreshes_update_only_the_requested_cache_and_retain_failed_reads() {
+    let initial = task(1, "initial");
+    let added = task(2, "added elsewhere");
+    let repository = MemoryRepository::with_tasks(vec![initial.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    repository.create_task(added.clone()).unwrap();
+    let active = worklog(10, added.id(), 200);
+    repository.insert_worklog(&active).unwrap();
+
+    application.refresh_task_catalog().unwrap();
+    assert_eq!(application.task(added.id()), Some(&added));
+    assert_eq!(application.current_tracking(), &TrackingState::Idle);
+
+    repository
+        .rename_task(
+            added.id(),
+            TaskName::new("renamed elsewhere").unwrap(),
+            at(300),
+        )
+        .unwrap();
+    application.refresh_tracking_resource().unwrap();
+    assert_eq!(application.task(added.id()), Some(&added));
+    assert!(
+        matches!(application.current_tracking(), TrackingState::Running { worklog } if worklog.id() == active.id())
+    );
+
+    let items = application.tasks(TaskOrdering::default());
+    let tracking = application.current_tracking().clone();
+    repository.0.borrow_mut().fail_reads = true;
+    assert!(application.refresh_task_catalog().is_err());
+    assert!(application.refresh_tracking_resource().is_err());
+    assert_eq!(application.tasks(TaskOrdering::default()), items);
+    assert_eq!(application.current_tracking(), &tracking);
+}
+
+#[test]
+fn single_task_reads_adopt_only_requested_metadata_and_remove_confirmed_absence() {
+    let first = task(1, "first");
+    let second = task(2, "second");
+    let repository = MemoryRepository::with_tasks(vec![first.clone(), second.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    repository
+        .rename_task(first.id(), TaskName::new("first changed").unwrap(), at(300))
+        .unwrap();
+    repository
+        .rename_task(
+            second.id(),
+            TaskName::new("second changed").unwrap(),
+            at(300),
+        )
+        .unwrap();
+    let active = worklog(10, first.id(), 200);
+    repository.insert_worklog(&active).unwrap();
+
+    let read = application.read_task_item(first.id()).unwrap().unwrap();
+
+    assert_eq!(read.task.name().as_str(), "first changed");
+    assert_eq!(read.latest_work_start, Some(at(200)));
+    assert_eq!(application.task(first.id()), Some(&read.task));
+    assert_eq!(application.task(second.id()), Some(&second));
+    assert_eq!(application.current_tracking(), &TrackingState::Idle);
+    repository
+        .0
+        .borrow_mut()
+        .tasks
+        .retain(|item| item.task.id() != second.id());
+    assert_eq!(application.read_task_item(second.id()).unwrap(), None);
+    assert_eq!(application.task(second.id()), None);
+    repository.0.borrow_mut().fail_reads = true;
+    assert!(application.read_task_item(first.id()).is_err());
+    assert_eq!(application.task(first.id()), Some(&read.task));
 }

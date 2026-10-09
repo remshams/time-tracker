@@ -14,10 +14,10 @@ use tracker_domain::{
 };
 
 use crate::{
-    ApplicationError, ClearActiveTaskOutcome, GlobalWorklogCursor, GlobalWorklogPage, ReportTotals,
-    RepositoryError, SetActiveTaskOutcome, TaskListItem, TaskOrdering, TrackerRepository,
-    TrackerSnapshot, WorklogCorrection, WorklogCursor, WorklogDeletion, WorklogMove, WorklogPage,
-    WorklogPageSnapshot,
+    ActiveTrackingRead, ApplicationError, ClearActiveTaskOutcome, GlobalWorklogCursor,
+    GlobalWorklogPage, ReportTotals, RepositoryError, SetActiveTaskOutcome, TaskListItem,
+    TaskOrdering, TrackerRepository, WorklogCorrection, WorklogCursor, WorklogDeletion,
+    WorklogMove, WorklogPage, WorklogPageSnapshot,
 };
 
 fn canonical_timestamp(timestamp: DateTime<Utc>) -> DateTime<Utc> {
@@ -40,13 +40,18 @@ pub trait TaskQueries {
     /// The tasks of the selected backend, ordered by the given ordering.
     fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem>;
     fn task(&self, id: TaskId) -> Option<&Task>;
+
+    /// Refreshes the task list and its active-task indication together.
+    fn refresh_task_list(&mut self) -> Result<(), ApplicationError> {
+        Ok(())
+    }
 }
 
 /// Reports time by task for a half-open UTC interval.
 pub trait ReportQueries {
     /// Clips completed work to the interval and ends open work at `now`.
-    /// A successful read also refreshes task and tracking queries from the
-    /// same backend snapshot.
+    /// Adopts active tracking and metadata for reported tasks from the same
+    /// backend read. Full task-list refreshes are explicit client operations.
     fn report_totals(
         &mut self,
         start: DateTime<Utc>,
@@ -129,7 +134,7 @@ pub trait TrackingOperations {
 }
 
 /// Queries for worklog history and move destinations. History page reads
-/// adopt the task and tracking snapshot read with the page before returning.
+/// adopt page task metadata and active tracking from the same read.
 pub trait WorklogQueries: TaskQueries {
     /// Eligible destinations from the current task snapshot, fuzzy matched and
     /// ordered by recent activity, creation time, then task identity.
@@ -243,8 +248,8 @@ pub struct TrackerApplication<R> {
 impl<R: TrackerRepository> TrackerApplication<R> {
     /// Loads task and tracking state from one coherent backend snapshot.
     pub fn load(repository: R) -> Result<Self, ApplicationError> {
-        let snapshot = repository.tracker_snapshot()?;
-        let (tasks, tracker) = Self::state_from_snapshot(snapshot)?;
+        let (tasks, active_worklog) = repository.load_task_tracking_resources()?;
+        let (tasks, tracker) = Self::state_from_resources(tasks, active_worklog)?;
         Ok(Self {
             repository,
             tasks,
@@ -252,22 +257,49 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         })
     }
 
-    /// Replaces cached task and tracking state with one authoritative read.
-    /// The server uses this after an uncertain write outcome.
+    /// Reads and adopts one task resource, preserving an authoritative absence.
+    pub fn read_task_item(&mut self, id: TaskId) -> Result<Option<TaskListItem>, ApplicationError> {
+        let item = self.repository.load_task_item(id)?;
+        match &item {
+            Some(item) => self.adopt_task_item(item.clone()),
+            None => self.tasks.retain(|item| item.task.id() != id),
+        }
+        Ok(item)
+    }
+
+    /// Refreshes task metadata and activity without reading active tracking.
+    pub fn refresh_task_catalog(&mut self) -> Result<(), ApplicationError> {
+        let mut tasks = self.repository.load_task_catalog()?;
+        tasks.sort_by_key(|item| item.task.id());
+        self.tasks = tasks;
+        Ok(())
+    }
+
+    /// Refreshes active tracking without reading task metadata.
+    pub fn refresh_tracking_resource(&mut self) -> Result<(), ApplicationError> {
+        self.tracker = match self.repository.active_worklog()? {
+            Some(worklog) => Tracker::resume(worklog)?,
+            None => Tracker::idle(),
+        };
+        Ok(())
+    }
+
+    /// Replaces task and tracking caches together for a coherent workflow.
     pub fn refresh_authoritative_state(&mut self) -> Result<(), ApplicationError> {
         self.refresh_tracking()
     }
 
-    pub(crate) fn state_from_snapshot(
-        mut snapshot: TrackerSnapshot,
+    pub(crate) fn state_from_resources(
+        mut tasks: Vec<TaskListItem>,
+        active_worklog: Option<Worklog>,
     ) -> Result<(Vec<TaskListItem>, Tracker), ApplicationError> {
-        snapshot.task_items.sort_by_key(|item| item.task.id());
-        let tracker = match snapshot.active_worklog {
+        tasks.sort_by_key(|item| item.task.id());
+        let tracker = match active_worklog {
             Some(worklog) => Tracker::resume(worklog)?,
             None => Tracker::idle(),
         };
-        Self::align_active_work(&mut snapshot.task_items, &tracker);
-        Ok((snapshot.task_items, tracker))
+        Self::align_active_work(&mut tasks, &tracker);
+        Ok((tasks, tracker))
     }
 
     fn align_active_work(items: &mut [TaskListItem], tracker: &Tracker) {
@@ -316,20 +348,43 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         )
     }
 
-    fn adopt_snapshot(&mut self, snapshot: TrackerSnapshot) -> Result<(), ApplicationError> {
-        let (tasks, tracker) = Self::state_from_snapshot(snapshot)?;
+    fn adopt_task_tracking_resources(
+        &mut self,
+        tasks: Vec<TaskListItem>,
+        active_worklog: Option<Worklog>,
+    ) -> Result<(), ApplicationError> {
+        let (tasks, tracker) = Self::state_from_resources(tasks, active_worklog)?;
         self.tasks = tasks;
         self.tracker = tracker;
         Ok(())
     }
 
+    fn adopt_tracking_read(&mut self, read: ActiveTrackingRead) -> Result<(), ApplicationError> {
+        let tracker = match read.active_worklog {
+            Some(worklog) => Tracker::resume(worklog)?,
+            None => Tracker::idle(),
+        };
+        if let Some(item) = read.active_task_item {
+            self.adopt_task_item(item);
+        }
+        self.tracker = tracker;
+        Ok(())
+    }
+
+    fn adopt_task_item(&mut self, item: TaskListItem) {
+        let id = item.task.id();
+        self.replace_task(item.task);
+        self.set_latest_work_start(id, item.latest_work_start);
+    }
+
     fn refresh_tracking(&mut self) -> Result<(), ApplicationError> {
-        self.adopt_snapshot(self.repository.tracker_snapshot()?)
+        let (tasks, active_worklog) = self.repository.load_task_tracking_resources()?;
+        self.adopt_task_tracking_resources(tasks, active_worklog)
     }
 
     fn reload_authoritative_state(&mut self) -> Result<(), RepositoryError> {
-        let snapshot = self.repository.tracker_snapshot()?;
-        self.adopt_snapshot(snapshot)
+        let (tasks, active_worklog) = self.repository.load_task_tracking_resources()?;
+        self.adopt_task_tracking_resources(tasks, active_worklog)
             .map_err(|_| RepositoryError::CorruptData {
                 field: "active worklog",
             })

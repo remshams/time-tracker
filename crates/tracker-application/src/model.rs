@@ -134,8 +134,9 @@ pub struct WorklogPageSnapshot {
 pub struct WorklogPage {
     /// The worklogs of this page, in history order.
     pub worklogs: Vec<Worklog>,
-    /// Bounded aggregate and tracking state read with this page.
-    pub snapshot: WorklogPageSnapshot,
+    /// Local aggregate and tracking adoption state from the page transaction.
+    /// Independent remote pages carry no adoption state.
+    pub snapshot: Option<WorklogPageSnapshot>,
     /// The cursor to pass for the next page, or `None` at the end of the
     /// history.
     pub next_cursor: Option<WorklogCursor>,
@@ -153,11 +154,13 @@ pub struct GlobalWorklogCursor {
 /// One page of worklogs across active and archived tasks.
 ///
 /// Rows are ordered by start descending, then `WorklogId` ascending. The
-/// tracker snapshot comes from the same backend read as the page.
+/// task metadata and active tracking come from the same backend read as the page.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobalWorklogPage {
     pub worklogs: Vec<Worklog>,
-    pub snapshot: crate::TrackerSnapshot,
+    /// Metadata for the distinct tasks represented on this bounded page.
+    pub task_items: Vec<TaskListItem>,
+    pub tracking: Option<crate::ActiveTrackingRead>,
     pub next_cursor: Option<GlobalWorklogCursor>,
 }
 
