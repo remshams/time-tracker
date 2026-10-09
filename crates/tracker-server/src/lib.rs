@@ -1,5 +1,9 @@
 //! HTTP server for the versioned remote tracker protocol.
 
+mod resources;
+
+use resources::{all_worklogs, report, task, tasks, tracking, worklog};
+
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::fs::{File, OpenOptions};
@@ -11,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::{Arc, Mutex};
 
-use axum::extract::rejection::JsonRejection;
+use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::{DefaultBodyLimit, Path as RoutePath, Query, State};
 use axum::http::{Request, StatusCode, header};
 use axum::middleware::{Next, from_fn};
@@ -30,11 +34,11 @@ use tracker_domain::{
     InactivityPeriod, Task, TaskId, TaskName, TrackingState, WorklogId, WorklogTimes,
 };
 use tracker_protocol::{
-    ArchiveInactiveCandidatesRequest, ArchiveInactiveTasksRequest, CreateTaskRequest,
-    DeleteWorklogRequest, ErrorCode, ErrorDto, GlobalWorklogPageDto, HealthDto,
-    InactiveTaskCandidatesDto, InactiveTaskPreviewDto, MutationDto, MutationResultDto, ReportDto,
-    SetTrackingRequest, SnapshotDto, TaskChangeRequest, TaskDto, WorklogChangeRequest, WorklogDto,
-    WorklogPageDto, WriteGuard, parse_task_id, parse_worklog_id,
+    ArchiveInactiveTasksRequest, CreateTaskRequest, DeleteWorklogRequest, ErrorCode, ErrorDto,
+    HealthDto, InactiveTaskPreviewDto, MutationDto, MutationResultDto, ReportDto,
+    SetTrackingRequest, TaskChangeRequest, TaskDto, TaskResourceDto, TasksDto, TrackingDto,
+    WorklogChangeRequest, WorklogDto, WorklogPageDto, WorklogResourceDto, WriteGuard,
+    parse_task_id, parse_worklog_id,
 };
 use tracker_storage::SqliteRepository;
 use uuid::Uuid;
@@ -50,7 +54,7 @@ struct Core {
     needs_refresh: bool,
     epoch: String,
     sequence: u64,
-    completed: HashMap<String, (String, MutationResultDto)>,
+    completed: HashMap<String, (String, MutationDto)>,
     completion_order: VecDeque<String>,
 }
 
@@ -59,20 +63,10 @@ impl Core {
         format!("{}:{}", self.epoch, self.sequence)
     }
 
-    fn snapshot(&self) -> SnapshotDto {
-        let active_worklog = match self.app.current_tracking() {
+    fn active_worklog(&self) -> Option<WorklogDto> {
+        match self.app.current_tracking() {
             TrackingState::Idle => None,
             TrackingState::Running { worklog } => Some(WorklogDto::from(&worklog.to_worklog())),
-        };
-        SnapshotDto {
-            task_items: self
-                .app
-                .tasks(TaskOrdering::RecentlyCreated)
-                .iter()
-                .map(Into::into)
-                .collect(),
-            active_worklog,
-            revision: self.revision(),
         }
     }
 
@@ -90,8 +84,8 @@ impl Core {
         if let Some((old_fingerprint, result)) = self.completed.get(&guard.request_id) {
             return if old_fingerprint == &fingerprint {
                 Ok(MutationDto {
-                    result: result.clone(),
-                    snapshot: self.snapshot(),
+                    replayed: true,
+                    ..result.clone()
                 })
             } else {
                 Err(ApiError::conflict(
@@ -119,11 +113,13 @@ impl Core {
             .checked_add(1)
             .ok_or_else(ApiError::internal)?;
         let response = MutationDto {
-            result: result.clone(),
-            snapshot: self.snapshot(),
+            request_id: guard.request_id.clone(),
+            applied_revision: self.revision(),
+            replayed: false,
+            result,
         };
         self.completed
-            .insert(guard.request_id.clone(), (fingerprint, result));
+            .insert(guard.request_id.clone(), (fingerprint, response.clone()));
         self.completion_order.push_back(guard.request_id.clone());
         if self.completion_order.len() > IDEMPOTENCY_CACHE_SIZE
             && let Some(evicted) = self.completion_order.pop_front()
@@ -270,16 +266,18 @@ async fn health() -> Json<HealthDto> {
     })
 }
 
-async fn snapshot(State(shared): State<Shared>) -> ApiResult<SnapshotDto> {
-    Ok(Json(lock(&shared)?.snapshot()))
-}
-
-const INACTIVE_PREVIEW_SAMPLE_SIZE: usize = 5;
 const INACTIVE_AS_OF_TOLERANCE: TimeDelta = TimeDelta::minutes(15);
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct InactivePreviewQuery {
     as_of: DateTime<Utc>,
+    #[serde(default = "default_inactive_days")]
+    inactive_days: u32,
+}
+
+fn default_inactive_days() -> u32 {
+    14
 }
 
 fn validate_inactive_as_of(as_of: DateTime<Utc>, now: DateTime<Utc>) -> Result<(), ApiError> {
@@ -295,19 +293,21 @@ fn validate_inactive_as_of(as_of: DateTime<Utc>, now: DateTime<Utc>) -> Result<(
 
 async fn preview_inactive_tasks(
     State(shared): State<Shared>,
-    Query(query): Query<InactivePreviewQuery>,
+    input: Result<Query<InactivePreviewQuery>, QueryRejection>,
 ) -> ApiResult<InactiveTaskPreviewDto> {
+    let query = query_payload(input)?;
     validate_inactive_as_of(query.as_of, Utc::now())?;
     let mut core = lock(&shared)?;
-    let tasks = core.app.preview_inactive_tasks(query.as_of)?;
+    let period = InactivityPeriod::new(query.inactive_days)
+        .map_err(|error| ApiError::invalid(&error.to_string()))?;
+    let tasks = core
+        .app
+        .preview_inactive_tasks_with_period(query.as_of, period)?;
     Ok(Json(InactiveTaskPreviewDto {
         as_of: query.as_of,
+        inactive_days: period.days(),
         count: tasks.len(),
-        sample_names: tasks
-            .iter()
-            .take(INACTIVE_PREVIEW_SAMPLE_SIZE)
-            .map(|task| task.name().as_str().to_owned())
-            .collect(),
+        candidate_task_ids: tasks.iter().map(|task| task.id().to_string()).collect(),
         revision: core.revision(),
     }))
 }
@@ -321,51 +321,6 @@ async fn archive_inactive_tasks(
     let mut core = lock(&shared)?;
     let response = core.execute(&request.guard, key, |app| {
         validate_inactive_as_of(request.as_of, Utc::now())?;
-        let candidates = app.preview_inactive_tasks(request.as_of)?;
-        let ids: Vec<TaskId> = candidates.iter().map(Task::id).collect();
-        let archived = app.archive_inactive_tasks(&ids, request.as_of)?;
-        Ok(MutationResultDto::ArchivedInactive {
-            count: archived.len(),
-        })
-    })?;
-    Ok(Json(response))
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct InactiveCandidatesQuery {
-    as_of: DateTime<Utc>,
-    inactive_days: u32,
-}
-
-async fn inactive_candidates(
-    State(shared): State<Shared>,
-    Query(query): Query<InactiveCandidatesQuery>,
-) -> ApiResult<InactiveTaskCandidatesDto> {
-    validate_inactive_as_of(query.as_of, Utc::now())?;
-    let period = InactivityPeriod::new(query.inactive_days)
-        .map_err(|error| ApiError::invalid(&error.to_string()))?;
-    let mut core = lock(&shared)?;
-    let tasks = core
-        .app
-        .preview_inactive_tasks_with_period(query.as_of, period)?;
-    Ok(Json(InactiveTaskCandidatesDto {
-        as_of: query.as_of,
-        inactive_days: period.days(),
-        tasks: tasks.iter().map(TaskDto::from).collect(),
-        revision: core.revision(),
-    }))
-}
-
-async fn archive_inactive_candidates(
-    State(shared): State<Shared>,
-    input: Result<Json<ArchiveInactiveCandidatesRequest>, JsonRejection>,
-) -> ApiResult<MutationDto> {
-    let request = payload(input)?;
-    let key = fingerprint("POST /v1/tasks/archive-inactive-candidates", &request)?;
-    let mut core = lock(&shared)?;
-    let response = core.execute(&request.guard, key, |app| {
-        validate_inactive_as_of(request.as_of, Utc::now())?;
         let period = InactivityPeriod::new(request.inactive_days)
             .map_err(|error| ApiError::invalid(&error.to_string()))?;
         let candidates = app.preview_inactive_tasks_with_period(request.as_of, period)?;
@@ -376,6 +331,12 @@ async fn archive_inactive_candidates(
         })
     })?;
     Ok(Json(response))
+}
+
+fn query_payload<T>(value: Result<Query<T>, QueryRejection>) -> Result<T, ApiError> {
+    value
+        .map(|Query(value)| value)
+        .map_err(|_| ApiError::invalid("Invalid query parameters"))
 }
 
 fn payload<T>(value: Result<Json<T>, JsonRejection>) -> Result<T, ApiError> {
@@ -398,9 +359,13 @@ async fn create_task(
     let key = fingerprint("POST /v1/tasks", &request)?;
     let mut core = lock(&shared)?;
     let response = core.execute(&request.guard, key, |app| {
-        app.create_task_with_id(id, name, request.occurred_at)
-            .map(|task| MutationResultDto::Task(TaskDto::from(&task)))
-            .map_err(Into::into)
+        app.create_task_with_id(id, name, request.occurred_at)?;
+        let item = app
+            .tasks(TaskOrdering::RecentlyCreated)
+            .into_iter()
+            .find(|item| item.task.id() == id)
+            .ok_or_else(ApiError::internal)?;
+        Ok(MutationResultDto::Task(TaskDto::from(&item)))
     })?;
     Ok(Json(response))
 }
@@ -425,7 +390,12 @@ async fn change_task(
                 app.unarchive_task(id, occurred_at)?
             }
         };
-        Ok(MutationResultDto::Task(TaskDto::from(&task)))
+        let item = app
+            .tasks(TaskOrdering::RecentlyCreated)
+            .into_iter()
+            .find(|item| item.task.id() == task.id())
+            .ok_or_else(ApiError::internal)?;
+        Ok(MutationResultDto::Task(TaskDto::from(&item)))
     })?;
     Ok(Json(response))
 }
@@ -499,59 +469,6 @@ async fn set_tracking(
     Ok(Json(response))
 }
 
-#[derive(Deserialize)]
-struct PageQuery {
-    after_start: Option<DateTime<Utc>>,
-    after_id: Option<String>,
-    after_revision: Option<i64>,
-}
-
-fn page_cursor(task_id: TaskId, query: PageQuery) -> Result<Option<WorklogCursor>, ApiError> {
-    match (query.after_start, query.after_id, query.after_revision) {
-        (None, None, None) => Ok(None),
-        (Some(start), Some(id), Some(revision)) if revision >= 0 => Ok(Some(WorklogCursor {
-            task_id,
-            start,
-            id: worklog_id(&id)?,
-            revision,
-        })),
-        _ => Err(ApiError::invalid("Incomplete worklog cursor")),
-    }
-}
-
-async fn task_worklogs(
-    State(shared): State<Shared>,
-    RoutePath(raw_id): RoutePath<String>,
-    Query(query): Query<PageQuery>,
-) -> ApiResult<WorklogPageDto> {
-    let id = task_id(&raw_id)?;
-    let cursor = page_cursor(id, query)?;
-    let mut core = lock(&shared)?;
-    let page = core.app.worklogs_for_task(id, cursor.as_ref())?;
-    Ok(Json(WorklogPageDto::from_page(&page, core.revision())))
-}
-
-async fn all_worklogs(
-    State(shared): State<Shared>,
-    Query(query): Query<PageQuery>,
-) -> ApiResult<GlobalWorklogPageDto> {
-    let cursor = match (query.after_start, query.after_id, query.after_revision) {
-        (None, None, None) => None,
-        (Some(start), Some(id), Some(revision)) if revision >= 0 => Some(GlobalWorklogCursor {
-            start,
-            id: worklog_id(&id)?,
-            revision,
-        }),
-        _ => return Err(ApiError::invalid("Incomplete worklog cursor")),
-    };
-    let mut core = lock(&shared)?;
-    let page = core.app.all_worklogs(cursor.as_ref())?;
-    Ok(Json(GlobalWorklogPageDto::from_page(
-        &page,
-        core.revision(),
-    )))
-}
-
 async fn change_worklog(
     State(shared): State<Shared>,
     RoutePath(raw_id): RoutePath<String>,
@@ -616,22 +533,6 @@ async fn delete_worklog(
     Ok(Json(response))
 }
 
-#[derive(Deserialize)]
-struct ReportQuery {
-    start: DateTime<Utc>,
-    end: DateTime<Utc>,
-    now: DateTime<Utc>,
-}
-
-async fn report(
-    State(shared): State<Shared>,
-    Query(query): Query<ReportQuery>,
-) -> ApiResult<ReportDto> {
-    let mut core = lock(&shared)?;
-    let totals = core.app.report_totals(query.start, query.end, query.now)?;
-    Ok(Json(ReportDto::from_totals(&totals, core.snapshot())))
-}
-
 /// Creates a router backed by one SQLite database. Each handler serializes access
 /// to the application service, including reads that refresh its snapshot.
 pub fn router_for_database(path: &Path) -> Result<Router, Box<dyn Error + Send + Sync>> {
@@ -650,24 +551,17 @@ pub fn router_for_database(path: &Path) -> Result<Router, Box<dyn Error + Send +
     let shared = Arc::new(Mutex::new(core));
     Ok(Router::new()
         .route("/v1/health", get(health))
-        .route("/v1/snapshot", get(snapshot))
-        .route("/v1/tasks", post(create_task))
-        .route("/v1/tasks/inactive-candidates", get(inactive_candidates))
-        .route(
-            "/v1/tasks/archive-inactive-candidates",
-            post(archive_inactive_candidates),
-        )
+        .route("/v1/tasks", get(tasks).post(create_task))
         .route("/v1/tasks/inactive-preview", get(preview_inactive_tasks))
         .route("/v1/tasks/archive-inactive", post(archive_inactive_tasks))
-        .route("/v1/tasks/{id}", axum::routing::patch(change_task))
-        .route("/v1/tracking", axum::routing::put(set_tracking))
-        .route("/v1/tasks/{id}/worklogs", get(task_worklogs))
+        .route("/v1/tasks/{id}", get(task).patch(change_task))
+        .route("/v1/tracking", get(tracking).put(set_tracking))
         .route("/v1/worklogs", get(all_worklogs))
         .route(
             "/v1/worklogs/{id}",
-            axum::routing::patch(change_worklog).delete(delete_worklog),
+            get(worklog).patch(change_worklog).delete(delete_worklog),
         )
-        .route("/v1/reports", get(report))
+        .route("/v1/reports/task-totals", get(report))
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .with_state(shared))
 }
@@ -887,21 +781,18 @@ mod tracking_tests {
             .unwrap()
             .0;
         assert_eq!(
-            first.snapshot.active_worklog.as_ref().unwrap().id,
+            shared.lock().unwrap().active_worklog().unwrap().id,
             first_id.to_string()
         );
         assert_eq!(
-            first.snapshot.active_worklog.as_ref().unwrap().start,
+            shared.lock().unwrap().active_worklog().unwrap().start,
             at(100)
         );
         let repeated = set_tracking(State(shared.clone()), Ok(Json(first_request)))
             .await
             .unwrap()
             .0;
-        assert_eq!(
-            repeated.snapshot.active_worklog,
-            first.snapshot.active_worklog
-        );
+        assert_eq!(repeated.result, first.result);
         let next_id = WorklogId::generate();
         let next_request = request(&shared, tasks[1].task.id(), next_id, Some(first_id), 200);
         let switched = set_tracking(State(shared.clone()), Ok(Json(next_request)))
@@ -909,7 +800,7 @@ mod tracking_tests {
             .unwrap()
             .0;
         assert_eq!(
-            switched.snapshot.active_worklog.as_ref().unwrap().id,
+            shared.lock().unwrap().active_worklog().unwrap().id,
             next_id.to_string()
         );
         assert!(
@@ -1172,7 +1063,12 @@ mod security_tests {
                 request_id.clone(),
                 (
                     "fingerprint".to_owned(),
-                    MutationResultDto::TrackingAlreadyIdle,
+                    tracker_protocol::MutationDto {
+                        request_id: request_id.clone(),
+                        applied_revision: core.revision(),
+                        replayed: false,
+                        result: MutationResultDto::TrackingAlreadyIdle,
+                    },
                 ),
             );
             core.completion_order.push_back(request_id);
