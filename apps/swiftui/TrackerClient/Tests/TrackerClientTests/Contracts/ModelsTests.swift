@@ -9,7 +9,8 @@ final class ModelsTests: XCTestCase {
     }
 
     func testSnapshotDecodesRustCamelCaseFieldsAndFractionalTimestamps() throws {
-        let json = #"{"tasks":[{"id":"task-one","name":"First task","archived":false,"latestStart":"2024-12-31T23:59:30.123456Z"}],"active":{"id":"worklog-one","taskId":"task-one","start":"2024-12-31T23:59:30.123456Z","end":null}}"#
+        let json =
+            #"{"tasks":[{"id":"task-one","name":"First task","archived":false,"latestStart":"2024-12-31T23:59:30.123456Z"}],"active":{"id":"worklog-one","taskId":"task-one","start":"2024-12-31T23:59:30.123456Z","end":null}}"#
         let snapshot = try JSONDecoder().decode(TrackerSnapshot.self, from: Data(json.utf8))
         XCTAssertEqual(snapshot.tasks.map(\.id), ["task-one"])
         XCTAssertEqual(snapshot.tasks.first?.latestStart, snapshot.active?.start)
@@ -20,7 +21,8 @@ final class ModelsTests: XCTestCase {
     }
 
     func testHistoryDecodesOpaqueCursorAndResetFlag() throws {
-        let json = #"{"worklogs":[{"id":"worklog-one","taskId":"task-one","start":"2024-12-30T09:00:00.000000Z","end":"2024-12-30T10:00:00.000000Z"}],"nextCursor":"{\"taskId\":\"task-one\"}","reset":true}"#
+        let json =
+            #"{"worklogs":[{"id":"worklog-one","taskId":"task-one","start":"2024-12-30T09:00:00.000000Z","end":"2024-12-30T10:00:00.000000Z"}],"nextCursor":"{\"taskId\":\"task-one\"}","reset":true}"#
         let page = try JSONDecoder().decode(HistoryPage.self, from: Data(json.utf8))
         XCTAssertEqual(page.worklogs.first?.end, "2024-12-30T10:00:00.000000Z")
         XCTAssertEqual(page.nextCursor, #"{"taskId":"task-one"}"#)

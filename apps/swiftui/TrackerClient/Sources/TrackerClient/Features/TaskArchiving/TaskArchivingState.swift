@@ -44,12 +44,13 @@ final class TaskArchivingState {
     private(set) var pending = false
 
     var presentation: TaskArchivingPresentation {
-        TaskArchivingPresentation(taskID: original?.id, taskName: original?.name ?? "", action: action,
-                                  isPresented: isPresented, isSubmitting: isSubmitting, error: error,
-                                  canSubmit: isPresented && original != nil && !isSubmitting && !requiresReview,
-                                  requiresReview: requiresReview, latest: latest,
-                                  hasPendingAction: original != nil && !isPresented,
-                                  hasUnresolvedIntent: intent != nil)
+        TaskArchivingPresentation(
+            taskID: original?.id, taskName: original?.name ?? "", action: action,
+            isPresented: isPresented, isSubmitting: isSubmitting, error: error,
+            canSubmit: isPresented && original != nil && !isSubmitting && !requiresReview,
+            requiresReview: requiresReview, latest: latest,
+            hasPendingAction: original != nil && !isPresented,
+            hasUnresolvedIntent: intent != nil)
     }
 
     var blocksConnectionChange: Bool { isPresented || isSubmitting || intent != nil }
@@ -57,8 +58,8 @@ final class TaskArchivingState {
 
     static func requiresRecovery(_ error: Error) -> Bool {
         guard let failure = error as? BridgeFailure else { return true }
-        return failure.uncertain || failure.requiresRefresh ||
-            failure.kind == "unavailable" || failure.kind == "protocol"
+        return failure.uncertain || failure.requiresRefresh || failure.kind == "unavailable"
+            || failure.kind == "protocol"
     }
 
     func open(_ task: TaskItem, action: TaskArchivingAction) {
@@ -84,10 +85,12 @@ final class TaskArchivingState {
 
     func submit(at occurredAt: String, immediate: Bool = false) -> Bool {
         guard !isSubmitting, !requiresReview, let original,
-              immediate || presentation.canSubmit else { return false }
+            immediate || presentation.canSubmit
+        else { return false }
         if intent == nil {
-            intent = Intent(taskID: original.id, taskName: original.name, originalArchived: original.archived,
-                            action: action, occurredAt: occurredAt)
+            intent = Intent(
+                taskID: original.id, taskName: original.name, originalArchived: original.archived,
+                action: action, occurredAt: occurredAt)
         }
         pending = true
         isSubmitting = true
@@ -110,7 +113,8 @@ final class TaskArchivingState {
         }
         if responseMatches(snapshot, intent: intent) { return .applied }
         guard task.archived == intent.originalArchived && task.name == intent.taskName else {
-            requireReview("The task changed on another client. Review its current state before continuing.", latest: task)
+            requireReview(
+                "The task changed on another client. Review its current state before continuing.", latest: task)
             return .review
         }
         guard intent.action != .archive || snapshot.active?.taskId != intent.taskID else {
@@ -121,8 +125,8 @@ final class TaskArchivingState {
     }
 
     func responseMatches(_ snapshot: TrackerSnapshot, intent: Intent) -> Bool {
-        snapshot.tasks.contains { $0.id == intent.taskID && $0.archived == intent.action.desiredArchived } &&
-            (intent.action != .archive || snapshot.active?.taskId != intent.taskID)
+        snapshot.tasks.contains { $0.id == intent.taskID && $0.archived == intent.action.desiredArchived }
+            && (intent.action != .archive || snapshot.active?.taskId != intent.taskID)
     }
 
     func requireReview(_ message: String, latest: TaskItem?) {

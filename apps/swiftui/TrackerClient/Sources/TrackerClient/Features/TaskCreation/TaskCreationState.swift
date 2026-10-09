@@ -24,11 +24,11 @@ final class TaskCreationState {
     var pending = false
 
     var presentation: TaskCreationPresentation {
-        TaskCreationPresentation(isPresented: isPresented, name: name,
-                                 isSubmitting: isSubmitting, error: error,
-                                 canEditName: !isSubmitting && intent == nil,
-                                 canSubmit: isPresented && !isSubmitting &&
-                                    !TaskNameEditingPolicy.normalized(name).isEmpty)
+        TaskCreationPresentation(
+            isPresented: isPresented, name: name,
+            isSubmitting: isSubmitting, error: error,
+            canEditName: !isSubmitting && intent == nil,
+            canSubmit: isPresented && !isSubmitting && !TaskNameEditingPolicy.normalized(name).isEmpty)
     }
 
     var blocksConnectionChange: Bool { isSubmitting || intent != nil }

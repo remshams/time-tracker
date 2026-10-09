@@ -4,7 +4,9 @@ import XCTest
 
 final class BulkTaskArchivingTests: XCTestCase {
     @MainActor
-    private func answerPreview(_ request: FakeClient.Request, tasks: [TaskItem] = [secondTask]) throws -> InactiveTaskPreview {
+    private func answerPreview(_ request: FakeClient.Request, tasks: [TaskItem] = [secondTask]) throws
+        -> InactiveTaskPreview
+    {
         guard case .inactivePreview(let days, let at) = request.operation else {
             throw TestTimeout(description: "Expected an inactive task preview.")
         }
@@ -66,7 +68,8 @@ final class BulkTaskArchivingTests: XCTestCase {
         let refresh = try await fixture.client.next()
         XCTAssertTrue(fixture.session.bulkTaskArchiving.isLoading)
         XCTAssertTrue(fixture.session.bulkTaskArchiving.hasPreview)
-        XCTAssertEqual(fixture.session.bulkTaskArchiving.tasks, [secondTask], "Refreshing must keep the displayed candidates.")
+        XCTAssertEqual(
+            fixture.session.bulkTaskArchiving.tasks, [secondTask], "Refreshing must keep the displayed candidates.")
         XCTAssertFalse(fixture.session.bulkTaskArchiving.canSubmit)
         let requests = fixture.client.operations.count
         fixture.session.submitBulkTaskArchiving()
@@ -281,8 +284,9 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.session.canOpenBulkTaskArchiving)
         let changed = try await fixture.taskValue(Task { await fixture.session.connect(.local) })
         XCTAssertFalse(changed)
-        do { try await fixture.session.testConnection(.local); XCTFail("Connection test must be blocked") }
-        catch { XCTAssertTrue(error.localizedDescription.contains("Close the archive dialog")) }
+        do { try await fixture.session.testConnection(.local); XCTFail("Connection test must be blocked") } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Close the archive dialog"))
+        }
         fixture.session.cancelBulkTaskArchiving()
         XCTAssertTrue(fixture.session.canOpenTaskCreation)
         fixture.session.openTaskArchive(taskID: secondTask.id)
@@ -349,7 +353,10 @@ final class BulkTaskArchivingTests: XCTestCase {
         background.succeed(emptySnapshot)
         try await fixture.settled()
         XCTAssertFalse(fixture.session.bulkTaskArchiving.isSubmitting)
-        XCTAssertFalse(fixture.client.operations.contains { if case .archiveInactive = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .archiveInactive = $0 { return true }; return false
+            })
     }
 
     @MainActor
@@ -452,7 +459,9 @@ final class BulkTaskArchivingTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(fixture.session.bulkTaskArchiving.archivedCount, 1)
         XCTAssertFalse(fixture.session.bulkTaskArchiving.isSubmitting)
-        let writes = fixture.client.operations.filter { if case .archiveInactive = $0 { return true }; return false }
+        let writes = fixture.client.operations.filter {
+            if case .archiveInactive = $0 { return true }; return false
+        }
         XCTAssertEqual(writes.count, 1)
     }
 
@@ -514,7 +523,10 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.session.bulkTaskArchiving.isSubmitting)
         XCTAssertFalse(fixture.session.bulkTaskArchiving.canSubmit)
         XCTAssertTrue(fixture.session.bulkTaskArchiving.tasks.isEmpty)
-        XCTAssertFalse(fixture.client.operations.contains { if case .archiveInactive = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .archiveInactive = $0 { return true }; return false
+            })
         fixture.session.wake()
         let refresh = try await fixture.client.next()
         refresh.succeed(emptySnapshot)
@@ -537,7 +549,10 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.session.bulkTaskArchiving.isSubmitting)
         XCTAssertFalse(fixture.session.bulkTaskArchiving.canSubmit)
         let fresh = try await fixture.client.next()
-        XCTAssertFalse(fixture.client.operations.contains { if case .archiveInactive = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .archiveInactive = $0 { return true }; return false
+            })
         _ = try answerPreview(fresh)
         let refresh = try await fixture.client.next()
         XCTAssertEqual(refresh.operation, .refresh(.local))

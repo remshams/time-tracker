@@ -19,7 +19,8 @@ public final class TrackerMenuPresentationObserver {
     public func update(from session: TrackerSession, showDailyTotal: Bool) {
         // Keep navigation stable while time values continue to update.
         let nextContent = trackingDepth == 0 ? TrackerMenuContent(session) : content
-        let nextLabel = trackingDepth == 0
+        let nextLabel =
+            trackingDepth == 0
             ? TrackerMenuLabelContent(session, showDailyTotal: showDailyTotal) : label
         let nextValues = TrackerMenuValues(session, content: nextContent)
         let contentChanged = content != nextContent

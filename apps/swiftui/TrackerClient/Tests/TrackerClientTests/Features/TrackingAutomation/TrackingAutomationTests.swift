@@ -13,8 +13,11 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertEqual(snapshot.operation, .snapshot)
         snapshot.succeed(running)
         let pause = try await fixture.client.next()
-        XCTAssertEqual(pause.operation, .pause(worklog: activeWorklog.id,
-                                              at: commandTimestamp(date ?? fixture.clock.now)))
+        XCTAssertEqual(
+            pause.operation,
+            .pause(
+                worklog: activeWorklog.id,
+                at: commandTimestamp(date ?? fixture.clock.now)))
         pause.paused(idle)
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
@@ -34,7 +37,8 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertFalse(fixture.session.isBusy)
         fixture.session.setPauseOnScreenLock(true)
         fixture.session.setPauseOnScreenLock(false)
-        XCTAssertEqual(fixture.preferences.writes, [TrackingPreferences(pauseOnScreenLock: true), TrackingPreferences()])
+        XCTAssertEqual(
+            fixture.preferences.writes, [TrackingPreferences(pauseOnScreenLock: true), TrackingPreferences()])
         XCTAssertNil(fixture.session.autoPauseStatusText)
     }
 
@@ -84,7 +88,10 @@ final class TrackingAutomationTests: XCTestCase {
         let unlock = fixture.clock.now
         fixture.session.screenUnlocked(at: unlock)
         fixture.session.screenUnlocked(at: unlock.addingTimeInterval(1))
-        XCTAssertFalse(fixture.client.operations.contains { if case .resume = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .resume = $0 { return true }; return false
+            })
         pause.paused(idle)
         let reconcile = try await fixture.client.next()
         XCTAssertEqual(reconcile.operation, .snapshot)
@@ -95,8 +102,14 @@ final class TrackingAutomationTests: XCTestCase {
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(fixture.client.operations.filter { if case .pause = $0 { return true }; return false }.count, 1)
-        XCTAssertEqual(fixture.client.operations.filter { if case .resume = $0 { return true }; return false }.count, 1)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .pause = $0 { return true }; return false
+            }.count, 1)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .resume = $0 { return true }; return false
+            }.count, 1)
     }
 
     func testPauseHasPriorityOverHistoryAfterInflightStart() async throws {
@@ -130,7 +143,10 @@ final class TrackingAutomationTests: XCTestCase {
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertFalse(fixture.client.operations.contains { if case .pause = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .pause = $0 { return true }; return false
+            })
     }
 
     func testNewWorklogAfterLockIsNotPaused() async throws {
@@ -141,13 +157,17 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.session.refresh()
         let snapshot = try await fixture.client.next()
         fixture.session.screenLocked(at: lock)
-        let later = WorklogItem(id: "later-worklog", taskId: firstTask.id,
-                                start: commandTimestamp(lock.addingTimeInterval(1)), end: nil)
+        let later = WorklogItem(
+            id: "later-worklog", taskId: firstTask.id,
+            start: commandTimestamp(lock.addingTimeInterval(1)), end: nil)
         snapshot.succeed(TrackerSnapshot(tasks: idle.tasks, active: later))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertFalse(fixture.client.operations.contains { if case .pause = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .pause = $0 { return true }; return false
+            })
     }
 
     func testAlreadyIdlePauseDoesNotGrantResumeOwnership() async throws {
@@ -164,7 +184,10 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.settled()
         fixture.session.screenUnlocked(at: fixture.clock.now)
         XCTAssertNil(fixture.session.autoPauseStatusText)
-        XCTAssertFalse(fixture.client.operations.contains { if case .resume = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .resume = $0 { return true }; return false
+            })
     }
 
     func testCompetingTimerCancelsResume() async throws {
@@ -179,7 +202,10 @@ final class TrackingAutomationTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertNil(fixture.session.autoPauseStatusText)
-        XCTAssertFalse(fixture.client.operations.contains { if case .resume = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .resume = $0 { return true }; return false
+            })
     }
 
     func testArchivedTaskCancelsResume() async throws {
@@ -195,7 +221,10 @@ final class TrackingAutomationTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertNil(fixture.session.autoPauseStatusText)
-        XCTAssertFalse(fixture.client.operations.contains { if case .resume = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .resume = $0 { return true }; return false
+            })
     }
 
     func testDisableWhilePauseIsInflightAcceptsSnapshotWithoutResuming() async throws {
@@ -214,7 +243,10 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.settled()
         XCTAssertNil(fixture.session.active)
         XCTAssertNil(fixture.session.autoPauseStatusText)
-        XCTAssertFalse(fixture.client.operations.contains { if case .resume = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .resume = $0 { return true }; return false
+            })
     }
 
     func testEnableWhileLockedUsesEnableTime() async throws {
@@ -252,7 +284,10 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.session.screenUnlocked(at: fixture.clock.now)
         XCTAssertEqual(fixture.session.trackingError, "Response lost")
         XCTAssertNil(fixture.session.autoPauseStatusText)
-        XCTAssertFalse(fixture.client.operations.contains { if case .resume = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .resume = $0 { return true }; return false
+            })
     }
 
     func testLockBeforeStartupIsDrainedAfterOpen() async throws {
@@ -292,7 +327,10 @@ final class TrackingAutomationTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.autoPauseStatusText, "Paused while screen is locked")
-        XCTAssertFalse(fixture.client.operations.contains { if case .resume = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .resume = $0 { return true }; return false
+            })
     }
 
     func testReentrantDisableAtBusyNotificationPreventsPauseWrite() async throws {
@@ -307,7 +345,10 @@ final class TrackingAutomationTests: XCTestCase {
         let snapshot = try await fixture.client.next()
         snapshot.succeed(running)
         try await fixture.settled()
-        XCTAssertFalse(fixture.client.operations.contains { if case .pause = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .pause = $0 { return true }; return false
+            })
     }
     func testRelockDuringResumePausesAcknowledgedNewWorklog() async throws {
         let fixture = Fixture(pauseOnScreenLock: true)
@@ -319,8 +360,9 @@ final class TrackingAutomationTests: XCTestCase {
         let snapshot = try await fixture.client.next()
         snapshot.succeed(idle)
         let resume = try await fixture.client.next()
-        let resumed = WorklogItem(id: "resumed-worklog", taskId: firstTask.id,
-                                  start: commandTimestamp(fixture.clock.now), end: nil)
+        let resumed = WorklogItem(
+            id: "resumed-worklog", taskId: firstTask.id,
+            start: commandTimestamp(fixture.clock.now), end: nil)
         fixture.clock.now.addTimeInterval(10)
         let relock = fixture.clock.now
         fixture.session.screenLocked(at: relock)
@@ -345,8 +387,9 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.session.startTracking(taskID: secondTask.id)
         let start = try await fixture.client.next()
         fixture.session.screenLocked(at: fixture.clock.now)
-        let switched = WorklogItem(id: "switched-worklog", taskId: secondTask.id,
-                                   start: commandTimestamp(fixture.clock.now), end: nil)
+        let switched = WorklogItem(
+            id: "switched-worklog", taskId: secondTask.id,
+            start: commandTimestamp(fixture.clock.now), end: nil)
         let snapshot = TrackerSnapshot(tasks: idle.tasks, active: switched)
         start.succeed(snapshot)
         let reconcile = try await fixture.client.next()
@@ -376,7 +419,10 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.settled()
         fixture.session.screenUnlocked(at: fixture.clock.now)
         XCTAssertNil(fixture.session.autoPauseStatusText)
-        XCTAssertFalse(fixture.client.operations.contains { if case .resume = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .resume = $0 { return true }; return false
+            })
     }
 
     func testShutdownIgnoresLatePauseAndEvents() async throws {
@@ -431,7 +477,10 @@ final class TrackingAutomationTests: XCTestCase {
         let reconcile = try await fixture.client.next()
         reconcile.succeed(snapshot)
         try await fixture.settled()
-        XCTAssertFalse(fixture.client.operations.contains { if case .pause = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .pause = $0 { return true }; return false
+            })
         XCTAssertEqual(fixture.session.trackingError, "Cannot pause tracking because its start time is invalid.")
     }
 
@@ -453,7 +502,10 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertEqual(fixture.session.trackingError, "Resume response lost")
         XCTAssertEqual(fixture.session.active, activeWorklog)
         XCTAssertNil(fixture.session.autoPauseStatusText)
-        XCTAssertEqual(fixture.client.operations.filter { if case .resume = $0 { return true }; return false }.count, 1)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .resume = $0 { return true }; return false
+            }.count, 1)
     }
 
     func testFailedReconciliationLeavesStaleStateAndNoResumeIntent() async throws {
@@ -479,13 +531,17 @@ final class TrackingAutomationTests: XCTestCase {
         try await acknowledgePause(fixture)
         fixture.session.startTracking(taskID: secondTask.id)
         let start = try await fixture.client.next()
-        let started = WorklogItem(id: "manual-worklog", taskId: secondTask.id,
-                                 start: commandTimestamp(fixture.clock.now), end: nil)
+        let started = WorklogItem(
+            id: "manual-worklog", taskId: secondTask.id,
+            start: commandTimestamp(fixture.clock.now), end: nil)
         start.succeed(TrackerSnapshot(tasks: idle.tasks, active: started))
         try await fixture.settled()
         fixture.session.screenUnlocked(at: fixture.clock.now)
         XCTAssertNil(fixture.session.autoPauseStatusText)
-        XCTAssertFalse(fixture.client.operations.contains { if case .resume = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .resume = $0 { return true }; return false
+            })
     }
 
     func testLockDuringConnectionChangeCannotPauseNewSourceWithOverlappingIDs() async throws {
@@ -502,7 +558,10 @@ final class TrackingAutomationTests: XCTestCase {
         let connected = try await fixture.taskValue(connecting)
         XCTAssertTrue(connected)
         try await fixture.settled()
-        XCTAssertFalse(fixture.client.operations.contains { if case .pause = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .pause = $0 { return true }; return false
+            })
         XCTAssertNil(fixture.session.autoPauseStatusText)
     }
 
@@ -526,7 +585,10 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.settled()
         fixture.session.screenUnlocked(at: fixture.clock.now)
         XCTAssertFalse(fixture.session.isBusy)
-        XCTAssertFalse(fixture.client.operations.contains { if case .resume = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .resume = $0 { return true }; return false
+            })
     }
 
     func testEnablingWhileLockedRecognizesInflightOwnStart() async throws {
@@ -558,15 +620,19 @@ final class TrackingAutomationTests: XCTestCase {
         let lock = fixture.clock.now
         fixture.session.screenLocked(at: lock)
         let snapshot = try await fixture.client.next()
-        let corrected = WorklogItem(id: activeWorklog.id, taskId: activeWorklog.taskId,
-                                    start: commandTimestamp(lock.addingTimeInterval(1)), end: nil)
+        let corrected = WorklogItem(
+            id: activeWorklog.id, taskId: activeWorklog.taskId,
+            start: commandTimestamp(lock.addingTimeInterval(1)), end: nil)
         snapshot.succeed(TrackerSnapshot(tasks: idle.tasks, active: corrected))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.trackingError, "Cannot pause tracking before the worklog start time.")
         XCTAssertNil(fixture.session.autoPauseStatusText)
-        XCTAssertFalse(fixture.client.operations.contains { if case .pause = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .pause = $0 { return true }; return false
+            })
     }
 
     func testEnablingWhileLockedAndIdleDoesNotBeginRequest() async throws {
@@ -604,8 +670,14 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertNil(fixture.session.autoPauseStatusText)
         fixture.session.screenUnlocked(at: fixture.clock.now)
         XCTAssertFalse(fixture.session.isBusy)
-        XCTAssertEqual(fixture.client.operations.filter { if case .pause = $0 { return true }; return false }.count, 1)
-        XCTAssertFalse(fixture.client.operations.contains { if case .resume = $0 { return true }; return false })
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .pause = $0 { return true }; return false
+            }.count, 1)
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .resume = $0 { return true }; return false
+            })
     }
 
     func testOldPauseFailurePreservesExplicitlyReenabledLockAction() async throws {
@@ -636,7 +708,10 @@ final class TrackingAutomationTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(fixture.session.autoPauseStatusText, "Paused while screen is locked")
         XCTAssertNil(fixture.session.trackingError)
-        XCTAssertEqual(fixture.client.operations.filter { if case .pause = $0 { return true }; return false }.count, 2)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .pause = $0 { return true }; return false
+            }.count, 2)
     }
 
     func testBackgroundHistoryQueuesManualIntentAndLockCancelsItBeforeRefresh() async throws {

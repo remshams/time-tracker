@@ -25,9 +25,9 @@ final class WorklogCorrectionState {
         let historyPageLimit: Int
 
         func matchesReplacement(_ worklog: WorklogItem) -> Bool {
-            worklog.id == expected.id && worklog.taskId == expected.taskId &&
-                sameWorklogTimestamp(worklog.start, replacementStart) &&
-                sameWorklogTimestamp(worklog.end, replacementEnd)
+            worklog.id == expected.id && worklog.taskId == expected.taskId
+                && sameWorklogTimestamp(worklog.start, replacementStart)
+                && sameWorklogTimestamp(worklog.end, replacementEnd)
         }
     }
 
@@ -48,13 +48,14 @@ final class WorklogCorrectionState {
 
     var presentation: WorklogCorrectionPresentation {
         let changed = original.map { replacementStart != $0.start || replacementEnd != $0.end } ?? false
-        return WorklogCorrectionPresentation(isPresented: isPresented, taskName: taskName, original: original,
-                                             start: timestamp(replacementStart) ?? start,
-                                             end: timestamp(replacementEnd), timezoneIdentifier: timezoneIdentifier,
-                                             isSubmitting: isSubmitting, error: error,
-                                             canEdit: isPresented && !isSubmitting && intent == nil && !requiresReview,
-                                             canSubmit: isPresented && !isSubmitting && !requiresReview && changed,
-                                             requiresReview: requiresReview, latest: latest)
+        return WorklogCorrectionPresentation(
+            isPresented: isPresented, taskName: taskName, original: original,
+            start: timestamp(replacementStart) ?? start,
+            end: timestamp(replacementEnd), timezoneIdentifier: timezoneIdentifier,
+            isSubmitting: isSubmitting, error: error,
+            canEdit: isPresented && !isSubmitting && intent == nil && !requiresReview,
+            canSubmit: isPresented && !isSubmitting && !requiresReview && changed,
+            requiresReview: requiresReview, latest: latest)
     }
 
     var blocksConnectionChange: Bool { isPresented || intent != nil }
@@ -82,7 +83,8 @@ final class WorklogCorrectionState {
     func open(_ worklog: WorklogItem, taskName: String, timezone: TimeZone = .current, historyPageLimit: Int = 2) {
         if isPresented || intent != nil { isPresented = true; return }
         guard let start = timestamp(worklog.start),
-              worklog.end == nil || timestamp(worklog.end) != nil else { return }
+            worklog.end == nil || timestamp(worklog.end) != nil
+        else { return }
         original = worklog
         self.taskName = taskName
         self.start = start
@@ -123,9 +125,10 @@ final class WorklogCorrectionState {
                     return false
                 }
             }
-            intent = Intent(expected: original, replacementStart: replacementStart,
-                            replacementEnd: replacementEnd, occurredAt: commandTimestamp(date),
-                            historyPageLimit: historyPageLimit)
+            intent = Intent(
+                expected: original, replacementStart: replacementStart,
+                replacementEnd: replacementEnd, occurredAt: commandTimestamp(date),
+                historyPageLimit: historyPageLimit)
         }
         isSubmitting = true
         pending = true
@@ -159,13 +162,13 @@ final class WorklogCorrectionState {
 
     func reviewLatest(taskName: String?) {
         guard requiresReview, let latest, let latestStart = timestamp(latest.start),
-              latest.end == nil || timestamp(latest.end) != nil else { return }
+            latest.end == nil || timestamp(latest.end) != nil
+        else { return }
         let changedStart = replacementStart != original?.start
         let changedEnd = replacementEnd != original?.end
         original = latest
         if !changedStart { start = latestStart }
-        if latest.end == nil { end = nil }
-        else if !changedEnd || end == nil { end = timestamp(latest.end) }
+        if latest.end == nil { end = nil } else if !changedEnd || end == nil { end = timestamp(latest.end) }
         if let taskName { self.taskName = taskName }
         self.latest = nil
         requiresReview = false
@@ -174,14 +177,14 @@ final class WorklogCorrectionState {
 
     func observe(_ worklog: WorklogItem) {
         guard isPresented, !isSubmitting, intent == nil, let original,
-              worklog.id == original.id, worklog != original else { return }
+            worklog.id == original.id, worklog != original
+        else { return }
         requireReview(latest: worklog, message: "This worklog changed. Review its latest times before saving.")
     }
 
     func cancel() {
         guard !isSubmitting else { return }
-        if intent != nil { isPresented = false }
-        else { reset() }
+        if intent != nil { isPresented = false } else { reset() }
     }
 
     func reset() {

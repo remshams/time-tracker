@@ -13,11 +13,16 @@ func sameWorklogTimestamp(_ lhs: String?, _ rhs: String?) -> Bool {
         let whole: String
         if let point, let fractionStart {
             whole = String(value[..<point]) + String(value[value.index(fractionStart, offsetBy: digits.count)...])
-        } else { whole = value }
+        } else {
+            whole = value
+        }
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime]
         guard let date = dateFormatter.date(from: whole) else { return nil }
-        return (Int64(date.timeIntervalSince1970.rounded()), String(digits) + String(repeating: "0", count: 9 - digits.count))
+        return (
+            Int64(date.timeIntervalSince1970.rounded()),
+            String(digits) + String(repeating: "0", count: 9 - digits.count)
+        )
     }
     guard let left = parts(lhs), let right = parts(rhs) else { return false }
     return left == right

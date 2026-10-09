@@ -3,9 +3,10 @@ import XCTest
 @testable import TrackerClient
 
 final class WorklogCorrectionTests: XCTestCase {
-    private let preciseLog = WorklogItem(id: "precise-log", taskId: firstTask.id,
-                                         start: "2024-12-30T09:00:12.123456Z",
-                                         end: "2024-12-30T10:00:45.654321Z")
+    private let preciseLog = WorklogItem(
+        id: "precise-log", taskId: firstTask.id,
+        start: "2024-12-30T09:00:12.123456Z",
+        end: "2024-12-30T10:00:45.654321Z")
 
     @MainActor
     private func openCompleted(_ fixture: Fixture, worklog: WorklogItem? = nil) async throws -> WorklogItem {
@@ -20,8 +21,10 @@ final class WorklogCorrectionTests: XCTestCase {
     }
 
     @MainActor
-    private func completePreflight(_ fixture: Fixture, worklog: WorklogItem,
-                                   snapshot: TrackerSnapshot? = nil) async throws {
+    private func completePreflight(
+        _ fixture: Fixture, worklog: WorklogItem,
+        snapshot: TrackerSnapshot? = nil
+    ) async throws {
         let snapshot = snapshot ?? TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
         let read = try await fixture.client.next()
         XCTAssertEqual(read.operation, .snapshot)
@@ -51,8 +54,9 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
-        let running = WorklogItem(id: "running-log", taskId: secondTask.id,
-                                  start: "2024-12-31T23:58:12.123456Z", end: nil)
+        let running = WorklogItem(
+            id: "running-log", taskId: secondTask.id,
+            start: "2024-12-31T23:58:12.123456Z", end: nil)
         refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: running))
         try await fixture.settled()
         fixture.session.onChange = { observer.update(from: fixture.session) }
@@ -79,8 +83,9 @@ final class WorklogCorrectionTests: XCTestCase {
         let visible = fixture.session.worklogCorrection
         XCTAssertTrue(visible.isSubmitting)
         XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
-        let corrected = WorklogItem(id: log.id, taskId: log.taskId,
-                                   start: "2024-12-30T08:45:00.000000Z", end: log.end)
+        let corrected = WorklogItem(
+            id: log.id, taskId: log.taskId,
+            start: "2024-12-30T08:45:00.000000Z", end: log.end)
         command.corrected(worklog: corrected, snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
         let history = try await fixture.client.next()
         XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
@@ -116,17 +121,24 @@ final class WorklogCorrectionTests: XCTestCase {
         poll.succeed(snapshot)
         try await completePreflight(fixture, worklog: activeWorklog, snapshot: snapshot)
         let command = try await fixture.client.next()
-        XCTAssertEqual(command.operation, .correct(expected: activeWorklog, start: "2024-12-31T23:58:00.000Z",
-                                                   end: nil, at: "2025-01-01T00:00:00.000Z"))
-        let corrected = WorklogItem(id: activeWorklog.id, taskId: firstTask.id,
-                                   start: "2024-12-31T23:58:00.000000Z", end: nil)
+        XCTAssertEqual(
+            command.operation,
+            .correct(
+                expected: activeWorklog, start: "2024-12-31T23:58:00.000Z",
+                end: nil, at: "2025-01-01T00:00:00.000Z"))
+        let corrected = WorklogItem(
+            id: activeWorklog.id, taskId: firstTask.id,
+            start: "2024-12-31T23:58:00.000000Z", end: nil)
         command.corrected(worklog: corrected, snapshot: TrackerSnapshot(tasks: snapshot.tasks, active: corrected))
         let history = try await fixture.client.next()
         history.succeed(HistoryPage(worklogs: [corrected], nextCursor: nil, reset: false))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.isBlockingControls)
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
-        XCTAssertFalse(fixture.client.operations.contains { if case .stop = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .stop = $0 { return true }; return false
+            })
     }
 
     @MainActor
@@ -147,7 +159,10 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertFalse(connected)
         try await fixture.settled()
         XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
-        XCTAssertFalse(fixture.client.operations.contains { if case .connect = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .connect = $0 { return true }; return false
+            })
     }
 
     @MainActor
@@ -162,13 +177,17 @@ final class WorklogCorrectionTests: XCTestCase {
         fixture.session.submitWorklogCorrection()
         try await completePreflight(fixture, worklog: log)
         let command = try await fixture.client.next()
-        XCTAssertEqual(command.operation, .correct(expected: log, start: "2024-12-30T08:45:00.000Z",
-                                                   end: log.end, at: "2025-01-01T00:00:00.000Z"))
+        XCTAssertEqual(
+            command.operation,
+            .correct(
+                expected: log, start: "2024-12-30T08:45:00.000Z",
+                end: log.end, at: "2025-01-01T00:00:00.000Z"))
         fixture.session.cancelWorklogCorrection()
         fixture.session.setWorklogCorrectionEnd(fixture.clock.now)
         XCTAssertEqual(fixture.session.worklogCorrection.end, timestamp(log.end))
-        let corrected = WorklogItem(id: log.id, taskId: log.taskId,
-                                   start: "2024-12-30T08:45:00.000000Z", end: log.end)
+        let corrected = WorklogItem(
+            id: log.id, taskId: log.taskId,
+            start: "2024-12-30T08:45:00.000000Z", end: log.end)
         command.corrected(worklog: corrected, snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: log.taskId, cursor: nil))
@@ -210,10 +229,14 @@ final class WorklogCorrectionTests: XCTestCase {
         fixture.session.submitWorklogCorrection()
         try await completePreflight(fixture, worklog: activeWorklog, snapshot: initial)
         let command = try await fixture.client.next()
-        XCTAssertEqual(command.operation, .correct(expected: activeWorklog, start: "2024-12-31T23:58:00.000Z",
-                                                   end: nil, at: "2025-01-01T00:00:00.000Z"))
-        let corrected = WorklogItem(id: activeWorklog.id, taskId: firstTask.id,
-                                   start: "2024-12-31T23:58:00.000000Z", end: nil)
+        XCTAssertEqual(
+            command.operation,
+            .correct(
+                expected: activeWorklog, start: "2024-12-31T23:58:00.000Z",
+                end: nil, at: "2025-01-01T00:00:00.000Z"))
+        let corrected = WorklogItem(
+            id: activeWorklog.id, taskId: firstTask.id,
+            start: "2024-12-31T23:58:00.000000Z", end: nil)
         command.corrected(worklog: corrected, snapshot: TrackerSnapshot(tasks: [firstTask], active: corrected))
         let history = try await fixture.client.next()
         history.succeed(HistoryPage(worklogs: [corrected], nextCursor: nil, reset: false))
@@ -252,9 +275,11 @@ final class WorklogCorrectionTests: XCTestCase {
         let draft = timestamp("2024-12-31T23:58:00.000Z")!
         fixture.session.setWorklogCorrectionStart(draft)
         fixture.session.submitWorklogCorrection()
-        let stopped = WorklogItem(id: activeWorklog.id, taskId: firstTask.id, start: activeWorklog.start,
-                                 end: "2025-01-01T00:00:00.000000Z")
-        try await completePreflight(fixture, worklog: stopped, snapshot: TrackerSnapshot(tasks: [firstTask], active: nil))
+        let stopped = WorklogItem(
+            id: activeWorklog.id, taskId: firstTask.id, start: activeWorklog.start,
+            end: "2025-01-01T00:00:00.000000Z")
+        try await completePreflight(
+            fixture, worklog: stopped, snapshot: TrackerSnapshot(tasks: [firstTask], active: nil))
         let refresh = try await fixture.client.next()
         refresh.succeed(HistoryPage(worklogs: [stopped], nextCursor: nil, reset: false))
         try await fixture.settled()
@@ -268,7 +293,10 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertEqual(fixture.session.worklogCorrection.start, draft)
         XCTAssertEqual(fixture.session.worklogCorrection.end, timestamp(stopped.end))
         XCTAssertTrue(fixture.session.worklogCorrection.canSubmit)
-        XCTAssertFalse(fixture.client.operations.contains { if case .correct = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .correct = $0 { return true }; return false
+            })
     }
 
     @MainActor
@@ -281,14 +309,18 @@ final class WorklogCorrectionTests: XCTestCase {
         fixture.session.submitWorklogCorrection()
         try await completePreflight(fixture, worklog: log)
         let command = try await fixture.client.next()
-        command.fail(BridgeFailure(message: "Tracker state changed. Save again.", kind: "conflict", requiresRefresh: true))
+        command.fail(
+            BridgeFailure(message: "Tracker state changed. Save again.", kind: "conflict", requiresRefresh: true))
         try await completePreflight(fixture, worklog: log)
         try await fixture.settled()
         XCTAssertFalse(fixture.session.worklogCorrection.requiresReview)
         XCTAssertTrue(fixture.session.worklogCorrection.canSubmit)
         XCTAssertTrue(fixture.session.worklogCorrection.canEdit)
         XCTAssertEqual(fixture.session.worklogCorrection.start, draft)
-        XCTAssertEqual(fixture.client.operations.filter { if case .correct = $0 { return true }; return false }.count, 1)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .correct = $0 { return true }; return false
+            }.count, 1)
     }
 
     @MainActor
@@ -327,7 +359,10 @@ final class WorklogCorrectionTests: XCTestCase {
         try await fixture.settled()
         XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
         XCTAssertEqual(fixture.session.worklogs, [corrected])
-        XCTAssertEqual(fixture.client.operations.filter { if case .correct = $0 { return true }; return false }.count, 1)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .correct = $0 { return true }; return false
+            }.count, 1)
     }
 
     @MainActor
@@ -386,7 +421,10 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertTrue(fixture.session.worklogCorrection.requiresReview)
         XCTAssertNil(fixture.session.worklogCorrection.latest)
         XCTAssertEqual(fixture.session.worklogCorrection.original, log)
-        XCTAssertFalse(fixture.client.operations.contains { if case .correct = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .correct = $0 { return true }; return false
+            })
         XCTAssertFalse(fixture.client.operations.contains(.history(task: secondTask.id, cursor: nil)))
     }
 
@@ -437,7 +475,8 @@ final class WorklogCorrectionTests: XCTestCase {
         try await completePreflight(fixture, worklog: activeWorklog, snapshot: snapshot)
         let command = try await fixture.client.next()
         fixture.session.shutdown()
-        let corrected = WorklogItem(id: activeWorklog.id, taskId: firstTask.id, start: "2024-12-31T23:58:00.000000Z", end: nil)
+        let corrected = WorklogItem(
+            id: activeWorklog.id, taskId: firstTask.id, start: "2024-12-31T23:58:00.000000Z", end: nil)
         command.corrected(worklog: corrected, snapshot: TrackerSnapshot(tasks: [firstTask], active: corrected))
         await Task.yield()
         XCTAssertEqual(fixture.session.active, activeWorklog)
@@ -473,8 +512,9 @@ final class WorklogCorrectionTests: XCTestCase {
     func testMinutePrecisionUsesFrozenLocalTimezoneForHistoricalSecondOffsets() {
         let state = WorklogCorrectionState()
         let timezone = TimeZone(identifier: "Europe/Paris")!
-        let log = WorklogItem(id: "historical-log", taskId: firstTask.id,
-                             start: "1900-01-01T09:00:12.123456Z", end: "1900-01-01T11:00:45.654321Z")
+        let log = WorklogItem(
+            id: "historical-log", taskId: firstTask.id,
+            start: "1900-01-01T09:00:12.123456Z", end: "1900-01-01T11:00:45.654321Z")
         state.open(log, taskName: "Historical task", timezone: timezone)
         state.updateStart(timestamp("1900-01-01T10:00:00.000Z")!)
         XCTAssertTrue(state.submit(at: timestamp("1900-01-02T00:00:00.000Z")!))
@@ -500,11 +540,14 @@ final class WorklogCorrectionTests: XCTestCase {
         try await fixture.settled()
         XCTAssertFalse(fixture.session.worklogCorrection.requiresReview)
         XCTAssertEqual(fixture.session.worklogCorrection.original, log)
-        XCTAssertEqual(fixture.session.worklogCorrection.error,
-                       "Could not verify this worklog within the history limit. Cancel and reopen the editor before retrying.")
-        XCTAssertFalse(fixture.client.operations.contains { if case .correct = $0 { return true }; return false })
+        XCTAssertEqual(
+            fixture.session.worklogCorrection.error,
+            "Could not verify this worklog within the history limit. Cancel and reopen the editor before retrying.")
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .correct = $0 { return true }; return false
+            })
     }
-
 
     @MainActor
     func testCommittedCorrectionClearsObsoleteHistoryWhenReloadFails() async throws {
@@ -534,8 +577,9 @@ final class WorklogCorrectionTests: XCTestCase {
         defer { fixture.cleanup() }
         let log = try await openCompleted(fixture)
         fixture.session.select(secondTask.id)
-        let other = WorklogItem(id: "other-log", taskId: secondTask.id,
-                               start: log.start, end: log.end)
+        let other = WorklogItem(
+            id: "other-log", taskId: secondTask.id,
+            start: log.start, end: log.end)
         let selectedHistory = try await fixture.client.next()
         selectedHistory.succeed(HistoryPage(worklogs: [other], nextCursor: "other-older", reset: false))
         try await fixture.settled()
@@ -543,8 +587,9 @@ final class WorklogCorrectionTests: XCTestCase {
         fixture.session.submitWorklogCorrection()
         try await completePreflight(fixture, worklog: log)
         let command = try await fixture.client.next()
-        let corrected = WorklogItem(id: log.id, taskId: log.taskId,
-                                   start: "2024-12-30T08:00:00.000000Z", end: log.end)
+        let corrected = WorklogItem(
+            id: log.id, taskId: log.taskId,
+            start: "2024-12-30T08:00:00.000000Z", end: log.end)
         command.corrected(worklog: corrected, snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .history(task: secondTask.id, cursor: nil))
@@ -563,10 +608,12 @@ final class WorklogCorrectionTests: XCTestCase {
         state.updateStart(timestamp("2024-12-30T08:00:00.000Z")!)
         XCTAssertTrue(state.submit(at: timestamp("2025-01-01T00:00:00.000Z")!))
         let intent = state.takePendingIntent()!
-        let same = WorklogItem(id: preciseLog.id, taskId: preciseLog.taskId,
-                              start: "2024-12-30T08:00:00.000000Z", end: preciseLog.end)
-        let changed = WorklogItem(id: preciseLog.id, taskId: preciseLog.taskId,
-                                 start: same.start, end: "2024-12-30T10:00:45.654999Z")
+        let same = WorklogItem(
+            id: preciseLog.id, taskId: preciseLog.taskId,
+            start: "2024-12-30T08:00:00.000000Z", end: preciseLog.end)
+        let changed = WorklogItem(
+            id: preciseLog.id, taskId: preciseLog.taskId,
+            start: same.start, end: "2024-12-30T10:00:45.654999Z")
         XCTAssertTrue(intent.matchesReplacement(same))
         XCTAssertFalse(intent.matchesReplacement(changed))
     }

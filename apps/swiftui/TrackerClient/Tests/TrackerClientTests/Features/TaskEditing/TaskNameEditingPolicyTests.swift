@@ -6,9 +6,12 @@ final class TaskNameEditingPolicyTests: XCTestCase {
     func testWhitespaceTrimmingPreservesZeroWidthAndInteriorWhitespace() {
         XCTAssertEqual(TaskNameEditingPolicy.normalized(""), "")
         XCTAssertEqual(TaskNameEditingPolicy.normalized("Task name"), "Task name")
-        XCTAssertEqual(TaskNameEditingPolicy.normalized(" \t\n\r\u{0085}\u{00a0}\u{1680}\u{2000}\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}"), "")
-        XCTAssertEqual(TaskNameEditingPolicy.normalized(" \t\u{200b} Task\nname \u{200b}\u{00a0}"),
-                       "\u{200b} Task\nname \u{200b}")
+        XCTAssertEqual(
+            TaskNameEditingPolicy.normalized(
+                " \t\n\r\u{0085}\u{00a0}\u{1680}\u{2000}\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}"), "")
+        XCTAssertEqual(
+            TaskNameEditingPolicy.normalized(" \t\u{200b} Task\nname \u{200b}\u{00a0}"),
+            "\u{200b} Task\nname \u{200b}")
         XCTAssertEqual(TaskNameEditingPolicy.normalized("\u{200b}"), "\u{200b}")
         XCTAssertEqual(TaskNameEditingPolicy.normalized("\u{feff}"), "\u{feff}")
     }
@@ -50,13 +53,16 @@ final class TaskNameEditingPolicyTests: XCTestCase {
             preflight.succeed(original)
             let rename = try await fixture.client.next()
             XCTAssertEqual(rename.operation, .rename(task: firstTask.id, name: rawName, at: "2025-01-01T00:00:00.000Z"))
-            let task = TaskItem(id: firstTask.id, name: "\u{200b}Renamed task\u{200b}", archived: false, latestStart: nil)
+            let task = TaskItem(
+                id: firstTask.id, name: "\u{200b}Renamed task\u{200b}", archived: false, latestStart: nil)
             let updated = TrackerSnapshot(tasks: [task], active: nil)
             if losesResponse {
                 rename.fail(BridgeFailure(message: "Response lost", uncertain: true))
                 let reconciliation = try await fixture.client.next()
                 reconciliation.succeed(updated)
-            } else { rename.succeed(updated) }
+            } else {
+                rename.succeed(updated)
+            }
             try await fixture.settled()
             XCTAssertFalse(fixture.session.taskRename.isPresented)
             XCTAssertNil(fixture.session.taskRename.error)

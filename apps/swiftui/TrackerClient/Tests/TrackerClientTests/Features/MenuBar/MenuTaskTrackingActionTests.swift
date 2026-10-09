@@ -61,16 +61,19 @@ final class MenuTaskTrackingActionTests: XCTestCase {
     func testArchivedTaskRemainsCopyableAndCannotStartEvenWithAnOutdatedCapability() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [archivedTask], active: nil),
-                                rows: [TaskReportTotal(taskId: archivedTask.id, durationMicroseconds: 60_000_000)])
+        try await fixture.start(
+            TrackerSnapshot(tasks: [archivedTask], active: nil),
+            rows: [TaskReportTotal(taskId: archivedTask.id, durationMicroseconds: 60_000_000)])
         let content = TrackerMenuContent(fixture.session)
         let entry = try XCTUnwrap(content.todayTasks.first)
         XCTAssertNil(entry.trackingAction(in: content))
-        let outdated = TrackerMenuTask(task: archivedTask, durationText: entry.durationText,
-                                      isRunning: false, canStart: true)
+        let outdated = TrackerMenuTask(
+            task: archivedTask, durationText: entry.durationText,
+            isRunning: false, canStart: true)
         XCTAssertNil(outdated.trackingAction(in: content))
-        XCTAssertEqual(fixture.session.menuCopyValue(.copyName, taskID: archivedTask.id, connection: .local),
-                       archivedTask.name)
+        XCTAssertEqual(
+            fixture.session.menuCopyValue(.copyName, taskID: archivedTask.id, connection: .local),
+            archivedTask.name)
         XCTAssertEqual(fixture.session.menuCopyValue(.copyExact, taskID: archivedTask.id, connection: .local), "1m 0s")
         XCTAssertNil(fixture.session.active)
     }
@@ -85,8 +88,9 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         observer.menuOpened(from: fixture.session, showDailyTotal: true)
         let captured = observer.content
         let entry = try XCTUnwrap((captured.todayTasks + captured.otherTasks).first)
-        let changed = WorklogItem(id: "worklog-from-other-client", taskId: firstTask.id,
-                                 start: activeWorklog.start, end: nil)
+        let changed = WorklogItem(
+            id: "worklog-from-other-client", taskId: firstTask.id,
+            start: activeWorklog.start, end: nil)
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
         poll.succeed(TrackerSnapshot(tasks: [firstTask], active: changed))

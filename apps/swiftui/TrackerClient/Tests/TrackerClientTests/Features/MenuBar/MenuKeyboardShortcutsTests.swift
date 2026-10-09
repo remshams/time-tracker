@@ -32,11 +32,14 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
     func testRemappingCopyToExactRequiresMovingTheNameBinding() throws {
         var shortcuts = MenuKeyboardShortcuts.defaults
         shortcuts.copyExact = MenuShortcut(key: "c")
-        XCTAssertEqual(shortcuts.validationError,
-                       "Copy exact duration and Copy task name use the same shortcut, C.")
+        XCTAssertEqual(
+            shortcuts.validationError,
+            "Copy exact duration and Copy task name use the same shortcut, C.")
         XCTAssertThrowsError(try shortcuts.validated())
-        XCTAssertThrowsError(try JSONDecoder().decode(MenuKeyboardShortcuts.self,
-                                                       from: JSONEncoder().encode(shortcuts)))
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(
+                MenuKeyboardShortcuts.self,
+                from: JSONEncoder().encode(shortcuts)))
         shortcuts.copyName = MenuShortcut(key: "n")
         XCTAssertNil(shortcuts.validationError)
         XCTAssertEqual(shortcuts.action(forKey: "c", modifiers: []), .copyExact)
@@ -49,17 +52,19 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(shortcuts.action(forKey: "c", modifiers: []), .copyName)
         XCTAssertEqual(shortcuts.action(forKey: "c", modifiers: [.command], includingGlobal: true), .openMenu)
         shortcuts.copyExact = shortcuts.openMenu
-        XCTAssertTrue(shortcuts.validationErrors().contains {
-            $0 == "Copy exact duration and Open menu use the same shortcut, ⌘C."
-        })
+        XCTAssertTrue(
+            shortcuts.validationErrors().contains {
+                $0 == "Copy exact duration and Open menu use the same shortcut, ⌘C."
+            })
     }
 
     func testGlobalShortcutRequiresACommandControlOrOptionModifier() {
         for modifiers: MenuShortcut.Modifiers in [[], .shift] {
             var shortcuts = MenuKeyboardShortcuts.defaults
             shortcuts.openMenu = MenuShortcut(key: "x", modifiers: modifiers)
-            XCTAssertEqual(shortcuts.validationError,
-                           "Open menu needs Command, Control or Option to avoid capturing normal typing.")
+            XCTAssertEqual(
+                shortcuts.validationError,
+                "Open menu needs Command, Control or Option to avoid capturing normal typing.")
         }
         for modifiers: MenuShortcut.Modifiers in [.command, .control, .option, [.shift, .command]] {
             var shortcuts = MenuKeyboardShortcuts.defaults
@@ -69,12 +74,17 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
     }
 
     func testReservedAndInvalidKeysCannotBeConfigured() {
-        for key in ["", " ", "\r", "\n", "\u{1b}", "up", "down", "return", "escape", "ab", "\u{f700}", "\u{f701}", "★", "é", "K"] {
+        for key in [
+            "", " ", "\r", "\n", "\u{1b}", "up", "down", "return", "escape", "ab", "\u{f700}", "\u{f701}", "★", "é",
+            "K",
+        ] {
             var shortcuts = MenuKeyboardShortcuts.defaults
             shortcuts.copyName = MenuShortcut(key: key)
-            XCTAssertTrue(shortcuts.validationErrors().contains {
-                $0 == "Copy task name needs one printable ASCII key. Space, arrow keys, Return and Escape are reserved."
-            }, "Rejected key: \(key.debugDescription)")
+            XCTAssertTrue(
+                shortcuts.validationErrors().contains {
+                    $0
+                        == "Copy task name needs one printable ASCII key. Space, arrow keys, Return and Escape are reserved."
+                }, "Rejected key: \(key.debugDescription)")
             XCTAssertNil(shortcuts.action(forKey: key, modifiers: []))
         }
         var shortcuts = MenuKeyboardShortcuts.defaults
@@ -100,13 +110,16 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         let unknown = MenuShortcut.Modifiers(rawValue: 1 << 7)
         var shortcuts = MenuKeyboardShortcuts.defaults
         shortcuts.copyName.modifiers = unknown
-        XCTAssertEqual(shortcuts.validationError,
-                       "Copy task name only supports Command, Control, Option and Shift modifiers.")
+        XCTAssertEqual(
+            shortcuts.validationError,
+            "Copy task name only supports Command, Control, Option and Shift modifiers.")
         XCTAssertNil(shortcuts.action(forKey: "c", modifiers: unknown))
         XCTAssertThrowsError(try JSONDecoder().decode(MenuShortcut.Modifiers.self, from: Data("128".utf8)))
         for modifiers: MenuShortcut.Modifiers in [[], .command, .control, .option, .shift, .allowed] {
-            XCTAssertEqual(try JSONDecoder().decode(MenuShortcut.Modifiers.self,
-                                                    from: JSONEncoder().encode(modifiers)), modifiers)
+            XCTAssertEqual(
+                try JSONDecoder().decode(
+                    MenuShortcut.Modifiers.self,
+                    from: JSONEncoder().encode(modifiers)), modifiers)
         }
         XCTAssertEqual(MenuShortcut(key: "x", modifiers: .allowed).displayText, "⌃⌥⇧⌘X")
     }

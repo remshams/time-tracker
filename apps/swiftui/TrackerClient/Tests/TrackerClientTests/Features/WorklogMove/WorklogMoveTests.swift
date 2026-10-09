@@ -3,8 +3,9 @@ import XCTest
 @testable import TrackerClient
 
 final class WorklogMoveTests: XCTestCase {
-    private let precise = WorklogItem(id: "precise", taskId: firstTask.id,
-                                     start: "2024-12-30T09:00:12.123456Z", end: "2024-12-30T10:00:45.654321Z")
+    private let precise = WorklogItem(
+        id: "precise", taskId: firstTask.id,
+        start: "2024-12-30T09:00:12.123456Z", end: "2024-12-30T10:00:45.654321Z")
     private let candidate = WorklogMoveCandidate(id: secondTask.id, name: secondTask.name)
 
     @MainActor
@@ -29,8 +30,10 @@ final class WorklogMoveTests: XCTestCase {
     }
 
     @MainActor
-    private func preflight(_ fixture: Fixture, log: WorklogItem, committed: Bool = false, recovery: Bool = false,
-                           tasks: [TaskItem] = [firstTask, secondTask]) async throws {
+    private func preflight(
+        _ fixture: Fixture, log: WorklogItem, committed: Bool = false, recovery: Bool = false,
+        tasks: [TaskItem] = [firstTask, secondTask]
+    ) async throws {
         let snapshot = try await fixture.client.next()
         XCTAssertEqual(snapshot.operation, .snapshot)
         snapshot.succeed(TrackerSnapshot(tasks: tasks, active: log.end == nil ? log : nil))
@@ -172,7 +175,8 @@ final class WorklogMoveTests: XCTestCase {
         defer { fixture.cleanup() }
         let log = try await open(fixture, worklog: activeWorklog)
         fixture.session.submitWorklogMove()
-        let stopped = WorklogItem(id: log.id, taskId: firstTask.id, start: log.start, end: "2025-01-01T00:00:00.000000Z")
+        let stopped = WorklogItem(
+            id: log.id, taskId: firstTask.id, start: log.start, end: "2025-01-01T00:00:00.000000Z")
         try await preflight(fixture, log: stopped)
         try await finishHistory(fixture, rows: [stopped])
         XCTAssertTrue(fixture.session.worklogMove.requiresReview)
@@ -186,7 +190,10 @@ final class WorklogMoveTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(fixture.session.worklogMove.original, stopped)
         XCTAssertTrue(fixture.session.worklogMove.canSubmit)
-        XCTAssertFalse(fixture.client.operations.contains { if case .move = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .move = $0 { return true }; return false
+            })
     }
 
     @MainActor
@@ -200,7 +207,10 @@ final class WorklogMoveTests: XCTestCase {
         try await fixture.settled()
         XCTAssertTrue(fixture.session.worklogMove.canEdit)
         XCTAssertNotNil(fixture.session.worklogMove.error)
-        XCTAssertFalse(fixture.client.operations.contains { if case .move = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .move = $0 { return true }; return false
+            })
     }
 
     @MainActor
@@ -216,7 +226,10 @@ final class WorklogMoveTests: XCTestCase {
         try await preflight(fixture, log: moved, committed: true)
         try await finishHistory(fixture)
         XCTAssertFalse(fixture.session.worklogMove.isPresented)
-        XCTAssertEqual(fixture.client.operations.filter { if case .move = $0 { return true }; return false }.count, 1)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .move = $0 { return true }; return false
+            }.count, 1)
     }
 
     @MainActor
@@ -311,7 +324,10 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertTrue(fixture.session.worklogMove.requiresReview)
         XCTAssertEqual(fixture.session.worklogMove.error, "This worklog changed. Review it before moving.")
         XCTAssertFalse(fixture.session.worklogMove.isSearching)
-        XCTAssertFalse(fixture.client.operations.contains { if case .candidates = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .candidates = $0 { return true }; return false
+            })
     }
 
     @MainActor
@@ -337,8 +353,9 @@ final class WorklogMoveTests: XCTestCase {
         let state = WorklogMoveState()
         state.open(activeWorklog, sourceTaskName: firstTask.name, historyPageLimit: 2)
         let search = state.takeSearch()!
-        let stopped = WorklogItem(id: activeWorklog.id, taskId: firstTask.id,
-                                  start: activeWorklog.start, end: "2025-01-01T00:00:00.000000Z")
+        let stopped = WorklogItem(
+            id: activeWorklog.id, taskId: firstTask.id,
+            start: activeWorklog.start, end: "2025-01-01T00:00:00.000000Z")
         state.observe(stopped)
         state.accept([candidate], search: search)
         state.failSearch(BridgeFailure(message: "Obsolete failure"), search: search)
@@ -417,7 +434,10 @@ final class WorklogMoveTests: XCTestCase {
         try await preflight(fixture, log: moved, committed: true)
         try await finishHistory(fixture)
         XCTAssertFalse(fixture.session.worklogMove.isPresented)
-        XCTAssertEqual(fixture.client.operations.filter { if case .move = $0 { return true }; return false }.count, 1)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .move = $0 { return true }; return false
+            }.count, 1)
     }
 
     @MainActor
@@ -518,7 +538,10 @@ final class WorklogMoveTests: XCTestCase {
         fixture.session.cancelWorklogMove()
         opening.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
         try await fixture.settled()
-        XCTAssertFalse(fixture.client.operations.contains { if case .candidates = $0 { return true }; return false })
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .candidates = $0 { return true }; return false
+            })
         fixture.session.openWorklogMove(worklogID: activeWorklog.id)
         let refresh = try await fixture.client.next()
         refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))

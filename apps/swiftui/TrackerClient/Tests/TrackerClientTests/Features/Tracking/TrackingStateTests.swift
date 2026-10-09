@@ -11,8 +11,9 @@ final class TrackingStateTests: XCTestCase {
         clock.now = clock.now.addingTimeInterval(100)
         clock.uptime += 5
         XCTAssertEqual(state.elapsed(clock: clock), 35)
-        let corrected = WorklogItem(id: activeWorklog.id, taskId: activeWorklog.taskId,
-                                    start: "2024-12-31T23:59:40.000Z", end: nil)
+        let corrected = WorklogItem(
+            id: activeWorklog.id, taskId: activeWorklog.taskId,
+            start: "2024-12-31T23:59:40.000Z", end: nil)
 
         state.apply(corrected, clock: clock)
 
@@ -28,8 +29,9 @@ final class TrackingStateTests: XCTestCase {
         clock.now = clock.now.addingTimeInterval(100)
         clock.uptime += 5
         XCTAssertEqual(state.elapsed(clock: clock), 35)
-        let replacement = WorklogItem(id: "replacement-worklog", taskId: activeWorklog.taskId,
-                                      start: activeWorklog.start, end: nil)
+        let replacement = WorklogItem(
+            id: "replacement-worklog", taskId: activeWorklog.taskId,
+            start: activeWorklog.start, end: nil)
 
         state.apply(replacement, clock: clock)
 
@@ -74,8 +76,9 @@ final class TrackingStateTests: XCTestCase {
     func testFutureStartAndBackwardUptimeNeverProduceNegativeElapsed() async {
         let state = TrackingState()
         let clock = FakeClock()
-        let future = WorklogItem(id: "future-worklog", taskId: firstTask.id,
-                                 start: "2025-01-01T00:00:30.000Z", end: nil)
+        let future = WorklogItem(
+            id: "future-worklog", taskId: firstTask.id,
+            start: "2025-01-01T00:00:30.000Z", end: nil)
         state.apply(future, clock: clock)
         XCTAssertEqual(state.elapsed(clock: clock), 0)
         clock.uptime -= 5

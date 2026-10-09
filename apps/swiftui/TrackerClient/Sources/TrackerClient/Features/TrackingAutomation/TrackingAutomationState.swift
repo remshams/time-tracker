@@ -22,14 +22,17 @@ final class TrackingAutomationState {
         pausedTaskID == nil ? nil : "Paused while screen is locked"
     }
 
-    func setEnabled(_ enabled: Bool, at date: Date, active: WorklogItem?,
-                    ownStartTaskID: String?, confirmed: Bool) -> Bool {
+    func setEnabled(
+        _ enabled: Bool, at date: Date, active: WorklogItem?,
+        ownStartTaskID: String?, confirmed: Bool
+    ) -> Bool {
         guard self.enabled != enabled else { return false }
         self.enabled = enabled
         cancel()
         if enabled && locked && (active != nil || ownStartTaskID != nil || !confirmed) {
-            pendingPause = Pause(occurredAt: date, expectedWorklogID: active?.id,
-                                 ownStartTaskID: ownStartTaskID, discoverAtStartup: !confirmed)
+            pendingPause = Pause(
+                occurredAt: date, expectedWorklogID: active?.id,
+                ownStartTaskID: ownStartTaskID, discoverAtStartup: !confirmed)
         }
         return true
     }
@@ -39,8 +42,9 @@ final class TrackingAutomationState {
         locked = true
         resumeAt = nil
         if enabled && (active != nil || ownStartTaskID != nil || !confirmed) {
-            pendingPause = Pause(occurredAt: date, expectedWorklogID: active?.id,
-                                 ownStartTaskID: ownStartTaskID, discoverAtStartup: !confirmed)
+            pendingPause = Pause(
+                occurredAt: date, expectedWorklogID: active?.id,
+                ownStartTaskID: ownStartTaskID, discoverAtStartup: !confirmed)
         }
     }
 
@@ -53,9 +57,11 @@ final class TrackingAutomationState {
 
     func acknowledgeOwnStart(_ active: WorklogItem?, taskID: String) {
         guard let pending = pendingPause, pending.ownStartTaskID == taskID,
-              let active, active.taskId == taskID else { return }
-        pendingPause = Pause(occurredAt: pending.occurredAt, expectedWorklogID: active.id,
-                             ownStartTaskID: nil, discoverAtStartup: false)
+            let active, active.taskId == taskID
+        else { return }
+        pendingPause = Pause(
+            occurredAt: pending.occurredAt, expectedWorklogID: active.id,
+            ownStartTaskID: nil, discoverAtStartup: false)
     }
 
     func unlock(at date: Date) {

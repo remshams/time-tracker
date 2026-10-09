@@ -33,8 +33,7 @@ final class WorklogHistoryState {
     }
 
     func accept(_ page: HistoryPage, cursor: String?) {
-        if cursor == nil || page.reset { worklogs = page.worklogs }
-        else { worklogs.append(contentsOf: page.worklogs) }
+        if cursor == nil || page.reset { worklogs = page.worklogs } else { worklogs.append(contentsOf: page.worklogs) }
         nextCursor = page.nextCursor
         unavailable = false
         error = nil

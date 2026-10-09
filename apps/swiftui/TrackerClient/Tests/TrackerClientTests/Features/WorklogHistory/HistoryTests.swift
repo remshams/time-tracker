@@ -37,8 +37,9 @@ final class HistoryTests: XCTestCase {
         refresh.succeed(TrackerSnapshot(tasks: [firstTask], active: nil))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
-        XCTAssertEqual(fixture.session.worklogs, [activeWorklog, oldWorklog],
-                       "Existing rows must remain visible while their replacement is fetched.")
+        XCTAssertEqual(
+            fixture.session.worklogs, [activeWorklog, oldWorklog],
+            "Existing rows must remain visible while their replacement is fetched.")
         XCTAssertEqual(fixture.session.nextCursor, "older")
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()

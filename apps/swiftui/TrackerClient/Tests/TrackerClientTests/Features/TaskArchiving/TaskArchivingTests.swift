@@ -161,7 +161,10 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertNil(fixture.session.taskArchiving.latest)
         fixture.session.reviewLatestTaskArchiving()
         XCTAssertFalse(fixture.session.taskArchiving.canSubmit)
-        XCTAssertEqual(fixture.client.operations.filter { if case .archive = $0 { return true }; return false }.count, 0)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .archive = $0 { return true }; return false
+            }.count, 0)
     }
 
     @MainActor
@@ -471,7 +474,8 @@ final class TaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Response lost", uncertain: true))
         let recovered = try await fixture.client.next()
-        recovered.succeed(TrackerSnapshot(tasks: [firstTask, archived(archivedTask, false), archived(secondTask)], active: nil))
+        recovered.succeed(
+            TrackerSnapshot(tasks: [firstTask, archived(archivedTask, false), archived(secondTask)], active: nil))
         let fallbackHistory = try await fixture.client.next()
         XCTAssertEqual(fallbackHistory.operation, .history(task: secondTask.id, cursor: nil))
         fallbackHistory.succeed(emptyPage)
@@ -573,9 +577,12 @@ final class TaskArchivingTests: XCTestCase {
         let original = fixture.session.taskArchiving
         var observedAvailability: [(Bool, Bool, Bool)] = []
         observer.onTaskArchivingChange = {
-            observedAvailability.append((fixture.session.canArchiveTask(taskID: firstTask.id),
-                                         fixture.session.canArchiveTask(taskID: secondTask.id),
-                                         fixture.session.canUnarchiveTask(taskID: archivedTask.id)))
+            observedAvailability.append(
+                (
+                    fixture.session.canArchiveTask(taskID: firstTask.id),
+                    fixture.session.canArchiveTask(taskID: secondTask.id),
+                    fixture.session.canUnarchiveTask(taskID: archivedTask.id)
+                ))
         }
         fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.session.refresh()
@@ -606,14 +613,19 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertNil(state.takePendingIntent())
         XCTAssertFalse(state.responseMatches(TrackerSnapshot(tasks: [], active: nil), intent: intent))
         XCTAssertFalse(state.responseMatches(TrackerSnapshot(tasks: [firstTask], active: nil), intent: intent))
-        XCTAssertFalse(state.responseMatches(TrackerSnapshot(tasks: [archived(firstTask)], active: activeWorklog), intent: intent))
+        XCTAssertFalse(
+            state.responseMatches(TrackerSnapshot(tasks: [archived(firstTask)], active: activeWorklog), intent: intent))
         XCTAssertTrue(state.responseMatches(TrackerSnapshot(tasks: [archived(firstTask)], active: nil), intent: intent))
-        XCTAssertEqual(state.preflight(intent, snapshot: TrackerSnapshot(tasks: [archived(firstTask)], active: activeWorklog)), .review)
+        XCTAssertEqual(
+            state.preflight(intent, snapshot: TrackerSnapshot(tasks: [archived(firstTask)], active: activeWorklog)),
+            .review)
         state.reset()
         state.open(archivedTask, action: .unarchive)
         state.reopen()
         XCTAssertTrue(state.submit(at: "restored"))
         let restore = state.takePendingIntent()!
-        XCTAssertTrue(state.responseMatches(TrackerSnapshot(tasks: [archived(archivedTask, false)], active: activeWorklog), intent: restore))
+        XCTAssertTrue(
+            state.responseMatches(
+                TrackerSnapshot(tasks: [archived(archivedTask, false)], active: activeWorklog), intent: restore))
     }
 }

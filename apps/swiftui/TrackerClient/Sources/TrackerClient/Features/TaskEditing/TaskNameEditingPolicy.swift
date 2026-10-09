@@ -23,7 +23,7 @@ enum TaskNameEditingPolicy {
 
     static func requiresRecovery(_ error: Error) -> Bool {
         guard let failure = error as? BridgeFailure else { return true }
-        return failure.uncertain || failure.requiresRefresh ||
-            failure.kind == "unavailable" || failure.kind == "protocol"
+        return failure.uncertain || failure.requiresRefresh || failure.kind == "unavailable"
+            || failure.kind == "protocol"
     }
 }

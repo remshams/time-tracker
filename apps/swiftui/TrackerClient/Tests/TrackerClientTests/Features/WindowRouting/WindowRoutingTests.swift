@@ -19,8 +19,11 @@ final class WindowRoutingTests: XCTestCase {
         var routing = TrackerWindowRoutingState()
         let id = UUID()
         XCTAssertEqual(routing.showTracker { id }, TrackerWindowOpenRequest(id: id, shouldOpen: true))
-        XCTAssertEqual(routing.showTracker { XCTFail("Do not create another scene"); return UUID() },
-                       TrackerWindowOpenRequest(id: id, shouldOpen: false))
+        XCTAssertEqual(
+            routing.showTracker {
+                XCTFail("Do not create another scene"); return UUID()
+            },
+            TrackerWindowOpenRequest(id: id, shouldOpen: false))
         routing.appeared(id, isActive: true)
         XCTAssertEqual(routing.showTracker(), TrackerWindowOpenRequest(id: id, shouldOpen: true))
     }

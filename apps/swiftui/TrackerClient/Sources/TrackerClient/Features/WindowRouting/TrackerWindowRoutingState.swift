@@ -30,7 +30,9 @@ public struct TrackerWindowRoutingState: Sendable {
         if isActive {
             activeWindowIDs.insert(id)
             preferredWindowID = id
-        } else { activeWindowIDs.remove(id) }
+        } else {
+            activeWindowIDs.remove(id)
+        }
     }
 
     public mutating func prefer(_ id: UUID) {
