@@ -6,8 +6,7 @@ use tempfile::TempDir;
 use tower::ServiceExt;
 use tracker_domain::{Task, TaskId, TaskName};
 use tracker_protocol::{
-    InactiveTaskPreviewDto, MutationDto, MutationResultDto, SnapshotDto, TaskItemDto, TasksDto,
-    TrackingDto,
+    InactiveTaskPreviewDto, MutationDto, MutationResultDto, TasksDto, TrackingDto,
 };
 use tracker_storage::SqliteRepository;
 use uuid::Uuid;
@@ -49,7 +48,7 @@ fn merge(mut body: Value, guard: Value) -> Value {
     body
 }
 
-async fn state(router: &axum::Router) -> SnapshotDto {
+async fn state(router: &axum::Router) -> (TasksDto, TrackingDto) {
     let (status, body) = call(router, Method::GET, "/v1/tasks", None).await;
     assert_eq!(status, StatusCode::OK);
     let tasks: TasksDto = serde_json::from_value(body).unwrap();
@@ -57,18 +56,7 @@ async fn state(router: &axum::Router) -> SnapshotDto {
     assert_eq!(status, StatusCode::OK);
     let tracking: TrackingDto = serde_json::from_value(body).unwrap();
     assert_eq!(tasks.revision, tracking.revision);
-    SnapshotDto {
-        task_items: tasks
-            .tasks
-            .into_iter()
-            .map(|task| TaskItemDto {
-                latest_work_start: task.latest_work_start,
-                task,
-            })
-            .collect(),
-        active_worklog: tracking.active_worklog,
-        revision: tasks.revision,
-    }
+    (tasks, tracking)
 }
 
 async fn create_fixture_task(router: &axum::Router, name: &str) -> String {
@@ -76,7 +64,7 @@ async fn create_fixture_task(router: &axum::Router, name: &str) -> String {
     let id = Uuid::now_v7().to_string();
     let request = merge(
         json!({"task_id": id, "name": name, "occurred_at": at(0)}),
-        guard(&before.revision),
+        guard(&before.0.revision),
     );
     let (status, body) = call(router, Method::POST, "/v1/tasks", Some(request)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -113,7 +101,7 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
             "name": "Old planning task",
             "occurred_at": created_at,
         }),
-        guard(&before.revision),
+        guard(&before.0.revision),
     );
     let (status, body) = call(&router, Method::POST, "/v1/tasks", Some(create)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -147,9 +135,10 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
     assert!(
         state(&router)
             .await
-            .task_items
+            .0
+            .tasks
             .iter()
-            .any(|item| { item.task.name == "Old planning task" && item.task.archived })
+            .any(|item| { item.name == "Old planning task" && item.archived })
     );
     let (status, replay) = call(
         &router,
@@ -174,9 +163,9 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "conflict");
-    assert_eq!(state(&router).await.revision, mutation.applied_revision);
+    assert_eq!(state(&router).await.0.revision, mutation.applied_revision);
 
-    let archived_id = &state(&router).await.task_items[0].task.id;
+    let archived_id = &state(&router).await.0.tasks[0].id;
     let restore = merge(
         json!({"action": "restore", "occurred_at": as_of}),
         guard(&mutation.applied_revision),
@@ -190,7 +179,7 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let restored: MutationDto = serde_json::from_value(body).unwrap();
-    assert!(!state(&router).await.task_items[0].task.archived);
+    assert!(!state(&router).await.0.tasks[0].archived);
 
     let (status, body) = call(
         &router,
@@ -205,7 +194,7 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
     assert_eq!(replay.applied_revision, mutation.applied_revision);
     assert!(replay.replayed);
     assert_ne!(replay.applied_revision, restored.applied_revision);
-    assert_eq!(state(&router).await.revision, restored.applied_revision);
+    assert_eq!(state(&router).await.0.revision, restored.applied_revision);
 }
 
 #[tokio::test]
@@ -282,25 +271,24 @@ async fn inactive_archive_uses_current_candidates_when_database_changes_after_pr
         MutationResultDto::ArchivedInactive { count: 2 }
     );
     assert_ne!(result.applied_revision, preview.revision);
-    assert_eq!(state(&router).await.task_items.len(), 3);
+    assert_eq!(state(&router).await.0.tasks.len(), 3);
     for id in candidate_ids {
         let task = outside.find_task(id).unwrap().unwrap();
         assert!(task.is_archived());
         assert!(
             state(&router)
                 .await
-                .task_items
+                .0
+                .tasks
                 .iter()
-                .any(|item| { item.task.id == id.to_string() && item.task.archived })
+                .any(|item| { item.id == id.to_string() && item.archived })
         );
     }
     let changed = outside.find_task(changed_id).unwrap().unwrap();
     assert!(!changed.is_archived());
     assert_eq!(changed.name().as_str(), "Recently changed");
-    assert!(state(&router).await.task_items.iter().any(|item| {
-        item.task.id == changed_id.to_string()
-            && item.task.name == "Recently changed"
-            && !item.task.archived
+    assert!(state(&router).await.0.tasks.iter().any(|item| {
+        item.id == changed_id.to_string() && item.name == "Recently changed" && !item.archived
     }));
 }
 
@@ -357,16 +345,16 @@ async fn health_create_retry_and_stale_revision() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(health, json!({"status":"ok","protocol_version":3}));
     let before = state(&router).await;
-    assert!(before.task_items.is_empty());
+    assert!(before.0.tasks.is_empty());
     let task_id = Uuid::now_v7().to_string();
     let request = merge(
         json!({"task_id":task_id,"name":"Write tests","occurred_at":at(100)}),
-        guard(&before.revision),
+        guard(&before.0.revision),
     );
     let (status, first) = call(&router, Method::POST, "/v1/tasks", Some(request.clone())).await;
     assert_eq!(status, StatusCode::OK, "{first}");
     let first: MutationDto = serde_json::from_value(first.clone()).unwrap();
-    assert_eq!(state(&router).await.task_items.len(), 1);
+    assert_eq!(state(&router).await.0.tasks.len(), 1);
     let (status, replay) = call(&router, Method::POST, "/v1/tasks", Some(request.clone())).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
@@ -382,12 +370,12 @@ async fn health_create_retry_and_stale_revision() {
     assert_eq!(error["code"], "conflict");
     let stale = merge(
         json!({"task_id":Uuid::now_v7().to_string(),"name":"Stale","occurred_at":at(101)}),
-        guard(&before.revision),
+        guard(&before.0.revision),
     );
     let (status, error) = call(&router, Method::POST, "/v1/tasks", Some(stale)).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(error["code"], "stale_revision");
-    assert_eq!(state(&router).await.task_items.len(), 1);
+    assert_eq!(state(&router).await.0.tasks.len(), 1);
 }
 
 #[tokio::test]
@@ -401,7 +389,7 @@ async fn tracking_survives_restart_and_worklogs_support_edits() {
     let first_id = Uuid::now_v7().to_string();
     let set = merge(
         json!({"task_id":first_task,"worklog_id":first_id,"expected_active":null,"occurred_at":at(100)}),
-        guard(&initial.revision),
+        guard(&initial.0.revision),
     );
     let (status, body) = call(&router, Method::PUT, "/v1/tracking", Some(set)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -410,24 +398,24 @@ async fn tracking_survives_restart_and_worklogs_support_edits() {
         matches!(&started.result, MutationResultDto::Worklog(worklog) if worklog.id == first_id)
     );
     assert_eq!(
-        state(&router).await.active_worklog.as_ref().unwrap().id,
+        state(&router).await.1.active_worklog.as_ref().unwrap().id,
         first_id
     );
     drop(router);
 
     let router = tracker_server::router_for_database(&path).unwrap();
     let resumed = state(&router).await;
-    assert_eq!(resumed.active_worklog.as_ref().unwrap().id, first_id);
+    assert_eq!(resumed.1.active_worklog.as_ref().unwrap().id, first_id);
     let switch_id = Uuid::now_v7().to_string();
     let switch = merge(
         json!({"task_id":second_task,"worklog_id":switch_id,"expected_active":first_id,"occurred_at":at(150)}),
-        guard(&resumed.revision),
+        guard(&resumed.0.revision),
     );
     let (status, body) = call(&router, Method::PUT, "/v1/tracking", Some(switch)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let switched: MutationDto = serde_json::from_value(body).unwrap();
     assert_eq!(
-        state(&router).await.active_worklog.as_ref().unwrap().id,
+        state(&router).await.1.active_worklog.as_ref().unwrap().id,
         switch_id
     );
     let clear = merge(
@@ -437,7 +425,7 @@ async fn tracking_survives_restart_and_worklogs_support_edits() {
     let (status, body) = call(&router, Method::PUT, "/v1/tracking", Some(clear)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let stopped: MutationDto = serde_json::from_value(body).unwrap();
-    assert!(state(&router).await.active_worklog.is_none());
+    assert!(state(&router).await.1.active_worklog.is_none());
 
     let (status, body) = call(&router, Method::GET, "/v1/worklogs", None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -481,7 +469,7 @@ async fn tracking_survives_restart_and_worklogs_support_edits() {
     assert!(
         matches!(&deleted.result, MutationResultDto::Worklog(worklog) if worklog.id == first_id && worklog.task_id == second_task)
     );
-    assert!(state(&router).await.active_worklog.is_none());
+    assert!(state(&router).await.1.active_worklog.is_none());
     let (status, body) = call(&router, Method::GET, "/v1/worklogs", None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["worklogs"].as_array().unwrap().len(), 1);
@@ -496,7 +484,7 @@ async fn task_changes_and_request_limit() {
     let route = format!("/v1/tasks/{id}");
     let rename = merge(
         json!({"action":"rename","name":"Renamed task","occurred_at":at(100)}),
-        guard(&initial.revision),
+        guard(&initial.0.revision),
     );
     let (status, body) = call(&router, Method::PATCH, &route, Some(rename)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -511,11 +499,11 @@ async fn task_changes_and_request_limit() {
     assert!(
         state(&router)
             .await
-            .task_items
+            .0
+            .tasks
             .iter()
-            .find(|item| item.task.id == id)
+            .find(|item| item.id == id)
             .unwrap()
-            .task
             .archived
     );
     let restore = merge(
@@ -528,11 +516,11 @@ async fn task_changes_and_request_limit() {
     assert!(
         !state(&router)
             .await
-            .task_items
+            .0
+            .tasks
             .iter()
-            .find(|item| item.task.id == id)
+            .find(|item| item.id == id)
             .unwrap()
-            .task
             .archived
     );
     let large = json!({"task_id":Uuid::now_v7().to_string(),"name":"x".repeat(17_000),"occurred_at":at(100),"expected_revision":restored.applied_revision,"request_id":Uuid::now_v7().to_string()});
@@ -567,11 +555,11 @@ async fn concurrent_commands_and_duplicate_server_are_rejected_safely() {
     let before = state(&router).await;
     let first = merge(
         json!({"task_id":Uuid::now_v7().to_string(),"name":"First","occurred_at":at(100)}),
-        guard(&before.revision),
+        guard(&before.0.revision),
     );
     let second = merge(
         json!({"task_id":Uuid::now_v7().to_string(),"name":"Second","occurred_at":at(100)}),
-        guard(&before.revision),
+        guard(&before.0.revision),
     );
     let (left, right) = tokio::join!(
         call(&router, Method::POST, "/v1/tasks", Some(first)),
@@ -580,7 +568,7 @@ async fn concurrent_commands_and_duplicate_server_are_rejected_safely() {
     let statuses = [left.0, right.0];
     assert!(statuses.contains(&StatusCode::OK));
     assert!(statuses.contains(&StatusCode::CONFLICT));
-    assert_eq!(state(&router).await.task_items.len(), 1);
+    assert_eq!(state(&router).await.0.tasks.len(), 1);
 }
 
 #[tokio::test]
@@ -590,7 +578,7 @@ async fn invalid_json_does_not_change_state() {
     let before = state(&router).await;
     let unknown = merge(
         json!({"task_id":Uuid::now_v7().to_string(),"name":"Input","occurred_at":at(100),"unexpected":"value"}),
-        guard(&before.revision),
+        guard(&before.0.revision),
     );
     let (status, body) = call(&router, Method::POST, "/v1/tasks", Some(unknown)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -606,7 +594,7 @@ async fn error_mapping_distinguishes_invalid_and_missing_tasks() {
 
     let invalid_name = merge(
         json!({"task_id":Uuid::now_v7().to_string(),"name":"   ","occurred_at":at(100)}),
-        guard(&before.revision),
+        guard(&before.0.revision),
     );
     let (status, body) = call(&router, Method::POST, "/v1/tasks", Some(invalid_name)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -616,7 +604,7 @@ async fn error_mapping_distinguishes_invalid_and_missing_tasks() {
     let missing_id = Uuid::now_v7().to_string();
     let change = merge(
         json!({"action":"rename","name":"Missing task","occurred_at":at(100)}),
-        guard(&before.revision),
+        guard(&before.0.revision),
     );
     let (status, body) = call(
         &router,
@@ -676,21 +664,21 @@ async fn stopping_an_already_idle_tracker_is_an_idempotent_success() {
     let before = state(&router).await;
     let request = merge(
         json!({"task_id":null,"worklog_id":null,"expected_active":null,"occurred_at":at(100)}),
-        guard(&before.revision),
+        guard(&before.0.revision),
     );
 
     let (status, first) = call(&router, Method::PUT, "/v1/tracking", Some(request.clone())).await;
     assert_eq!(status, StatusCode::OK, "{first}");
     assert_eq!(first["result"]["kind"], "tracking_already_idle");
     assert!(first.get("snapshot").is_none());
-    assert!(state(&router).await.active_worklog.is_none());
+    assert!(state(&router).await.1.active_worklog.is_none());
 
     let (status, retry) = call(&router, Method::PUT, "/v1/tracking", Some(request)).await;
     assert_eq!(status, StatusCode::OK, "{retry}");
     assert_eq!(retry["result"], first["result"]);
     assert_eq!(retry["applied_revision"], first["applied_revision"]);
     assert_eq!(retry["replayed"], true);
-    assert!(state(&router).await.task_items.is_empty());
+    assert!(state(&router).await.0.tasks.is_empty());
 }
 
 #[tokio::test]
@@ -700,8 +688,8 @@ async fn a_new_server_database_stays_empty_after_restart() {
     for _ in 0..2 {
         let router = tracker_server::router_for_database(&path).unwrap();
         let snapshot = state(&router).await;
-        assert!(snapshot.task_items.is_empty());
-        assert!(snapshot.active_worklog.is_none());
+        assert!(snapshot.0.tasks.is_empty());
+        assert!(snapshot.1.active_worklog.is_none());
     }
     let repository = SqliteRepository::open(&path).unwrap();
     assert!(repository.list_tasks().unwrap().is_empty());
@@ -778,7 +766,7 @@ async fn configurable_candidates_include_every_task_and_archive_the_chosen_perio
         MutationResultDto::ArchivedInactive { count: 8 }
     );
     assert_eq!(
-        state(&router).await.active_worklog.as_ref().unwrap().id,
+        state(&router).await.1.active_worklog.as_ref().unwrap().id,
         worklog.id().to_string()
     );
     assert_eq!(outside.active_worklog().unwrap(), Some(worklog));
@@ -868,7 +856,7 @@ async fn configurable_archive_recomputes_candidates_and_preserves_original_recei
     assert_eq!(replay.applied_revision, first.applied_revision);
     assert!(replay.replayed);
     assert_ne!(replay.applied_revision, restored.applied_revision);
-    assert_eq!(state(&router).await.revision, restored.applied_revision);
+    assert_eq!(state(&router).await.0.revision, restored.applied_revision);
     let mut changed_request = request;
     changed_request["inactive_days"] = json!(30);
     let (status, body) = call(
@@ -880,7 +868,7 @@ async fn configurable_archive_recomputes_candidates_and_preserves_original_recei
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "conflict");
-    assert_eq!(state(&router).await.revision, restored.applied_revision);
+    assert_eq!(state(&router).await.0.revision, restored.applied_revision);
 }
 
 #[tokio::test]
@@ -895,7 +883,7 @@ async fn configurable_archive_validates_days_time_and_revision_without_writing()
         assert_eq!(status, StatusCode::BAD_REQUEST);
         let request = merge(
             json!({"as_of": as_of, "inactive_days": days}),
-            guard(&before.revision),
+            guard(&before.0.revision),
         );
         let (status, body) = call(
             &router,
@@ -916,7 +904,7 @@ async fn configurable_archive_validates_days_time_and_revision_without_writing()
         assert_eq!(status, StatusCode::BAD_REQUEST);
         let request = merge(
             json!({"as_of": invalid_time, "inactive_days": 7}),
-            guard(&before.revision),
+            guard(&before.0.revision),
         );
         let (status, _) = call(
             &router,
@@ -948,7 +936,7 @@ async fn configurable_archive_validates_days_time_and_revision_without_writing()
             &router,
             Method::POST,
             "/v1/tasks/archive-inactive",
-            Some(merge(fields, guard(&before.revision))),
+            Some(merge(fields, guard(&before.0.revision))),
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1188,7 +1176,7 @@ async fn write_receipts_replay_original_resources_after_subsequent_writes_and_ex
     let task_id = Uuid::now_v7().to_string();
     let request = merge(
         json!({"task_id":task_id,"name":"Original project","occurred_at":at(100)}),
-        guard(&before.revision),
+        guard(&before.0.revision),
     );
     let (status, receipt) = call(&router, Method::POST, "/v1/tasks", Some(request.clone())).await;
     assert_eq!(status, StatusCode::OK);
@@ -1222,7 +1210,7 @@ async fn write_receipts_replay_original_resources_after_subsequent_writes_and_ex
     assert_eq!(replay["result"], receipt["result"]);
     assert_eq!(replay["result"]["value"]["name"], "Original project");
     assert_eq!(replay["replayed"], true);
-    assert_eq!(state(&router).await.task_items[0].task.name, "New project");
+    assert_eq!(state(&router).await.0.tasks[0].name, "New project");
     drop(router);
     let router = tracker_server::router_for_database(&database).unwrap();
     let (status, error) = call(&router, Method::POST, "/v1/tasks", Some(request)).await;
@@ -1230,7 +1218,7 @@ async fn write_receipts_replay_original_resources_after_subsequent_writes_and_ex
     assert_eq!(error["code"], "stale_revision");
     let mut invalid_request = merge(
         json!({"task_id":Uuid::now_v7().to_string(),"name":"Invalid receipt","occurred_at":at(100)}),
-        guard(&state(&router).await.revision),
+        guard(&state(&router).await.0.revision),
     );
     invalid_request["request_id"] = json!("invalid-request-id");
     let (status, error) = call(&router, Method::POST, "/v1/tasks", Some(invalid_request)).await;
