@@ -136,6 +136,43 @@ Exact duration uses the TUI format, such as `1h 23m 45s`; rounded duration uses 
 
 Native interaction checks require a Mac. Open the menu with the global shortcut and with a right-click. Check the popup starts below the menu bar on each display, with the menu bar always visible and with automatic hiding enabled. Use arrows to navigate Today and Start tracking, open a task submenu with Right, and invoke every command with Return. Hover to open the same submenus. Click an idle task row directly and confirm it starts; click the running task row directly and confirm it stops. Repeat with its submenu already visible. Copy a task name, exact duration, and rounded duration from both task lists, including an archived task, confirmed zero totals, cached state, and a running task after leaving the menu open for a minute. Confirm unavailable tracking and copy commands are disabled. Change tracking from another client while the menu is open and confirm a captured Stop command cannot stop the replacement worklog. Close with Escape or an outside click, then confirm a primary click on the status icon still starts or stops tracking. Record another Open menu binding, restart to verify persistence, check a global registration conflict, and switch keyboard layouts.
 
+## Formatting and linting
+
+Install the repository's pinned tools with Swift 6.1 or newer and Python 3.12 or newer:
+
+```sh
+python3 scripts/install-swift-style-tools.py
+```
+
+The installer builds swift-format 601.0.0 with locked dependencies and downloads SwiftLint 0.65.1.
+It verifies archive checksums and executable versions, and installs both under `.build/swift-style`.
+Use `--swift` to select a toolchain and `--jobs` to limit build parallelism. Linux and macOS use
+the same formatter release and configurations, regardless of the compiler used for the app.
+
+Run these commands from the repository root:
+
+```sh
+python3 scripts/swift-style.py --format
+python3 scripts/swift-style.py
+```
+
+The first command applies formatting. The second checks formatting and lint rules without
+editing files; either tool's violations fail the command. `.swift-format` sets four-space
+indentation and a 120-column target. `.swiftlint.yml` selects code-pattern checks, including
+forced casts, forced `try`, identical operands, unused closure parameters, and strong delegates.
+The selected SwiftLint rules use syntax rather than SourceKit, so they can check SwiftUI source
+on Linux without Apple's SDKs. Native compilation and UI tests still require macOS.
+
+Both commands cover the native app's production sources, the `TrackerClient` manifest,
+and its production sources and unit tests. Generated build output and native UI E2E/layout
+tests are outside the initial style scope. This setup preserves the existing E2E files as
+required by `AGENTS.md`.
+
+CI requires these checks in the Linux Swift job. The repository's pre-commit hook checks Swift
+formatting when staged paths affect this scope or the style configuration. It checks the full
+working-tree scope, as the Rust formatting hook does. Enable it with `git config core.hooksPath .githooks`.
+Use `python3 scripts/swift-style.py --format-check` to run only the formatting check.
+
 ## Unit tests
 
 The `TrackerClient` package contains Foundation-only client state and XCTest tests. It has no Rust, SwiftUI, AppKit, database, or network dependency. Run it from the repository root on a Mac or Linux machine with Swift 5.9 or newer:

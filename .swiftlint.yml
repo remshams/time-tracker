@@ -1,0 +1,19 @@
+included:
+  - apps/swiftui/Sources
+  - apps/swiftui/TrackerClient/Sources
+  - apps/swiftui/TrackerClient/Tests
+  - apps/swiftui/TrackerClient/Package.swift
+
+# Formatting belongs to swift-format. These rules check code patterns.
+only_rules:
+  - duplicate_imports
+  - force_cast
+  - force_try
+  - identical_operands
+  - redundant_discardable_let
+  - redundant_nil_coalescing
+  - unused_closure_parameter
+  - unused_optional_binding
+  - weak_delegate
+
+strict: true
