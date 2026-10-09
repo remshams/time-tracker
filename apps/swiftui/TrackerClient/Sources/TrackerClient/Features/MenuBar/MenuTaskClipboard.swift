@@ -7,7 +7,7 @@ public extension TrackerSession {
     ) -> String? {
         // A dropdown opened on one data source must not copy from another.
         guard connectionSettings == connection,
-            let task = tasks.first(where: { $0.id == taskID })
+            let task = menuTask(withID: taskID)
         else { return nil }
         switch action {
         case .copyName: return task.name
@@ -15,5 +15,12 @@ public extension TrackerSession {
         case .copyRounded: return MenuDurationFormatter.rounded(dailyDuration(taskID: taskID))
         case .openMenu, .moveDown, .moveUp: return nil
         }
+    }
+
+    private func menuTask(withID taskID: String) -> TaskItem? {
+        for task in tasks {
+            if task.id == taskID { return task }
+        }
+        return nil
     }
 }
