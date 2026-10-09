@@ -164,7 +164,9 @@ fn forward(mut client: TcpStream, upstream: SocketAddr, shared: &Shared) {
     client
         .set_read_timeout(Some(REQUEST_LIMIT))
         .expect("the gate must set a client timeout");
-    let request = read_request(&mut client);
+    let Some(request) = read_request(&mut client) else {
+        return;
+    };
     let first_line = request.split(|byte| *byte == b'\n').next().unwrap();
     let first_line = std::str::from_utf8(first_line).expect("the HTTP request line must be text");
     let mut parts = first_line.split_whitespace();
@@ -221,14 +223,16 @@ fn forward(mut client: TcpStream, upstream: SocketAddr, shared: &Shared) {
     }
 }
 
-fn read_request(stream: &mut TcpStream) -> Vec<u8> {
+fn read_request(stream: &mut TcpStream) -> Option<Vec<u8>> {
     let mut request = Vec::new();
     let mut chunk = [0; 4096];
     loop {
         let len = stream
             .read(&mut chunk)
             .expect("the gate must read the request");
-        assert!(len > 0, "the HTTP request ended before its body");
+        if len == 0 {
+            return None;
+        }
         request.extend_from_slice(&chunk[..len]);
         if let Some(header_end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
             let header = std::str::from_utf8(&request[..header_end]).unwrap();
@@ -241,8 +245,48 @@ fn read_request(stream: &mut TcpStream) -> Vec<u8> {
                 })
                 .unwrap_or(0);
             if request.len() >= header_end + 4 + body_len {
-                return request;
+                return Some(request);
             }
         }
     }
+}
+
+#[test]
+fn abandoned_requests_do_not_reach_the_server_or_count_toward_the_gate() {
+    let upstream = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let proxy = ControlledProxy::new(upstream.local_addr().unwrap());
+    proxy.hold(Route::Snapshot);
+    let server = thread::spawn(move || {
+        let (mut client, _) = upstream.accept().unwrap();
+        client.set_read_timeout(Some(REQUEST_LIMIT)).unwrap();
+        let request = read_request(&mut client).unwrap();
+        assert!(request.starts_with(b"GET /v1/snapshot HTTP/1.1\r\n"));
+        client
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+            .unwrap();
+    });
+
+    for partial in [
+        b"".as_slice(),
+        b"POST /v1/tasks HTTP/1.1\r\nContent-Length: 5\r\n\r\nab".as_slice(),
+    ] {
+        let mut client = TcpStream::connect(proxy.address).unwrap();
+        client.write_all(partial).unwrap();
+    }
+
+    let mut client = TcpStream::connect(proxy.address).unwrap();
+    client.set_read_timeout(Some(REQUEST_LIMIT)).unwrap();
+    client
+        .write_all(b"GET /v1/snapshot HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        .unwrap();
+    proxy.wait_for_request();
+    assert_eq!(proxy.request_count(), 1);
+    proxy.release();
+    let mut response = String::new();
+    client.read_to_string(&mut response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
+    assert!(response.ends_with("\r\n\r\n{}"));
+    proxy.wait_for_delivery();
+    server.join().unwrap();
+    drop(proxy);
 }
