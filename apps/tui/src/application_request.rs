@@ -19,11 +19,13 @@ pub(crate) enum ApplicationRequest {
     },
     RenameTask {
         id: TaskId,
+        expected_name: TaskName,
         name: TaskName,
         occurred_at: DateTime<Utc>,
     },
     ArchiveTask {
         id: TaskId,
+        expected_name: TaskName,
         occurred_at: DateTime<Utc>,
     },
     PreviewInactiveTasks {
@@ -38,6 +40,7 @@ pub(crate) enum ApplicationRequest {
     },
     SetActiveTask {
         task_id: TaskId,
+        expected_active: Option<WorklogId>,
         occurred_at: DateTime<Utc>,
     },
     ClearActiveTask {
@@ -100,11 +103,22 @@ impl ApplicationRequest {
     fn write_intent(&self) -> Option<WriteIntent<'_>> {
         let intent = match self {
             Self::CreateTask { name, .. } => WriteIntent::CreateTask(name),
-            Self::RenameTask { id, name, .. } => WriteIntent::RenameTask(id, name),
-            Self::ArchiveTask { id, .. } => WriteIntent::ArchiveTask(id),
+            Self::RenameTask {
+                id,
+                expected_name,
+                name,
+                ..
+            } => WriteIntent::RenameTask(id, expected_name, name),
+            Self::ArchiveTask {
+                id, expected_name, ..
+            } => WriteIntent::ArchiveTask(id, expected_name),
             Self::UnarchiveTask { id, .. } => WriteIntent::UnarchiveTask(id),
             Self::ArchiveInactiveTasks { preview } => WriteIntent::ArchiveInactiveTasks(preview),
-            Self::SetActiveTask { task_id, .. } => WriteIntent::SetActiveTask(task_id),
+            Self::SetActiveTask {
+                task_id,
+                expected_active,
+                ..
+            } => WriteIntent::SetActiveTask(task_id, expected_active),
             Self::ClearActiveTask {
                 expected_active, ..
             } => WriteIntent::ClearActiveTask(expected_active),
@@ -146,11 +160,11 @@ impl ApplicationRequest {
 #[derive(PartialEq, Eq)]
 enum WriteIntent<'a> {
     CreateTask(&'a TaskName),
-    RenameTask(&'a TaskId, &'a TaskName),
-    ArchiveTask(&'a TaskId),
+    RenameTask(&'a TaskId, &'a TaskName, &'a TaskName),
+    ArchiveTask(&'a TaskId, &'a TaskName),
     UnarchiveTask(&'a TaskId),
     ArchiveInactiveTasks(&'a InactiveTaskPreview),
-    SetActiveTask(&'a TaskId),
+    SetActiveTask(&'a TaskId, &'a Option<WorklogId>),
     ClearActiveTask(&'a WorklogId),
     MoveWorklog(&'a WorklogId, &'a TaskId, &'a WorklogTimes, &'a TaskId),
     CorrectWorklog(&'a WorklogId, &'a WorklogTimes, &'a WorklogTimes),
@@ -213,6 +227,7 @@ pub(crate) fn execute_local<S: TrackerApplicationService>(
         ApplicationRequest::SetActiveTask {
             task_id,
             occurred_at,
+            ..
         } => ApplicationOutcome::SetActiveTask(application.set_active_task(*task_id, *occurred_at)),
         ApplicationRequest::ClearActiveTask {
             expected_active,
@@ -284,9 +299,12 @@ pub(crate) async fn execute_remote(
         }
         ApplicationRequest::SetActiveTask {
             task_id,
+            expected_active,
             occurred_at,
         } => ApplicationOutcome::SetActiveTask(
-            application.set_active_task(*task_id, *occurred_at).await,
+            application
+                .set_active_task_with_expected_active(*task_id, *expected_active, *occurred_at)
+                .await,
         ),
         ApplicationRequest::ClearActiveTask {
             expected_active,
@@ -362,10 +380,11 @@ fn execute_local_task<S: TrackerApplicationService>(
             id,
             name,
             occurred_at,
+            ..
         } => ApplicationOutcome::Task(application.rename_task(*id, name.clone(), *occurred_at)),
-        ApplicationRequest::ArchiveTask { id, occurred_at } => {
-            ApplicationOutcome::Task(application.archive_task(*id, *occurred_at))
-        }
+        ApplicationRequest::ArchiveTask {
+            id, occurred_at, ..
+        } => ApplicationOutcome::Task(application.archive_task(*id, *occurred_at)),
         ApplicationRequest::PreviewInactiveTasks { as_of } => {
             ApplicationOutcome::InactiveTaskPreview(application.preview_inactive_tasks(*as_of).map(
                 |tasks| {
@@ -414,26 +433,38 @@ async fn execute_remote_task(
         }
         ApplicationRequest::RenameTask {
             id,
+            expected_name,
             name,
             occurred_at,
         } => ApplicationOutcome::Task(
             application
-                .rename_task(*id, name.clone(), *occurred_at)
+                .rename_task_with_expected_name(*id, expected_name, name.clone(), *occurred_at)
                 .await,
         ),
-        ApplicationRequest::ArchiveTask { id, occurred_at } => {
-            ApplicationOutcome::Task(application.archive_task(*id, *occurred_at).await)
-        }
+        ApplicationRequest::ArchiveTask {
+            id,
+            expected_name,
+            occurred_at,
+        } => ApplicationOutcome::Task(
+            application
+                .archive_task_with_expected_name(*id, expected_name, *occurred_at)
+                .await,
+        ),
         ApplicationRequest::PreviewInactiveTasks { as_of } => {
-            ApplicationOutcome::InactiveTaskPreview(
-                application
-                    .preview_inactive_tasks(*as_of)
-                    .await
-                    .map(InactiveTaskPreview::Remote),
-            )
+            let result = async {
+                let preview = application.preview_inactive_tasks(*as_of).await?;
+                let tasks = application.resolve_preview_tasks(&preview).await?;
+                let sample_names = tasks.into_iter().take(5).map(|task| task.name).collect();
+                Ok(InactiveTaskPreview::Remote {
+                    preview,
+                    sample_names,
+                })
+            }
+            .await;
+            ApplicationOutcome::InactiveTaskPreview(result)
         }
         ApplicationRequest::ArchiveInactiveTasks { preview } => {
-            let InactiveTaskPreview::Remote(preview) = preview else {
+            let InactiveTaskPreview::Remote { preview, .. } = preview else {
                 unreachable!("remote bulk archive uses a remote preview")
             };
             ApplicationOutcome::ArchivedInactiveTasks(
@@ -521,11 +552,13 @@ mod intent_tests {
             (
                 Request::RenameTask {
                     id: task,
+                    expected_name: TaskName::new("Reviewed name").unwrap(),
                     name: name.clone(),
                     occurred_at: at,
                 },
                 Request::RenameTask {
                     id: task,
+                    expected_name: TaskName::new("Reviewed name").unwrap(),
                     name: name.clone(),
                     occurred_at: later,
                 },
@@ -533,10 +566,12 @@ mod intent_tests {
             (
                 Request::ArchiveTask {
                     id: task,
+                    expected_name: TaskName::new("Reviewed name").unwrap(),
                     occurred_at: at,
                 },
                 Request::ArchiveTask {
                     id: task,
+                    expected_name: TaskName::new("Reviewed name").unwrap(),
                     occurred_at: later,
                 },
             ),
@@ -553,10 +588,12 @@ mod intent_tests {
             (
                 Request::SetActiveTask {
                     task_id: task,
+                    expected_active: None,
                     occurred_at: at,
                 },
                 Request::SetActiveTask {
                     task_id: task,
+                    expected_active: None,
                     occurred_at: later,
                 },
             ),
@@ -625,16 +662,19 @@ mod intent_tests {
             },
             Request::RenameTask {
                 id: other_task,
+                expected_name: TaskName::new("Reviewed name").unwrap(),
                 name: name.clone(),
                 occurred_at: at,
             },
             Request::RenameTask {
                 id: task,
+                expected_name: TaskName::new("Reviewed name").unwrap(),
                 name: other_name,
                 occurred_at: at,
             },
             Request::ArchiveTask {
                 id: other_task,
+                expected_name: TaskName::new("Reviewed name").unwrap(),
                 occurred_at: at,
             },
             Request::UnarchiveTask {
@@ -643,6 +683,7 @@ mod intent_tests {
             },
             Request::SetActiveTask {
                 task_id: other_task,
+                expected_active: None,
                 occurred_at: at,
             },
             Request::ClearActiveTask {
@@ -714,16 +755,19 @@ mod intent_tests {
             },
             Request::RenameTask {
                 id: task,
+                expected_name: TaskName::new("Reviewed name").unwrap(),
                 name: name.clone(),
                 occurred_at: at,
             },
             Request::RenameTask {
                 id: task,
+                expected_name: TaskName::new("Reviewed name").unwrap(),
                 name,
                 occurred_at: at,
             },
             Request::ArchiveTask {
                 id: task,
+                expected_name: TaskName::new("Reviewed name").unwrap(),
                 occurred_at: at,
             },
             Request::UnarchiveTask {
@@ -732,6 +776,7 @@ mod intent_tests {
             },
             Request::SetActiveTask {
                 task_id: task,
+                expected_active: None,
                 occurred_at: at,
             },
             Request::ClearActiveTask {
@@ -805,6 +850,7 @@ mod intent_tests {
         assert!(
             !Request::ArchiveTask {
                 id: task,
+                expected_name: TaskName::new("Reviewed name").unwrap(),
                 occurred_at: at
             }
             .same_write_intent(&Request::UnarchiveTask {
@@ -841,5 +887,38 @@ mod intent_tests {
 
         assert!(same.same_write_intent(&repeated));
         assert!(!same.same_write_intent(&distinct));
+    }
+}
+
+#[cfg(test)]
+mod reviewed_intent_tests {
+    use super::*;
+
+    #[test]
+    fn queued_writes_distinguish_the_reviewed_name_and_active_worklog() {
+        let at = Utc::now();
+        let id = TaskId::generate();
+        let first = TaskName::new("Original name").unwrap();
+        let second = TaskName::new("Changed name").unwrap();
+        let desired = TaskName::new("Draft name").unwrap();
+        let rename = |expected_name| ApplicationRequest::RenameTask {
+            id,
+            expected_name,
+            name: desired.clone(),
+            occurred_at: at,
+        };
+        assert!(!rename(first.clone()).same_write_intent(&rename(second.clone())));
+        let archive = |expected_name| ApplicationRequest::ArchiveTask {
+            id,
+            expected_name,
+            occurred_at: at,
+        };
+        assert!(!archive(first).same_write_intent(&archive(second)));
+        let tracking = |expected_active| ApplicationRequest::SetActiveTask {
+            task_id: id,
+            expected_active,
+            occurred_at: at,
+        };
+        assert!(!tracking(None).same_write_intent(&tracking(Some(WorklogId::generate()))));
     }
 }

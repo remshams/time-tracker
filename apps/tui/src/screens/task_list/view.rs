@@ -671,12 +671,16 @@ mod tests {
                 candidate_ids: vec![TaskId::generate()],
                 sample_names: vec!["local legacy task".to_owned()],
             },
-            InactiveTaskPreview::Remote(tracker_remote::InactiveTaskPreviewDto {
-                as_of,
-                count: 1,
+            InactiveTaskPreview::Remote {
+                preview: tracker_remote::InactiveTaskPreviewDto {
+                    as_of,
+                    inactive_days: 14,
+                    count: 1,
+                    candidate_task_ids: vec![TaskId::generate().to_string()],
+                    revision: "revision".to_owned(),
+                },
                 sample_names: vec!["remote legacy task".to_owned()],
-                revision: "revision".to_owned(),
-            }),
+            },
         ];
 
         for (preview, sample) in previews

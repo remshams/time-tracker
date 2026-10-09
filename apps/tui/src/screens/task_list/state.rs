@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use tracker_domain::TaskId;
+use tracker_domain::{TaskId, TaskName};
 use tracker_remote::InactiveTaskPreviewDto;
 
 /// A preview captured before the user confirms a bulk archive.
@@ -10,21 +10,24 @@ pub enum InactiveTaskPreview {
         candidate_ids: Vec<TaskId>,
         sample_names: Vec<String>,
     },
-    Remote(InactiveTaskPreviewDto),
+    Remote {
+        preview: InactiveTaskPreviewDto,
+        sample_names: Vec<String>,
+    },
 }
 
 impl InactiveTaskPreview {
     pub(crate) fn count(&self) -> usize {
         match self {
             Self::Local { candidate_ids, .. } => candidate_ids.len(),
-            Self::Remote(preview) => preview.count,
+            Self::Remote { preview, .. } => preview.count,
         }
     }
 
     pub(crate) fn sample_names(&self) -> &[String] {
         match self {
             Self::Local { sample_names, .. } => sample_names,
-            Self::Remote(preview) => &preview.sample_names,
+            Self::Remote { sample_names, .. } => sample_names,
         }
     }
 }
@@ -74,6 +77,7 @@ pub struct TaskListState {
     active_selection: Option<TaskId>,
     archived_selection: Option<TaskId>,
     mode: TaskListMode,
+    rename_original_name: Option<TaskName>,
     search_query: Option<String>,
     search_snapshot: Option<(Option<String>, Option<TaskId>)>,
     before_filter_selection: Option<TaskId>,
@@ -89,6 +93,7 @@ impl TaskListState {
             active_selection,
             archived_selection: None,
             mode: TaskListMode::Normal,
+            rename_original_name: None,
             search_query: None,
             search_snapshot: None,
             before_filter_selection: None,
@@ -220,7 +225,15 @@ impl TaskListState {
 
     pub(crate) fn open_input(&mut self, purpose: InputPurpose, buffer: String) {
         self.dialog_generation = self.dialog_generation.wrapping_add(1);
+        self.rename_original_name = match purpose {
+            InputPurpose::Rename { .. } => TaskName::new(&buffer).ok(),
+            InputPurpose::Add => None,
+        };
         self.mode = TaskListMode::Input { purpose, buffer };
+    }
+
+    pub(crate) fn rename_original_name(&self) -> Option<&TaskName> {
+        self.rename_original_name.as_ref()
     }
 
     pub(crate) fn open_archive_confirmation(&mut self, task_id: TaskId, name: String) {

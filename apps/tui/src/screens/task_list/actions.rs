@@ -481,6 +481,12 @@ impl AppState {
             },
             InputPurpose::Rename { task_id } => ApplicationRequest::RenameTask {
                 id: task_id,
+                expected_name: self
+                    .shell()
+                    .task_list()
+                    .rename_original_name()
+                    .cloned()
+                    .expect("rename dialog retains its original valid task name"),
                 name,
                 occurred_at: Utc::now(),
             },
@@ -527,12 +533,14 @@ impl AppState {
     fn confirm_archive(&mut self) {
         let mode_at_request = self.shell().task_list().mode().clone();
         let dialog_generation = self.shell().task_list().dialog_generation();
-        let TaskListMode::ConfirmArchive { task_id, .. } = mode_at_request.clone() else {
+        let TaskListMode::ConfirmArchive { task_id, name } = mode_at_request.clone() else {
             return;
         };
         self.enqueue(
             ApplicationRequest::ArchiveTask {
                 id: task_id,
+                expected_name: TaskName::new(&name)
+                    .expect("archive dialog retains a valid task name"),
                 occurred_at: Utc::now(),
             },
             move |app, completed| {
@@ -636,6 +644,7 @@ impl AppState {
         } else {
             ApplicationRequest::SetActiveTask {
                 task_id: task.id(),
+                expected_active: active.as_ref().map(ActiveWorklog::id),
                 occurred_at,
             }
         };
