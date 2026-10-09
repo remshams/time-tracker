@@ -26,7 +26,7 @@ const BUSY_DELAY: Duration = Duration::from_millis(100);
 
 pub(crate) enum Backend {
     Local(TrackerApplication<SqliteRepository>),
-    Remote(RemoteApplication),
+    Remote(Box<RemoteApplication>),
 }
 
 enum ResultKind {
