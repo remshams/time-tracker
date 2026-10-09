@@ -601,6 +601,18 @@ async fn task_history_rejects_other_scope_and_keeps_task_and_tracking_caches() {
             .latest_work_start,
         Some(requested_at)
     );
+    let current_page = second
+        .worklogs_for_task(requested.id(), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        current_page.snapshot.requested_task_latest_work_start,
+        Some(requested_at)
+    );
+    assert_eq!(
+        current_page.snapshot.active_task_latest_work_start,
+        Some(started_at)
+    );
 }
 
 #[tokio::test]
@@ -1703,4 +1715,738 @@ async fn source_changed_preflight_is_certain_and_recovers_affected_caches() {
         second.cached_worklog(reviewed.id()).unwrap().worklog.start,
         at + Duration::seconds(2)
     );
+}
+
+fn command_receipt_server(
+    tasks: Vec<tracker_protocol::TaskDto>,
+    active: Option<tracker_protocol::WorklogDto>,
+    worklog: tracker_protocol::WorklogDto,
+    result: impl Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
+) -> StubServer {
+    use axum::extract::Path;
+    use std::sync::Arc;
+    use tracker_protocol::{TaskResourceDto, TasksDto, TrackingDto, WorklogResourceDto};
+    let result = Arc::new(result);
+    let write = move |Json(body): Json<serde_json::Value>| {
+        let result = result.clone();
+        async move {
+            Json(serde_json::json!({
+                "request_id": body["request_id"],
+                "applied_revision": "receipt-revision",
+                "replayed": false,
+                "result": result(body),
+            }))
+        }
+    };
+    let individual_tasks = tasks.clone();
+    let router = Router::new()
+        .route(
+            "/v1/health",
+            get(|| async {
+                Json(HealthDto {
+                    status: "ok".into(),
+                    protocol_version: VERSION,
+                })
+            }),
+        )
+        .route(
+            "/v1/tasks",
+            get(move || {
+                let tasks = tasks.clone();
+                async move {
+                    Json(TasksDto {
+                        tasks,
+                        revision: "read-revision".into(),
+                    })
+                }
+            })
+            .post(write.clone()),
+        )
+        .route(
+            "/v1/tasks/{id}",
+            get(move |Path(id): Path<String>| {
+                let task = individual_tasks
+                    .iter()
+                    .find(|task| task.id == id)
+                    .unwrap()
+                    .clone();
+                async move {
+                    Json(TaskResourceDto {
+                        task,
+                        revision: "read-revision".into(),
+                    })
+                }
+            })
+            .patch(write.clone()),
+        )
+        .route(
+            "/v1/tracking",
+            get(move || {
+                let active_worklog = active.clone();
+                async move {
+                    Json(TrackingDto {
+                        active_worklog,
+                        revision: "read-revision".into(),
+                    })
+                }
+            })
+            .put(write.clone()),
+        )
+        .route(
+            "/v1/worklogs/{id}",
+            get(move || {
+                let worklog = worklog.clone();
+                async move {
+                    Json(WorklogResourceDto {
+                        worklog,
+                        revision: "read-revision".into(),
+                    })
+                }
+            })
+            .patch(write.clone())
+            .delete(write),
+        );
+    StubServer::from_router(router)
+}
+
+#[tokio::test]
+async fn command_receipts_reject_individual_changes_to_reviewed_result_fields() {
+    use serde_json::json;
+    use tracker_protocol::{TaskDto, WorklogDto};
+    #[derive(Clone, Copy, Debug)]
+    enum Command {
+        Create,
+        Rename,
+        Archive,
+        Restore,
+        Start,
+        Switch,
+        AlreadyActive,
+        Stop,
+        Move,
+        Correct,
+        Delete,
+    }
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let source_id = tracker_domain::TaskId::generate();
+    let target_id = tracker_domain::TaskId::generate();
+    let worklog_id = WorklogId::generate();
+    let other_id = tracker_domain::TaskId::generate().to_string();
+    let commands = [
+        (
+            Command::Create,
+            vec!["id", "name", "archived", "created_at", "updated_at"],
+        ),
+        (Command::Rename, vec!["id", "name"]),
+        (Command::Archive, vec!["id", "archived"]),
+        (Command::Restore, vec!["id", "archived"]),
+        (Command::Start, vec!["id", "task_id", "start", "end"]),
+        (
+            Command::Switch,
+            vec![
+                "stopped.id",
+                "stopped.task_id",
+                "stopped.start",
+                "stopped.end",
+                "started.id",
+                "started.task_id",
+                "started.start",
+                "started.end",
+            ],
+        ),
+        (
+            Command::AlreadyActive,
+            vec!["id", "task_id", "start", "end"],
+        ),
+        (Command::Stop, vec!["id", "task_id", "start", "end"]),
+        (Command::Move, vec!["id", "task_id", "start", "end"]),
+        (Command::Correct, vec!["id", "task_id", "start", "end"]),
+        (Command::Delete, vec!["id", "task_id", "start", "end"]),
+    ];
+    for (command, fields) in commands {
+        for field in fields {
+            let source = TaskDto {
+                id: source_id.to_string(),
+                name: "Source task".into(),
+                archived: matches!(command, Command::Restore),
+                created_at: at,
+                updated_at: at,
+                latest_work_start: None,
+            };
+            let target = TaskDto {
+                id: target_id.to_string(),
+                name: "Target task".into(),
+                archived: false,
+                ..source.clone()
+            };
+            let running = matches!(
+                command,
+                Command::Switch | Command::AlreadyActive | Command::Stop
+            );
+            let original = WorklogDto {
+                id: worklog_id.to_string(),
+                task_id: source_id.to_string(),
+                start: at,
+                end: (!running).then_some(at + Duration::seconds(10)),
+            };
+            let original_for_receipt = original.clone();
+            let source_for_receipt = source.clone();
+            let other_id = other_id.clone();
+            let server = command_receipt_server(
+                vec![source, target],
+                running.then_some(original.clone()),
+                original,
+                move |body| {
+                    let mut value = match command {
+                        Command::Create => json!({
+                            "id": body["task_id"], "name": body["name"], "archived": false,
+                            "created_at": body["occurred_at"], "updated_at": body["occurred_at"], "latest_work_start": null,
+                        }),
+                        Command::Rename | Command::Archive | Command::Restore => {
+                            let mut value = serde_json::to_value(&source_for_receipt).unwrap();
+                            match command {
+                                Command::Rename => value["name"] = body["name"].clone(),
+                                Command::Archive => value["archived"] = json!(true),
+                                Command::Restore => value["archived"] = json!(false),
+                                _ => unreachable!(),
+                            }
+                            value
+                        }
+                        Command::Start => {
+                            json!({"id":body["worklog_id"], "task_id":body["task_id"], "start":body["occurred_at"], "end":null})
+                        }
+                        Command::Switch => {
+                            let mut stopped = serde_json::to_value(&original_for_receipt).unwrap();
+                            stopped["end"] = body["occurred_at"].clone();
+                            json!({"stopped":stopped,"started":{"id":body["worklog_id"],"task_id":body["task_id"],"start":body["occurred_at"],"end":null}})
+                        }
+                        Command::AlreadyActive | Command::Delete => {
+                            serde_json::to_value(&original_for_receipt).unwrap()
+                        }
+                        Command::Stop => {
+                            let mut value = serde_json::to_value(&original_for_receipt).unwrap();
+                            value["end"] = body["occurred_at"].clone();
+                            value
+                        }
+                        Command::Move => {
+                            let mut value = serde_json::to_value(&original_for_receipt).unwrap();
+                            value["task_id"] = body["destination_task_id"].clone();
+                            value
+                        }
+                        Command::Correct => {
+                            let mut value = serde_json::to_value(&original_for_receipt).unwrap();
+                            value["start"] = body["replacement_start"].clone();
+                            value["end"] = body["replacement_end"].clone();
+                            value
+                        }
+                    };
+                    let mut parts = field.split('.');
+                    let first = parts.next().unwrap();
+                    let altered = if let Some(second) = parts.next() {
+                        &mut value[first][second]
+                    } else {
+                        &mut value[first]
+                    };
+                    *altered = match field.rsplit('.').next().unwrap() {
+                        "id" | "task_id" => json!(other_id),
+                        "name" => json!("Contradictory name"),
+                        "archived" => json!(!altered.as_bool().unwrap()),
+                        "created_at" => json!(at - Duration::seconds(1)),
+                        "updated_at" => json!(at + Duration::seconds(21)),
+                        "start" => {
+                            let old: DateTime<Utc> =
+                                serde_json::from_value(altered.clone()).unwrap();
+                            json!(old + Duration::seconds(1))
+                        }
+                        "end" => {
+                            if altered.is_null() {
+                                json!(at + Duration::seconds(21))
+                            } else {
+                                let old: DateTime<Utc> =
+                                    serde_json::from_value(altered.clone()).unwrap();
+                                json!(old + Duration::seconds(1))
+                            }
+                        }
+                        _ => unreachable!(),
+                    };
+                    let kind = match command {
+                        Command::Create | Command::Rename | Command::Archive | Command::Restore => {
+                            "task"
+                        }
+                        Command::Switch => "tracking_switched",
+                        Command::AlreadyActive => "tracking_already_active",
+                        _ => "worklog",
+                    };
+                    json!({"kind":kind,"value":value})
+                },
+            );
+            let mut client = connected(&server.endpoint()).await.unwrap();
+            let expected = WorklogTimes::new(at, Some(at + Duration::seconds(10)));
+            let write_at = at + Duration::seconds(20);
+            let error = match command {
+                Command::Create => client
+                    .create_task(name("Created task"), write_at)
+                    .await
+                    .map(|_| ()),
+                Command::Rename => client
+                    .rename_task(source_id, name("Renamed task"), write_at)
+                    .await
+                    .map(|_| ()),
+                Command::Archive => client.archive_task(source_id, write_at).await.map(|_| ()),
+                Command::Restore => client.unarchive_task(source_id, write_at).await.map(|_| ()),
+                Command::Start | Command::Switch => client
+                    .set_active_task(target_id, write_at)
+                    .await
+                    .map(|_| ()),
+                Command::AlreadyActive => client
+                    .set_active_task(source_id, write_at)
+                    .await
+                    .map(|_| ()),
+                Command::Stop => client
+                    .clear_active_task(worklog_id, write_at)
+                    .await
+                    .map(|_| ()),
+                Command::Move => client
+                    .move_worklog(worklog_id, source_id, expected, target_id)
+                    .await
+                    .map(|_| ()),
+                Command::Correct => client
+                    .correct_worklog(
+                        worklog_id,
+                        expected,
+                        WorklogTimes::new(
+                            at + Duration::seconds(1),
+                            Some(at + Duration::seconds(9)),
+                        ),
+                        write_at,
+                    )
+                    .await
+                    .map(|_| ()),
+                Command::Delete => client
+                    .delete_completed_worklog(worklog_id, source_id, expected)
+                    .await
+                    .map(|_| ()),
+            }
+            .expect_err(&format!("{command:?} receipt changed {field}"));
+            assert!(client.last_write_attempted(), "{command:?} {field}");
+            assert_eq!(
+                error.failure().source(),
+                tracker_application::ApplicationFailureSource::RemoteProtocol,
+                "{command:?} {field}"
+            );
+            assert_eq!(client.task_revision(), "read-revision");
+            assert_eq!(client.tracking_revision(), "read-revision");
+        }
+    }
+}
+
+#[tokio::test]
+async fn raced_worklog_recovery_retains_the_last_coherent_view() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    use tracker_protocol::{
+        MutationDto, MutationResultDto, TaskDto, TasksDto, TrackingDto, WorklogChangeRequest,
+        WorklogDto, WorklogResourceDto,
+    };
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let task_id = tracker_domain::TaskId::generate();
+    let id = WorklogId::generate();
+    let committed = Arc::new(AtomicBool::new(false));
+    let tasks_committed = committed.clone();
+    let tracking_committed = committed.clone();
+    let worklog_committed = committed.clone();
+    let command_committed = committed.clone();
+    let original = WorklogDto {
+        id: id.to_string(),
+        task_id: task_id.to_string(),
+        start: at,
+        end: Some(at + Duration::seconds(10)),
+    };
+    let for_get = original.clone();
+    let for_patch = original.clone();
+    let router = Router::new()
+        .route(
+            "/v1/health",
+            get(|| async {
+                Json(HealthDto {
+                    status: "ok".into(),
+                    protocol_version: VERSION,
+                })
+            }),
+        )
+        .route(
+            "/v1/tasks",
+            get(move || {
+                let committed = tasks_committed.clone();
+                async move {
+                    let changed = committed.load(Ordering::SeqCst);
+                    Json(TasksDto {
+                        tasks: vec![TaskDto {
+                            id: task_id.to_string(),
+                            name: if changed {
+                                "Later task name"
+                            } else {
+                                "Confirmed task name"
+                            }
+                            .into(),
+                            archived: false,
+                            created_at: at,
+                            updated_at: at,
+                            latest_work_start: None,
+                        }],
+                        revision: if changed { "racing-tasks" } else { "confirmed" }.into(),
+                    })
+                }
+            }),
+        )
+        .route(
+            "/v1/tracking",
+            get(move || {
+                let committed = tracking_committed.clone();
+                async move {
+                    Json(TrackingDto {
+                        active_worklog: None,
+                        revision: if committed.load(Ordering::SeqCst) {
+                            "racing-tracking"
+                        } else {
+                            "confirmed"
+                        }
+                        .into(),
+                    })
+                }
+            }),
+        )
+        .route(
+            "/v1/worklogs/{id}",
+            get(move || {
+                let committed = worklog_committed.clone();
+                let mut worklog = for_get.clone();
+                async move {
+                    let changed = committed.load(Ordering::SeqCst);
+                    if changed {
+                        worklog.start = at + Duration::seconds(1);
+                    }
+                    Json(WorklogResourceDto {
+                        worklog,
+                        revision: if changed {
+                            "committed-worklog"
+                        } else {
+                            "confirmed"
+                        }
+                        .into(),
+                    })
+                }
+            })
+            .patch(move |Json(body): Json<WorklogChangeRequest>| {
+                let committed = command_committed.clone();
+                let mut worklog = for_patch.clone();
+                async move {
+                    let WorklogChangeRequest::Correct {
+                        replacement_start,
+                        replacement_end,
+                        guard,
+                        ..
+                    } = body
+                    else {
+                        panic!("expected correction")
+                    };
+                    worklog.start = replacement_start;
+                    worklog.end = replacement_end;
+                    committed.store(true, Ordering::SeqCst);
+                    Json(MutationDto {
+                        request_id: guard.request_id,
+                        applied_revision: "committed-worklog".into(),
+                        replayed: false,
+                        result: MutationResultDto::Worklog(worklog),
+                    })
+                }
+            }),
+        );
+    let server = StubServer::from_router(router);
+    let mut client = connected(&server.endpoint()).await.unwrap();
+    let error = client
+        .correct_worklog(
+            id,
+            WorklogTimes::new(at, original.end),
+            WorklogTimes::new(at + Duration::seconds(1), original.end),
+            at + Duration::seconds(20),
+        )
+        .await
+        .unwrap_err();
+    assert!(committed.load(Ordering::SeqCst));
+    assert!(client.last_write_attempted());
+    assert_eq!(
+        error.failure().source(),
+        tracker_application::ApplicationFailureSource::Operation
+    );
+    assert_eq!(client.task_revision(), "confirmed");
+    assert_eq!(client.tracking_revision(), "confirmed");
+    assert_eq!(
+        client.task(task_id).unwrap().name().as_str(),
+        "Confirmed task name"
+    );
+    assert!(client.snapshot().active_worklog.is_none());
+    assert_eq!(
+        client.cached_worklog(id).unwrap().worklog.start,
+        at + Duration::seconds(1)
+    );
+    assert_eq!(
+        client.cached_worklog(id).unwrap().revision,
+        "committed-worklog"
+    );
+}
+
+#[tokio::test]
+async fn history_rejects_empty_revision_and_cursor_scope_before_caching() {
+    use tracker_protocol::{WorklogCursorDto, WorklogPageDto};
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let requested = tracker_domain::TaskId::generate();
+    for (revision, cursor_task) in [
+        ("", None),
+        (
+            "valid",
+            Some(tracker_domain::TaskId::generate().to_string()),
+        ),
+        ("valid", None),
+    ] {
+        let next_cursor = if revision.is_empty() {
+            None
+        } else {
+            Some(WorklogCursorDto {
+                task_id: cursor_task,
+                start: at,
+                id: WorklogId::generate().to_string(),
+                revision: 1,
+            })
+        };
+        let dto = WorklogPageDto {
+            worklogs: vec![],
+            next_cursor,
+            revision: revision.into(),
+        };
+        let server = with_json_resource("/v1/worklogs", serde_json::to_value(dto).unwrap());
+        let mut client = RemoteApplication::connect(&server.endpoint())
+            .await
+            .unwrap();
+        let error = client.worklogs_for_task(requested, None).await.unwrap_err();
+        assert_eq!(
+            error.failure().source(),
+            tracker_application::ApplicationFailureSource::RemoteProtocol
+        );
+        assert!(client.cached_history(Some(requested)).is_none());
+        assert!(client.task_revision().is_empty());
+        assert!(client.tracking_revision().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn malformed_history_retains_the_previous_confirmed_page() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tracker_protocol::{WorklogCursorDto, WorklogDto, WorklogPageDto};
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let requested = tracker_domain::TaskId::generate();
+    let valid = WorklogPageDto {
+        worklogs: vec![WorklogDto {
+            id: WorklogId::generate().to_string(),
+            task_id: requested.to_string(),
+            start: at,
+            end: Some(at + Duration::seconds(10)),
+        }],
+        next_cursor: None,
+        revision: "confirmed-page".into(),
+    };
+    let mut invalid_id = valid.clone();
+    invalid_id.worklogs[0].id = "invalid worklog id".into();
+    let mut invalid_task = valid.clone();
+    invalid_task.worklogs[0].task_id = "invalid task id".into();
+    let mut backwards = valid.clone();
+    backwards.worklogs[0].end = Some(at - Duration::seconds(1));
+    let mut wrong_scope = valid.clone();
+    wrong_scope.worklogs[0].task_id = tracker_domain::TaskId::generate().to_string();
+    let mut invalid_cursor = valid.clone();
+    invalid_cursor.next_cursor = Some(WorklogCursorDto {
+        task_id: Some(requested.to_string()),
+        start: at,
+        id: "invalid cursor id".into(),
+        revision: 1,
+    });
+    let mut invalid_global_cursor = invalid_cursor.clone();
+    invalid_global_cursor.next_cursor.as_mut().unwrap().task_id = None;
+    for (global, invalid) in [
+        (false, invalid_id),
+        (false, invalid_task),
+        (false, backwards),
+        (false, wrong_scope),
+        (false, invalid_cursor),
+        (true, invalid_global_cursor),
+    ] {
+        let reads = Arc::new(AtomicUsize::new(0));
+        let valid_for_get = valid.clone();
+        let server = StubServer::from_router(
+            Router::new()
+                .route(
+                    "/v1/health",
+                    get(|| async {
+                        Json(HealthDto {
+                            status: "ok".into(),
+                            protocol_version: VERSION,
+                        })
+                    }),
+                )
+                .route(
+                    "/v1/worklogs",
+                    get(move || {
+                        let reads = reads.clone();
+                        let valid = valid_for_get.clone();
+                        let invalid = invalid.clone();
+                        async move {
+                            Json(if reads.fetch_add(1, Ordering::SeqCst) == 0 {
+                                valid
+                            } else {
+                                invalid
+                            })
+                        }
+                    }),
+                ),
+        );
+        let mut client = RemoteApplication::connect(&server.endpoint())
+            .await
+            .unwrap();
+        if global {
+            client.all_worklogs(None).await.unwrap();
+            assert!(client.all_worklogs(None).await.is_err());
+        } else {
+            client.worklogs_for_task(requested, None).await.unwrap();
+            assert!(client.worklogs_for_task(requested, None).await.is_err());
+        }
+        assert_eq!(
+            client.cached_history((!global).then_some(requested)),
+            Some(&valid)
+        );
+        assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
+    }
+}
+
+#[tokio::test]
+async fn coherent_task_creation_recovers_the_original_id_after_failed_post_write_reads() {
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    use tracker_protocol::{
+        CreateTaskRequest, MutationDto, MutationResultDto, TaskDto, TasksDto, TrackingDto,
+    };
+    let current = Arc::new(Mutex::new(Vec::<TaskDto>::new()));
+    let coherent = Arc::new(AtomicBool::new(true));
+    let writes = Arc::new(AtomicUsize::new(0));
+    let tasks_current = current.clone();
+    let tasks_coherent = coherent.clone();
+    let tracking_coherent = coherent.clone();
+    let command_current = current.clone();
+    let command_coherent = coherent.clone();
+    let command_writes = writes.clone();
+    let server = StubServer::from_router(
+        Router::new()
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(HealthDto {
+                        status: "ok".into(),
+                        protocol_version: VERSION,
+                    })
+                }),
+            )
+            .route(
+                "/v1/tasks",
+                get(move || {
+                    let current = tasks_current.clone();
+                    let coherent = tasks_coherent.clone();
+                    async move {
+                        Json(TasksDto {
+                            tasks: current.lock().unwrap().clone(),
+                            revision: if coherent.load(Ordering::SeqCst) {
+                                "confirmed"
+                            } else {
+                                "racing-tasks"
+                            }
+                            .into(),
+                        })
+                    }
+                })
+                .post(move |Json(body): Json<CreateTaskRequest>| {
+                    let current = command_current.clone();
+                    let coherent = command_coherent.clone();
+                    let writes = command_writes.clone();
+                    async move {
+                        writes.fetch_add(1, Ordering::SeqCst);
+                        let task = TaskDto {
+                            id: body.task_id,
+                            name: body.name,
+                            archived: false,
+                            created_at: body.occurred_at,
+                            updated_at: body.occurred_at,
+                            latest_work_start: None,
+                        };
+                        *current.lock().unwrap() = vec![task.clone()];
+                        coherent.store(false, Ordering::SeqCst);
+                        Json(MutationDto {
+                            request_id: body.guard.request_id,
+                            applied_revision: "committed".into(),
+                            replayed: false,
+                            result: MutationResultDto::Task(task),
+                        })
+                    }
+                }),
+            )
+            .route(
+                "/v1/tracking",
+                get(move || {
+                    let coherent = tracking_coherent.clone();
+                    async move {
+                        Json(TrackingDto {
+                            active_worklog: None,
+                            revision: if coherent.load(Ordering::SeqCst) {
+                                "confirmed"
+                            } else {
+                                "racing-tracking"
+                            }
+                            .into(),
+                        })
+                    }
+                }),
+            ),
+    );
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap()
+        .with_coherent_task_views();
+    client.refresh().await.unwrap();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    client
+        .create_task(name("Original creation"), at)
+        .await
+        .unwrap_err();
+    assert!(client.last_write_attempted());
+    assert_eq!(writes.load(Ordering::SeqCst), 1);
+    assert!(client.snapshot().task_items.is_empty());
+    assert_eq!(client.task_revision(), "confirmed");
+    assert_eq!(client.tracking_revision(), "confirmed");
+    let original = current.lock().unwrap()[0].clone();
+    coherent.store(true, Ordering::SeqCst);
+    let recovered = client
+        .create_task(name("Original creation"), at + Duration::seconds(20))
+        .await
+        .unwrap();
+    assert_eq!(recovered.id().to_string(), original.id);
+    assert_eq!(recovered.created_at(), at);
+    assert_eq!(recovered.name().as_str(), "Original creation");
+    assert_eq!(writes.load(Ordering::SeqCst), 1);
+    assert!(!client.last_write_attempted());
+    assert_eq!(client.snapshot().task_items.len(), 1);
+    assert_eq!(client.task_revision(), client.tracking_revision());
 }
