@@ -5,6 +5,32 @@ import XCTest
 extension TrackerUITestCase {
     var statusButton: XCUIElement { element("menu.status") }
 
+    func chooseMenuBarDisplay(_ label: String) {
+        element("menu.display").click()
+        let item = app.menuItems[label].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: timeout))
+        item.click()
+    }
+
+    func assertStatusTooltip(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
+        trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
+        waitUntil("The previous tooltip closes", file: file, line: line) {
+            !self.app.descendants(matching: .helpTag).firstMatch.exists
+        }
+        statusButton.hover()
+        let tooltip = app.descendants(matching: .helpTag).firstMatch
+        waitUntil("Hover shows the full tracking status", file: file, line: line) {
+            guard tooltip.exists else { return false }
+            return tooltip.label.components(separatedBy: "\n").first == expected
+                || (tooltip.value as? String)?.components(separatedBy: "\n").first == expected
+                || tooltip.descendants(matching: .any)
+                    .matching(NSPredicate(
+                        format: "label == %@ OR value == %@ OR label BEGINSWITH %@ OR value BEGINSWITH %@",
+                        expected, expected, expected + "\n", expected + "\n")).firstMatch.exists
+        }
+        trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
+    }
+
     func openStatusMenu() {
         app.typeKey("t", modifierFlags: [.control, .option])
         XCTAssertTrue(app.menuItems["Open Time Tracker"].waitForExistence(timeout: timeout))
