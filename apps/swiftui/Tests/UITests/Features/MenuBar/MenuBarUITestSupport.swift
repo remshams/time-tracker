@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import CoreML
 import Vision
 import XCTest
@@ -16,7 +17,8 @@ extension TrackerUITestCase {
 
     func assertStatusTooltip(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
         trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
-        statusButton.hover()
+        let frame = statusButton.frame
+        screenCoordinate(at: CGPoint(x: frame.midX, y: frame.midY)).hover()
         var screenshot: XCUIScreenshot?
         var recognizedText = ""
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -24,7 +26,8 @@ extension TrackerUITestCase {
             screenshot = captured
             let request = VNRecognizeTextRequest()
             request.revision = VNRecognizeTextRequestRevision1
-            request.recognitionLevel = .fast
+            request.recognitionLevel = .accurate
+            request.minimumTextHeight = 0
             request.recognitionLanguages = ["en-US"]
             request.usesLanguageCorrection = false
             request.regionOfInterest = CGRect(x: 0, y: 0.75, width: 1, height: 0.25)
@@ -56,7 +59,9 @@ extension TrackerUITestCase {
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }
-            let attachment = XCTAttachment(string: recognizedText)
+            let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            let attachment = XCTAttachment(string:
+                "Expected: \(expected)\nRecognized: \(recognizedText)\nStatus frame: \(frame)\nPointer: \(NSEvent.mouseLocation)\nWindows: \(String(describing: windows))")
             attachment.name = "Status tooltip recognized text"
             attachment.lifetime = .keepAlways
             add(attachment)
@@ -90,11 +95,19 @@ extension TrackerUITestCase {
     func clickTaskSubmenuItem(_ item: XCUIElement, task: FixtureTask) {
         waitUntil("The task submenu action is reachable") { item.exists && item.isHittable }
         let row = menuTask(task)
+        let actionFrame = item.frame
+        let rowFrame = row.frame
         // Enter the submenu at the parent row's height before moving to the action.
         // A diagonal move can cross another parent row when the submenu opens to the left.
-        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .withOffset(CGVector(dx: item.frame.midX - row.frame.midX, dy: 0)).hover()
-        item.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        screenCoordinate(at: CGPoint(x: actionFrame.midX, y: rowFrame.midY)).hover()
+        screenCoordinate(at: CGPoint(x: actionFrame.midX, y: actionFrame.midY)).click()
+    }
+
+    private func screenCoordinate(at point: CGPoint) -> XCUICoordinate {
+        let window = trackerWindow
+        let frame = window.frame
+        return window.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: point.x - frame.minX, dy: point.y - frame.minY))
     }
 
     func withRestoredClipboard(_ body: () throws -> Void) rethrows {
