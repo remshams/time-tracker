@@ -1114,6 +1114,7 @@ mod remote_resource_tests {
                         Err(error) => panic!("could not accept resource request: {error}"),
                     }
                 };
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(1)))
                     .unwrap();
