@@ -136,10 +136,15 @@ public final class TrackerPresentationObserver {
         let dayStart: Date?
 
         @MainActor init(_ session: TrackerSession) {
-            taskTotals = Dictionary(uniqueKeysWithValues: session.tasks.map {
-                ($0.id, TaskDailyTotalPresentation(text: session.dailyDuration(taskID: $0.id).map(clockDuration) ?? "-",
-                                                   explanation: session.dailyTotalsExplanation))
-            })
+            taskTotals = Dictionary(
+                uniqueKeysWithValues: session.tasks.map {
+                    (
+                        $0.id,
+                        TaskDailyTotalPresentation(
+                            text: session.dailyDuration(taskID: $0.id).map(clockDuration) ?? "-",
+                            explanation: session.dailyTotalsExplanation)
+                    )
+                })
             totalText = session.totalDailyDurationText
             status = session.dailyTotalsStatus
             error = session.dailyTotalsError

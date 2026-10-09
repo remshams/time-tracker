@@ -7,7 +7,7 @@ let package = Package(
     products: [.library(name: "TrackerClient", targets: ["TrackerClient"])],
     targets: [
         .target(name: "TrackerClient"),
-        .testTarget(name: "TrackerClientTests", dependencies: ["TrackerClient"])
+        .testTarget(name: "TrackerClientTests", dependencies: ["TrackerClient"]),
     ],
     swiftLanguageVersions: [.v5]
 )

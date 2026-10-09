@@ -34,11 +34,11 @@ final class TaskRenameState {
 
     var presentation: TaskRenamePresentation {
         let desired = TaskNameEditingPolicy.normalized(name)
-        return TaskRenamePresentation(isPresented: isPresented, taskID: taskID, originalName: originalName, name: name,
-                                      isSubmitting: isSubmitting, error: error,
-                                      canEditName: !isSubmitting && intent == nil && !requiresReview,
-                                      canSubmit: isPresented && !isSubmitting && !requiresReview &&
-                                        !desired.isEmpty && desired != originalName)
+        return TaskRenamePresentation(
+            isPresented: isPresented, taskID: taskID, originalName: originalName, name: name,
+            isSubmitting: isSubmitting, error: error,
+            canEditName: !isSubmitting && intent == nil && !requiresReview,
+            canSubmit: isPresented && !isSubmitting && !requiresReview && !desired.isEmpty && desired != originalName)
     }
 
     var blocksConnectionChange: Bool { isSubmitting || intent != nil }

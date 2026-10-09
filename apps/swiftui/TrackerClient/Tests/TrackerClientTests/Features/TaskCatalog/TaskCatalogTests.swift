@@ -7,8 +7,9 @@ final class TaskCatalogTests: XCTestCase {
         let state = TaskCatalogState()
         let tasks = [firstTask, secondTask]
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: activeWorklog))
-        let corrected = WorklogItem(id: activeWorklog.id, taskId: firstTask.id,
-                                    start: "2025-01-01T00:00:00.000Z", end: nil)
+        let corrected = WorklogItem(
+            id: activeWorklog.id, taskId: firstTask.id,
+            start: "2025-01-01T00:00:00.000Z", end: nil)
 
         XCTAssertTrue(state.apply(tasks, previousActive: activeWorklog, active: corrected))
         XCTAssertEqual(state.selectedTaskID, firstTask.id)
@@ -19,8 +20,9 @@ final class TaskCatalogTests: XCTestCase {
         let state = TaskCatalogState()
         let tasks = [firstTask, secondTask]
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: activeWorklog))
-        let replacement = WorklogItem(id: "replacement-worklog", taskId: firstTask.id,
-                                      start: activeWorklog.start, end: nil)
+        let replacement = WorklogItem(
+            id: "replacement-worklog", taskId: firstTask.id,
+            start: activeWorklog.start, end: nil)
 
         XCTAssertTrue(state.apply(tasks, previousActive: activeWorklog, active: replacement))
         XCTAssertEqual(state.selectedTaskID, firstTask.id)
@@ -31,8 +33,9 @@ final class TaskCatalogTests: XCTestCase {
         let state = TaskCatalogState()
         let tasks = [firstTask, secondTask]
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
-        let other = WorklogItem(id: "other-worklog", taskId: secondTask.id,
-                                start: "2025-01-01T00:00:00.000Z", end: nil)
+        let other = WorklogItem(
+            id: "other-worklog", taskId: secondTask.id,
+            start: "2025-01-01T00:00:00.000Z", end: nil)
 
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: activeWorklog))
         XCTAssertTrue(state.apply(tasks, previousActive: activeWorklog, active: nil))
@@ -47,10 +50,12 @@ final class TaskCatalogTests: XCTestCase {
         let state = TaskCatalogState()
         let tasks = [firstTask, secondTask]
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
-        let previous = WorklogItem(id: "other-worklog", taskId: secondTask.id,
-                                   start: activeWorklog.start, end: nil)
-        let replacement = WorklogItem(id: "new-other-worklog", taskId: secondTask.id,
-                                      start: "2025-01-01T00:00:00.000Z", end: nil)
+        let previous = WorklogItem(
+            id: "other-worklog", taskId: secondTask.id,
+            start: activeWorklog.start, end: nil)
+        let replacement = WorklogItem(
+            id: "new-other-worklog", taskId: secondTask.id,
+            start: "2025-01-01T00:00:00.000Z", end: nil)
 
         XCTAssertFalse(state.apply(tasks, previousActive: nil, active: previous))
         XCTAssertFalse(state.apply(tasks, previousActive: previous, active: replacement))
@@ -73,10 +78,12 @@ final class TaskCatalogTests: XCTestCase {
     func testLatestStartReloadsOnlyTheSelectedTaskHistory() async {
         let state = TaskCatalogState()
         XCTAssertTrue(state.apply([firstTask, secondTask], previousActive: nil, active: nil))
-        let updatedOther = TaskItem(id: secondTask.id, name: secondTask.name, archived: false,
-                                    latestStart: "2025-01-01T00:00:00.000Z")
-        let updatedSelected = TaskItem(id: firstTask.id, name: firstTask.name, archived: false,
-                                       latestStart: "2025-01-01T01:00:00.000Z")
+        let updatedOther = TaskItem(
+            id: secondTask.id, name: secondTask.name, archived: false,
+            latestStart: "2025-01-01T00:00:00.000Z")
+        let updatedSelected = TaskItem(
+            id: firstTask.id, name: firstTask.name, archived: false,
+            latestStart: "2025-01-01T01:00:00.000Z")
 
         XCTAssertFalse(state.apply([firstTask, updatedOther], previousActive: nil, active: nil))
         XCTAssertTrue(state.apply([updatedSelected, updatedOther], previousActive: nil, active: nil))
@@ -106,8 +113,9 @@ final class TaskCatalogTests: XCTestCase {
     @MainActor
     func testEachTabRestoresItsSelectionAndFallsBackWhenThatTaskDisappears() async {
         let state = TaskCatalogState()
-        let otherArchived = TaskItem(id: "other-archived-task", name: "Other archived task",
-                                     archived: true, latestStart: nil)
+        let otherArchived = TaskItem(
+            id: "other-archived-task", name: "Other archived task",
+            archived: true, latestStart: nil)
         let tasks = [firstTask, secondTask, archivedTask, otherArchived]
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
         XCTAssertTrue(state.select(secondTask.id))
@@ -132,8 +140,9 @@ final class TaskCatalogTests: XCTestCase {
     @MainActor
     func testResetSelectionsClearsBothTabMemoriesBeforeLoadingAnotherSource() async {
         let state = TaskCatalogState()
-        let otherArchived = TaskItem(id: "other-archived-task", name: "Other archived task",
-                                     archived: true, latestStart: nil)
+        let otherArchived = TaskItem(
+            id: "other-archived-task", name: "Other archived task",
+            archived: true, latestStart: nil)
         let tasks = [firstTask, secondTask, archivedTask, otherArchived]
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
         XCTAssertTrue(state.select(secondTask.id))

@@ -16,8 +16,10 @@ public protocol TrackerClient: Sendable {
     func archiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot
     func unarchiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot
     func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TrackerSnapshot
-    func correctWorklog(expected: WorklogItem, replacementStart: String, replacementEnd: String?,
-                        occurredAt: String) async throws -> WorklogCorrectionResult
+    func correctWorklog(
+        expected: WorklogItem, replacementStart: String, replacementEnd: String?,
+        occurredAt: String
+    ) async throws -> WorklogCorrectionResult
     func moveCandidates(sourceTaskID: String, query: String) async throws -> [WorklogMoveCandidate]
     func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult
     func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws -> TrackerSnapshot
@@ -39,8 +41,10 @@ public protocol TrackerCancellation {
 
 @MainActor
 public protocol TrackerScheduler {
-    func schedule(after: TimeInterval, repeating: Bool, tolerance: TimeInterval,
-                  action: @escaping @MainActor () -> Void) -> any TrackerCancellation
+    func schedule(
+        after: TimeInterval, repeating: Bool, tolerance: TimeInterval,
+        action: @escaping @MainActor () -> Void
+    ) -> any TrackerCancellation
 }
 
 @MainActor

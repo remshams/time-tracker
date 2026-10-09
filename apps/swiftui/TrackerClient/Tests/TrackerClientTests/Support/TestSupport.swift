@@ -82,7 +82,8 @@ final class FakeClient: TrackerClient, ReportClient {
 
     func next(timeout: TimeInterval = 2, file: StaticString = #filePath, line: UInt = #line) async throws -> Request {
         if !requests.isEmpty { return requests.removeFirst() }
-        let description = "Next client request after \(operations.last.map { String(describing: $0) } ?? "startup") at \(file):\(line)"
+        let description =
+            "Next client request after \(operations.last.map { String(describing: $0) } ?? "startup") at \(file):\(line)"
         let expectation = XCTestExpectation(description: description)
         let id = UUID()
         waiters.append((id, expectation))
@@ -169,12 +170,16 @@ final class FakeClient: TrackerClient, ReportClient {
     }
     func previewInactiveTasks(inactiveDays: Int, asOf: String) async throws -> InactiveTaskPreview {
         let operation = Operation.inactivePreview(days: inactiveDays, at: asOf)
-        guard case .inactivePreview(let value) = try await perform(operation) else { throw wrongReply("inactive preview", operation: operation) }
+        guard case .inactivePreview(let value) = try await perform(operation) else {
+            throw wrongReply("inactive preview", operation: operation)
+        }
         return value
     }
     func archiveInactiveTasks(preview: InactiveTaskPreview) async throws -> InactiveTaskArchiveResult {
         let operation = Operation.archiveInactive(preview)
-        guard case .archivedInactive(let value) = try await perform(operation) else { throw wrongReply("inactive archive", operation: operation) }
+        guard case .archivedInactive(let value) = try await perform(operation) else {
+            throw wrongReply("inactive archive", operation: operation)
+        }
         return value
     }
     func archiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
@@ -186,9 +191,12 @@ final class FakeClient: TrackerClient, ReportClient {
     func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TrackerSnapshot {
         try await snapshotReply(.rename(task: taskID, name: name, at: occurredAt))
     }
-    func correctWorklog(expected: WorklogItem, replacementStart: String, replacementEnd: String?,
-                        occurredAt: String) async throws -> WorklogCorrectionResult {
-        let operation = Operation.correct(expected: expected, start: replacementStart, end: replacementEnd, at: occurredAt)
+    func correctWorklog(
+        expected: WorklogItem, replacementStart: String, replacementEnd: String?,
+        occurredAt: String
+    ) async throws -> WorklogCorrectionResult {
+        let operation = Operation.correct(
+            expected: expected, start: replacementStart, end: replacementEnd, at: occurredAt)
         guard case .corrected(let value) = try await perform(operation) else {
             throw wrongReply("correction", operation: operation)
         }
@@ -196,12 +204,16 @@ final class FakeClient: TrackerClient, ReportClient {
     }
     func moveCandidates(sourceTaskID: String, query: String) async throws -> [WorklogMoveCandidate] {
         let operation = Operation.candidates(source: sourceTaskID, query: query)
-        guard case .candidates(let value) = try await perform(operation) else { throw wrongReply("candidates", operation: operation) }
+        guard case .candidates(let value) = try await perform(operation) else {
+            throw wrongReply("candidates", operation: operation)
+        }
         return value
     }
     func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult {
         let operation = Operation.move(expected: expected, destination: destinationTaskID)
-        guard case .moved(let value) = try await perform(operation) else { throw wrongReply("move", operation: operation) }
+        guard case .moved(let value) = try await perform(operation) else {
+            throw wrongReply("move", operation: operation)
+        }
         return value
     }
     func history(taskID: String, cursor: String?) async throws -> HistoryPage {
@@ -254,8 +266,10 @@ final class FakeScheduler: TrackerScheduler {
     var poll: ScheduledAction? { active.last { !$0.repeating && $0.tolerance > 0 } }
     var display: ScheduledAction? { active.last { $0.repeating } }
 
-    func schedule(after delay: TimeInterval, repeating: Bool, tolerance: TimeInterval,
-                  action: @escaping @MainActor () -> Void) -> any TrackerCancellation {
+    func schedule(
+        after delay: TimeInterval, repeating: Bool, tolerance: TimeInterval,
+        action: @escaping @MainActor () -> Void
+    ) -> any TrackerCancellation {
         let token = ScheduledAction(delay: delay, repeating: repeating, tolerance: tolerance, action: action)
         scheduled.append(token)
         return token
@@ -281,16 +295,20 @@ final class Fixture {
     let preferences: MemoryTrackingPreferences
     private let reportsEnabled: Bool
 
-    init(saved: ConnectionSettings? = nil, pauseOnScreenLock: Bool = false,
-         reports: Bool = false, calendar: Calendar = .autoupdatingCurrent,
-         lastTrackedTasks: (any LastTrackedTaskRepository)? = nil) {
+    init(
+        saved: ConnectionSettings? = nil, pauseOnScreenLock: Bool = false,
+        reports: Bool = false, calendar: Calendar = .autoupdatingCurrent,
+        lastTrackedTasks: (any LastTrackedTaskRepository)? = nil
+    ) {
         reportsEnabled = reports
         let settings = MemorySettings(saved)
         self.settings = settings
         let preferences = MemoryTrackingPreferences(TrackingPreferences(pauseOnScreenLock: pauseOnScreenLock))
         self.preferences = preferences
-        session = TrackerSession(client: client, clock: clock, scheduler: scheduler, settings: settings,
-                                 trackingPreferences: preferences, lastTrackedTasks: lastTrackedTasks, reports: reports ? client : nil, calendar: calendar)
+        session = TrackerSession(
+            client: client, clock: clock, scheduler: scheduler, settings: settings,
+            trackingPreferences: preferences, lastTrackedTasks: lastTrackedTasks, reports: reports ? client : nil,
+            calendar: calendar)
     }
 
     func cleanup() {
@@ -306,7 +324,9 @@ final class Fixture {
         open.succeed(snapshot)
         if reportsEnabled {
             let report = try await client.next()
-            guard case .report = report.operation else { throw TestTimeout(description: "Expected startup report before history.") }
+            guard case .report = report.operation else {
+                throw TestTimeout(description: "Expected startup report before history.")
+            }
             report.succeed(TrackerReport(snapshot: snapshot, rows: rows))
         }
         if let task = snapshot.tasks.first(where: { !$0.archived }) {
@@ -321,10 +341,14 @@ final class Fixture {
         try await settled()
     }
 
-    func settled() async throws { try await waitUntil("session to finish its current operation") { !self.session.isBusy } }
+    func settled() async throws {
+        try await waitUntil("session to finish its current operation") { !self.session.isBusy }
+    }
 
-    func taskValue<Value, Failure>(_ task: Task<Value, Failure>, timeout: TimeInterval = 2,
-                                   file: StaticString = #filePath, line: UInt = #line) async throws -> Value {
+    func taskValue<Value, Failure>(
+        _ task: Task<Value, Failure>, timeout: TimeInterval = 2,
+        file: StaticString = #filePath, line: UInt = #line
+    ) async throws -> Value {
         let expectation = XCTestExpectation(description: "Asynchronous test task at \(file):\(line)")
         var completedResult: Result<Value, Failure>?
         let observer = Task { @MainActor in
@@ -341,9 +365,11 @@ final class Fixture {
         return try completedResult.get()
     }
 
-    func waitUntil(_ description: String, timeout: TimeInterval = 2,
-                   file: StaticString = #filePath, line: UInt = #line,
-                   _ condition: @escaping @MainActor () -> Bool) async throws {
+    func waitUntil(
+        _ description: String, timeout: TimeInterval = 2,
+        file: StaticString = #filePath, line: UInt = #line,
+        _ condition: @escaping @MainActor () -> Bool
+    ) async throws {
         if condition() { return }
         let expectation = XCTestExpectation(description: description)
         session.onChange = { [weak session] in
@@ -367,7 +393,8 @@ let firstTask = TaskItem(id: "task-one", name: "First task", archived: false, la
 let secondTask = TaskItem(id: "task-two", name: "Second task", archived: false, latestStart: nil)
 let archivedTask = TaskItem(id: "task-archived", name: "Archived task", archived: true, latestStart: nil)
 let activeWorklog = WorklogItem(id: "worklog-active", taskId: "task-one", start: "2024-12-31T23:59:30.000Z", end: nil)
-let oldWorklog = WorklogItem(id: "worklog-old", taskId: "task-one", start: "2024-12-30T09:00:00.000Z", end: "2024-12-30T10:00:00.000Z")
+let oldWorklog = WorklogItem(
+    id: "worklog-old", taskId: "task-one", start: "2024-12-30T09:00:00.000Z", end: "2024-12-30T10:00:00.000Z")
 let serverSettings = ConnectionSettings(mode: .server, serverURL: "https://tracker.example")
 
 @MainActor

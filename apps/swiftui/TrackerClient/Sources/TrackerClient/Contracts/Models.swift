@@ -105,8 +105,10 @@ public struct BridgeFailure: LocalizedError, Sendable {
     public var requiresRefresh: Bool
     public var errorDescription: String? { message }
 
-    public init(message: String, kind: String = "general", uncertain: Bool = false,
-                requiresRefresh: Bool = false) {
+    public init(
+        message: String, kind: String = "general", uncertain: Bool = false,
+        requiresRefresh: Bool = false
+    ) {
         self.message = message
         self.kind = kind
         self.uncertain = uncertain

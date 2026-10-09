@@ -40,16 +40,18 @@ final class BulkTaskArchivingState {
     var ownsPresentation: Bool { isPresented || isSubmitting }
     var days: Int? {
         guard !daysText.isEmpty, daysText.allSatisfy({ $0.isASCII && $0.isNumber }),
-              let value = UInt32(daysText), value > 0 else { return nil }
+            let value = UInt32(daysText), value > 0
+        else { return nil }
         return Int(value)
     }
     var presentation: BulkTaskArchivingPresentation {
-        BulkTaskArchivingPresentation(isPresented: isPresented, daysText: daysText,
+        BulkTaskArchivingPresentation(
+            isPresented: isPresented, daysText: daysText,
             isLoading: isLoading, isSubmitting: isSubmitting, hasPreview: preview != nil,
             tasks: preview?.tasks ?? [],
             error: error, archivedCount: archivedCount,
-            canSubmit: isPresented && !isLoading && !isSubmitting && archivedCount == nil &&
-                preview?.inactiveDays == days && !(preview?.tasks.isEmpty ?? true))
+            canSubmit: isPresented && !isLoading && !isSubmitting && archivedCount == nil
+                && preview?.inactiveDays == days && !(preview?.tasks.isEmpty ?? true))
     }
 
     func open() { isPresented = true; requestPreview() }
@@ -76,10 +78,12 @@ final class BulkTaskArchivingState {
     func accept(_ value: InactiveTaskPreview, search: Search) throws {
         guard matches(search) else { return }
         guard value.inactiveDays == search.days, timestamp(value.asOf) == timestamp(search.asOf),
-              timestamp(value.asOf) != nil,
-              Set(value.tasks.map(\.id)).count == value.tasks.count,
-              value.tasks.allSatisfy({ !$0.archived }) else {
-            throw BridgeFailure(message: "The tracker returned an invalid archive preview.", kind: "protocol", requiresRefresh: true)
+            timestamp(value.asOf) != nil,
+            Set(value.tasks.map(\.id)).count == value.tasks.count,
+            value.tasks.allSatisfy({ !$0.archived })
+        else {
+            throw BridgeFailure(
+                message: "The tracker returned an invalid archive preview.", kind: "protocol", requiresRefresh: true)
         }
         preview = value
         isLoading = false
@@ -106,7 +110,8 @@ final class BulkTaskArchivingState {
     }
     func beginSubmission(_ submission: Submission) -> Bool {
         guard isPresented, isSubmitting, preparedSubmission,
-              submission.generation == generation else { return false }
+            submission.generation == generation
+        else { return false }
         preparedSubmission = false
         return true
     }

@@ -15,12 +15,16 @@ public struct TrackerMenuValues: Equatable, Sendable {
             elapsedText = nil
         }
         let total = session.totalDailyDurationText
-        totalText = sameConnection
+        totalText =
+            sameConnection
             ? (session.dailyTotalsStatus == .cached ? "~\(total)" : total) : "Unavailable"
-        taskDurationTexts = Dictionary(uniqueKeysWithValues: content.todayTasks.map {
-            ($0.id, sameConnection ? session.dailyDuration(taskID: $0.id).map(clockDuration) ?? "-" : "-")
-        })
-        totalsExplanation = sameConnection ? session.dailyTotalsExplanation
+        taskDurationTexts = Dictionary(
+            uniqueKeysWithValues: content.todayTasks.map {
+                ($0.id, sameConnection ? session.dailyDuration(taskID: $0.id).map(clockDuration) ?? "-" : "-")
+            })
+        totalsExplanation =
+            sameConnection
+            ? session.dailyTotalsExplanation
             : "The connection changed. Reopen the menu to see the current tracker."
     }
 }

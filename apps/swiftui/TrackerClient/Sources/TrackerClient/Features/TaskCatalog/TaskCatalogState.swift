@@ -50,8 +50,8 @@ final class TaskCatalogState {
         }
         rememberSelection()
         let selectedActiveChanged =
-            (previousActive?.taskId == selectedTaskID || active?.taskId == selectedTaskID) &&
-            (previousActive?.id != active?.id || previousActive?.start != active?.start)
+            (previousActive?.taskId == selectedTaskID || active?.taskId == selectedTaskID)
+            && (previousActive?.id != active?.id || previousActive?.start != active?.start)
         return previousTask != selectedTaskID || previousLatest != selectedTask?.latestStart || selectedActiveChanged
     }
 
@@ -65,7 +65,6 @@ final class TaskCatalogState {
     }
 
     private func rememberSelection() {
-        if tab == .active { activeSelection = selectedTaskID }
-        else { archivedSelection = selectedTaskID }
+        if tab == .active { activeSelection = selectedTaskID } else { archivedSelection = selectedTaskID }
     }
 }

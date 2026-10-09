@@ -16,7 +16,8 @@ public struct MenuShortcut: Codable, Equatable, Hashable, Sendable {
             let container = try decoder.singleValueContainer()
             let value = try container.decode(UInt8.self)
             guard value & ~Self.allowed.rawValue == 0 else {
-                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported shortcut modifiers")
+                throw DecodingError.dataCorruptedError(
+                    in: container, debugDescription: "Unsupported shortcut modifiers")
             }
             self.init(rawValue: value)
         }
@@ -48,8 +49,9 @@ public struct MenuShortcut: Codable, Equatable, Hashable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(key: try container.decode(String.self, forKey: .key),
-                  modifiers: try container.decode(Modifiers.self, forKey: .modifiers))
+        self.init(
+            key: try container.decode(String.self, forKey: .key),
+            modifiers: try container.decode(Modifiers.self, forKey: .modifiers))
     }
 
     var normalized: Self { Self(key: key, modifiers: modifiers) }
@@ -89,12 +91,14 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
 
     public static let defaults = Self()
 
-    public init(openMenu: MenuShortcut = MenuShortcut(key: "t", modifiers: [.control, .option]),
-                moveDown: MenuShortcut = MenuShortcut(key: "j"),
-                moveUp: MenuShortcut = MenuShortcut(key: "k"),
-                copyName: MenuShortcut = MenuShortcut(key: "c"),
-                copyExact: MenuShortcut = MenuShortcut(key: "t"),
-                copyRounded: MenuShortcut = MenuShortcut(key: "s")) {
+    public init(
+        openMenu: MenuShortcut = MenuShortcut(key: "t", modifiers: [.control, .option]),
+        moveDown: MenuShortcut = MenuShortcut(key: "j"),
+        moveUp: MenuShortcut = MenuShortcut(key: "k"),
+        copyName: MenuShortcut = MenuShortcut(key: "c"),
+        copyExact: MenuShortcut = MenuShortcut(key: "t"),
+        copyRounded: MenuShortcut = MenuShortcut(key: "s")
+    ) {
         self.openMenu = openMenu
         self.moveDown = moveDown
         self.moveUp = moveUp
@@ -134,7 +138,8 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
         for action in MenuShortcutAction.allCases {
             let shortcut = self[action].normalized
             if !shortcut.hasSupportedKey {
-                errors.append("\(action.title) needs one printable ASCII key. Space, arrow keys, Return and Escape are reserved.")
+                errors.append(
+                    "\(action.title) needs one printable ASCII key. Space, arrow keys, Return and Escape are reserved.")
             }
             if !shortcut.modifiers.subtracting(.allowed).isEmpty {
                 errors.append("\(action.title) only supports Command, Control, Option and Shift modifiers.")
@@ -159,8 +164,10 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
         return result
     }
 
-    public func action(forKey key: String, modifiers: MenuShortcut.Modifiers,
-                       includingGlobal: Bool = false) -> MenuShortcutAction? {
+    public func action(
+        forKey key: String, modifiers: MenuShortcut.Modifiers,
+        includingGlobal: Bool = false
+    ) -> MenuShortcutAction? {
         let shortcut = MenuShortcut(key: key, modifiers: modifiers)
         guard shortcut.hasSupportedKey, modifiers.subtracting(.allowed).isEmpty else { return nil }
         return MenuShortcutAction.allCases.first {
@@ -172,16 +179,19 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(openMenu: try container.decode(MenuShortcut.self, forKey: .openMenu),
-                  moveDown: try container.decode(MenuShortcut.self, forKey: .moveDown),
-                  moveUp: try container.decode(MenuShortcut.self, forKey: .moveUp),
-                  copyName: try container.decode(MenuShortcut.self, forKey: .copyName),
-                  copyExact: try container.decode(MenuShortcut.self, forKey: .copyExact),
-                  copyRounded: try container.decode(MenuShortcut.self, forKey: .copyRounded))
+        self.init(
+            openMenu: try container.decode(MenuShortcut.self, forKey: .openMenu),
+            moveDown: try container.decode(MenuShortcut.self, forKey: .moveDown),
+            moveUp: try container.decode(MenuShortcut.self, forKey: .moveUp),
+            copyName: try container.decode(MenuShortcut.self, forKey: .copyName),
+            copyExact: try container.decode(MenuShortcut.self, forKey: .copyExact),
+            copyRounded: try container.decode(MenuShortcut.self, forKey: .copyRounded))
         let errors = validationErrors()
         guard errors.isEmpty else {
-            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
-                                                   debugDescription: errors.joined(separator: " ")))
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: errors.joined(separator: " ")))
         }
         self = try validated()
     }

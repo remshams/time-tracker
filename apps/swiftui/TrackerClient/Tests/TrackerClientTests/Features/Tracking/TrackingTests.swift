@@ -22,18 +22,23 @@ final class TrackingTests: XCTestCase {
 
         fixture.session.startTracking(taskID: secondTask.id)
         XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
-        let switched = WorklogItem(id: "switched-worklog", taskId: secondTask.id,
-                                  start: "2025-01-01T00:00:00.000Z", end: nil)
+        let switched = WorklogItem(
+            id: "switched-worklog", taskId: secondTask.id,
+            start: "2025-01-01T00:00:00.000Z", end: nil)
         let start = try await fixture.client.next()
-        XCTAssertEqual(start.operation, .start(task: secondTask.id, expected: activeWorklog.id,
-                                             at: "2025-01-01T00:00:00.000Z"))
+        XCTAssertEqual(
+            start.operation,
+            .start(
+                task: secondTask.id, expected: activeWorklog.id,
+                at: "2025-01-01T00:00:00.000Z"))
         start.succeed(TrackerSnapshot(tasks: tasks, active: switched))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(Array(fixture.client.operations.dropFirst(operationCount)), [start.operation, history.operation],
-                       "Switching tasks must delegate one atomic start command without a separate stop.")
+        XCTAssertEqual(
+            Array(fixture.client.operations.dropFirst(operationCount)), [start.operation, history.operation],
+            "Switching tasks must delegate one atomic start command without a separate stop.")
         XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
         XCTAssertTrue(fixture.session.canStartSelectedTask)
         XCTAssertTrue(fixture.session.canStartTracking(taskID: firstTask.id))
@@ -96,15 +101,19 @@ final class TrackingTests: XCTestCase {
         fixture.clock.now.addTimeInterval(120)
         fixture.session.startTracking(taskID: secondTask.id)
         let request = try await fixture.client.next()
-        XCTAssertEqual(request.operation, .start(task: secondTask.id, expected: activeWorklog.id,
-                                                at: "2025-01-01T00:00:00.000Z"))
+        XCTAssertEqual(
+            request.operation,
+            .start(
+                task: secondTask.id, expected: activeWorklog.id,
+                at: "2025-01-01T00:00:00.000Z"))
         XCTAssertTrue(fixture.session.isBusy)
         XCTAssertFalse(fixture.session.canStopTracking)
         request.succeed(TrackerSnapshot(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
         try await fixture.settled()
-        XCTAssertEqual(fixture.client.operations.filter {
-            if case .start = $0 { return true }; return false
-        }.count, 1)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .start = $0 { return true }; return false
+            }.count, 1)
     }
 
     @MainActor
@@ -117,8 +126,11 @@ final class TrackingTests: XCTestCase {
         XCTAssertEqual(fixture.client.operations.count, 2)
         fixture.session.startTracking(taskID: firstTask.id)
         let request = try await fixture.client.next()
-        XCTAssertEqual(request.operation, .start(task: firstTask.id, expected: nil,
-                                                at: "2025-01-01T00:00:00.000Z"))
+        XCTAssertEqual(
+            request.operation,
+            .start(
+                task: firstTask.id, expected: nil,
+                at: "2025-01-01T00:00:00.000Z"))
         request.succeed(TrackerSnapshot(tasks: [firstTask, archivedTask], active: nil))
         try await fixture.settled()
     }

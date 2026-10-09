@@ -7,10 +7,12 @@ final class RefreshPresentationTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
         fixture.session.setWindowVisible(true)
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog), rows: [
-            TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
-            TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000)
-        ])
+        try await fixture.start(
+            TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog),
+            rows: [
+                TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
+                TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
+            ])
         let observer = TrackerPresentationObserver(session: fixture.session)
         var redraws: [Set<String>] = []
         observer.onTaskDailyTotalsChange = { redraws.append($0) }
@@ -21,8 +23,9 @@ final class RefreshPresentationTests: XCTestCase {
             fixture.clock.uptime += 1
             display.fire()
         }
-        XCTAssertEqual(redraws, Array(repeating: Set([firstTask.id]), count: 3),
-                       "A running duration must leave completed task rows unchanged.")
+        XCTAssertEqual(
+            redraws, Array(repeating: Set([firstTask.id]), count: 3),
+            "A running duration must leave completed task rows unchanged.")
     }
 
     @MainActor
@@ -30,10 +33,12 @@ final class RefreshPresentationTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
         let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
-        try await fixture.start(snapshot, rows: [
-            TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
-            TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000)
-        ])
+        try await fixture.start(
+            snapshot,
+            rows: [
+                TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
+                TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
+            ])
         let observer = TrackerPresentationObserver(session: fixture.session)
         var redraws: [Set<String>] = []
         var listUpdates = 0
@@ -42,10 +47,13 @@ final class RefreshPresentationTests: XCTestCase {
         fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
-        poll.succeed(TrackerReport(snapshot: snapshot, rows: [
-            TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
-            TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 25_000_000)
-        ]))
+        poll.succeed(
+            TrackerReport(
+                snapshot: snapshot,
+                rows: [
+                    TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
+                    TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 25_000_000),
+                ]))
         try await settleWithoutReplacingObserver(fixture)
         XCTAssertEqual(redraws, [Set([secondTask.id])])
         XCTAssertEqual(listUpdates, 0)
@@ -60,10 +68,12 @@ final class RefreshPresentationTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
         let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
-        try await fixture.start(snapshot, rows: [
-            TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
-            TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000)
-        ])
+        try await fixture.start(
+            snapshot,
+            rows: [
+                TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
+                TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
+            ])
         let observer = TrackerPresentationObserver(session: fixture.session)
         var redraws: [Set<String>] = []
         var listUpdates = 0
@@ -74,10 +84,13 @@ final class RefreshPresentationTests: XCTestCase {
         fixture.clock.uptime += 5
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
-        poll.succeed(TrackerReport(snapshot: snapshot, rows: [
-            TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 15_000_000),
-            TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000)
-        ]))
+        poll.succeed(
+            TrackerReport(
+                snapshot: snapshot,
+                rows: [
+                    TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 15_000_000),
+                    TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
+                ]))
         try await settleWithoutReplacingObserver(fixture)
         XCTAssertEqual(redraws, [Set([firstTask.id])])
         XCTAssertEqual(listUpdates, 0)
@@ -89,10 +102,12 @@ final class RefreshPresentationTests: XCTestCase {
     func testCachedReportNotifiesAllRowsOfChangedExplanation() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil), rows: [
-            TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
-            TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000)
-        ])
+        try await fixture.start(
+            TrackerSnapshot(tasks: [firstTask, secondTask], active: nil),
+            rows: [
+                TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
+                TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
+            ])
         let observer = TrackerPresentationObserver(session: fixture.session)
         var redraws: [Set<String>] = []
         observer.onTaskDailyTotalsChange = { redraws.append($0) }
@@ -111,10 +126,12 @@ final class RefreshPresentationTests: XCTestCase {
     func testAddedAndRemovedTasksNotifyTheirTotalAdapters() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil), rows: [
-            TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
-            TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000)
-        ])
+        try await fixture.start(
+            TrackerSnapshot(tasks: [firstTask, secondTask], active: nil),
+            rows: [
+                TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
+                TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
+            ])
         let observer = TrackerPresentationObserver(session: fixture.session)
         var redraws: [Set<String>] = []
         observer.onTaskDailyTotalsChange = { redraws.append($0) }
@@ -122,10 +139,13 @@ final class RefreshPresentationTests: XCTestCase {
         let added = TaskItem(id: "task-three", name: "New task", archived: false, latestStart: nil)
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
-        poll.succeed(TrackerReport(snapshot: TrackerSnapshot(tasks: [firstTask, added], active: nil), rows: [
-            TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
-            TaskReportTotal(taskId: added.id, durationMicroseconds: 30_000_000)
-        ]))
+        poll.succeed(
+            TrackerReport(
+                snapshot: TrackerSnapshot(tasks: [firstTask, added], active: nil),
+                rows: [
+                    TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
+                    TaskReportTotal(taskId: added.id, durationMicroseconds: 30_000_000),
+                ]))
         try await settleWithoutReplacingObserver(fixture)
         XCTAssertEqual(redraws, [Set([secondTask.id, added.id])])
         XCTAssertNil(observer.taskDailyTotals[secondTask.id])

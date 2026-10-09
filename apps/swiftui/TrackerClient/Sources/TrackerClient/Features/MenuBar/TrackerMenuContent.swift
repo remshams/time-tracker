@@ -51,9 +51,10 @@ public struct TrackerMenuContent: Equatable {
 
     @MainActor
     private static func entry(_ task: TaskItem, session: TrackerSession) -> TrackerMenuTask {
-        TrackerMenuTask(task: task, durationText: session.dailyDuration(taskID: task.id).map(clockDuration) ?? "-",
-                        isRunning: session.active?.taskId == task.id,
-                        canStart: session.canStartTracking(taskID: task.id))
+        TrackerMenuTask(
+            task: task, durationText: session.dailyDuration(taskID: task.id).map(clockDuration) ?? "-",
+            isRunning: session.active?.taskId == task.id,
+            canStart: session.canStartTracking(taskID: task.id))
     }
 }
 
@@ -67,11 +68,13 @@ public struct TrackerMenuLabelContent: Equatable {
 
     @MainActor
     init(_ session: TrackerSession, showDailyTotal: Bool) {
-        indicator = TaskIndicator(taskID: session.active?.taskId ?? session.lastTrackedTaskID,
-                                  isRunning: session.active != nil, isStale: session.isStale)
+        indicator = TaskIndicator(
+            taskID: session.active?.taskId ?? session.lastTrackedTaskID,
+            isRunning: session.active != nil, isStale: session.isStale)
         if session.isStale {
             let name = session.lastTrackedTask?.name ?? (session.lastTrackedTaskID == nil ? nil : "Unavailable task")
-            status = name.map { "Tracking status unavailable. Last confirmed task: \($0)" }
+            status =
+                name.map { "Tracking status unavailable. Last confirmed task: \($0)" }
                 ?? "Tracking status unavailable. No task tracked yet"
         } else if session.active != nil {
             status = "Tracking: \(session.runningTaskName)"
@@ -88,7 +91,9 @@ public struct TrackerMenuLabelContent: Equatable {
                 let minutes = Int(max(0, duration)) / 60
                 let text = String(format: "%02d:%02d", minutes / 60, minutes % 60)
                 total = session.dailyTotalsStatus == .cached ? "~\(text)" : text
-            } else { total = "-" }
+            } else {
+                total = "-"
+            }
             totalText = total
             help = "\(status)\nTotal today: \(total)\n\(session.dailyTotalsExplanation)"
         } else {

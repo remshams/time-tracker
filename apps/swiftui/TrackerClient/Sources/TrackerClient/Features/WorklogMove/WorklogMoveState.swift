@@ -24,9 +24,9 @@ final class WorklogMoveState {
         let historyPageLimit: Int
 
         func matchesReplacement(_ worklog: WorklogItem) -> Bool {
-            worklog.id == expected.id && worklog.taskId == destinationTaskID &&
-                sameWorklogTimestamp(worklog.start, expected.start) &&
-                sameWorklogTimestamp(worklog.end, expected.end)
+            worklog.id == expected.id && worklog.taskId == destinationTaskID
+                && sameWorklogTimestamp(worklog.start, expected.start)
+                && sameWorklogTimestamp(worklog.end, expected.end)
         }
     }
 
@@ -59,12 +59,13 @@ final class WorklogMoveState {
     var blocksConnectionChange: Bool { isPresented || intent != nil }
     var presentation: WorklogMovePresentation {
         let canEdit = isPresented && !isSubmitting && intent == nil && !requiresReview
-        return WorklogMovePresentation(isPresented: isPresented, original: original,
+        return WorklogMovePresentation(
+            isPresented: isPresented, original: original,
             sourceTaskName: sourceTaskName, query: query, candidates: candidates,
             selectedTaskID: selectedTaskID, isSearching: isSearching, isSubmitting: isSubmitting,
             error: error, canEdit: canEdit,
-            canSubmit: isPresented && !isSubmitting && !requiresReview &&
-                (intent != nil || (!isSearching && selectedTaskID != nil)),
+            canSubmit: isPresented && !isSubmitting && !requiresReview
+                && (intent != nil || (!isSearching && selectedTaskID != nil)),
             requiresReview: requiresReview, latest: latest)
     }
 
@@ -193,16 +194,19 @@ final class WorklogMoveState {
 
     func observe(_ worklog: WorklogItem) {
         guard isPresented, !isSubmitting, intent == nil, let original,
-              worklog.id == original.id else { return }
-        if worklog.taskId == original.taskId && sameWorklogTimestamp(worklog.start, original.start) &&
-            sameWorklogTimestamp(worklog.end, original.end) { return }
+            worklog.id == original.id
+        else { return }
+        if worklog.taskId == original.taskId && sameWorklogTimestamp(worklog.start, original.start)
+            && sameWorklogTimestamp(worklog.end, original.end)
+        {
+            return
+        }
         requireReview(latest: worklog, message: "This worklog changed. Review it before moving.")
     }
 
     func cancel() {
         guard !isSubmitting else { return }
-        if intent != nil { isPresented = false }
-        else { reset() }
+        if intent != nil { isPresented = false } else { reset() }
     }
 
     func reset() {
@@ -225,4 +229,3 @@ final class WorklogMoveState {
         pending = false
     }
 }
-

@@ -38,10 +38,15 @@ final class LastTrackedTaskState {
         let idleTaskID: String?
         if let stored {
             if let previous = snapshot.tasks.first(where: { $0.id == stored }), let latest,
-               timestamp(previous.latestStart).map({ latest.1 > $0 }) ?? true {
+                timestamp(previous.latestStart).map({ latest.1 > $0 }) ?? true
+            {
                 idleTaskID = latest.0
-            } else { idleTaskID = stored }
-        } else { idleTaskID = latest?.0 }
+            } else {
+                idleTaskID = stored
+            }
+        } else {
+            idleTaskID = latest?.0
+        }
         taskID = snapshot.active?.taskId ?? idleTaskID
         guard let taskID else { return }
         if stored != taskID { repository?.save(taskID: taskID, for: settings) }

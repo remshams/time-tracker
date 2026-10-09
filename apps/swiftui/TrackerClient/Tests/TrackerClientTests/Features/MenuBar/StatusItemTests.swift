@@ -53,7 +53,8 @@ final class StatusItemTests: XCTestCase {
         let latest = TaskItem(id: "latest", name: "Latest", archived: true, latestStart: "2024-12-31T12:00:00.000Z")
         let tied = TaskItem(id: "aaa", name: "Tied", archived: false, latestStart: latest.latestStart)
         let invalid = TaskItem(id: "invalid", name: "Invalid", archived: false, latestStart: "invalid")
-        state.observe(TrackerSnapshot(tasks: [earlier, latest, tied, invalid, firstTask], active: nil), settings: .local)
+        state.observe(
+            TrackerSnapshot(tasks: [earlier, latest, tied, invalid, firstTask], active: nil), settings: .local)
         XCTAssertEqual(state.taskID, tied.id)
         XCTAssertEqual(repository.writes.last?.1, tied.id)
     }
@@ -63,10 +64,12 @@ final class StatusItemTests: XCTestCase {
         let repository = MemoryLastTrackedTasks()
         repository.save(taskID: firstTask.id, for: serverSettings)
         let state = LastTrackedTaskState(repository: repository, settings: serverSettings)
-        let previous = TaskItem(id: firstTask.id, name: firstTask.name, archived: false,
-                                latestStart: "2024-12-30T12:00:00.000Z")
-        let newer = TaskItem(id: secondTask.id, name: secondTask.name, archived: false,
-                             latestStart: "2024-12-31T12:00:00.000Z")
+        let previous = TaskItem(
+            id: firstTask.id, name: firstTask.name, archived: false,
+            latestStart: "2024-12-30T12:00:00.000Z")
+        let newer = TaskItem(
+            id: secondTask.id, name: secondTask.name, archived: false,
+            latestStart: "2024-12-31T12:00:00.000Z")
         state.observe(TrackerSnapshot(tasks: [previous, newer], active: nil), settings: serverSettings)
         XCTAssertEqual(state.taskID, secondTask.id)
         XCTAssertEqual(repository.load(for: serverSettings), secondTask.id)
@@ -81,8 +84,9 @@ final class StatusItemTests: XCTestCase {
     func testConfirmedDatedTaskSupersedesRememberedTaskWithoutDate() {
         let state = LastTrackedTaskState(repository: nil, settings: .local)
         state.observe(TrackerSnapshot(tasks: [firstTask], active: activeWorklog), settings: .local)
-        let newer = TaskItem(id: secondTask.id, name: secondTask.name, archived: false,
-                             latestStart: "2024-12-31T12:00:00.000Z")
+        let newer = TaskItem(
+            id: secondTask.id, name: secondTask.name, archived: false,
+            latestStart: "2024-12-31T12:00:00.000Z")
         state.observe(TrackerSnapshot(tasks: [firstTask, newer], active: nil), settings: .local)
         XCTAssertEqual(state.taskID, secondTask.id)
     }

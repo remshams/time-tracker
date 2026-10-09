@@ -27,9 +27,11 @@ final class ObserverTests: XCTestCase {
         XCTAssertFalse(fixture.session.canStartSelectedTask)
         XCTAssertFalse(fixture.session.canStopTracking)
         XCTAssertTrue(fixture.scheduler.active.isEmpty)
-        XCTAssertEqual(fixture.client.operations, [
-            .open(.local), .history(task: firstTask.id, cursor: nil), .refresh(.local),
-        ])
+        XCTAssertEqual(
+            fixture.client.operations,
+            [
+                .open(.local), .history(task: firstTask.id, cursor: nil), .refresh(.local),
+            ])
     }
 
     @MainActor

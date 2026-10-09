@@ -37,14 +37,18 @@ final class MenuPresentationTests: XCTestCase {
             display.fire()
             XCTAssertEqual(observer.values.elapsedText, fixture.session.timerDisplayText)
             XCTAssertEqual(observer.values.totalText, fixture.session.totalDailyDurationText)
-            XCTAssertEqual(observer.values.taskDurationTexts[firstTask.id],
-                           fixture.session.dailyDurationText(taskID: firstTask.id))
+            XCTAssertEqual(
+                observer.values.taskDurationTexts[firstTask.id],
+                fixture.session.dailyDurationText(taskID: firstTask.id))
             fixture.scheduler.poll?.fire()
             let poll = try await fixture.client.next()
             XCTAssertTrue(fixture.session.isBusy)
             XCTAssertEqual(observer.content, originalContent)
-            let updatedRows = [TaskReportTotal(taskId: firstTask.id,
-                                              durationMicroseconds: Int64(10 + step * 60) * 1_000_000)]
+            let updatedRows = [
+                TaskReportTotal(
+                    taskId: firstTask.id,
+                    durationMicroseconds: Int64(10 + step * 60) * 1_000_000)
+            ]
             poll.succeed(TrackerReport(snapshot: snapshot, rows: updatedRows))
             let finished = Task { @MainActor in
                 while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
@@ -58,7 +62,8 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertEqual(windowControls, 0, "Background polls must keep the window's controls stable.")
         XCTAssertEqual(observer.label, originalLabel)
         observer.menuClosed(from: fixture.session, showDailyTotal: true)
-        XCTAssertEqual(observer.content, originalContent, "Closing a submenu must not release the root menu's snapshot.")
+        XCTAssertEqual(
+            observer.content, originalContent, "Closing a submenu must not release the root menu's snapshot.")
         XCTAssertEqual(observer.values.elapsedText, fixture.session.timerDisplayText)
         observer.menuClosed(from: fixture.session, showDailyTotal: true)
         XCTAssertEqual(contentChanges, 1)
@@ -71,16 +76,18 @@ final class MenuPresentationTests: XCTestCase {
     func testLabelPublishesOnlyMinuteChangesAndHonorsHiddenTotal() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
-                                rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)])
+        try await fixture.start(
+            TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
+            rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)])
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         var changes = 0
         observer.onLabelChange = { changes += 1 }
         XCTAssertEqual(observer.label.symbol, "circle.fill")
         XCTAssertEqual(observer.label.status, "Tracking: First task")
         XCTAssertEqual(observer.label.totalText, "00:00")
-        XCTAssertEqual(observer.label.help,
-                       "Tracking: First task\nTotal today: 00:00\nTime logged today in your local time zone")
+        XCTAssertEqual(
+            observer.label.help,
+            "Tracking: First task\nTotal today: 00:00\nTime logged today in your local time zone")
         fixture.clock.now.addTimeInterval(1)
         fixture.clock.uptime += 1
         observer.update(from: fixture.session, showDailyTotal: true)
@@ -107,8 +114,9 @@ final class MenuPresentationTests: XCTestCase {
     func testOpeningCapturesFreshTimeAndNestedNotificationsKeepTheSnapshotUntilFinalClose() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
-                                rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 5_000_000)])
+        try await fixture.start(
+            TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
+            rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 5_000_000)])
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         fixture.clock.now.addTimeInterval(60)
         fixture.clock.uptime += 60
@@ -139,10 +147,14 @@ final class MenuPresentationTests: XCTestCase {
         let twin = TaskItem(id: "task-three", name: secondTask.name, archived: false, latestStart: nil)
         let another = TaskItem(id: "task-zulu", name: "Another task", archived: false, latestStart: nil)
         let emptyArchive = TaskItem(id: "archive-empty", name: "Empty archived task", archived: true, latestStart: nil)
-        let rows = [TaskReportTotal(taskId: archivedTask.id, durationMicroseconds: 30_000_000),
-                    TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)]
-        try await fixture.start(TrackerSnapshot(tasks: [secondTask, twin, archivedTask, emptyArchive, firstTask, another],
-                                                active: activeWorklog), rows: rows)
+        let rows = [
+            TaskReportTotal(taskId: archivedTask.id, durationMicroseconds: 30_000_000),
+            TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
+        ]
+        try await fixture.start(
+            TrackerSnapshot(
+                tasks: [secondTask, twin, archivedTask, emptyArchive, firstTask, another],
+                active: activeWorklog), rows: rows)
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         XCTAssertEqual(observer.content.todayTasks.map(\.id), [archivedTask.id, firstTask.id])
         XCTAssertEqual(observer.content.todayTasks.map(\.durationText), ["00:00:30", "00:00:10"])
@@ -165,8 +177,9 @@ final class MenuPresentationTests: XCTestCase {
         observer.menuOpened(from: fixture.session, showDailyTotal: true)
         let target = try XCTUnwrap(observer.content.otherTasks.first { $0.id == secondTask.id })
         XCTAssertTrue(target.canStart)
-        let changed = WorklogItem(id: "worklog-from-other-client", taskId: firstTask.id,
-                                  start: activeWorklog.start, end: nil)
+        let changed = WorklogItem(
+            id: "worklog-from-other-client", taskId: firstTask.id,
+            start: activeWorklog.start, end: nil)
         let archived = TaskItem(id: secondTask.id, name: secondTask.name, archived: true, latestStart: nil)
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
@@ -238,8 +251,9 @@ final class MenuPresentationTests: XCTestCase {
     func testReportFailureShowsCachedTotalAndStaleTrackingLabel() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
-                                rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 90_000_000)])
+        try await fixture.start(
+            TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
+            rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 90_000_000)])
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
@@ -251,8 +265,9 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertEqual(observer.label.status, "Tracking status unavailable. Last confirmed task: First task")
         XCTAssertEqual(observer.label.totalText, "~00:01")
         XCTAssertEqual(observer.content.dailyTotalsStatus, .cached)
-        XCTAssertEqual(observer.content.totalsExplanation,
-                       "Today's total uses cached tracker state. Running time may be unconfirmed.")
+        XCTAssertEqual(
+            observer.content.totalsExplanation,
+            "Today's total uses cached tracker state. Running time may be unconfirmed.")
         XCTAssertFalse(observer.content.canStopTracking)
     }
 }

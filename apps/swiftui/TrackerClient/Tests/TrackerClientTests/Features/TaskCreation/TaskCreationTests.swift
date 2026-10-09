@@ -57,7 +57,10 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertEqual(fixture.session.selectedTaskID, created.id)
         XCTAssertEqual(fixture.session.active, activeWorklog)
         XCTAssertEqual(fixture.session.tasks, tasks + [created])
-        XCTAssertEqual(fixture.client.operations.filter { if case .create = $0 { return true }; return false }.count, 1)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .create = $0 { return true }; return false
+            }.count, 1)
     }
 
     @MainActor
@@ -282,8 +285,10 @@ final class TaskCreationTests: XCTestCase {
 
     @MainActor
     func testInvalidCreationResponsesNeverCloseSheetOrSelectUnconfirmedTask() async throws {
-        for (id, tasks) in [("missing", [firstTask]),
-                            ("", [TaskItem(id: "", name: "Invalid identity", archived: false, latestStart: nil)])] {
+        for (id, tasks) in [
+            ("missing", [firstTask]),
+            ("", [TaskItem(id: "", name: "Invalid identity", archived: false, latestStart: nil)]),
+        ] {
             let fixture = Fixture()
             defer { fixture.cleanup() }
             try await fixture.start()
@@ -298,7 +303,8 @@ final class TaskCreationTests: XCTestCase {
             try await fixture.settled()
             XCTAssertTrue(fixture.session.taskCreation.isPresented)
             XCTAssertFalse(fixture.session.taskCreation.canEditName)
-            XCTAssertEqual(fixture.session.taskCreation.error, "The creation response does not contain the created task.")
+            XCTAssertEqual(
+                fixture.session.taskCreation.error, "The creation response does not contain the created task.")
             XCTAssertNil(fixture.session.selectedTaskID)
             XCTAssertTrue(fixture.session.tasks.isEmpty)
         }
@@ -309,7 +315,8 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
-        try await fixture.start(snapshot, rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 60_000_000)])
+        try await fixture.start(
+            snapshot, rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 60_000_000)])
         fixture.session.openTaskCreation()
         fixture.session.setTaskCreationName(secondTask.name)
         fixture.session.submitTaskCreation()
@@ -317,8 +324,13 @@ final class TaskCreationTests: XCTestCase {
         let createdSnapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
         creation.created(taskID: secondTask.id, snapshot: createdSnapshot)
         let report = try await fixture.client.next()
-        guard case .report = report.operation else { return XCTFail("Creation must refresh daily totals before history.") }
-        report.succeed(TrackerReport(snapshot: createdSnapshot, rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 60_000_000)]))
+        guard case .report = report.operation else {
+            return XCTFail("Creation must refresh daily totals before history.")
+        }
+        report.succeed(
+            TrackerReport(
+                snapshot: createdSnapshot,
+                rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 60_000_000)]))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
         history.succeed(emptyPage)
@@ -332,10 +344,12 @@ final class TaskCreationTests: XCTestCase {
     @MainActor
     func testRecoveryClassificationDistinguishesKnownRejectionFromUnknownOutcome() {
         XCTAssertFalse(TaskCreationState.requiresRecovery(BridgeFailure(message: "Invalid", kind: "validation")))
-        for failure in [BridgeFailure(message: "Uncertain", uncertain: true),
-                        BridgeFailure(message: "Refresh", requiresRefresh: true),
-                        BridgeFailure(message: "Offline", kind: "unavailable"),
-                        BridgeFailure(message: "Malformed", kind: "protocol")] {
+        for failure in [
+            BridgeFailure(message: "Uncertain", uncertain: true),
+            BridgeFailure(message: "Refresh", requiresRefresh: true),
+            BridgeFailure(message: "Offline", kind: "unavailable"),
+            BridgeFailure(message: "Malformed", kind: "protocol"),
+        ] {
             XCTAssertTrue(TaskCreationState.requiresRecovery(failure))
         }
         XCTAssertTrue(TaskCreationState.requiresRecovery(CancellationError()))
@@ -524,7 +538,8 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertTrue(fixture.session.canStartSelectedTask)
         XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
         XCTAssertEqual(fixture.session.worklogs, [])
-        XCTAssertEqual(fixture.client.operations.count, 5,
-                       "Recovering an already selected task must reuse its loaded history.")
+        XCTAssertEqual(
+            fixture.client.operations.count, 5,
+            "Recovering an already selected task must reuse its loaded history.")
     }
 }

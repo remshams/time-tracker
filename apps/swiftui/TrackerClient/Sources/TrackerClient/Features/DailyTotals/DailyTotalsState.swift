@@ -82,18 +82,24 @@ final class DailyTotalsState {
     func validate(_ report: TrackerReport) throws {
         let taskIDs = Set(report.snapshot.tasks.map(\.id))
         guard taskIDs.count == report.snapshot.tasks.count else {
-            throw BridgeFailure(message: "The report contains duplicate tasks.", kind: "protocol", requiresRefresh: true)
+            throw BridgeFailure(
+                message: "The report contains duplicate tasks.", kind: "protocol", requiresRefresh: true)
         }
         var rowIDs = Set<String>()
         for row in report.rows {
             guard taskIDs.contains(row.taskId), row.durationMicroseconds >= 0,
-                  rowIDs.insert(row.taskId).inserted else {
-                throw BridgeFailure(message: "The report contains invalid task totals.", kind: "protocol", requiresRefresh: true)
+                rowIDs.insert(row.taskId).inserted
+            else {
+                throw BridgeFailure(
+                    message: "The report contains invalid task totals.", kind: "protocol", requiresRefresh: true)
             }
         }
         if let active = report.snapshot.active {
-            guard !active.id.isEmpty, taskIDs.contains(active.taskId), active.end == nil, timestamp(active.start) != nil else {
-                throw BridgeFailure(message: "The report contains invalid running worklog data.", kind: "protocol", requiresRefresh: true)
+            guard !active.id.isEmpty, taskIDs.contains(active.taskId), active.end == nil, timestamp(active.start) != nil
+            else {
+                throw BridgeFailure(
+                    message: "The report contains invalid running worklog data.", kind: "protocol",
+                    requiresRefresh: true)
             }
         }
     }
@@ -114,7 +120,9 @@ final class DailyTotalsState {
     func totalDuration(active: WorklogItem?, clock: any TrackerClock) -> TimeInterval? {
         guard let request, calendar.dateInterval(of: .day, for: clock.now) == request.day else { return nil }
         let total = rows.values.reduce(0.0) { $0 + Double($1) } / 1_000_000
-        guard let active, let projected = duration(taskID: active.taskId, active: active, clock: clock) else { return total }
+        guard let active, let projected = duration(taskID: active.taskId, active: active, clock: clock) else {
+            return total
+        }
         return total + (projected - baseDuration(taskID: active.taskId))
     }
 
@@ -122,9 +130,10 @@ final class DailyTotalsState {
         guard let request, calendar.dateInterval(of: .day, for: clock.now) == request.day else { return nil }
         let base = baseDuration(taskID: taskID)
         guard let active, let reportedActive, active.id == reportedActive.id,
-              active.taskId == reportedActive.taskId, active.start == reportedActive.start,
-              active.taskId == taskID, active.end == nil,
-              let start = timestamp(active.start), let anchorDate else { return base }
+            active.taskId == reportedActive.taskId, active.start == reportedActive.start,
+            active.taskId == taskID, active.end == nil,
+            let start = timestamp(active.start), let anchorDate
+        else { return base }
         let projectedNow = anchorDate.addingTimeInterval(max(0, clock.uptime - anchorUptime))
         let lower = max(request.cutoff, request.day.start, start)
         let upper = min(projectedNow, request.day.end)
