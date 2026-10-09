@@ -142,8 +142,9 @@ impl Backend {
     }
 
     pub fn remote(endpoint: &str) -> Result<Self, String> {
-        let application =
-            RemoteApplication::disconnected(endpoint).map_err(|error| error.to_string())?;
+        let application = RemoteApplication::disconnected(endpoint)
+            .map_err(|error| error.to_string())?
+            .with_coherent_task_views();
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
