@@ -10,10 +10,10 @@ pub(crate) use chrono::{
     DateTime, FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, TimeDelta, TimeZone, Utc,
 };
 pub(crate) use tracker_application::{
-    ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, GlobalWorklogCursor,
-    GlobalWorklogPage, ReportQueries, ReportTotals, RepositoryError, SetActiveTaskOutcome,
-    TaskListItem, TaskOperations, TaskOrdering, TaskQueries, TrackerApplication,
-    TrackerApplicationService, TrackerSnapshot, TrackingOperations, WorklogCursor,
+    ActiveTrackingRead, ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome,
+    GlobalWorklogCursor, GlobalWorklogPage, ReportQueries, ReportTotals, RepositoryError,
+    SetActiveTaskOutcome, TaskListItem, TaskOperations, TaskOrdering, TaskQueries,
+    TrackerApplication, TrackerApplicationService, TrackingOperations, WorklogCursor,
     WorklogOperations, WorklogPage, WorklogPageSnapshot, WorklogQueries,
 };
 pub(crate) use tracker_domain::{
@@ -761,6 +761,11 @@ impl WorklogQueries for TestService {
         let task_items = self
             .tasks
             .iter()
+            .filter(|task| {
+                worklogs
+                    .iter()
+                    .any(|worklog| worklog.task_id() == task.id())
+            })
             .cloned()
             .map(|task| {
                 let latest_work_start = self
@@ -777,14 +782,15 @@ impl WorklogQueries for TestService {
             .collect();
         Ok(GlobalWorklogPage {
             worklogs,
-            snapshot: TrackerSnapshot {
-                task_items,
+            task_items,
+            tracking: Some(ActiveTrackingRead {
                 active_worklog: self
                     .authoritative_worklogs
                     .iter()
                     .find(|worklog| worklog.is_active())
                     .cloned(),
-            },
+                active_task_item: None,
+            }),
             next_cursor,
         })
     }
@@ -805,16 +811,18 @@ impl WorklogQueries for TestService {
         let result = self.worklog_pages.get(read).cloned().unwrap_or_else(|| {
             Ok(WorklogPage {
                 worklogs: Vec::new(),
-                snapshot: WorklogPageSnapshot {
+                snapshot: Some(WorklogPageSnapshot {
                     requested_task_latest_work_start: None,
                     active_worklog: None,
                     active_task_latest_work_start: None,
-                },
+                }),
                 next_cursor: None,
             })
         });
-        if let Ok(page) = &result {
-            self.tracking = match &page.snapshot.active_worklog {
+        if let Ok(page) = &result
+            && let Some(snapshot) = &page.snapshot
+        {
+            self.tracking = match snapshot.active_worklog.as_ref() {
                 Some(worklog) => TrackingState::Running {
                     worklog: ActiveWorklog::begin(worklog.id(), worklog.task_id(), worklog.start()),
                 },
@@ -886,11 +894,11 @@ pub(crate) fn page(worklogs: Vec<Worklog>, next_cursor: Option<WorklogCursor>) -
     let requested_task_latest_work_start = worklogs.iter().map(Worklog::start).max();
     let active_worklog = worklogs.iter().find(|worklog| worklog.is_active()).cloned();
     WorklogPage {
-        snapshot: WorklogPageSnapshot {
+        snapshot: Some(WorklogPageSnapshot {
             requested_task_latest_work_start,
             active_task_latest_work_start: active_worklog.as_ref().map(Worklog::start),
             active_worklog,
-        },
+        }),
         worklogs,
         next_cursor,
     }
@@ -903,11 +911,11 @@ pub(crate) fn page_with_active(
 ) -> WorklogPage {
     let requested_task_latest_work_start = worklogs.iter().map(Worklog::start).max();
     WorklogPage {
-        snapshot: WorklogPageSnapshot {
+        snapshot: Some(WorklogPageSnapshot {
             requested_task_latest_work_start,
             active_task_latest_work_start: active_worklog.as_ref().map(Worklog::start),
             active_worklog,
-        },
+        }),
         worklogs,
         next_cursor,
     }

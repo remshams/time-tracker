@@ -111,14 +111,6 @@ impl AppState {
                 let ApplicationOutcome::Worklog(result) = completed.outcome else {
                     unreachable!()
                 };
-                state.replace_items(completed.snapshot.items);
-                if result.is_ok() {
-                    state.sync_tracking_after_history_reload(completed.snapshot.tracking);
-                } else {
-                    state
-                        .tracking_mut()
-                        .sync(completed.snapshot.tracking, false);
-                }
                 if !current {
                     return;
                 }
@@ -141,10 +133,7 @@ impl AppState {
                                 else {
                                     unreachable!()
                                 };
-                                state.replace_items(completed.snapshot.items);
-                                state.sync_tracking_after_history_reload(
-                                    completed.snapshot.tracking,
-                                );
+
                                 if !current {
                                     return;
                                 }

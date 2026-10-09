@@ -93,8 +93,12 @@ impl AppState {
                     app.refresh_reports_now();
                     return;
                 }
-                let ApplicationOutcome::ReportTotals(result) = completed.outcome else {
-                    unreachable!("report request returns totals")
+                let result = match completed.outcome {
+                    ApplicationOutcome::ReportTotals(result) => {
+                        result.map(super::ReportPresentation::from)
+                    }
+                    ApplicationOutcome::RemoteReportTotals(result) => result,
+                    _ => unreachable!("report request returns totals"),
                 };
                 match result {
                     Ok(totals) => {
@@ -103,11 +107,7 @@ impl AppState {
                             .report_mut()
                             .expect("report is open")
                             .set_totals(totals);
-                        app.sync_from_snapshot(
-                            completed.snapshot.items,
-                            completed.snapshot.tracking,
-                            false,
-                        );
+
                         if had_error {
                             app.shell_mut().info("Report ready");
                         }
@@ -283,6 +283,7 @@ impl AppState {
         let first = self.catalog().tasks(view).first().map(|task| task.id());
         self.shell_mut().leave_reports(view, first);
         self.reload_tasks();
+        self.refresh_task_list();
     }
 
     fn navigate_report(&mut self, command: ReportCommand) {
@@ -402,7 +403,9 @@ impl AppState {
                 match result {
                     Ok(page) => {
                         let baseline = crate::screens::worklog_history::active_worklog_for_task(
-                            &page.snapshot.active_worklog,
+                            page.snapshot
+                                .as_ref()
+                                .and_then(|snapshot| snapshot.active_worklog.as_ref()),
                             task_id,
                         );
                         app.shell_mut().open_report_history(History::new(
@@ -411,11 +414,7 @@ impl AppState {
                             page.next_cursor,
                             baseline,
                         ));
-                        app.sync_from_snapshot(
-                            completed.snapshot.items,
-                            completed.snapshot.tracking,
-                            false,
-                        );
+
                         app.shell_mut().info("Task history");
                     }
                     Err(error) => app.shell_mut().error(application_error_text(&error)),
@@ -431,14 +430,17 @@ impl AppState {
             .and_then(|report| report.totals.as_ref())
             .and_then(|totals| {
                 totals.rows.iter().find(|row| {
-                    Some(row.task.id()) == self.shell().report().and_then(|report| report.selected)
+                    Some(row.task_id) == self.shell().report().and_then(|report| report.selected)
                 })
             })
         else {
             return;
         };
         let value = match command {
-            ReportCommand::CopyName => row.task.name().to_string(),
+            ReportCommand::CopyName => row
+                .task_name
+                .clone()
+                .unwrap_or_else(|| "unknown task".to_owned()),
             ReportCommand::CopyExact => format_exact(row.duration),
             ReportCommand::CopyRounded => format_rounded(row.duration),
             _ => return,
@@ -497,7 +499,7 @@ fn report_now() -> DateTime<Utc> {
 mod tests {
     use super::*;
     use crate::app::{App, AppEffect, AppState, Status};
-    use crate::application_request::{ApplicationSnapshot, CompletedRequest};
+    use crate::application_request::CompletedRequest;
     use crate::command::Command;
     use crate::screens::TaskListCommand;
     use crate::test_support::{TestService, app_in_timezone, archived_task, at, task};
@@ -512,17 +514,13 @@ mod tests {
                 rows: Vec::new(),
                 total: TimeDelta::zero(),
             })),
-            snapshot: ApplicationSnapshot {
-                items: Vec::new(),
-                tracking: TrackingState::Idle,
-            },
         };
-        state.complete_effect(effect, completed);
+        state.complete_effect_with_resources(effect, completed, Vec::new(), TrackingState::Idle);
     }
 
     #[test]
     fn period_change_during_a_report_read_queues_the_new_period() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.open_reports();
         let first = state
             .shell()
@@ -550,7 +548,7 @@ mod tests {
 
     #[test]
     fn live_report_accepts_a_result_after_the_next_tick() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.open_reports();
         let first = state.take_effect().expect("first report request");
         let ApplicationRequest::ReportTotals { now, end, .. } = &first.request else {
@@ -569,13 +567,21 @@ mod tests {
 
     #[test]
     fn reopening_reports_during_a_read_ignores_the_old_result() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.open_reports();
         let effect = state.take_effect().expect("first report request");
         state.handle_report_command(ReportCommand::ShowActive);
         state.open_reports();
         finish_empty_report(&mut state, effect);
         assert!(state.shell().report().unwrap().totals.is_none());
+        let task_list = state.take_effect().expect("return-to-tasks refresh");
+        state.complete_effect(
+            task_list,
+            CompletedRequest {
+                request: ApplicationRequest::RefreshTaskList,
+                outcome: ApplicationOutcome::TaskListRefresh(Ok(())),
+            },
+        );
         let replacement = state.take_effect().expect("reopened report request");
         finish_empty_report(&mut state, replacement);
         assert!(state.shell().report().unwrap().totals.is_some());
@@ -584,11 +590,11 @@ mod tests {
     #[test]
     fn report_refresh_does_not_discard_pending_history() {
         let selected = task(1, "selected task");
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.open_reports();
         let first = state.take_effect().expect("report request");
         let request = first.request.clone();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             first,
             CompletedRequest {
                 request,
@@ -599,11 +605,9 @@ mod tests {
                     }],
                     total: TimeDelta::seconds(1),
                 })),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         state.handle_report_command(ReportCommand::OpenHistory);
         let history = state.take_effect().expect("history request");
@@ -615,24 +619,22 @@ mod tests {
             .unwrap();
         state.refresh_reports_at(start + (end - start) / 2);
         let request = history.request.clone();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             history,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
                     worklogs: Vec::new(),
-                    snapshot: WorklogPageSnapshot {
+                    snapshot: Some(WorklogPageSnapshot {
                         requested_task_latest_work_start: None,
                         active_worklog: None,
                         active_task_latest_work_start: None,
-                    },
+                    }),
                     next_cursor: None,
                 })),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         assert_eq!(state.shell().screen(), Screen::WorklogHistory);
     }
@@ -640,7 +642,7 @@ mod tests {
     #[test]
     fn history_read_does_not_open_after_stepping_away_and_back() {
         let selected = task(1, "selected task");
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.open_reports();
         let first = state.take_effect().expect("report request");
         finish_empty_report(&mut state, first);
@@ -660,24 +662,22 @@ mod tests {
         state.handle_report_command(ReportCommand::PreviousPeriod);
         state.handle_report_command(ReportCommand::NextPeriod);
         let request = history.request.clone();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             history,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
                     worklogs: Vec::new(),
-                    snapshot: WorklogPageSnapshot {
+                    snapshot: Some(WorklogPageSnapshot {
                         requested_task_latest_work_start: None,
                         active_worklog: None,
                         active_task_latest_work_start: None,
-                    },
+                    }),
                     next_cursor: None,
                 })),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         assert_eq!(state.shell().screen(), Screen::Reports);
     }
@@ -686,7 +686,7 @@ mod tests {
     fn history_read_does_not_open_after_selecting_another_report_row() {
         let first_task = task(1, "first task");
         let second_task = task(2, "second task");
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.open_reports();
         let first = state.take_effect().expect("report request");
         finish_empty_report(&mut state, first);
@@ -715,24 +715,22 @@ mod tests {
             Some(second_task.id())
         );
         let request = history.request.clone();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             history,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
                     worklogs: Vec::new(),
-                    snapshot: WorklogPageSnapshot {
+                    snapshot: Some(WorklogPageSnapshot {
                         requested_task_latest_work_start: None,
                         active_worklog: None,
                         active_task_latest_work_start: None,
-                    },
+                    }),
                     next_cursor: None,
                 })),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         assert_eq!(state.shell().screen(), Screen::Reports);
     }
@@ -928,7 +926,7 @@ mod tests {
     }
 
     #[test]
-    fn report_snapshot_reconciles_both_saved_task_tabs() {
+    fn returning_from_reports_refreshes_both_saved_task_tabs() {
         let active = task(1, "active task");
         let archived = archived_task(2, "archived task");
         let service = TestService::with_tasks(vec![active.clone(), archived.clone()]);
