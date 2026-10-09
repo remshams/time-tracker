@@ -1051,23 +1051,20 @@ mod reviewed_intent_tests {
 }
 
 #[cfg(test)]
-mod remote_report_tests {
+mod remote_resource_tests {
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpListener;
     use std::thread;
     use std::time::{Duration, Instant};
 
     use super::{ApplicationOutcome, ApplicationRequest, execute_remote};
-    use crate::test_support::{at, task};
+    use crate::test_support::{at, task, worklog_id};
     use tracker_remote::RemoteApplication;
 
     fn report_server(
         task_id: tracker_domain::TaskId,
         metadata_available: bool,
     ) -> (String, thread::JoinHandle<Vec<String>>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        listener.set_nonblocking(true).unwrap();
         let report = format!(
             r#"{{"start":"{}","end":"{}","now":"{}","rows":[{{"task_id":"{task_id}","duration_us":60000000}}],"total_us":60000000,"revision":"report-1"}}"#,
             at(100).to_rfc3339(),
@@ -1094,6 +1091,13 @@ mod remote_report_tests {
         if metadata_available {
             responses.push((200, report));
         }
+        resource_server(responses)
+    }
+
+    fn resource_server(responses: Vec<(u16, String)>) -> (String, thread::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
         let worker = thread::spawn(move || {
             let mut paths = Vec::new();
             let deadline = Instant::now() + Duration::from_secs(3);
@@ -1107,7 +1111,7 @@ mod remote_report_tests {
                             }
                             thread::sleep(Duration::from_millis(2));
                         }
-                        Err(error) => panic!("could not accept report request: {error}"),
+                        Err(error) => panic!("could not accept resource request: {error}"),
                     }
                 };
                 stream
@@ -1188,5 +1192,94 @@ mod remote_report_tests {
     #[tokio::test]
     async fn report_and_history_labels_reuse_independent_task_resources_without_replacing_totals() {
         read_report(true).await;
+    }
+
+    #[tokio::test]
+    async fn global_history_resolves_duplicate_task_labels_once_and_reuses_them_on_later_pages() {
+        let task_id = task(1, "History task").id();
+        let first_id = worklog_id(1);
+        let second_id = worklog_id(2);
+        let third_id = worklog_id(3);
+        let first_page = format!(
+            r#"{{"worklogs":[{{"id":"{first_id}","task_id":"{task_id}","start":"{}","end":"{}"}},{{"id":"{second_id}","task_id":"{task_id}","start":"{}","end":"{}"}}],"next_cursor":{{"task_id":null,"start":"{}","id":"{second_id}","revision":42}},"revision":"history-1"}}"#,
+            at(200).to_rfc3339(),
+            at(250).to_rfc3339(),
+            at(100).to_rfc3339(),
+            at(150).to_rfc3339(),
+            at(100).to_rfc3339(),
+        );
+        let second_page = format!(
+            r#"{{"worklogs":[{{"id":"{third_id}","task_id":"{task_id}","start":"{}","end":"{}"}}],"next_cursor":null,"revision":"history-2"}}"#,
+            at(50).to_rfc3339(),
+            at(75).to_rfc3339(),
+        );
+        let metadata = format!(
+            r#"{{"task":{{"id":"{task_id}","name":"History task","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":"{}"}},"revision":"task-3"}}"#,
+            at(0).to_rfc3339(),
+            at(0).to_rfc3339(),
+            at(200).to_rfc3339(),
+        );
+        let (endpoint, worker) = resource_server(vec![
+            (200, r#"{"status":"ok","protocol_version":3}"#.to_owned()),
+            (200, first_page),
+            (200, metadata),
+            (200, second_page),
+        ]);
+        let mut application = RemoteApplication::disconnected(&endpoint).unwrap();
+
+        let completed = execute_remote(
+            &mut application,
+            ApplicationRequest::AllWorklogs { after: None },
+        )
+        .await;
+        let ApplicationOutcome::GlobalWorklogPage(Ok(page)) = completed.outcome else {
+            panic!("the first global page must load with independently resolved task metadata");
+        };
+        assert_eq!(
+            page.worklogs
+                .iter()
+                .map(|worklog| worklog.id())
+                .collect::<Vec<_>>(),
+            vec![first_id, second_id],
+        );
+        assert!(page.task_items.is_empty());
+        assert!(page.tracking.is_none());
+        let label = application.task_item(task_id).unwrap();
+        assert_eq!(label.task.name().as_str(), "History task");
+        assert_eq!(label.latest_work_start, Some(at(200)));
+        assert!(application.task_observation().is_none());
+        assert!(application.tracking_observation().is_none());
+
+        let completed = execute_remote(
+            &mut application,
+            ApplicationRequest::AllWorklogs {
+                after: Some(page.next_cursor.expect("the first page has older rows")),
+            },
+        )
+        .await;
+        let ApplicationOutcome::GlobalWorklogPage(Ok(page)) = completed.outcome else {
+            panic!("the later global page must reuse its task label");
+        };
+        assert_eq!(page.worklogs.len(), 1);
+        assert_eq!(page.worklogs[0].id(), third_id);
+        assert!(page.next_cursor.is_none());
+        assert!(page.task_items.is_empty());
+        assert!(page.tracking.is_none());
+        assert_eq!(
+            application.task(task_id).unwrap().name().as_str(),
+            "History task"
+        );
+        assert!(application.task_observation().is_none());
+        assert!(application.tracking_observation().is_none());
+        assert!(application.last_failure().is_none());
+
+        let paths = worker.join().unwrap();
+        assert_eq!(paths.len(), 4);
+        assert_eq!(paths[0], "/v1/health");
+        assert_eq!(paths[1], "/v1/worklogs");
+        assert_eq!(paths[2], format!("/v1/tasks/{task_id}"));
+        assert!(paths[3].starts_with("/v1/worklogs?"));
+        assert!(paths[3].contains(&format!("after_id={second_id}")));
+        assert!(paths[3].contains("after_revision=42"));
     }
 }
