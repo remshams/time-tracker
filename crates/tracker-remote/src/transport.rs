@@ -310,7 +310,7 @@ mod tests {
         });
         let transport = Transport::new(&endpoint).unwrap();
         let result: Result<bool, _> = transport
-            .send(Method::GET, transport.url("v1/snapshot"), None::<&()>)
+            .send(Method::GET, transport.url("v1/tasks"), None::<&()>)
             .await;
         assert!(result.is_err());
         assert!(!server.join().unwrap());
@@ -322,7 +322,7 @@ mod tests {
         let (endpoint, worker) = serve_json(payload);
         let transport = Transport::new(&endpoint).unwrap();
         let received: String = transport
-            .send(Method::GET, transport.url("v1/snapshot"), None::<&()>)
+            .send(Method::GET, transport.url("v1/tasks"), None::<&()>)
             .await
             .unwrap();
         assert_eq!(received.len(), 2_000_000);
@@ -335,7 +335,7 @@ mod tests {
         let (endpoint, worker) = serve_json(payload);
         let transport = Transport::new(&endpoint).unwrap();
         let result: Result<String, _> = transport
-            .send(Method::GET, transport.url("v1/snapshot"), None::<&()>)
+            .send(Method::GET, transport.url("v1/tasks"), None::<&()>)
             .await;
         assert!(
             matches!(result, Err(RemoteError::Protocol(message)) if message == "server response is too large")
@@ -349,7 +349,7 @@ mod tests {
         let (endpoint, worker) = serve_json(payload);
         let transport = Transport::new(&endpoint).unwrap();
         let received: String = transport
-            .send(Method::GET, transport.url("v1/snapshot"), None::<&()>)
+            .send(Method::GET, transport.url("v1/tasks"), None::<&()>)
             .await
             .unwrap();
         assert_eq!(received.len(), 16 * 1024 * 1024 - 2);

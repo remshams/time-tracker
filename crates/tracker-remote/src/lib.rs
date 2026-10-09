@@ -6,7 +6,7 @@ mod transport;
 use reqwest::StatusCode;
 
 pub use application::{RemoteApplication, RemoteFailureKind};
-pub use tracker_protocol::{InactiveTaskCandidatesDto, InactiveTaskPreviewDto};
+pub use tracker_protocol::InactiveTaskPreviewDto;
 
 /// A connection or wire failure. Semantic command errors use
 /// `ApplicationError` in operation results.
