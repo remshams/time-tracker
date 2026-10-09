@@ -10,22 +10,28 @@ final class PresentationObserverTests: XCTestCase {
         let observer = TrackerPresentationObserver(session: fixture.session)
         var bulkChanges = 0
         var moveChanges = 0
+        var correctionChanges = 0
         observer.onBulkTaskArchivingChange = { bulkChanges += 1 }
         observer.onWorklogMoveChange = { moveChanges += 1 }
+        observer.onWorklogCorrectionChange = { correctionChanges += 1 }
         fixture.session.onChange = { observer.update(from: fixture.session) }
 
         observer.update(from: fixture.session)
         XCTAssertEqual(bulkChanges, 0)
         XCTAssertEqual(moveChanges, 0)
+        XCTAssertEqual(correctionChanges, 0)
         fixture.session.openTaskCreation()
         XCTAssertEqual(bulkChanges, 1)
         XCTAssertEqual(moveChanges, 1)
+        XCTAssertEqual(correctionChanges, 1)
         fixture.session.cancelTaskCreation()
         XCTAssertEqual(bulkChanges, 2)
         XCTAssertEqual(moveChanges, 2)
+        XCTAssertEqual(correctionChanges, 2)
         observer.update(from: fixture.session)
         XCTAssertEqual(bulkChanges, 2)
         XCTAssertEqual(moveChanges, 2)
+        XCTAssertEqual(correctionChanges, 2)
     }
 
     @MainActor
