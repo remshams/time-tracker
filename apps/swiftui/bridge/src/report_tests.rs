@@ -471,6 +471,76 @@ fn remote_report_uses_server_totals_and_composes_task_and_tracking_resources() {
 }
 
 #[test]
+fn remote_report_reconciles_changed_tracking_once_and_keeps_matching_totals() {
+    use axum::{Json, routing::get};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tracker_protocol::{HealthDto, ReportDto, ReportRowDto, SnapshotDto};
+
+    for initial_revision in ["41", "42"] {
+        let repository = SqliteRepository::open_in_memory().unwrap();
+        let mut application = TrackerApplication::load(repository).unwrap();
+        let task_id = application
+            .create_task(TaskName::new("Measured task").unwrap(), at(0))
+            .unwrap()
+            .id();
+        let resources = SnapshotDto::from_snapshot(
+            &tracker_application::TrackerSnapshot {
+                task_items: application.tasks(TaskOrdering::default()),
+                active_worklog: None,
+            },
+            "42".into(),
+        );
+        let requests = Arc::new(AtomicUsize::new(0));
+        let report_requests = requests.clone();
+        let router = resource_router(resources, vec![])
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(HealthDto {
+                        status: "ok".into(),
+                        protocol_version: tracker_protocol::VERSION,
+                    })
+                }),
+            )
+            .route(
+                "/v1/reports/task-totals",
+                get(move || {
+                    let first = report_requests.fetch_add(1, Ordering::SeqCst) == 0;
+                    async move {
+                        let duration_us = if first { 50_000_000 } else { 60_000_000 };
+                        Json(ReportDto {
+                            start: at(1000),
+                            end: at(1100),
+                            now: at(1050),
+                            rows: vec![ReportRowDto {
+                                task_id: task_id.to_string(),
+                                duration_us,
+                            }],
+                            total_us: duration_us,
+                            revision: if first { initial_revision } else { "42" }.into(),
+                        })
+                    }
+                }),
+            );
+        let server = Server::start(router);
+        let mut bridge = server.client();
+        let value = report(&mut bridge, 1000, 1100, 1050);
+        assert!(value.get("error").is_none(), "{value}");
+        assert_eq!(value["data"]["revision"], "42");
+        assert_eq!(value["data"]["snapshot"]["trackingRevision"], "42");
+        let changed = initial_revision != "42";
+        assert_eq!(requests.load(Ordering::SeqCst), if changed { 2 } else { 1 });
+        assert_eq!(
+            value["data"]["rows"][0]["durationMicroseconds"],
+            if changed { 60_000_000 } else { 50_000_000 }
+        );
+    }
+}
+
+#[test]
 fn remote_report_failure_retains_resource_caches_until_an_explicit_refresh() {
     use axum::{Json, Router, http::StatusCode, routing::get};
     use std::sync::{
