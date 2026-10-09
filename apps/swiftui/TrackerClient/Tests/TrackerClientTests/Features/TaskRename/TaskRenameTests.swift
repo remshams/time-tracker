@@ -10,7 +10,7 @@ final class TaskRenameTests: XCTestCase {
         fixture.session.openTaskRename()
         XCTAssertFalse(fixture.session.canOpenTaskRename)
         XCTAssertFalse(fixture.session.taskRename.isPresented)
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         fixture.session.openTaskRename()
         XCTAssertEqual(fixture.session.taskRename.taskID, firstTask.id)
         XCTAssertEqual(fixture.session.taskRename.originalName, firstTask.name)
@@ -31,7 +31,7 @@ final class TaskRenameTests: XCTestCase {
     func testRenameKeepsCapturedTargetWhenSelectionChangesAndPreservesTrackingAndHistory() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Renamed task")
@@ -44,7 +44,7 @@ final class TaskRenameTests: XCTestCase {
         fixture.session.submitTaskRename()
         fixture.clock.now.addTimeInterval(30)
         let preflight = try await fixture.client.next()
-        XCTAssertEqual(preflight.operation, .snapshot)
+        XCTAssertEqual(preflight.operation, .taskList)
         preflight.succeed(snapshot)
         let rename = try await fixture.client.next()
         XCTAssertEqual(
@@ -54,7 +54,7 @@ final class TaskRenameTests: XCTestCase {
         fixture.session.setTaskRenameName("Replacement")
         XCTAssertEqual(fixture.session.taskRename.name, "Renamed task")
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
-        rename.succeed(TrackerSnapshot(tasks: [renamed, secondTask], active: activeWorklog))
+        rename.succeed(TaskListResources(tasks: [renamed, secondTask], active: activeWorklog))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.taskRename.isPresented)
         XCTAssertEqual(fixture.session.selectedTaskID, secondTask.id)
@@ -72,7 +72,7 @@ final class TaskRenameTests: XCTestCase {
     func testArchivedTaskCanBeRenamedWithoutMovingTabs() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [archivedTask], active: nil)
+        let snapshot = TaskListResources(tasks: [archivedTask], active: nil)
         try await fixture.start(snapshot)
         XCTAssertFalse(fixture.session.canOpenTaskRename)
         fixture.session.changeTab(.archived)
@@ -87,19 +87,19 @@ final class TaskRenameTests: XCTestCase {
         preflight.succeed(snapshot)
         let rename = try await fixture.client.next()
         let renamed = TaskItem(id: archivedTask.id, name: "Renamed archive", archived: true, latestStart: nil)
-        rename.succeed(TrackerSnapshot(tasks: [renamed], active: nil))
+        rename.succeed(TaskListResources(tasks: [renamed], active: nil))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.tab, .archived)
         XCTAssertEqual(fixture.session.selectedTaskID, archivedTask.id)
         XCTAssertTrue(fixture.session.selectedTask?.archived == true)
-        XCTAssertEqual(fixture.client.operations.count, 4)
+        XCTAssertEqual(fixture.client.operations.count, 5)
     }
 
     @MainActor
     func testRenameQueuesBehindPollingAndPollingDoesNotOverwriteDraft() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Draft name")
@@ -118,7 +118,7 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertEqual(
             rename.operation, .rename(task: firstTask.id, name: "Draft name", at: "2025-01-01T00:00:00.000Z"))
         let renamed = TaskItem(id: firstTask.id, name: "Draft name", archived: false, latestStart: nil)
-        rename.succeed(TrackerSnapshot(tasks: [renamed], active: nil))
+        rename.succeed(TaskListResources(tasks: [renamed], active: nil))
         try await fixture.settled()
     }
 
@@ -126,13 +126,13 @@ final class TaskRenameTests: XCTestCase {
     func testExternalNameChangeRequiresReviewAndMakesNoWrite() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("My change")
         fixture.session.submitTaskRename()
         let changed = TaskItem(id: firstTask.id, name: "Other client change", archived: false, latestStart: nil)
         let preflight = try await fixture.client.next()
-        preflight.succeed(TrackerSnapshot(tasks: [changed], active: nil))
+        preflight.succeed(TaskListResources(tasks: [changed], active: nil))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.taskRename.name, "My change")
         XCTAssertEqual(
@@ -151,13 +151,13 @@ final class TaskRenameTests: XCTestCase {
     func testAlreadyAppliedDesiredNameResolvesWithoutAnotherWrite() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Desired name")
         fixture.session.submitTaskRename()
         let desired = TaskItem(id: firstTask.id, name: "Desired name", archived: false, latestStart: nil)
         let preflight = try await fixture.client.next()
-        preflight.succeed(TrackerSnapshot(tasks: [desired], active: nil))
+        preflight.succeed(TaskListResources(tasks: [desired], active: nil))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.taskRename.isPresented)
         XCTAssertEqual(fixture.session.selectedTask?.name, desired.name)
@@ -168,7 +168,7 @@ final class TaskRenameTests: XCTestCase {
     func testLostResponseReconcilesCommittedRenameAndClosesSheet() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Confirmed name")
@@ -178,9 +178,9 @@ final class TaskRenameTests: XCTestCase {
         let rename = try await fixture.client.next()
         rename.fail(BridgeFailure(message: "Response lost", kind: "unavailable", uncertain: true))
         let reconciliation = try await fixture.client.next()
-        XCTAssertEqual(reconciliation.operation, .snapshot)
+        XCTAssertEqual(reconciliation.operation, .taskList)
         let renamed = TaskItem(id: firstTask.id, name: "Confirmed name", archived: false, latestStart: nil)
-        reconciliation.succeed(TrackerSnapshot(tasks: [renamed], active: activeWorklog))
+        reconciliation.succeed(TaskListResources(tasks: [renamed], active: activeWorklog))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.taskRename.isPresented)
         XCTAssertFalse(fixture.session.isStale)
@@ -192,7 +192,7 @@ final class TaskRenameTests: XCTestCase {
     func testUncertainFailureRetainsTargetNameTimeAndBlocksConnectionAndCreation() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Retained name")
@@ -233,7 +233,7 @@ final class TaskRenameTests: XCTestCase {
         let retry = try await fixture.client.next()
         XCTAssertEqual(retry.operation, rename.operation)
         let renamed = TaskItem(id: firstTask.id, name: "Retained name", archived: false, latestStart: nil)
-        retry.succeed(TrackerSnapshot(tasks: [renamed, secondTask], active: nil))
+        retry.succeed(TaskListResources(tasks: [renamed, secondTask], active: nil))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.selectedTaskID, secondTask.id)
     }
@@ -242,7 +242,7 @@ final class TaskRenameTests: XCTestCase {
     func testNulRejectionPublishesInlineErrorAndDraftEditsDoNotRedrawLists() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         let observer = TrackerPresentationObserver(session: fixture.session)
         var displayedErrors: [String?] = []
         var contentUpdates = 0
@@ -266,7 +266,7 @@ final class TaskRenameTests: XCTestCase {
     func testConnectionSwitchDiscardsEditingDraftAndEditorsAreMutuallyExclusive() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         fixture.session.openTaskCreation()
         XCTAssertFalse(fixture.session.canOpenTaskRename)
         fixture.session.openTaskRename()
@@ -291,7 +291,7 @@ final class TaskRenameTests: XCTestCase {
     func testKnownNameRejectionReconcilesBeforeAllowingDraftChanges() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Invalid\u{0001}name")
@@ -316,7 +316,7 @@ final class TaskRenameTests: XCTestCase {
     func testConflictDuringWriteRequiresReviewEvenWhenNameStillMatchesOriginal() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Desired name")
@@ -342,7 +342,7 @@ final class TaskRenameTests: XCTestCase {
     func testUncertainWriteReconciliationDetectsAnotherClientsNameInsteadOfRebasing() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("My name")
@@ -353,7 +353,7 @@ final class TaskRenameTests: XCTestCase {
         rename.fail(BridgeFailure(message: "Response lost", uncertain: true))
         let reconciliation = try await fixture.client.next()
         let other = TaskItem(id: firstTask.id, name: "Other client's name", archived: false, latestStart: nil)
-        reconciliation.succeed(TrackerSnapshot(tasks: [other], active: nil))
+        reconciliation.succeed(TaskListResources(tasks: [other], active: nil))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.taskRename.canSubmit)
         XCTAssertEqual(fixture.session.selectedTask?.name, other.name)
@@ -366,7 +366,7 @@ final class TaskRenameTests: XCTestCase {
     func testPreflightOutageShowsErrorWithoutWriteAndKeepsRetryIntent() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Draft name")
         fixture.session.submitTaskRename()
@@ -388,12 +388,12 @@ final class TaskRenameTests: XCTestCase {
     func testMissingTargetRequiresReviewAndNeverRenamesSelectedReplacement() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("New name")
         fixture.session.submitTaskRename()
         let preflight = try await fixture.client.next()
-        preflight.succeed(TrackerSnapshot(tasks: [secondTask], active: nil))
+        preflight.succeed(TaskListResources(tasks: [secondTask], active: nil))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
@@ -409,7 +409,7 @@ final class TaskRenameTests: XCTestCase {
     func testExplicitClickedIdentityIsCapturedAndInvalidIdentityIsIgnored() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         fixture.session.openTaskRename(taskID: "missing-task")
         XCTAssertFalse(fixture.session.taskRename.isPresented)
         fixture.session.openTaskRename(taskID: secondTask.id)
@@ -423,7 +423,7 @@ final class TaskRenameTests: XCTestCase {
     func testSleepDuringQueuedRequestAndPreflightDefersWriteUntilWake() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.refresh()
         let poll = try await fixture.client.next()
@@ -437,7 +437,7 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertEqual(fixture.client.operations.count, 3)
         fixture.session.wake()
         let preflight = try await fixture.client.next()
-        XCTAssertEqual(preflight.operation, .snapshot)
+        XCTAssertEqual(preflight.operation, .taskList)
         fixture.session.sleep()
         preflight.succeed(snapshot)
         try await fixture.settled()
@@ -450,7 +450,7 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertEqual(
             rename.operation, .rename(task: firstTask.id, name: "Queued rename", at: "2025-01-01T00:00:00.000Z"))
         let renamed = TaskItem(id: firstTask.id, name: "Queued rename", archived: false, latestStart: nil)
-        rename.succeed(TrackerSnapshot(tasks: [renamed], active: nil))
+        rename.succeed(TaskListResources(tasks: [renamed], active: nil))
         try await fixture.settled()
     }
 
@@ -459,7 +459,7 @@ final class TaskRenameTests: XCTestCase {
         for shutdownBeforeWrite in [true, false] {
             let fixture = Fixture()
             defer { fixture.cleanup() }
-            let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+            let snapshot = TaskListResources(tasks: [firstTask], active: nil)
             try await fixture.start(snapshot)
             fixture.session.openTaskRename()
             fixture.session.setTaskRenameName("New name")
@@ -474,7 +474,7 @@ final class TaskRenameTests: XCTestCase {
             }
             fixture.session.shutdown()
             let renamed = TaskItem(id: firstTask.id, name: "New name", archived: false, latestStart: nil)
-            outstanding.succeed(TrackerSnapshot(tasks: [renamed], active: nil))
+            outstanding.succeed(TaskListResources(tasks: [renamed], active: nil))
             await Task.yield()
             XCTAssertEqual(fixture.session.tasks, [firstTask])
             XCTAssertFalse(fixture.session.taskRename.isPresented)
@@ -494,7 +494,7 @@ final class TaskRenameTests: XCTestCase {
         for queueBehindPoll in [true, false] {
             let fixture = Fixture()
             defer { fixture.cleanup() }
-            let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+            let snapshot = TaskListResources(tasks: [firstTask], active: nil)
             try await fixture.start(snapshot)
             let outstanding: FakeClient.Request
             if queueBehindPoll {
@@ -524,7 +524,7 @@ final class TaskRenameTests: XCTestCase {
     func testRemoteRenameReceiptKeepsNewerTaskMetadataAfterRecovery() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Desired name")
@@ -534,7 +534,7 @@ final class TaskRenameTests: XCTestCase {
         let rename = try await fixture.client.next()
         let newer = TaskItem(id: firstTask.id, name: "Another client renamed later", archived: false, latestStart: nil)
         rename.succeed(
-            TrackerSnapshot(tasks: [newer], active: nil, tasksRevision: "epoch:3", trackingRevision: "epoch:3"))
+            TaskListResources(tasks: [newer], active: nil, tasksRevision: "epoch:3", trackingRevision: "epoch:3"))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.tasks, [newer])
         XCTAssertFalse(fixture.session.taskRename.isPresented)
@@ -552,7 +552,7 @@ final class TaskRenameTests: XCTestCase {
         for responseTask in [secondTask, firstTask, wrongTargetWithDesiredName] {
             let fixture = Fixture()
             defer { fixture.cleanup() }
-            let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+            let snapshot = TaskListResources(tasks: [firstTask], active: nil)
             try await fixture.start(snapshot)
             fixture.session.openTaskRename()
             fixture.session.setTaskRenameName("Desired name")
@@ -564,9 +564,9 @@ final class TaskRenameTests: XCTestCase {
             var displayedErrors: [String?] = []
             observer.onTaskRenameChange = { displayedErrors.append(fixture.session.taskRename.error) }
             fixture.session.onChange = { observer.update(from: fixture.session) }
-            rename.succeed(TrackerSnapshot(tasks: [responseTask], active: nil))
+            rename.succeed(TaskListResources(tasks: [responseTask], active: nil))
             let reconciliation = try await fixture.client.next()
-            XCTAssertEqual(reconciliation.operation, .snapshot)
+            XCTAssertEqual(reconciliation.operation, .taskList)
             reconciliation.succeed(snapshot)
             let finished = Task { @MainActor in
                 while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
@@ -585,7 +585,7 @@ final class TaskRenameTests: XCTestCase {
     func testFailedWriteConfirmationRetainsDraftAndDisablesTrackingUntilRecovery() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Desired name")
@@ -609,7 +609,7 @@ final class TaskRenameTests: XCTestCase {
     func testShutdownDuringWriteReconciliationDiscardsConfirmedResult() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Desired name")
@@ -621,7 +621,7 @@ final class TaskRenameTests: XCTestCase {
         let reconciliation = try await fixture.client.next()
         fixture.session.shutdown()
         let renamed = TaskItem(id: firstTask.id, name: "Desired name", archived: false, latestStart: nil)
-        reconciliation.succeed(TrackerSnapshot(tasks: [renamed], active: nil))
+        reconciliation.succeed(TaskListResources(tasks: [renamed], active: nil))
         await Task.yield()
         XCTAssertEqual(fixture.session.tasks, [firstTask])
         XCTAssertFalse(fixture.session.taskRename.isPresented)
@@ -632,7 +632,7 @@ final class TaskRenameTests: XCTestCase {
     func testFailedSourceChangeKeepsDraftForOriginalConnection() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Current server draft")
         let connect = Task { await fixture.session.connect(serverSettings) }
@@ -650,7 +650,7 @@ final class TaskRenameTests: XCTestCase {
     func testUnresolvedCreationBlocksRenameAfterCreationSheetDismissal() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskCreation()
         fixture.session.setTaskCreationName("Unconfirmed new task")
@@ -672,7 +672,7 @@ final class TaskRenameTests: XCTestCase {
     func testAutomaticPauseRunsBeforeQueuedRenameAndResumeUsesSameIdentity() async throws {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.refresh()
         let poll = try await fixture.client.next()
@@ -682,18 +682,18 @@ final class TaskRenameTests: XCTestCase {
         fixture.session.screenLocked(at: fixture.clock.now)
         poll.succeed(snapshot)
         let automationRead = try await fixture.client.next()
-        XCTAssertEqual(automationRead.operation, .snapshot)
+        XCTAssertEqual(automationRead.operation, .taskList)
         automationRead.succeed(snapshot)
         let pause = try await fixture.client.next()
         XCTAssertEqual(pause.operation, .pause(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
-        let paused = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let paused = TaskListResources(tasks: [firstTask], active: nil)
         pause.paused(paused)
         let renameRead = try await fixture.client.next()
-        XCTAssertEqual(renameRead.operation, .snapshot)
+        XCTAssertEqual(renameRead.operation, .taskList)
         renameRead.succeed(paused)
         let rename = try await fixture.client.next()
         let renamed = TaskItem(id: firstTask.id, name: "Renamed while locked", archived: false, latestStart: nil)
-        let renamedPaused = TrackerSnapshot(tasks: [renamed], active: nil)
+        let renamedPaused = TaskListResources(tasks: [renamed], active: nil)
         rename.succeed(renamedPaused)
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
@@ -705,7 +705,7 @@ final class TaskRenameTests: XCTestCase {
         let resume = try await fixture.client.next()
         XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: "2025-01-01T00:00:30.000Z"))
         let resumed = WorklogItem(id: "resumed", taskId: firstTask.id, start: "2025-01-01T00:00:30.000Z", end: nil)
-        resume.succeed(TrackerSnapshot(tasks: [renamed], active: resumed))
+        resume.succeed(TaskListResources(tasks: [renamed], active: resumed))
         let resumedHistory = try await fixture.client.next()
         resumedHistory.succeed(emptyPage)
         try await fixture.settled()
@@ -716,7 +716,7 @@ final class TaskRenameTests: XCTestCase {
     func testCreationSheetUpdatesRenameButtonAvailabilityWithoutChangingRenameDraft() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         let originalPresentation = fixture.session.taskRename
         let observer = TrackerPresentationObserver(session: fixture.session)
         var enabledStates: [Bool] = []

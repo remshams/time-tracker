@@ -30,7 +30,7 @@ final class TaskNameEditingPolicyTests: XCTestCase {
         let creation = try await fixture.client.next()
         XCTAssertEqual(creation.operation, .create(name: "\u{200b}", at: "2025-01-01T00:00:00.000Z"))
         let task = TaskItem(id: "zero-width-task", name: "\u{200b}", archived: false, latestStart: nil)
-        creation.created(taskID: task.id, snapshot: TrackerSnapshot(tasks: [task], active: nil))
+        creation.created(taskID: task.id, snapshot: TaskListResources(tasks: [task], active: nil))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
@@ -43,7 +43,7 @@ final class TaskNameEditingPolicyTests: XCTestCase {
         for losesResponse in [false, true] {
             let fixture = Fixture()
             defer { fixture.cleanup() }
-            let original = TrackerSnapshot(tasks: [firstTask], active: nil)
+            let original = TaskListResources(tasks: [firstTask], active: nil)
             try await fixture.start(original)
             fixture.session.openTaskRename()
             let rawName = " \u{200b}Renamed task\u{200b}\u{00a0}"
@@ -55,7 +55,7 @@ final class TaskNameEditingPolicyTests: XCTestCase {
             XCTAssertEqual(rename.operation, .rename(task: firstTask.id, name: rawName, at: "2025-01-01T00:00:00.000Z"))
             let task = TaskItem(
                 id: firstTask.id, name: "\u{200b}Renamed task\u{200b}", archived: false, latestStart: nil)
-            let updated = TrackerSnapshot(tasks: [task], active: nil)
+            let updated = TaskListResources(tasks: [task], active: nil)
             if losesResponse {
                 rename.fail(BridgeFailure(message: "Response lost", uncertain: true))
                 let reconciliation = try await fixture.client.next()

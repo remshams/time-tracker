@@ -72,7 +72,7 @@ final class LifecycleTests: XCTestCase {
     func testDisplayTimerNeedsRunningTaskAndVisibilityAndDoesNotFetchData() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(snapshot)
         XCTAssertNil(fixture.scheduler.display)
         XCTAssertEqual(fixture.session.timerDisplayText, "00:00:30")
@@ -99,7 +99,7 @@ final class LifecycleTests: XCTestCase {
     func testCancelledTimerCallbacksAlreadyQueuedCannotRefreshOrUpdateDisplay() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.setWindowVisible(true)
         let refresh = try await fixture.client.next()
@@ -156,7 +156,7 @@ final class LifecycleTests: XCTestCase {
     func testElapsedUsesMonotonicClockUntilWakeResetsWallTimeAnchor() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.setWindowVisible(true)
         let refresh = try await fixture.client.next()
@@ -185,10 +185,10 @@ final class LifecycleTests: XCTestCase {
     func testShutdownCancelsTimersAndIgnoresLateConnectionResult() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         fixture.session.setWindowVisible(true)
         let refresh = try await fixture.client.next()
-        refresh.succeed(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        refresh.succeed(TaskListResources(tasks: [firstTask], active: activeWorklog))
         try await fixture.settled()
         let tokens = fixture.scheduler.active
         let connecting = Task { await fixture.session.connect(serverSettings) }
@@ -196,7 +196,7 @@ final class LifecycleTests: XCTestCase {
         fixture.session.shutdown()
         XCTAssertTrue(tokens.allSatisfy { $0.cancelled })
         XCTAssertTrue(fixture.scheduler.active.isEmpty)
-        candidate.succeed(TrackerSnapshot(tasks: [secondTask], active: nil))
+        candidate.succeed(TaskListResources(tasks: [secondTask], active: nil))
         let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
         XCTAssertEqual(fixture.session.connectionSettings, .local)
