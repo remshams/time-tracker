@@ -815,10 +815,12 @@ mod effect_tests {
     #[test]
     fn quitting_discards_queued_reads_and_keeps_an_accepted_write() {
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
+        assert!(!state.has_queued_write());
         let read = ApplicationRequest::AllWorklogs { after: None };
         assert!(state.enqueue(read.clone(), |_, _| {}));
         let active = state.take_effect().expect("active read");
         assert!(state.enqueue(read.clone(), |_, _| {}));
+        assert!(!state.has_queued_write());
         let write = ApplicationRequest::CreateTask {
             name: TaskName::new("Saved task").unwrap(),
             occurred_at: Utc::now(),
@@ -844,6 +846,7 @@ mod effect_tests {
             TrackingState::Idle,
         );
         assert_eq!(state.take_effect().expect("accepted write").request, write);
+        assert!(!state.has_queued_write());
         assert!(state.active_request_is_write());
     }
 }
