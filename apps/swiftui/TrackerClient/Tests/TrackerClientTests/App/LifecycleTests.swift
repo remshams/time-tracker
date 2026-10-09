@@ -121,6 +121,46 @@ final class LifecycleTests: XCTestCase {
     }
 
     @MainActor
+    func testReplacedTimersCannotPublishAfterSessionResumes() async throws {
+        let fixture = Fixture(reports: true)
+        defer { fixture.cleanup() }
+        fixture.session.setWindowVisible(true)
+        let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(resources)
+        let replacedTimers = fixture.scheduler.active
+        XCTAssertTrue(replacedTimers.contains { $0.repeating })
+        XCTAssertTrue(replacedTimers.contains { !$0.repeating && $0.tolerance == 0 })
+
+        fixture.session.sleep()
+        fixture.clock.now.addTimeInterval(30)
+        fixture.clock.uptime += 30
+        fixture.session.wake()
+        let resumed = try await fixture.client.next()
+        resumed.succeed(TaskListTotalsRefresh(snapshot: resources, rows: []))
+        try await fixture.settled()
+        let currentDisplay = try XCTUnwrap(fixture.scheduler.display)
+        let publishedNow = fixture.session.now
+        let operationCount = fixture.client.operations.count
+        let scheduledCount = fixture.scheduler.scheduled.count
+        var changes = 0
+        fixture.session.onChange = { changes += 1 }
+        fixture.clock.now.addTimeInterval(10)
+        fixture.clock.uptime += 10
+
+        replacedTimers.forEach { $0.deliverQueuedAction() }
+        XCTAssertEqual(changes, 0, "Callbacks from replaced timers must not publish into the resumed session.")
+        XCTAssertEqual(fixture.session.now, publishedNow)
+        XCTAssertFalse(fixture.session.isBusy)
+        XCTAssertEqual(fixture.client.operations.count, operationCount)
+        XCTAssertEqual(fixture.scheduler.scheduled.count, scheduledCount)
+
+        currentDisplay.fire()
+        XCTAssertEqual(changes, 1)
+        XCTAssertEqual(fixture.session.now, fixture.clock.now)
+        XCTAssertEqual(fixture.client.operations.count, operationCount)
+    }
+
+    @MainActor
     func testVisibleIdleSessionDoesNotScheduleDisplayTimer() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
