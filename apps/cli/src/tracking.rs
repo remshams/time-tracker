@@ -6,7 +6,7 @@ use tracker_protocol::WorklogDto;
 
 use crate::CliError;
 use crate::args::Tracking;
-use crate::backend::Backend;
+use crate::backend::{Backend, BackendKind};
 
 pub(crate) async fn execute(
     backend: &mut Backend,
@@ -14,7 +14,12 @@ pub(crate) async fn execute(
     now: DateTime<Utc>,
 ) -> Result<Value, CliError> {
     match command {
-        Tracking::Status => Ok(status(backend, now)),
+        Tracking::Status => {
+            if let BackendKind::Remote(app) = &mut backend.kind {
+                app.refresh_tracking().await.map_err(CliError::remote)?;
+            }
+            Ok(status(backend, now))
+        }
         Tracking::Start { task_id } => Ok(match backend.set_active_task(task_id, now).await? {
             SetActiveTaskOutcome::Started { worklog } => {
                 json!({"outcome": "started", "worklog": WorklogDto::from(&worklog)})

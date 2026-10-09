@@ -138,7 +138,12 @@ fn decode_cursor(
     match token {
         CursorToken::Task { backend, cursor } => {
             check_backend(backend, identity)?;
-            let task_id = cursor.task_id.parse().map_err(CliError::input)?;
+            let task_id = cursor
+                .task_id
+                .as_deref()
+                .ok_or_else(|| CliError::input("task cursor is missing its task scope"))?
+                .parse()
+                .map_err(CliError::input)?;
             if task != Some(task_id) {
                 return Err(CliError::input(
                     "cursor belongs to a different task or scope",

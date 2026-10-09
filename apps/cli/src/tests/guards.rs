@@ -325,9 +325,10 @@ fn json_file_inputs_reject_fifos_and_directories_without_waiting_for_writers() {
 #[test]
 fn remote_preview_tokens_reject_invalid_guards_and_candidates_before_connecting() {
     let backend = "remote:http://127.0.0.1:8765/";
+    let id = "00000000-0000-7000-8000-000000000001";
     let valid = serde_json::json!({
         "mode":"remote", "backend":backend,
-        "preview":{"as_of":T0,"count":1,"sample_names":["Old task"],"revision":"revision-1"}
+        "preview":{"as_of":T0,"inactive_days":14,"count":1,"candidate_task_ids":[id],"revision":"revision-1"}
     });
     let now = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
     let validate = |token: &serde_json::Value, identity: &str| {
@@ -338,27 +339,19 @@ fn remote_preview_tokens_reject_invalid_guards_and_candidates_before_connecting(
         crate::tasks::validate(&mut command, identity, now)
     };
     validate(&valid, backend).unwrap();
-    let mut exactly_five = valid.clone();
-    exactly_five["preview"]["count"] = serde_json::json!(5);
-    exactly_five["preview"]["sample_names"] =
-        serde_json::json!(["One", "Two", "Three", "Four", "Five"]);
-    validate(&exactly_five, backend).unwrap();
-    let mut fewer_than_count = valid.clone();
-    fewer_than_count["preview"]["count"] = serde_json::json!(5);
-    validate(&fewer_than_count, backend).unwrap();
-    let mut too_many = exactly_five.clone();
-    too_many["preview"]["count"] = serde_json::json!(6);
-    too_many["preview"]["sample_names"] =
-        serde_json::json!(["One", "Two", "Three", "Four", "Five", "Six"]);
-    assert_eq!(validate(&too_many, backend).unwrap_err().exit_code, 2);
+    let mut empty = valid.clone();
+    empty["preview"]["count"] = serde_json::json!(0);
+    empty["preview"]["candidate_task_ids"] = serde_json::json!([]);
+    validate(&empty, backend).unwrap();
     for (field, value) in [
         ("revision", serde_json::json!("")),
-        ("sample_names", serde_json::json!([""])),
-        (
-            "sample_names",
-            serde_json::json!(["One", "Two", "Three", "Four", "Five", "Six"]),
-        ),
+        ("inactive_days", serde_json::json!(0)),
+        ("inactive_days", serde_json::json!(7)),
+        ("candidate_task_ids", serde_json::json!(["invalid"])),
+        ("candidate_task_ids", serde_json::json!([id, id])),
+        ("candidate_task_ids", serde_json::json!([])),
         ("count", serde_json::json!(0)),
+        ("count", serde_json::json!(2)),
     ] {
         let mut invalid = valid.clone();
         invalid["preview"][field] = value;
