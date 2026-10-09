@@ -147,7 +147,7 @@ class MenuBarUITests: TrackerUITestCase {
         menuTask(first).click()
         assertStopped()
     }
-    private func assertClipboard(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
+    fileprivate func assertClipboard(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
         waitUntil("Copied value reaches the clipboard", file: file, line: line) {
             NSPasteboard.general.string(forType: .string) == expected
         }
@@ -304,5 +304,4 @@ final class MenuSourceUITests: TrackerUITestCase {
         XCTAssertEqual(try fixture.worklogs(localTask).count, 2)
         XCTAssertEqual(try remote.worklogs(serverTask).count, 2)
     }
-
 }
