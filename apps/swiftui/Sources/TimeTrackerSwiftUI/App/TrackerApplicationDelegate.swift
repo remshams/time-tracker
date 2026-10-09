@@ -8,14 +8,15 @@ final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
-        if TrackerLaunchConfiguration.current.localDatabasePath != nil,
-           let requestedAppearance = ProcessInfo.processInfo.environment["TT_UI_TEST_APPEARANCE"] {
-            switch requestedAppearance {
-            case "Light": NSApplication.shared.appearance = NSAppearance(named: .aqua)
-            case "Dark": NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
-            default: break
+            if TrackerLaunchConfiguration.current.localDatabasePath != nil,
+                let requestedAppearance = ProcessInfo.processInfo.environment["TT_UI_TEST_APPEARANCE"]
+            {
+                switch requestedAppearance {
+                case "Light": NSApplication.shared.appearance = NSAppearance(named: .aqua)
+                case "Dark": NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+                default: break
+                }
             }
-        }
         #endif
         runtime.start()
     }
@@ -99,8 +100,7 @@ final class TrackerAppRuntime {
     func showTracker() -> UUID {
         let request = windows.showTracker()
         if request.shouldOpen {
-            if let openTracker { openTracker(request.id) }
-            else { deferredOpenID = request.id }
+            if let openTracker { openTracker(request.id) } else { deferredOpenID = request.id }
         }
         NSApplication.shared.activate()
         presentation.windowAvailable()

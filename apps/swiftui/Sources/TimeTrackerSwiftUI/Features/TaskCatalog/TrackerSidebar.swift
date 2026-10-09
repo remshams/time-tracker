@@ -38,10 +38,13 @@ struct TrackerSidebar: View {
             List(selection: selectionBinding) {
                 ForEach(store.visibleTasks) { task in
                     HStack(spacing: 8) {
-                        TaskIndicatorView(taskID: task.id,
-                                          isRunning: !store.isStale && store.active?.taskId == task.id)
-                            .accessibilityIdentifier(!store.isStale && store.active?.taskId == task.id
-                                                     ? "tracking.active-task" : "task-sidebar.indicator.\(task.id)")
+                        TaskIndicatorView(
+                            taskID: task.id,
+                            isRunning: !store.isStale && store.active?.taskId == task.id
+                        )
+                        .accessibilityIdentifier(
+                            !store.isStale && store.active?.taskId == task.id
+                                ? "tracking.active-task" : "task-sidebar.indicator.\(task.id)")
                         Text(task.name)
                             .lineLimit(2)
                             .padding(.vertical, 4)
@@ -53,18 +56,20 @@ struct TrackerSidebar: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("task-sidebar.task.\(task.id)")
                     .contextMenu {
-                        TaskContextMenu(creation: store.creation, rename: store.rename,
-                                        archiving: store.archiving, taskID: task.id,
-                                        taskIsArchived: task.archived,
-                                        taskIsRunning: store.active?.taskId == task.id)
+                        TaskContextMenu(
+                            creation: store.creation, rename: store.rename,
+                            archiving: store.archiving, taskID: task.id,
+                            taskIsArchived: task.archived,
+                            taskIsRunning: store.active?.taskId == task.id)
                     }
                 }
             }
             .listStyle(.sidebar)
             .accessibilityIdentifier("task-sidebar.list")
             .contextMenu {
-                TaskContextMenu(creation: store.creation, rename: store.rename,
-                                archiving: store.archiving, taskID: nil)
+                TaskContextMenu(
+                    creation: store.creation, rename: store.rename,
+                    archiving: store.archiving, taskID: nil)
             }
             .overlay {
                 if store.visibleTasks.isEmpty {

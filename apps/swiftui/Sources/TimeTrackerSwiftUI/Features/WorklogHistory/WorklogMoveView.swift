@@ -9,10 +9,12 @@ struct WorklogMoveDialog: View {
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
-            .sheet(isPresented: Binding(
-                get: { isPresentationOwner && move.state.isPresented },
-                set: { if isPresentationOwner && !$0 { move.cancel() } }
-            )) {
+            .sheet(
+                isPresented: Binding(
+                    get: { isPresentationOwner && move.state.isPresented },
+                    set: { if isPresentationOwner && !$0 { move.cancel() } }
+                )
+            ) {
                 WorklogMoveSheet(move: move)
             }
     }
@@ -31,9 +33,11 @@ private struct WorklogMoveSheet: View {
                 .lineLimit(2)
                 .help(state.sourceTaskName)
             if let original = state.original {
-                Text("\(localDay(original.start)) · \(localTimestamp(original.start)) to \(original.end.map(localTimestamp) ?? "Running")")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "\(localDay(original.start)) · \(localTimestamp(original.start)) to \(original.end.map(localTimestamp) ?? "Running")"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
                 if original.end == nil {
                     Label("The timer will keep running on the destination task.", systemImage: "timer")
                         .font(.caption)
@@ -41,23 +45,26 @@ private struct WorklogMoveSheet: View {
                 }
             }
 
-            TextField("Search destination tasks", text: Binding(
-                get: { move.sheetContent.query }, set: { move.setQuery($0) }
-            ))
-                .textFieldStyle(.roundedBorder)
-                .disableAutocorrection(true)
-                .focused($searchFocused)
-                .accessibilityIdentifier("worklog-move.search")
-                .disabled(!state.canEdit)
-                .onKeyPress(.upArrow) {
-                    move.moveSelection(by: -1)
-                    return .handled
-                }
-                .onKeyPress(.downArrow) {
-                    move.moveSelection(by: 1)
-                    return .handled
-                }
-                .onSubmit { if move.state.canSubmit { move.submit() } }
+            TextField(
+                "Search destination tasks",
+                text: Binding(
+                    get: { move.sheetContent.query }, set: { move.setQuery($0) }
+                )
+            )
+            .textFieldStyle(.roundedBorder)
+            .disableAutocorrection(true)
+            .focused($searchFocused)
+            .accessibilityIdentifier("worklog-move.search")
+            .disabled(!state.canEdit)
+            .onKeyPress(.upArrow) {
+                move.moveSelection(by: -1)
+                return .handled
+            }
+            .onKeyPress(.downArrow) {
+                move.moveSelection(by: 1)
+                return .handled
+            }
+            .onSubmit { if move.state.canSubmit { move.submit() } }
 
             Group {
                 if state.isSearching {
@@ -73,10 +80,12 @@ private struct WorklogMoveSheet: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollViewReader { proxy in
-                        List(selection: Binding<String?>(
-                            get: { move.sheetContent.selectedTaskID },
-                            set: { if let taskID = $0 { move.select(taskID: taskID) } }
-                        )) {
+                        List(
+                            selection: Binding<String?>(
+                                get: { move.sheetContent.selectedTaskID },
+                                set: { if let taskID = $0 { move.select(taskID: taskID) } }
+                            )
+                        ) {
                             ForEach(state.candidates) { candidate in
                                 Text(candidate.name)
                                     .lineLimit(2)
@@ -133,10 +142,10 @@ private struct WorklogMoveSheet: View {
                 Button(state.error != nil && !state.canEdit && state.canSubmit ? "Retry" : "Move") {
                     move.submit()
                 }
-                    .accessibilityIdentifier("worklog-move.confirm")
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!state.canSubmit)
+                .accessibilityIdentifier("worklog-move.confirm")
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(!state.canSubmit)
             }
         }
         .padding(24)

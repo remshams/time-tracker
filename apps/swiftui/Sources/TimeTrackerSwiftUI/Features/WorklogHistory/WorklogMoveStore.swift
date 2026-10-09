@@ -29,7 +29,7 @@ final class WorklogMoveStore {
 }
 
 #if compiler(>=6.2)
-extension WorklogMoveStore: @MainActor ObservableObject {}
+    extension WorklogMoveStore: @MainActor ObservableObject {}
 #else
-extension WorklogMoveStore: ObservableObject {}
+    extension WorklogMoveStore: ObservableObject {}
 #endif

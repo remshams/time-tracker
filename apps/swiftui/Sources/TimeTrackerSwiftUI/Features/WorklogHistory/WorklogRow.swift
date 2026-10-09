@@ -31,10 +31,10 @@ struct WorklogRow: View {
                     Text(clockDuration(duration))
                 }
             }
-                .font(.system(.title3, design: .monospaced).weight(.medium))
-                .foregroundStyle(.primary)
-                .monospacedDigit()
-                .fixedSize()
+            .font(.system(.title3, design: .monospaced).weight(.medium))
+            .foregroundStyle(.primary)
+            .monospacedDigit()
+            .fixedSize()
             WorklogActionsMenu(correction: correction, move: move, worklogID: worklog.id)
         }
         .accessibilityElement(children: .contain)
@@ -67,8 +67,7 @@ private struct WorklogActionsMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .disabled(correction.state.isPresented || move.state.isPresented ||
-                  (!correction.canOpen && !move.canOpen))
+        .disabled(correction.state.isPresented || move.state.isPresented || (!correction.canOpen && !move.canOpen))
         .help("Worklog actions")
         .accessibilityIdentifier("worklog-history.actions.\(worklogID)")
     }

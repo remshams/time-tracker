@@ -53,8 +53,9 @@ final class TrackerStatusItemController: NSObject {
                 return nil
             } catch { return error.localizedDescription }
         }
-        do { try registration.register(store.menuShortcuts.openMenu) }
-        catch { store.reportMenuGlobalShortcutError(error.localizedDescription) }
+        do { try registration.register(store.menuShortcuts.openMenu) } catch {
+            store.reportMenuGlobalShortcutError(error.localizedDescription)
+        }
         DistributedNotificationCenter.default()
             .publisher(for: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String))
             .receive(on: RunLoop.main)
@@ -86,18 +87,23 @@ final class TrackerStatusItemController: NSObject {
     private func updateLabel() {
         guard let button = statusItem?.button else { return }
         let label = store.menu.label.content
-        button.image = TaskDotImage.make(color: label.indicator.color,
-                                        isRunning: label.indicator.isRunning,
-                                        appearance: button.effectiveAppearance)
+        button.image = TaskDotImage.make(
+            color: label.indicator.color,
+            isRunning: label.indicator.isRunning,
+            appearance: button.effectiveAppearance)
         let total = label.totalText.map { " \($0)" } ?? ""
-        button.attributedTitle = NSAttributedString(string: total, attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
-            .foregroundColor: NSColor.labelColor
-        ])
+        button.attributedTitle = NSAttributedString(
+            string: total,
+            attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
+                .foregroundColor: NSColor.labelColor,
+            ])
         button.toolTip = label.help
         button.setAccessibilityLabel(label.status)
         button.setAccessibilityValue(label.totalText ?? "")
-        button.setAccessibilityHelp("\(label.help)\nClick to start or stop tracking. Right-click or use the Open menu shortcut to open the menu.")
+        button.setAccessibilityHelp(
+            "\(label.help)\nClick to start or stop tracking. Right-click or use the Open menu shortcut to open the menu."
+        )
     }
 
     @objc private func clicked() {
@@ -111,8 +117,9 @@ final class TrackerStatusItemController: NSObject {
     }
 
     private func toggleMenu() {
-        if let nativeMenu { nativeMenu.cancelTracking() }
-        else {
+        if let nativeMenu {
+            nativeMenu.cancelTracking()
+        } else {
             NSApplication.shared.activate(ignoringOtherApps: true)
             showNativeMenu()
         }
@@ -178,7 +185,8 @@ final class TrackerStatusItemController: NSObject {
         menu.appearance = appearance
         menu.autoenablesItems = false
         let connection = store.connectionSettings
-        let serverURL = connection.mode == .server
+        let serverURL =
+            connection.mode == .server
             ? connection.serverURL.trimmingCharacters(in: .whitespacesAndNewlines) : nil
         addText(content.connectionStatusText, value: serverURL, to: menu)
         if content.isStale { addText("Showing last confirmed state", to: menu) }
@@ -187,14 +195,16 @@ final class TrackerStatusItemController: NSObject {
         if let error = content.trackingError { addText(error, to: menu) }
         menu.addItem(.separator())
         addText(content.dailyTotalsStatus == .cached ? "Today, cached" : "Today", to: menu)
-        totalField = addText("Total", value: content.totalText, to: menu,
-                             help: content.totalsExplanation, liveValue: true)
+        totalField = addText(
+            "Total", value: content.totalText, to: menu,
+            help: content.totalsExplanation, liveValue: true)
         menu.addItem(.separator())
         for entry in content.todayTasks {
             let archived = entry.task.archived ? "  Archived" : ""
-            let item = addTask(entry, title: "\(entry.task.name)  \(entry.durationText)\(archived)",
-                               help: content.totalsExplanation, content: content,
-                               appearance: appearance, to: menu)
+            let item = addTask(
+                entry, title: "\(entry.task.name)  \(entry.durationText)\(archived)",
+                help: content.totalsExplanation, content: content,
+                appearance: appearance, to: menu)
             let row = MenuTaskRow(item: item, entry: entry, isStale: content.isStale)
             taskRows[entry.id] = row
             row.setDurationFont(entry.durationText)
@@ -215,8 +225,9 @@ final class TrackerStatusItemController: NSObject {
             submenu.appearance = appearance
             submenu.autoenablesItems = false
             for entry in content.otherTasks {
-                addTask(entry, title: entry.task.name, help: nil, content: content,
-                        appearance: appearance, to: submenu)
+                addTask(
+                    entry, title: entry.task.name, help: nil, content: content,
+                    appearance: appearance, to: submenu)
             }
             let parent = NSMenuItem(title: "Start tracking", action: nil, keyEquivalent: "")
             parent.submenu = submenu
@@ -230,8 +241,10 @@ final class TrackerStatusItemController: NSObject {
     }
 
     @discardableResult
-    private func addTask(_ entry: TrackerMenuTask, title: String, help: String?,
-                         content: TrackerMenuContent, appearance: NSAppearance, to menu: NSMenu) -> NSMenuItem {
+    private func addTask(
+        _ entry: TrackerMenuTask, title: String, help: String?,
+        content: TrackerMenuContent, appearance: NSAppearance, to menu: NSMenu
+    ) -> NSMenuItem {
         let isRunning = entry.isRunning && !content.isStale
         let trackingAction = entry.trackingAction(in: content).map { action -> MenuAction in
             switch action {
@@ -242,12 +255,15 @@ final class TrackerStatusItemController: NSObject {
         let submenu = NSMenu(title: entry.task.name)
         submenu.appearance = appearance
         submenu.autoenablesItems = false
-        addAction(entry.isRunning ? "Stop tracking" : "Start tracking",
-                  action: trackingAction, enabled: trackingAction != nil, to: submenu)
+        addAction(
+            entry.isRunning ? "Stop tracking" : "Start tracking",
+            action: trackingAction, enabled: trackingAction != nil, to: submenu)
         submenu.addItem(.separator())
         for action in [MenuShortcutAction.copyName, .copyExact, .copyRounded] {
-            let available = store.menuCopyValue(action, taskID: entry.id,
-                                                connection: store.connectionSettings) != nil
+            let available =
+                store.menuCopyValue(
+                    action, taskID: entry.id,
+                    connection: store.connectionSettings) != nil
             addAction(action.title, action: .copy(action, entry.id), enabled: available, to: submenu)
         }
         let item = addAction(title, action: trackingAction, to: menu)
@@ -260,28 +276,38 @@ final class TrackerStatusItemController: NSObject {
             item.action = #selector(selected(_:))
         }
         if isRunning {
-            item.attributedTitle = NSAttributedString(string: title, attributes: [
-                .font: NSFont.boldSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize)
-            ])
+            item.attributedTitle = NSAttributedString(
+                string: title,
+                attributes: [
+                    .font: NSFont.boldSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize)
+                ])
         }
-        item.image = TaskDotImage.make(color: TaskColor.forTaskID(entry.id),
-                                      isRunning: isRunning, appearance: appearance)
+        item.image = TaskDotImage.make(
+            color: TaskColor.forTaskID(entry.id),
+            isRunning: isRunning, appearance: appearance)
         if #available(macOS 27.0, *) {
             item.preferredImageVisibility = .visible
         }
-        item.toolTip = trackingAction != nil ? help : "Open the submenu to copy this task's name or time. Tracking is unavailable."
+        item.toolTip =
+            trackingAction != nil ? help : "Open the submenu to copy this task's name or time. Tracking is unavailable."
         let status: String
         if content.isStale {
-            status = entry.isRunning ? "last confirmed tracking, current status unavailable"
+            status =
+                entry.isRunning
+                ? "last confirmed tracking, current status unavailable"
                 : "current tracking status unavailable"
-        } else { status = entry.isRunning ? "tracking" : "not tracking" }
+        } else {
+            status = entry.isRunning ? "tracking" : "not tracking"
+        }
         item.setAccessibilityLabel("\(title), \(status)")
         return item
     }
 
     @discardableResult
-    private func addText(_ title: String, value: String? = nil, to menu: NSMenu,
-                         help: String? = nil, liveValue: Bool = false) -> MenuValueField? {
+    private func addText(
+        _ title: String, value: String? = nil, to menu: NSMenu,
+        help: String? = nil, liveValue: Bool = false
+    ) -> MenuValueField? {
         let text = value.map { "\(title), \($0)" } ?? title
         let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
         item.isEnabled = false
@@ -292,19 +318,27 @@ final class TrackerStatusItemController: NSObject {
         label.toolTip = help ?? title
         label.setAccessibilityLabel(title)
         let valueLabel = value.map { NSTextField(labelWithString: $0) }
-        valueLabel?.font = liveValue
-            ? NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize,
-                                             weight: .regular) : label.font
+        valueLabel?.font =
+            liveValue
+            ? NSFont.monospacedDigitSystemFont(
+                ofSize: NSFont.menuFont(ofSize: 0).pointSize,
+                weight: .regular) : label.font
         valueLabel?.textColor = .labelColor
         valueLabel?.alignment = .right
         valueLabel?.lineBreakMode = .byTruncatingMiddle
         valueLabel?.toolTip = help ?? value
         valueLabel?.setAccessibilityLabel(value ?? "")
         let valueSize = valueLabel?.fittingSize ?? .zero
-        let valueWidth = liveValue && valueLabel != nil
-            ? max(valueSize.width, NSAttributedString(string: "~000000:00:00", attributes: [
-                .font: valueLabel?.font ?? NSFont.menuFont(ofSize: 0)
-            ]).size().width) : valueSize.width
+        let valueWidth =
+            liveValue && valueLabel != nil
+            ? max(
+                valueSize.width,
+                NSAttributedString(
+                    string: "~000000:00:00",
+                    attributes: [
+                        .font: valueLabel?.font ?? NSFont.menuFont(ofSize: 0)
+                    ]
+                ).size().width) : valueSize.width
         let width = min(480, label.fittingSize.width + valueWidth + (value == nil ? 40 : 56))
         let height = max(label.fittingSize.height, valueSize.height) + 8
         let view = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
@@ -314,7 +348,7 @@ final class TrackerStatusItemController: NSObject {
         view.addSubview(label)
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            label.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
         if let valueLabel {
             valueLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -323,7 +357,7 @@ final class TrackerStatusItemController: NSObject {
             NSLayoutConstraint.activate([
                 valueLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
                 valueLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-                label.trailingAnchor.constraint(lessThanOrEqualTo: valueLabel.leadingAnchor, constant: -16)
+                label.trailingAnchor.constraint(lessThanOrEqualTo: valueLabel.leadingAnchor, constant: -16),
             ])
             if liveValue {
                 valueLabel.widthAnchor.constraint(equalToConstant: valueWidth).isActive = true
@@ -339,8 +373,10 @@ final class TrackerStatusItemController: NSObject {
     }
 
     @discardableResult
-    private func addAction(_ title: String, action: MenuAction?, enabled: Bool = true,
-                           to menu: NSMenu) -> NSMenuItem {
+    private func addAction(
+        _ title: String, action: MenuAction?, enabled: Bool = true,
+        to menu: NSMenu
+    ) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: #selector(selected(_:)), keyEquivalent: "")
         item.target = self
         item.representedObject = action.map { MenuCommand(action: $0, connection: store.connectionSettings) }

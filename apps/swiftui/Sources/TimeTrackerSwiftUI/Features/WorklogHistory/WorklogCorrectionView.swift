@@ -9,10 +9,12 @@ struct WorklogCorrectionDialog: View {
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
-            .sheet(isPresented: Binding(
-                get: { isPresentationOwner && correction.state.isPresented },
-                set: { if isPresentationOwner && !$0 { correction.cancel() } }
-            )) {
+            .sheet(
+                isPresented: Binding(
+                    get: { isPresentationOwner && correction.state.isPresented },
+                    set: { if isPresentationOwner && !$0 { correction.cancel() } }
+                )
+            ) {
                 WorklogCorrectionSheet(correction: correction)
             }
     }
@@ -39,22 +41,28 @@ private struct WorklogCorrectionSheet: View {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 16) {
                 GridRow {
                     Text("Start")
-                    DatePicker("Start", selection: Binding(
-                        get: { correction.sheetContent.start }, set: { correction.setStart($0) }
-                    ), displayedComponents: [.date, .hourAndMinute])
-                        .labelsHidden()
-                        .accessibilityIdentifier("worklog-correction.start")
+                    DatePicker(
+                        "Start",
+                        selection: Binding(
+                            get: { correction.sheetContent.start }, set: { correction.setStart($0) }
+                        ), displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .labelsHidden()
+                    .accessibilityIdentifier("worklog-correction.start")
                 }
 
                 if state.end != nil {
                     GridRow {
                         Text("End")
-                        DatePicker("End", selection: Binding(
-                            get: { correction.sheetContent.end ?? correction.sheetContent.start },
-                            set: { correction.setEnd($0) }
-                        ), displayedComponents: [.date, .hourAndMinute])
-                            .labelsHidden()
-                            .accessibilityIdentifier("worklog-correction.end")
+                        DatePicker(
+                            "End",
+                            selection: Binding(
+                                get: { correction.sheetContent.end ?? correction.sheetContent.start },
+                                set: { correction.setEnd($0) }
+                            ), displayedComponents: [.date, .hourAndMinute]
+                        )
+                        .labelsHidden()
+                        .accessibilityIdentifier("worklog-correction.end")
                     }
                 }
             }
@@ -78,9 +86,12 @@ private struct WorklogCorrectionSheet: View {
                 }
             } else if state.end == nil {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    LabeledContent("Elapsed after save", value: clockDuration(
-                        max(0, context.date.timeIntervalSince(state.start))
-                    ))
+                    LabeledContent(
+                        "Elapsed after save",
+                        value: clockDuration(
+                            max(0, context.date.timeIntervalSince(state.start))
+                        )
+                    )
                     .monospacedDigit()
                 }
             }
@@ -120,10 +131,10 @@ private struct WorklogCorrectionSheet: View {
                 Button(state.error != nil && !state.canEdit && state.canSubmit ? "Retry" : "Save") {
                     correction.submit()
                 }
-                    .accessibilityIdentifier("worklog-correction.save")
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!state.canSubmit)
+                .accessibilityIdentifier("worklog-correction.save")
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(!state.canSubmit)
             }
         }
         .padding(24)

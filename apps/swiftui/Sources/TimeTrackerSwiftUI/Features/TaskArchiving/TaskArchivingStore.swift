@@ -27,7 +27,7 @@ final class TaskArchivingStore {
 }
 
 #if compiler(>=6.2)
-extension TaskArchivingStore: @MainActor ObservableObject {}
+    extension TaskArchivingStore: @MainActor ObservableObject {}
 #else
-extension TaskArchivingStore: ObservableObject {}
+    extension TaskArchivingStore: ObservableObject {}
 #endif

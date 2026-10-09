@@ -27,7 +27,7 @@ final class WorklogCorrectionStore {
 }
 
 #if compiler(>=6.2)
-extension WorklogCorrectionStore: @MainActor ObservableObject {}
+    extension WorklogCorrectionStore: @MainActor ObservableObject {}
 #else
-extension WorklogCorrectionStore: ObservableObject {}
+    extension WorklogCorrectionStore: ObservableObject {}
 #endif
