@@ -128,10 +128,14 @@ final class WorklogMoveState {
 
     func accept(_ values: [WorklogMoveCandidate], search: Search) {
         guard isPresented, !requiresReview, search.revision == revision else { return }
-        candidates = values.filter { $0.id != original?.taskId }
+        candidates = values.filter { Self.isDestination($0, sourceTaskID: original?.taskId) }
         selectedTaskID = candidates.first?.id
         isSearching = false
         error = nil
+    }
+
+    private static func isDestination(_ candidate: WorklogMoveCandidate, sourceTaskID: String?) -> Bool {
+        candidate.id != sourceTaskID
     }
 
     func failSearch(_ failure: Error, search: Search) {
