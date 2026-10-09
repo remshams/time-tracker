@@ -14,17 +14,20 @@ struct ConnectionSummary: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: store.connectionSettings.mode == .local ? "internaldrive" : "network")
-                .foregroundStyle(store.isStale || store.isChangingConnection
-                                 ? Color.secondary : Color.green)
+                .foregroundStyle(
+                    store.isStale || store.isChangingConnection
+                        ? Color.secondary : Color.green)
             VStack(alignment: .leading, spacing: 3) {
-                Text(store.connectionSettings.mode == .local
-                     ? "Local database" : store.connectionSettings.serverURL)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(store.connectionSettings.serverURL)
-                    .accessibilityIdentifier("connection-summary.source")
+                Text(
+                    store.connectionSettings.mode == .local
+                        ? "Local database" : store.connectionSettings.serverURL
+                )
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(store.connectionSettings.serverURL)
+                .accessibilityIdentifier("connection-summary.source")
                 Text(store.connectionStatusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)

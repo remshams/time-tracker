@@ -60,8 +60,9 @@ struct TaskDetails: View {
                         }
 
                         ForEach(store.worklogs) { worklog in
-                            WorklogRow(worklog: worklog, active: store.active, timer: store.timer,
-                                       correction: store.correction, move: store.move)
+                            WorklogRow(
+                                worklog: worklog, active: store.active, timer: store.timer,
+                                correction: store.correction, move: store.move)
                         }
 
                         if store.hasMoreHistory {

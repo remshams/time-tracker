@@ -20,9 +20,11 @@ final class TrackerTaskPresentationCoordinator {
     func start() {
         guard !isRunning else { return }
         isRunning = true
-        for publisher in [store.objectWillChange, store.creation.objectWillChange,
-                          store.rename.objectWillChange, store.correction.objectWillChange,
-                          store.move.objectWillChange, store.archiving.objectWillChange, store.bulkArchiving.objectWillChange] {
+        for publisher in [
+            store.objectWillChange, store.creation.objectWillChange,
+            store.rename.objectWillChange, store.correction.objectWillChange,
+            store.move.objectWillChange, store.archiving.objectWillChange, store.bulkArchiving.objectWillChange,
+        ] {
             publisher.sink { [weak self] _ in self?.update() }.store(in: &subscriptions)
         }
         update()
@@ -51,9 +53,9 @@ final class TrackerTaskPresentationCoordinator {
     }
 
     private var hasPresentation: Bool {
-        store.creation.state.isPresented || store.rename.state.isPresented ||
-            store.correction.state.isPresented || store.move.state.isPresented ||
-            store.archiving.state.isPresented || store.bulkArchiving.state.isPresented || store.trackingError != nil
+        store.creation.state.isPresented || store.rename.state.isPresented || store.correction.state.isPresented
+            || store.move.state.isPresented || store.archiving.state.isPresented
+            || store.bulkArchiving.state.isPresented || store.trackingError != nil
     }
 
     private func update() {
@@ -65,8 +67,10 @@ final class TrackerTaskPresentationCoordinator {
         guard ownerID == nil else { return }
         isChoosingOwner = true
         defer { isChoosingOwner = false }
-        let needsEditor = store.creation.state.isPresented || store.rename.state.isPresented ||
-            store.correction.state.isPresented || store.move.state.isPresented || store.archiving.state.isPresented || store.bulkArchiving.state.isPresented
+        let needsEditor =
+            store.creation.state.isPresented || store.rename.state.isPresented || store.correction.state.isPresented
+            || store.move.state.isPresented || store.archiving.state.isPresented
+            || store.bulkArchiving.state.isPresented
         setOwner(presentingWindow(needsEditor))
     }
 
@@ -78,9 +82,9 @@ final class TrackerTaskPresentationCoordinator {
 }
 
 #if compiler(>=6.2)
-extension TrackerTaskPresentationCoordinator: @MainActor ObservableObject {}
+    extension TrackerTaskPresentationCoordinator: @MainActor ObservableObject {}
 #else
-extension TrackerTaskPresentationCoordinator: ObservableObject {}
+    extension TrackerTaskPresentationCoordinator: ObservableObject {}
 #endif
 
 @MainActor
@@ -91,9 +95,11 @@ struct TrackerDetailPresentation: View {
 
     private var isOwner: Bool { presentation.owns(windowID) }
     private var trackingFailurePresented: Binding<Bool> {
-        Binding(get: { isOwner && store.trackingError != nil }, set: {
-            if isOwner && !$0 { store.dismissTrackingError() }
-        })
+        Binding(
+            get: { isOwner && store.trackingError != nil },
+            set: {
+                if isOwner && !$0 { store.dismissTrackingError() }
+            })
     }
 
     var body: some View {

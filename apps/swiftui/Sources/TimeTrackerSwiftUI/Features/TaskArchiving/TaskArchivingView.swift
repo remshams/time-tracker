@@ -9,10 +9,12 @@ struct TaskArchivingDialog: View {
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
-            .sheet(isPresented: Binding(
-                get: { isPresentationOwner && archiving.state.isPresented },
-                set: { if isPresentationOwner && !$0 { archiving.cancel() } }
-            )) {
+            .sheet(
+                isPresented: Binding(
+                    get: { isPresentationOwner && archiving.state.isPresented },
+                    set: { if isPresentationOwner && !$0 { archiving.cancel() } }
+                )
+            ) {
                 TaskArchivingSheet(archiving: archiving)
             }
     }
@@ -32,11 +34,13 @@ private struct TaskArchivingSheet: View {
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-            Text(isUnarchiving
-                 ? "The task will return to Active. Its worklog history will remain available."
-                 : "The task will move to Archived. Its worklog history will remain available.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                isUnarchiving
+                    ? "The task will return to Active. Its worklog history will remain available."
+                    : "The task will move to Archived. Its worklog history will remain available."
+            )
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
 
             if let error = state.error {
                 Label(error, systemImage: "exclamationmark.triangle")
@@ -75,10 +79,10 @@ private struct TaskArchivingSheet: View {
                 Button(state.hasUnresolvedIntent && state.error != nil ? "Retry" : actionTitle) {
                     archiving.submit()
                 }
-                    .accessibilityIdentifier("task-archive.confirm")
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!state.canSubmit)
+                .accessibilityIdentifier("task-archive.confirm")
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(!state.canSubmit)
             }
         }
         .padding(24)

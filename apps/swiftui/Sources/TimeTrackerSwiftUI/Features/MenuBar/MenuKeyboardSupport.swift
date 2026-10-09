@@ -6,10 +6,11 @@ import TrackerClient
 extension MenuShortcut {
     init?(event: NSEvent) {
         guard event.type == .keyDown,
-              let key = event.characters(byApplyingModifiers: event.modifierFlags.intersection(.shift)),
-              key.unicodeScalars.count == 1,
-              let scalar = key.unicodeScalars.first,
-              (33...126).contains(scalar.value) else { return nil }
+            let key = event.characters(byApplyingModifiers: event.modifierFlags.intersection(.shift)),
+            key.unicodeScalars.count == 1,
+            let scalar = key.unicodeScalars.first,
+            (33...126).contains(scalar.value)
+        else { return nil }
         var modifiers: Modifiers = []
         if event.modifierFlags.contains(.command) { modifiers.insert(.command) }
         if event.modifierFlags.contains(.control) { modifiers.insert(.control) }
@@ -32,9 +33,11 @@ enum GlobalMenuShortcutError: LocalizedError {
         case .missingModifier:
             return "The global shortcut needs Command, Control, or Option."
         case .handlerInstallation(let status):
-            return "Time Tracker could not install its shortcut handler. Restart the app and try again. macOS error \(status)."
+            return
+                "Time Tracker could not install its shortcut handler. Restart the app and try again. macOS error \(status)."
         case .registration(let shortcut, let status):
-            return "macOS could not register \(shortcut). Another app or a system shortcut may use it. Choose a different shortcut. macOS error \(status)."
+            return
+                "macOS could not register \(shortcut). Another app or a system shortcut may use it. Choose a different shortcut. macOS error \(status)."
         }
     }
 }
@@ -60,8 +63,9 @@ final class GlobalMenuShortcutRegistration {
     deinit {
         if let menuEventMonitor { NSEvent.removeMonitor(menuEventMonitor) }
         if let menuRunLoopObserver {
-            CFRunLoopRemoveObserver(CFRunLoopGetMain(), menuRunLoopObserver,
-                                    CFRunLoopMode(rawValue: RunLoop.Mode.eventTracking.rawValue as CFString))
+            CFRunLoopRemoveObserver(
+                CFRunLoopGetMain(), menuRunLoopObserver,
+                CFRunLoopMode(rawValue: RunLoop.Mode.eventTracking.rawValue as CFString))
         }
         if let hotKey { UnregisterEventHotKey(hotKey) }
         if let handler { RemoveEventHandler(handler) }
@@ -80,21 +84,24 @@ final class GlobalMenuShortcutRegistration {
         let hotKeyID = EventHotKeyID(signature: Self.signature, id: nextIdentifier)
         var replacement: EventHotKeyRef?
         #if DEBUG
-        var testReservation: EventHotKeyRef?
-        let process = ProcessInfo.processInfo
-        if process.arguments.contains("-tt-ui-testing"),
-           let suite = process.environment["TT_UI_TEST_DEFAULTS_SUITE"],
-           suite.hasPrefix("TimeTrackerUITests."),
-           UUID(uuidString: String(suite.dropFirst("TimeTrackerUITests.".count))) != nil,
-           process.environment["TT_UI_TEST_CONFLICT_KEY"] == shortcut.key {
-            RegisterEventHotKey(keyCode, carbonModifiers(shortcut.modifiers),
-                                EventHotKeyID(signature: 0x54545549, id: 1),
-                                GetEventDispatcherTarget(), 0, &testReservation)
-        }
-        defer { if let testReservation { UnregisterEventHotKey(testReservation) } }
+            var testReservation: EventHotKeyRef?
+            let process = ProcessInfo.processInfo
+            if process.arguments.contains("-tt-ui-testing"),
+                let suite = process.environment["TT_UI_TEST_DEFAULTS_SUITE"],
+                suite.hasPrefix("TimeTrackerUITests."),
+                UUID(uuidString: String(suite.dropFirst("TimeTrackerUITests.".count))) != nil,
+                process.environment["TT_UI_TEST_CONFLICT_KEY"] == shortcut.key
+            {
+                RegisterEventHotKey(
+                    keyCode, carbonModifiers(shortcut.modifiers),
+                    EventHotKeyID(signature: 0x54545549, id: 1),
+                    GetEventDispatcherTarget(), 0, &testReservation)
+            }
+            defer { if let testReservation { UnregisterEventHotKey(testReservation) } }
         #endif
-        let status = RegisterEventHotKey(keyCode, carbonModifiers(shortcut.modifiers), hotKeyID,
-                                         GetEventDispatcherTarget(), 0, &replacement)
+        let status = RegisterEventHotKey(
+            keyCode, carbonModifiers(shortcut.modifiers), hotKeyID,
+            GetEventDispatcherTarget(), 0, &replacement)
         guard status == noErr, let replacement else {
             throw GlobalMenuShortcutError.registration(shortcut.displayText, status)
         }
@@ -141,8 +148,9 @@ final class GlobalMenuShortcutRegistration {
         }
         if let observer {
             menuRunLoopObserver = observer
-            CFRunLoopAddObserver(CFRunLoopGetMain(), observer,
-                                 CFRunLoopMode(rawValue: RunLoop.Mode.eventTracking.rawValue as CFString))
+            CFRunLoopAddObserver(
+                CFRunLoopGetMain(), observer,
+                CFRunLoopMode(rawValue: RunLoop.Mode.eventTracking.rawValue as CFString))
         }
     }
 
@@ -158,8 +166,9 @@ final class GlobalMenuShortcutRegistration {
         if let menuEventMonitor { NSEvent.removeMonitor(menuEventMonitor) }
         menuEventMonitor = nil
         if let menuRunLoopObserver {
-            CFRunLoopRemoveObserver(CFRunLoopGetMain(), menuRunLoopObserver,
-                                    CFRunLoopMode(rawValue: RunLoop.Mode.eventTracking.rawValue as CFString))
+            CFRunLoopRemoveObserver(
+                CFRunLoopGetMain(), menuRunLoopObserver,
+                CFRunLoopMode(rawValue: RunLoop.Mode.eventTracking.rawValue as CFString))
         }
         menuRunLoopObserver = nil
         dismissTrackedMenu = nil
@@ -167,8 +176,9 @@ final class GlobalMenuShortcutRegistration {
 
     private func matchesTrackedShortcut(_ event: NSEvent) -> Bool {
         guard dismissTrackedMenu != nil, let shortcut, let registeredKeyCode,
-              event.type == .keyDown, !event.isARepeat,
-              UInt32(event.keyCode) == registeredKeyCode else { return false }
+            event.type == .keyDown, !event.isARepeat,
+            UInt32(event.keyCode) == registeredKeyCode
+        else { return false }
         var modifiers: MenuShortcut.Modifiers = []
         if event.modifierFlags.contains(.command) { modifiers.insert(.command) }
         if event.modifierFlags.contains(.control) { modifiers.insert(.control) }
@@ -183,48 +193,59 @@ final class GlobalMenuShortcutRegistration {
         defer { isConsumingTrackedShortcut = false }
         let application = NSApplication.shared
         // Leave other keys and pointer events in their original queue order for the menu.
-        guard let head = application.nextEvent(matching: .any, until: .distantPast,
-                                               inMode: .eventTracking, dequeue: false),
-              matchesTrackedShortcut(head),
-              application.nextEvent(matching: .keyDown, until: .distantPast,
-                                    inMode: .eventTracking, dequeue: true) != nil else { return }
+        guard
+            let head = application.nextEvent(
+                matching: .any, until: .distantPast,
+                inMode: .eventTracking, dequeue: false),
+            matchesTrackedShortcut(head),
+            application.nextEvent(
+                matching: .keyDown, until: .distantPast,
+                inMode: .eventTracking, dequeue: true) != nil
+        else { return }
         dismissTrackedMenu?()
     }
 
     private func installHandler() throws {
         guard handler == nil else { return }
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
-                                      eventKind: UInt32(kEventHotKeyPressed))
-        let status = InstallEventHandler(GetEventDispatcherTarget(), { _, event, context in
-            guard let event, let context else { return OSStatus(eventNotHandledErr) }
-            var hotKeyID = EventHotKeyID()
-            let status = GetEventParameter(event, EventParamName(kEventParamDirectObject),
-                                           EventParamType(typeEventHotKeyID), nil,
-                                           MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
-            guard status == noErr else { return status }
-            return MainActor.assumeIsolated {
-                let registration = Unmanaged<GlobalMenuShortcutRegistration>
-                    .fromOpaque(context).takeUnretainedValue()
-                guard hotKeyID.signature == GlobalMenuShortcutRegistration.signature,
-                      hotKeyID.id == registration.identifier,
-                      registration.hotKey != nil else { return OSStatus(eventNotHandledErr) }
-                if let shortcut = registration.shortcut,
-                   let recorder = NSApplication.shared.keyWindow?.firstResponder as? ShortcutRecorderButton,
-                   recorder.captureRegisteredShortcut(shortcut) {
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed))
+        let status = InstallEventHandler(
+            GetEventDispatcherTarget(),
+            { _, event, context in
+                guard let event, let context else { return OSStatus(eventNotHandledErr) }
+                var hotKeyID = EventHotKeyID()
+                let status = GetEventParameter(
+                    event, EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID), nil,
+                    MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
+                guard status == noErr else { return status }
+                return MainActor.assumeIsolated {
+                    let registration = Unmanaged<GlobalMenuShortcutRegistration>
+                        .fromOpaque(context).takeUnretainedValue()
+                    guard hotKeyID.signature == GlobalMenuShortcutRegistration.signature,
+                        hotKeyID.id == registration.identifier,
+                        registration.hotKey != nil
+                    else { return OSStatus(eventNotHandledErr) }
+                    if let shortcut = registration.shortcut,
+                        let recorder = NSApplication.shared.keyWindow?.firstResponder as? ShortcutRecorderButton,
+                        recorder.captureRegisteredShortcut(shortcut)
+                    {
+                        return noErr
+                    }
+                    let triggeredID = hotKeyID.id
+                    // Menu tracking starts a nested run loop. Return from Carbon before opening it.
+                    RunLoop.main.perform(inModes: [.common]) { [weak registration] in
+                        MainActor.assumeIsolated {
+                            guard let registration, registration.hotKey != nil,
+                                registration.identifier == triggeredID
+                            else { return }
+                            registration.action()
+                        }
+                    }
                     return noErr
                 }
-                let triggeredID = hotKeyID.id
-                // Menu tracking starts a nested run loop. Return from Carbon before opening it.
-                RunLoop.main.perform(inModes: [.common]) { [weak registration] in
-                    MainActor.assumeIsolated {
-                        guard let registration, registration.hotKey != nil,
-                              registration.identifier == triggeredID else { return }
-                        registration.action()
-                    }
-                }
-                return noErr
-            }
-        }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), &handler)
+            }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), &handler)
         guard status == noErr else { throw GlobalMenuShortcutError.handlerInstallation(status) }
     }
 
@@ -240,15 +261,22 @@ final class GlobalMenuShortcutRegistration {
 
 private enum KeyboardLayoutKeyCode {
     static func find(for shortcut: MenuShortcut) -> UInt32? {
-        let sources = [TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
-                       TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue()]
+        let sources = [
+            TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+            TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
+        ]
         for source in sources.compactMap({ $0 }) {
             guard let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else {
                 continue
             }
-            if let keyCode = withExtendedLifetime(source, {
-                find(for: shortcut, data: Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue())
-            }) { return keyCode }
+            if let keyCode = withExtendedLifetime(
+                source,
+                {
+                    find(for: shortcut, data: Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue())
+                })
+            {
+                return keyCode
+            }
         }
         return nil
     }
@@ -262,10 +290,11 @@ private enum KeyboardLayoutKeyCode {
                 var deadKeyState: UInt32 = 0
                 var characters = [UniChar](repeating: 0, count: 8)
                 var count = 0
-                let status = UCKeyTranslate(layout, keyCode, UInt16(kUCKeyActionDisplay), modifiers,
-                                            UInt32(LMGetKbdType()),
-                                            OptionBits(1 << kUCKeyTranslateNoDeadKeysBit),
-                                            &deadKeyState, characters.count, &count, &characters)
+                let status = UCKeyTranslate(
+                    layout, keyCode, UInt16(kUCKeyActionDisplay), modifiers,
+                    UInt32(LMGetKbdType()),
+                    OptionBits(1 << kUCKeyTranslateNoDeadKeysBit),
+                    &deadKeyState, characters.count, &count, &characters)
                 guard status == noErr, count > 0 else { continue }
                 let key = String(utf16CodeUnits: characters, count: count).lowercased()
                 if key == shortcut.key { return UInt32(keyCode) }
@@ -376,8 +405,11 @@ final class ShortcutRecorderButton: NSButton {
             return true
         }
         if event.keyCode == UInt16(kVK_Tab) {
-            if event.modifierFlags.contains(.shift) { window?.selectPreviousKeyView(self) }
-            else { window?.selectNextKeyView(self) }
+            if event.modifierFlags.contains(.shift) {
+                window?.selectPreviousKeyView(self)
+            } else {
+                window?.selectNextKeyView(self)
+            }
             return true
         }
         guard let shortcut = MenuShortcut(event: event) else {

@@ -22,7 +22,7 @@ final class TaskRenameStore {
 
 // Keep publisher access on the main actor with compilers that support isolated conformances.
 #if compiler(>=6.2)
-extension TaskRenameStore: @MainActor ObservableObject {}
+    extension TaskRenameStore: @MainActor ObservableObject {}
 #else
-extension TaskRenameStore: ObservableObject {}
+    extension TaskRenameStore: ObservableObject {}
 #endif

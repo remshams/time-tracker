@@ -24,7 +24,7 @@ final class BulkTaskArchivingStore {
 }
 
 #if compiler(>=6.2)
-extension BulkTaskArchivingStore: @MainActor ObservableObject {}
+    extension BulkTaskArchivingStore: @MainActor ObservableObject {}
 #else
-extension BulkTaskArchivingStore: ObservableObject {}
+    extension BulkTaskArchivingStore: ObservableObject {}
 #endif

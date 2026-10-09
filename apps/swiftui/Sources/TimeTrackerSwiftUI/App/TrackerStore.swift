@@ -34,12 +34,13 @@ final class TrackerStore {
         keyboardPreferences = UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults)
         menuShortcuts = keyboardPreferences.load()
         let worker = TrackerWorker(localDatabasePath: launch.localDatabasePath)
-        session = TrackerSession(client: worker, clock: SystemTrackerClock(),
-                                 scheduler: RunLoopTrackerScheduler(),
-                                 settings: UserDefaultsConnectionSettings(defaults: launch.defaults),
-                                 trackingPreferences: UserDefaultsTrackingPreferences(defaults: launch.defaults),
-                                 lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
-                                 reports: worker)
+        session = TrackerSession(
+            client: worker, clock: SystemTrackerClock(),
+            scheduler: RunLoopTrackerScheduler(),
+            settings: UserDefaultsConnectionSettings(defaults: launch.defaults),
+            trackingPreferences: UserDefaultsTrackingPreferences(defaults: launch.defaults),
+            lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
+            reports: worker)
         presentation = TrackerPresentationObserver(session: session)
         activity = TrackerActivityStore(session: session, presentation: presentation)
         timer = TrackerTimerStore(session: session, presentation: presentation)
@@ -141,8 +142,10 @@ final class TrackerStore {
         menuGlobalShortcutError = message
     }
 
-    func menuCopyValue(_ action: MenuShortcutAction, taskID: String,
-                       connection: ConnectionSettings) -> String? {
+    func menuCopyValue(
+        _ action: MenuShortcutAction, taskID: String,
+        connection: ConnectionSettings
+    ) -> String? {
         session.menuCopyValue(action, taskID: taskID, connection: connection)
     }
     func changeTab(_ tab: TaskTab) { session.changeTab(tab) }
@@ -186,7 +189,9 @@ final class TrackerDailyTotalsStore {
             for id in taskIDs {
                 if let content = self.presentation.taskDailyTotals[id] {
                     taskStores[id]?.update(content)
-                } else { taskStores.removeValue(forKey: id) }
+                } else {
+                    taskStores.removeValue(forKey: id)
+                }
             }
         }
     }
@@ -307,15 +312,15 @@ final class TrackerTimerStore {
 
 // Keep publisher access on the main actor with compilers that support isolated conformances.
 #if compiler(>=6.2)
-extension TrackerStore: @MainActor ObservableObject {}
-extension TrackerTaskDailyTotalStore: @MainActor ObservableObject {}
-extension TrackerMenuLabelStore: @MainActor ObservableObject {}
-extension TrackerActivityStore: @MainActor ObservableObject {}
-extension TrackerTimerStore: @MainActor ObservableObject {}
+    extension TrackerStore: @MainActor ObservableObject {}
+    extension TrackerTaskDailyTotalStore: @MainActor ObservableObject {}
+    extension TrackerMenuLabelStore: @MainActor ObservableObject {}
+    extension TrackerActivityStore: @MainActor ObservableObject {}
+    extension TrackerTimerStore: @MainActor ObservableObject {}
 #else
-extension TrackerStore: ObservableObject {}
-extension TrackerTaskDailyTotalStore: ObservableObject {}
-extension TrackerMenuLabelStore: ObservableObject {}
-extension TrackerActivityStore: ObservableObject {}
-extension TrackerTimerStore: ObservableObject {}
+    extension TrackerStore: ObservableObject {}
+    extension TrackerTaskDailyTotalStore: ObservableObject {}
+    extension TrackerMenuLabelStore: ObservableObject {}
+    extension TrackerActivityStore: ObservableObject {}
+    extension TrackerTimerStore: ObservableObject {}
 #endif

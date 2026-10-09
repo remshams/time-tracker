@@ -22,7 +22,7 @@ final class TaskCreationStore {
 
 // Keep publisher access on the main actor with compilers that support isolated conformances.
 #if compiler(>=6.2)
-extension TaskCreationStore: @MainActor ObservableObject {}
+    extension TaskCreationStore: @MainActor ObservableObject {}
 #else
-extension TaskCreationStore: ObservableObject {}
+    extension TaskCreationStore: ObservableObject {}
 #endif

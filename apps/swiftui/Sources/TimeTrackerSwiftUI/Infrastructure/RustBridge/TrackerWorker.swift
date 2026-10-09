@@ -37,11 +37,14 @@ private final class RustBridge {
         tt_bridge_close(handle)
     }
 
-    private func decode<Value: Decodable>(_ pointer: UnsafeMutablePointer<CChar>?,
-                                         requiresRefreshOnMalformed: Bool = false) throws -> Value {
+    private func decode<Value: Decodable>(
+        _ pointer: UnsafeMutablePointer<CChar>?,
+        requiresRefreshOnMalformed: Bool = false
+    ) throws -> Value {
         func malformed(_ message: String) -> BridgeFailure {
-            BridgeFailure(message: message, kind: requiresRefreshOnMalformed ? "protocol" : "general",
-                          requiresRefresh: requiresRefreshOnMalformed)
+            BridgeFailure(
+                message: message, kind: requiresRefreshOnMalformed ? "protocol" : "general",
+                requiresRefresh: requiresRefreshOnMalformed)
         }
         guard let pointer else { throw malformed("The tracker bridge returned no data.") }
         defer { tt_bridge_string_free(pointer) }
@@ -53,9 +56,10 @@ private final class RustBridge {
             throw malformed("The tracker bridge returned an invalid result: \(error.localizedDescription)")
         }
         if let error = envelope.error {
-            throw BridgeFailure(message: error, kind: envelope.kind ?? "general",
-                                uncertain: envelope.uncertain ?? false,
-                                requiresRefresh: envelope.requiresRefresh ?? false)
+            throw BridgeFailure(
+                message: error, kind: envelope.kind ?? "general",
+                uncertain: envelope.uncertain ?? false,
+                requiresRefresh: envelope.requiresRefresh ?? false)
         }
         guard let data = envelope.data else { throw malformed("The tracker bridge returned an empty result.") }
         return data
@@ -168,21 +172,27 @@ private final class RustBridge {
         }
     }
 
-    private func withOptionalCString<Value>(_ value: String?, _ operation: (UnsafePointer<CChar>?) throws -> Value) rethrows -> Value {
+    private func withOptionalCString<Value>(_ value: String?, _ operation: (UnsafePointer<CChar>?) throws -> Value)
+        rethrows -> Value
+    {
         if let value { return try value.withCString { try operation($0) } }
         return try operation(nil)
     }
 
-    func correctWorklog(expected: WorklogItem, replacementStart: String,
-                        replacementEnd: String?, occurredAt: String) throws -> WorklogCorrectionResult {
+    func correctWorklog(
+        expected: WorklogItem, replacementStart: String,
+        replacementEnd: String?, occurredAt: String
+    ) throws -> WorklogCorrectionResult {
         try expected.id.withCString { worklog in
             try expected.start.withCString { originalStart in
                 try withOptionalCString(expected.end) { originalEnd in
                     try replacementStart.withCString { start in
                         try withOptionalCString(replacementEnd) { end in
                             try occurredAt.withCString { instant in
-                                try decode(tt_bridge_correct_worklog_at(handle, worklog, originalStart, originalEnd,
-                                                                       start, end, instant), requiresRefreshOnMalformed: true)
+                                try decode(
+                                    tt_bridge_correct_worklog_at(
+                                        handle, worklog, originalStart, originalEnd,
+                                        start, end, instant), requiresRefreshOnMalformed: true)
                             }
                         }
                     }
@@ -217,8 +227,9 @@ private final class RustBridge {
                 try expected.start.withCString { start in
                     try withOptionalCString(expected.end) { end in
                         try destinationTaskID.withCString { destination in
-                            try decode(tt_bridge_move_worklog(handle, worklog, source, start, end, destination),
-                                       requiresRefreshOnMalformed: true)
+                            try decode(
+                                tt_bridge_move_worklog(handle, worklog, source, start, end, destination),
+                                requiresRefreshOnMalformed: true)
                         }
                     }
                 }
@@ -241,11 +252,14 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         queue.async { retainedBridge?.close() }
     }
 
-    private func perform<Value: Sendable>(_ operation: @escaping @Sendable (TrackerWorker) throws -> Value) async throws -> Value {
+    private func perform<Value: Sendable>(_ operation: @escaping @Sendable (TrackerWorker) throws -> Value) async throws
+        -> Value
+    {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
-                do { continuation.resume(returning: try operation(self)) }
-                catch { continuation.resume(throwing: error) }
+                do { continuation.resume(returning: try operation(self)) } catch {
+                    continuation.resume(throwing: error)
+                }
             }
         }
     }
@@ -326,7 +340,10 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
     }
 
     func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws -> TrackerSnapshot {
-        try await perform { try $0.currentBridge().startTracking(taskID: taskID, expectedActiveID: expectedActiveID, occurredAt: occurredAt) }
+        try await perform {
+            try $0.currentBridge().startTracking(
+                taskID: taskID, expectedActiveID: expectedActiveID, occurredAt: occurredAt)
+        }
     }
 
     func stopTracking(worklogID: String, occurredAt: String) async throws -> TrackerSnapshot {
@@ -341,11 +358,14 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         try await perform { try $0.currentBridge().resumeTracking(taskID: taskID, occurredAt: occurredAt) }
     }
 
-    func correctWorklog(expected: WorklogItem, replacementStart: String,
-                        replacementEnd: String?, occurredAt: String) async throws -> WorklogCorrectionResult {
+    func correctWorklog(
+        expected: WorklogItem, replacementStart: String,
+        replacementEnd: String?, occurredAt: String
+    ) async throws -> WorklogCorrectionResult {
         try await perform {
-            try $0.currentBridge().correctWorklog(expected: expected, replacementStart: replacementStart,
-                                                 replacementEnd: replacementEnd, occurredAt: occurredAt)
+            try $0.currentBridge().correctWorklog(
+                expected: expected, replacementStart: replacementStart,
+                replacementEnd: replacementEnd, occurredAt: occurredAt)
         }
     }
 
@@ -358,6 +378,8 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
     }
 
     func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult {
-        try await perform { try $0.currentBridge().moveWorklog(expected: expected, destinationTaskID: destinationTaskID) }
+        try await perform {
+            try $0.currentBridge().moveWorklog(expected: expected, destinationTaskID: destinationTaskID)
+        }
     }
 }

@@ -37,11 +37,13 @@ struct ConnectionSettingsView: View {
                     .accessibilityIdentifier("connection.mode")
 
                     if draft.mode == .server {
-                        TextField("Server URL", text: $draft.serverURL,
-                                  prompt: Text("http://server-address:port"))
-                            .textFieldStyle(.roundedBorder)
-                            .disableAutocorrection(true)
-                            .accessibilityIdentifier("connection.server-url")
+                        TextField(
+                            "Server URL", text: $draft.serverURL,
+                            prompt: Text("http://server-address:port")
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .disableAutocorrection(true)
+                        .accessibilityIdentifier("connection.server-url")
                         Text("Enter the full HTTP or HTTPS address of your tracker server.")
                             .foregroundStyle(.secondary)
                     } else {
@@ -52,10 +54,13 @@ struct ConnectionSettingsView: View {
                 .disabled(operationPending || store.isChangingConnection)
 
                 Section("Tracking") {
-                    Toggle("Automatically pause tracking when the screen is locked", isOn: Binding(
-                        get: { store.pauseOnScreenLock },
-                        set: { store.setPauseOnScreenLock($0) }
-                    ))
+                    Toggle(
+                        "Automatically pause tracking when the screen is locked",
+                        isOn: Binding(
+                            get: { store.pauseOnScreenLock },
+                            set: { store.setPauseOnScreenLock($0) }
+                        )
+                    )
                     .accessibilityIdentifier("tracking.pause-on-lock")
                     Text("Resume the same task when you unlock this Mac, unless another timer is already running.")
                         .foregroundStyle(.secondary)
@@ -68,10 +73,13 @@ struct ConnectionSettingsView: View {
                 }
 
                 Section("Menu bar") {
-                    Toggle("Show today's total next to the icon", isOn: Binding(
-                        get: { store.showDailyTotalInMenuBar },
-                        set: { store.setShowDailyTotalInMenuBar($0) }
-                    ))
+                    Toggle(
+                        "Show today's total next to the icon",
+                        isOn: Binding(
+                            get: { store.showDailyTotalInMenuBar },
+                            set: { store.setShowDailyTotalInMenuBar($0) }
+                        )
+                    )
                     .accessibilityIdentifier("menu.show-daily-total")
                 }
 
@@ -88,12 +96,16 @@ struct ConnectionSettingsView: View {
                             .accessibilityIdentifier("menu.shortcut.open")
                         }
                     }
-                    Text("Click the shortcut and press its new keys. Escape cancels. Open menu opens the native menu across apps. Use arrow keys to navigate and open task submenus for tracking and copying.")
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Task submenus can copy the task name, today's exact time, or today's time rounded to the nearest 15 minutes.")
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Click the shortcut and press its new keys. Escape cancels. Open menu opens the native menu across apps. Use arrow keys to navigate and open task submenus for tracking and copying."
+                    )
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Task submenus can copy the task name, today's exact time, or today's time rounded to the nearest 15 minutes."
+                    )
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     if let error = store.menuShortcutError {
                         Text(error).foregroundStyle(.red)
                             .fixedSize(horizontal: false, vertical: true)
@@ -201,7 +213,8 @@ struct ConnectionSettingsView: View {
             let succeeded = await store.connect(settings)
             guard presentationGeneration == generation else { return }
             resultSucceeded = succeeded
-            resultMessage = resultSucceeded
+            resultMessage =
+                resultSucceeded
                 ? "Connected. This data source will be used next time you open the app."
                 : store.connectionMessage ?? "Could not connect. Please try again."
             operationPending = false

@@ -35,8 +35,10 @@ struct MenuTaskRow {
         if item.title != nextTitle {
             item.title = nextTitle
             setDurationFont(duration)
-            let status = isStale
-                ? (entry.isRunning ? "last confirmed tracking, current status unavailable"
+            let status =
+                isStale
+                ? (entry.isRunning
+                    ? "last confirmed tracking, current status unavailable"
                     : "current tracking status unavailable")
                 : (entry.isRunning ? "tracking" : "not tracking")
             item.setAccessibilityLabel("\(nextTitle), \(status)")
@@ -59,8 +61,10 @@ struct MenuTaskRow {
         let font = running ? NSFont.boldSystemFont(ofSize: menuFont.pointSize) : menuFont
         let text = NSMutableAttributedString(string: title, attributes: [.font: font])
         let range = (title as NSString).range(of: duration, options: .backwards)
-        text.addAttribute(.font, value: NSFont.monospacedDigitSystemFont(
-            ofSize: font.pointSize, weight: running ? .bold : .regular), range: range)
+        text.addAttribute(
+            .font,
+            value: NSFont.monospacedDigitSystemFont(
+                ofSize: font.pointSize, weight: running ? .bold : .regular), range: range)
         return text
     }
 }

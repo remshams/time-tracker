@@ -9,10 +9,12 @@ struct TaskCreationDialog: View {
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
-            .sheet(isPresented: Binding(
-                get: { isPresentationOwner && creation.state.isPresented },
-                set: { if isPresentationOwner && !$0 { creation.cancel() } }
-            )) {
+            .sheet(
+                isPresented: Binding(
+                    get: { isPresentationOwner && creation.state.isPresented },
+                    set: { if isPresentationOwner && !$0 { creation.cancel() } }
+                )
+            ) {
                 TaskCreationSheet(creation: creation)
             }
     }
@@ -24,11 +26,13 @@ private struct TaskCreationSheet: View {
 
     var body: some View {
         let state = creation.state
-        TaskNameSheet(title: "New task", name: Binding(
-            get: { creation.state.name }, set: { creation.setName($0) }
-        ), actionTitle: state.error != nil && !state.canEditName ? "Retry" : "Create",
-                      progressTitle: "Creating task...", isSubmitting: state.isSubmitting,
-                      canEditName: state.canEditName, canSubmit: state.canSubmit, error: state.error,
-                      cancel: creation.cancel, submit: creation.submit)
+        TaskNameSheet(
+            title: "New task",
+            name: Binding(
+                get: { creation.state.name }, set: { creation.setName($0) }
+            ), actionTitle: state.error != nil && !state.canEditName ? "Retry" : "Create",
+            progressTitle: "Creating task...", isSubmitting: state.isSubmitting,
+            canEditName: state.canEditName, canSubmit: state.canSubmit, error: state.error,
+            cancel: creation.cancel, submit: creation.submit)
     }
 }

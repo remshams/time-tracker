@@ -8,10 +8,12 @@ struct BulkTaskArchivingDialog: View {
 
     var body: some View {
         Color.clear.frame(width: 0, height: 0)
-            .sheet(isPresented: Binding(
-                get: { isPresentationOwner && archiving.state.isPresented },
-                set: { if isPresentationOwner && !$0 { archiving.cancel() } }
-            )) {
+            .sheet(
+                isPresented: Binding(
+                    get: { isPresentationOwner && archiving.state.isPresented },
+                    set: { if isPresentationOwner && !$0 { archiving.cancel() } }
+                )
+            ) {
                 BulkTaskArchivingSheet(archiving: archiving)
             }
     }
@@ -25,9 +27,11 @@ private struct BulkTaskArchivingSheet: View {
         let state = archiving.sheetContent
         VStack(alignment: .leading, spacing: 16) {
             Text("Archive inactive tasks").font(.title2.bold())
-            Text("Archive tasks with no recent work or changes. Running tasks are excluded. Worklog history remains available.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                "Archive tasks with no recent work or changes. Running tasks are excluded. Worklog history remains available."
+            )
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Text("Inactive for more than")
                 TextField("Days", text: Binding(get: { state.daysText }, set: archiving.updateDays))
@@ -38,7 +42,9 @@ private struct BulkTaskArchivingSheet: View {
                     .accessibilityIdentifier("bulk-archive.days")
                 Text("days")
                 Spacer()
-                Button { archiving.refresh() } label: {
+                Button {
+                    archiving.refresh()
+                } label: {
                     ZStack {
                         Image(systemName: "arrow.clockwise")
                             .opacity(state.isLoading ? 0 : 1)
@@ -50,11 +56,11 @@ private struct BulkTaskArchivingSheet: View {
                     .padding(4)
                     .contentShape(Rectangle())
                 }
-                    .buttonStyle(.plain)
-                    .disabled(state.isSubmitting || state.isLoading)
-                    .help("Refresh preview")
-                    .accessibilityLabel(state.isLoading ? "Refreshing preview" : "Refresh preview")
-                    .accessibilityIdentifier("bulk-archive.refresh")
+                .buttonStyle(.plain)
+                .disabled(state.isSubmitting || state.isLoading)
+                .help("Refresh preview")
+                .accessibilityLabel(state.isLoading ? "Refreshing preview" : "Refresh preview")
+                .accessibilityIdentifier("bulk-archive.refresh")
             }
             Text(previewTitle(state))
                 .font(.headline)
@@ -75,8 +81,11 @@ private struct BulkTaskArchivingSheet: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 8) {
                             if let count = state.archivedCount {
-                                Label("Archived \(count) \(count == 1 ? "task" : "tasks").", systemImage: "checkmark.circle")
-                                    .accessibilityIdentifier("bulk-archive.result")
+                                Label(
+                                    "Archived \(count) \(count == 1 ? "task" : "tasks").",
+                                    systemImage: "checkmark.circle"
+                                )
+                                .accessibilityIdentifier("bulk-archive.result")
                             } else {
                                 ForEach(state.tasks) { task in
                                     Text(task.name).frame(maxWidth: .infinity, alignment: .leading)

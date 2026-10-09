@@ -1,6 +1,6 @@
 import SwiftUI
 #if DEBUG
-import AppKit
+    import AppKit
 #endif
 
 @MainActor
@@ -24,19 +24,20 @@ struct TrackerWindow: View {
 
     @ViewBuilder var body: some View {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-tt-ui-testing"),
-           let suite = ProcessInfo.processInfo.environment["TT_UI_TEST_DEFAULTS_SUITE"],
-           suite.hasPrefix("TimeTrackerUITests."),
-           UUID(uuidString: String(suite.dropFirst("TimeTrackerUITests.".count))) != nil {
-            content.background {
-                TrackerWindowAppearanceProbe(appearance: colorScheme == .dark ? "Dark" : "Light")
-                    .frame(width: 1, height: 1)
+            if ProcessInfo.processInfo.arguments.contains("-tt-ui-testing"),
+                let suite = ProcessInfo.processInfo.environment["TT_UI_TEST_DEFAULTS_SUITE"],
+                suite.hasPrefix("TimeTrackerUITests."),
+                UUID(uuidString: String(suite.dropFirst("TimeTrackerUITests.".count))) != nil
+            {
+                content.background {
+                    TrackerWindowAppearanceProbe(appearance: colorScheme == .dark ? "Dark" : "Light")
+                        .frame(width: 1, height: 1)
+                }
+            } else {
+                content
             }
-        } else {
-            content
-        }
         #else
-        content
+            content
         #endif
     }
 
@@ -76,77 +77,80 @@ struct TrackerWindow: View {
 }
 
 #if DEBUG
-@MainActor
-private struct TrackerWindowAppearanceProbe: NSViewRepresentable {
-    let appearance: String
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField(labelWithString: appearance)
-        field.textColor = .clear
-        field.setAccessibilityIdentifier("tracker.window.appearance")
-        field.setAccessibilityLabel("Window appearance")
-        context.coordinator.observeResize(for: field)
-        return field
-    }
-
-    func updateNSView(_ field: NSTextField, context: Context) {
-        field.stringValue = appearance
-        field.setAccessibilityValue(appearance)
-    }
-
-    static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
-        coordinator.stop()
-    }
-
     @MainActor
-    final class Coordinator {
-        private weak var field: NSTextField?
-        private var resizeObserver: NSObjectProtocol?
+    private struct TrackerWindowAppearanceProbe: NSViewRepresentable {
+        let appearance: String
 
-        deinit {
-            if let resizeObserver {
-                DistributedNotificationCenter.default().removeObserver(resizeObserver)
-            }
+        func makeCoordinator() -> Coordinator { Coordinator() }
+
+        func makeNSView(context: Context) -> NSTextField {
+            let field = NSTextField(labelWithString: appearance)
+            field.textColor = .clear
+            field.setAccessibilityIdentifier("tracker.window.appearance")
+            field.setAccessibilityLabel("Window appearance")
+            context.coordinator.observeResize(for: field)
+            return field
         }
 
-        func observeResize(for field: NSTextField) {
-            guard TrackerLaunchConfiguration.current.localDatabasePath != nil,
-                  let suite = ProcessInfo.processInfo.environment["TT_UI_TEST_DEFAULTS_SUITE"] else { return }
-            self.field = field
-            resizeObserver = DistributedNotificationCenter.default().addObserver(
-                forName: Notification.Name("\(suite).resize"), object: nil, queue: .main
-            ) { [weak self] notification in
-                MainActor.assumeIsolated { self?.resize(notification) }
-            }
+        func updateNSView(_ field: NSTextField, context: Context) {
+            field.stringValue = appearance
+            field.setAccessibilityValue(appearance)
         }
 
-        func stop() {
-            if let resizeObserver {
-                DistributedNotificationCenter.default().removeObserver(resizeObserver)
-            }
-            resizeObserver = nil
-            field = nil
+        static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
+            coordinator.stop()
         }
 
-        private func resize(_ notification: Notification) {
-            guard let window = field?.window, window.isKeyWindow,
-                  let screen = window.screen,
-                  let width = notification.userInfo?["width"] as? NSNumber,
-                  let height = notification.userInfo?["height"] as? NSNumber,
-                  width.doubleValue.isFinite, height.doubleValue.isFinite,
-                  width.doubleValue > 0, height.doubleValue > 0 else { return }
-            let available = window.contentRect(forFrameRect: screen.visibleFrame).size
-            let minimum = window.contentMinSize
-            guard minimum.width <= available.width, minimum.height <= available.height else { return }
-            window.setContentSize(NSSize(
-                width: max(minimum.width, min(CGFloat(width.doubleValue), available.width)),
-                height: max(minimum.height, min(CGFloat(height.doubleValue), available.height))
-            ))
+        @MainActor
+        final class Coordinator {
+            private weak var field: NSTextField?
+            private var resizeObserver: NSObjectProtocol?
+
+            deinit {
+                if let resizeObserver {
+                    DistributedNotificationCenter.default().removeObserver(resizeObserver)
+                }
+            }
+
+            func observeResize(for field: NSTextField) {
+                guard TrackerLaunchConfiguration.current.localDatabasePath != nil,
+                    let suite = ProcessInfo.processInfo.environment["TT_UI_TEST_DEFAULTS_SUITE"]
+                else { return }
+                self.field = field
+                resizeObserver = DistributedNotificationCenter.default().addObserver(
+                    forName: Notification.Name("\(suite).resize"), object: nil, queue: .main
+                ) { [weak self] notification in
+                    MainActor.assumeIsolated { self?.resize(notification) }
+                }
+            }
+
+            func stop() {
+                if let resizeObserver {
+                    DistributedNotificationCenter.default().removeObserver(resizeObserver)
+                }
+                resizeObserver = nil
+                field = nil
+            }
+
+            private func resize(_ notification: Notification) {
+                guard let window = field?.window, window.isKeyWindow,
+                    let screen = window.screen,
+                    let width = notification.userInfo?["width"] as? NSNumber,
+                    let height = notification.userInfo?["height"] as? NSNumber,
+                    width.doubleValue.isFinite, height.doubleValue.isFinite,
+                    width.doubleValue > 0, height.doubleValue > 0
+                else { return }
+                let available = window.contentRect(forFrameRect: screen.visibleFrame).size
+                let minimum = window.contentMinSize
+                guard minimum.width <= available.width, minimum.height <= available.height else { return }
+                window.setContentSize(
+                    NSSize(
+                        width: max(minimum.width, min(CGFloat(width.doubleValue), available.width)),
+                        height: max(minimum.height, min(CGFloat(height.doubleValue), available.height))
+                    ))
+            }
         }
     }
-}
 #endif
 
 @MainActor
@@ -234,25 +238,34 @@ private struct TrackerTaskToolbar: View {
             .disabled(!rename.canOpen || hasTaskEditor)
             .help("Edit task name")
 
-            let canChangeArchive = task.archived ? archiving.canUnarchive(taskID: task.id)
+            let canChangeArchive =
+                task.archived
+                ? archiving.canUnarchive(taskID: task.id)
                 : archiving.canArchive(taskID: task.id)
             Button {
                 guard canChangeArchive else { return }
                 preferWindow()
-                if task.archived { archiving.unarchive(taskID: task.id) }
-                else { archiving.openArchive(taskID: task.id) }
+                if task.archived {
+                    archiving.unarchive(taskID: task.id)
+                } else {
+                    archiving.openArchive(taskID: task.id)
+                }
             } label: {
-                Label(task.archived ? "Unarchive task" : "Archive task",
-                      systemImage: task.archived ? "archivebox.fill" : "archivebox")
+                Label(
+                    task.archived ? "Unarchive task" : "Archive task",
+                    systemImage: task.archived ? "archivebox.fill" : "archivebox")
             }
             .disabled(!canChangeArchive)
-            .help(!task.archived && store.active?.taskId == task.id
-                  ? "Stop tracking before archiving this task"
-                  : task.archived ? "Unarchive this task" : "Archive this task")
+            .help(
+                !task.archived && store.active?.taskId == task.id
+                    ? "Stop tracking before archiving this task"
+                    : task.archived ? "Unarchive this task" : "Archive this task")
 
             if !task.archived {
                 let isRunning = store.active?.taskId == task.id
-                let canTrack = isRunning ? activity.canStopTracking
+                let canTrack =
+                    isRunning
+                    ? activity.canStopTracking
                     : activity.canStartTracking(taskID: task.id)
                 Button {
                     guard canTrack else { return }
@@ -262,12 +275,16 @@ private struct TrackerTaskToolbar: View {
                         store.startTracking(taskID: task.id)
                     }
                 } label: {
-                    Label(isRunning ? "Stop tracking" : "Start tracking",
-                          systemImage: isRunning ? "stop.fill" : "play.fill")
+                    Label(
+                        isRunning ? "Stop tracking" : "Start tracking",
+                        systemImage: isRunning ? "stop.fill" : "play.fill")
                 }
                 .disabled(!canTrack)
-                .help(isRunning ? "Stop tracking this task" : store.active == nil
-                      ? "Start tracking this task" : "Stop the current timer and start tracking this task")
+                .help(
+                    isRunning
+                        ? "Stop tracking this task"
+                        : store.active == nil
+                            ? "Start tracking this task" : "Stop the current timer and start tracking this task")
             }
         }
     }
