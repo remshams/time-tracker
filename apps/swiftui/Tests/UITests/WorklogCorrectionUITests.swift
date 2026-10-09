@@ -11,9 +11,12 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         select(task)
         openCorrection(log)
         XCTAssertTrue(element("worklog-correction.timezone").exists)
-        let originalPreview = element("worklog-correction.duration").value as? String
+        let originalPreview = try XCTUnwrap(element("worklog-correction.duration").value as? String)
         stepMinute("worklog-correction.start")
-        XCTAssertNotEqual(element("worklog-correction.duration").value as? String, originalPreview)
+        waitUntil("Corrected start updates the duration preview") {
+            guard let preview = self.element("worklog-correction.duration").value as? String else { return false }
+            return preview != originalPreview
+        }
         app.buttons["worklog-correction.save"].click()
         waitUntil("Completed correction closes") { !self.element("worklog-correction.start").exists }
         let saved = try XCTUnwrap(fixture.worklogs(task).first)
