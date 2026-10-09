@@ -31,9 +31,13 @@ Complete. The baseline was merged independently in [PR #10](https://github.com/r
 
 The [native coverage map](../apps/swiftui/e2e-coverage.md) records task creation/display, start/switch/stop, history, daily totals, refresh/reconnect, relaunch persistence and retained bulk archive scenarios in local and real-server modes. Fixtures drive the real app and production bridge, use isolated preferences and databases, and verify server/storage outcomes. Existing TUI E2E tests remain part of workspace CI. Native diagnostics include logs and Xcode result bundles.
 
-This evidence satisfies the start prerequisite for protocol/server changes, cache refactoring and client migration. Select a passing source revision for implementation; the latest `main` build at `2d8b96c` was queued when this plan was updated. Keep the existing E2E baseline as regression coverage. This documentation change does not modify E2E tests; obtain explicit consent before implementation changes them.
+This evidence satisfies the start prerequisite for protocol/server changes, cache refactoring and client migration. Select a passing source revision for implementation; the latest `main` build at `2d8b96c` was queued when this plan was updated. Keep the existing E2E baseline as regression coverage. The user approved updating affected E2E tests during implementation. Route fault matches now follow protocol 3, while existing workflow assertions remain.
 
 Migration-specific E2E scenarios for stale previews, concurrent changes, receipt recovery and `/v1` resource composition are part of implementation acceptance. Extend the established baseline for those cases as the affected features migrate.
+
+## Implementation status
+
+The coordinated protocol-3 implementation replaces the server responses and migrates the remote adapter, CLI, TUI and native bridge together. The database schema is unchanged. Native macOS E2E validation still requires the macOS CI runner. Deployment remains a coordinated server and client release.
 
 ## Implementation sequence
 
@@ -139,7 +143,7 @@ Migration-specific E2E scenarios for stale previews, concurrent changes, receipt
 | 12 | Application E2E | Existing TUI and native local bulk archive suites pass; real-server native scenarios verify changed `/v1` workflows; logs and result bundles are available in CI |
 | 13 | Configurable archive | Default and chosen periods, complete candidate labels, invalid input, refresh/cancel, stale preview rejection, actual count, active timer and relaunch persistence remain correct |
 
-Use behavior and concurrency tests rather than tests that merely restate DTO construction. Portable Swift state tests and server integration tests complement application E2E coverage; they do not replace native UI-to-server scenarios. Keep existing E2E tests unchanged for this documentation branch, and obtain explicit consent before implementation adds or modifies E2E tests.
+Use behavior and concurrency tests rather than tests that merely restate DTO construction. Portable Swift state tests and server integration tests complement application E2E coverage; they do not replace native UI-to-server scenarios. E2E updates have explicit user consent. Added migration scenarios cover split-resource coherence and stale rename intent; the existing receipt recovery workflows use the new routes.
 
 Run the repository's required checks for each implementation handoff:
 
