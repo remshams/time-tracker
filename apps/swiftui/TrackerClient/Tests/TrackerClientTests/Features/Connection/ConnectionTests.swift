@@ -4,6 +4,85 @@ import XCTest
 
 final class ConnectionTests: XCTestCase {
     @MainActor
+    func testSourceSwitchClearsAHiddenUnarchiveFailure() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        fixture.session.setWindowVisible(true)
+        let snapshot = TrackerSnapshot(tasks: [firstTask, archivedTask], active: nil)
+        try await fixture.start(snapshot)
+        fixture.session.unarchiveTask(taskID: archivedTask.id)
+        let preflight = try await fixture.client.next()
+        preflight.succeed(snapshot)
+        let command = try await fixture.client.next()
+        fixture.session.setWindowVisible(false)
+        command.fail(BridgeFailure(message: "Unarchive rejected", kind: "conflict"))
+        let reconciliation = try await fixture.client.next()
+        reconciliation.succeed(snapshot)
+        try await fixture.settled()
+        XCTAssertTrue(fixture.session.taskArchiving.hasPendingAction)
+        XCTAssertFalse(fixture.session.taskArchiving.hasUnresolvedIntent)
+
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let request = try await fixture.client.next()
+        request.succeed(emptySnapshot)
+        let connected = try await fixture.taskValue(connecting)
+        try await fixture.settled()
+
+        XCTAssertTrue(connected)
+        XCTAssertFalse(fixture.session.taskArchiving.hasPendingAction)
+        XCTAssertNil(fixture.session.taskArchiving.taskID)
+        XCTAssertNil(fixture.session.taskArchiving.error)
+    }
+
+    @MainActor
+    func testAlreadyCancelledConnectionDoesNotLeaveAQueuedOperationWaiting() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        try await fixture.start(snapshot)
+        fixture.session.refresh()
+        let poll = try await fixture.client.next()
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        connecting.cancel()
+
+        let connected = try await fixture.taskValue(connecting)
+
+        XCTAssertFalse(connected)
+        XCTAssertFalse(fixture.session.isBlockingControls)
+        poll.succeed(snapshot)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.connectionSettings, .local)
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .connect = $0 { return true }; return false
+            })
+    }
+
+    @MainActor
+    func testSourceSwitchPublishesTheReplacementTasksAndActiveTimer() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        let remoteTask = TaskItem(id: "remote-task", name: "Remote task", archived: false, latestStart: nil)
+        let remoteWorklog = WorklogItem(
+            id: "remote-worklog", taskId: remoteTask.id, start: activeWorklog.start, end: nil)
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let request = try await fixture.client.next()
+        request.succeed(TrackerSnapshot(tasks: [remoteTask], active: remoteWorklog))
+        let connected = try await fixture.taskValue(connecting)
+        XCTAssertTrue(connected)
+        let history = try await fixture.client.next()
+        XCTAssertEqual(history.operation, .history(task: remoteTask.id, cursor: nil))
+        history.succeed(emptyPage)
+        try await fixture.settled()
+
+        XCTAssertEqual(fixture.session.tasks, [remoteTask])
+        XCTAssertEqual(fixture.session.active, remoteWorklog)
+        XCTAssertEqual(fixture.session.selectedTaskID, remoteTask.id)
+        XCTAssertEqual(fixture.session.connectionSettings, serverSettings)
+    }
+
+    @MainActor
     func testSourceSwitchClearsCachedHistoryEvenWhenTaskIDsMatch() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
