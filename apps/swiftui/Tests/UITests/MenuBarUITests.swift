@@ -106,7 +106,7 @@ class MenuBarUITests: TrackerUITestCase {
                                        ("Copy rounded duration", "0m")] {
                 openStatusMenu()
                 copyFromMenu(action, task: task)
-                XCTAssertEqual(NSPasteboard.general.string(forType: .string), expected)
+                assertClipboard(expected)
             }
         }
     }
@@ -118,11 +118,11 @@ class MenuBarUITests: TrackerUITestCase {
             openStatusMenu()
             app.menuItems["Start tracking"].firstMatch.hover()
             copyFromMenu("Copy exact duration", task: task)
-            XCTAssertEqual(NSPasteboard.general.string(forType: .string), "0s")
+            assertClipboard("0s")
             openStatusMenu()
             app.menuItems["Start tracking"].firstMatch.hover()
             copyFromMenu("Copy rounded duration", task: task)
-            XCTAssertEqual(NSPasteboard.general.string(forType: .string), "0m")
+            assertClipboard("0m")
         }
     }
 
@@ -146,6 +146,12 @@ class MenuBarUITests: TrackerUITestCase {
         XCTAssertTrue(menuTask(first).isEnabled)
         menuTask(first).click()
         assertStopped()
+    }
+    private func assertClipboard(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
+        waitUntil("Copied value reaches the clipboard", file: file, line: line) {
+            NSPasteboard.general.string(forType: .string) == expected
+        }
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), expected, file: file, line: line)
     }
 }
 
@@ -199,7 +205,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             XCTAssertFalse(app.menuItems["Start tracking"].firstMatch.isEnabled)
             XCTAssertTrue(self.app.staticTexts["Today, cached"].exists)
             app.menuItems["Copy exact duration"].click()
-            XCTAssertEqual(NSPasteboard.general.string(forType: .string), exact)
+            assertClipboard(exact)
         }
         try fixture.restartServer()
         XCTAssertNil(try fixture.activeWorklog())
@@ -231,10 +237,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             let copyName = menuTask(first).menuItems["Copy task name"]
             waitUntil("The captured Copy action is reachable") { copyName.exists && copyName.isHittable }
             copyName.click()
-            waitUntil("The captured task name reaches the clipboard") {
-                NSPasteboard.general.string(forType: .string) == first.name
-            }
-            XCTAssertEqual(NSPasteboard.general.string(forType: .string), first.name)
+            assertClipboard(first.name)
             openStatusMenu()
             menuTask(first).hover()
             let copyDuration = menuTask(first).menuItems["Copy exact duration"]
@@ -249,7 +252,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
                 let row = try XCTUnwrap(report.rows.first { $0.task.id == first.id })
                 let seconds = row.durationMicroseconds / 1_000_000
                 let expected = seconds >= 60 ? "\(seconds / 60)m \(seconds % 60)s" : "\(seconds)s"
-                XCTAssertEqual(NSPasteboard.general.string(forType: .string), expected)
+                assertClipboard(expected)
             } catch { XCTFail("Could not verify the completed timer: \(error)") }
         }
     }
