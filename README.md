@@ -202,7 +202,7 @@ action revisions, dependency and build caches, and seven-day report retention.
 | 1 | [CI](.github/workflows/ci.yml) | Rust formatting, Clippy with warnings denied, Python script tests, and actionlint | Every PR, push to `main`, and manual run |
 | 2 | CI | Full Rust workspace tests on Linux and macOS, including existing integration and TUI E2E tests | Every PR, push to `main`, and manual run |
 | 3 | CI | Rust coverage and the configured CRAP threshold of 12 | Every PR, push to `main`, and manual run |
-| 4 | CI | Portable Swift tests and at least 95% executable line coverage on Linux | Every PR, push to `main`, and manual run |
+| 4 | CI | Pinned Swift formatting and linting, portable Swift tests, and at least 95% executable line coverage on Linux | Every PR, push to `main`, and manual run |
 | 5 | CI | Six required native UI E2E groups, Swift package tests on macOS, native Debug and universal Release builds, and scene layout checks | Every PR, push to `main`, and manual run |
 | 6 | CI | `CI passed` requires every regular job to succeed, including both Rust test platforms | Every PR, push to `main`, and manual run |
 | 7 | [Mutation tests](.github/workflows/mutations.yml) | Full Rust and portable Swift mutation suites on Linux; missed, timed-out, and unresolved mutants fail their jobs | Manual only |
@@ -241,7 +241,7 @@ This CI policy does not change the local before-handoff checks in `AGENTS.md`.
 
 ## Hooks
 
-The pre-commit hook checks formatting. After cloning, point Git at the repository-owned hooks:
+The pre-commit hook checks Rust formatting and Swift formatting when staged changes affect the Swift style scope. Install the [Swift style tools](apps/swiftui/README.md#formatting-and-linting) before committing Swift changes. After cloning, point Git at the repository-owned hooks:
 
 ```sh
 git config core.hooksPath .githooks
