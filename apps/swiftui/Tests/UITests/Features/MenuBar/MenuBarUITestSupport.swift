@@ -23,7 +23,8 @@ extension TrackerUITestCase {
             let captured = XCUIScreen.main.screenshot()
             screenshot = captured
             let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
+            request.revision = VNRecognizeTextRequestRevision1
+            request.recognitionLevel = .fast
             request.recognitionLanguages = ["en-US"]
             request.usesLanguageCorrection = false
             request.regionOfInterest = CGRect(x: 0, y: 0.75, width: 1, height: 0.25)
@@ -80,10 +81,20 @@ extension TrackerUITestCase {
         let row = menuTask(task)
         XCTAssertTrue(row.waitForExistence(timeout: timeout))
         row.hover()
-        let item = app.menuItems[action].firstMatch
+        let item = row.menuItems[action].firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: timeout))
         XCTAssertTrue(item.isEnabled)
-        item.click()
+        clickTaskSubmenuItem(item, task: task)
+    }
+
+    func clickTaskSubmenuItem(_ item: XCUIElement, task: FixtureTask) {
+        waitUntil("The task submenu action is reachable") { item.exists && item.isHittable }
+        let row = menuTask(task)
+        // Enter the submenu at the parent row's height before moving to the action.
+        // A diagonal move can cross another parent row when the submenu opens to the left.
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .withOffset(CGVector(dx: item.frame.midX - row.frame.midX, dy: 0)).hover()
+        item.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     }
 
     func withRestoredClipboard(_ body: () throws -> Void) rethrows {

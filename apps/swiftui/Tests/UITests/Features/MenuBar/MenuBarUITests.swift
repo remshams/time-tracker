@@ -32,6 +32,7 @@ class MenuBarUITests: TrackerUITestCase {
     func testLongLabelIsEllipsizedAndHoverKeepsFullTaskNameInEveryDisplayMode() throws {
         let task = try fixture.create("A very long tracked task name for menu bar coverage")
         _ = try fixture.start(task)
+        additionalLaunchArguments = ["-NSInitialToolTipDelay", "100"]
         launch()
         for mode in ["Task name", "Time", "None"] {
             openSettings()
@@ -51,6 +52,7 @@ class MenuBarUITests: TrackerUITestCase {
     func testTaskLabelFollowsStartRenameSwitchAndStop() throws {
         let first = try fixture.create("Planning")
         let second = try fixture.create("Review")
+        additionalLaunchArguments = ["-NSInitialToolTipDelay", "100"]
         launch()
         openSettings()
         chooseMenuBarDisplay("Task name")
@@ -222,9 +224,19 @@ class MenuBarUITests: TrackerUITestCase {
         assertStopped()
     }
     fileprivate func assertClipboard(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
-        waitUntil("Copied value reaches the clipboard", file: file, line: line) {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             NSPasteboard.general.string(forType: .string) == expected
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        if result != .completed {
+            let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            attachment.name = "Copy action desktop"
+            attachment.lifetime = .keepAlways
+            add(attachment)
         }
+        XCTAssertEqual(result, .completed,
+                       "Copied value reaches the clipboard. Expected \(expected); received \(NSPasteboard.general.string(forType: .string) ?? "nil")",
+                       file: file, line: line)
         XCTAssertEqual(NSPasteboard.general.string(forType: .string), expected, file: file, line: line)
     }
 }
@@ -310,7 +322,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             menuTask(first).hover()
             let copyName = menuTask(first).menuItems["Copy task name"]
             waitUntil("The captured Copy action is reachable") { copyName.exists && copyName.isHittable }
-            copyName.click()
+            clickTaskSubmenuItem(copyName, task: first)
             assertClipboard(first.name)
             openStatusMenu()
             menuTask(first).hover()
@@ -318,7 +330,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             waitUntil("The captured duration Copy action is reachable") {
                 copyDuration.exists && copyDuration.isHittable
             }
-            copyDuration.click()
+            clickTaskSubmenuItem(copyDuration, task: first)
             do {
                 let now = Date()
                 let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
