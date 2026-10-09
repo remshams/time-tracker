@@ -24,27 +24,8 @@ extension TrackerUITestCase {
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             let captured = XCUIScreen.main.screenshot()
             screenshot = captured
-            let request = VNRecognizeTextRequest()
-            request.revision = VNRecognizeTextRequestRevision1
-            request.recognitionLevel = .fast
-            request.minimumTextHeight = 0
-            request.recognitionLanguages = ["en-US"]
-            request.usesLanguageCorrection = false
-            request.regionOfInterest = CGRect(x: 0, y: 0.75, width: 1, height: 0.25)
             do {
-                for (stage, devices) in try request.supportedComputeStageDevices {
-                    guard let cpu = devices.first(where: {
-                        if case .cpu = $0 { return true }
-                        return false
-                    }) else {
-                        recognizedText = "Text recognition has no CPU device for \(stage)"
-                        return false
-                    }
-                    request.setComputeDevice(cpu, for: stage)
-                }
-                try VNImageRequestHandler(data: captured.pngRepresentation, options: [:]).perform([request])
-                recognizedText = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-                    .joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+                recognizedText = try self.recognizeTooltipText(in: captured)
                 return recognizedText.contains(expected)
             } catch {
                 recognizedText = "Text recognition failed: \(error)"
@@ -65,9 +46,64 @@ extension TrackerUITestCase {
             attachment.name = "Status tooltip recognized text"
             attachment.lifetime = .keepAlways
             add(attachment)
+            captureToolbarTooltipDiagnostic()
         }
         trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
         XCTAssertEqual(result, .completed, "Hover shows the full tracking status", file: file, line: line)
+    }
+
+    private func recognizeTooltipText(in screenshot: XCUIScreenshot) throws -> String {
+        let request = VNRecognizeTextRequest()
+        request.revision = VNRecognizeTextRequestRevision1
+        request.recognitionLevel = .fast
+        request.minimumTextHeight = 0
+        request.recognitionLanguages = ["en-US"]
+        request.usesLanguageCorrection = false
+        request.regionOfInterest = CGRect(x: 0, y: 0.75, width: 1, height: 0.25)
+        for (stage, devices) in try request.supportedComputeStageDevices {
+            if let cpu = devices.first(where: {
+                if case .cpu = $0 { return true }
+                return false
+            }) {
+                request.setComputeDevice(cpu, for: stage)
+            } else {
+                throw NSError(domain: "TooltipRecognition", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "No CPU device for \(stage)"])
+            }
+        }
+        try VNImageRequestHandler(data: screenshot.pngRepresentation, options: [:]).perform([request])
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            .joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    private func captureToolbarTooltipDiagnostic() {
+        trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
+        app.buttons["New task"].hover()
+        var screenshot: XCUIScreenshot?
+        var recognizedText = ""
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let captured = XCUIScreen.main.screenshot()
+            screenshot = captured
+            do {
+                recognizedText = try self.recognizeTooltipText(in: captured)
+                return recognizedText.contains("New task")
+            } catch {
+                recognizedText = "Text recognition failed: \(error)"
+                return false
+            }
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        if let screenshot {
+            let attachment = XCTAttachment(screenshot: screenshot)
+            attachment.name = "Toolbar tooltip diagnostic desktop"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        let attachment = XCTAttachment(string:
+            "Toolbar tooltip wait: \(result)\nExpected: New task\nRecognized: \(recognizedText)\nPointer: \(NSEvent.mouseLocation)")
+        attachment.name = "Toolbar tooltip diagnostic text"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     func openStatusMenu() {
