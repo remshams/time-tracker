@@ -93,7 +93,7 @@ fn run_remote_tui(server: &str) -> Result<(), Box<dyn Error>> {
     );
     state.shell_mut().info("Connecting to server...");
     let mut guard = terminal_guard()?;
-    runtime::run(&mut guard, Backend::Remote(application), state).map_err(Into::into)
+    runtime::run(&mut guard, Backend::Remote(Box::new(application)), state).map_err(Into::into)
 }
 
 fn terminal_guard() -> io::Result<TerminalGuard> {
