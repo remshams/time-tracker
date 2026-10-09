@@ -3,6 +3,32 @@ import XCTest
 
 final class PresentationObserverTests: XCTestCase {
     @MainActor
+    func testEditorAvailabilityNotifiesOnlyWhenTheAvailabilityChanges() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        let observer = TrackerPresentationObserver(session: fixture.session)
+        var bulkChanges = 0
+        var moveChanges = 0
+        observer.onBulkTaskArchivingChange = { bulkChanges += 1 }
+        observer.onWorklogMoveChange = { moveChanges += 1 }
+        fixture.session.onChange = { observer.update(from: fixture.session) }
+
+        observer.update(from: fixture.session)
+        XCTAssertEqual(bulkChanges, 0)
+        XCTAssertEqual(moveChanges, 0)
+        fixture.session.openTaskCreation()
+        XCTAssertEqual(bulkChanges, 1)
+        XCTAssertEqual(moveChanges, 1)
+        fixture.session.cancelTaskCreation()
+        XCTAssertEqual(bulkChanges, 2)
+        XCTAssertEqual(moveChanges, 2)
+        observer.update(from: fixture.session)
+        XCTAssertEqual(bulkChanges, 2)
+        XCTAssertEqual(moveChanges, 2)
+    }
+
+    @MainActor
     func testChangedServerContentAndPreferencesStillNotifyTheWindow() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
