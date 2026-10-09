@@ -170,6 +170,42 @@ final class HistoryTests: XCTestCase {
     }
 
     @MainActor
+    func testReturningToTaskRejectsAnEarlierHistoryGeneration() async throws {
+        for failedResponse in [false, true] {
+            let fixture = Fixture()
+            defer { fixture.cleanup() }
+            try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
+            fixture.session.retryHistory()
+            let oldRequest = try await fixture.client.next()
+            XCTAssertEqual(oldRequest.operation, .history(task: firstTask.id, cursor: nil))
+
+            fixture.session.select(secondTask.id)
+            fixture.session.select(firstTask.id)
+            XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
+            if failedResponse {
+                oldRequest.fail(BridgeFailure(message: "An earlier history request failed", kind: "unavailable"))
+            } else {
+                oldRequest.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "obsolete", reset: false))
+            }
+
+            let freshRequest = try await fixture.client.next()
+            XCTAssertEqual(freshRequest.operation, .history(task: firstTask.id, cursor: nil))
+            XCTAssertTrue(fixture.session.worklogs.isEmpty)
+            XCTAssertNil(fixture.session.nextCursor)
+            XCTAssertFalse(fixture.session.historyUnavailable)
+            XCTAssertNil(fixture.session.error)
+            XCTAssertFalse(fixture.session.isStale)
+            freshRequest.succeed(emptyPage)
+            try await fixture.settled()
+            XCTAssertTrue(fixture.session.worklogs.isEmpty)
+            XCTAssertNil(fixture.session.nextCursor)
+            XCTAssertNil(fixture.session.error)
+            XCTAssertFalse(fixture.session.isStale)
+            XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
+        }
+    }
+
+    @MainActor
     func testPaginationAppendsButResetReplacesPreviousRowsAndCursor() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
