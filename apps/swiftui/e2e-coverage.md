@@ -94,4 +94,6 @@ Changing the data source through Settings closes an open native menu. Source-swi
 
 At checkpoint `a80d4d8`, the Python suite passes 64 tests. Rust workspace tests and coverage pass, and all 1,174 reported functions are below the CRAP threshold of 12. Scoped `tracker-swift-bridge` mutations produce 87 caught and 43 unviable cases, with zero missed or timed-out cases. The bridge crate's unit and integration tests remain enabled.
 
-The change adds native Swift tests, accessibility observations, and native menu shortcut delivery during AppKit tracking. It does not change portable Swift state or Rust production behavior. Portable Swift mutations are therefore unchanged; the Rust bridge check covers the production boundary exercised by the native journeys. Native Swift line coverage is not inferred from the portable package's coverage percentage.
+Those `a80d4d8` measurements cover the earlier native UI expansion and its Rust bridge boundary.
+
+The menu bar display change also modifies portable Swift menu logic. At `925b7e4`, all 414 portable tests pass, and focused mutations catch all 37 mutants across the six selected menu production files. The Python suite succeeds with 71 tests total and two platform/toolchain skips. Rust tests, coverage and CRAP pass, with all 1,174 reported functions within the threshold of 12. Rust production behavior is unchanged. Native AppKit behavior is checked through the macOS E2E suite; its line coverage is not inferred from the portable package's coverage percentage.
