@@ -17,8 +17,12 @@ enum TaskNameEditingPolicy {
     }
 
     static func transportError(_ name: String) -> String? {
-        name.unicodeScalars.contains(where: { $0.value == 0 })
+        name.unicodeScalars.contains(where: isNullScalar)
             ? "Task names must not contain control characters." : nil
+    }
+
+    private static func isNullScalar(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.value == 0
     }
 
     static func requiresRecovery(_ error: Error) -> Bool {
