@@ -49,7 +49,7 @@ fn renaming_active_and_archived_tasks_preserves_ids_tracking_and_worklog_history
             .set_active_task(active, at + chrono::Duration::seconds(3))
             .is_ok()
     );
-    let before = serde_json::to_value(snapshot(&bridge.application)).unwrap();
+    let before = crate::tests::test_resource_values(&bridge.application);
     let active_history = bridge
         .application
         .worklogs_for_task(active, None)
@@ -63,13 +63,14 @@ fn renaming_active_and_archived_tasks_preserves_ids_tracking_and_worklog_history
     let renamed_at = at + chrono::Duration::seconds(4);
     for (id, expected_archived) in [(active, false), (archived, true)] {
         let renamed = rename(&mut bridge, id, "  Shared name 🛠  ", renamed_at);
+        let observed_tasks = crate::tests::test_task_values(&bridge.application);
         assert!(renamed.get("error").is_none(), "{renamed}");
-        assert_eq!(renamed["data"]["active"], before["active"]);
         assert_eq!(
-            renamed["data"]["tasks"].as_array().unwrap().len(),
-            tasks.len()
+            crate::tests::test_active_value(&bridge.application),
+            before.1
         );
-        let item = renamed["data"]["tasks"]
+        assert_eq!(observed_tasks.as_array().unwrap().len(), tasks.len());
+        let item = observed_tasks
             .as_array()
             .unwrap()
             .iter()
@@ -77,7 +78,8 @@ fn renaming_active_and_archived_tasks_preserves_ids_tracking_and_worklog_history
             .unwrap();
         assert_eq!(item["name"], "Shared name 🛠");
         assert_eq!(item["archived"], expected_archived);
-        let old = before["tasks"]
+        let old = before
+            .0
             .as_array()
             .unwrap()
             .iter()
@@ -126,7 +128,7 @@ fn renaming_active_and_archived_tasks_preserves_ids_tracking_and_worklog_history
 fn rename_validates_task_names_and_missing_ids_without_changes() {
     let directory = tempfile::tempdir().unwrap();
     let mut bridge = open_fixture(&directory.path().join("validation.db")).unwrap();
-    let before = serde_json::to_value(snapshot(&bridge.application)).unwrap();
+    let before = crate::tests::test_resource_values(&bridge.application);
     let id = bridge.application.tasks(TaskOrdering::default())[0]
         .task
         .id();
@@ -148,7 +150,7 @@ fn rename_validates_task_names_and_missing_ids_without_changes() {
         "Task not found"
     );
     assert_eq!(
-        serde_json::to_value(snapshot(&bridge.application)).unwrap(),
+        crate::tests::test_resource_values(&bridge.application),
         before
     );
     assert!(
@@ -162,7 +164,7 @@ fn rename_validates_task_names_and_missing_ids_without_changes() {
 fn rename_rejects_null_and_invalid_c_inputs() {
     let directory = tempfile::tempdir().unwrap();
     let mut bridge = open_fixture(&directory.path().join("inputs.db")).unwrap();
-    let before = serde_json::to_value(snapshot(&bridge.application)).unwrap();
+    let before = crate::tests::test_resource_values(&bridge.application);
     let id = CString::new(
         bridge.application.tasks(TaskOrdering::default())[0]
             .task
@@ -218,7 +220,7 @@ fn rename_rejects_null_and_invalid_c_inputs() {
         }
     }
     assert_eq!(
-        serde_json::to_value(snapshot(&bridge.application)).unwrap(),
+        crate::tests::test_resource_values(&bridge.application),
         before
     );
 }

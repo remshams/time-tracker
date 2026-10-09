@@ -96,7 +96,7 @@ fn completed_and_running_moves_preserve_identity_times_and_update_history_and_to
             unrelated.as_ref().unwrap()
         };
         assert_eq!(
-            result["data"]["snapshot"]["active"],
+            crate::tests::test_active_value(&bridge.application),
             serde_json::to_value(worklog_json(active)).unwrap()
         );
         assert!(
@@ -115,15 +115,19 @@ fn completed_and_running_moves_preserve_identity_times_and_update_history_and_to
                 .worklogs,
             vec![moved.clone()]
         );
-        let totals = bridge
+        let (rows, _, _) = bridge
             .application
-            .report_totals(at(0), at(250), at(250))
+            .report_rows(at(0), at(250), at(250))
             .unwrap_or_else(|error| panic!("{}", error.message));
-        assert_eq!(totals.rows.len(), 1);
-        assert_eq!(totals.rows[0].task.id(), destination);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].task_id, destination.to_string());
         assert_eq!(
-            totals.rows[0].duration.num_seconds(),
-            if end.is_some() { 100 } else { 150 }
+            rows[0].duration_microseconds,
+            if end.is_some() {
+                100_000_000
+            } else {
+                150_000_000
+            }
         );
         drop(bridge);
         let mut reopened = open_at(&path).unwrap();
@@ -171,7 +175,7 @@ fn candidates_use_cached_tasks_filter_search_and_exclude_source_and_archived_row
     assert_eq!(candidates(&mut bridge, source, "")["data"], first["data"]);
     bridge
         .application
-        .refresh()
+        .refresh_resources(3)
         .unwrap_or_else(|error| panic!("{}", error.message));
     assert_eq!(
         candidates(&mut bridge, source, "fresh")["data"][0]["name"],
@@ -352,11 +356,11 @@ fn remote_moves_refresh_revision_keep_original_guards_and_candidates_never_use_h
     let mut second = server.client();
     first
         .application
-        .refresh()
+        .refresh_resources(3)
         .unwrap_or_else(|error| panic!("{}", error.message));
     second
         .application
-        .refresh()
+        .refresh_resources(3)
         .unwrap_or_else(|error| panic!("{}", error.message));
     second
         .application
@@ -365,11 +369,14 @@ fn remote_moves_refresh_revision_keep_original_guards_and_candidates_never_use_h
     let moved = move_to(&mut first, &original, destination);
     assert!(moved.get("error").is_none(), "{moved}");
     assert_eq!(
-        moved["data"]["snapshot"]["tasks"].as_array().unwrap().len(),
+        crate::tests::test_task_values(&first.application)
+            .as_array()
+            .unwrap()
+            .len(),
         4
     );
     assert_eq!(
-        moved["data"]["snapshot"]["active"],
+        crate::tests::test_active_value(&first.application),
         moved["data"]["worklog"]
     );
     let failure = move_to(&mut second, &original, tasks[2].task.id());
@@ -398,7 +405,7 @@ fn remote_moves_refresh_revision_keep_original_guards_and_candidates_never_use_h
         .remove(0);
     let moved = move_to(&mut second, &completed, source);
     assert!(moved.get("error").is_none(), "{moved}");
-    assert!(moved["data"]["snapshot"]["active"].is_null());
+    assert!(crate::tests::test_active_value(&second.application).is_null());
     drop(server);
     assert_eq!(
         candidates(&mut second, source, "CONCURRENT")["data"][0]["name"],
@@ -411,7 +418,7 @@ fn remote_moves_refresh_revision_keep_original_guards_and_candidates_never_use_h
 }
 
 fn mock_server(
-    snapshot: tracker_protocol::SnapshotDto,
+    snapshot: (tracker_protocol::TasksDto, tracker_protocol::TrackingDto),
     original: &Worklog,
     reply: Value,
 ) -> report_tests::Server {
@@ -451,13 +458,15 @@ fn mock_server(
                     {
                         let mut snapshot = state.lock().unwrap();
                         if snapshot
+                            .1
                             .active_worklog
                             .as_ref()
                             .is_some_and(|active| active.id == worklog.id)
                         {
-                            snapshot.active_worklog = worklog.end.is_none().then_some(worklog);
+                            snapshot.1.active_worklog = worklog.end.is_none().then_some(worklog);
                         }
-                        snapshot.revision = receipt.applied_revision;
+                        snapshot.0.revision = receipt.applied_revision;
+                        snapshot.1.revision = snapshot.0.revision.clone();
                     }
                     Json(reply)
                 }
@@ -468,7 +477,7 @@ fn mock_server(
 
 #[test]
 fn remote_move_rejects_wrong_identity_destination_times_and_invalid_receipts() {
-    use tracker_protocol::{MutationDto, MutationResultDto, SnapshotDto, WorklogDto};
+    use tracker_protocol::{MutationDto, MutationResultDto, WorklogDto};
     let directory = tempfile::tempdir().unwrap();
     for end in [Some(200), None] {
         let mut writer =
@@ -478,20 +487,19 @@ fn remote_move_rejects_wrong_identity_destination_times_and_invalid_receipts() {
         let destination = tasks[1].task.id();
         let original = record(&mut writer, source, 100, end);
         let moved = original.moved_to(destination).unwrap();
-        let initial = SnapshotDto::from_snapshot(
-            &tracker_application::TrackerSnapshot {
-                task_items: writer.application.tasks(TaskOrdering::default()),
-                active_worklog: end.is_none().then(|| original.clone()),
-            },
+        let initial = report_tests::resource_dtos(
+            writer.application.tasks(TaskOrdering::default()),
+            end.is_none().then(|| original.clone()),
             "42".into(),
         );
         let mut updated = initial.clone();
-        updated.active_worklog = end.is_none().then(|| WorklogDto::from(&moved));
-        updated.revision = "43".into();
+        updated.1.active_worklog = end.is_none().then(|| WorklogDto::from(&moved));
+        updated.0.revision = "43".into();
+        updated.1.revision = updated.0.revision.clone();
         let baseline = serde_json::to_value(MutationDto {
             result: MutationResultDto::Worklog(WorklogDto::from(&moved)),
             request_id: String::new(),
-            applied_revision: updated.revision,
+            applied_revision: updated.0.revision,
             replayed: false,
         })
         .unwrap();
@@ -543,16 +551,14 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
         routing::{get, patch},
     };
     use std::sync::{Arc, Mutex};
-    use tracker_protocol::{ErrorCode, ErrorDto, HealthDto, SnapshotDto};
+    use tracker_protocol::{ErrorCode, ErrorDto, HealthDto};
     let directory = tempfile::tempdir().unwrap();
     let mut writer = open_fixture(&directory.path().join("payload.db")).unwrap();
     let tasks = writer.application.tasks(TaskOrdering::default());
     let original = record(&mut writer, tasks[0].task.id(), 100, Some(200));
-    let snapshot = SnapshotDto::from_snapshot(
-        &tracker_application::TrackerSnapshot {
-            task_items: writer.application.tasks(TaskOrdering::default()),
-            active_worklog: None,
-        },
+    let snapshot = report_tests::resource_dtos(
+        writer.application.tasks(TaskOrdering::default()),
+        None,
         "42".into(),
     );
     for (code, status, kind, uncertain) in [
@@ -713,20 +719,18 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
-    use tracker_protocol::{ErrorCode, ErrorDto, HealthDto, SnapshotDto};
+    use tracker_protocol::{ErrorCode, ErrorDto, HealthDto};
     let directory = tempfile::tempdir().unwrap();
     let mut writer = open_fixture(&directory.path().join("recovery.db")).unwrap();
     let tasks = writer.application.tasks(TaskOrdering::default());
     let original = record(&mut writer, tasks[0].task.id(), 100, Some(200));
-    let snapshot = SnapshotDto::from_snapshot(
-        &tracker_application::TrackerSnapshot {
-            task_items: writer.application.tasks(TaskOrdering::default()),
-            active_worklog: None,
-        },
+    let snapshot = report_tests::resource_dtos(
+        writer.application.tasks(TaskOrdering::default()),
+        None,
         "42".into(),
     );
     let reads = Arc::new(AtomicUsize::new(0));
-    let task_resources = snapshot.task_items.clone();
+    let task_resources = snapshot.0.tasks.clone();
     let original_dto = tracker_protocol::WorklogDto::from(&original);
     let router = Router::new()
         .route(
@@ -735,9 +739,8 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
                 move |axum::extract::Path(id): axum::extract::Path<String>| {
                     let task = task_resources
                         .iter()
-                        .find(|item| item.task.id == id)
+                        .find(|item| item.id == id)
                         .unwrap()
-                        .task
                         .clone();
                     async move {
                         Json(tracker_protocol::TaskResourceDto {
@@ -774,16 +777,8 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
                             .into_response()
                     } else {
                         Json(tracker_protocol::TasksDto {
-                            tasks: snapshot
-                                .task_items
-                                .into_iter()
-                                .map(|item| {
-                                    let mut task = item.task;
-                                    task.latest_work_start = item.latest_work_start;
-                                    task
-                                })
-                                .collect(),
-                            revision: snapshot.revision,
+                            tasks: snapshot.0.tasks.into_iter().collect(),
+                            revision: snapshot.0.revision,
                         })
                         .into_response()
                     }
@@ -822,7 +817,7 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
         );
     let server = report_tests::Server::start(router);
     let mut bridge = server.client();
-    bridge.application.refresh().unwrap();
+    bridge.application.refresh_resources(3).unwrap();
     let failure = move_to(&mut bridge, &original, tasks[1].task.id());
     assert_eq!(failure["kind"], "unavailable");
     assert_eq!(failure["uncertain"], true);
@@ -836,7 +831,7 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
         routing::{get, patch},
     };
     use std::sync::{Arc, Mutex};
-    use tracker_protocol::{MutationDto, MutationResultDto, SnapshotDto, WorklogDto};
+    use tracker_protocol::{MutationDto, MutationResultDto, WorklogDto};
     let directory = tempfile::tempdir().unwrap();
     for end in [Some(200), None] {
         let mut writer =
@@ -847,11 +842,9 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
         let competing_task = tasks[2].task.id();
         let original = record(&mut writer, source, 100, end);
         let moved = original.moved_to(destination).unwrap();
-        let initial = SnapshotDto::from_snapshot(
-            &tracker_application::TrackerSnapshot {
-                task_items: writer.application.tasks(TaskOrdering::default()),
-                active_worklog: end.is_none().then(|| original.clone()),
-            },
+        let initial = report_tests::resource_dtos(
+            writer.application.tasks(TaskOrdering::default()),
+            end.is_none().then(|| original.clone()),
             "before".into(),
         );
         let state = Arc::new(Mutex::new(initial));
@@ -882,15 +875,16 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
                     async move {
                         {
                             let mut state = changed_state.lock().unwrap();
-                            state.active_worklog = Some(WorklogDto::from(&later_active));
+                            state.1.active_worklog = Some(WorklogDto::from(&later_active));
                             state
-                                .task_items
+                                .0
+                                .tasks
                                 .iter_mut()
-                                .find(|item| item.task.id == destination.to_string())
+                                .find(|item| item.id == destination.to_string())
                                 .unwrap()
-                                .task
                                 .archived = true;
-                            state.revision = "later".into();
+                            state.0.revision = "later".into();
+                            state.1.revision = state.0.revision.clone();
                         }
                         changed_worklogs.lock().unwrap()[0] = WorklogDto::from(
                             &Worklog::new(
@@ -916,11 +910,31 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
         assert!(result.get("error").is_none(), "{end:?}: {result}");
         assert_eq!(result["data"]["worklog"]["id"], moved.id().to_string());
         assert_eq!(
-            result["data"]["snapshot"]["active"]["id"],
+            result["data"]["worklog"],
+            serde_json::to_value(worklog_json(&moved)).unwrap()
+        );
+        assert_eq!(result["data"]["receipt"]["appliedRevision"], "applied");
+        assert_eq!(result["data"]["receipt"]["replayed"], true);
+        assert_eq!(
+            crate::tests::test_active_value(&bridge.application)["id"],
             expected_active.id().to_string()
         );
-        assert_eq!(result["data"]["snapshot"]["tasksRevision"], "later");
-        assert_eq!(result["data"]["snapshot"]["trackingRevision"], "later");
+        assert_eq!(
+            tasks_json(&bridge.application)
+                .unwrap()
+                .revision
+                .as_deref()
+                .unwrap(),
+            "later"
+        );
+        assert_eq!(
+            tracking_json(&bridge.application)
+                .unwrap()
+                .revision
+                .as_deref()
+                .unwrap(),
+            "later"
+        );
         assert!(
             bridge
                 .application
