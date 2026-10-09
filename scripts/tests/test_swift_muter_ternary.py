@@ -21,7 +21,7 @@ MUTER = shutil.which(os.environ.get("SWIFT_MUTER_EXECUTABLE", str(ROOT / ".build
 class SwiftMuterTernaryTests(unittest.TestCase):
     def test_session_optional_comparison_branches_compile_and_keep_swap_mutations(self) -> None:
         session = ROOT / "apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift"
-        expressions = re.findall(r"\(result\.worklog\.end == nil\s*\?[^{}]+?\)\s*else\s*\{", session.read_text())
+        expressions = re.findall(r"\(result\.worklog\.end == nil\s*\?[^(){}]+?\)", session.read_text())
         self.assertEqual(len(expressions), 2, "Expected the move and correction response checks")
         with tempfile.TemporaryDirectory(prefix="tracker-muter-ternary-") as directory:
             root = Path(directory)
@@ -34,7 +34,6 @@ class SwiftMuterTernaryTests(unittest.TestCase):
             )
             contents = "struct Worklog: Equatable { let id: String; let end: String? }\n"
             for index, expression in enumerate(expressions):
-                expression = re.sub(r"\s*else\s*\{$", "", expression)
                 expression = expression.replace("result.snapshot.active", "active").replace("result.worklog", "worklog")
                 contents += (f"func valid{index}(_ worklog: Worklog, _ active: Worklog?) -> Bool {{\n"
                              f"    return {expression}\n}}\n")
