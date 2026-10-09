@@ -20,8 +20,7 @@ use tracker_protocol::{
     ArchiveInactiveTasksRequest, CreateTaskRequest, DeleteWorklogRequest, ErrorCode, ErrorDto,
     HealthDto, InactiveTaskPreviewDto, MutationDto, MutationResultDto, ReportDto,
     SetTrackingRequest, TaskChangeRequest, TaskDto, TaskResourceDto, TasksDto, TrackingDto,
-    WorklogChangeRequest, WorklogCursorDto, WorklogDto, WorklogPageDto, WorklogResourceDto,
-    WriteGuard,
+    WorklogChangeRequest, WorklogDto, WorklogPageDto, WorklogResourceDto, WriteGuard,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +47,7 @@ pub struct RemoteApplication {
     version_checked: bool,
     pending_create: Option<CreateTaskRequest>,
     last_write_attempted: bool,
+    coherent_task_views: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -62,6 +62,11 @@ struct MutationScope {
     recovery: Recovery,
     worklog_id: Option<WorklogId>,
     task_id: Option<TaskId>,
+}
+
+struct HistoryRead {
+    worklogs: Vec<Worklog>,
+    next_cursor: Option<GlobalWorklogCursor>,
 }
 
 impl RemoteApplication {
@@ -85,7 +90,14 @@ impl RemoteApplication {
             version_checked: false,
             pending_create: None,
             last_write_attempted: false,
+            coherent_task_views: false,
         })
+    }
+
+    /// Keeps task commands and their preflights within a coherent task and tracking view.
+    pub fn with_coherent_task_views(mut self) -> Self {
+        self.coherent_task_views = true;
+        self
     }
 
     /// Checks compatibility without loading tasks or tracking.
@@ -351,14 +363,18 @@ impl RemoteApplication {
         )
     }
 
+    async fn refresh_task_command_view(&mut self) -> Result<(), RemoteError> {
+        if self.coherent_task_views {
+            self.refresh().await
+        } else {
+            self.refresh_tasks().await
+        }
+    }
+
     async fn recover(&mut self, recovery: Recovery) -> Result<(), RemoteError> {
         match recovery {
-            Recovery::Tasks => self.refresh_tasks().await,
-            Recovery::Tracking => self.refresh().await,
-            Recovery::Worklog => {
-                self.refresh_tasks().await?;
-                self.refresh_tracking().await
-            }
+            Recovery::Tasks => self.refresh_task_command_view().await,
+            Recovery::Tracking | Recovery::Worklog => self.refresh().await,
         }
     }
 
@@ -446,7 +462,7 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.last_write_attempted = false;
-        self.refresh_tasks()
+        self.refresh_task_command_view()
             .await
             .map_err(|error| map_application_error(&error, None, None))?;
         if let Some(pending) = self.pending_create.clone() {
@@ -482,6 +498,7 @@ impl RemoteApplication {
             .parse()
             .map_err(|_| protocol_failure("invalid pending task id"))?;
         self.pending_create = Some(body.clone());
+        let mut receipt_confirmed = false;
         let result = self
             .mutation(
                 Method::POST,
@@ -502,17 +519,15 @@ impl RemoteApplication {
                     {
                         return Err(protocol_failure("created task contradicts command"));
                     }
+                    receipt_confirmed = true;
                     Ok(task)
                 },
             )
             .await;
-        if !result.as_ref().is_err_and(|error| {
-            matches!(
-                error.failure().source(),
-                ApplicationFailureSource::RemoteUnavailable
-                    | ApplicationFailureSource::RemoteProtocol
-            )
-        }) {
+        if !result
+            .as_ref()
+            .is_err_and(|error| creation_needs_recovery(error, receipt_confirmed))
+        {
             self.pending_create = None;
         }
         result
@@ -904,7 +919,7 @@ impl RemoteApplication {
         &mut self,
         task_id: Option<TaskId>,
         after: Option<(DateTime<Utc>, WorklogId, i64)>,
-    ) -> Result<WorklogPageDto, ApplicationError> {
+    ) -> Result<HistoryRead, ApplicationError> {
         self.ensure_version()
             .await
             .map_err(|error| map_application_error(&error, None, task_id))?;
@@ -931,17 +946,13 @@ impl RemoteApplication {
                 self.record_error(error.clone());
                 map_application_error(&error, None, task_id)
             })?;
-        if dto.revision.is_empty()
-            || dto
-                .next_cursor
-                .as_ref()
-                .is_some_and(|cursor| cursor.task_id != task_id.map(|id| id.to_string()))
-        {
-            return Err(protocol_failure("invalid history scope"));
-        }
-        self.history_cache.insert(task_id, dto.clone());
+        let decoded = decode_history(&dto, task_id).map_err(|error| {
+            self.record_error(error.clone());
+            map_application_error(&error, None, task_id)
+        })?;
+        self.history_cache.insert(task_id, dto);
         self.confirmed();
-        Ok(dto)
+        Ok(decoded)
     }
     pub async fn worklogs_for_task(
         &mut self,
@@ -957,22 +968,14 @@ impl RemoteApplication {
                 after.map(|cursor| (cursor.start, cursor.id, cursor.revision)),
             )
             .await?;
-        let worklogs = dto
-            .worklogs
-            .into_iter()
-            .map(app_decode_worklog)
-            .collect::<Result<Vec<_>, _>>()?;
-        if worklogs.iter().any(|worklog| worklog.task_id() != task_id) {
-            return Err(protocol_failure("history contains another task"));
-        }
-        let next_cursor = dto
-            .next_cursor
-            .map(decode_cursor)
-            .transpose()
-            .map_err(|error| map_application_error(&error, None, Some(task_id)))?;
         Ok(WorklogPage {
-            worklogs,
-            next_cursor,
+            worklogs: dto.worklogs,
+            next_cursor: dto.next_cursor.map(|cursor| WorklogCursor {
+                task_id,
+                start: cursor.start,
+                id: cursor.id,
+                revision: cursor.revision,
+            }),
             snapshot: WorklogPageSnapshot {
                 requested_task_latest_work_start: self
                     .snapshot
@@ -1005,27 +1008,9 @@ impl RemoteApplication {
                 after.map(|cursor| (cursor.start, cursor.id, cursor.revision)),
             )
             .await?;
-        let worklogs = dto
-            .worklogs
-            .into_iter()
-            .map(app_decode_worklog)
-            .collect::<Result<Vec<_>, _>>()?;
-        let next_cursor = dto
-            .next_cursor
-            .map(|cursor| {
-                Ok::<_, ApplicationError>(GlobalWorklogCursor {
-                    start: cursor.start,
-                    id: cursor
-                        .id
-                        .parse()
-                        .map_err(|_| protocol_failure("invalid cursor id"))?,
-                    revision: cursor.revision,
-                })
-            })
-            .transpose()?;
         Ok(GlobalWorklogPage {
-            worklogs,
-            next_cursor,
+            worklogs: dto.worklogs,
+            next_cursor: dto.next_cursor,
             snapshot: self.snapshot.clone(),
         })
     }
@@ -1285,6 +1270,14 @@ impl RemoteApplication {
     }
 }
 
+fn creation_needs_recovery(error: &ApplicationError, receipt_confirmed: bool) -> bool {
+    receipt_confirmed
+        || matches!(
+            error.failure().source(),
+            ApplicationFailureSource::RemoteUnavailable | ApplicationFailureSource::RemoteProtocol
+        )
+}
+
 fn reviewed_tracking_changed(
     reviewed: Option<&TrackingState>,
     current: &TrackingState,
@@ -1426,19 +1419,46 @@ fn decode_active(dto: Option<WorklogDto>) -> Result<(Option<Worklog>, TrackingSt
     };
     Ok((worklog, tracking))
 }
-fn decode_cursor(dto: WorklogCursorDto) -> Result<WorklogCursor, RemoteError> {
-    Ok(WorklogCursor {
-        task_id: dto
-            .task_id
-            .ok_or_else(|| RemoteError::Protocol("missing cursor scope".into()))?
-            .parse()
-            .map_err(|_| RemoteError::Protocol("invalid cursor task id".into()))?,
-        start: dto.start,
-        id: dto
-            .id
-            .parse()
-            .map_err(|_| RemoteError::Protocol("invalid cursor worklog id".into()))?,
-        revision: dto.revision,
+fn decode_history(
+    dto: &WorklogPageDto,
+    task_id: Option<TaskId>,
+) -> Result<HistoryRead, RemoteError> {
+    if dto.revision.is_empty()
+        || dto
+            .next_cursor
+            .as_ref()
+            .is_some_and(|cursor| cursor.task_id != task_id.map(|id| id.to_string()))
+    {
+        return Err(RemoteError::Protocol("invalid history scope".into()));
+    }
+    let worklogs = dto
+        .worklogs
+        .iter()
+        .cloned()
+        .map(decode_worklog)
+        .collect::<Result<Vec<_>, _>>()?;
+    if task_id.is_some_and(|id| worklogs.iter().any(|worklog| worklog.task_id() != id)) {
+        return Err(RemoteError::Protocol(
+            "history contains another task".into(),
+        ));
+    }
+    let next_cursor = dto
+        .next_cursor
+        .as_ref()
+        .map(|cursor| {
+            Ok::<_, RemoteError>(GlobalWorklogCursor {
+                start: cursor.start,
+                id: cursor
+                    .id
+                    .parse()
+                    .map_err(|_| RemoteError::Protocol("invalid cursor worklog id".into()))?,
+                revision: cursor.revision,
+            })
+        })
+        .transpose()?;
+    Ok(HistoryRead {
+        worklogs,
+        next_cursor,
     })
 }
 fn app_decode_task(dto: TaskDto) -> Result<Task, ApplicationError> {
