@@ -7,7 +7,7 @@ final class MenuLiveValuesTests: XCTestCase {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
-            TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
+            TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)])
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: false)
         observer.menuOpened(from: fixture.session, showDailyTotal: false)
@@ -35,7 +35,7 @@ final class MenuLiveValuesTests: XCTestCase {
     func testPollUpdatesOnlyCapturedTaskValuesAndRefreshesStructureAfterClosing() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(
             snapshot,
             rows: [
@@ -50,7 +50,7 @@ final class MenuLiveValuesTests: XCTestCase {
         fixture.session.refresh()
         let poll = try await fixture.client.next()
         poll.succeed(
-            TrackerReport(
+            TaskListTotalsRefresh(
                 snapshot: snapshot,
                 rows: [
                     TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 20_000_000),
@@ -78,13 +78,13 @@ final class MenuLiveValuesTests: XCTestCase {
         ] {
             let fixture = Fixture()
             defer { fixture.cleanup() }
-            try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+            try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
             let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
             observer.menuOpened(from: fixture.session, showDailyTotal: true)
             fixture.session.onChange = { observer.update(from: fixture.session, showDailyTotal: true) }
             fixture.session.refresh()
             let poll = try await fixture.client.next()
-            poll.succeed(TrackerSnapshot(tasks: [firstTask], active: active))
+            poll.succeed(TaskListResources(tasks: [firstTask], active: active))
             let history = try await fixture.client.next()
             history.succeed(emptyPage)
             let completed = Task { @MainActor in
@@ -103,7 +103,7 @@ final class MenuLiveValuesTests: XCTestCase {
     func testConnectionChangeWithReusedIDsCannotUpdateCapturedMenuValues() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(
             snapshot,
             rows: [
@@ -121,7 +121,7 @@ final class MenuLiveValuesTests: XCTestCase {
         XCTAssertTrue(connected)
         let report = try await fixture.client.next()
         report.succeed(
-            TrackerReport(
+            TaskListTotalsRefresh(
                 snapshot: snapshot,
                 rows: [
                     TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 900_000_000)
@@ -149,7 +149,7 @@ final class MenuLiveValuesTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
-            TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
+            TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 90_000_000)])
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         observer.menuOpened(from: fixture.session, showDailyTotal: true)

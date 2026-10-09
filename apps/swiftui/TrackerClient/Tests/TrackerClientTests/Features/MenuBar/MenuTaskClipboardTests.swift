@@ -6,7 +6,7 @@ final class MenuTaskClipboardTests: XCTestCase {
     func testCopyUsesHighlightedTaskRatherThanWindowSelectionOrRunningTask() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         let rows = [
             TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 30_000_000),
             TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 5_025_000_000),
@@ -27,7 +27,7 @@ final class MenuTaskClipboardTests: XCTestCase {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
-            TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
+            TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 440_000_000)])
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         observer.menuOpened(from: fixture.session, showDailyTotal: true)
@@ -46,7 +46,7 @@ final class MenuTaskClipboardTests: XCTestCase {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
-            TrackerSnapshot(tasks: [archivedTask], active: nil),
+            TaskListResources(tasks: [archivedTask], active: nil),
             rows: [TaskReportTotal(taskId: archivedTask.id, durationMicroseconds: 1_200_000_000)])
         let operations = fixture.client.operations.count
         XCTAssertFalse(fixture.session.canStartTracking(taskID: archivedTask.id))
@@ -61,7 +61,7 @@ final class MenuTaskClipboardTests: XCTestCase {
     func testUnavailableTotalsDoNotBecomeZeroAndNameStillCopies() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         XCTAssertNil(fixture.session.menuCopyValue(.copyExact, taskID: firstTask.id, connection: .local))
         XCTAssertNil(fixture.session.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local))
         XCTAssertEqual(
@@ -72,7 +72,7 @@ final class MenuTaskClipboardTests: XCTestCase {
     func testLoadedTaskWithoutLogsCopiesZeroAndMissingTaskCopiesNothing() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil), rows: [])
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil), rows: [])
         XCTAssertEqual(fixture.session.menuCopyValue(.copyExact, taskID: firstTask.id, connection: .local), "0s")
         XCTAssertEqual(fixture.session.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local), "0m")
         XCTAssertNil(fixture.session.menuCopyValue(.copyName, taskID: "missing-task", connection: .local))
@@ -86,7 +86,7 @@ final class MenuTaskClipboardTests: XCTestCase {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
-            TrackerSnapshot(tasks: [firstTask], active: nil),
+            TaskListResources(tasks: [firstTask], active: nil),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 60_000_000)])
         for action in [MenuShortcutAction.copyName, .copyExact, .copyRounded] {
             XCTAssertNil(fixture.session.menuCopyValue(action, taskID: firstTask.id, connection: serverSettings))
@@ -102,7 +102,7 @@ final class MenuTaskClipboardTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
-            TrackerSnapshot(tasks: [firstTask], active: nil),
+            TaskListResources(tasks: [firstTask], active: nil),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 60_000_000)])
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()

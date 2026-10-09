@@ -28,7 +28,7 @@ final class ConnectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         fixture.session.setWindowVisible(true)
-        let snapshot = TrackerSnapshot(tasks: [firstTask, archivedTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, archivedTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.unarchiveTask(taskID: archivedTask.id)
         let preflight = try await fixture.client.next()
@@ -58,7 +58,7 @@ final class ConnectionTests: XCTestCase {
     func testAlreadyCancelledConnectionDoesNotLeaveAQueuedOperationWaiting() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.refresh()
         let poll = try await fixture.client.next()
@@ -82,13 +82,13 @@ final class ConnectionTests: XCTestCase {
     func testSourceSwitchPublishesTheReplacementTasksAndActiveTimer() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         let remoteTask = TaskItem(id: "remote-task", name: "Remote task", archived: false, latestStart: nil)
         let remoteWorklog = WorklogItem(
             id: "remote-worklog", taskId: remoteTask.id, start: activeWorklog.start, end: nil)
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let request = try await fixture.client.next()
-        request.succeed(TrackerSnapshot(tasks: [remoteTask], active: remoteWorklog))
+        request.succeed(TaskListResources(tasks: [remoteTask], active: remoteWorklog))
         let connected = try await fixture.taskValue(connecting)
         XCTAssertTrue(connected)
         let history = try await fixture.client.next()
@@ -106,7 +106,7 @@ final class ConnectionTests: XCTestCase {
     func testSourceSwitchClearsCachedHistoryEvenWhenTaskIDsMatch() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.retryHistory()
         let initial = try await fixture.client.next()
@@ -129,7 +129,7 @@ final class ConnectionTests: XCTestCase {
     func testEmptyReplacementSourceClearsHistoryWhenBothSourcesAreIdle() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         fixture.session.retryHistory()
         let history = try await fixture.client.next()
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
@@ -152,7 +152,7 @@ final class ConnectionTests: XCTestCase {
     func testReplacementSourceChoosesItsFirstTaskWhenPreviousIDsAlsoExist() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.select(secondTask.id)
         let previousHistory = try await fixture.client.next()
@@ -216,7 +216,7 @@ final class ConnectionTests: XCTestCase {
     func testFailedCandidateRetainsSnapshotHistoryAndSettings() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         fixture.session.retryHistory()
         let history = try await fixture.client.next()
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
@@ -244,7 +244,7 @@ final class ConnectionTests: XCTestCase {
     func testSuccessfulConnectionToEmptySourceClearsPreviousHistoryAndErrors() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         fixture.session.retryHistory()
         let history = try await fixture.client.next()
         history.fail(BridgeFailure(message: "History unavailable"))
@@ -255,7 +255,7 @@ final class ConnectionTests: XCTestCase {
         let stop = try await fixture.client.next()
         stop.fail(BridgeFailure(message: "Write failed", uncertain: true))
         let confirmation = try await fixture.client.next()
-        confirmation.succeed(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        confirmation.succeed(TaskListResources(tasks: [firstTask], active: activeWorklog))
         let retriedHistory = try await fixture.client.next()
         retriedHistory.fail(BridgeFailure(message: "History unavailable"))
         try await fixture.settled()
@@ -284,10 +284,10 @@ final class ConnectionTests: XCTestCase {
     func testSuccessfulSourceSwitchReplacesTasksAndLoadsNewSelection() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, archivedTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask, archivedTask], active: activeWorklog))
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let request = try await fixture.client.next()
-        request.succeed(TrackerSnapshot(tasks: [secondTask], active: nil))
+        request.succeed(TaskListResources(tasks: [secondTask], active: nil))
         let connected = try await fixture.taskValue(connecting)
         XCTAssertTrue(connected)
         let history = try await fixture.client.next()

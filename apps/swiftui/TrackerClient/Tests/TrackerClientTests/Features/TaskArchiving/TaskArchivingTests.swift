@@ -11,7 +11,7 @@ final class TaskArchivingTests: XCTestCase {
     func testAvailabilityDistinguishesRunningInactiveAndArchivedTasks() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
 
         XCTAssertEqual(fixture.session.taskArchivingAvailability[firstTask.id], false)
         XCTAssertEqual(fixture.session.taskArchivingAvailability[secondTask.id], true)
@@ -22,7 +22,7 @@ final class TaskArchivingTests: XCTestCase {
     func testUnarchiveAvailabilityRequiresAnArchivedTaskWithTheRequestedIdentity() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, archivedTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, archivedTask], active: nil))
 
         XCTAssertTrue(fixture.session.canUnarchiveTask(taskID: archivedTask.id))
         XCTAssertFalse(fixture.session.canUnarchiveTask(taskID: firstTask.id))
@@ -35,7 +35,7 @@ final class TaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         XCTAssertFalse(fixture.session.canArchiveTask(taskID: firstTask.id))
         fixture.session.openTaskArchive(taskID: firstTask.id)
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask, archivedTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
         fixture.session.openTaskArchive(taskID: secondTask.id)
         XCTAssertEqual(fixture.session.taskArchiving.taskID, secondTask.id)
         XCTAssertEqual(fixture.session.taskArchiving.taskName, secondTask.name)
@@ -52,7 +52,7 @@ final class TaskArchivingTests: XCTestCase {
     func testArchivePreservesUnrelatedSelectionHistoryAndTimer() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(snapshot)
         XCTAssertFalse(fixture.session.canArchiveTask(taskID: firstTask.id))
         XCTAssertFalse(fixture.session.canArchiveTask(taskID: "missing"))
@@ -60,19 +60,19 @@ final class TaskArchivingTests: XCTestCase {
         fixture.session.openTaskArchive(taskID: secondTask.id)
         fixture.session.submitTaskArchiving()
         let preflight = try await fixture.client.next()
-        XCTAssertEqual(preflight.operation, .snapshot)
+        XCTAssertEqual(preflight.operation, .taskList)
         preflight.succeed(snapshot)
         let command = try await fixture.client.next()
         XCTAssertEqual(command.operation, .archive(task: secondTask.id, at: "2025-01-01T00:00:00.000Z"))
         fixture.session.submitTaskArchiving()
         fixture.session.cancelTaskArchiving()
-        command.succeed(TrackerSnapshot(tasks: [firstTask, archived(secondTask)], active: activeWorklog))
+        command.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: activeWorklog))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
         XCTAssertEqual(fixture.session.active, activeWorklog)
         XCTAssertEqual(fixture.session.tab, .active)
         XCTAssertFalse(fixture.session.taskArchiving.isPresented)
-        XCTAssertEqual(fixture.client.operations.count, 4)
+        XCTAssertEqual(fixture.client.operations.count, 5)
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
     }
 
@@ -80,14 +80,14 @@ final class TaskArchivingTests: XCTestCase {
     func testSelectedArchivedTaskFallsBackAndReloadsHistory() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskArchive(taskID: firstTask.id)
         fixture.session.submitTaskArchiving()
         let preflight = try await fixture.client.next()
         preflight.succeed(snapshot)
         let command = try await fixture.client.next()
-        command.succeed(TrackerSnapshot(tasks: [archived(firstTask), secondTask], active: nil))
+        command.succeed(TaskListResources(tasks: [archived(firstTask), secondTask], active: nil))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
         history.succeed(emptyPage)
@@ -101,7 +101,7 @@ final class TaskArchivingTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let other = archived(secondTask)
-        let snapshot = TrackerSnapshot(tasks: [firstTask, archivedTask, other], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask, archivedTask, other], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.changeTab(.archived)
         let originalHistory = try await fixture.client.next()
@@ -115,7 +115,7 @@ final class TaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         XCTAssertEqual(command.operation, .unarchive(task: other.id, at: "2025-01-01T00:00:00.000Z"))
         fixture.session.unarchiveTask(taskID: archivedTask.id)
-        command.succeed(TrackerSnapshot(tasks: [firstTask, archivedTask, secondTask], active: activeWorklog))
+        command.succeed(TaskListResources(tasks: [firstTask, archivedTask, secondTask], active: activeWorklog))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.tab, .archived)
         XCTAssertEqual(fixture.session.selectedTaskID, archivedTask.id)
@@ -132,11 +132,11 @@ final class TaskArchivingTests: XCTestCase {
     func testRenameRaceRequiresExplicitReviewOfCapturedTask() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         fixture.session.openTaskArchive(taskID: secondTask.id)
         fixture.session.submitTaskArchiving()
         let latest = archived(secondTask, false, name: "Renamed task")
-        let snapshot = TrackerSnapshot(tasks: [firstTask, latest], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, latest], active: nil)
         let preflight = try await fixture.client.next()
         preflight.succeed(snapshot)
         try await fixture.settled()
@@ -153,7 +153,7 @@ final class TaskArchivingTests: XCTestCase {
         reviewedRead.succeed(snapshot)
         let command = try await fixture.client.next()
         XCTAssertEqual(command.operation, .archive(task: secondTask.id, at: "2025-01-01T00:00:30.000Z"))
-        command.succeed(TrackerSnapshot(tasks: [firstTask, archived(latest)], active: nil))
+        command.succeed(TaskListResources(tasks: [firstTask, archived(latest)], active: nil))
         try await fixture.settled()
     }
 
@@ -161,12 +161,12 @@ final class TaskArchivingTests: XCTestCase {
     func testRunningRaceAndMissingTaskRequireReviewWithoutWriting() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskArchive(taskID: firstTask.id)
         fixture.session.submitTaskArchiving()
         let preflight = try await fixture.client.next()
-        preflight.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
+        preflight.succeed(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
@@ -177,7 +177,7 @@ final class TaskArchivingTests: XCTestCase {
         fixture.session.openTaskArchive(taskID: secondTask.id)
         fixture.session.submitTaskArchiving()
         let missing = try await fixture.client.next()
-        missing.succeed(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        missing.succeed(TaskListResources(tasks: [firstTask], active: activeWorklog))
         try await fixture.settled()
         XCTAssertTrue(fixture.session.taskArchiving.requiresReview)
         XCTAssertNil(fixture.session.taskArchiving.latest)
@@ -193,7 +193,7 @@ final class TaskArchivingTests: XCTestCase {
     func testLostArchiveResponseReconcilesAndDoesNotWriteTwice() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskArchive(taskID: secondTask.id)
         fixture.session.submitTaskArchiving()
@@ -202,7 +202,7 @@ final class TaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Response lost", uncertain: true))
         let recovered = try await fixture.client.next()
-        recovered.succeed(TrackerSnapshot(tasks: [firstTask, archived(secondTask)], active: nil))
+        recovered.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: nil))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.taskArchiving.isPresented)
         XCTAssertFalse(fixture.session.taskArchiving.hasUnresolvedIntent)
@@ -214,7 +214,7 @@ final class TaskArchivingTests: XCTestCase {
     func testUnresolvedRetryKeepsTargetActionAndTimestampAndBlocksConnection() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskArchive(taskID: secondTask.id)
         fixture.session.submitTaskArchiving()
@@ -241,7 +241,7 @@ final class TaskArchivingTests: XCTestCase {
         retryRead.succeed(snapshot)
         let retry = try await fixture.client.next()
         XCTAssertEqual(retry.operation, command.operation)
-        retry.succeed(TrackerSnapshot(tasks: [firstTask, archived(secondTask)], active: nil))
+        retry.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: nil))
         try await fixture.settled()
     }
 
@@ -249,7 +249,7 @@ final class TaskArchivingTests: XCTestCase {
     func testDesiredStateDuringRetryResolvesWithoutSendingCommand() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskArchive(taskID: secondTask.id)
         fixture.session.submitTaskArchiving()
@@ -259,7 +259,7 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertTrue(fixture.session.taskArchiving.hasUnresolvedIntent)
         fixture.session.submitTaskArchiving()
         let retry = try await fixture.client.next()
-        retry.succeed(TrackerSnapshot(tasks: [firstTask, archived(secondTask)], active: nil))
+        retry.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: nil))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.taskArchiving.isPresented)
         XCTAssertEqual(fixture.client.operations.count, 4)
@@ -269,7 +269,7 @@ final class TaskArchivingTests: XCTestCase {
     func testRevisionRejectionReconcilesBeforeExplicitRetryAndKeepsCapturedIntent() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskArchive(taskID: secondTask.id)
         fixture.session.submitTaskArchiving()
@@ -301,7 +301,7 @@ final class TaskArchivingTests: XCTestCase {
     func testRemoteArchiveReceiptAcceptsLaterRestoreFromRecovery() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskArchive(taskID: secondTask.id)
         fixture.session.submitTaskArchiving()
@@ -309,7 +309,7 @@ final class TaskArchivingTests: XCTestCase {
         preflight.succeed(snapshot)
         let command = try await fixture.client.next()
         command.succeed(
-            TrackerSnapshot(
+            TaskListResources(
                 tasks: [firstTask, secondTask], active: nil,
                 tasksRevision: "epoch:3", trackingRevision: "epoch:3"))
         try await fixture.settled()
@@ -322,7 +322,7 @@ final class TaskArchivingTests: XCTestCase {
     func testMalformedWriteResponseRequiresRecoveryBeforeRetry() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskArchive(taskID: secondTask.id)
         fixture.session.submitTaskArchiving()
@@ -342,7 +342,7 @@ final class TaskArchivingTests: XCTestCase {
     func testHiddenUnarchiveFailureDoesNotPresentWindowAndCanReopenKnownError() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, archivedTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, archivedTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.unarchiveTask(taskID: archivedTask.id)
         let preflight = try await fixture.client.next()
@@ -368,7 +368,7 @@ final class TaskArchivingTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         fixture.session.setWindowVisible(true)
-        let snapshot = TrackerSnapshot(tasks: [firstTask, archivedTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, archivedTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.unarchiveTask(taskID: archivedTask.id)
         let preflight = try await fixture.client.next()
@@ -383,7 +383,7 @@ final class TaskArchivingTests: XCTestCase {
     func testQueuedArchiveWaitsForPollAndSleepDefersWriteUntilWake() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.refresh()
         let poll = try await fixture.client.next()
@@ -399,11 +399,11 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertEqual(fixture.client.operations.count, 4)
         fixture.session.wake()
         let awakeRead = try await fixture.client.next()
-        XCTAssertEqual(awakeRead.operation, .snapshot)
+        XCTAssertEqual(awakeRead.operation, .taskList)
         awakeRead.succeed(snapshot)
         let command = try await fixture.client.next()
         XCTAssertEqual(command.operation, .archive(task: secondTask.id, at: "2025-01-01T00:00:00.000Z"))
-        command.succeed(TrackerSnapshot(tasks: [firstTask, archived(secondTask)], active: nil))
+        command.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: nil))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.taskArchiving.isPresented)
     }
@@ -412,7 +412,7 @@ final class TaskArchivingTests: XCTestCase {
     func testShutdownIgnoresLateArchivingResponseAndResetsState() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskArchive(taskID: secondTask.id)
         fixture.session.submitTaskArchiving()
@@ -420,11 +420,11 @@ final class TaskArchivingTests: XCTestCase {
         preflight.succeed(snapshot)
         let command = try await fixture.client.next()
         fixture.session.shutdown()
-        command.succeed(TrackerSnapshot(tasks: [firstTask, archived(secondTask)], active: nil))
+        command.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: nil))
         await Task.yield()
         XCTAssertFalse(fixture.session.taskArchiving.isPresented)
         XCTAssertNil(fixture.session.taskArchiving.taskID)
-        XCTAssertEqual(fixture.session.tasks, snapshot.tasks)
+        XCTAssertEqual(fixture.session.tasks, snapshot.catalog.value)
         XCTAssertFalse(fixture.session.canArchiveTask(taskID: secondTask.id))
     }
 
@@ -432,7 +432,7 @@ final class TaskArchivingTests: XCTestCase {
     func testEditorsAreExclusiveAndObserverFreezesClosingContent() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask, archivedTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
         fixture.session.openTaskCreation()
         XCTAssertFalse(fixture.session.canArchiveTask(taskID: secondTask.id))
         XCTAssertFalse(fixture.session.canUnarchiveTask(taskID: archivedTask.id))
@@ -464,7 +464,7 @@ final class TaskArchivingTests: XCTestCase {
     func testConnectionChangeRejectsUnsubmittedConfirmation() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         fixture.session.openTaskArchive(taskID: secondTask.id)
         var publishedMessage: String?
         fixture.session.onChange = { publishedMessage = fixture.session.connectionMessage }
@@ -482,7 +482,7 @@ final class TaskArchivingTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         fixture.session.setWindowVisible(true)
-        let snapshot = TrackerSnapshot(tasks: [firstTask, archivedTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, archivedTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.unarchiveTask(taskID: archivedTask.id)
         let preflight = try await fixture.client.next()
@@ -503,7 +503,7 @@ final class TaskArchivingTests: XCTestCase {
         retryRead.succeed(snapshot)
         let retry = try await fixture.client.next()
         XCTAssertEqual(retry.operation, command.operation)
-        retry.succeed(TrackerSnapshot(tasks: [firstTask, archived(archivedTask, false)], active: nil))
+        retry.succeed(TaskListResources(tasks: [firstTask, archived(archivedTask, false)], active: nil))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.taskArchiving.hasPendingAction)
     }
@@ -512,7 +512,7 @@ final class TaskArchivingTests: XCTestCase {
     func testUnarchiveLostResponseRecognizesRestorationAndKeepsArchivedFallback() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, archivedTask, archived(secondTask)], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, archivedTask, archived(secondTask)], active: nil)
         try await fixture.start(snapshot)
         fixture.session.changeTab(.archived)
         let originalHistory = try await fixture.client.next()
@@ -525,7 +525,7 @@ final class TaskArchivingTests: XCTestCase {
         command.fail(BridgeFailure(message: "Response lost", uncertain: true))
         let recovered = try await fixture.client.next()
         recovered.succeed(
-            TrackerSnapshot(tasks: [firstTask, archived(archivedTask, false), archived(secondTask)], active: nil))
+            TaskListResources(tasks: [firstTask, archived(archivedTask, false), archived(secondTask)], active: nil))
         let fallbackHistory = try await fixture.client.next()
         XCTAssertEqual(fallbackHistory.operation, .history(task: secondTask.id, cursor: nil))
         fallbackHistory.succeed(emptyPage)
@@ -545,7 +545,7 @@ final class TaskArchivingTests: XCTestCase {
     func testQueuedConnectionCannotChangeSourceAfterArchiveSubmission() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.openTaskArchive(taskID: secondTask.id)
         fixture.session.refresh()
@@ -567,7 +567,7 @@ final class TaskArchivingTests: XCTestCase {
     func testKnownHiddenErrorCannotReopenOverAnotherEditor() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, archivedTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, archivedTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.unarchiveTask(taskID: archivedTask.id)
         let preflight = try await fixture.client.next()
@@ -587,7 +587,7 @@ final class TaskArchivingTests: XCTestCase {
     func testQueuedConnectionPreventsOpeningArchiveForTheOldSource() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask, archivedTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.refresh()
         let poll = try await fixture.client.next()
@@ -621,7 +621,7 @@ final class TaskArchivingTests: XCTestCase {
     func testObserverNotifiesArchiveAvailabilityWhenTimerChangesWithoutEditingState() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask, archivedTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil)
         try await fixture.start(snapshot)
         let observer = TrackerPresentationObserver(session: fixture.session)
         let original = fixture.session.taskArchiving
@@ -637,7 +637,7 @@ final class TaskArchivingTests: XCTestCase {
         fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
-        refresh.succeed(TrackerSnapshot(tasks: snapshot.tasks, active: activeWorklog))
+        refresh.succeed(TaskListResources(tasks: snapshot.catalog.value, active: activeWorklog))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
@@ -661,13 +661,15 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertTrue(state.submit(at: "captured"))
         let intent = state.takePendingIntent()!
         XCTAssertNil(state.takePendingIntent())
-        XCTAssertFalse(state.responseMatches(TrackerSnapshot(tasks: [], active: nil), intent: intent))
-        XCTAssertFalse(state.responseMatches(TrackerSnapshot(tasks: [firstTask], active: nil), intent: intent))
+        XCTAssertFalse(state.responseMatches(TaskListResources(tasks: [], active: nil), intent: intent))
+        XCTAssertFalse(state.responseMatches(TaskListResources(tasks: [firstTask], active: nil), intent: intent))
         XCTAssertFalse(
-            state.responseMatches(TrackerSnapshot(tasks: [archived(firstTask)], active: activeWorklog), intent: intent))
-        XCTAssertTrue(state.responseMatches(TrackerSnapshot(tasks: [archived(firstTask)], active: nil), intent: intent))
+            state.responseMatches(
+                TaskListResources(tasks: [archived(firstTask)], active: activeWorklog), intent: intent))
+        XCTAssertTrue(
+            state.responseMatches(TaskListResources(tasks: [archived(firstTask)], active: nil), intent: intent))
         XCTAssertEqual(
-            state.preflight(intent, snapshot: TrackerSnapshot(tasks: [archived(firstTask)], active: activeWorklog)),
+            state.preflight(intent, snapshot: TaskListResources(tasks: [archived(firstTask)], active: activeWorklog)),
             .review)
         state.reset()
         state.open(archivedTask, action: .unarchive)
@@ -676,6 +678,6 @@ final class TaskArchivingTests: XCTestCase {
         let restore = state.takePendingIntent()!
         XCTAssertTrue(
             state.responseMatches(
-                TrackerSnapshot(tasks: [archived(archivedTask, false)], active: activeWorklog), intent: restore))
+                TaskListResources(tasks: [archived(archivedTask, false)], active: activeWorklog), intent: restore))
     }
 }

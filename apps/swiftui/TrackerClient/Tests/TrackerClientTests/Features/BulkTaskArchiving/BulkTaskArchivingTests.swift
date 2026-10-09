@@ -16,17 +16,17 @@ final class BulkTaskArchivingTests: XCTestCase {
     }
 
     @MainActor
-    func testSuccessfulArchivePublishesTheReturnedTaskSnapshot() async throws {
+    func testSuccessfulArchiveRefreshesTaskCatalog() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         fixture.session.openBulkTaskArchiving()
         _ = try answerPreview(try await fixture.client.next())
         try await fixture.settled()
         fixture.session.submitBulkTaskArchiving()
         let command = try await fixture.client.next()
         let archived = TaskItem(id: secondTask.id, name: secondTask.name, archived: true, latestStart: nil)
-        command.archivedInactive(count: 1, snapshot: TrackerSnapshot(tasks: [firstTask, archived], active: nil))
+        command.archivedInactive(count: 1, snapshot: TaskListResources(tasks: [firstTask, archived], active: nil))
         try await fixture.settled()
 
         XCTAssertEqual(fixture.session.tasks, [firstTask, archived])
@@ -241,7 +241,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         for actualCount in [0, 2] {
             let fixture = Fixture()
             defer { fixture.cleanup() }
-            let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
+            let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
             try await fixture.start(snapshot)
             fixture.session.openBulkTaskArchiving()
             let preview = try answerPreview(try await fixture.client.next())
@@ -292,7 +292,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Response lost", kind: "unavailable", uncertain: true))
         let reconcile = try await fixture.client.next()
-        XCTAssertEqual(reconcile.operation, .snapshot)
+        XCTAssertEqual(reconcile.operation, .taskList)
         reconcile.succeed(emptySnapshot)
         try await fixture.settled()
         XCTAssertFalse(fixture.session.bulkTaskArchiving.canSubmit)
@@ -310,7 +310,7 @@ final class BulkTaskArchivingTests: XCTestCase {
     func testDialogBlocksOtherEditorsTrackingAndConnections() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
         fixture.session.openBulkTaskArchiving()
         _ = try answerPreview(try await fixture.client.next())
         try await fixture.settled()
@@ -441,7 +441,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertNotNil(fixture.session.bulkTaskArchiving.error)
         fixture.session.refreshBulkArchivePreview()
         let recovery = try await fixture.client.next()
-        XCTAssertEqual(recovery.operation, .snapshot)
+        XCTAssertEqual(recovery.operation, .taskList)
         recovery.succeed(emptySnapshot)
         let duplicate = try await fixture.client.next()
         _ = try answerPreview(duplicate, tasks: [secondTask, secondTask])
@@ -452,7 +452,7 @@ final class BulkTaskArchivingTests: XCTestCase {
     func testBulkDialogCannotOpenWhileOtherEditorsOwnPresentation() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         fixture.session.openTaskCreation()
         XCTAssertFalse(fixture.session.canOpenBulkTaskArchiving)
         fixture.session.cancelTaskCreation()
@@ -465,7 +465,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         fixture.session.openWorklogMove(worklogID: activeWorklog.id)
         XCTAssertFalse(fixture.session.canOpenBulkTaskArchiving)
         let moveSnapshot = try await fixture.client.next()
-        moveSnapshot.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
+        moveSnapshot.succeed(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         let search = try await fixture.client.next()
         search.candidates([])
         try await fixture.settled()
@@ -530,7 +530,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertTrue(fixture.session.isStale)
         fixture.session.refreshBulkArchivePreview()
         let recovery = try await fixture.client.next()
-        XCTAssertEqual(recovery.operation, .snapshot)
+        XCTAssertEqual(recovery.operation, .taskList)
         recovery.succeed(emptySnapshot)
         _ = try answerPreview(try await fixture.client.next())
         try await fixture.settled()

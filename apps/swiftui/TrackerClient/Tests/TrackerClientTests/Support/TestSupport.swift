@@ -13,7 +13,9 @@ final class FakeClient: TrackerClient, ReportClient {
         case test(ConnectionSettings)
         case connect(ConnectionSettings)
         case refresh(ConnectionSettings)
-        case snapshot
+        case taskList
+        case tasks
+        case trackingResource
         case create(name: String, at: String)
         case inactivePreview(days: Int, at: String)
         case archiveInactive(InactiveTaskPreview)
@@ -32,7 +34,7 @@ final class FakeClient: TrackerClient, ReportClient {
     }
 
     enum Reply {
-        case snapshot(TrackerSnapshot)
+        case taskList(TaskListResources)
         case history(HistoryPage)
         case tested
         case inactivePreview(InactiveTaskPreview)
@@ -42,39 +44,108 @@ final class FakeClient: TrackerClient, ReportClient {
         case candidates([WorklogMoveCandidate])
         case moved(WorklogMoveResult)
         case paused(TrackingPauseResult)
-        case report(TrackerReport)
+        case report(TaskListTotalsRefresh)
+        case reportResource(TrackerReport)
+        case catalog(TaskCatalogObservation)
+        case trackingResource(TrackingObservation)
+        case dailyTotals(DailyTotalsResources)
+        case task(TaskCommandResult)
+        case tracking(TrackingCommandResult)
     }
 
     @MainActor
     struct Request {
         let operation: Operation
         let complete: (Result<Reply, Error>) -> Void
+        let publishAfterCommand: (TaskListResources) -> Void
 
-        func succeed(_ snapshot: TrackerSnapshot) { complete(.success(.snapshot(snapshot))) }
+        func succeed(_ resources: TaskListResources) {
+            switch operation {
+            case .rename(let id, _, _), .archive(let id, _), .unarchive(let id, _):
+                var task =
+                    resources.catalog.value.first { $0.id == id }
+                    ?? TaskItem(id: "", name: "Missing task", archived: false, latestStart: nil)
+                let desiredName: String?
+                let desiredArchived: Bool?
+                switch operation {
+                case .rename(_, let name, _):
+                    desiredName = TaskNameEditingPolicy.normalized(name); desiredArchived = nil
+                case .archive: desiredName = nil; desiredArchived = true
+                case .unarchive: desiredName = nil; desiredArchived = false
+                default: desiredName = nil; desiredArchived = nil
+                }
+                let receipt: CommandReceipt?
+                if resources.catalog.revision != nil {
+                    task = TaskItem(
+                        id: id, name: desiredName ?? task.name,
+                        archived: desiredArchived ?? task.archived, latestStart: task.latestStart)
+                    receipt = CommandReceipt(
+                        requestId: "command-request", appliedRevision: "command-applied", replayed: false)
+                } else {
+                    receipt = nil
+                }
+                if task.id == id, desiredName.map({ $0 == task.name }) ?? true,
+                    desiredArchived.map({ $0 == task.archived }) ?? true
+                {
+                    publishAfterCommand(resources)
+                }
+                complete(.success(.task(TaskCommandResult(task: task, receipt: receipt))))
+            case .start, .stop, .resume:
+                publishAfterCommand(resources)
+                complete(.success(.tracking(TrackingCommandResult(active: resources.tracking.value))))
+            default: complete(.success(.taskList(resources)))
+            }
+        }
         func succeed(_ page: HistoryPage) { complete(.success(.history(page))) }
-        func succeed(_ report: TrackerReport) { complete(.success(.report(report))) }
-        func paused(_ snapshot: TrackerSnapshot, didStop: Bool = true) {
-            complete(.success(.paused(TrackingPauseResult(snapshot: snapshot, didStop: didStop))))
+        func succeed(_ report: TaskListTotalsRefresh) { complete(.success(.report(report))) }
+        func succeed(_ report: TrackerReport) { complete(.success(.reportResource(report))) }
+        func paused(_ snapshot: TaskListResources, didStop: Bool = true) {
+            publishAfterCommand(snapshot)
+            complete(.success(.paused(TrackingPauseResult(active: snapshot.tracking.value, didStop: didStop))))
         }
-        func created(taskID: String, snapshot: TrackerSnapshot) {
-            complete(.success(.created(TaskCreationResult(taskId: taskID, snapshot: snapshot))))
+        func created(task: TaskItem, receipt: CommandReceipt? = nil) {
+            complete(.success(.created(TaskCreationResult(task: task, receipt: receipt))))
         }
-        func corrected(worklog: WorklogItem, snapshot: TrackerSnapshot) {
-            complete(.success(.corrected(WorklogCorrectionResult(worklog: worklog, snapshot: snapshot))))
+        func created(taskID: String, snapshot: TaskListResources) {
+            let task =
+                snapshot.catalog.value.first { $0.id == taskID }
+                ?? TaskItem(id: "", name: "Missing task", archived: false, latestStart: nil)
+            if !task.id.isEmpty { publishAfterCommand(snapshot) }
+            complete(.success(.created(TaskCreationResult(task: task))))
+        }
+        func corrected(worklog: WorklogItem, snapshot: TaskListResources) {
+            if case .correct(let expected, let start, let end, _) = operation,
+                worklog.id == expected.id, worklog.taskId == expected.taskId,
+                sameWorklogTimestamp(worklog.start, start), sameWorklogTimestamp(worklog.end, end)
+            {
+                publishAfterCommand(snapshot)
+            }
+            complete(.success(.corrected(WorklogCorrectionResult(worklog: worklog))))
         }
         func candidates(_ values: [WorklogMoveCandidate]) { complete(.success(.candidates(values))) }
-        func moved(worklog: WorklogItem, snapshot: TrackerSnapshot) {
-            complete(.success(.moved(WorklogMoveResult(worklog: worklog, snapshot: snapshot))))
+        func moved(worklog: WorklogItem) {
+            complete(.success(.moved(WorklogMoveResult(worklog: worklog))))
+        }
+        func moved(worklog: WorklogItem, snapshot: TaskListResources) {
+            if case .move(let expected, let destination) = operation,
+                worklog.id == expected.id, worklog.taskId == destination,
+                sameWorklogTimestamp(worklog.start, expected.start), sameWorklogTimestamp(worklog.end, expected.end)
+            {
+                publishAfterCommand(snapshot)
+            }
+            complete(.success(.moved(WorklogMoveResult(worklog: worklog))))
         }
         func inactivePreview(_ preview: InactiveTaskPreview) { complete(.success(.inactivePreview(preview))) }
-        func archivedInactive(count: Int, snapshot: TrackerSnapshot) {
-            complete(.success(.archivedInactive(InactiveTaskArchiveResult(archivedCount: count, snapshot: snapshot))))
+        func archivedInactive(count: Int, snapshot: TaskListResources) {
+            if count >= 0 { publishAfterCommand(snapshot) }
+            complete(.success(.archivedInactive(InactiveTaskArchiveResult(archivedCount: count))))
         }
         func tested() { complete(.success(.tested)) }
         func fail(_ error: Error) { complete(.failure(error)) }
     }
 
     private var requests: [Request] = []
+    private var commandPublication: TaskListResources?
     private var waiters: [(id: UUID, expectation: XCTestExpectation)] = []
     private var outstanding: [UUID: CheckedContinuation<Reply, Error>] = [:]
     private(set) var operations: [Operation] = []
@@ -114,9 +185,14 @@ final class FakeClient: TrackerClient, ReportClient {
             let id = UUID()
             outstanding[id] = continuation
             maximumOutstandingRequests = max(maximumOutstandingRequests, outstanding.count)
-            let request = Request(operation: operation) { [weak self] result in
-                self?.outstanding.removeValue(forKey: id)?.resume(with: result)
-            }
+            let request = Request(
+                operation: operation,
+                complete: { [weak self] result in
+                    self?.outstanding.removeValue(forKey: id)?.resume(with: result)
+                },
+                publishAfterCommand: { [weak self] resources in
+                    self?.commandPublication = resources
+                })
             requests.append(request)
             if !waiters.isEmpty { waiters.removeFirst().expectation.fulfill() }
         }
@@ -128,29 +204,76 @@ final class FakeClient: TrackerClient, ReportClient {
         return TestTimeout(description: message)
     }
 
-    private func snapshotReply(_ operation: Operation) async throws -> TrackerSnapshot {
-        guard case .snapshot(let value) = try await perform(operation) else {
+    private func snapshotReply(_ operation: Operation) async throws -> TaskListResources {
+        guard case .taskList(let value) = try await perform(operation) else {
             throw wrongReply("snapshot", operation: operation)
         }
         return value
     }
 
-    func openConfigured(_ settings: ConnectionSettings) async throws -> TrackerSnapshot {
+    func readTaskCatalog() async throws -> TaskCatalogObservation {
+        guard case .catalog(let value) = try await perform(.tasks) else {
+            throw wrongReply("task resource", operation: .tasks)
+        }
+        return value
+    }
+
+    func readTracking() async throws -> TrackingObservation {
+        guard case .trackingResource(let value) = try await perform(.trackingResource) else {
+            throw wrongReply("tracking resource", operation: .trackingResource)
+        }
+        return value
+    }
+
+    func refreshDailyTotals(settings: ConnectionSettings, start: String, end: String, now: String)
+        async throws -> DailyTotalsResources
+    {
+        let operation = Operation.report(settings: settings, start: start, end: end, now: now)
+        guard case .dailyTotals(let value) = try await perform(operation) else {
+            throw wrongReply("daily totals", operation: operation)
+        }
+        return value
+    }
+
+    private func taskReply(_ operation: Operation) async throws -> TaskCommandResult {
+        guard case .task(let value) = try await perform(operation) else {
+            throw wrongReply("task command", operation: operation)
+        }
+        return value
+    }
+
+    private func trackingReply(_ operation: Operation) async throws -> TrackingCommandResult {
+        guard case .tracking(let value) = try await perform(operation) else {
+            throw wrongReply("tracking command", operation: operation)
+        }
+        return value
+    }
+
+    func openConfigured(_ settings: ConnectionSettings) async throws -> TaskListResources {
         try await snapshotReply(.open(settings))
     }
     func test(_ settings: ConnectionSettings) async throws { _ = try await perform(.test(settings)) }
-    func connect(_ settings: ConnectionSettings) async throws -> TrackerSnapshot {
+    func connect(_ settings: ConnectionSettings) async throws -> TaskListResources {
         try await snapshotReply(.connect(settings))
     }
-    func refresh(settings: ConnectionSettings) async throws -> TrackerSnapshot {
+    func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources {
         try await snapshotReply(.refresh(settings))
     }
-    func snapshot() async throws -> TrackerSnapshot { try await snapshotReply(.snapshot) }
-    func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws -> TrackerSnapshot {
-        try await snapshotReply(.start(task: taskID, expected: expectedActiveID, at: occurredAt))
+    func refreshTaskList() async throws -> TaskListResources {
+        if let resources = commandPublication {
+            commandPublication = nil
+            operations.append(.taskList)
+            return resources
+        }
+        return try await snapshotReply(.taskList)
     }
-    func stopTracking(worklogID: String, occurredAt: String) async throws -> TrackerSnapshot {
-        try await snapshotReply(.stop(worklog: worklogID, at: occurredAt))
+    func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws
+        -> TrackingCommandResult
+    {
+        try await trackingReply(.start(task: taskID, expected: expectedActiveID, at: occurredAt))
+    }
+    func stopTracking(worklogID: String, occurredAt: String) async throws -> TrackingCommandResult {
+        try await trackingReply(.stop(worklog: worklogID, at: occurredAt))
     }
     func pauseTracking(worklogID: String, occurredAt: String) async throws -> TrackingPauseResult {
         guard case .paused(let value) = try await perform(.pause(worklog: worklogID, at: occurredAt)) else {
@@ -158,8 +281,8 @@ final class FakeClient: TrackerClient, ReportClient {
         }
         return value
     }
-    func resumeTracking(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
-        try await snapshotReply(.resume(task: taskID, at: occurredAt))
+    func resumeTracking(taskID: String, occurredAt: String) async throws -> TrackingCommandResult {
+        try await trackingReply(.resume(task: taskID, at: occurredAt))
     }
     func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult {
         let operation = Operation.create(name: name, at: occurredAt)
@@ -182,14 +305,14 @@ final class FakeClient: TrackerClient, ReportClient {
         }
         return value
     }
-    func archiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
-        try await snapshotReply(.archive(task: taskID, at: occurredAt))
+    func archiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult {
+        try await taskReply(.archive(task: taskID, at: occurredAt))
     }
-    func unarchiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
-        try await snapshotReply(.unarchive(task: taskID, at: occurredAt))
+    func unarchiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult {
+        try await taskReply(.unarchive(task: taskID, at: occurredAt))
     }
-    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TrackerSnapshot {
-        try await snapshotReply(.rename(task: taskID, name: name, at: occurredAt))
+    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TaskCommandResult {
+        try await taskReply(.rename(task: taskID, name: name, at: occurredAt))
     }
     func correctWorklog(
         expected: WorklogItem, replacementStart: String, replacementEnd: String?,
@@ -224,11 +347,21 @@ final class FakeClient: TrackerClient, ReportClient {
     }
     func report(settings: ConnectionSettings, start: String, end: String, now: String) async throws -> TrackerReport {
         let operation = Operation.report(settings: settings, start: start, end: end, now: now)
-        guard case .report(let value) = try await perform(operation) else {
+        guard case .reportResource(let value) = try await perform(operation) else {
             throw wrongReply("report", operation: operation)
         }
         return value
     }
+    func refreshTaskListWithTotals(settings: ConnectionSettings, start: String, end: String, now: String)
+        async throws -> TaskListTotalsRefresh
+    {
+        let operation = Operation.report(settings: settings, start: start, end: end, now: now)
+        guard case .report(let value) = try await perform(operation) else {
+            throw wrongReply("task list totals", operation: operation)
+        }
+        return value
+    }
+
 }
 
 @MainActor
@@ -317,7 +450,7 @@ final class Fixture {
         client.cancelOutstanding()
     }
 
-    func start(_ snapshot: TrackerSnapshot = emptySnapshot, rows: [TaskReportTotal] = []) async throws {
+    func start(_ snapshot: TaskListResources = emptySnapshot, rows: [TaskReportTotal] = []) async throws {
         session.start()
         let open = try await client.next()
         XCTAssertEqual(open.operation, .open(settings.saved ?? .local))
@@ -327,9 +460,9 @@ final class Fixture {
             guard case .report = report.operation else {
                 throw TestTimeout(description: "Expected startup report before history.")
             }
-            report.succeed(TrackerReport(snapshot: snapshot, rows: rows))
+            report.succeed(TaskListTotalsRefresh(snapshot: snapshot, rows: rows))
         }
-        if let task = snapshot.tasks.first(where: { !$0.archived }) {
+        if let task = snapshot.catalog.value.first(where: { !$0.archived }) {
             let history = try await client.next()
             XCTAssertEqual(history.operation, .history(task: task.id, cursor: nil))
             guard session.isBusy else {
@@ -387,7 +520,7 @@ final class Fixture {
     }
 }
 
-let emptySnapshot = TrackerSnapshot(tasks: [], active: nil)
+let emptySnapshot = TaskListResources(tasks: [], active: nil)
 let emptyPage = HistoryPage(worklogs: [], nextCursor: nil, reset: false)
 let firstTask = TaskItem(id: "task-one", name: "First task", archived: false, latestStart: nil)
 let secondTask = TaskItem(id: "task-two", name: "Second task", archived: false, latestStart: nil)
@@ -404,4 +537,32 @@ final class MemoryTrackingPreferences: TrackingPreferencesRepository {
     init(_ preferences: TrackingPreferences = TrackingPreferences()) { saved = preferences }
     func load() -> TrackingPreferences { saved }
     func save(_ preferences: TrackingPreferences) { saved = preferences; writes.append(preferences) }
+}
+
+extension TaskListResources {
+    init(
+        tasks: [TaskItem], active: WorklogItem?, tasksRevision: String? = nil,
+        trackingRevision: String? = nil
+    ) {
+        self.init(
+            catalog: TaskCatalogObservation(value: tasks, revision: tasksRevision),
+            tracking: TrackingObservation(value: active, revision: trackingRevision))
+    }
+}
+
+extension TaskListTotalsRefresh {
+    init(snapshot: TaskListResources, rows: [TaskReportTotal], revision: String? = nil, now: String? = nil) {
+        self.init(taskList: snapshot, report: TrackerReport(rows: rows, revision: revision, now: now))
+    }
+}
+
+@MainActor
+extension DailyTotalsState {
+    func accept(_ refresh: TaskListTotalsRefresh, requested: Request, clock: any TrackerClock) {
+        accept(refresh.report, tracking: refresh.taskList.tracking, requested: requested, clock: clock)
+    }
+
+    func validate(_ refresh: TaskListTotalsRefresh) throws {
+        try validate(refresh.report, tracking: refresh.taskList.tracking)
+    }
 }

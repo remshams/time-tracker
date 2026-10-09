@@ -106,8 +106,8 @@ final class TaskArchivingState {
 
     func deferUntilWake() { pending = true }
 
-    func preflight(_ intent: Intent, snapshot: TrackerSnapshot) -> Preflight {
-        guard let task = snapshot.tasks.first(where: { $0.id == intent.taskID }) else {
+    func preflight(_ intent: Intent, snapshot: TaskListResources) -> Preflight {
+        guard let task = snapshot.catalog.value.first(where: { $0.id == intent.taskID }) else {
             requireReview("The task no longer exists. Cancel and refresh the task list.", latest: nil)
             return .review
         }
@@ -117,16 +117,16 @@ final class TaskArchivingState {
                 "The task changed on another client. Review its current state before continuing.", latest: task)
             return .review
         }
-        guard intent.action != .archive || snapshot.active?.taskId != intent.taskID else {
+        guard intent.action != .archive || snapshot.tracking.value?.taskId != intent.taskID else {
             requireReview("Stop tracking this task before archiving it.", latest: task)
             return .review
         }
         return .apply
     }
 
-    func responseMatches(_ snapshot: TrackerSnapshot, intent: Intent) -> Bool {
-        snapshot.tasks.contains { $0.id == intent.taskID && $0.archived == intent.action.desiredArchived }
-            && (intent.action != .archive || snapshot.active?.taskId != intent.taskID)
+    func responseMatches(_ snapshot: TaskListResources, intent: Intent) -> Bool {
+        snapshot.catalog.value.contains { $0.id == intent.taskID && $0.archived == intent.action.desiredArchived }
+            && (intent.action != .archive || snapshot.tracking.value?.taskId != intent.taskID)
     }
 
     func requireReview(_ message: String, latest: TaskItem?) {
