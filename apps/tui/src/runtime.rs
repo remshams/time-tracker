@@ -78,7 +78,7 @@ async fn event_loop(
 
     draw(guard, &state, None)?;
     loop {
-        if !state.is_running() && !state.active_request_is_write() && !state.has_queued_write() {
+        if should_exit(&state) {
             break;
         }
         if pending.is_none() {
@@ -167,6 +167,10 @@ async fn event_loop(
         }
     }
     Ok(())
+}
+
+fn should_exit(state: &AppState) -> bool {
+    !state.is_running() && !state.active_request_is_write() && !state.has_queued_write()
 }
 
 fn start_request(backend: Backend, request: ApplicationRequest) -> Pending {
@@ -308,15 +312,237 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use ratatui::{Terminal, backend::TestBackend};
-    use tracker_domain::TrackingState;
+    use tracker_application::TaskListItem;
+    use tracker_domain::{ActiveWorklog, Task, TrackingState};
     use tracker_remote::{RemoteApplication, RemoteError};
 
     use super::{
-        apply_refresh, busy_label, pending_busy_deadline, render_frame, visible_busy_label,
+        Backend, ResultKind, apply_refresh, busy_label, pending_busy_deadline,
+        publish_request_resources, render_frame, should_exit, start_request, visible_busy_label,
         wait_until,
     };
     use crate::app::{AppState, Status};
-    use crate::application_request::ApplicationRequest;
+    use crate::application_request::remote_resource_tests::stoppable_resource_server;
+    use crate::application_request::{ApplicationOutcome, ApplicationRequest, CompletedRequest};
+    use crate::command::Command;
+    use crate::test_support::{at, task, worklog_id};
+
+    fn confirmed_state() -> (AppState, Task, ActiveWorklog) {
+        let cached = task(2, "Previously confirmed task");
+        let running = ActiveWorklog::begin(worklog_id(2), cached.id(), at(100));
+        let state = AppState::load_task_list(
+            vec![TaskListItem {
+                task: cached.clone(),
+                latest_work_start: Some(at(100)),
+            }],
+            TrackingState::Running {
+                worklog: running.clone(),
+            },
+        );
+        (state, cached, running)
+    }
+
+    fn task_list_responses(task_revision: &str, tracking_revision: &str) -> Vec<(u16, String)> {
+        vec![
+            (
+                200,
+                format!(r#"{{"tasks":[],"revision":"{task_revision}"}}"#),
+            ),
+            (
+                200,
+                format!(r#"{{"active_worklog":null,"revision":"{tracking_revision}"}}"#),
+            ),
+        ]
+    }
+
+    #[test]
+    fn exit_gate_waits_for_quit_and_accepted_writes_but_allows_pending_reads() {
+        let mut idle = AppState::load_task_list(Vec::new(), TrackingState::Idle);
+        assert!(!should_exit(&idle));
+        idle.handle_command(Command::Quit);
+        assert!(should_exit(&idle));
+
+        let mut reading = AppState::load_task_list(Vec::new(), TrackingState::Idle);
+        let read = ApplicationRequest::AllWorklogs { after: None };
+        assert!(reading.enqueue(read.clone(), |_, _| {}));
+        let _ = reading.take_effect().unwrap();
+        reading.handle_command(Command::Quit);
+        assert!(should_exit(&reading));
+
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
+        assert!(state.enqueue(read.clone(), |_, _| {}));
+        let active_read = state.take_effect().unwrap();
+        let created = task(1, "Accepted task");
+        let write = ApplicationRequest::CreateTask {
+            name: created.name().clone(),
+            occurred_at: at(100),
+        };
+        assert!(state.enqueue(write.clone(), |_, _| {}));
+        state.handle_command(Command::Quit);
+        assert!(!should_exit(&state));
+        state.complete_effect(
+            active_read,
+            CompletedRequest {
+                request: read,
+                outcome: ApplicationOutcome::GlobalWorklogPage(Err(
+                    tracker_application::ApplicationError::InvalidReportRange,
+                )),
+            },
+        );
+        assert!(!should_exit(&state));
+        let active_write = state.take_effect().unwrap();
+        assert!(!should_exit(&state));
+        state.complete_effect(
+            active_write,
+            CompletedRequest {
+                request: write,
+                outcome: ApplicationOutcome::Task(Ok(created)),
+            },
+        );
+        assert!(should_exit(&state));
+    }
+
+    #[tokio::test]
+    async fn remote_history_publishes_labels_without_refreshing_unrelated_resources() {
+        let history_task = task(1, "History task");
+        let task_id = history_task.id();
+        let log_id = worklog_id(1);
+        let mut responses = vec![
+            (200, r#"{"status":"ok","protocol_version":3}"#.to_owned()),
+            (
+                200,
+                format!(
+                    r#"{{"worklogs":[{{"id":"{log_id}","task_id":"{task_id}","start":"{}","end":"{}"}}],"next_cursor":null,"revision":"history-1"}}"#,
+                    at(100).to_rfc3339(),
+                    at(150).to_rfc3339(),
+                ),
+            ),
+            (
+                200,
+                format!(
+                    r#"{{"task":{{"id":"{task_id}","name":"History task","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":null}},"revision":"task-2"}}"#,
+                    at(100).to_rfc3339(),
+                    at(100).to_rfc3339(),
+                ),
+            ),
+        ];
+        responses.extend(task_list_responses("state-1", "state-1"));
+        let (endpoint, worker, stop) = stoppable_resource_server(responses);
+        let application = RemoteApplication::disconnected(&endpoint).unwrap();
+        let (backend, result) = start_request(
+            Backend::Remote(Box::new(application)),
+            ApplicationRequest::AllWorklogs { after: None },
+        )
+        .await;
+        let _ = stop.send(());
+        let paths = worker.join().unwrap();
+        let ResultKind::Request(completed) = result else {
+            panic!("history returns a request completion");
+        };
+        assert!(matches!(
+            completed.outcome,
+            ApplicationOutcome::GlobalWorklogPage(Ok(_))
+        ));
+        let Backend::Remote(application) = &backend else {
+            panic!("a remote history request retains its backend");
+        };
+        assert!(application.task_observation().is_none());
+        assert!(application.tracking_observation().is_none());
+        assert!(application.last_failure().is_none());
+        let (mut state, cached, running) = confirmed_state();
+
+        publish_request_resources(&mut state, &backend, &completed);
+
+        assert_eq!(state.catalog().task(task_id), Some(&history_task));
+        assert_eq!(state.catalog().task(cached.id()), Some(&cached));
+        assert_eq!(state.tracking().active_worklog(), Some(&running));
+        assert_eq!(
+            paths,
+            vec![
+                "/v1/health".to_owned(),
+                "/v1/worklogs".to_owned(),
+                format!("/v1/tasks/{task_id}")
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_remote_refresh_reads_each_resource_once_and_publishes_a_coherent_pair() {
+        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":3}"#.to_owned())];
+        responses.extend(task_list_responses("state-1", "state-1"));
+        responses.extend(task_list_responses("state-1", "state-1"));
+        let (endpoint, worker, stop) = stoppable_resource_server(responses);
+        let application = RemoteApplication::disconnected(&endpoint).unwrap();
+        let (backend, result) = start_request(
+            Backend::Remote(Box::new(application)),
+            ApplicationRequest::RefreshTaskList,
+        )
+        .await;
+        let _ = stop.send(());
+        let paths = worker.join().unwrap();
+        let ResultKind::Request(completed) = result else {
+            panic!("an explicit refresh returns its request completion");
+        };
+        assert!(matches!(
+            completed.outcome,
+            ApplicationOutcome::TaskListRefresh(Ok(()))
+        ));
+        let (mut state, cached, _) = confirmed_state();
+
+        publish_request_resources(&mut state, &backend, &completed);
+
+        assert!(state.catalog().task(cached.id()).is_none());
+        assert!(state.tracking().active_worklog().is_none());
+        assert_eq!(paths, vec!["/v1/health", "/v1/tasks", "/v1/tracking"]);
+    }
+
+    #[tokio::test]
+    async fn failed_remote_refresh_does_not_publish_independently_loaded_mismatched_resources() {
+        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":3}"#.to_owned())];
+        for _ in 0..3 {
+            responses.extend(task_list_responses("tasks-1", "tracking-2"));
+        }
+        let (endpoint, worker, stop) = stoppable_resource_server(responses);
+        let mut application = RemoteApplication::disconnected(&endpoint).unwrap();
+        application.refresh_tasks().await.unwrap();
+        application.refresh_tracking().await.unwrap();
+        let (backend, result) = start_request(
+            Backend::Remote(Box::new(application)),
+            ApplicationRequest::RefreshTaskList,
+        )
+        .await;
+        let _ = stop.send(());
+        let paths = worker.join().unwrap();
+        let ResultKind::Request(completed) = result else {
+            panic!("a failed refresh returns its request completion");
+        };
+        assert!(matches!(
+            completed.outcome,
+            ApplicationOutcome::TaskListRefresh(Err(_))
+        ));
+        let Backend::Remote(application) = &backend else {
+            panic!("a failed remote refresh retains its backend");
+        };
+        assert_ne!(application.task_revision(), application.tracking_revision());
+        let (mut state, cached, running) = confirmed_state();
+
+        publish_request_resources(&mut state, &backend, &completed);
+
+        assert_eq!(state.catalog().task(cached.id()), Some(&cached));
+        assert_eq!(state.tracking().active_worklog(), Some(&running));
+        assert_eq!(
+            paths,
+            vec![
+                "/v1/health",
+                "/v1/tasks",
+                "/v1/tracking",
+                "/v1/tasks",
+                "/v1/tracking",
+                "/v1/tasks",
+                "/v1/tracking"
+            ]
+        );
+    }
 
     #[test]
     fn a_busy_refresh_does_not_overlap_an_existing_error_status() {
