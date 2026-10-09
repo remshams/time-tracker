@@ -2,22 +2,22 @@ import XCTest
 
 @MainActor
 final class SettingsUITests: TrackerUITestCase {
-    func testMenuTotalAndAutomaticPausePreferencesApplyAndPersist() throws {
+    func testMenuBarDisplayAndAutomaticPausePreferencesApplyAndPersist() throws {
         _ = try fixture.create("Settings task")
         launch()
         openSettings()
-        let total = element("menu.show-daily-total")
+        let display = element("menu.display")
         let pause = element("tracking.pause-on-lock")
-        XCTAssertEqual((total.value as? NSNumber)?.boolValue, true)
+        XCTAssertEqual(display.value as? String, "Time")
         XCTAssertEqual((pause.value as? NSNumber)?.boolValue, false)
-        total.click()
+        chooseMenuBarDisplay("None")
         pause.click()
         waitUntil("The status item removes its total immediately") { self.statusButton.value as? String == "" }
         relaunch()
         openSettings()
-        XCTAssertEqual((element("menu.show-daily-total").value as? NSNumber)?.boolValue, false)
+        XCTAssertEqual(element("menu.display").value as? String, "None")
         XCTAssertEqual((element("tracking.pause-on-lock").value as? NSNumber)?.boolValue, true)
-        element("menu.show-daily-total").click()
+        chooseMenuBarDisplay("Time")
         waitUntil("The status item restores its total immediately") { self.statusButton.value as? String != "" }
     }
 
