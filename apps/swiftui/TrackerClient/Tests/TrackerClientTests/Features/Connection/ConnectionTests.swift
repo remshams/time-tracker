@@ -4,6 +4,26 @@ import XCTest
 
 final class ConnectionTests: XCTestCase {
     @MainActor
+    func testCancellingConnectionFromItsQueuedPublicationReleasesTheReservation() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start()
+        fixture.session.refresh()
+        let refresh = try await fixture.client.next()
+        var connecting: Task<Bool, Never>?
+        fixture.session.onChange = {
+            if fixture.session.isBlockingControls { connecting?.cancel() }
+        }
+        connecting = Task { await fixture.session.connect(serverSettings) }
+        let connected = try await fixture.taskValue(connecting!)
+        XCTAssertFalse(connected)
+        XCTAssertFalse(fixture.session.isBlockingControls)
+        refresh.succeed(emptySnapshot)
+        try await fixture.settled()
+        XCTAssertFalse(fixture.client.operations.contains(.connect(serverSettings)))
+    }
+
+    @MainActor
     func testSourceSwitchClearsAHiddenUnarchiveFailure() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
