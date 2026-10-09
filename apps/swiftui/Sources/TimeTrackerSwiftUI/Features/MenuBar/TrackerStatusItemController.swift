@@ -87,17 +87,21 @@ final class TrackerStatusItemController: NSObject {
     private func updateLabel() {
         guard let button = statusItem?.button else { return }
         let label = store.menu.label.content
-        button.image = TaskDotImage.make(color: label.indicator.color,
-                                        isRunning: label.indicator.isRunning,
-                                        appearance: button.effectiveAppearance)
+        button.image = TaskDotImage.make(
+            color: label.indicator.color,
+            isRunning: label.indicator.isRunning,
+            appearance: button.effectiveAppearance)
         let text = label.text.map { " \($0)" } ?? ""
-        let font = label.display == .time
+        let font =
+            label.display == .time
             ? NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
             : NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        button.attributedTitle = NSAttributedString(string: text, attributes: [
-            .font: font,
-            .foregroundColor: NSColor.labelColor
-        ])
+        button.attributedTitle = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: font,
+                .foregroundColor: NSColor.labelColor,
+            ])
         button.toolTip = label.help
         button.setAccessibilityLabel(label.status)
         button.setAccessibilityValue(label.text ?? "")

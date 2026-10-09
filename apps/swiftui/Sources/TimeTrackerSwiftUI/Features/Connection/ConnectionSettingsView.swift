@@ -73,19 +73,24 @@ struct ConnectionSettingsView: View {
                 }
 
                 Section("Menu bar") {
-                    Picker("Text next to the icon", selection: Binding(
-                        get: { store.menuBarDisplay },
-                        set: { store.setMenuBarDisplay($0) }
-                    )) {
+                    Picker(
+                        "Text next to the icon",
+                        selection: Binding(
+                            get: { store.menuBarDisplay },
+                            set: { store.setMenuBarDisplay($0) }
+                        )
+                    ) {
                         Text("Time").tag(MenuBarDisplay.time)
                         Text("Task name").tag(MenuBarDisplay.taskName)
                         Text("None").tag(MenuBarDisplay.none)
                     }
                     .pickerStyle(.menu)
                     .accessibilityIdentifier("menu.display")
-                    Text("Time shows today's total. Task name shows the running task. Hover over the icon to read the full task name.")
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Time shows today's total. Task name shows the running task. Hover over the icon to read the full task name."
+                    )
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Section("Menu shortcut") {
