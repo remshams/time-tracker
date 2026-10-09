@@ -50,6 +50,8 @@ class MuterInstallerTests(unittest.TestCase):
             contents = json.loads(report.read_text(encoding="utf-8"))
             self.assertGreater(contents["totalAppliedMutationOperators"], 0)
             self.assertEqual(contents["numberOfKilledMutants"], contents["totalAppliedMutationOperators"])
+            self.assertTrue(any(entry["mutationPoint"]["mutationOperatorId"] == "SwapTernary"
+                                for file in contents["fileReports"] for entry in file["appliedOperators"]))
 
     def test_download_checksum_rejects_changed_source_before_extraction(self):
         with tempfile.TemporaryDirectory() as directory:
