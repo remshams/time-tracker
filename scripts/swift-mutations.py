@@ -208,7 +208,8 @@ def run(arguments: list[str], package: Path, log, *, check: bool = True, timeout
     return status
 
 
-def collect(swift: str, muter: str, selected: list[str] | None = None, *, timeout: float = 1800) -> dict:
+def collect(swift: str, muter: str, selected: list[str] | None = None, *, timeout: float = 1800,
+            test_workers: int = 4) -> dict:
     OUTPUT.mkdir(parents=True, exist_ok=True)
     report_path = OUTPUT / "report.json"
     summary_path = OUTPUT / "summary.json"
@@ -218,6 +219,8 @@ def collect(swift: str, muter: str, selected: list[str] | None = None, *, timeou
     if logs_path.exists():
         shutil.rmtree(logs_path)
     positive_timeout(timeout)
+    if test_workers < 1:
+        raise MutationError("Test worker count must be positive")
     swift, muter = executable(swift), executable(muter)
     expected = production_files(PACKAGE, selected)
     relative_files = [path.relative_to(PACKAGE).as_posix() for path in expected]
@@ -227,7 +230,9 @@ def collect(swift: str, muter: str, selected: list[str] | None = None, *, timeou
         shutil.copy2(PACKAGE / "Package.swift", package / "Package.swift")
         for name in ("Sources", "Tests"):
             shutil.copytree(PACKAGE / name, package / name)
-        test_arguments = ["test", "-j", "2", "--parallel", "--num-workers", "4"]
+        test_arguments = ["test", "-j", "2"]
+        if test_workers > 1:
+            test_arguments.extend(["--parallel", "--num-workers", str(test_workers)])
         configuration = {"executable": swift, "arguments": test_arguments,
                          "exclude": ["/Tests/", "/Package.swift"], "mutationTestTimeout": 180}
         configuration_path = package / "muter.conf.yml"
@@ -270,9 +275,12 @@ def main() -> int:
     parser.add_argument("--files", nargs="+", help="Package-relative production files for a focused diagnostic run")
     parser.add_argument("--timeout", type=float, default=1800,
                         help="Maximum seconds for the whole Muter run, default 1800")
+    parser.add_argument("--test-workers", type=int, default=4,
+                        help="XCTest workers, default 4; use 1 to run the full suite in one process")
     arguments = parser.parse_args()
     try:
-        collect(arguments.swift, arguments.muter, arguments.files, timeout=arguments.timeout)
+        collect(arguments.swift, arguments.muter, arguments.files, timeout=arguments.timeout,
+                test_workers=arguments.test_workers)
     except (MutationError, OSError) as error:
         print(f"Swift mutation testing failed: {error}", file=sys.stderr)
         print(f"Log: {OUTPUT / 'run.log'}", file=sys.stderr)

@@ -52,6 +52,9 @@ class MuterInstallerTests(unittest.TestCase):
             self.assertEqual(contents["numberOfKilledMutants"], contents["totalAppliedMutationOperators"])
             self.assertTrue(any(entry["mutationPoint"]["mutationOperatorId"] == "SwapTernary"
                                 for file in contents["fileReports"] for entry in file["appliedOperators"]))
+            instrumented = Path(str(package) + "_mutated") / "Sources/Probe/Probe.swift"
+            self.assertIn("getenv(", instrumented.read_text(encoding="utf-8"))
+            self.assertNotIn("ProcessInfo.processInfo.environment", instrumented.read_text(encoding="utf-8"))
 
     def test_download_checksum_rejects_changed_source_before_extraction(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -80,6 +83,14 @@ class MuterInstallerTests(unittest.TestCase):
             ternary = effects.with_name("SwapTernaryOperator.swift")
             ternary.write_text("            let secondChoice = children[index + 1]\n"
                                "            children[index + 1] = firstChoice\n", encoding="utf-8")
+            switch = rewriter.with_name("MutationSwitch.swift")
+            switch.write_text('import SwiftSyntax\nenum MutationSwitch {\n'
+                              '    private static func buildSchemataCondition(\n'
+                              '        baseName: .identifier("environment")\n    }\n}\n', encoding="utf-8")
+            imports = rewriter.with_name("AddImportRewriter.swift")
+            imports.write_text('import SwiftSyntax\nclass AddImportRewriter {\n'
+                               '    private func insertImportFoundation(\n    }\n}\n\n'
+                               'final class AddImportVisitior {}\n', encoding="utf-8")
             INSTALLER.patch_source(source)
             patched = mapping.read_text(encoding="utf-8")
             self.assertIn("$0.key.position == codeBlockSyntax.position", patched)
@@ -90,6 +101,8 @@ class MuterInstallerTests(unittest.TestCase):
             self.assertIn('"NSLock"', effects.read_text(encoding="utf-8"))
             self.assertIn("Array(children[(index + 1)...])", ternary.read_text(encoding="utf-8"))
             self.assertIn("replaceSubrange", ternary.read_text(encoding="utf-8"))
+            self.assertIn("getenv(", switch.read_text(encoding="utf-8"))
+            self.assertIn("import Foundation", imports.read_text(encoding="utf-8"))
             shim = (source / "Sources/muterCore/LinuxAutoreleasepool.swift").read_text(encoding="utf-8")
             self.assertTrue(shim.startswith("#if os(Linux)\n"))
 
