@@ -734,12 +734,42 @@ impl RemoteApplication {
         self.archive_inactive_tasks(preview).await
     }
 
-    async fn tracking_guard(&mut self, target: Option<TaskId>) -> Result<String, ApplicationError> {
-        let reviewed = if self.tracking_revision.is_empty() {
+    async fn initialize_tracking_command_view(
+        &mut self,
+        target: Option<TaskId>,
+    ) -> Result<(), ApplicationError> {
+        if self.coherent_task_views && self.tracking_revision.is_empty() {
+            self.refresh()
+                .await
+                .map_err(|error| map_application_error(&error, None, target))?;
+        }
+        Ok(())
+    }
+
+    fn adopt_tracking_preflight(
+        &mut self,
+        active: Option<Worklog>,
+        state: TrackingState,
+        revision: &str,
+    ) {
+        if !self.coherent_task_views {
+            self.snapshot.active_worklog = active;
+            self.tracking = state;
+            self.tracking_revision = revision.to_owned();
+        }
+    }
+
+    fn reviewed_tracking_state(&self) -> Option<TrackingState> {
+        if self.tracking_revision.is_empty() {
             None
         } else {
             Some(self.tracking.clone())
-        };
+        }
+    }
+
+    async fn tracking_guard(&mut self, target: Option<TaskId>) -> Result<String, ApplicationError> {
+        self.initialize_tracking_command_view(target).await?;
+        let reviewed = self.reviewed_tracking_state();
         let reviewed_task = target.and_then(|id| self.task(id).cloned());
         for _ in 0..2 {
             self.ensure_version()
@@ -765,9 +795,7 @@ impl RemoteApplication {
                 reviewed_task.as_ref(),
                 task.as_ref().map(|(item, _)| item),
             );
-            self.snapshot.active_worklog = active;
-            self.tracking = state;
-            self.tracking_revision = revision.clone();
+            self.adopt_tracking_preflight(active, state, &revision);
             if let Some((item, task_revision)) = task {
                 self.adopt_task(item, task_revision);
             }
