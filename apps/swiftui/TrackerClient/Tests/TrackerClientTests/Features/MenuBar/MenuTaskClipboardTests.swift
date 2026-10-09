@@ -29,16 +29,16 @@ final class MenuTaskClipboardTests: XCTestCase {
         try await fixture.start(
             TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 440_000_000)])
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
-        observer.menuOpened(from: fixture.session, showDailyTotal: true)
+        let observer = TrackerMenuPresentationObserver(session: fixture.session, display: .time)
+        observer.menuOpened(from: fixture.session, display: .time)
         let captured = observer.content
         fixture.clock.now.addTimeInterval(15)
         fixture.clock.uptime += 15
-        observer.update(from: fixture.session, showDailyTotal: true)
+        observer.update(from: fixture.session, display: .time)
         XCTAssertEqual(observer.content, captured)
         XCTAssertEqual(fixture.session.menuCopyValue(.copyExact, taskID: firstTask.id, connection: .local), "7m 35s")
         XCTAssertEqual(fixture.session.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local), "15m")
-        observer.menuClosed(from: fixture.session, showDailyTotal: true)
+        observer.menuClosed(from: fixture.session, display: .time)
     }
 
     @MainActor

@@ -213,6 +213,9 @@ jobs:
             -configuration Debug -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath .build/native-debug -resultBundlePath .build/native-debug.xcresult \
             CODE_SIGNING_ALLOWED=NO build | tee .build/native-debug.log
+      - name: Test menu bar display regressions first
+        if: matrix.group == 'menu'
+        run: apps/swiftui/check-native-ui.sh --group menu-display
       - name: Test SwiftUI workflows through the native macOS UI
         run: apps/swiftui/check-native-ui.sh --group "${{ matrix.group }}"
       - name: Build the universal Release app and Rust bridge

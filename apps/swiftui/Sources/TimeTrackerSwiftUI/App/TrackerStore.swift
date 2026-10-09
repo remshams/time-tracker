@@ -8,7 +8,7 @@ final class TrackerStore {
     private let session: TrackerSession
     private let presentation: TrackerPresentationObserver
     private let menuBarPreferences: UserDefaultsMenuBarPreferences
-    private(set) var showDailyTotalInMenuBar: Bool
+    private(set) var menuBarDisplay: MenuBarDisplay
     private let keyboardPreferences: UserDefaultsMenuKeyboardPreferences
     private(set) var menuShortcuts: MenuKeyboardShortcuts
     private var menuShortcutValidationError: String?
@@ -30,7 +30,7 @@ final class TrackerStore {
     init() {
         let launch = TrackerLaunchConfiguration.current
         menuBarPreferences = UserDefaultsMenuBarPreferences(defaults: launch.defaults)
-        showDailyTotalInMenuBar = menuBarPreferences.load()
+        menuBarDisplay = menuBarPreferences.load()
         keyboardPreferences = UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults)
         menuShortcuts = keyboardPreferences.load()
         let worker = TrackerWorker(localDatabasePath: launch.localDatabasePath)
@@ -45,7 +45,7 @@ final class TrackerStore {
         activity = TrackerActivityStore(session: session, presentation: presentation)
         timer = TrackerTimerStore(session: session, presentation: presentation)
         dailyTotals = TrackerDailyTotalsStore(presentation: presentation)
-        menu = TrackerMenuStore(session: session, showDailyTotal: showDailyTotalInMenuBar)
+        menu = TrackerMenuStore(session: session, display: menuBarDisplay)
         creation = TaskCreationStore(session: session, presentation: presentation)
         rename = TaskRenameStore(session: session, presentation: presentation)
         bulkArchiving = BulkTaskArchivingStore(session: session, presentation: presentation)
@@ -89,17 +89,17 @@ final class TrackerStore {
     var autoPauseStatusText: String? { session.autoPauseStatusText }
     var dailyTotalsStatus: DailyTotalsStatus { session.dailyTotalsStatus }
 
-    func setShowDailyTotalInMenuBar(_ enabled: Bool) {
-        guard showDailyTotalInMenuBar != enabled else { return }
+    func setMenuBarDisplay(_ display: MenuBarDisplay) {
+        guard menuBarDisplay != display else { return }
         objectWillChange.send()
-        showDailyTotalInMenuBar = enabled
-        menuBarPreferences.save(enabled)
-        menu.setShowDailyTotal(enabled)
+        menuBarDisplay = display
+        menuBarPreferences.save(display)
+        menu.setDisplay(display)
         updateMenuBarTimer()
     }
 
     private func updateMenuBarTimer() {
-        dailyTotals.updateMenuBarTimer(isRunning: showDailyTotalInMenuBar && session.active != nil)
+        dailyTotals.updateMenuBarTimer(isRunning: menuBarDisplay == .time && session.active != nil)
     }
 
     func setPauseOnScreenLock(_ enabled: Bool) { session.setPauseOnScreenLock(enabled) }
@@ -241,12 +241,12 @@ final class TrackerMenuStore {
     let valuesDidChange = PassthroughSubject<TrackerMenuValues, Never>()
     private let session: TrackerSession
     private let presentation: TrackerMenuPresentationObserver
-    private var showDailyTotal: Bool
+    private var display: MenuBarDisplay
 
-    init(session: TrackerSession, showDailyTotal: Bool) {
+    init(session: TrackerSession, display: MenuBarDisplay) {
         self.session = session
-        self.showDailyTotal = showDailyTotal
-        presentation = TrackerMenuPresentationObserver(session: session, showDailyTotal: showDailyTotal)
+        self.display = display
+        presentation = TrackerMenuPresentationObserver(session: session, display: display)
         label = TrackerMenuLabelStore(presentation: presentation)
         presentation.onValuesChange = { [weak self] in
             guard let self else { return }
@@ -257,15 +257,15 @@ final class TrackerMenuStore {
     var content: TrackerMenuContent { presentation.content }
     var values: TrackerMenuValues { presentation.values }
 
-    func update() { presentation.update(from: session, showDailyTotal: showDailyTotal) }
+    func update() { presentation.update(from: session, display: display) }
 
-    func setShowDailyTotal(_ enabled: Bool) {
-        showDailyTotal = enabled
+    func setDisplay(_ display: MenuBarDisplay) {
+        self.display = display
         update()
     }
 
-    func menuOpened() { presentation.menuOpened(from: session, showDailyTotal: showDailyTotal) }
-    func menuClosed() { presentation.menuClosed(from: session, showDailyTotal: showDailyTotal) }
+    func menuOpened() { presentation.menuOpened(from: session, display: display) }
+    func menuClosed() { presentation.menuClosed(from: session, display: display) }
 }
 
 @MainActor

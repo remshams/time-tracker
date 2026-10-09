@@ -1,9 +1,138 @@
 import AppKit
+import CoreGraphics
+import CoreML
+import ImageIO
+import Vision
 import XCTest
 
 @MainActor
 extension TrackerUITestCase {
     var statusButton: XCUIElement { element("menu.status") }
+
+    func chooseMenuBarDisplay(_ label: String) {
+        element("menu.display").click()
+        let item = app.menuItems[label].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: timeout))
+        item.click()
+    }
+
+    func assertStatusTooltip(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
+        trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
+        let frame = statusButton.frame
+        // Hover the leading icon instead of the text portion of the status button.
+        let iconX = frame.minX + min(18, frame.width / 2)
+        screenCoordinate(at: CGPoint(x: iconX, y: frame.midY)).hover()
+        var screenshot: XCUIScreenshot?
+        var recognizedText = ""
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let captured = XCUIScreen.main.screenshot()
+            screenshot = captured
+            do {
+                recognizedText = try self.recognizeTooltipText(in: captured)
+                return recognizedText.contains(expected)
+            } catch {
+                recognizedText = "Text recognition failed: \(error)"
+                return false
+            }
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        if result != .completed {
+            if let screenshot {
+                let attachment = XCTAttachment(screenshot: screenshot)
+                attachment.name = "Status tooltip desktop"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+            let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            let attachment = XCTAttachment(string:
+                "Expected: \(expected)\nRecognized: \(recognizedText)\nStatus frame: \(frame)\nPointer: \(NSEvent.mouseLocation)\nWindows: \(String(describing: windows))")
+            attachment.name = "Status tooltip recognized text"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            captureToolbarTooltipDiagnostic()
+        }
+        trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
+        XCTAssertEqual(result, .completed, "Hover shows the full tracking status", file: file, line: line)
+    }
+
+    private func recognizeTooltipText(in screenshot: XCUIScreenshot) throws -> String {
+        let request = VNRecognizeTextRequest()
+        request.revision = VNRecognizeTextRequestRevision1
+        request.recognitionLevel = .fast
+        request.minimumTextHeight = 0
+        request.recognitionLanguages = ["en-US"]
+        request.usesLanguageCorrection = false
+        for (stage, devices) in try request.supportedComputeStageDevices {
+            if let cpu = devices.first(where: {
+                if case .cpu = $0 { return true }
+                return false
+            }) {
+                request.setComputeDevice(cpu, for: stage)
+            } else {
+                throw NSError(domain: "TooltipRecognition", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "No CPU device for \(stage)"])
+            }
+        }
+        try VNImageRequestHandler(cgImage: tooltipRecognitionImage(from: screenshot), options: [:]).perform([request])
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            .joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    private func tooltipRecognitionImage(from screenshot: XCUIScreenshot) throws -> CGImage {
+        guard let source = CGImageSourceCreateWithData(screenshot.pngRepresentation as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              let top = image.cropping(to: CGRect(x: 0, y: 0,
+                                                  width: CGFloat(image.width), height: CGFloat(image.height / 4))) else {
+            throw NSError(domain: "TooltipRecognition", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Cannot decode the tooltip screenshot"])
+        }
+        // Small tooltip fonts need more pixels for the runner's fast recognition model.
+        let width = top.width * 3
+        let height = top.height * 3
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            throw NSError(domain: "TooltipRecognition", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Cannot enlarge the tooltip screenshot"])
+        }
+        context.interpolationQuality = .high
+        context.draw(top, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+        guard let enlarged = context.makeImage() else {
+            throw NSError(domain: "TooltipRecognition", code: 4,
+                          userInfo: [NSLocalizedDescriptionKey: "Cannot create the tooltip recognition image"])
+        }
+        return enlarged
+    }
+
+    private func captureToolbarTooltipDiagnostic() {
+        trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
+        app.buttons["New task"].hover()
+        var screenshot: XCUIScreenshot?
+        var recognizedText = ""
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let captured = XCUIScreen.main.screenshot()
+            screenshot = captured
+            do {
+                recognizedText = try self.recognizeTooltipText(in: captured)
+                return recognizedText.contains("New task")
+            } catch {
+                recognizedText = "Text recognition failed: \(error)"
+                return false
+            }
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        if let screenshot {
+            let attachment = XCTAttachment(screenshot: screenshot)
+            attachment.name = "Toolbar tooltip diagnostic desktop"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        let attachment = XCTAttachment(string:
+            "Toolbar tooltip wait: \(result)\nExpected: New task\nRecognized: \(recognizedText)\nPointer: \(NSEvent.mouseLocation)")
+        attachment.name = "Toolbar tooltip diagnostic text"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
 
     func openStatusMenu() {
         app.typeKey("t", modifierFlags: [.control, .option])
@@ -21,10 +150,28 @@ extension TrackerUITestCase {
         let row = menuTask(task)
         XCTAssertTrue(row.waitForExistence(timeout: timeout))
         row.hover()
-        let item = app.menuItems[action].firstMatch
+        let item = row.menuItems[action].firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: timeout))
         XCTAssertTrue(item.isEnabled)
-        item.click()
+        clickTaskSubmenuItem(item, task: task)
+    }
+
+    func clickTaskSubmenuItem(_ item: XCUIElement, task: FixtureTask) {
+        waitUntil("The task submenu action is reachable") { item.exists && item.isHittable }
+        let row = menuTask(task)
+        let actionFrame = item.frame
+        let rowFrame = row.frame
+        // Enter the submenu at the parent row's height before moving to the action.
+        // A diagonal move can cross another parent row when the submenu opens to the left.
+        screenCoordinate(at: CGPoint(x: actionFrame.midX, y: rowFrame.midY)).hover()
+        screenCoordinate(at: CGPoint(x: actionFrame.midX, y: actionFrame.midY)).click()
+    }
+
+    private func screenCoordinate(at point: CGPoint) -> XCUICoordinate {
+        let window = trackerWindow
+        let frame = window.frame
+        return window.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: point.x - frame.minX, dy: point.y - frame.minY))
     }
 
     func withRestoredClipboard(_ body: () throws -> Void) rethrows {

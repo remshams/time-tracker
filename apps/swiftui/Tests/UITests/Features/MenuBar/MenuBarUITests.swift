@@ -3,6 +3,82 @@ import XCTest
 
 @MainActor
 class MenuBarUITests: TrackerUITestCase {
+    func testDisplayChoicesApplyImmediatelyAndTaskNamePersistsAcrossRelaunch() throws {
+        let task = try fixture.create("Planning")
+        let running = try fixture.start(task, at: Date().addingTimeInterval(-65))
+        launch()
+        openSettings()
+        XCTAssertEqual(element("menu.display").value as? String, "Time")
+        waitUntil("Time displays today's total") {
+            (self.statusButton.value as? String)?.range(of: "^[0-9]+:[0-9]{2}$", options: .regularExpression) != nil
+        }
+        chooseMenuBarDisplay("Task name")
+        waitUntil("Task name replaces the total") { self.statusButton.value as? String == task.name }
+        chooseMenuBarDisplay("None")
+        waitUntil("None hides the text") { self.statusButton.value as? String == "" }
+        chooseMenuBarDisplay("Time")
+        waitUntil("Time restores today's total") {
+            (self.statusButton.value as? String)?.range(of: "^[0-9]+:[0-9]{2}$", options: .regularExpression) != nil
+        }
+        chooseMenuBarDisplay("Task name")
+        XCTAssertEqual(try fixture.activeWorklog(), running)
+        relaunch()
+        waitUntil("The saved task label returns") { self.statusButton.value as? String == task.name }
+        openSettings()
+        XCTAssertEqual(element("menu.display").value as? String, "Task name")
+        XCTAssertEqual(try fixture.activeWorklog(), running)
+    }
+
+    func testLongLabelIsEllipsizedAndHoverKeepsFullTaskNameInEveryDisplayMode() throws {
+        let task = try fixture.create("A very long tracked task name for menu bar coverage")
+        _ = try fixture.start(task)
+        additionalLaunchArguments = ["-NSInitialToolTipDelay", "100"]
+        launch()
+        for mode in ["Task name", "Time", "None"] {
+            openSettings()
+            chooseMenuBarDisplay(mode)
+            closeConnectionSettings()
+            if mode == "Task name" {
+                waitUntil("The long label ends in an ellipsis") {
+                    self.statusButton.value as? String == "A very long tracked tas…"
+                }
+            } else if mode == "None" {
+                waitUntil("None hides the long label") { self.statusButton.value as? String == "" }
+            }
+            assertStatusTooltip("Tracking: \(task.name)")
+        }
+    }
+
+    func testTaskLabelFollowsStartRenameSwitchAndStop() throws {
+        let first = try fixture.create("Planning")
+        let second = try fixture.create("Review")
+        additionalLaunchArguments = ["-NSInitialToolTipDelay", "100"]
+        launch()
+        openSettings()
+        chooseMenuBarDisplay("Task name")
+        closeConnectionSettings()
+        XCTAssertEqual(statusButton.value as? String, "")
+        select(first)
+        app.buttons["Start tracking"].click()
+        assertRunning(first)
+        waitUntil("Starting shows the tracked task") { self.statusButton.value as? String == first.name }
+        let running = try XCTUnwrap(fixture.activeWorklog())
+        openRename(first)
+        replaceText(app.textFields["task-name.input"], "Updated planning")
+        app.buttons["task-name.submit"].click()
+        waitUntil("Rename updates the menu bar label") { self.statusButton.value as? String == "Updated planning" }
+        XCTAssertEqual(try fixture.activeWorklog(), running)
+        assertStatusTooltip("Tracking: Updated planning")
+        select(second)
+        app.buttons["Start tracking"].click()
+        assertRunning(second)
+        waitUntil("Switching replaces the label") { self.statusButton.value as? String == second.name }
+        assertStatusTooltip("Tracking: \(second.name)")
+        statusButton.click()
+        assertStopped()
+        waitUntil("Stopping removes the task label") { self.statusButton.value as? String == "" }
+    }
+
     func testRightClickControlClickAndShortcutOpenMenuAndEscapeDismisses() throws {
         _ = try fixture.create("Planning")
         launch()
@@ -148,9 +224,19 @@ class MenuBarUITests: TrackerUITestCase {
         assertStopped()
     }
     fileprivate func assertClipboard(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
-        waitUntil("Copied value reaches the clipboard", file: file, line: line) {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             NSPasteboard.general.string(forType: .string) == expected
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        if result != .completed {
+            let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            attachment.name = "Copy action desktop"
+            attachment.lifetime = .keepAlways
+            add(attachment)
         }
+        XCTAssertEqual(result, .completed,
+                       "Copied value reaches the clipboard. Expected \(expected); received \(NSPasteboard.general.string(forType: .string) ?? "nil")",
+                       file: file, line: line)
         XCTAssertEqual(NSPasteboard.general.string(forType: .string), expected, file: file, line: line)
     }
 }
@@ -236,7 +322,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             menuTask(first).hover()
             let copyName = menuTask(first).menuItems["Copy task name"]
             waitUntil("The captured Copy action is reachable") { copyName.exists && copyName.isHittable }
-            copyName.click()
+            clickTaskSubmenuItem(copyName, task: first)
             assertClipboard(first.name)
             openStatusMenu()
             menuTask(first).hover()
@@ -244,7 +330,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             waitUntil("The captured duration Copy action is reachable") {
                 copyDuration.exists && copyDuration.isHittable
             }
-            copyDuration.click()
+            clickTaskSubmenuItem(copyDuration, task: first)
             do {
                 let now = Date()
                 let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
