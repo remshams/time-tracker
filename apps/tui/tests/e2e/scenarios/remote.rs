@@ -215,6 +215,67 @@ fn remote_duplicate_confirmation_does_not_send_a_second_write() {
 }
 
 #[test]
+fn remote_create_recovers_newer_resources_after_its_original_receipt() {
+    let context = RemoteTestContext::new_with_tasks();
+    let proxy = context.proxy();
+    let mut first = context.launch_through(&proxy);
+    let mut second = context.launch_second_client();
+    for client in [&mut first, &mut second] {
+        client.wait_for_first_frame("the initial task list", |screen| {
+            TimeTrackerPage::new(screen.clone())
+                .task_panel()
+                .task_names()
+                .len()
+                == 3
+        });
+        client.press_and_wait(Key::Char('a'), "the task name dialog", |screen| {
+            TimeTrackerPage::new(screen.clone())
+                .task_input_dialog()
+                .is_some()
+        });
+    }
+
+    first.type_text("First receipt task");
+    first.wait_for("the first submitted name", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_input_dialog()
+            .is_some_and(|dialog| dialog.text() == "First receipt task")
+    });
+    proxy.hold(Route::CreateTask);
+    first.press(Key::Enter);
+    proxy.wait_for_request();
+
+    second.type_text("Later revision task");
+    second.press_and_wait(Key::Enter, "the later committed task", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_input_dialog().is_none()
+            && page
+                .task_panel()
+                .task_names()
+                .contains(&"Later revision task".to_owned())
+    });
+    proxy.release();
+    let page = first.wait_for("the original receipt and current resources", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        let names = page.task_panel().task_names();
+        page.task_input_dialog().is_none()
+            && names.contains(&"First receipt task".to_owned())
+            && names.contains(&"Later revision task".to_owned())
+    });
+    assert_eq!(page.status_bar().text(), "Added \"First receipt task\"");
+    assert_eq!(proxy.request_count(), 1);
+    assert_eq!(page.task_panel().task_names().len(), 5);
+    first.quit().assert_clean_exit();
+    second.quit().assert_clean_exit();
+    assert!(
+        context
+            .server_database()
+            .task_by_name("First receipt task")
+            .is_some()
+    );
+}
+
+#[test]
 fn remote_late_history_response_does_not_reopen_the_screen() {
     let context = RemoteTestContext::new_with_tasks();
     let proxy = context.proxy();
