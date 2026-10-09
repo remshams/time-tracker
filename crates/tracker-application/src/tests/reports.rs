@@ -140,3 +140,48 @@ fn report_rejects_a_combined_duration_that_exceeds_signed_microseconds() {
         Err(ApplicationError::ReportDurationOverflow)
     );
 }
+
+#[test]
+fn selected_task_list_totals_adopt_unreported_tasks_and_tracking_from_one_read() {
+    let initial = task(1, "initial");
+    let added = task(2, "unreported task");
+    let repository = MemoryRepository::with_tasks(vec![initial.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    repository.create_task(added.clone()).unwrap();
+    repository
+        .insert_worklog(&completed_worklog(10, added.id(), 100, 120))
+        .unwrap();
+    let active = worklog(11, initial.id(), 200);
+    repository.insert_worklog(&active).unwrap();
+
+    let totals = application
+        .task_list_report_totals(at(200), at(300), at(210))
+        .unwrap();
+
+    assert_eq!(totals.total, TimeDelta::seconds(10));
+    assert_eq!(totals.rows.len(), 1);
+    assert_eq!(totals.rows[0].task.id(), initial.id());
+    assert_eq!(application.task(added.id()), Some(&added));
+    let items = application.tasks(TaskOrdering::RecentlyWorked);
+    assert_eq!(items[0].task.id(), initial.id());
+    assert_eq!(items[0].latest_work_start, Some(at(200)));
+    assert_eq!(items[1].task.id(), added.id());
+    assert_eq!(items[1].latest_work_start, Some(at(100)));
+    assert!(
+        matches!(application.current_tracking(), TrackingState::Running { worklog } if worklog.id() == active.id())
+    );
+
+    let tracking = application.current_tracking().clone();
+    assert_eq!(
+        application.task_list_report_totals(at(300), at(300), at(310)),
+        Err(ApplicationError::InvalidReportRange)
+    );
+    repository.0.borrow_mut().fail_reads = true;
+    assert!(
+        application
+            .task_list_report_totals(at(200), at(300), at(210))
+            .is_err()
+    );
+    assert_eq!(application.tasks(TaskOrdering::RecentlyWorked), items);
+    assert_eq!(application.current_tracking(), &tracking);
+}

@@ -117,7 +117,7 @@ impl MemoryRepository {
         }
     }
 
-    fn snapshot(data: &Data) -> TrackerSnapshot {
+    fn task_items(data: &Data) -> Vec<TaskListItem> {
         let mut task_items = data.tasks.clone();
         for item in &mut task_items {
             item.latest_work_start = data
@@ -127,13 +127,23 @@ impl MemoryRepository {
                 .map(Worklog::start)
                 .max();
         }
-        TrackerSnapshot {
-            task_items,
-            active_worklog: data
-                .worklogs
-                .iter()
-                .find(|worklog| worklog.is_active())
-                .cloned(),
+        task_items
+    }
+
+    fn tracking_read(data: &Data) -> ActiveTrackingRead {
+        let active_worklog = data
+            .worklogs
+            .iter()
+            .find(|worklog| worklog.is_active())
+            .cloned();
+        let active_task_item = active_worklog.as_ref().and_then(|active| {
+            Self::task_items(data)
+                .into_iter()
+                .find(|item| item.task.id() == active.task_id())
+        });
+        ActiveTrackingRead {
+            active_worklog,
+            active_task_item,
         }
     }
 
@@ -186,6 +196,18 @@ impl MemoryRepository {
 }
 
 impl TaskRepository for MemoryRepository {
+    fn load_task_item(&self, id: TaskId) -> Result<Option<TaskListItem>, RepositoryError> {
+        self.read_guard()?;
+        Ok(Self::task_items(&self.0.borrow())
+            .into_iter()
+            .find(|item| item.task.id() == id))
+    }
+
+    fn load_task_catalog(&self) -> Result<Vec<TaskListItem>, RepositoryError> {
+        self.read_guard()?;
+        Ok(Self::task_items(&self.0.borrow()))
+    }
+
     fn create_task(&self, task: Task) -> Result<(), RepositoryError> {
         if let Some(error) = self.take_write_failure() {
             return Err(error);
@@ -202,9 +224,15 @@ impl TaskRepository for MemoryRepository {
         Ok(())
     }
 
-    fn tracker_snapshot(&self) -> Result<TrackerSnapshot, RepositoryError> {
+    fn load_task_tracking_resources(
+        &self,
+    ) -> Result<(Vec<TaskListItem>, Option<Worklog>), RepositoryError> {
         self.read_guard()?;
-        Ok(Self::snapshot(&self.0.borrow()))
+        let data = self.0.borrow();
+        Ok((
+            Self::task_items(&data),
+            Self::tracking_read(&data).active_worklog,
+        ))
     }
 
     fn rename_task(
@@ -294,7 +322,7 @@ impl TaskRepository for MemoryRepository {
         let data = self.0.borrow();
         Ok(crate::InactiveTaskPreviewRead {
             tasks: Self::inactive_tasks(&data, as_of, InactivityPeriod::default())?,
-            snapshot: Self::snapshot(&data),
+            tracking: Self::tracking_read(&data),
         })
     }
 
@@ -322,7 +350,7 @@ impl TaskRepository for MemoryRepository {
         }
         Ok(crate::InactiveTaskArchive {
             tasks,
-            snapshot: Self::snapshot(&data),
+            tracking: Self::tracking_read(&data),
         })
     }
 }
@@ -338,7 +366,7 @@ impl InactiveTaskRepository for MemoryRepository {
         let data = self.0.borrow();
         Ok(InactiveTaskPreviewRead {
             tasks: Self::inactive_tasks(&data, as_of, period)?,
-            snapshot: Self::snapshot(&data),
+            tracking: Self::tracking_read(&data),
         })
     }
 
@@ -367,12 +395,23 @@ impl InactiveTaskRepository for MemoryRepository {
         }
         Ok(InactiveTaskArchive {
             tasks,
-            snapshot: Self::snapshot(&data),
+            tracking: Self::tracking_read(&data),
         })
     }
 }
 
 impl ReportRepository for MemoryRepository {
+    fn task_list_report_read(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<(Vec<TaskListItem>, ReportRead), RepositoryError> {
+        let data = self.0.borrow();
+        let read = self.report_read(start, end, now)?;
+        Ok((Self::task_items(&data), read))
+    }
+
     fn report_read(
         &self,
         start: DateTime<Utc>,
@@ -402,7 +441,7 @@ impl ReportRepository for MemoryRepository {
         }
         Ok(ReportRead {
             rows,
-            snapshot: Self::snapshot(&data),
+            tracking: Self::tracking_read(&data),
         })
     }
 }
@@ -454,9 +493,18 @@ impl WorklogRepository for MemoryRepository {
                 revision,
             }
         });
+        let task_items = Self::task_items(&data)
+            .into_iter()
+            .filter(|item| {
+                worklogs
+                    .iter()
+                    .any(|worklog| worklog.task_id() == item.task.id())
+            })
+            .collect();
         Ok(GlobalWorklogPage {
             worklogs,
-            snapshot: Self::snapshot(&data),
+            task_items,
+            tracking: Some(Self::tracking_read(&data)),
             next_cursor,
         })
     }
@@ -743,17 +791,21 @@ impl WorklogRepository for MemoryRepository {
         });
         Ok(WorklogPage {
             worklogs,
-            snapshot: WorklogPageSnapshot {
+            snapshot: Some(WorklogPageSnapshot {
                 requested_task_latest_work_start,
                 active_worklog,
                 active_task_latest_work_start,
-            },
+            }),
             next_cursor,
         })
     }
 }
 
 impl TrackingRepository for MemoryRepository {
+    fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError> {
+        MemoryRepository::active_worklog(self)
+    }
+
     fn insert_worklog(&self, worklog: &Worklog) -> Result<(), RepositoryError> {
         if let Some(error) = self.take_write_failure() {
             return Err(error);
