@@ -20,7 +20,7 @@ final class TaskCatalogState {
     }
 
     func select(_ taskID: String?) -> Bool {
-        guard let taskID, visibleTasks.contains(where: { $0.id == taskID }), selectedTaskID != taskID else {
+        guard let taskID, hasTask(withID: taskID, in: visibleTasks), selectedTaskID != taskID else {
             return false
         }
         selectedTaskID = taskID
@@ -43,7 +43,7 @@ final class TaskCatalogState {
         let previousTask = selectedTaskID
         let previousLatest = selectedTask?.latestStart
         if tasks != newTasks { tasks = newTasks }
-        if let selectedTaskID, !visibleTasks.contains(where: { $0.id == selectedTaskID }) {
+        if let selectedTaskID, !hasTask(withID: selectedTaskID, in: visibleTasks) {
             self.selectedTaskID = firstTaskID(in: tab)
         } else if selectedTaskID == nil {
             selectedTaskID = firstTaskID(in: tab)
@@ -57,7 +57,22 @@ final class TaskCatalogState {
 
     private func selection(for tab: TaskTab) -> String? {
         let saved = tab == .active ? activeSelection : archivedSelection
-        return saved.flatMap { id in tasks.first { $0.id == id && $0.archived == (tab == .archived) }?.id }
+        guard let saved else { return nil }
+        return matchingTaskID(saved, in: tab)
+    }
+
+    private func hasTask(withID id: String, in tasks: [TaskItem]) -> Bool {
+        for task in tasks {
+            if task.id == id { return true }
+        }
+        return false
+    }
+
+    private func matchingTaskID(_ id: String, in tab: TaskTab) -> String? {
+        for task in tasks {
+            if task.id == id && task.archived == (tab == .archived) { return task.id }
+        }
+        return nil
     }
 
     private func firstTaskID(in tab: TaskTab) -> String? {
