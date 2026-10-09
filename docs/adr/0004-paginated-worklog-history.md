@@ -2,7 +2,7 @@
 
 ## Status
 
-Partially superseded by ADR 0006 and ADR 0007; all other decisions remain accepted.
+Partially superseded by ADR 0006, ADR 0007 and [ADR 0017](0017-separate-http-resources-from-client-refreshes.md); all other decisions remain accepted. ADR 0017 replaces the remote HTTP expectations for implicit tracking refresh and bundled recovery metadata; local-mode behavior is unchanged.
 
 ## Date
 
