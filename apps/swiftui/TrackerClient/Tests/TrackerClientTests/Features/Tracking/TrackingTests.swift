@@ -4,6 +4,34 @@ import XCTest
 
 final class TrackingTests: XCTestCase {
     @MainActor
+    func testQueuedStartRechecksTheActiveWorklogBeforeWriting() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let tasks = [firstTask, secondTask]
+        let initial = TrackerSnapshot(tasks: tasks, active: activeWorklog)
+        try await fixture.start(initial)
+        fixture.session.select(secondTask.id)
+        let poll = try await fixture.client.next()
+        fixture.session.startTracking(taskID: secondTask.id)
+        poll.succeed(emptyPage)
+        let preflight = try await fixture.client.next()
+        XCTAssertEqual(preflight.operation, .snapshot)
+        let replacement = WorklogItem(
+            id: "replacement-worklog", taskId: firstTask.id, start: activeWorklog.start, end: nil)
+        preflight.succeed(TrackerSnapshot(tasks: tasks, active: replacement))
+        try await fixture.settled()
+
+        XCTAssertEqual(fixture.session.active, replacement)
+        XCTAssertEqual(
+            fixture.session.trackingError,
+            "Tracking changed while Start was waiting. Review the current timer and try again.")
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .start = $0 { return true }; return false
+            })
+    }
+
+    @MainActor
     func testTaskEligibilityAndAtomicSwitchDoNotDependOnSelection() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
