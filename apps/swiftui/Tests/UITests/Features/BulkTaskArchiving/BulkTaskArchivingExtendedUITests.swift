@@ -74,15 +74,15 @@ final class ServerBulkTaskArchivingUITests: BulkTaskArchivingExtendedUITests {
         launch()
         openBulkPreview()
         XCTAssertTrue(element("bulk-archive.candidate.\(old.id)").waitForExistence(timeout: timeout))
-        try proxy.dropWriteResponses(method: "POST", path: "/v1/tasks/archive-inactive-candidates")
+        try proxy.dropWriteResponses(method: "POST", path: "/v1/tasks/archive-inactive")
         app.buttons["bulk-archive.confirm"].click()
         XCTAssertTrue(element("bulk-archive.error").waitForExistence(timeout: timeout))
         XCTAssertFalse(app.buttons["bulk-archive.confirm"].isEnabled)
         XCTAssertTrue(try XCTUnwrap(fixture.tasks().first { $0.id == old.id }).archived)
         XCTAssertEqual(try fixture.activeWorklog(), timer)
-        try assertAcceptedWriteIntent(proxy, method: "POST", path: "/v1/tasks/archive-inactive-candidates")
+        try assertAcceptedWriteIntent(proxy, method: "POST", path: "/v1/tasks/archive-inactive")
         app.buttons["bulk-archive.refresh"].click()
         XCTAssertTrue(element("bulk-archive.empty").waitForExistence(timeout: timeout))
-        try assertAcceptedWriteIntent(proxy, method: "POST", path: "/v1/tasks/archive-inactive-candidates")
+        try assertAcceptedWriteIntent(proxy, method: "POST", path: "/v1/tasks/archive-inactive")
     }
 }
