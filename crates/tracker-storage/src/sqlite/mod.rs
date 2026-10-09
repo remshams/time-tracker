@@ -13,8 +13,8 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags};
 use tracker_application::{
     GlobalWorklogCursor, GlobalWorklogPage, InactiveTaskArchive, InactiveTaskPreviewRead,
-    InactiveTaskRepository, ReportRead, ReportRepository, RepositoryError, TaskRepository,
-    TrackerSnapshot, TrackingRepository, WorklogCorrection, WorklogCursor, WorklogDeletion,
+    InactiveTaskRepository, ReportRead, ReportRepository, RepositoryError, TaskListItem,
+    TaskRepository, TrackingRepository, WorklogCorrection, WorklogCursor, WorklogDeletion,
     WorklogMove, WorklogPage, WorklogRepository,
 };
 use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
@@ -74,12 +74,22 @@ impl SqliteRepository {
 }
 
 impl TaskRepository for SqliteRepository {
+    fn load_task_item(&self, id: TaskId) -> Result<Option<TaskListItem>, RepositoryError> {
+        tasks::task_item_by_id_on(&self.conn, id).map_err(Into::into)
+    }
+
+    fn load_task_catalog(&self) -> Result<Vec<TaskListItem>, RepositoryError> {
+        self.list_task_items().map_err(Into::into)
+    }
+
     fn create_task(&self, task: Task) -> Result<(), RepositoryError> {
         SqliteRepository::create_task(self, task).map_err(Into::into)
     }
 
-    fn tracker_snapshot(&self) -> Result<TrackerSnapshot, RepositoryError> {
-        SqliteRepository::tracker_snapshot(self).map_err(Into::into)
+    fn load_task_tracking_resources(
+        &self,
+    ) -> Result<(Vec<TaskListItem>, Option<Worklog>), RepositoryError> {
+        SqliteRepository::load_task_tracking_resources(self).map_err(Into::into)
     }
 
     fn rename_task(
@@ -145,6 +155,15 @@ impl InactiveTaskRepository for SqliteRepository {
 }
 
 impl ReportRepository for SqliteRepository {
+    fn task_list_report_read(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<(Vec<TaskListItem>, ReportRead), RepositoryError> {
+        SqliteRepository::task_list_report_read(self, start, end, now).map_err(Into::into)
+    }
+
     fn report_read(
         &self,
         start: DateTime<Utc>,
@@ -156,6 +175,10 @@ impl ReportRepository for SqliteRepository {
 }
 
 impl TrackingRepository for SqliteRepository {
+    fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError> {
+        SqliteRepository::active_worklog(self).map_err(Into::into)
+    }
+
     fn insert_worklog(&self, worklog: &Worklog) -> Result<(), RepositoryError> {
         SqliteRepository::insert_worklog(self, worklog).map_err(Into::into)
     }
@@ -283,14 +306,23 @@ mod unit_tests {
 
         let page = repository.worklog_page(task.id(), None).unwrap();
 
-        assert_eq!(page.snapshot.active_worklog, Some(active));
+        assert_eq!(page.snapshot.as_ref().unwrap().active_worklog, Some(active));
         assert_eq!(
-            page.snapshot.requested_task_latest_work_start,
+            page.snapshot
+                .as_ref()
+                .unwrap()
+                .requested_task_latest_work_start,
             Some(DateTime::from_timestamp(200, 0).unwrap())
         );
         assert_eq!(
-            page.snapshot.active_task_latest_work_start,
-            page.snapshot.requested_task_latest_work_start
+            page.snapshot
+                .as_ref()
+                .unwrap()
+                .active_task_latest_work_start,
+            page.snapshot
+                .as_ref()
+                .unwrap()
+                .requested_task_latest_work_start
         );
     }
 
