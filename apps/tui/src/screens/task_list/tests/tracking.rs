@@ -134,6 +134,7 @@ fn tracking_outcomes_choose_the_right_status_and_clock_anchor() {
     switched_service.set_timestamp = Some(old + TimeDelta::minutes(1));
     let (mut switched, clock) = app_with_test_clock(switched_service, chrono_tz::UTC, old);
     clock.advance_monotonic(Duration::from_secs(60));
+    clock.set_wall_clock(old + TimeDelta::hours(2));
     switched.handle(Command::TaskList(TaskListCommand::MoveDown));
     switched.handle(Command::TaskList(TaskListCommand::ToggleTracking));
     assert_eq!(
