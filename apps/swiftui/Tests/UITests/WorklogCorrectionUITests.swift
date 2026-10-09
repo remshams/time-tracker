@@ -1,3 +1,4 @@
+import AppKit
 import CoreFoundation
 import XCTest
 
@@ -165,11 +166,12 @@ class WorklogCorrectionUITests: TrackerUITestCase {
 
     private func enableButtonKeyboardNavigation() {
         let key = "AppleKeyboardUIMode" as CFString
-        let applicationID = "com.timetracker.swiftui" as CFString
+        let applicationID = kCFPreferencesAnyApplication
         let user = kCFPreferencesCurrentUser
         let host = kCFPreferencesAnyHost
         XCTAssertTrue(CFPreferencesSynchronize(applicationID, user, host))
         let previous = CFPreferencesCopyValue(key, applicationID, user, host)
+        let previousKeyboardAccess = NSApplication.shared.isFullKeyboardAccessEnabled
         let notify: @MainActor () -> Void = {
             DistributedNotificationCenter.default().postNotificationName(
                 Notification.Name("com.apple.KeyboardUIModeDidChange"), object: nil,
@@ -179,7 +181,7 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         let restore: @MainActor () -> Void = {
             CFPreferencesSetValue(key, previous, applicationID, user, host)
             XCTAssertTrue(CFPreferencesSynchronize(applicationID, user, host),
-                          "Restore the app's original keyboard-navigation preference.")
+                          "Restore the original system keyboard-navigation preference.")
             notify()
             let restored = CFPreferencesCopyValue(key, applicationID, user, host)
             if let previous {
@@ -188,15 +190,23 @@ class WorklogCorrectionUITests: TrackerUITestCase {
             } else {
                 XCTAssertNil(restored)
             }
+            let appKitRestored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                _ = CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
+                return NSApplication.shared.isFullKeyboardAccessEnabled == previousKeyboardAccess
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [appKitRestored], timeout: 15), .completed,
+                           "AppKit returns to the original keyboard-navigation mode.")
         }
         addTeardownBlock { await restore() }
         CFPreferencesSetValue(key, NSNumber(value: 3), applicationID, user, host)
         XCTAssertTrue(CFPreferencesSynchronize(applicationID, user, host))
         notify()
-        var valid: DarwinBoolean = false
-        let mode = CFPreferencesGetAppIntegerValue(key, applicationID, &valid)
-        XCTAssertTrue(valid.boolValue)
-        XCTAssertEqual(mode & 2, 2, "The app's native tab order includes buttons.")
+        let mode = CFPreferencesCopyValue(key, applicationID, user, host) as? NSNumber
+        XCTAssertEqual(mode?.intValue, 3)
+        waitUntil("AppKit enables keyboard navigation through buttons") {
+            _ = CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
+            return NSApplication.shared.isFullKeyboardAccessEnabled
+        }
     }
 
     private func assertMinutePrecision(_ timestamp: String, file: StaticString = #filePath, line: UInt = #line) {
