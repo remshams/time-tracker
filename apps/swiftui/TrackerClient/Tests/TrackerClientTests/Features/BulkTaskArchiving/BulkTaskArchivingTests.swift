@@ -16,6 +16,47 @@ final class BulkTaskArchivingTests: XCTestCase {
     }
 
     @MainActor
+    func testSuccessfulArchivePublishesTheReturnedTaskSnapshot() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        fixture.session.openBulkTaskArchiving()
+        _ = try answerPreview(try await fixture.client.next())
+        try await fixture.settled()
+        fixture.session.submitBulkTaskArchiving()
+        let command = try await fixture.client.next()
+        let archived = TaskItem(id: secondTask.id, name: secondTask.name, archived: true, latestStart: nil)
+        command.archivedInactive(count: 1, snapshot: TrackerSnapshot(tasks: [firstTask, archived], active: nil))
+        try await fixture.settled()
+
+        XCTAssertEqual(fixture.session.tasks, [firstTask, archived])
+        XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
+    }
+
+    @MainActor
+    func testPreviewFailuresThatNeedReconciliationMarkTheConnectionStale() async throws {
+        let failures = [
+            BridgeFailure(message: "Preview unavailable", kind: "unavailable"),
+            BridgeFailure(message: "Preview protocol error", kind: "protocol"),
+            BridgeFailure(message: "Preview uncertain", uncertain: true),
+            BridgeFailure(message: "Preview requires refresh", requiresRefresh: true),
+        ]
+        for failure in failures {
+            let fixture = Fixture()
+            defer { fixture.cleanup() }
+            try await fixture.start()
+            fixture.session.openBulkTaskArchiving()
+            let request = try await fixture.client.next()
+            request.fail(failure)
+            try await fixture.settled()
+
+            XCTAssertTrue(fixture.session.isStale, failure.message)
+            XCTAssertEqual(fixture.session.connectionMessage, failure.message)
+            XCTAssertEqual(fixture.session.bulkTaskArchiving.error, failure.message)
+        }
+    }
+
+    @MainActor
     func testDefaultPreviewWithNoSelectedTaskAndCancel() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
@@ -282,8 +323,11 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
         XCTAssertFalse(fixture.session.canStopTracking)
         XCTAssertFalse(fixture.session.canOpenBulkTaskArchiving)
+        var publishedMessage: String?
+        fixture.session.onChange = { publishedMessage = fixture.session.connectionMessage }
         let changed = try await fixture.taskValue(Task { await fixture.session.connect(.local) })
         XCTAssertFalse(changed)
+        XCTAssertEqual(publishedMessage, "Close the archive dialog before changing connections.")
         do { try await fixture.session.testConnection(.local); XCTFail("Connection test must be blocked") } catch {
             XCTAssertTrue(error.localizedDescription.contains("Close the archive dialog"))
         }
