@@ -32,6 +32,7 @@ class SwiftMutationTests(unittest.TestCase):
         (self.package / "Package.swift").write_text("// swift-tools-version: 5.9\n", encoding="utf-8")
         (self.package / "Tests").mkdir()
         self.output = self.directory / "reports"
+        self.enterContext(patch.object(mutations, "OUTPUT", self.output))
 
     def report(self, outcomes: tuple[str, ...] = ("failed", "failed"), *, package: Path | None = None) -> dict:
         package = package or self.package
