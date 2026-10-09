@@ -446,20 +446,18 @@ fn mock_server(
                 async move {
                     if let Ok(receipt) =
                         serde_json::from_value::<tracker_protocol::MutationDto>(reply.clone())
-                    {
-                        if let tracker_protocol::MutationResultDto::Worklog(worklog) =
+                        && let tracker_protocol::MutationResultDto::Worklog(worklog) =
                             receipt.result
+                    {
+                        let mut snapshot = state.lock().unwrap();
+                        if snapshot
+                            .active_worklog
+                            .as_ref()
+                            .is_some_and(|active| active.id == worklog.id)
                         {
-                            let mut snapshot = state.lock().unwrap();
-                            if snapshot
-                                .active_worklog
-                                .as_ref()
-                                .is_some_and(|active| active.id == worklog.id)
-                            {
-                                snapshot.active_worklog = worklog.end.is_none().then_some(worklog);
-                            }
-                            snapshot.revision = receipt.applied_revision;
+                            snapshot.active_worklog = worklog.end.is_none().then_some(worklog);
                         }
+                        snapshot.revision = receipt.applied_revision;
                     }
                     Json(reply)
                 }
@@ -923,7 +921,7 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
         );
         assert_eq!(result["data"]["snapshot"]["tasksRevision"], "later");
         assert_eq!(result["data"]["snapshot"]["trackingRevision"], "later");
-        assert_eq!(
+        assert!(
             bridge
                 .application
                 .tasks(TaskOrdering::default())
@@ -931,8 +929,7 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
                 .find(|item| item.task.id() == destination)
                 .unwrap()
                 .task
-                .is_archived(),
-            true
+                .is_archived()
         );
     }
 }

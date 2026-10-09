@@ -23,6 +23,8 @@ pub(crate) struct RemoteBackend {
     requires_refresh: bool,
 }
 
+type ReportRows = (Vec<super::ReportRowJson>, Option<String>, DateTime<Utc>);
+
 pub(crate) enum InactivePreview {
     Local {
         as_of: DateTime<Utc>,
@@ -183,7 +185,7 @@ impl Backend {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         now: DateTime<Utc>,
-    ) -> Result<(Vec<super::ReportRowJson>, Option<String>, DateTime<Utc>), BridgeError> {
+    ) -> Result<ReportRows, BridgeError> {
         match self {
             Self::Local(_) => {
                 let totals = self.report_totals(start, end, now)?;
