@@ -82,7 +82,7 @@ fn remote_keypress_renders_without_poll_delay() {
 }
 
 #[test]
-fn remote_input_resize_and_timer_redraw_while_snapshot_response_is_held() {
+fn remote_input_resize_and_timer_redraw_while_task_response_is_held() {
     let context = RemoteTestContext::new_with_tasks();
     let proxy = context.proxy();
     let mut tt = context.launch_through(&proxy);
@@ -100,7 +100,7 @@ fn remote_input_resize_and_timer_redraw_while_snapshot_response_is_held() {
             .is_some()
     });
 
-    proxy.hold(Route::Snapshot);
+    proxy.hold(Route::Tasks);
     proxy.wait_for_request();
     let mut samples = Vec::new();
     for index in 0..5 {
@@ -210,6 +210,67 @@ fn remote_duplicate_confirmation_does_not_send_a_second_write() {
         context
             .server_database()
             .task_by_name("One delayed write")
+            .is_some()
+    );
+}
+
+#[test]
+fn remote_create_recovers_newer_resources_after_its_original_receipt() {
+    let context = RemoteTestContext::new_with_tasks();
+    let proxy = context.proxy();
+    let mut first = context.launch_through(&proxy);
+    let mut second = context.launch_second_client();
+    for client in [&mut first, &mut second] {
+        client.wait_for_first_frame("the initial task list", |screen| {
+            TimeTrackerPage::new(screen.clone())
+                .task_panel()
+                .task_names()
+                .len()
+                == 3
+        });
+        client.press_and_wait(Key::Char('a'), "the task name dialog", |screen| {
+            TimeTrackerPage::new(screen.clone())
+                .task_input_dialog()
+                .is_some()
+        });
+    }
+
+    first.type_text("First receipt task");
+    first.wait_for("the first submitted name", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_input_dialog()
+            .is_some_and(|dialog| dialog.text() == "First receipt task")
+    });
+    proxy.hold(Route::CreateTask);
+    first.press(Key::Enter);
+    proxy.wait_for_request();
+
+    second.type_text("Later revision task");
+    second.press_and_wait(Key::Enter, "the later committed task", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_input_dialog().is_none()
+            && page
+                .task_panel()
+                .task_names()
+                .contains(&"Later revision task".to_owned())
+    });
+    proxy.release();
+    let page = first.wait_for("the original receipt and current resources", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        let names = page.task_panel().task_names();
+        page.task_input_dialog().is_none()
+            && names.contains(&"First receipt task".to_owned())
+            && names.contains(&"Later revision task".to_owned())
+    });
+    assert_eq!(page.status_bar().text(), "Added \"First receipt task\"");
+    assert_eq!(proxy.request_count(), 1);
+    assert_eq!(page.task_panel().task_names().len(), 5);
+    first.quit().assert_clean_exit();
+    second.quit().assert_clean_exit();
+    assert!(
+        context
+            .server_database()
+            .task_by_name("First receipt task")
             .is_some()
     );
 }
@@ -900,4 +961,155 @@ fn an_empty_server_stays_empty_after_restart_and_accepts_its_first_task() {
     );
     assert!(context.server_database().active_worklogs().is_empty());
     assert!(!context.local_database_path().exists());
+}
+
+#[test]
+fn remote_retries_split_resources_when_another_client_changes_tracking() {
+    let context = RemoteTestContext::new_with_tasks();
+    let proxy = context.proxy();
+    proxy.hold(Route::Tasks);
+    let mut first = context.launch_through(&proxy);
+    proxy.wait_for_request();
+
+    let mut second = context.launch_second_client();
+    second.wait_for_first_frame("the second client task list", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .task_names()
+            .len()
+            == 3
+    });
+    second.press_and_wait(Key::Char('a'), "the new task dialog", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_input_dialog()
+            .is_some()
+    });
+    second.type_text("Track the coordinated release");
+    second.press_and_wait(Key::Enter, "the created release task", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .task_names()
+            .contains(&"Track the coordinated release".to_owned())
+    });
+    second.press_and_wait(Key::Char(' '), "the new task timer", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .header()
+            .active_task()
+            .is_some_and(|task| task.name() == "Track the coordinated release")
+    });
+    proxy.release();
+    proxy.wait_for_delivery();
+    first.wait_for_first_frame("a coherent task list and timer after retry", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.header()
+            .active_task()
+            .is_some_and(|task| task.name() == "Track the coordinated release")
+            && page
+                .task_panel()
+                .task_names()
+                .contains(&"Track the coordinated release".to_owned())
+    });
+    assert!(
+        proxy.request_count() >= 2,
+        "the mismatched resources must trigger another catalog read"
+    );
+    first.quit().assert_clean_exit();
+    second.quit().assert_clean_exit();
+}
+
+#[test]
+fn remote_rename_keeps_the_reviewed_name_when_another_client_renames() {
+    let context = RemoteTestContext::new_with_tasks();
+    let mut first = context.launch();
+    let mut second = context.launch_second_client();
+    for client in [&mut first, &mut second] {
+        client.wait_for_first_frame("the remote task list", |screen| {
+            TimeTrackerPage::new(screen.clone())
+                .task_panel()
+                .task_names()
+                .len()
+                == 3
+        });
+        client.press_and_wait(Key::Char('e'), "the rename draft", |screen| {
+            TimeTrackerPage::new(screen.clone())
+                .task_input_dialog()
+                .is_some()
+        });
+        for _ in 0.."Write release notes".chars().count() {
+            client.press(Key::Backspace);
+        }
+    }
+    first.type_text("First client draft");
+    second.type_text("Second client rename");
+    second.press_and_wait(Key::Enter, "the competing rename", |screen| {
+        TimeTrackerPage::new(screen.clone()).status_bar().text()
+            == "Renamed to \"Second client rename\""
+    });
+    first.press_and_wait(Key::Enter, "the stale rename rejection", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_input_dialog()
+            .is_some_and(|dialog| dialog.text() == "First client draft")
+            && page.status_bar().text().contains("changed")
+    });
+    first.press_and_wait(Key::Esc, "the retained competing name", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_input_dialog().is_none()
+            && page
+                .task_panel()
+                .task_names()
+                .contains(&"Second client rename".to_owned())
+    });
+    first.quit().assert_clean_exit();
+    second.quit().assert_clean_exit();
+}
+
+#[test]
+fn remote_queued_start_does_not_replace_a_timer_started_by_another_client() {
+    let context = RemoteTestContext::new_with_tasks();
+    let proxy = context.proxy();
+    let mut first = context.launch_through(&proxy);
+    let mut second = context.launch_second_client();
+    for client in [&mut first, &mut second] {
+        client.wait_for_first_frame("the idle remote task list", |screen| {
+            let page = TimeTrackerPage::new(screen.clone());
+            page.header().is_idle() && page.task_panel().task_names().len() == 3
+        });
+    }
+    proxy.hold(Route::Tasks);
+    proxy.wait_for_request();
+    second.press_and_wait(Key::Char('j'), "the competing task selection", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .task_panel()
+            .selected_index()
+            == Some(1)
+    });
+    second.press_and_wait(Key::Char(' '), "the competing timer", |screen| {
+        TimeTrackerPage::new(screen.clone())
+            .header()
+            .active_task()
+            .is_some_and(|task| task.name() == "Fix the coffee machine")
+    });
+    first.press(Key::Char(' '));
+    // A later navigation response proves the click reached the event loop before HTTP resumes.
+    first.press_and_wait(
+        Key::Char('j'),
+        "navigation behind the queued tracking click",
+        |screen| {
+            TimeTrackerPage::new(screen.clone())
+                .task_panel()
+                .selected_index()
+                == Some(1)
+        },
+    );
+    proxy.release();
+    proxy.wait_for_delivery();
+    first.wait_for("the preserved competing timer and conflict", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.header()
+            .active_task()
+            .is_some_and(|task| task.name() == "Fix the coffee machine")
+            && page.status_bar().text().contains("changed")
+    });
+    first.quit().assert_clean_exit();
+    second.quit().assert_clean_exit();
 }

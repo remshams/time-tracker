@@ -443,13 +443,10 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
                     })
                 }),
             )
-            .route(
-                "/v1/snapshot",
-                get(move || {
-                    let snapshot = snapshot.clone();
-                    async move { Json(snapshot) }
-                }),
-            )
+            .merge(report_tests::resource_router(
+                snapshot,
+                vec![tracker_protocol::WorklogDto::from(&original)],
+            ))
             .route(
                 "/v1/worklogs/{id}",
                 patch(

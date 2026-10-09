@@ -96,15 +96,10 @@ fn validate_remote_candidates(preview: &InactiveTaskPreviewDto) -> Result<(), Cl
     if preview.revision.is_empty() {
         return Err(CliError::input("invalid remote preview guard"));
     }
-    if preview.sample_names.len() > 5
-        || preview.sample_names.len() > preview.count
-        || preview
-            .sample_names
-            .iter()
-            .any(|name| TaskName::new(name).is_err())
-    {
+    if preview.inactive_days != 14 || preview.count != preview.candidate_task_ids.len() {
         return Err(CliError::input("invalid remote preview candidates"));
     }
+    validate_local_candidates(&preview.candidate_task_ids)?;
     Ok(())
 }
 
@@ -118,8 +113,19 @@ pub(crate) async fn execute(
             state,
             sort,
             search,
-        } => list(backend, state, sort, search.as_deref()),
-        Tasks::Get { task_id } => get(backend, task_id),
+        } => {
+            if let BackendKind::Remote(app) = &mut backend.kind {
+                app.refresh_tasks().await.map_err(CliError::remote)?;
+            }
+            list(backend, state, sort, search.as_deref())
+        }
+        Tasks::Get { task_id } => {
+            if let BackendKind::Remote(app) = &mut backend.kind {
+                let resource = app.read_task(task_id).await.map_err(CliError::remote)?;
+                return crate::json(resource.task);
+            }
+            get(backend, task_id)
+        }
         Tasks::PreviewInactive => preview(backend, now).await,
         Tasks::ArchiveInactive { preview, .. } => archive(backend, read_json(&preview)?).await,
         change @ (Tasks::Create { .. }
@@ -216,9 +222,12 @@ async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, C
                 backend: backend.identity.clone(),
                 preview: preview.clone(),
             };
-            Ok(
-                json!({"count": preview.count, "sample_names": preview.sample_names, "preview": token}),
-            )
+            let tasks = app
+                .resolve_preview_tasks(&preview)
+                .await
+                .map_err(CliError::application)?;
+            let sample_names: Vec<_> = tasks.iter().take(5).map(|task| &task.name).collect();
+            Ok(json!({"count": preview.count, "sample_names": sample_names, "preview": token}))
         }
     }
 }

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Partially superseded by [ADR 0017](0017-separate-http-resources-from-client-refreshes.md); all other decisions remain accepted. ADR 0017 replaces the remote HTTP response that bundles source/destination task aggregates; local-mode behavior is unchanged.
 
 ## Date
 

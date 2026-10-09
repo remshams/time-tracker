@@ -215,6 +215,8 @@ fn mock_server(
         Json, Router,
         routing::{get, patch},
     };
+    let state = std::sync::Arc::new(std::sync::Mutex::new(initial));
+    let write_state = state.clone();
     report_tests::Server::start(
         Router::new()
             .route(
@@ -226,20 +228,35 @@ fn mock_server(
                     })
                 }),
             )
-            .route(
-                "/v1/snapshot",
-                get(move || {
-                    let initial = initial.clone();
-                    async move { Json(initial) }
-                }),
-            )
+            .merge(report_tests::resource_router_state(state, vec![]))
             .route(
                 "/v1/tasks/{id}",
                 patch(move |Json(body): Json<Value>| {
                     let reply = reply.clone();
                     let requests = requests.clone();
+                    let state = write_state.clone();
                     async move {
-                        requests.lock().unwrap().push(body);
+                        requests.lock().unwrap().push(body.clone());
+                        let mut reply = reply;
+                        if reply["request_id"] == "" {
+                            reply["request_id"] = body["request_id"].clone();
+                        }
+                        if let Ok(receipt) =
+                            serde_json::from_value::<tracker_protocol::MutationDto>(reply.clone())
+                            && let tracker_protocol::MutationResultDto::Task(task) = receipt.result
+                        {
+                            let mut snapshot = state.lock().unwrap();
+                            if let Some(item) = snapshot
+                                .task_items
+                                .iter_mut()
+                                .find(|item| item.task.id == task.id)
+                            {
+                                item.task = task;
+                            }
+                            if !receipt.applied_revision.is_empty() {
+                                snapshot.revision = receipt.applied_revision;
+                            }
+                        }
                         Json(reply)
                     }
                 }),
@@ -290,7 +307,9 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
         let result_task: TaskDto = task.task.clone();
         let baseline = serde_json::to_value(MutationDto {
             result: MutationResultDto::Task(result_task),
-            snapshot: updated,
+            request_id: String::new(),
+            applied_revision: updated.revision,
+            replayed: false,
         })
         .unwrap();
         for index in 0..8 {
@@ -299,23 +318,10 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
                 0 => {}
                 1 => reply["result"]["value"]["id"] = json!(TaskId::generate().to_string()),
                 2 => reply["result"]["value"]["archived"] = json!(!archived),
-                3 => reply["snapshot"]["task_items"]
-                    .as_array_mut()
-                    .unwrap()
-                    .retain(|item| item["task"]["id"] != target.to_string()),
-                4 => {
-                    reply["snapshot"]["task_items"]
-                        .as_array_mut()
-                        .unwrap()
-                        .iter_mut()
-                        .find(|item| item["task"]["id"] == target.to_string())
-                        .unwrap()["task"]["name"] = json!("Contradictory name")
-                }
-                5 => reply["snapshot"]["active_worklog"] = Value::Null,
-                6 => {
-                    reply["snapshot"]["active_worklog"]["id"] =
-                        json!(WorklogId::generate().to_string())
-                }
+                3 => reply["request_id"] = json!(WorklogId::generate().to_string()),
+                4 => reply["applied_revision"] = json!(""),
+                5 => reply["unexpected"] = json!(true),
+                6 => reply["replayed"] = json!("invalid"),
                 7 => reply["result"]["kind"] = json!("tracking_already_idle"),
                 _ => unreachable!(),
             }
@@ -369,7 +375,7 @@ fn unavailable_archive_and_restore_keep_confirmed_state_and_block_writes_until_r
         drop(server);
         let failure = change(&mut bridge, target, archived);
         assert_eq!(failure["kind"], "unavailable");
-        assert_eq!(failure["uncertain"], true);
+        assert_eq!(failure["uncertain"], false);
         assert_eq!(failure["requiresRefresh"], true);
         assert_eq!(
             serde_json::to_value(snapshot(&bridge.application)).unwrap(),
@@ -379,5 +385,265 @@ fn unavailable_archive_and_restore_keep_confirmed_state_and_block_writes_until_r
         assert_eq!(blocked["uncertain"], false);
         assert_eq!(blocked["requiresRefresh"], true);
         assert!(bridge.application.refresh().is_err());
+    }
+}
+
+#[test]
+fn task_write_recovery_reconciles_raced_views_or_preserves_the_last_coherent_pair() {
+    use axum::{Json, Router, routing::get};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    use tracker_application::TaskOperations;
+    use tracker_protocol::{
+        HealthDto, MutationDto, MutationResultDto, TaskDto, TaskResourceDto, TasksDto, TrackingDto,
+        WorklogDto,
+    };
+
+    for settles in [false, true] {
+        let mut application =
+            TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap();
+        let task = application
+            .create_task(TaskName::new("Original name").unwrap(), at(1))
+            .unwrap();
+        let initial = TaskDto::from(&application.tasks(TaskOrdering::default())[0]);
+        let mut applied = initial.clone();
+        applied.name = "Requested name".into();
+        applied.updated_at = at(400);
+        let active = WorklogDto {
+            id: WorklogId::generate().to_string(),
+            task_id: task.id().to_string(),
+            start: at(399),
+            end: None,
+        };
+        let mut latest = applied.clone();
+        latest.latest_work_start = Some(active.start);
+        let written = Arc::new(AtomicBool::new(false));
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let task_written = written.clone();
+        let task_attempts = attempts.clone();
+        let original_task = initial.clone();
+        let tracking_written = written.clone();
+        let write_written = written.clone();
+        let router = Router::new()
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(HealthDto {
+                        status: "ok".into(),
+                        protocol_version: tracker_protocol::VERSION,
+                    })
+                }),
+            )
+            .route(
+                "/v1/tasks",
+                get(move || {
+                    let after = task_written.load(Ordering::SeqCst);
+                    let attempt = if after {
+                        task_attempts.fetch_add(1, Ordering::SeqCst)
+                    } else {
+                        0
+                    };
+                    let dto = TasksDto {
+                        tasks: vec![if after {
+                            latest.clone()
+                        } else {
+                            original_task.clone()
+                        }],
+                        revision: if !after {
+                            "before"
+                        } else if settles && attempt > 0 {
+                            "after"
+                        } else {
+                            "raced"
+                        }
+                        .into(),
+                    };
+                    async move { Json(dto) }
+                }),
+            )
+            .route(
+                "/v1/tracking",
+                get(move || {
+                    let after = tracking_written.load(Ordering::SeqCst);
+                    let dto = TrackingDto {
+                        active_worklog: after.then(|| active.clone()),
+                        revision: if after { "after" } else { "before" }.into(),
+                    };
+                    async move { Json(dto) }
+                }),
+            )
+            .route(
+                "/v1/tasks/{id}",
+                get(move || {
+                    let task = initial.clone();
+                    async move {
+                        Json(TaskResourceDto {
+                            task,
+                            revision: "before".into(),
+                        })
+                    }
+                })
+                .patch(move |Json(body): Json<Value>| {
+                    write_written.store(true, Ordering::SeqCst);
+                    let task = applied.clone();
+                    async move {
+                        Json(MutationDto {
+                            request_id: body["request_id"].as_str().unwrap().into(),
+                            applied_revision: "applied".into(),
+                            replayed: false,
+                            result: MutationResultDto::Task(task),
+                        })
+                    }
+                }),
+            );
+        let server = report_tests::Server::start(router);
+        let mut bridge = server.client();
+        bridge.application.refresh().unwrap();
+        let before = serde_json::to_value(snapshot(&bridge.application)).unwrap();
+        let result = bridge.application.rename_task(
+            task.id(),
+            TaskName::new("Requested name").unwrap(),
+            at(400),
+        );
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        if settles {
+            assert!(result.is_ok());
+            assert_eq!(
+                bridge.application.resource_revisions(),
+                (Some("after".into()), Some("after".into()))
+            );
+            assert_eq!(
+                bridge.application.tasks(TaskOrdering::default())[0]
+                    .task
+                    .name()
+                    .as_str(),
+                "Requested name"
+            );
+            assert!(matches!(
+                bridge.application.current_tracking(),
+                TrackingState::Running { .. }
+            ));
+        } else {
+            let error = result.unwrap_err();
+            assert!(error.requires_refresh);
+            assert!(!error.uncertain);
+            assert_eq!(
+                serde_json::to_value(snapshot(&bridge.application)).unwrap(),
+                before
+            );
+            assert_eq!(
+                bridge.application.resource_revisions(),
+                (Some("before".into()), Some("before".into()))
+            );
+        }
+    }
+}
+
+#[test]
+fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
+    use axum::{
+        Json, Router,
+        routing::{get, patch},
+    };
+    use std::sync::{Arc, Mutex};
+    use tracker_application::TaskOperations;
+    use tracker_protocol::{MutationDto, MutationResultDto, SnapshotDto, TaskDto};
+    for action in ["rename", "archive", "restore"] {
+        for replayed in [false, true] {
+            let repository = SqliteRepository::open_in_memory().unwrap();
+            let mut application = TrackerApplication::load(repository).unwrap();
+            let task = application
+                .create_task(TaskName::new("Original project").unwrap(), at(1))
+                .unwrap();
+            if action == "restore" {
+                application.archive_task(task.id(), at(2)).unwrap();
+            }
+            let initial = SnapshotDto::from_snapshot(
+                &tracker_application::TrackerSnapshot {
+                    task_items: application.tasks(TaskOrdering::default()),
+                    active_worklog: None,
+                },
+                "before".into(),
+            );
+            let state = Arc::new(Mutex::new(initial));
+            let changed = state.clone();
+            let mut committed_task = state.lock().unwrap().task_items[0].task.clone();
+            committed_task.updated_at = at(400);
+            if action == "rename" {
+                committed_task.name = "Requested name".into();
+            } else {
+                committed_task.archived = action == "archive";
+            }
+            let router = Router::new()
+                .route(
+                    "/v1/health",
+                    get(|| async {
+                        Json(tracker_protocol::HealthDto {
+                            status: "ok".into(),
+                            protocol_version: tracker_protocol::VERSION,
+                        })
+                    }),
+                )
+                .merge(report_tests::resource_router_state(state, vec![]))
+                .route(
+                    "/v1/tasks/{id}",
+                    patch(move |Json(body): Json<Value>| {
+                        let changed = changed.clone();
+                        let committed_task = committed_task.clone();
+                        async move {
+                            let mut latest: TaskDto = committed_task.clone();
+                            latest.name = "Later writer name".into();
+                            latest.archived = if action == "rename" {
+                                latest.archived
+                            } else {
+                                !latest.archived
+                            };
+                            latest.updated_at = at(401);
+                            {
+                                let mut state = changed.lock().unwrap();
+                                state.task_items[0].task = latest;
+                                state.revision = "later".into();
+                            }
+                            Json(MutationDto {
+                                request_id: body["request_id"].as_str().unwrap().into(),
+                                applied_revision: "applied".into(),
+                                replayed,
+                                result: MutationResultDto::Task(committed_task),
+                            })
+                        }
+                    }),
+                );
+            let server = report_tests::Server::start(router);
+            let mut bridge = server.client();
+            bridge.application.refresh().unwrap();
+            let value = if action == "rename" {
+                let id = CString::new(task.id().to_string()).unwrap();
+                let name = CString::new("Requested name").unwrap();
+                let timestamp = CString::new(timestamp(at(400))).unwrap();
+                // SAFETY: The bridge and input strings are live for this call.
+                response(unsafe {
+                    tt_bridge_rename_task_at(
+                        &mut bridge,
+                        id.as_ptr(),
+                        name.as_ptr(),
+                        timestamp.as_ptr(),
+                    )
+                })
+            } else {
+                change(&mut bridge, task.id(), action == "archive")
+            };
+            assert!(
+                value.get("error").is_none(),
+                "{action}, replayed={replayed}: {value}"
+            );
+            assert_eq!(value["data"]["tasks"][0]["name"], "Later writer name");
+            assert_eq!(value["data"]["tasksRevision"], "later");
+            assert_eq!(value["data"]["trackingRevision"], "later");
+            if action != "rename" {
+                assert_eq!(value["data"]["tasks"][0]["archived"], action != "archive");
+            }
+        }
     }
 }

@@ -9,7 +9,7 @@ use tracker_application::{
 use tracker_domain::{
     InactivityPeriod, Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes,
 };
-use tracker_remote::{InactiveTaskCandidatesDto, RemoteApplication, RemoteError};
+use tracker_remote::{InactiveTaskPreviewDto, RemoteApplication, RemoteError};
 use tracker_storage::SqliteRepository;
 
 pub(crate) enum Backend {
@@ -23,27 +23,32 @@ pub(crate) struct RemoteBackend {
     requires_refresh: bool,
 }
 
+type ReportRows = (Vec<super::ReportRowJson>, Option<String>, DateTime<Utc>);
+
 pub(crate) enum InactivePreview {
     Local {
         as_of: DateTime<Utc>,
         period: InactivityPeriod,
         tasks: Vec<Task>,
     },
-    Remote(InactiveTaskCandidatesDto),
+    Remote {
+        preview: InactiveTaskPreviewDto,
+        tasks: Vec<tracker_protocol::TaskDto>,
+    },
 }
 
 impl InactivePreview {
     pub fn as_of(&self) -> DateTime<Utc> {
         match self {
             Self::Local { as_of, .. } => *as_of,
-            Self::Remote(preview) => preview.as_of,
+            Self::Remote { preview, .. } => preview.as_of,
         }
     }
 
     pub fn days(&self) -> u32 {
         match self {
             Self::Local { period, .. } => period.days(),
-            Self::Remote(preview) => preview.inactive_days,
+            Self::Remote { preview, .. } => preview.inactive_days,
         }
     }
 }
@@ -88,9 +93,12 @@ impl Backend {
                         .application
                         .preview_inactive_tasks_with_period(as_of, period),
                 );
-                result
-                    .map(InactivePreview::Remote)
-                    .map_err(|error| remote.operation_error(error, false))
+                let preview = result.map_err(|error| remote.operation_error(error, false))?;
+                let tasks = remote
+                    .runtime
+                    .block_on(remote.application.resolve_preview_tasks(&preview))
+                    .map_err(|error| remote.operation_error(error, false))?;
+                Ok(InactivePreview::Remote { preview, tasks })
             }
         }
     }
@@ -118,7 +126,7 @@ impl Backend {
                         mapped
                     })
             }
-            (Self::Remote(remote), InactivePreview::Remote(preview)) => {
+            (Self::Remote(remote), InactivePreview::Remote { preview, .. }) => {
                 remote.check_write()?;
                 let result = remote.runtime.block_on(
                     remote
@@ -134,8 +142,9 @@ impl Backend {
     }
 
     pub fn remote(endpoint: &str) -> Result<Self, String> {
-        let application =
-            RemoteApplication::disconnected(endpoint).map_err(|error| error.to_string())?;
+        let application = RemoteApplication::disconnected(endpoint)
+            .map_err(|error| error.to_string())?
+            .with_coherent_task_views();
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
@@ -145,6 +154,95 @@ impl Backend {
             runtime,
             requires_refresh: true,
         })))
+    }
+
+    pub fn check_connection(&mut self) -> Result<(), BridgeError> {
+        match self {
+            Self::Local(_) => Ok(()),
+            Self::Remote(remote) => remote
+                .runtime
+                .block_on(remote.application.check_connection())
+                .map_err(|error| BridgeError {
+                    message: error.to_string(),
+                    kind: remote_error_kind(&error),
+                    uncertain: false,
+                    requires_refresh: true,
+                }),
+        }
+    }
+
+    pub fn resource_revisions(&self) -> (Option<String>, Option<String>) {
+        match self {
+            Self::Local(_) => (None, None),
+            Self::Remote(remote) => (
+                Some(remote.application.task_revision().to_owned()),
+                Some(remote.application.tracking_revision().to_owned()),
+            ),
+        }
+    }
+
+    pub fn report_rows(
+        &mut self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportRows, BridgeError> {
+        match self {
+            Self::Local(_) => {
+                let totals = self.report_totals(start, end, now)?;
+                let rows = totals
+                    .rows
+                    .into_iter()
+                    .map(|row| {
+                        Ok(super::ReportRowJson {
+                            task_id: row.task.id().to_string(),
+                            duration_microseconds: row.duration.num_microseconds().ok_or_else(
+                                || {
+                                    BridgeError::from(
+                                        "Report duration exceeds the supported range".to_owned(),
+                                    )
+                                },
+                            )?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, BridgeError>>()?;
+                Ok((rows, None, now))
+            }
+            Self::Remote(remote) => {
+                let mut report = remote
+                    .runtime
+                    .block_on(remote.application.task_totals(start, end, now))
+                    .map_err(|error| remote.operation_error(error, false))?;
+                // The sidebar and timer explicitly request their resources independently of totals.
+                if remote
+                    .runtime
+                    .block_on(remote.application.refresh())
+                    .is_ok()
+                {
+                    remote.requires_refresh = false;
+                    if remote.application.tracking_revision() != report.revision {
+                        // Reconcile once. Continued writes leave reported totals without projection.
+                        if let Ok(reconciled) = remote
+                            .runtime
+                            .block_on(remote.application.task_totals(start, end, now))
+                        {
+                            report = reconciled;
+                        }
+                    }
+                } else {
+                    remote.requires_refresh = true;
+                }
+                let rows = report
+                    .rows
+                    .into_iter()
+                    .map(|row| super::ReportRowJson {
+                        task_id: row.task_id,
+                        duration_microseconds: row.duration_us,
+                    })
+                    .collect();
+                Ok((rows, Some(report.revision), report.now))
+            }
+        }
     }
 
     pub fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
@@ -234,30 +332,12 @@ impl Backend {
                 .map_err(local_error),
             Self::Remote(remote) => {
                 remote.check_write()?;
-                let expected_name = name.clone();
                 let result = remote.runtime.block_on(remote.application.rename_task(
                     task_id,
                     name,
                     occurred_at,
                 ));
-                match result {
-                    Ok(task)
-                        if task.name() == &expected_name
-                            && remote.application.task(task_id) == Some(&task) =>
-                    {
-                        Ok(task)
-                    }
-                    Ok(_) => {
-                        remote.requires_refresh = true;
-                        Err(BridgeError {
-                            message: "Renamed task does not match returned server state".into(),
-                            kind: "protocol",
-                            uncertain: true,
-                            requires_refresh: true,
-                        })
-                    }
-                    Err(error) => Err(remote.operation_error(error, true)),
-                }
+                result.map_err(|error| remote.operation_error(error, true))
             }
         }
     }
@@ -290,10 +370,6 @@ impl Backend {
         replacement: WorklogTimes,
         occurred_at: DateTime<Utc>,
     ) -> Result<Worklog, BridgeError> {
-        // Refresh the remote revision without replacing the editor's original timestamps.
-        if matches!(self, Self::Remote(_)) {
-            self.refresh()?;
-        }
         match self {
             Self::Local(application) => application
                 .correct_worklog(id, expected, replacement, occurred_at)
@@ -305,6 +381,9 @@ impl Backend {
                     replacement,
                     occurred_at,
                 ));
+                if result.is_ok() {
+                    remote.requires_refresh = false;
+                }
                 result.map_err(|error| {
                     let kind = correction_error_kind(&error);
                     let mut mapped = remote.operation_error(error, true);
@@ -331,10 +410,6 @@ impl Backend {
         expected: WorklogTimes,
         destination_task_id: TaskId,
     ) -> Result<Worklog, BridgeError> {
-        // Refresh the revision while preserving the selected row's task and timestamps.
-        if matches!(self, Self::Remote(_)) {
-            self.refresh()?;
-        }
         match self {
             Self::Local(application) => application
                 .move_worklog(id, expected_source_task_id, expected, destination_task_id)
@@ -467,7 +542,6 @@ impl Backend {
             }
             Self::Remote(remote) => {
                 remote.check_write()?;
-                let previous_tracking = remote.application.current_tracking().clone();
                 let result = if archived {
                     remote
                         .runtime
@@ -478,26 +552,11 @@ impl Backend {
                         .block_on(remote.application.unarchive_task(task_id, occurred_at))
                 };
                 match result {
-                    Ok(task)
-                        if task.is_archived() == archived
-                            && remote.application.task(task_id) == Some(&task)
-                            && remote.application.current_tracking() == &previous_tracking =>
-                    {
-                        Ok(task)
-                    }
-                    Ok(_) => {
-                        remote.requires_refresh = true;
-                        Err(BridgeError {
-                            message: "Task archive result does not match returned server state"
-                                .into(),
-                            kind: "protocol",
-                            uncertain: true,
-                            requires_refresh: true,
-                        })
-                    }
+                    Ok(task) => Ok(task),
                     Err(error) => {
                         remote.requires_refresh = true;
                         let mut mapped = archive_error(&error);
+                        mapped.uncertain &= remote.application.last_write_attempted();
                         mapped.requires_refresh = true;
                         Err(mapped)
                     }
@@ -515,41 +574,16 @@ impl RemoteBackend {
         expected: WorklogTimes,
         destination_task_id: TaskId,
     ) -> Result<Worklog, BridgeError> {
-        let previous_tracking = self.application.current_tracking().clone();
         let result = self.runtime.block_on(self.application.move_worklog(
             id,
             expected_source_task_id,
             expected,
             destination_task_id,
         ));
-        match result {
-            Ok(worklog)
-                if self
-                    .application
-                    .task(destination_task_id)
-                    .is_some_and(|task| !task.is_archived())
-                    && moved_worklog_matches(
-                        &worklog,
-                        id,
-                        expected,
-                        destination_task_id,
-                        &previous_tracking,
-                        self.application.current_tracking(),
-                    ) =>
-            {
-                Ok(worklog)
-            }
-            Ok(_) => {
-                self.requires_refresh = true;
-                Err(BridgeError {
-                    message: "Moved worklog does not match returned server state".into(),
-                    kind: "protocol",
-                    uncertain: true,
-                    requires_refresh: true,
-                })
-            }
-            Err(error) => Err(self.move_error(error, destination_task_id)),
+        if result.is_ok() {
+            self.requires_refresh = false;
         }
+        result.map_err(|error| self.move_error(error, destination_task_id))
     }
 
     fn move_error(&mut self, error: ApplicationError, destination_task_id: TaskId) -> BridgeError {
@@ -594,7 +628,9 @@ impl RemoteBackend {
     fn operation_error(&mut self, error: ApplicationError, write: bool) -> BridgeError {
         let failure = error.failure();
         let kind = operation_error_kind(&error);
-        let uncertain = write && matches!(kind, "unavailable" | "protocol");
+        let uncertain = write
+            && self.application.last_write_attempted()
+            && matches!(kind, "unavailable" | "protocol");
         self.requires_refresh |= write || matches!(kind, "unavailable" | "protocol");
         BridgeError {
             message: failure.message().to_owned(),
@@ -687,33 +723,6 @@ fn correction_error(error: ApplicationError) -> BridgeError {
         kind,
         uncertain: false,
         requires_refresh: kind == "worklog_changed",
-    }
-}
-
-fn moved_worklog_matches(
-    worklog: &Worklog,
-    id: WorklogId,
-    expected: WorklogTimes,
-    destination_task_id: TaskId,
-    previous: &TrackingState,
-    current: &TrackingState,
-) -> bool {
-    let canonical = |value: DateTime<Utc>| value.timestamp_micros();
-    if worklog.id() != id
-        || worklog.task_id() != destination_task_id
-        || canonical(worklog.start()) != canonical(expected.start())
-        || worklog.end().map(canonical) != expected.end().map(canonical)
-    {
-        return false;
-    }
-    if expected.is_active() {
-        matches!(current, TrackingState::Running { worklog: active }
-            if active.id() == worklog.id()
-                && active.task_id() == worklog.task_id()
-                && active.start() == worklog.start())
-    } else {
-        current == previous
-            && !matches!(current, TrackingState::Running { worklog: active } if active.id() == id)
     }
 }
 

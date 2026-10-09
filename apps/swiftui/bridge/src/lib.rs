@@ -53,9 +53,12 @@ struct WorklogJson {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SnapshotJson {
     tasks: Vec<TaskJson>,
     active: Option<WorklogJson>,
+    tasks_revision: Option<String>,
+    tracking_revision: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -77,6 +80,8 @@ struct ReportRowJson {
 struct ReportJson {
     snapshot: SnapshotJson,
     rows: Vec<ReportRowJson>,
+    revision: Option<String>,
+    now: String,
 }
 
 fn timestamp(value: DateTime<Utc>) -> String {
@@ -112,7 +117,13 @@ fn snapshot(application: &Backend) -> SnapshotJson {
             end: None,
         }),
     };
-    SnapshotJson { tasks, active }
+    let (tasks_revision, tracking_revision) = application.resource_revisions();
+    SnapshotJson {
+        tasks,
+        active,
+        tasks_revision,
+        tracking_revision,
+    }
 }
 
 fn encode(result: Result<Value, BridgeError>) -> *mut c_char {
@@ -242,6 +253,24 @@ pub unsafe extern "C" fn tt_bridge_string_free(value: *mut c_char) {
     }
 }
 
+/// Tests connectivity and compatibility without adopting any resource state.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Free the returned owned string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_check_connection(bridge: *mut Bridge) -> *mut c_char {
+    // SAFETY: The caller supplies exclusive access to a live bridge or null.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    encode(
+        bridge
+            .application
+            .check_connection()
+            .map(|_| json!({ "compatible": true })),
+    )
+}
+
 /// Returns a JSON snapshot. A refresh rereads the authoritative backend state.
 ///
 /// # Safety
@@ -263,7 +292,7 @@ pub unsafe extern "C" fn tt_bridge_snapshot(bridge: *mut Bridge, refresh: bool) 
     }))
 }
 
-/// Returns task totals and the snapshot from the same authoritative report read.
+/// Returns task totals and separately composed task and tracking caches.
 /// The caller supplies the UTC interval and the instant used to cap active work.
 ///
 /// # Safety
@@ -290,22 +319,12 @@ pub unsafe extern "C" fn tt_bridge_report(
         // SAFETY: The caller supplies valid C strings or null.
         let now = unsafe { read_identifier(now, "Invalid report timestamp") }
             .map_err(BridgeError::from)?;
-        let totals = bridge.application.report_totals(start, end, now)?;
-        let rows = totals
-            .rows
-            .into_iter()
-            .map(|row| {
-                Ok(ReportRowJson {
-                    task_id: row.task.id().to_string(),
-                    duration_microseconds: row.duration.num_microseconds().ok_or_else(|| {
-                        BridgeError::from("Report duration exceeds the supported range".to_owned())
-                    })?,
-                })
-            })
-            .collect::<Result<Vec<_>, BridgeError>>()?;
+        let (rows, revision, cutoff) = bridge.application.report_rows(start, end, now)?;
         serde_json::to_value(ReportJson {
             snapshot: snapshot(&bridge.application),
             rows,
+            revision,
+            now: timestamp(cutoff),
         })
         .map_err(|error| error.to_string().into())
     })();

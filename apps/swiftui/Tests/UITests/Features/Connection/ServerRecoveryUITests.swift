@@ -47,7 +47,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         launch()
         select(second)
         XCTAssertTrue(element("worklog-history.row.\(secondLog.id)").waitForExistence(timeout: timeout))
-        try proxy.arm(method: "GET", path: "/v1/tasks/\(first.id)/worklogs", mode: .holdAfter)
+        try proxy.arm(method: "GET", path: "/v1/worklogs?task_id=\(first.id)", mode: .holdAfter)
         select(first)
         _ = try proxy.waitForHeldRequest()
         select(second)
@@ -64,7 +64,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         let proxy = try fixture.enableProxy()
         launch()
         select(other)
-        try proxy.arm(method: "GET", path: "/v1/tasks/\(task.id)/worklogs", mode: .fail)
+        try proxy.arm(method: "GET", path: "/v1/worklogs?task_id=\(task.id)", mode: .fail)
         select(task)
         XCTAssertTrue(element("worklog-history.error").waitForExistence(timeout: timeout))
         app.buttons["worklog-history.retry"].click()
@@ -79,7 +79,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         let proxy = try fixture.enableProxy()
         launch()
         select(first)
-        try proxy.arm(method: "GET", path: "/v1/reports", mode: .holdAfter)
+        try proxy.arm(method: "GET", path: "/v1/reports/task-totals", mode: .holdAfter)
         _ = try proxy.waitForHeldRequest()
         app.buttons["Start tracking"].click()
         select(second)
@@ -96,7 +96,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         let proxy = try fixture.enableProxy()
         launch()
         select(first)
-        try proxy.arm(method: "GET", path: "/v1/reports", mode: .holdAfter)
+        try proxy.arm(method: "GET", path: "/v1/reports/task-totals", mode: .holdAfter)
         _ = try proxy.waitForHeldRequest()
         app.buttons["Stop tracking"].click()
         let replacement = try fixture.start(second)
@@ -109,11 +109,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         XCTAssertNotEqual(replacement.id, original.id)
         XCTAssertNotNil(try fixture.worklogs(first).first?.end)
         let writes = try proxy.requests(method: "PUT", path: "/v1/tracking")
-        XCTAssertEqual(writes.count, 1)
-        let rejected = try XCTUnwrap(writes.first)
-        XCTAssertEqual(rejected.status, 409)
-        let intent = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(rejected.body.utf8)) as? [String: Any])
-        XCTAssertEqual(intent["expected_active"] as? String, original.id)
+        XCTAssertTrue(writes.isEmpty, "Tracking preflight rejects the replacement before sending a write.")
     }
 
     func testLostCreationResponseReconcilesWithoutCreatingAnotherTask() throws {
@@ -192,7 +188,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         openCreation()
         app.textFields["task-name.input"].typeText("Retained creation intent")
         try proxy.dropWriteResponses(method: "POST", path: "/v1/tasks", then: [
-            .init(method: "GET", path: "/v1/snapshot", mode: .fail)
+            .init(method: "GET", path: "/v1/tasks", mode: .fail)
         ])
         app.buttons["task-name.submit"].click()
         XCTAssertTrue(element("task-name.error").waitForExistence(timeout: timeout))
@@ -268,7 +264,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
             scroll.scroll(byDeltaX: 0, deltaY: -450)
         }
         XCTAssertTrue(older.isHittable)
-        try proxy.arm(method: "GET", path: "/v1/tasks/\(task.id)/worklogs?", mode: .holdBefore)
+        try proxy.arm(method: "GET", path: "/v1/worklogs?task_id=\(task.id)&", mode: .holdBefore)
         older.click()
         _ = try proxy.waitForHeldRequest()
         let added = try fixture.completed(task, start: now.addingTimeInterval(-500), end: now.addingTimeInterval(-200))
@@ -291,7 +287,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         let proxy = try fixture.enableProxy()
         launch()
         select(selected)
-        try proxy.arm(method: "GET", path: "/v1/reports", mode: .holdBefore)
+        try proxy.arm(method: "GET", path: "/v1/reports/task-totals", mode: .holdBefore)
         _ = try proxy.waitForHeldRequest()
         app.buttons["Start tracking"].click()
         let timer = try fixture.start(competing)
@@ -311,7 +307,8 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         openRename(task)
         replaceText(app.textFields["task-name.input"], "Pending rename confirmed")
         try proxy.dropWriteResponses(method: "PATCH", path: "/v1/tasks/\(task.id)", then: [
-            .init(method: "GET", path: "/v1/snapshot", mode: .fail)
+            .init(method: "GET", path: "/v1/tasks", mode: .fail),
+            .init(method: "GET", path: "/v1/tasks", mode: .fail)
         ])
         app.buttons["task-name.submit"].click()
         XCTAssertTrue(element("task-name.error").waitForExistence(timeout: timeout))
@@ -334,7 +331,8 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         app.buttons["Archive task"].click()
         XCTAssertTrue(app.buttons["task-archive.confirm"].waitForExistence(timeout: timeout))
         try proxy.dropWriteResponses(method: "PATCH", path: "/v1/tasks/\(task.id)", then: [
-            .init(method: "GET", path: "/v1/snapshot", mode: .fail)
+            .init(method: "GET", path: "/v1/tasks", mode: .fail),
+            .init(method: "GET", path: "/v1/tasks", mode: .fail)
         ])
         app.buttons["task-archive.confirm"].click()
         XCTAssertTrue(element("task-archive.error").waitForExistence(timeout: timeout))
@@ -358,7 +356,8 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         openCorrection(log)
         stepMinute("worklog-correction.start")
         try proxy.dropWriteResponses(method: "PATCH", path: "/v1/worklogs/\(log.id)", then: [
-            .init(method: "GET", path: "/v1/snapshot", mode: .fail)
+            .init(method: "GET", path: "/v1/tasks", mode: .fail),
+            .init(method: "GET", path: "/v1/tasks", mode: .fail)
         ])
         app.buttons["worklog-correction.save"].click()
         XCTAssertTrue(element("worklog-correction.error").waitForExistence(timeout: timeout))
@@ -387,7 +386,8 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         XCTAssertTrue(element("worklog-move.candidate.\(destination.id)").waitForExistence(timeout: timeout))
         element("worklog-move.candidate.\(destination.id)").click()
         try proxy.dropWriteResponses(method: "PATCH", path: "/v1/worklogs/\(log.id)", then: [
-            .init(method: "GET", path: "/v1/snapshot", mode: .fail)
+            .init(method: "GET", path: "/v1/tasks", mode: .fail),
+            .init(method: "GET", path: "/v1/tasks", mode: .fail)
         ])
         app.buttons["worklog-move.confirm"].click()
         XCTAssertTrue(element("worklog-move.error").waitForExistence(timeout: timeout))

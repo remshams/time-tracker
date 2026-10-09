@@ -26,7 +26,7 @@ const BUSY_DELAY: Duration = Duration::from_millis(100);
 
 pub(crate) enum Backend {
     Local(TrackerApplication<SqliteRepository>),
-    Remote(RemoteApplication),
+    Remote(Box<RemoteApplication>),
 }
 
 enum ResultKind {
@@ -355,6 +355,7 @@ mod tests {
         );
         assert_eq!(
             busy_label(&ApplicationRequest::ArchiveTask {
+                expected_name: tracker_domain::TaskName::new("Reviewed task").unwrap(),
                 id: tracker_domain::TaskId::generate(),
                 occurred_at: chrono::Utc::now(),
             }),

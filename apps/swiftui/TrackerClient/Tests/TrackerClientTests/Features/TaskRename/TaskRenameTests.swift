@@ -521,6 +521,31 @@ final class TaskRenameTests: XCTestCase {
     }
 
     @MainActor
+    func testRemoteRenameReceiptKeepsNewerTaskMetadataAfterRecovery() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        try await fixture.start(snapshot)
+        fixture.session.openTaskRename()
+        fixture.session.setTaskRenameName("Desired name")
+        fixture.session.submitTaskRename()
+        let preflight = try await fixture.client.next()
+        preflight.succeed(snapshot)
+        let rename = try await fixture.client.next()
+        let newer = TaskItem(id: firstTask.id, name: "Another client renamed later", archived: false, latestStart: nil)
+        rename.succeed(
+            TrackerSnapshot(tasks: [newer], active: nil, tasksRevision: "epoch:3", trackingRevision: "epoch:3"))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.tasks, [newer])
+        XCTAssertFalse(fixture.session.taskRename.isPresented)
+        XCTAssertNil(fixture.session.taskRename.error)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .rename = $0 { return true }; return false
+            }.count, 1)
+    }
+
+    @MainActor
     func testMalformedRenameResultIsReconciledAndRetainsFrozenIntent() async throws {
         let wrongTargetWithDesiredName = TaskItem(
             id: secondTask.id, name: "Desired name", archived: false, latestStart: nil)

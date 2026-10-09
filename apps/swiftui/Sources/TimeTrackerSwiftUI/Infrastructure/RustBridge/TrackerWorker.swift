@@ -65,6 +65,12 @@ private final class RustBridge {
         return data
     }
 
+    func testConnection() throws {
+        struct Compatibility: Decodable { let compatible: Bool }
+        let result: Compatibility = try decode(tt_bridge_check_connection(handle))
+        guard result.compatible else { throw BridgeFailure(message: "The tracker connection is incompatible.") }
+    }
+
     func snapshot() throws -> TrackerSnapshot { try decode(tt_bridge_snapshot(handle, true)) }
 
     func createTask(name: String, occurredAt: String) throws -> TaskCreationResult {
@@ -278,9 +284,9 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
     }
 
     func test(_ settings: ConnectionSettings) async throws {
-        let _: TrackerSnapshot = try await perform { worker in
+        try await perform { worker in
             let candidate = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
-            return try candidate.snapshot()
+            try candidate.testConnection()
         }
     }
 

@@ -2,7 +2,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
 use serde_json::{Value, json};
 use tracker_application::calendar_reports::{self, CalendarPreset, CalendarRangeError};
-use tracker_protocol::ReportRowDto;
+use tracker_protocol::TaskDto;
 
 use crate::CliError;
 use crate::args::{Preset, ReportArgs};
@@ -24,13 +24,10 @@ pub(crate) async fn execute(
     let rows: Vec<_> = totals
         .rows
         .iter()
-        .map(|row| ReportRowDto {
-            task: (&row.task).into(),
-            duration_us: row
-                .duration
-                .num_microseconds()
-                .expect("application validated report duration"),
-        })
+        .map(|row| json!({
+            "task": TaskDto::from(&row.task),
+            "duration_us": row.duration.num_microseconds().expect("application validated report duration"),
+        }))
         .collect();
     Ok(json!({
         "start": range.start, "end": range.end, "timezone": range.timezone.to_string(), "as_of": now,
