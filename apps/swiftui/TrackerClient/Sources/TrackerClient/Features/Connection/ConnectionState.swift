@@ -21,7 +21,7 @@ final class ConnectionState {
         return ConnectionSettings(mode: settings.mode, serverURL: url)
     }
 
-    func acceptSnapshot() {
+    func acceptTaskList() {
         confirmed = true
         stale = false
         failures = 0

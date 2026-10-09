@@ -1,31 +1,38 @@
 import Foundation
 
 public protocol ReportClient: Sendable {
+    func refreshDailyTotals(settings: ConnectionSettings, start: String, end: String, now: String)
+        async throws -> DailyTotalsResources
     func report(settings: ConnectionSettings, start: String, end: String, now: String) async throws -> TrackerReport
+    func refreshTaskListWithTotals(settings: ConnectionSettings, start: String, end: String, now: String)
+        async throws -> TaskListTotalsRefresh
 }
 
 public protocol TrackerClient: Sendable {
-    func openConfigured(_ settings: ConnectionSettings) async throws -> TrackerSnapshot
+    func readTaskCatalog() async throws -> TaskCatalogObservation
+    func readTracking() async throws -> TrackingObservation
+    func openConfigured(_ settings: ConnectionSettings) async throws -> TaskListResources
     func test(_ settings: ConnectionSettings) async throws
-    func connect(_ settings: ConnectionSettings) async throws -> TrackerSnapshot
-    func refresh(settings: ConnectionSettings) async throws -> TrackerSnapshot
-    func snapshot() async throws -> TrackerSnapshot
+    func connect(_ settings: ConnectionSettings) async throws -> TaskListResources
+    func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources
+    func refreshTaskList() async throws -> TaskListResources
     func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult
     func previewInactiveTasks(inactiveDays: Int, asOf: String) async throws -> InactiveTaskPreview
     func archiveInactiveTasks(preview: InactiveTaskPreview) async throws -> InactiveTaskArchiveResult
-    func archiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot
-    func unarchiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot
-    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TrackerSnapshot
+    func archiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult
+    func unarchiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult
+    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TaskCommandResult
     func correctWorklog(
         expected: WorklogItem, replacementStart: String, replacementEnd: String?,
         occurredAt: String
     ) async throws -> WorklogCorrectionResult
     func moveCandidates(sourceTaskID: String, query: String) async throws -> [WorklogMoveCandidate]
     func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult
-    func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws -> TrackerSnapshot
-    func stopTracking(worklogID: String, occurredAt: String) async throws -> TrackerSnapshot
+    func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws
+        -> TrackingCommandResult
+    func stopTracking(worklogID: String, occurredAt: String) async throws -> TrackingCommandResult
     func pauseTracking(worklogID: String, occurredAt: String) async throws -> TrackingPauseResult
-    func resumeTracking(taskID: String, occurredAt: String) async throws -> TrackerSnapshot
+    func resumeTracking(taskID: String, occurredAt: String) async throws -> TrackingCommandResult
     func history(taskID: String, cursor: String?) async throws -> HistoryPage
 }
 

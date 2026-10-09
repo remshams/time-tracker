@@ -6,7 +6,7 @@ final class HistoryTests: XCTestCase {
     func testSelectingAnotherTaskImmediatelyClearsCachedRowsAndCursor() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         fixture.session.retryHistory()
         let initial = try await fixture.client.next()
         initial.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
@@ -25,7 +25,7 @@ final class HistoryTests: XCTestCase {
     func testPollingKeepsExistingRowsWhileSameTaskHistoryRefreshes() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
-        let running = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let running = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(running)
         fixture.session.retryHistory()
         let initial = try await fixture.client.next()
@@ -34,7 +34,7 @@ final class HistoryTests: XCTestCase {
 
         fixture.scheduler.poll?.fire()
         let refresh = try await fixture.client.next()
-        refresh.succeed(TrackerSnapshot(tasks: [firstTask], active: nil))
+        refresh.succeed(TaskListResources(tasks: [firstTask], active: nil))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
         XCTAssertEqual(
@@ -51,7 +51,7 @@ final class HistoryTests: XCTestCase {
     func testIncompatibleHistoryDisablesTrackingAndStopsAutomaticPolling() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         XCTAssertTrue(fixture.session.canStartSelectedTask)
         XCTAssertNotNil(fixture.scheduler.poll)
         fixture.session.retryHistory()
@@ -71,7 +71,7 @@ final class HistoryTests: XCTestCase {
     func testHistoryRequiringRefreshDisablesTrackingUntilSnapshotIsConfirmed() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         XCTAssertTrue(fixture.session.canStartSelectedTask)
         fixture.session.retryHistory()
@@ -101,7 +101,7 @@ final class HistoryTests: XCTestCase {
     func testSelectionsAreRememberedPerTabAndRemovedSelectionFallsBack() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask, archivedTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.select(secondTask.id)
         let selected = try await fixture.client.next()
@@ -122,7 +122,7 @@ final class HistoryTests: XCTestCase {
         try await fixture.settled()
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
-        refresh.succeed(TrackerSnapshot(tasks: [firstTask, archivedTask], active: nil))
+        refresh.succeed(TaskListResources(tasks: [firstTask, archivedTask], active: nil))
         let fallback = try await fixture.client.next()
         XCTAssertEqual(fallback.operation, .history(task: firstTask.id, cursor: nil))
         fallback.succeed(emptyPage)
@@ -134,7 +134,7 @@ final class HistoryTests: XCTestCase {
     func testDelayedHistoryCannotReplaceNewSelectionOrItsErrorState() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         fixture.session.retryHistory()
         let oldRequest = try await fixture.client.next()
         fixture.session.select(secondTask.id)
@@ -156,7 +156,7 @@ final class HistoryTests: XCTestCase {
     func testDelayedSuccessfulHistoryCannotPopulateNewSelection() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         fixture.session.retryHistory()
         let oldRequest = try await fixture.client.next()
         fixture.session.select(secondTask.id)
@@ -173,7 +173,7 @@ final class HistoryTests: XCTestCase {
     func testPaginationAppendsButResetReplacesPreviousRowsAndCursor() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         fixture.session.retryHistory()
         let first = try await fixture.client.next()
         first.succeed(HistoryPage(worklogs: [activeWorklog], nextCursor: "page-two", reset: false))
@@ -199,7 +199,7 @@ final class HistoryTests: XCTestCase {
     func testHistoryFailureRetriesCurrentSelectionAndClearsError() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         fixture.session.retryHistory()
         let failure = try await fixture.client.next()
         failure.fail(BridgeFailure(message: "History read failed"))
@@ -221,7 +221,7 @@ final class HistoryTests: XCTestCase {
     func testUnavailableHistoryMarksSnapshotStaleAndRefreshRetriesHistory() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         fixture.session.retryHistory()
         let history = try await fixture.client.next()

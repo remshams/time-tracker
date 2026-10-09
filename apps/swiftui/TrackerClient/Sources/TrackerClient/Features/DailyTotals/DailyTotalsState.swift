@@ -60,7 +60,7 @@ final class DailyTotalsState {
         return Request(day: day, cutoff: cutoff, uptime: clock.uptime, anchorGeneration: anchorGeneration)
     }
 
-    func accept(_ report: TrackerReport, requested: Request, clock: any TrackerClock) {
+    func accept(_ report: TrackerReport, tracking: TrackingObservation?, requested: Request, clock: any TrackerClock) {
         updateDay(at: clock.now)
         guard day == requested.day else { pending = true; return }
         rows = report.rows.reduce(into: [:]) { totals, row in
@@ -69,7 +69,7 @@ final class DailyTotalsState {
         request = Request(
             day: requested.day, cutoff: report.now.flatMap(timestamp) ?? requested.cutoff,
             uptime: requested.uptime, anchorGeneration: requested.anchorGeneration)
-        reportedActive = report.revision == report.snapshot.trackingRevision ? report.snapshot.active : nil
+        reportedActive = report.revision == tracking?.revision ? tracking?.value : nil
         let cutoff = report.now.flatMap(timestamp) ?? requested.cutoff
         if requested.anchorGeneration == anchorGeneration {
             anchorDate = cutoff
@@ -78,16 +78,11 @@ final class DailyTotalsState {
             anchorDate = clock.now
             anchorUptime = clock.uptime
         }
-        status = report.revision == report.snapshot.trackingRevision ? .current : .cached
+        status = tracking != nil && report.revision == tracking?.revision ? .current : .cached
         error = nil
     }
 
-    func validate(_ report: TrackerReport) throws {
-        let taskIDs = Set(report.snapshot.tasks.map(\.id))
-        guard taskIDs.count == report.snapshot.tasks.count else {
-            throw BridgeFailure(
-                message: "The report contains duplicate tasks.", kind: "protocol", requiresRefresh: true)
-        }
+    func validate(_ report: TrackerReport, tracking: TrackingObservation? = nil) throws {
         if let now = report.now, timestamp(now) == nil {
             throw BridgeFailure(
                 message: "The report contains an invalid cutoff.", kind: "protocol", requiresRefresh: true)
@@ -101,7 +96,7 @@ final class DailyTotalsState {
                     message: "The report contains invalid task totals.", kind: "protocol", requiresRefresh: true)
             }
         }
-        if let active = report.snapshot.active {
+        if let active = tracking?.value {
             guard !active.id.isEmpty, !active.taskId.isEmpty, active.end == nil, timestamp(active.start) != nil
             else {
                 throw BridgeFailure(

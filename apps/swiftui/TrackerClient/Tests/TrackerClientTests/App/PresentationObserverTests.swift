@@ -6,7 +6,7 @@ final class PresentationObserverTests: XCTestCase {
     func testEditorAvailabilityNotifiesOnlyWhenTheAvailabilityChanges() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         let observer = TrackerPresentationObserver(session: fixture.session)
         var bulkChanges = 0
         var moveChanges = 0
@@ -38,7 +38,7 @@ final class PresentationObserverTests: XCTestCase {
     func testChangedServerContentAndPreferencesStillNotifyTheWindow() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         let observer = TrackerPresentationObserver(session: fixture.session)
         var names: [String?] = []
         observer.onContentChange = { names.append(fixture.session.selectedTask?.name) }
@@ -46,7 +46,7 @@ final class PresentationObserverTests: XCTestCase {
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
         fixture.scheduler.poll?.fire()
         let refresh = try await fixture.client.next()
-        refresh.succeed(TrackerSnapshot(tasks: [renamed], active: activeWorklog))
+        refresh.succeed(TaskListResources(tasks: [renamed], active: activeWorklog))
         let finished = Task { @MainActor in
             while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
         }
@@ -63,7 +63,7 @@ final class PresentationObserverTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         fixture.session.setWindowVisible(true)
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         let observer = TrackerPresentationObserver(session: fixture.session)
         var contentUpdates = 0
         var activityUpdates = 0
@@ -92,7 +92,7 @@ final class PresentationObserverTests: XCTestCase {
     func testUnchangedServerPollsDoNotInvalidateControlsOrLists() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(snapshot)
         let observer = TrackerPresentationObserver(session: fixture.session)
         var contentUpdates = 0

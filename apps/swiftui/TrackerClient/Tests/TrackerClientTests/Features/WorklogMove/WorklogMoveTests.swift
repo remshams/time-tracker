@@ -11,7 +11,7 @@ final class WorklogMoveTests: XCTestCase {
     @MainActor
     private func open(_ fixture: Fixture, worklog: WorklogItem? = nil) async throws -> WorklogItem {
         let log = worklog ?? precise
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: log.end == nil ? log : nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: log.end == nil ? log : nil))
         if log.end != nil {
             fixture.session.retryHistory()
             let page = try await fixture.client.next()
@@ -21,8 +21,8 @@ final class WorklogMoveTests: XCTestCase {
         fixture.session.openWorklogMove(worklogID: log.id)
         XCTAssertEqual(fixture.session.worklogMove.sourceTaskName, firstTask.name)
         let refresh = try await fixture.client.next()
-        XCTAssertEqual(refresh.operation, .snapshot)
-        refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: log.end == nil ? log : nil))
+        XCTAssertEqual(refresh.operation, .taskList)
+        refresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: log.end == nil ? log : nil))
         let search = try await fixture.client.next()
         XCTAssertEqual(search.operation, .candidates(source: firstTask.id, query: ""))
         search.candidates([candidate])
@@ -36,8 +36,8 @@ final class WorklogMoveTests: XCTestCase {
         tasks: [TaskItem] = [firstTask, secondTask]
     ) async throws {
         let snapshot = try await fixture.client.next()
-        XCTAssertEqual(snapshot.operation, .snapshot)
-        snapshot.succeed(TrackerSnapshot(tasks: tasks, active: log.end == nil ? log : nil))
+        XCTAssertEqual(snapshot.operation, .taskList)
+        snapshot.succeed(TaskListResources(tasks: tasks, active: log.end == nil ? log : nil))
         if log.end != nil {
             if committed || recovery {
                 let destination = try await fixture.client.next()
@@ -70,7 +70,7 @@ final class WorklogMoveTests: XCTestCase {
         let command = try await fixture.client.next()
         XCTAssertEqual(command.operation, .move(expected: log, destination: secondTask.id))
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: log.end)
-        command.moved(worklog: moved, snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        command.moved(worklog: moved, snapshot: TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let history = try await fixture.client.next()
         XCTAssertFalse(fixture.session.worklogMove.isPresented)
         XCTAssertEqual(fixture.session.worklogs, [])
@@ -91,7 +91,7 @@ final class WorklogMoveTests: XCTestCase {
         try await preflight(fixture, log: log)
         let command = try await fixture.client.next()
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
-        command.moved(worklog: moved, snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: moved))
+        command.moved(worklog: moved, snapshot: TaskListResources(tasks: [firstTask, secondTask], active: moved))
         try await finishHistory(fixture)
         XCTAssertEqual(fixture.session.active, moved)
         XCTAssertEqual(fixture.session.elapsed, elapsed)
@@ -116,7 +116,7 @@ final class WorklogMoveTests: XCTestCase {
         latest.candidates([candidate])
         try await fixture.settled()
         XCTAssertEqual(fixture.session.worklogMove.selectedTaskID, secondTask.id)
-        XCTAssertEqual(fixture.client.operations.filter { $0 == .snapshot }.count, 1)
+        XCTAssertEqual(fixture.client.operations.filter { $0 == .taskList }.count, 1)
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
     }
 
@@ -124,7 +124,7 @@ final class WorklogMoveTests: XCTestCase {
     func testOpeningDuringRefreshCoalescesSearchAndQueuedConnectionCannotChangeSource() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
@@ -136,7 +136,7 @@ final class WorklogMoveTests: XCTestCase {
         let connected = try await fixture.taskValue(connection)
         XCTAssertFalse(connected)
         let opening = try await fixture.client.next()
-        XCTAssertEqual(opening.operation, .snapshot)
+        XCTAssertEqual(opening.operation, .taskList)
         fixture.session.setWorklogMoveQuery("final")
         opening.succeed(snapshot)
         let search = try await fixture.client.next()
@@ -161,7 +161,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertFalse(fixture.session.worklogMove.canSubmit)
         fixture.session.retryWorklogMoveCandidates()
         let refresh = try await fixture.client.next()
-        refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        refresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let retry = try await fixture.client.next()
         retry.candidates([])
         try await fixture.settled()
@@ -186,7 +186,7 @@ final class WorklogMoveTests: XCTestCase {
         fixture.session.reviewLatestWorklogMove()
         XCTAssertEqual(fixture.session.worklogMove.sourceTaskName, firstTask.name)
         let refresh = try await fixture.client.next()
-        refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        refresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let search = try await fixture.client.next()
         search.candidates([candidate])
         try await fixture.settled()
@@ -275,7 +275,7 @@ final class WorklogMoveTests: XCTestCase {
         fixture.session.submitWorklogMove()
         let snapshot = try await fixture.client.next()
         fixture.session.sleep()
-        snapshot.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: log))
+        snapshot.succeed(TaskListResources(tasks: [firstTask, secondTask], active: log))
         try await fixture.settled()
         XCTAssertTrue(fixture.session.worklogMove.isSubmitting)
         fixture.session.wake()
@@ -283,7 +283,7 @@ final class WorklogMoveTests: XCTestCase {
         let command = try await fixture.client.next()
         fixture.session.shutdown()
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
-        command.moved(worklog: moved, snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: moved))
+        command.moved(worklog: moved, snapshot: TaskListResources(tasks: [firstTask, secondTask], active: moved))
         await Task.yield()
         XCTAssertEqual(fixture.session.active, log)
         XCTAssertFalse(fixture.session.worklogMove.isPresented)
@@ -318,11 +318,11 @@ final class WorklogMoveTests: XCTestCase {
     func testOpeningRefreshCannotClearChangedWorklogReviewWithCandidates() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         fixture.session.openWorklogMove(worklogID: activeWorklog.id)
         let refresh = try await fixture.client.next()
         let changed = WorklogItem(id: activeWorklog.id, taskId: secondTask.id, start: activeWorklog.start, end: nil)
-        refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: changed))
+        refresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: changed))
         try await fixture.settled()
         XCTAssertTrue(fixture.session.worklogMove.requiresReview)
         XCTAssertEqual(fixture.session.worklogMove.error, "This worklog changed. Review it before moving.")
@@ -337,7 +337,7 @@ final class WorklogMoveTests: XCTestCase {
     func testCoalescedOpeningSearchFailureReportsLatestQueryError() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.openWorklogMove(worklogID: activeWorklog.id)
         let refresh = try await fixture.client.next()
@@ -395,7 +395,7 @@ final class WorklogMoveTests: XCTestCase {
         try await preflight(fixture, log: log)
         let command = try await fixture.client.next()
         let invalid = WorklogItem(id: log.id, taskId: secondTask.id, start: "2024-12-31T23:58:30.000Z", end: nil)
-        command.moved(worklog: invalid, snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: invalid))
+        command.moved(worklog: invalid, snapshot: TaskListResources(tasks: [firstTask, secondTask], active: invalid))
         try await preflight(fixture, log: log)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.active, log)
@@ -428,11 +428,11 @@ final class WorklogMoveTests: XCTestCase {
     func testCandidateSearchRetriesWhenItsInitialSnapshotArrivesDuringSleep() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.openWorklogMove(worklogID: activeWorklog.id)
         let openingSnapshot = try await fixture.client.next()
-        XCTAssertEqual(openingSnapshot.operation, .snapshot)
+        XCTAssertEqual(openingSnapshot.operation, .taskList)
         fixture.session.sleep()
         openingSnapshot.succeed(snapshot)
         try await fixture.settled()
@@ -464,7 +464,7 @@ final class WorklogMoveTests: XCTestCase {
 
         fixture.session.wake()
         let refresh = try await fixture.client.next()
-        refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        refresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let retry = try await fixture.client.next()
         XCTAssertEqual(retry.operation, .candidates(source: firstTask.id, query: "Destination"))
         retry.candidates([candidate])
@@ -522,7 +522,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertEqual(fixture.session.worklogs.count, 101)
         fixture.session.submitWorklogMove()
         let snapshot = try await fixture.client.next()
-        snapshot.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        snapshot.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         for cursor in ["second-page", "third-page"] {
             let page = try await fixture.client.next()
             page.succeed(HistoryPage(worklogs: [], nextCursor: cursor, reset: false))
@@ -533,7 +533,7 @@ final class WorklogMoveTests: XCTestCase {
         let command = try await fixture.client.next()
         XCTAssertEqual(command.operation, .move(expected: log, destination: secondTask.id))
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: log.end)
-        command.moved(worklog: moved, snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        command.moved(worklog: moved, snapshot: TaskListResources(tasks: [firstTask, secondTask], active: nil))
         try await finishHistory(fixture)
 
         XCTAssertFalse(fixture.session.worklogMove.isPresented)
@@ -546,7 +546,7 @@ final class WorklogMoveTests: XCTestCase {
         _ = try await open(fixture)
         fixture.session.submitWorklogMove()
         let snapshot = try await fixture.client.next()
-        snapshot.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        snapshot.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
@@ -623,7 +623,7 @@ final class WorklogMoveTests: XCTestCase {
         let archived = TaskItem(id: secondTask.id, name: secondTask.name, archived: true, latestStart: nil)
         command.moved(
             worklog: moved,
-            snapshot: TrackerSnapshot(
+            snapshot: TaskListResources(
                 tasks: [firstTask, archived], active: nil,
                 tasksRevision: "epoch:3", trackingRevision: "epoch:3"))
         let history = try await fixture.client.next()
@@ -635,7 +635,7 @@ final class WorklogMoveTests: XCTestCase {
     }
 
     @MainActor
-    func testMoveResponseWithAnArchivedDestinationRequiresReconciliation() async throws {
+    func testCommittedMoveSurvivesFailedResourceRefresh() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await open(fixture, worklog: activeWorklog)
@@ -643,15 +643,22 @@ final class WorklogMoveTests: XCTestCase {
         try await preflight(fixture, log: log)
         let command = try await fixture.client.next()
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
-        let archived = TaskItem(id: secondTask.id, name: secondTask.name, archived: true, latestStart: nil)
-        command.moved(worklog: moved, snapshot: TrackerSnapshot(tasks: [firstTask, archived], active: moved))
-        try await preflight(fixture, log: log)
+        command.moved(worklog: moved)
+        let refresh = try await fixture.client.next()
+        XCTAssertEqual(refresh.operation, .taskList)
+        refresh.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable", requiresRefresh: true))
+        let history = try await fixture.client.next()
+        history.succeed(emptyPage)
         try await fixture.settled()
 
         XCTAssertEqual(fixture.session.active, log)
-        XCTAssertFalse(fixture.session.worklogMove.canEdit)
-        XCTAssertTrue(fixture.session.worklogMove.canSubmit)
-        XCTAssertEqual(fixture.session.worklogMove.error, "The move response does not contain the moved worklog.")
+        XCTAssertFalse(fixture.session.worklogMove.isPresented)
+        XCTAssertNil(fixture.session.worklogMove.error)
+        XCTAssertTrue(fixture.session.isStale)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .move = $0 { return true }; return false
+            }.count, 1)
     }
 
     @MainActor
@@ -702,7 +709,7 @@ final class WorklogMoveTests: XCTestCase {
         let tasks = [firstTask, secondTask, third]
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
-        refresh.succeed(TrackerSnapshot(tasks: tasks, active: nil))
+        refresh.succeed(TaskListResources(tasks: tasks, active: nil))
         try await fixture.settled()
         fixture.session.select(third.id)
         let selectedHistory = try await fixture.client.next()
@@ -713,7 +720,7 @@ final class WorklogMoveTests: XCTestCase {
         try await preflight(fixture, log: log, tasks: tasks)
         let command = try await fixture.client.next()
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: log.end)
-        command.moved(worklog: moved, snapshot: TrackerSnapshot(tasks: tasks, active: nil))
+        command.moved(worklog: moved, snapshot: TaskListResources(tasks: tasks, active: nil))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: third.id, cursor: nil))
         XCTAssertEqual(fixture.session.worklogs, [unrelated])
@@ -746,7 +753,7 @@ final class WorklogMoveTests: XCTestCase {
         let command = try await fixture.client.next()
         command.fail(BridgeFailure(message: "Lost response", uncertain: true))
         let snapshot = try await fixture.client.next()
-        snapshot.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        snapshot.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         for cursor in ["older-destination", "unverified-destination"] {
             let page = try await fixture.client.next()
             page.succeed(HistoryPage(worklogs: [], nextCursor: cursor, reset: false))
@@ -770,7 +777,7 @@ final class WorklogMoveTests: XCTestCase {
         _ = try await open(fixture)
         fixture.session.submitWorklogMove()
         let snapshot = try await fixture.client.next()
-        snapshot.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        snapshot.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         for cursor in ["older-source", "unverified-source"] {
             let page = try await fixture.client.next()
             page.succeed(HistoryPage(worklogs: [], nextCursor: cursor, reset: false))
@@ -785,11 +792,11 @@ final class WorklogMoveTests: XCTestCase {
     func testCancelledOpeningDoesNotSearchOrOverwriteReopenedSheet() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         fixture.session.openWorklogMove(worklogID: activeWorklog.id)
         let opening = try await fixture.client.next()
         fixture.session.cancelWorklogMove()
-        opening.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
+        opening.succeed(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         try await fixture.settled()
         XCTAssertFalse(
             fixture.client.operations.contains {
@@ -797,7 +804,7 @@ final class WorklogMoveTests: XCTestCase {
             })
         fixture.session.openWorklogMove(worklogID: activeWorklog.id)
         let refresh = try await fixture.client.next()
-        refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
+        refresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         let search = try await fixture.client.next()
         search.candidates([candidate])
         try await fixture.settled()
@@ -809,7 +816,7 @@ final class WorklogMoveTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await open(fixture, worklog: activeWorklog)
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: log)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: log)
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
         fixture.session.submitWorklogMove()
@@ -836,7 +843,7 @@ final class WorklogMoveTests: XCTestCase {
         let visible = observer.worklogMoveSheetContent
         XCTAssertTrue(visible.isSubmitting)
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
-        command.moved(worklog: moved, snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: moved))
+        command.moved(worklog: moved, snapshot: TaskListResources(tasks: [firstTask, secondTask], active: moved))
         let history = try await fixture.client.next()
         XCTAssertEqual(observer.worklogMoveSheetContent, visible)
         history.succeed(emptyPage)

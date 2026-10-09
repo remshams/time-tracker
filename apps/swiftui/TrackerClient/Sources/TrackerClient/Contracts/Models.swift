@@ -11,16 +11,104 @@ public struct TaskReportTotal: Decodable, Equatable, Sendable {
 }
 
 public struct TrackerReport: Decodable, Equatable, Sendable {
-    public let snapshot: TrackerSnapshot
     public let rows: [TaskReportTotal]
     public let revision: String?
     public let now: String?
 
-    public init(snapshot: TrackerSnapshot, rows: [TaskReportTotal], revision: String? = nil, now: String? = nil) {
-        self.snapshot = snapshot
+    public init(rows: [TaskReportTotal], revision: String? = nil, now: String? = nil) {
         self.rows = rows
         self.revision = revision
         self.now = now
+    }
+}
+
+public struct ResourceObservation<Value: Decodable & Equatable & Sendable>: Decodable, Equatable, Sendable {
+    public let value: Value
+    public let revision: String?
+
+    public init(value: Value, revision: String? = nil) {
+        self.value = value
+        self.revision = revision
+    }
+
+    private enum CodingKeys: String, CodingKey { case value, revision }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        value = try container.decode(Value.self, forKey: .value)
+        revision = try container.decodeIfPresent(String.self, forKey: .revision)
+    }
+}
+
+public typealias TaskCatalogObservation = ResourceObservation<[TaskItem]>
+public typealias TrackingObservation = ResourceObservation<WorklogItem?>
+
+public struct TaskListResources: Equatable, Sendable {
+    public let catalog: TaskCatalogObservation
+    public let tracking: TrackingObservation
+
+    public init(catalog: TaskCatalogObservation, tracking: TrackingObservation) {
+        self.catalog = catalog
+        self.tracking = tracking
+    }
+}
+
+public struct DailyTotalsResources: Equatable, Sendable {
+    public let report: TrackerReport
+    public let tracking: TrackingObservation
+
+    public init(report: TrackerReport, tracking: TrackingObservation) {
+        self.report = report
+        self.tracking = tracking
+    }
+}
+
+public struct TaskListTotalsRefresh: Equatable, Sendable {
+    public let taskList: TaskListResources
+    public let report: TrackerReport
+
+    public init(taskList: TaskListResources, report: TrackerReport) {
+        self.taskList = taskList
+        self.report = report
+    }
+}
+
+public struct CommandReceipt: Decodable, Equatable, Sendable {
+    public let requestId: String
+    public let appliedRevision: String
+    public let replayed: Bool
+
+    public init(requestId: String, appliedRevision: String, replayed: Bool) {
+        self.requestId = requestId
+        self.appliedRevision = appliedRevision
+        self.replayed = replayed
+    }
+}
+
+public struct TaskCommandResult: Decodable, Equatable, Sendable {
+    public let task: TaskItem
+    public let receipt: CommandReceipt?
+
+    public init(task: TaskItem, receipt: CommandReceipt? = nil) {
+        self.task = task
+        self.receipt = receipt
+    }
+}
+
+public struct TrackingCommandResult: Decodable, Equatable, Sendable {
+    public let active: WorklogItem?
+    public let stopped: WorklogItem?
+    public let didStop: Bool
+    public let receipt: CommandReceipt?
+
+    public init(
+        active: WorklogItem?, stopped: WorklogItem? = nil, didStop: Bool = false,
+        receipt: CommandReceipt? = nil
+    ) {
+        self.active = active
+        self.stopped = stopped
+        self.didStop = didStop
+        self.receipt = receipt
     }
 }
 
@@ -54,23 +142,6 @@ public struct WorklogItem: Decodable, Identifiable, Equatable, Sendable {
         self.start = start
         self.end = end
     }
-}
-
-public struct TrackerSnapshot: Decodable, Equatable, Sendable {
-    public let tasks: [TaskItem]
-    public let active: WorklogItem?
-    public let tasksRevision: String?
-    public let trackingRevision: String?
-
-    public init(tasks: [TaskItem], active: WorklogItem?, tasksRevision: String? = nil, trackingRevision: String? = nil)
-    {
-        self.tasks = tasks
-        self.active = active
-        self.tasksRevision = tasksRevision
-        self.trackingRevision = trackingRevision
-    }
-
-    public var resourcesAreCoherent: Bool { tasksRevision == trackingRevision }
 }
 
 public struct HistoryPage: Decodable, Equatable, Sendable {
@@ -135,33 +206,16 @@ public struct TrackingPreferences: Codable, Equatable, Sendable {
     }
 }
 
-public struct TrackingPauseResult: Decodable, Equatable, Sendable {
-    public let snapshot: TrackerSnapshot
-    public let didStop: Bool
-
-    public init(snapshot: TrackerSnapshot, didStop: Bool) {
-        self.snapshot = snapshot
-        self.didStop = didStop
-    }
-}
-
-public struct TaskCreationResult: Decodable, Equatable, Sendable {
-    public let taskId: String
-    public let snapshot: TrackerSnapshot
-
-    public init(taskId: String, snapshot: TrackerSnapshot) {
-        self.taskId = taskId
-        self.snapshot = snapshot
-    }
-}
+public typealias TrackingPauseResult = TrackingCommandResult
+public typealias TaskCreationResult = TaskCommandResult
 
 public struct WorklogCorrectionResult: Decodable, Equatable, Sendable {
     public let worklog: WorklogItem
-    public let snapshot: TrackerSnapshot
+    public let receipt: CommandReceipt?
 
-    public init(worklog: WorklogItem, snapshot: TrackerSnapshot) {
+    public init(worklog: WorklogItem, receipt: CommandReceipt? = nil) {
         self.worklog = worklog
-        self.snapshot = snapshot
+        self.receipt = receipt
     }
 }
 
@@ -175,15 +229,7 @@ public struct WorklogMoveCandidate: Decodable, Identifiable, Equatable, Sendable
     }
 }
 
-public struct WorklogMoveResult: Decodable, Equatable, Sendable {
-    public let worklog: WorklogItem
-    public let snapshot: TrackerSnapshot
-
-    public init(worklog: WorklogItem, snapshot: TrackerSnapshot) {
-        self.worklog = worklog
-        self.snapshot = snapshot
-    }
-}
+public typealias WorklogMoveResult = WorklogCorrectionResult
 
 public struct InactiveTaskPreview: Decodable, Equatable, Sendable {
     public let asOf: String
@@ -199,10 +245,10 @@ public struct InactiveTaskPreview: Decodable, Equatable, Sendable {
 
 public struct InactiveTaskArchiveResult: Decodable, Equatable, Sendable {
     public let archivedCount: Int
-    public let snapshot: TrackerSnapshot
+    public let receipt: CommandReceipt?
 
-    public init(archivedCount: Int, snapshot: TrackerSnapshot) {
+    public init(archivedCount: Int, receipt: CommandReceipt? = nil) {
         self.archivedCount = archivedCount
-        self.snapshot = snapshot
+        self.receipt = receipt
     }
 }
