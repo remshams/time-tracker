@@ -166,8 +166,7 @@ impl RemoteApplication {
 
     pub async fn refresh_tasks(&mut self) -> Result<(), RemoteError> {
         self.ensure_version().await?;
-        let dto: TasksDto = self.read("v1/tasks").await?;
-        let (items, revision) = decode_tasks(dto).map_err(|error| self.record_error(error))?;
+        let (items, revision) = self.fetch_task_catalog().await?;
         self.task_cache.clear();
         self.task_observation = Some(ResourceObservation {
             value: items,
@@ -175,6 +174,11 @@ impl RemoteApplication {
         });
         self.confirmed();
         Ok(())
+    }
+
+    async fn fetch_task_catalog(&mut self) -> Result<(Vec<TaskListItem>, String), RemoteError> {
+        let dto: TasksDto = self.read("v1/tasks").await?;
+        decode_tasks(dto).map_err(|error| self.record_error(error))
     }
 
     pub async fn refresh_tracking(&mut self) -> Result<(), RemoteError> {
@@ -254,8 +258,7 @@ impl RemoteApplication {
             let (active, state, revision) =
                 decode_tracking(tracking).map_err(|error| self.record_error(error))?;
             let tasks = if include_tasks {
-                let dto: TasksDto = self.read("v1/tasks").await?;
-                Some(decode_tasks(dto).map_err(|error| self.record_error(error))?)
+                Some(self.fetch_task_catalog().await?)
             } else {
                 None
             };
