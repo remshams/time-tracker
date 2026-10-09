@@ -208,6 +208,7 @@ final class TaskCreationTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(fixture.client.operations.count, 2)
         XCTAssertTrue(fixture.session.taskCreation.isSubmitting)
+        XCTAssertTrue(fixture.session.isBlockingControls)
         fixture.session.wake()
         let creation = try await fixture.client.next()
         XCTAssertEqual(creation.operation, .create(name: "Queued task", at: "2025-01-01T00:00:00.000Z"))
