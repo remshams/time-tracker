@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import CoreML
+import ImageIO
 import Vision
 import XCTest
 
@@ -18,7 +19,9 @@ extension TrackerUITestCase {
     func assertStatusTooltip(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
         trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
         let frame = statusButton.frame
-        screenCoordinate(at: CGPoint(x: frame.midX, y: frame.midY)).hover()
+        // Hover the leading icon instead of the text portion of the status button.
+        let iconX = frame.minX + min(18, frame.width / 2)
+        screenCoordinate(at: CGPoint(x: iconX, y: frame.midY)).hover()
         var screenshot: XCUIScreenshot?
         var recognizedText = ""
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -59,7 +62,6 @@ extension TrackerUITestCase {
         request.minimumTextHeight = 0
         request.recognitionLanguages = ["en-US"]
         request.usesLanguageCorrection = false
-        request.regionOfInterest = CGRect(x: 0, y: 0.75, width: 1, height: 0.25)
         for (stage, devices) in try request.supportedComputeStageDevices {
             if let cpu = devices.first(where: {
                 if case .cpu = $0 { return true }
@@ -71,9 +73,35 @@ extension TrackerUITestCase {
                               userInfo: [NSLocalizedDescriptionKey: "No CPU device for \(stage)"])
             }
         }
-        try VNImageRequestHandler(data: screenshot.pngRepresentation, options: [:]).perform([request])
+        try VNImageRequestHandler(cgImage: tooltipRecognitionImage(from: screenshot), options: [:]).perform([request])
         return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
             .joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    private func tooltipRecognitionImage(from screenshot: XCUIScreenshot) throws -> CGImage {
+        guard let source = CGImageSourceCreateWithData(screenshot.pngRepresentation as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              let top = image.cropping(to: CGRect(x: 0, y: 0,
+                                                  width: CGFloat(image.width), height: CGFloat(image.height / 4))) else {
+            throw NSError(domain: "TooltipRecognition", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Cannot decode the tooltip screenshot"])
+        }
+        // Small tooltip fonts need more pixels for the runner's fast recognition model.
+        let width = top.width * 3
+        let height = top.height * 3
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            throw NSError(domain: "TooltipRecognition", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Cannot enlarge the tooltip screenshot"])
+        }
+        context.interpolationQuality = .high
+        context.draw(top, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+        guard let enlarged = context.makeImage() else {
+            throw NSError(domain: "TooltipRecognition", code: 4,
+                          userInfo: [NSLocalizedDescriptionKey: "Cannot create the tooltip recognition image"])
+        }
+        return enlarged
     }
 
     private func captureToolbarTooltipDiagnostic() {
