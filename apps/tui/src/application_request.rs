@@ -1051,7 +1051,7 @@ mod reviewed_intent_tests {
 }
 
 #[cfg(test)]
-mod remote_resource_tests {
+pub(crate) mod remote_resource_tests {
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpListener;
     use std::thread;
@@ -1098,14 +1098,29 @@ mod remote_resource_tests {
     }
 
     fn resource_server(responses: Vec<(u16, String)>) -> (String, thread::JoinHandle<Vec<String>>) {
+        let (endpoint, worker, _stop) = stoppable_resource_server(responses);
+        (endpoint, worker)
+    }
+
+    pub(crate) fn stoppable_resource_server(
+        responses: Vec<(u16, String)>,
+    ) -> (
+        String,
+        thread::JoinHandle<Vec<String>>,
+        std::sync::mpsc::Sender<()>,
+    ) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         listener.set_nonblocking(true).unwrap();
+        let (stop, stopped) = std::sync::mpsc::channel();
         let worker = thread::spawn(move || {
             let mut paths = Vec::new();
             let deadline = Instant::now() + Duration::from_secs(3);
             for (status, body) in responses {
                 let (mut stream, _) = loop {
+                    if stopped.try_recv().is_ok() {
+                        return paths;
+                    }
                     match listener.accept() {
                         Ok(connection) => break connection,
                         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -1128,7 +1143,7 @@ mod remote_resource_tests {
             }
             paths
         });
-        (endpoint, worker)
+        (endpoint, worker, stop)
     }
 
     async fn read_report(metadata_available: bool) {
