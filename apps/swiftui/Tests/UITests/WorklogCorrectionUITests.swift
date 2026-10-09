@@ -200,6 +200,8 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         notify()
         let mode = CFPreferencesCopyValue(key, applicationID, user, host) as? NSNumber
         XCTAssertEqual(mode?.intValue, 3)
+        XCTAssertTrue(try Self.keyboardAccessInFreshProcess(directory: directory),
+                      "A fresh AppKit process reads enabled button navigation.")
         waitUntil("AppKit enables keyboard navigation through buttons") {
             _ = CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
             return NSApplication.shared.isFullKeyboardAccessEnabled
