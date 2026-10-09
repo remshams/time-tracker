@@ -711,7 +711,6 @@ public final class TrackerSession {
             catalog.resetSelections()
             rename.reset()
             archiving.reset()
-            bulkArchiving.reset()
             history.request(selectedTaskID: nil)
             tracking.error = nil
             acceptSnapshot(snapshot)
@@ -765,11 +764,11 @@ public final class TrackerSession {
     }
 
     private func acquireControlOperation() async throws -> ControlOperation {
-        try Task.checkCancellation()
         guard running, !sleeping, !isBlockingControls else {
             throw BridgeFailure(message: "Wait for the current request to finish.")
         }
         if !isBusy {
+            try Task.checkCancellation()
             let operation = ControlOperation(token: generation, controlGeneration: controlGeneration)
             beginOperation()
             return operation
