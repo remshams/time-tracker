@@ -20,7 +20,7 @@ pub(crate) struct Backend {
 
 pub(crate) enum BackendKind {
     Local(TrackerApplication<SqliteRepository>),
-    Remote(RemoteApplication),
+    Remote(Box<RemoteApplication>),
 }
 
 pub(crate) fn identity(database: Option<&Path>, server: Option<&str>) -> Result<String, CliError> {
@@ -71,11 +71,11 @@ impl Backend {
     pub async fn open(database: Option<PathBuf>, server: Option<String>) -> Result<Self, CliError> {
         let identity = identity(database.as_deref(), server.as_deref())?;
         let kind = if let Some(server) = server {
-            BackendKind::Remote(
+            BackendKind::Remote(Box::new(
                 RemoteApplication::connect(&server)
                     .await
                     .map_err(CliError::remote)?,
-            )
+            ))
         } else {
             let path = match database {
                 Some(path) => path,
