@@ -80,8 +80,9 @@ public struct TrackerMenuLabelContent: Equatable {
     @MainActor
     init(_ session: TrackerSession, display: MenuBarDisplay) {
         self.display = display
-        indicator = TaskIndicator(taskID: session.active?.taskId ?? session.lastTrackedTaskID,
-                                  isRunning: session.active != nil, isStale: session.isStale)
+        indicator = TaskIndicator(
+            taskID: session.active?.taskId ?? session.lastTrackedTaskID,
+            isRunning: session.active != nil, isStale: session.isStale)
         if session.isStale {
             let name = session.lastTrackedTask?.name ?? Self.unavailableTaskName(session.lastTrackedTaskID)
             status =
