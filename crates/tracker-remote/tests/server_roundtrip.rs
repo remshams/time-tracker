@@ -2450,3 +2450,100 @@ async fn coherent_task_creation_recovers_the_original_id_after_failed_post_write
     assert_eq!(client.snapshot().task_items.len(), 1);
     assert_eq!(client.task_revision(), client.tracking_revision());
 }
+
+#[tokio::test]
+async fn definitively_rejected_creation_allows_a_new_task_identity() {
+    use axum::{http::StatusCode, response::IntoResponse};
+    use std::sync::{Arc, Mutex};
+    use tracker_protocol::{
+        CreateTaskRequest, ErrorCode, ErrorDto, MutationDto, MutationResultDto, TaskDto, TasksDto,
+    };
+    let commands = Arc::new(Mutex::new(Vec::<CreateTaskRequest>::new()));
+    let current = Arc::new(Mutex::new(Vec::<TaskDto>::new()));
+    let for_get = current.clone();
+    let for_post = current.clone();
+    let captured = commands.clone();
+    let server = StubServer::from_router(
+        Router::new()
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(HealthDto {
+                        status: "ok".into(),
+                        protocol_version: VERSION,
+                    })
+                }),
+            )
+            .route(
+                "/v1/tasks",
+                get(move || {
+                    let current = for_get.clone();
+                    async move {
+                        Json(TasksDto {
+                            tasks: current.lock().unwrap().clone(),
+                            revision: "confirmed".into(),
+                        })
+                    }
+                })
+                .post(move |Json(body): Json<CreateTaskRequest>| {
+                    let current = for_post.clone();
+                    let captured = captured.clone();
+                    async move {
+                        let first = {
+                            let mut commands = captured.lock().unwrap();
+                            commands.push(body.clone());
+                            commands.len() == 1
+                        };
+                        if first {
+                            return (
+                                StatusCode::CONFLICT,
+                                Json(ErrorDto {
+                                    code: ErrorCode::StaleRevision,
+                                    message: "Tracker state changed. Refresh and retry.".into(),
+                                }),
+                            )
+                                .into_response();
+                        }
+                        let task = TaskDto {
+                            id: body.task_id,
+                            name: body.name,
+                            archived: false,
+                            created_at: body.occurred_at,
+                            updated_at: body.occurred_at,
+                            latest_work_start: None,
+                        };
+                        *current.lock().unwrap() = vec![task.clone()];
+                        Json(MutationDto {
+                            request_id: body.guard.request_id,
+                            applied_revision: "committed".into(),
+                            replayed: false,
+                            result: MutationResultDto::Task(task),
+                        })
+                        .into_response()
+                    }
+                }),
+            ),
+    );
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let error = client
+        .create_task(name("Rejected task"), at)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.failure().source(),
+        tracker_application::ApplicationFailureSource::Operation
+    );
+    let task = client
+        .create_task(name("New reviewed task"), at + Duration::seconds(1))
+        .await
+        .unwrap();
+    assert_eq!(task.name().as_str(), "New reviewed task");
+    let commands = commands.lock().unwrap();
+    assert_eq!(commands.len(), 2);
+    assert_ne!(commands[0].task_id, commands[1].task_id);
+    assert_ne!(commands[0].guard.request_id, commands[1].guard.request_id);
+    assert_eq!(commands[1].task_id, task.id().to_string());
+}
