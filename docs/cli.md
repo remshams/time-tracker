@@ -60,7 +60,7 @@ Listing defaults to active tasks ordered by most recently worked. Search uses th
 
 Archiving rechecks eligibility in one transaction at the token's original preview time, as the TUI does. Waiting to confirm does not move the eligibility window. Running timers and recorded positive-duration work starting at or after the preview time prevent affected tasks from qualifying. Local mode requires the candidate set to match the preview, and confirmation cannot precede the preview time. Server mode keeps the revision check and reports the actual archived count, which can differ from the preview if storage changed without advancing the server revision. If a guard fails, generate a new preview. Remote previews expire when their preview time is more than 15 minutes from the server clock. Restoring a task preserves its ID and worklogs.
 
-Remote clients and servers require protocol version 2. Update both together and regenerate remote preview tokens saved by an older client; they contain the removed candidate fingerprint field.
+Remote clients and servers require `/v1` protocol version 3. Update every client and the server together, then regenerate saved remote preview tokens. Health checks reject incompatible versions before loading resources.
 
 ## Tracking
 
