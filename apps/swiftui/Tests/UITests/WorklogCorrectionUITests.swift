@@ -5,7 +5,8 @@ import XCTest
 class WorklogCorrectionUITests: TrackerUITestCase {
     func testCompletedStartCorrectionUsesMinutePrecisionAndPreservesEndFractions() throws {
         let task = try fixture.create("Completed correction")
-        let now = Date()
+        // Keep the edit visible in the second-precision duration preview.
+        let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970 / 60) * 60 + 30)
         let log = try fixture.completed(task, start: now.addingTimeInterval(-3600.375), end: now.addingTimeInterval(-1800.625))
         launch()
         select(task)
