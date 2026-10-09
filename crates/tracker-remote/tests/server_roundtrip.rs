@@ -2547,3 +2547,126 @@ async fn definitively_rejected_creation_allows_a_new_task_identity() {
     assert_ne!(commands[0].guard.request_id, commands[1].guard.request_id);
     assert_eq!(commands[1].task_id, task.id().to_string());
 }
+
+#[tokio::test]
+async fn coherent_tracking_preflight_preserves_the_confirmed_view_when_a_new_task_is_running() {
+    let server = TestServer::start();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let mut first = connected(&server.endpoint()).await.unwrap();
+    let original_task = first
+        .create_task(name("Original timer task"), at)
+        .await
+        .unwrap();
+    let original_timer = match first
+        .set_active_task(original_task.id(), at + Duration::seconds(1))
+        .await
+        .unwrap()
+    {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        _ => panic!("expected original timer"),
+    };
+    let mut second = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap()
+        .with_coherent_task_views();
+    second.refresh().await.unwrap();
+    let revision = second.task_revision().to_owned();
+    let confirmed_active = second.snapshot().active_worklog.clone();
+    let new_task = first
+        .create_task(name("New timer task"), at + Duration::seconds(2))
+        .await
+        .unwrap();
+    first
+        .set_active_task(new_task.id(), at + Duration::seconds(3))
+        .await
+        .unwrap();
+
+    second
+        .clear_active_task(original_timer.id(), at + Duration::seconds(4))
+        .await
+        .unwrap_err();
+    assert!(!second.last_write_attempted());
+    assert_eq!(second.task_revision(), second.tracking_revision());
+    assert_eq!(second.task_revision(), revision);
+    assert_eq!(second.snapshot().active_worklog, confirmed_active);
+    let active_task_id = second.snapshot().active_worklog.as_ref().unwrap().task_id();
+    assert!(
+        second
+            .snapshot()
+            .task_items
+            .iter()
+            .any(|item| item.task.id() == active_task_id)
+    );
+}
+
+#[tokio::test]
+async fn coherent_tracking_preflight_initializes_a_pair_before_rejecting_an_unreviewed_timer() {
+    let server = TestServer::start();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let mut first = connected(&server.endpoint()).await.unwrap();
+    let running_task = first.create_task(name("Running task"), at).await.unwrap();
+    let target = first.create_task(name("Target task"), at).await.unwrap();
+    let running = match first
+        .set_active_task(running_task.id(), at + Duration::seconds(1))
+        .await
+        .unwrap()
+    {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        _ => panic!("expected original timer"),
+    };
+    for starting in [false, true] {
+        let mut client = RemoteApplication::connect(&server.endpoint())
+            .await
+            .unwrap()
+            .with_coherent_task_views();
+        assert!(client.task_revision().is_empty());
+        assert!(client.tracking_revision().is_empty());
+        if starting {
+            client
+                .set_active_task_with_expected_active(target.id(), None, at + Duration::seconds(2))
+                .await
+                .unwrap_err();
+        } else {
+            client
+                .clear_active_task(WorklogId::generate(), at + Duration::seconds(2))
+                .await
+                .unwrap_err();
+        }
+        assert!(!client.last_write_attempted());
+        assert!(!client.task_revision().is_empty());
+        assert_eq!(client.task_revision(), client.tracking_revision());
+        assert_eq!(
+            client.snapshot().active_worklog.as_ref().unwrap().id(),
+            running.id()
+        );
+        let active_task_id = client.snapshot().active_worklog.as_ref().unwrap().task_id();
+        assert!(
+            client
+                .snapshot()
+                .task_items
+                .iter()
+                .any(|item| item.task.id() == active_task_id)
+        );
+    }
+    let mut initial = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap()
+        .with_coherent_task_views();
+    assert!(matches!(
+        initial
+            .set_active_task(target.id(), at + Duration::seconds(3))
+            .await
+            .unwrap(),
+        SetActiveTaskOutcome::Switched { .. }
+    ));
+    assert_eq!(initial.task_revision(), initial.tracking_revision());
+    assert_eq!(
+        initial
+            .snapshot()
+            .active_worklog
+            .as_ref()
+            .unwrap()
+            .task_id(),
+        target.id()
+    );
+}
