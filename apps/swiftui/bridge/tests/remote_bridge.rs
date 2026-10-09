@@ -7,11 +7,7 @@ use std::{
     thread,
 };
 
-use axum::{
-    Json, Router,
-    http::StatusCode,
-    routing::{get, patch, post, put},
-};
+use axum::{Json, Router, http::StatusCode, routing::get};
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -215,7 +211,7 @@ fn remote_mode_uses_only_server_tasks_and_preserves_click_timestamps() {
     let mut client = Client::open(&server.endpoint());
     assert_eq!(
         client.snapshot(false)["data"],
-        json!({"tasks": [], "active": null})
+        json!({"tasks": [], "active": null,"tasksRevision":"","trackingRevision":""})
     );
     let disconnected = client.start("00000000-0000-0000-0000-000000000001", at());
     assert_eq!(disconnected["requiresRefresh"], true);
@@ -269,7 +265,19 @@ fn remote_creation_persists_client_ids_timestamps_and_preserves_tracking() {
         created["data"]["snapshot"]["active"],
         active["data"]["active"]
     );
-    assert_eq!(client.snapshot(true)["data"], created["data"]["snapshot"]);
+    let refreshed = client.snapshot(true);
+    assert_eq!(
+        refreshed["data"]["tasks"],
+        created["data"]["snapshot"]["tasks"]
+    );
+    assert_eq!(
+        refreshed["data"]["active"],
+        created["data"]["snapshot"]["active"]
+    );
+    assert_eq!(
+        refreshed["data"]["tasksRevision"],
+        refreshed["data"]["trackingRevision"]
+    );
     let stored = TrackerApplication::load(SqliteRepository::open(server.path()).unwrap()).unwrap();
     let task = stored.task(id).unwrap();
     assert_eq!(task.name().as_str(), "Server project 🛠");
@@ -281,7 +289,12 @@ fn remote_creation_persists_client_ids_timestamps_and_preserves_tracking() {
 #[test]
 fn uncertain_creation_recovers_the_same_id_after_polling_or_retries_the_original_intent() {
     for committed in [false, true] {
-        for failure in ["malformed", "wrong-result", "server-error", "missing-task"] {
+        for failure in [
+            "malformed",
+            "wrong-result",
+            "server-error",
+            "empty-revision",
+        ] {
             let requests = Arc::new(Mutex::new(Vec::<Value>::new()));
             let task = Arc::new(Mutex::new(None::<Value>));
             let recovered = Arc::new(Mutex::new(false));
@@ -289,39 +302,44 @@ fn uncertain_creation_recovers_the_same_id_after_polling_or_retries_the_original
             let task_for_get = Arc::clone(&task);
             let task_for_post = Arc::clone(&task);
             let recovered_for_post = Arc::clone(&recovered);
+            let task_list_state = Arc::clone(&task);
             let server = Server::launch(
                 TempDir::new().unwrap(),
                 "127.0.0.1:0".parse().unwrap(),
                 move || {
                     Router::new()
                     .route("/v1/health", get(|| async { Json(json!({"status":"ok","protocol_version":tracker_protocol::VERSION})) }))
-                    .route("/v1/snapshot", get(move || {
-                        let task = Arc::clone(&task_for_get);
+                    .route("/v1/tasks", get(move || {
+                        let task = Arc::clone(&task_list_state);
                         async move {
-                            let items = task.lock().unwrap().clone().map(|task| vec![json!({"task":task,"latest_work_start":null})]).unwrap_or_default();
-                            Json(json!({"task_items":items,"active_worklog":null,"revision":"recovered"}))
+                            let tasks = task.lock().unwrap().clone().map(|task| vec![task]).unwrap_or_default();
+                            Json(json!({"tasks":tasks,"revision":"recovered"}))
                         }
-                    }))
-                    .route("/v1/tasks", post(move |Json(body): Json<Value>| {
+                    }).post(move |Json(body): Json<Value>| {
                         let requests = Arc::clone(&request_state);
                         let task = Arc::clone(&task_for_post);
                         let recovered = Arc::clone(&recovered_for_post);
                         async move {
                             requests.lock().unwrap().push(body.clone());
                             let healthy = *recovered.lock().unwrap();
-                            let created = json!({"id":body["task_id"],"name":body["name"],"archived":false,"created_at":body["occurred_at"],"updated_at":body["occurred_at"]});
+                            let created = json!({"id":body["task_id"],"name":body["name"],"archived":false,"created_at":body["occurred_at"],"updated_at":body["occurred_at"],"latest_work_start":null});
                             if committed || healthy { *task.lock().unwrap() = Some(created.clone()); }
-                            let snapshot = json!({"task_items":[{"task":created,"latest_work_start":null}],"active_worklog":null,"revision":"created"});
+                            let receipt = json!({"request_id":body["request_id"],"applied_revision":"created","replayed":false,"result":{"kind":"task","value":created}});
                             if healthy {
-                                (StatusCode::OK, Json(json!({"result":{"kind":"task","value":created},"snapshot":snapshot})))
-                            } else if failure == "missing-task" {
-                                (StatusCode::OK, Json(json!({"result":{"kind":"task","value":created},"snapshot":{"task_items":[],"active_worklog":null,"revision":"created"}})))
+                                (StatusCode::OK, Json(receipt.clone()))
+                            } else if failure == "empty-revision" {
+                                (StatusCode::OK, Json(json!({"request_id":body["request_id"],"applied_revision":"","replayed":false,"result":{"kind":"task","value":created}})))
                             } else if failure == "wrong-result" {
-                                (StatusCode::OK, Json(json!({"result":{"kind":"tracking_already_idle"},"snapshot":snapshot})))
+                                (StatusCode::OK, Json(json!({"request_id":body["request_id"],"applied_revision":"created","replayed":false,"result":{"kind":"tracking_already_idle"}})))
                             } else {
                                 (if failure == "server-error" { StatusCode::INTERNAL_SERVER_ERROR } else { StatusCode::OK }, Json(json!({"unexpected":true})))
                             }
                         }
+                    }))
+                    .route("/v1/tracking", get(|| async { Json(json!({"active_worklog":null,"revision":"recovered"})) }))
+                    .route("/v1/tasks/{id}", get(move || {
+                        let task = task_for_get.lock().unwrap().clone().unwrap();
+                        async move { Json(json!({"task":task,"revision":"recovered"})) }
                     }))
                 },
             );
@@ -348,7 +366,7 @@ fn uncertain_creation_recovers_the_same_id_after_polling_or_retries_the_original
                 assert_eq!(request["request_id"], first["request_id"]);
             }
             if !committed {
-                assert_ne!(sent.last().unwrap()["request_id"], first["request_id"]);
+                assert_eq!(sent.last().unwrap()["request_id"], first["request_id"]);
                 assert_eq!(sent.last().unwrap()["expected_revision"], "recovered");
             }
         }
@@ -356,17 +374,14 @@ fn uncertain_creation_recovers_the_same_id_after_polling_or_retries_the_original
 }
 
 #[test]
-fn creation_conflicts_require_refresh_and_never_insert_a_second_task() {
+fn creation_refreshes_its_task_guard_after_another_client_adds_an_unrelated_task() {
     let server = Server::start();
     let mut first = Client::open(&server.endpoint());
     let mut second = Client::open(&server.endpoint());
     let initial = first.snapshot(true);
     second.snapshot(true);
-    second.create("Other client", at());
-    let conflict = first.create("My project", at());
-    assert_eq!(conflict["kind"], "conflict", "{conflict}");
-    assert_eq!(conflict["uncertain"], false);
-    first.snapshot(true);
+    let concurrent = second.create("Other client", at());
+    assert!(concurrent.get("error").is_none(), "{concurrent}");
     let created = first.create("My project", at());
     assert!(created.get("error").is_none(), "{created}");
     assert_eq!(
@@ -375,6 +390,15 @@ fn creation_conflicts_require_refresh_and_never_insert_a_second_task() {
             .unwrap()
             .len(),
         initial["data"]["tasks"].as_array().unwrap().len() + 2
+    );
+    let stored = TrackerApplication::load(SqliteRepository::open(server.path()).unwrap()).unwrap();
+    assert_eq!(
+        stored
+            .tasks(tracker_application::TaskOrdering::default())
+            .iter()
+            .filter(|item| item.task.name().as_str() == "My project")
+            .count(),
+        1
     );
 }
 
@@ -432,7 +456,8 @@ fn remote_rename_conflicts_and_outages_require_reconciliation_without_changing_c
     let initial = first.snapshot(true);
     second.snapshot(true);
     let id = initial["data"]["tasks"][0]["id"].as_str().unwrap();
-    second.create("Other client change", at());
+    let concurrent = second.rename(id, "Other client name", Utc::now());
+    assert!(concurrent.get("error").is_none(), "{concurrent}");
     let conflict = first.rename(id, "Updated name", Utc::now());
     assert_eq!(conflict["kind"], "conflict", "{conflict}");
     assert_eq!(conflict["uncertain"], false);
@@ -447,7 +472,7 @@ fn remote_rename_conflicts_and_outages_require_reconciliation_without_changing_c
     server.stop();
     let offline = first.rename(id, "Offline name", Utc::now());
     assert_eq!(offline["kind"], "unavailable");
-    assert_eq!(offline["uncertain"], true);
+    assert_eq!(offline["uncertain"], false);
     assert_eq!(offline["requiresRefresh"], true);
     assert_eq!(first.snapshot(false)["data"], renamed["data"]);
     assert_eq!(
@@ -458,28 +483,31 @@ fn remote_rename_conflicts_and_outages_require_reconciliation_without_changing_c
 }
 
 #[test]
-fn remote_rename_rejects_inconsistent_result_names_and_snapshot_tasks() {
-    for failure in ["missing", "snapshot-name", "result-name"] {
+fn remote_rename_rejects_inconsistent_result_names_and_invalid_receipts() {
+    for failure in ["empty-revision", "wrong-request", "result-name"] {
         let id = tracker_domain::TaskId::generate().to_string();
         let id_for_post = id.clone();
-        let initial_task =
-            json!({"id":id,"name":"Original","archived":false,"created_at":at(),"updated_at":at()});
-        let initial_snapshot = json!({"task_items":[{"task":initial_task,"latest_work_start":null}],"active_worklog":null,"revision":"initial"});
+        let initial_task = json!({"id":id,"name":"Original","archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null});
+        let task_for_get = initial_task.clone();
         let server = Server::launch(
             TempDir::new().unwrap(),
             "127.0.0.1:0".parse().unwrap(),
             move || {
                 Router::new()
                 .route("/v1/health", get(|| async { Json(json!({"status":"ok","protocol_version":tracker_protocol::VERSION})) }))
-                .route("/v1/snapshot", get(move || { let snapshot = initial_snapshot.clone(); async move { Json(snapshot) } }))
-                .route("/v1/tasks/{id}", patch(move || {
+                .route("/v1/tasks", get(move || {
+                    let task = initial_task.clone();
+                    async move { Json(json!({"tasks":[task],"revision":"initial"})) }
+                }))
+                .route("/v1/tracking", get(|| async { Json(json!({"active_worklog":null,"revision":"initial"})) }))
+                .route("/v1/tasks/{id}", get(move || {
+                    let task = task_for_get.clone();
+                    async move { Json(json!({"task":task,"revision":"initial"})) }
+                }).patch(move |Json(body): Json<Value>| {
                     let id = id_for_post.clone();
                     async move {
-                        let result_task = json!({"id":id,"name":if failure == "result-name" {"Wrong name"} else {"Updated"},"archived":false,"created_at":at(),"updated_at":at()});
-                        let mut snapshot_task = result_task.clone();
-                        if failure == "snapshot-name" { snapshot_task["name"] = json!("Wrong name"); }
-                        let items = if failure == "missing" {vec![]} else {vec![json!({"task":snapshot_task,"latest_work_start":null})]};
-                        Json(json!({"result":{"kind":"task","value":result_task},"snapshot":{"task_items":items,"active_worklog":null,"revision":"renamed"}}))
+                        let task = json!({"id":id,"name":if failure == "result-name" {"Wrong name"} else {"Updated"},"archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null});
+                        Json(json!({"request_id":if failure == "wrong-request" {json!(tracker_domain::WorklogId::generate().to_string())} else {body["request_id"].clone()},"applied_revision":if failure == "empty-revision" {""} else {"renamed"},"replayed":false,"result":{"kind":"task","value":task}}))
                     }
                 }))
             },
@@ -584,7 +612,7 @@ fn unavailable_server_keeps_confirmed_cache_and_blocks_writes_without_local_fall
     let task = snapshot["data"]["tasks"][0]["id"].as_str().unwrap();
     let failure = client.start(task, at());
     assert_eq!(failure["kind"], "unavailable", "{failure}");
-    assert_eq!(failure["uncertain"], true);
+    assert_eq!(failure["uncertain"], false);
     assert_eq!(failure["requiresRefresh"], true);
     assert_eq!(client.snapshot(false)["data"], snapshot["data"]);
     assert_eq!(client.snapshot(true)["kind"], "unavailable");
@@ -627,8 +655,9 @@ fn failed_write_response_remains_uncertain_after_a_successful_recovery_read() {
         || {
             Router::new()
             .route("/v1/health", get(|| async { Json(json!({"status": "ok", "protocol_version": tracker_protocol::VERSION})) }))
-            .route("/v1/snapshot", get(|| async { Json(json!({"task_items": [], "active_worklog": null, "revision": "confirmed"})) }))
-            .route("/v1/tracking", put(|| async { (StatusCode::INTERNAL_SERVER_ERROR, "Unconfirmed write") }))
+            .route("/v1/tasks", get(|| async { Json(json!({"tasks": [{"id":"00000000-0000-0000-0000-000000000001","name":"Tracking project","archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null}], "revision": "confirmed"})) }))
+            .route("/v1/tasks/{id}", get(|| async { Json(json!({"task":{"id":"00000000-0000-0000-0000-000000000001","name":"Tracking project","archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null},"revision":"confirmed"})) }))
+            .route("/v1/tracking", get(|| async { Json(json!({"active_worklog":null,"revision":"confirmed"})) }).put(|| async { (StatusCode::INTERNAL_SERVER_ERROR, "Unconfirmed write") }))
         },
     );
     let mut client = Client::open(&server.endpoint());

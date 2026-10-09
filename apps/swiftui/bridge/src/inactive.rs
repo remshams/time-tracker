@@ -17,8 +17,7 @@ fn preview_tasks(preview: &InactivePreview) -> Vec<TaskJson> {
                 latest_start: None,
             })
             .collect(),
-        InactivePreview::Remote(preview) => preview
-            .tasks
+        InactivePreview::Remote { tasks, .. } => tasks
             .iter()
             .map(|task| TaskJson {
                 id: task.id.clone(),
