@@ -1058,7 +1058,10 @@ mod remote_resource_tests {
     use std::time::{Duration, Instant};
 
     use super::{ApplicationOutcome, ApplicationRequest, execute_remote};
+    use crate::app::AppState;
     use crate::test_support::{at, task, worklog_id};
+    use tracker_application::TaskListItem;
+    use tracker_domain::{ActiveWorklog, TrackingState};
     use tracker_remote::RemoteApplication;
 
     fn report_server(
@@ -1227,13 +1230,21 @@ mod remote_resource_tests {
             (200, second_page),
         ]);
         let mut application = RemoteApplication::disconnected(&endpoint).unwrap();
+        let cached = task(2, "Previously confirmed task");
+        let mut state = AppState::load_task_list(
+            vec![TaskListItem {
+                task: cached.clone(),
+                latest_work_start: None,
+            }],
+            TrackingState::Idle,
+        );
 
         let completed = execute_remote(
             &mut application,
             ApplicationRequest::AllWorklogs { after: None },
         )
         .await;
-        let ApplicationOutcome::GlobalWorklogPage(Ok(page)) = completed.outcome else {
+        let ApplicationOutcome::GlobalWorklogPage(Ok(page)) = &completed.outcome else {
             panic!("the first global page must load with independently resolved task metadata");
         };
         assert_eq!(
@@ -1250,6 +1261,13 @@ mod remote_resource_tests {
         assert_eq!(label.latest_work_start, Some(at(200)));
         assert!(application.task_observation().is_none());
         assert!(application.tracking_observation().is_none());
+        state.publish_request_resources(&completed, vec![label.clone()], None);
+        assert_eq!(
+            state.catalog().task(task_id).unwrap().name().as_str(),
+            "History task"
+        );
+        assert_eq!(state.catalog().task(cached.id()), Some(&cached));
+        assert!(state.tracking().active_worklog().is_none());
 
         let completed = execute_remote(
             &mut application,
@@ -1282,5 +1300,75 @@ mod remote_resource_tests {
         assert!(paths[3].starts_with("/v1/worklogs?"));
         assert!(paths[3].contains(&format!("after_id={second_id}")));
         assert!(paths[3].contains("after_revision=42"));
+    }
+
+    #[tokio::test]
+    async fn task_history_publishes_resolved_labels_without_replacing_cached_tasks_or_tracking() {
+        let history_task = task(1, "Old history name");
+        let cached = task(2, "Previously confirmed task");
+        let running = ActiveWorklog::begin(worklog_id(2), cached.id(), at(100));
+        let mut state = AppState::load_task_list(
+            vec![
+                TaskListItem {
+                    task: history_task.clone(),
+                    latest_work_start: None,
+                },
+                TaskListItem {
+                    task: cached.clone(),
+                    latest_work_start: Some(at(100)),
+                },
+            ],
+            TrackingState::Running {
+                worklog: running.clone(),
+            },
+        );
+        let task_id = history_task.id();
+        let metadata = format!(
+            r#"{{"task":{{"id":"{task_id}","name":"Resolved history name","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":null}},"revision":"task-2"}}"#,
+            at(0).to_rfc3339(),
+            at(200).to_rfc3339(),
+        );
+        let (endpoint, worker) = resource_server(vec![
+            (200, r#"{"status":"ok","protocol_version":3}"#.to_owned()),
+            (
+                200,
+                r#"{"worklogs":[],"next_cursor":null,"revision":"history-1"}"#.to_owned(),
+            ),
+            (200, metadata),
+        ]);
+        let mut application = RemoteApplication::disconnected(&endpoint).unwrap();
+        let completed = execute_remote(
+            &mut application,
+            ApplicationRequest::WorklogsForTask {
+                task_id,
+                after: None,
+            },
+        )
+        .await;
+        let ApplicationOutcome::WorklogPage(Ok(page)) = &completed.outcome else {
+            panic!("task history must load with its independently resolved label");
+        };
+        assert!(page.worklogs.is_empty());
+        assert!(page.snapshot.is_none());
+        let resolved = application.task_item(task_id).unwrap().clone();
+
+        state.publish_request_resources(&completed, vec![resolved], None);
+
+        assert_eq!(
+            state.catalog().task(task_id).unwrap().name().as_str(),
+            "Resolved history name"
+        );
+        assert_eq!(state.catalog().task(cached.id()), Some(&cached));
+        assert_eq!(state.tracking().active_worklog(), Some(&running));
+        assert!(application.task_observation().is_none());
+        assert!(application.tracking_observation().is_none());
+        assert_eq!(
+            worker.join().unwrap(),
+            vec![
+                "/v1/health".to_owned(),
+                format!("/v1/worklogs?task_id={task_id}"),
+                format!("/v1/tasks/{task_id}"),
+            ]
+        );
     }
 }
