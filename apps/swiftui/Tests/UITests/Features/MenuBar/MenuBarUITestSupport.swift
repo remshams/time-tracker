@@ -1,4 +1,5 @@
 import AppKit
+import CoreML
 import Vision
 import XCTest
 
@@ -18,7 +19,7 @@ extension TrackerUITestCase {
         statusButton.hover()
         var screenshot: XCUIScreenshot?
         var recognizedText = ""
-        waitUntil("Hover shows the full tracking status", file: file, line: line) {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             let captured = XCUIScreen.main.screenshot()
             screenshot = captured
             let request = VNRecognizeTextRequest()
@@ -27,6 +28,16 @@ extension TrackerUITestCase {
             request.usesLanguageCorrection = false
             request.regionOfInterest = CGRect(x: 0, y: 0.75, width: 1, height: 0.25)
             do {
+                for (stage, devices) in try request.supportedComputeStageDevices {
+                    guard let cpu = devices.first(where: {
+                        if case .cpu = $0 { return true }
+                        return false
+                    }) else {
+                        recognizedText = "Text recognition has no CPU device for \(stage)"
+                        return false
+                    }
+                    request.setComputeDevice(cpu, for: stage)
+                }
                 try VNImageRequestHandler(data: captured.pngRepresentation, options: [:]).perform([request])
                 recognizedText = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
                     .joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
@@ -35,8 +46,9 @@ extension TrackerUITestCase {
                 recognizedText = "Text recognition failed: \(error)"
                 return false
             }
-        }
-        if !recognizedText.contains(expected) {
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        if result != .completed {
             if let screenshot {
                 let attachment = XCTAttachment(screenshot: screenshot)
                 attachment.name = "Status tooltip desktop"
@@ -49,6 +61,7 @@ extension TrackerUITestCase {
             add(attachment)
         }
         trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
+        XCTAssertEqual(result, .completed, "Hover shows the full tracking status", file: file, line: line)
     }
 
     func openStatusMenu() {
