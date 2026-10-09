@@ -430,6 +430,7 @@ final class TaskRenameTests: XCTestCase {
         fixture.session.openTaskRename()
         fixture.session.setTaskRenameName("Queued rename")
         fixture.session.submitTaskRename()
+        XCTAssertTrue(fixture.session.isBlockingControls)
         fixture.session.sleep()
         poll.succeed(snapshot)
         try await fixture.settled()
