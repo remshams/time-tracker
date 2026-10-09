@@ -10,7 +10,7 @@ Native suites follow the application's `App`, `Features`, and `Infrastructure` f
 
 Implementation checkpoint `72b2154`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
 
-The menu bar display change adds three cases to both `MenuBarUITests` and its server subclass, for six additional executions. They cover immediate Time/Task name/None selection, saved Task name selection across relaunch, start/rename/switch/stop updates, ellipsis, and full native hover tooltips in every display mode. The settings test retains saved None and automatic-pause checks. Native execution of these additions is pending in [PR 3](https://github.com/remshams/time-tracker/pull/3).
+The menu bar display change adds three cases to both `MenuBarUITests` and its server subclass, for six additional executions. They cover immediate Time/Task name/None selection, saved Task name selection across relaunch, start/rename/switch/stop updates, ellipsis, and full native hover tooltips in every display mode. The settings test retains saved None and automatic-pause checks. Native execution evidence for these additions is recorded in [PR 3](https://github.com/remshams/time-tracker/pull/3).
 
 ## Run the tests
 
