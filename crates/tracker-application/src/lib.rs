@@ -17,8 +17,8 @@ pub use model::{
     WorklogCursor, WorklogPage, WorklogPageSnapshot,
 };
 pub use repository::{
-    InactiveTaskArchive, InactiveTaskPreviewRead, InactiveTaskRepository, ReportRead,
-    ReportRepository, RepositoryError, TaskRepository, TrackerRepository, TrackerSnapshot,
+    ActiveTrackingRead, InactiveTaskArchive, InactiveTaskPreviewRead, InactiveTaskRepository,
+    ReportRead, ReportRepository, RepositoryError, TaskRepository, TrackerRepository,
     TrackingRepository, WorklogCorrection, WorklogDeletion, WorklogMove, WorklogRepository,
 };
 pub use service::move_candidates_for_tasks;

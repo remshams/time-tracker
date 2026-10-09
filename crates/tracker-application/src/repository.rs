@@ -65,32 +65,32 @@ pub enum RepositoryError {
     ReportDurationOverflow,
 }
 
-/// A coherent read of task-list aggregates and global tracking state.
+/// Active tracking and its task metadata from the same backend read.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TrackerSnapshot {
-    pub task_items: Vec<TaskListItem>,
+pub struct ActiveTrackingRead {
     pub active_worklog: Option<Worklog>,
+    pub active_task_item: Option<TaskListItem>,
 }
 
-/// Preview candidates and tracker state from one backend read.
+/// Preview candidates and active tracking from one backend read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InactiveTaskPreviewRead {
     pub tasks: Vec<Task>,
-    pub snapshot: TrackerSnapshot,
+    pub tracking: ActiveTrackingRead,
 }
 
-/// Bulk archive rows and the tracker state read before its transaction commits.
+/// Bulk archive rows and active tracking read before its transaction commits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InactiveTaskArchive {
     pub tasks: Vec<Task>,
-    pub snapshot: TrackerSnapshot,
+    pub tracking: ActiveTrackingRead,
 }
 
-/// Report totals and tracker state from one backend read.
+/// Report totals and active tracking from one backend read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportRead {
     pub rows: Vec<ReportRow>,
-    pub snapshot: TrackerSnapshot,
+    pub tracking: ActiveTrackingRead,
 }
 
 /// The committed result of a worklog correction.
@@ -132,11 +132,19 @@ pub struct WorklogMove {
 
 /// Persistence needed by task use cases.
 pub trait TaskRepository {
+    /// Reads one task and its latest-work aggregate without loading the catalog.
+    fn load_task_item(&self, id: TaskId) -> Result<Option<TaskListItem>, RepositoryError>;
+
+    /// Reads only task metadata and per-task latest-work aggregates.
+    fn load_task_catalog(&self) -> Result<Vec<TaskListItem>, RepositoryError>;
+
     fn create_task(&self, task: Task) -> Result<(), RepositoryError>;
 
     /// Reads task-list aggregates and global active tracking in one coherent
     /// backend snapshot.
-    fn tracker_snapshot(&self) -> Result<TrackerSnapshot, RepositoryError>;
+    fn load_task_tracking_resources(
+        &self,
+    ) -> Result<(Vec<TaskListItem>, Option<Worklog>), RepositoryError>;
 
     fn rename_task(
         &self,
@@ -152,7 +160,7 @@ pub trait TaskRepository {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, RepositoryError>;
 
-    /// Reads eligible tasks and tracker state from one backend snapshot.
+    /// Reads eligible tasks and active tracking from one backend transaction.
     fn preview_inactive_tasks(
         &self,
         as_of: DateTime<Utc>,
@@ -234,6 +242,9 @@ pub trait WorklogRepository {
 
 /// Persistence needed by tracking commands.
 pub trait TrackingRepository {
+    /// Reads only the global active worklog.
+    fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError>;
+
     fn insert_worklog(&self, worklog: &Worklog) -> Result<(), RepositoryError>;
     /// Stops the active worklog only when its stored start still matches
     /// `expected_start`.
@@ -256,6 +267,15 @@ pub trait TrackingRepository {
 
 /// A current read of time spent by task in one UTC interval.
 pub trait ReportRepository {
+    /// Reads the explicitly requested task list, totals, and active tracking
+    /// under one backend transaction for the task-list totals workflow.
+    fn task_list_report_read(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<(Vec<TaskListItem>, ReportRead), RepositoryError>;
+
     /// Returns positive task totals and tracker state from one read snapshot.
     /// Open worklogs end at `now` for the report calculation.
     fn report_read(
