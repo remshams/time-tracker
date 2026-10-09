@@ -361,6 +361,31 @@ final class WorklogCorrectionTests: XCTestCase {
     }
 
     @MainActor
+    func testReviewUsesTheLatestTaskNameAfterAConcurrentRename() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let log = try await openCompleted(fixture)
+        fixture.session.refresh()
+        let poll = try await fixture.client.next()
+        let renamed = TaskItem(id: firstTask.id, name: "Renamed source task", archived: false, latestStart: nil)
+        poll.succeed(TrackerSnapshot(tasks: [renamed, secondTask], active: nil))
+        try await fixture.settled()
+        fixture.session.retryHistory()
+        let history = try await fixture.client.next()
+        let changed = WorklogItem(
+            id: log.id, taskId: log.taskId, start: log.start, end: "2024-12-30T10:30:00.000000Z")
+        history.succeed(HistoryPage(worklogs: [changed], nextCursor: nil, reset: false))
+        try await fixture.settled()
+        XCTAssertTrue(fixture.session.worklogCorrection.requiresReview)
+
+        fixture.session.reviewLatestWorklogCorrection()
+
+        XCTAssertEqual(fixture.session.worklogCorrection.taskName, renamed.name)
+        XCTAssertEqual(fixture.session.worklogCorrection.original, changed)
+        XCTAssertFalse(fixture.session.worklogCorrection.requiresReview)
+    }
+
+    @MainActor
     func testInvalidSubmissionPublishesItsValidationErrorToTheSheetObserver() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
@@ -408,7 +433,8 @@ final class WorklogCorrectionTests: XCTestCase {
         var publishedMessage: String?
         fixture.session.onChange = { publishedMessage = fixture.session.connectionMessage }
 
-        let connected = await fixture.session.connect(serverSettings)
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connected = try await fixture.taskValue(connecting)
 
         XCTAssertFalse(connected)
         XCTAssertEqual(fixture.session.connectionMessage, "Finish worklog editing before changing connections.")
@@ -520,7 +546,8 @@ final class WorklogCorrectionTests: XCTestCase {
         fixture.session.cancelWorklogCorrection()
         XCTAssertFalse(fixture.session.canOpenTaskCreation)
         XCTAssertFalse(fixture.session.canOpenTaskRename)
-        let connected = await fixture.session.connect(serverSettings)
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
         XCTAssertEqual(fixture.session.connectionSettings, .local)
         fixture.session.select(secondTask.id)
