@@ -2,7 +2,7 @@
 
 The suite drives the shipped macOS application through XCUITest and the production Rust bridge. The CLI creates fixtures, acts as another client, and verifies stored results. It does not perform the UI action under test.
 
-Implementation checkpoint `4aeb44a`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
+Implementation checkpoint `9ac6be8`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
 
 ## Run the tests
 
@@ -12,7 +12,7 @@ apps/swiftui/check-native-ui.sh --smoke
 apps/swiftui/check-native-ui.sh --group server
 ```
 
-The full suite requires macOS, Xcode 27, and a desktop session. The runner builds `tt-cli` and `tt`, supplies an absolute Python 3 path, and disables parallel XCTest execution. CI runs six required groups on separate macOS runners. Every group remains serial because status items, menus, shortcuts, and the clipboard share its desktop. The CI gate requires all groups to pass. The Return correction case temporarily enables system button navigation through the global Core Foundation preference domain and verifies AppKit's mode before launch. It then Tabs to the native Save button and presses Return. Teardown restores and verifies the exact prior key value or absence and original AppKit mode. Window layout cases resize the real AppKit window through an isolated DEBUG fixture event.
+The full suite requires macOS, Xcode 27, and a desktop session. The runner builds `tt-cli` and `tt`, supplies an absolute Python 3 path, and disables parallel XCTest execution. CI runs six required groups on separate macOS runners. Every group remains serial because status items, menus, shortcuts, and the clipboard share its desktop. The CI gate requires all groups to pass. The Return correction case temporarily enables system button navigation through the global Core Foundation preference domain and verifies AppKit's mode before launch. It then Tabs to the native Save button and presses Return. Teardown restores and verifies the exact prior key value or absence. Bounded fresh AppKit processes verify the effective mode before setup and after restoration, independently of the long-lived runner's cached getter. Window layout cases resize the real AppKit window through an isolated DEBUG fixture event.
 
 The previous seven-test native UI step took 7 minutes 20 seconds in [CI run 37833088852](https://github.com/remshams/time-tracker/actions/runs/37833088852). The expanded suite is grouped to stay within the existing 60-minute job limit. Logs and result bundles are retained for every group.
 
