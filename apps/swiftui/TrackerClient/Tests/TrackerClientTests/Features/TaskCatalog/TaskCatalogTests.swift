@@ -3,6 +3,19 @@ import XCTest
 
 final class TaskCatalogTests: XCTestCase {
     @MainActor
+    func testRememberedRestoredTaskIgnoresMissingAndArchivedTasks() async {
+        let state = TaskCatalogState()
+        XCTAssertTrue(state.apply([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
+        XCTAssertTrue(state.changeTab(.archived))
+        state.rememberRestoredTask(secondTask.id)
+        state.rememberRestoredTask("missing-task")
+        state.rememberRestoredTask(archivedTask.id)
+
+        XCTAssertTrue(state.changeTab(.active))
+        XCTAssertEqual(state.selectedTaskID, secondTask.id)
+    }
+
+    @MainActor
     func testChangingSelectedWorklogStartReloadsHistoryWithoutChangingItsID() async {
         let state = TaskCatalogState()
         let tasks = [firstTask, secondTask]
