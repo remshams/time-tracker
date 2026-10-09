@@ -389,6 +389,159 @@ fn unavailable_archive_and_restore_keep_confirmed_state_and_block_writes_until_r
 }
 
 #[test]
+fn task_write_recovery_reconciles_raced_views_or_preserves_the_last_coherent_pair() {
+    use axum::{Json, Router, routing::get};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    use tracker_application::TaskOperations;
+    use tracker_protocol::{
+        HealthDto, MutationDto, MutationResultDto, TaskDto, TaskResourceDto, TasksDto, TrackingDto,
+        WorklogDto,
+    };
+
+    for settles in [false, true] {
+        let mut application =
+            TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap();
+        let task = application
+            .create_task(TaskName::new("Original name").unwrap(), at(1))
+            .unwrap();
+        let initial = TaskDto::from(&application.tasks(TaskOrdering::default())[0]);
+        let mut applied = initial.clone();
+        applied.name = "Requested name".into();
+        applied.updated_at = at(400);
+        let active = WorklogDto {
+            id: WorklogId::generate().to_string(),
+            task_id: task.id().to_string(),
+            start: at(399),
+            end: None,
+        };
+        let mut latest = applied.clone();
+        latest.latest_work_start = Some(active.start);
+        let written = Arc::new(AtomicBool::new(false));
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let task_written = written.clone();
+        let task_attempts = attempts.clone();
+        let original_task = initial.clone();
+        let tracking_written = written.clone();
+        let write_written = written.clone();
+        let router = Router::new()
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(HealthDto {
+                        status: "ok".into(),
+                        protocol_version: tracker_protocol::VERSION,
+                    })
+                }),
+            )
+            .route(
+                "/v1/tasks",
+                get(move || {
+                    let after = task_written.load(Ordering::SeqCst);
+                    let attempt = if after {
+                        task_attempts.fetch_add(1, Ordering::SeqCst)
+                    } else {
+                        0
+                    };
+                    let dto = TasksDto {
+                        tasks: vec![if after {
+                            latest.clone()
+                        } else {
+                            original_task.clone()
+                        }],
+                        revision: if !after {
+                            "before"
+                        } else if settles && attempt > 0 {
+                            "after"
+                        } else {
+                            "raced"
+                        }
+                        .into(),
+                    };
+                    async move { Json(dto) }
+                }),
+            )
+            .route(
+                "/v1/tracking",
+                get(move || {
+                    let after = tracking_written.load(Ordering::SeqCst);
+                    let dto = TrackingDto {
+                        active_worklog: after.then(|| active.clone()),
+                        revision: if after { "after" } else { "before" }.into(),
+                    };
+                    async move { Json(dto) }
+                }),
+            )
+            .route(
+                "/v1/tasks/{id}",
+                get(move || {
+                    let task = initial.clone();
+                    async move {
+                        Json(TaskResourceDto {
+                            task,
+                            revision: "before".into(),
+                        })
+                    }
+                })
+                .patch(move |Json(body): Json<Value>| {
+                    write_written.store(true, Ordering::SeqCst);
+                    let task = applied.clone();
+                    async move {
+                        Json(MutationDto {
+                            request_id: body["request_id"].as_str().unwrap().into(),
+                            applied_revision: "applied".into(),
+                            replayed: false,
+                            result: MutationResultDto::Task(task),
+                        })
+                    }
+                }),
+            );
+        let server = report_tests::Server::start(router);
+        let mut bridge = server.client();
+        bridge.application.refresh().unwrap();
+        let before = serde_json::to_value(snapshot(&bridge.application)).unwrap();
+        let result = bridge.application.rename_task(
+            task.id(),
+            TaskName::new("Requested name").unwrap(),
+            at(400),
+        );
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        if settles {
+            assert!(result.is_ok());
+            assert_eq!(
+                bridge.application.resource_revisions(),
+                (Some("after".into()), Some("after".into()))
+            );
+            assert_eq!(
+                bridge.application.tasks(TaskOrdering::default())[0]
+                    .task
+                    .name()
+                    .as_str(),
+                "Requested name"
+            );
+            assert!(matches!(
+                bridge.application.current_tracking(),
+                TrackingState::Running { .. }
+            ));
+        } else {
+            let error = result.unwrap_err();
+            assert!(error.requires_refresh);
+            assert!(!error.uncertain);
+            assert_eq!(
+                serde_json::to_value(snapshot(&bridge.application)).unwrap(),
+                before
+            );
+            assert_eq!(
+                bridge.application.resource_revisions(),
+                (Some("before".into()), Some("before".into()))
+            );
+        }
+    }
+}
+
+#[test]
 fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
     use axum::{
         Json, Router,
@@ -487,6 +640,7 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
             );
             assert_eq!(value["data"]["tasks"][0]["name"], "Later writer name");
             assert_eq!(value["data"]["tasksRevision"], "later");
+            assert_eq!(value["data"]["trackingRevision"], "later");
             if action != "rename" {
                 assert_eq!(value["data"]["tasks"][0]["archived"], action != "archive");
             }
