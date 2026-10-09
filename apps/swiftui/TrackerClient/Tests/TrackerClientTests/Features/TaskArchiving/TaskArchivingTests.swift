@@ -230,7 +230,8 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertTrue(fixture.session.taskArchiving.hasPendingAction)
         fixture.session.openTaskCreation()
         XCTAssertFalse(fixture.session.taskCreation.isPresented)
-        let connected = await fixture.session.connect(serverSettings)
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
         XCTAssertEqual(fixture.session.connectionMessage, "Finish or retry task archiving before changing connections.")
         fixture.session.reopenTaskArchiving()
@@ -446,7 +447,8 @@ final class TaskArchivingTests: XCTestCase {
         fixture.session.openTaskArchive(taskID: secondTask.id)
         var publishedMessage: String?
         fixture.session.onChange = { publishedMessage = fixture.session.connectionMessage }
-        let connected = await fixture.session.connect(serverSettings)
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
         XCTAssertTrue(fixture.session.taskArchiving.isPresented)
         XCTAssertEqual(fixture.session.taskArchiving.taskID, secondTask.id)
