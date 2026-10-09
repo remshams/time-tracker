@@ -19,7 +19,7 @@ fn create(bridge: &mut Bridge, name: &str, at: &str) -> Value {
 }
 
 #[test]
-fn local_creation_returns_a_permanent_id_and_snapshot_without_changing_tracking() {
+fn local_creation_returns_a_permanent_id_and_preserves_tracking() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("creation.db");
     let mut bridge = open_fixture(&path).unwrap();
@@ -28,14 +28,22 @@ fn local_creation_returns_a_permanent_id_and_snapshot_without_changing_tracking(
         .id();
     let at: DateTime<Utc> = "2026-10-05T08:00:00.123456Z".parse().unwrap();
     assert!(bridge.application.set_active_task(first, at).is_ok());
-    let before = serde_json::to_value(snapshot(&bridge.application)).unwrap();
+    let before = crate::tests::test_resource_values(&bridge.application);
     let created = create(&mut bridge, "  Plan release 🛠  ", &timestamp(at));
     assert!(created.get("error").is_none(), "{created}");
-    let id: TaskId = created["data"]["taskId"].as_str().unwrap().parse().unwrap();
+    let id: TaskId = created["data"]["task"]["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
     assert_eq!(id.as_uuid().get_version_num(), 7);
-    assert_eq!(created["data"]["snapshot"]["active"], before["active"]);
-    let tasks = created["data"]["snapshot"]["tasks"].as_array().unwrap();
-    assert_eq!(tasks.len(), before["tasks"].as_array().unwrap().len() + 1);
+    assert_eq!(
+        crate::tests::test_active_value(&bridge.application),
+        before.1
+    );
+    let observed_tasks = crate::tests::test_task_values(&bridge.application);
+    let tasks = observed_tasks.as_array().unwrap();
+    assert_eq!(tasks.len(), before.0.as_array().unwrap().len() + 1);
     let task = tasks
         .iter()
         .find(|task| task["id"] == id.to_string())
@@ -44,7 +52,10 @@ fn local_creation_returns_a_permanent_id_and_snapshot_without_changing_tracking(
     assert_eq!(task["archived"], false);
     assert!(task["latestStart"].is_null());
     let repeated_name = create(&mut bridge, "Plan release 🛠", &timestamp(at));
-    assert_ne!(repeated_name["data"]["taskId"], created["data"]["taskId"]);
+    assert_ne!(
+        repeated_name["data"]["task"]["id"],
+        created["data"]["task"]["id"]
+    );
     drop(bridge);
     let application = TrackerApplication::load(SqliteRepository::open(path).unwrap()).unwrap();
     let stored = application.task(id).unwrap();

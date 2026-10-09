@@ -77,8 +77,8 @@ fn local_preview_uses_chosen_period_and_archive_preserves_running_work() {
     assert_eq!(fortnight["data"]["tasks"][0]["id"], old.id().to_string());
     let result = archive(&mut bridge, 14, as_of);
     assert_eq!(result["data"]["archivedCount"], 1);
-    let snapshot = &result["data"]["snapshot"];
-    assert_eq!(snapshot["active"]["taskId"], running.id().to_string());
+    let observations = crate::tests::test_resource_values(&bridge.application);
+    assert_eq!(observations.1["taskId"], running.id().to_string());
     for (id, expected) in [
         (old.id(), true),
         (medium.id(), false),
@@ -86,7 +86,8 @@ fn local_preview_uses_chosen_period_and_archive_preserves_running_work() {
         (running.id(), false),
     ] {
         assert_eq!(
-            snapshot["tasks"]
+            observations
+                .0
                 .as_array()
                 .unwrap()
                 .iter()
@@ -245,7 +246,7 @@ fn remote_preview_and_archive_use_server_candidates_and_captured_revision() {
         tracker_server::router_for_database(&path).unwrap(),
     );
     let mut bridge = server.client();
-    bridge.application.refresh().unwrap();
+    bridge.application.refresh_resources(3).unwrap();
     let selected = preview(&mut bridge, 7, as_of);
     assert_eq!(selected["data"]["tasks"].as_array().unwrap().len(), 2);
     assert!(
@@ -256,11 +257,11 @@ fn remote_preview_and_archive_use_server_candidates_and_captured_revision() {
             .all(|task| task["id"] != id.to_string())
     );
     // Polling a snapshot does not replace the retained preview's revision.
-    bridge.application.refresh().unwrap();
+    bridge.application.refresh_resources(3).unwrap();
     let result = archive(&mut bridge, 7, as_of);
     assert_eq!(result["data"]["archivedCount"], 2, "{result}");
     assert_eq!(
-        result["data"]["snapshot"]["active"]["taskId"],
+        crate::tests::test_active_value(&bridge.application)["taskId"],
         id.to_string()
     );
     assert_eq!(
@@ -279,15 +280,15 @@ fn remote_revision_conflict_is_not_hidden_by_polling_and_blocks_another_write() 
     );
     let mut first = server.client();
     let mut second = server.client();
-    first.application.refresh().unwrap();
-    second.application.refresh().unwrap();
+    first.application.refresh_resources(3).unwrap();
+    second.application.refresh_resources(3).unwrap();
     let as_of = Utc::now();
     assert!(preview(&mut first, 14, as_of).get("error").is_none());
     second
         .application
         .create_task(TaskName::new("Concurrent task").unwrap(), as_of)
         .unwrap();
-    first.application.refresh().unwrap();
+    first.application.refresh_resources(3).unwrap();
     let failure = archive(&mut first, 14, as_of);
     assert_eq!(failure["kind"], "conflict", "{failure}");
     assert_eq!(failure["uncertain"], false);
@@ -296,7 +297,7 @@ fn remote_revision_conflict_is_not_hidden_by_polling_and_blocks_another_write() 
     let blocked = archive(&mut first, 14, as_of);
     assert_eq!(blocked["kind"], "unavailable");
     assert_eq!(blocked["uncertain"], false);
-    first.application.refresh().unwrap();
+    first.application.refresh_resources(3).unwrap();
     assert!(preview(&mut first, 14, as_of).get("error").is_none());
     assert_eq!(archive(&mut first, 14, as_of)["data"]["archivedCount"], 3);
 }
@@ -311,10 +312,10 @@ fn unavailable_preview_and_confirmation_invalidate_context_and_preserve_confirme
             tracker_server::router_for_database(&path).unwrap(),
         );
         let mut bridge = server.client();
-        bridge.application.refresh().unwrap();
+        bridge.application.refresh_resources(3).unwrap();
         let as_of = Utc::now();
         assert!(preview(&mut bridge, 14, as_of).get("error").is_none());
-        let before = serde_json::to_value(snapshot(&bridge.application)).unwrap();
+        let before = crate::tests::test_resource_values(&bridge.application);
         drop(server);
         let failure = if fail_preview {
             preview(&mut bridge, 14, as_of)
@@ -325,7 +326,7 @@ fn unavailable_preview_and_confirmation_invalidate_context_and_preserve_confirme
         assert_eq!(failure["uncertain"], !fail_preview);
         assert_eq!(failure["requiresRefresh"], true);
         assert_eq!(
-            serde_json::to_value(snapshot(&bridge.application)).unwrap(),
+            crate::tests::test_resource_values(&bridge.application),
             before
         );
         assert_eq!(
