@@ -530,7 +530,7 @@ public final class TrackerSession {
 
     public func submitWorklogMove() {
         guard canOpenWorklogMove else { return }
-        guard move.submit() else { publish(); return }
+        guard move.submit() else { return }
         drainMove()
         publish()
     }
