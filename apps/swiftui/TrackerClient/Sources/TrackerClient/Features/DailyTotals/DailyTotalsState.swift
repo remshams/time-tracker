@@ -66,16 +66,19 @@ final class DailyTotalsState {
         rows = report.rows.reduce(into: [:]) { totals, row in
             totals[row.taskId] = max(0, row.durationMicroseconds)
         }
-        request = requested
-        reportedActive = report.snapshot.active
+        request = Request(
+            day: requested.day, cutoff: report.now.flatMap(timestamp) ?? requested.cutoff,
+            uptime: requested.uptime, anchorGeneration: requested.anchorGeneration)
+        reportedActive = report.revision == report.snapshot.trackingRevision ? report.snapshot.active : nil
+        let cutoff = report.now.flatMap(timestamp) ?? requested.cutoff
         if requested.anchorGeneration == anchorGeneration {
-            anchorDate = requested.cutoff
+            anchorDate = cutoff
             anchorUptime = requested.uptime
         } else {
             anchorDate = clock.now
             anchorUptime = clock.uptime
         }
-        status = .current
+        status = report.revision == report.snapshot.trackingRevision ? .current : .cached
         error = nil
     }
 
@@ -85,9 +88,13 @@ final class DailyTotalsState {
             throw BridgeFailure(
                 message: "The report contains duplicate tasks.", kind: "protocol", requiresRefresh: true)
         }
+        if let now = report.now, timestamp(now) == nil {
+            throw BridgeFailure(
+                message: "The report contains an invalid cutoff.", kind: "protocol", requiresRefresh: true)
+        }
         var rowIDs = Set<String>()
         for row in report.rows {
-            guard taskIDs.contains(row.taskId), row.durationMicroseconds >= 0,
+            guard !row.taskId.isEmpty, row.durationMicroseconds >= 0,
                 rowIDs.insert(row.taskId).inserted
             else {
                 throw BridgeFailure(
@@ -95,7 +102,7 @@ final class DailyTotalsState {
             }
         }
         if let active = report.snapshot.active {
-            guard !active.id.isEmpty, taskIDs.contains(active.taskId), active.end == nil, timestamp(active.start) != nil
+            guard !active.id.isEmpty, !active.taskId.isEmpty, active.end == nil, timestamp(active.start) != nil
             else {
                 throw BridgeFailure(
                     message: "The report contains invalid running worklog data.", kind: "protocol",

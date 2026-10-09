@@ -1041,7 +1041,8 @@ public final class TrackerSession {
                     result = try await client.unarchiveTask(taskID: intent.taskID, occurredAt: intent.occurredAt)
                 }
                 guard isCurrent(token) else { return }
-                guard archiving.responseMatches(result, intent: intent) else {
+                // Remote receipts confirm the command; separately read resources may include later changes.
+                guard result.tasksRevision != nil || archiving.responseMatches(result, intent: intent) else {
                     throw BridgeFailure(
                         message: "The response does not confirm the task's archive state.",
                         kind: "protocol", uncertain: true, requiresRefresh: true)
@@ -1099,7 +1100,10 @@ public final class TrackerSession {
                     taskID: intent.taskID, name: intent.name,
                     occurredAt: intent.occurredAt)
                 guard isCurrent(token) else { return }
-                guard result.tasks.contains(where: { $0.id == intent.taskID && $0.name == intent.desiredName }) else {
+                guard
+                    result.tasksRevision != nil
+                        || result.tasks.contains(where: { $0.id == intent.taskID && $0.name == intent.desiredName })
+                else {
                     throw BridgeFailure(
                         message: "The rename response does not contain the updated task.",
                         kind: "protocol", uncertain: true, requiresRefresh: true)
@@ -1275,9 +1279,11 @@ public final class TrackerSession {
                     expected: intent.expected, destinationTaskID: intent.destinationTaskID)
                 guard isCurrent(token) else { return }
                 guard intent.matchesReplacement(result.worklog),
-                    result.snapshot.tasks.contains(where: { $0.id == result.worklog.taskId && !$0.archived }),
-                    (result.worklog.end == nil
-                        ? result.snapshot.active == result.worklog : result.snapshot.active?.id != result.worklog.id)
+                    result.snapshot.tasksRevision != nil
+                        || (result.snapshot.tasks.contains(where: { $0.id == result.worklog.taskId && !$0.archived })
+                            && (result.worklog.end == nil
+                                ? result.snapshot.active == result.worklog
+                                : result.snapshot.active?.id != result.worklog.id))
                 else {
                     throw BridgeFailure(
                         message: "The move response does not contain the moved worklog.",
@@ -1696,7 +1702,11 @@ public final class TrackerSession {
                 guard isCurrent(token) else { return }
                 try dailyTotals.validate(report)
                 dailyTotals.accept(report, requested: requested, clock: clock)
-                acceptSnapshot(report.snapshot, requestReport: false)
+                if report.snapshot.resourcesAreCoherent {
+                    acceptSnapshot(report.snapshot, requestReport: false)
+                } else {
+                    publish()
+                }
             } catch {
                 guard isCurrent(token) else { return }
                 dailyTotals.fail(error, clock: clock)

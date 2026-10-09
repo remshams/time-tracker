@@ -298,6 +298,27 @@ final class TaskArchivingTests: XCTestCase {
     }
 
     @MainActor
+    func testRemoteArchiveReceiptAcceptsLaterRestoreFromRecovery() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: nil)
+        try await fixture.start(snapshot)
+        fixture.session.openTaskArchive(taskID: secondTask.id)
+        fixture.session.submitTaskArchiving()
+        let preflight = try await fixture.client.next()
+        preflight.succeed(snapshot)
+        let command = try await fixture.client.next()
+        command.succeed(
+            TrackerSnapshot(
+                tasks: [firstTask, secondTask], active: nil,
+                tasksRevision: "epoch:3", trackingRevision: "epoch:3"))
+        try await fixture.settled()
+        XCTAssertFalse(fixture.session.taskArchiving.hasUnresolvedIntent)
+        XCTAssertNil(fixture.session.taskArchiving.error)
+        XCTAssertFalse(fixture.session.tasks.first { $0.id == secondTask.id }!.archived)
+    }
+
+    @MainActor
     func testMalformedWriteResponseRequiresRecoveryBeforeRetry() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }

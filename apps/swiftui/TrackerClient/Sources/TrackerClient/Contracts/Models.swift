@@ -13,10 +13,14 @@ public struct TaskReportTotal: Decodable, Equatable, Sendable {
 public struct TrackerReport: Decodable, Equatable, Sendable {
     public let snapshot: TrackerSnapshot
     public let rows: [TaskReportTotal]
+    public let revision: String?
+    public let now: String?
 
-    public init(snapshot: TrackerSnapshot, rows: [TaskReportTotal]) {
+    public init(snapshot: TrackerSnapshot, rows: [TaskReportTotal], revision: String? = nil, now: String? = nil) {
         self.snapshot = snapshot
         self.rows = rows
+        self.revision = revision
+        self.now = now
     }
 }
 
@@ -55,11 +59,18 @@ public struct WorklogItem: Decodable, Identifiable, Equatable, Sendable {
 public struct TrackerSnapshot: Decodable, Equatable, Sendable {
     public let tasks: [TaskItem]
     public let active: WorklogItem?
+    public let tasksRevision: String?
+    public let trackingRevision: String?
 
-    public init(tasks: [TaskItem], active: WorklogItem?) {
+    public init(tasks: [TaskItem], active: WorklogItem?, tasksRevision: String? = nil, trackingRevision: String? = nil)
+    {
         self.tasks = tasks
         self.active = active
+        self.tasksRevision = tasksRevision
+        self.trackingRevision = trackingRevision
     }
+
+    public var resourcesAreCoherent: Bool { tasksRevision == trackingRevision }
 }
 
 public struct HistoryPage: Decodable, Equatable, Sendable {

@@ -612,6 +612,29 @@ final class WorklogMoveTests: XCTestCase {
     }
 
     @MainActor
+    func testRemoteMoveReceiptAcceptsNewerTrackingAndDestinationMetadata() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let log = try await open(fixture, worklog: activeWorklog)
+        fixture.session.submitWorklogMove()
+        try await preflight(fixture, log: log)
+        let command = try await fixture.client.next()
+        let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
+        let archived = TaskItem(id: secondTask.id, name: secondTask.name, archived: true, latestStart: nil)
+        command.moved(
+            worklog: moved,
+            snapshot: TrackerSnapshot(
+                tasks: [firstTask, archived], active: nil,
+                tasksRevision: "epoch:3", trackingRevision: "epoch:3"))
+        let history = try await fixture.client.next()
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertNil(fixture.session.active)
+        XCTAssertNil(fixture.session.worklogMove.error)
+        XCTAssertFalse(fixture.session.worklogMove.isPresented)
+    }
+
+    @MainActor
     func testMoveResponseWithAnArchivedDestinationRequiresReconciliation() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
