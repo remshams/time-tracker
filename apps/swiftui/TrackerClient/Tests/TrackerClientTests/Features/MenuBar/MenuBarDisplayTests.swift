@@ -55,8 +55,9 @@ final class MenuBarDisplayTests: XCTestCase {
     func testModesSwitchPreserveTrackingStateAndKeepTheFullTaskTooltip() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
-                                rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 90_000_000)])
+        try await fixture.start(
+            TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
+            rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 90_000_000)])
         let observer = TrackerMenuPresentationObserver(session: fixture.session, display: .time)
         let content = observer.content
         var contentChanges = 0
@@ -89,7 +90,7 @@ final class MenuBarDisplayTests: XCTestCase {
             (String(repeating: "a", count: 24), String(repeating: "a", count: 24)),
             (String(repeating: "a", count: 25), "aaaaaaaaaaaaaaaaaaaaaaa…"),
             (String(repeating: "👩🏽‍💻", count: 25), String(repeating: "👩🏽‍💻", count: 23) + "…"),
-            (String(repeating: "e\u{301}", count: 25), String(repeating: "e\u{301}", count: 23) + "…")
+            (String(repeating: "e\u{301}", count: 25), String(repeating: "e\u{301}", count: 23) + "…"),
         ]
         for (name, expected) in cases {
             let fixture = Fixture()
@@ -112,9 +113,11 @@ final class MenuBarDisplayTests: XCTestCase {
         XCTAssertEqual(observer.label.text, firstTask.name)
         let renamed = TaskItem(id: firstTask.id, name: "Renamed active task", archived: false, latestStart: nil)
         let switched = WorklogItem(id: "switched-worklog", taskId: secondTask.id, start: activeWorklog.start, end: nil)
-        let snapshots = [TrackerSnapshot(tasks: [renamed, secondTask], active: activeWorklog),
-                         TrackerSnapshot(tasks: [renamed, secondTask], active: switched),
-                         TrackerSnapshot(tasks: [renamed, secondTask], active: nil)]
+        let snapshots = [
+            TrackerSnapshot(tasks: [renamed, secondTask], active: activeWorklog),
+            TrackerSnapshot(tasks: [renamed, secondTask], active: switched),
+            TrackerSnapshot(tasks: [renamed, secondTask], active: nil),
+        ]
         for (index, snapshot) in snapshots.enumerated() {
             fixture.scheduler.poll?.fire()
             let poll = try await fixture.client.next()
