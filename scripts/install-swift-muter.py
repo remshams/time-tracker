@@ -80,6 +80,23 @@ def patch_source(source: Path) -> None:
     if contents.count(original) != 1:
         raise ValueError("Pinned Muter source no longer matches the NSLock exclusion patch")
     effects.write_text(contents.replace(original, '            "NSLock",\n' + original), encoding="utf-8")
+    # Unresolved ternary branches can span several sequence elements. Swap
+    # the whole else expression so its operators do not remain after the then branch.
+    ternary = source / "Sources/muterCore/MutationOperators/SwapTernaryOperator.swift"
+    contents = ternary.read_text(encoding="utf-8")
+    replacements = {
+        "            let secondChoice = children[index + 1]\n":
+        "            let secondChoice = ExprSyntax(SequenceExprSyntax(\n"
+        "                elements: ExprListSyntax(Array(children[(index + 1)...]))\n"
+        "            ))\n",
+        "            children[index + 1] = firstChoice\n":
+        "            children.replaceSubrange((index + 1)..<children.count, with: [firstChoice])\n",
+    }
+    for original, replacement in replacements.items():
+        if contents.count(original) != 1:
+            raise ValueError("Pinned Muter source no longer matches the ternary expression patch")
+        contents = contents.replace(original, replacement)
+    ternary.write_text(contents, encoding="utf-8")
 
 
 def install(swift: str, jobs: int) -> Path:
