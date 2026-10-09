@@ -39,11 +39,13 @@ final class BulkTaskArchivingState {
 
     var ownsPresentation: Bool { isPresented || isSubmitting }
     var days: Int? {
-        guard !daysText.isEmpty, daysText.allSatisfy({ $0.isASCII && $0.isNumber }),
+        guard !daysText.isEmpty, daysText.allSatisfy(isDayDigit),
             let value = UInt32(daysText), value > 0
         else { return nil }
         return Int(value)
     }
+
+    private func isDayDigit(_ character: Character) -> Bool { character.isASCII && character.isNumber }
     var presentation: BulkTaskArchivingPresentation {
         BulkTaskArchivingPresentation(
             isPresented: isPresented, daysText: daysText,
