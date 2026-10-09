@@ -26,7 +26,7 @@ extension TrackerUITestCase {
             screenshot = captured
             let request = VNRecognizeTextRequest()
             request.revision = VNRecognizeTextRequestRevision1
-            request.recognitionLevel = .accurate
+            request.recognitionLevel = .fast
             request.minimumTextHeight = 0
             request.recognitionLanguages = ["en-US"]
             request.usesLanguageCorrection = false
