@@ -328,7 +328,11 @@ final class BulkTaskArchivingTests: XCTestCase {
         let changed = try await fixture.taskValue(Task { await fixture.session.connect(.local) })
         XCTAssertFalse(changed)
         XCTAssertEqual(publishedMessage, "Close the archive dialog before changing connections.")
-        do { try await fixture.session.testConnection(.local); XCTFail("Connection test must be blocked") } catch {
+        do {
+            let testing = Task { try await fixture.session.testConnection(.local) }
+            try await fixture.taskValue(testing)
+            XCTFail("Connection test must be blocked")
+        } catch {
             XCTAssertTrue(error.localizedDescription.contains("Close the archive dialog"))
         }
         fixture.session.cancelBulkTaskArchiving()
