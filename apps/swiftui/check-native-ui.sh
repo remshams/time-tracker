@@ -43,6 +43,17 @@ elif [[ "${1:-}" == --group && $# == 2 ]]; then
         worklogs) suites=(WorklogCorrectionUITests ServerWorklogCorrectionUITests WorklogMoveUITests ServerWorklogMoveUITests) ;;
         server) suites=(ConnectionUITests ServerRecoveryUITests) ;;
         menu) suites=(MenuBarUITests ServerMenuBarUITests MenuSourceUITests SettingsUITests) ;;
+        menu-display)
+            suites=()
+            for suite in MenuBarUITests ServerMenuBarUITests; do
+                for test in \
+                    testDisplayChoicesApplyImmediatelyAndTaskNamePersistsAcrossRelaunch \
+                    testLongLabelIsEllipsizedAndHoverKeepsFullTaskNameInEveryDisplayMode \
+                    testTaskLabelFollowsStartRenameSwitchAndStop; do
+                    suites+=("$suite/$test")
+                done
+            done
+            ;;
         mac) suites=(WindowRoutingUITests DailyTotalsUITests ServerDailyTotalsUITests LifecycleUITests ServerLifecycleUITests AppearanceUITests) ;;
         *) echo "Unknown native UI group: $2" >&2; exit 2 ;;
     esac
@@ -51,7 +62,7 @@ elif [[ "${1:-}" == --group && $# == 2 ]]; then
         test_selection+=("-only-testing:TimeTrackerUITests/$suite")
     done
 elif (( $# != 0 )); then
-    echo 'Usage: check-native-ui.sh [--smoke | --group core|tasks|worklogs|server|menu|mac]' >&2
+    echo 'Usage: check-native-ui.sh [--smoke | --group core|tasks|worklogs|server|menu|menu-display|mac]' >&2
     exit 2
 fi
 xcodebuild -project apps/swiftui/TimeTracker.xcodeproj -scheme TimeTracker \
