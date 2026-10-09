@@ -34,7 +34,7 @@ fn history_owns_the_exact_task_list_state_it_will_restore() {
 }
 
 #[test]
-fn history_keeps_task_navigation_after_its_read_changes_membership() {
+fn history_read_keeps_unrelated_tasks_until_returning_to_the_task_list() {
     let alpha = task(1, "alpha");
     let beta = task(2, "beta");
     let gamma = task(3, "gamma");
@@ -54,13 +54,13 @@ fn history_keeps_task_navigation_after_its_read_changes_membership() {
     assert_eq!(app.app_view().screen(), Screen::WorklogHistory);
     assert_eq!(
         app.app_view().tasks().len(),
-        2,
-        "the history read removed alpha"
+        3,
+        "the history read leaves unrelated task metadata unchanged"
     );
     assert_eq!(
         app.app_view().selected(),
-        Some(0),
-        "selection followed beta's stable id"
+        Some(1),
+        "selection remains on beta's stable id"
     );
     assert_eq!(
         app.app_view().tasks()[app.app_view().selected().unwrap()].id(),

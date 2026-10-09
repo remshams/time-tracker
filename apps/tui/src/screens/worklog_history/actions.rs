@@ -189,18 +189,18 @@ impl AppState {
                 let ApplicationOutcome::WorklogPage(result) = completed.outcome else {
                     unreachable!()
                 };
-                state.sync_from_snapshot(
-                    completed.snapshot.items,
-                    completed.snapshot.tracking,
-                    false,
-                );
+
                 if !still_selected {
                     return;
                 }
                 match result {
                     Ok(page) => {
-                        let baseline =
-                            active_worklog_for_task(&page.snapshot.active_worklog, task_id);
+                        let baseline = active_worklog_for_task(
+                            page.snapshot
+                                .as_ref()
+                                .and_then(|snapshot| snapshot.active_worklog.as_ref()),
+                            task_id,
+                        );
                         state.shell_mut().open_history(History::new(
                             task_id,
                             page.worklogs,
@@ -220,6 +220,9 @@ impl AppState {
     pub(crate) fn back_to_task_list(&mut self) {
         if self.history_is_normal() {
             self.shell_mut().back_to_task_list();
+            if self.shell().screen() == Screen::TaskList {
+                self.refresh_task_list();
+            }
             self.refresh_reports_now();
         }
     }
@@ -323,19 +326,19 @@ impl AppState {
                 let ApplicationOutcome::WorklogPage(result) = completed.outcome else {
                     unreachable!()
                 };
-                state.sync_from_snapshot(
-                    completed.snapshot.items,
-                    completed.snapshot.tracking,
-                    false,
-                );
+
                 if !current {
                     return;
                 }
                 match result {
                     Ok(page) => {
-                        let active =
-                            active_worklog_for_task(&page.snapshot.active_worklog, task_id);
-                        if active != baseline {
+                        let active = active_worklog_for_task(
+                            page.snapshot
+                                .as_ref()
+                                .and_then(|snapshot| snapshot.active_worklog.as_ref()),
+                            task_id,
+                        );
+                        if page.snapshot.is_some() && active != baseline {
                             state.reload_newest_history_after_change(task_id);
                             return;
                         }
@@ -384,11 +387,7 @@ impl AppState {
                 let ApplicationOutcome::WorklogPage(result) = completed.outcome else {
                     unreachable!()
                 };
-                state.sync_from_snapshot(
-                    completed.snapshot.items,
-                    completed.snapshot.tracking,
-                    false,
-                );
+
                 if !current {
                     return;
                 }
@@ -419,11 +418,7 @@ impl AppState {
                 let ApplicationOutcome::WorklogPage(result) = completed.outcome else {
                     unreachable!()
                 };
-                state.sync_from_snapshot(
-                    completed.snapshot.items,
-                    completed.snapshot.tracking,
-                    false,
-                );
+
                 if !current {
                     return;
                 }
@@ -450,7 +445,12 @@ impl AppState {
         keep: Option<WorklogId>,
         page: WorklogPage,
     ) {
-        let baseline = active_worklog_for_task(&page.snapshot.active_worklog, task_id);
+        let baseline = active_worklog_for_task(
+            page.snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.active_worklog.as_ref()),
+            task_id,
+        );
         let Some(history) = self.history_mut() else {
             return;
         };
@@ -468,13 +468,6 @@ impl AppState {
             state.session_id() == session && state.history().task_id() == task_id
         })
     }
-
-    pub(crate) fn sync_tracking_after_history_reload(
-        &mut self,
-        tracking: tracker_domain::TrackingState,
-    ) {
-        self.tracking_mut().sync_after_history_reload(tracking);
-    }
 }
 
 #[cfg(test)]
@@ -485,7 +478,7 @@ mod navigation_tests {
     use tracker_domain::{TaskId, TrackingState, Worklog, WorklogId};
 
     use crate::app::AppState;
-    use crate::application_request::{ApplicationOutcome, ApplicationSnapshot, CompletedRequest};
+    use crate::application_request::{ApplicationOutcome, CompletedRequest};
     use crate::command::Command;
     use crate::screens::task_list::TaskListCommand;
     use crate::screens::worklog_history::WorklogHistoryCommand;
@@ -510,7 +503,7 @@ mod navigation_tests {
             task: selected.clone(),
             latest_work_start: None,
         }];
-        let mut state = AppState::load_from_snapshot(items.clone(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(items.clone(), TrackingState::Idle);
         state.handle_command(Command::TaskList(TaskListCommand::OpenHistory));
         let effect = state.take_effect().expect("history request");
         let request = effect.request.clone();
@@ -520,24 +513,22 @@ mod navigation_tests {
             .shell_mut()
             .leave_reports(TaskView::Active, Some(selected.id()));
         assert_eq!(state.shell().task_list().selection(), Some(selected.id()));
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
                     worklogs: Vec::new(),
-                    snapshot: WorklogPageSnapshot {
+                    snapshot: Some(WorklogPageSnapshot {
                         requested_task_latest_work_start: None,
                         active_worklog: None,
                         active_task_latest_work_start: None,
-                    },
+                    }),
                     next_cursor: None,
                 })),
-                snapshot: ApplicationSnapshot {
-                    items,
-                    tracking: TrackingState::Idle,
-                },
             },
+            items,
+            TrackingState::Idle,
         );
         assert_eq!(state.shell().screen(), Screen::TaskList);
     }
@@ -549,7 +540,7 @@ mod navigation_tests {
             task: selected.clone(),
             latest_work_start: None,
         }];
-        let mut state = AppState::load_from_snapshot(items.clone(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(items.clone(), TrackingState::Idle);
         state.handle_command(Command::TaskList(TaskListCommand::OpenHistory));
         let effect = state.take_effect().expect("history request");
         let request = effect.request.clone();
@@ -557,24 +548,22 @@ mod navigation_tests {
         state.handle_command(Command::TaskList(TaskListCommand::ShowArchivedTasks));
         state.handle_command(Command::TaskList(TaskListCommand::ShowActiveTasks));
         assert_eq!(state.shell().task_list().selection(), Some(selected.id()));
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
                     worklogs: Vec::new(),
-                    snapshot: WorklogPageSnapshot {
+                    snapshot: Some(WorklogPageSnapshot {
                         requested_task_latest_work_start: None,
                         active_worklog: None,
                         active_task_latest_work_start: None,
-                    },
+                    }),
                     next_cursor: None,
                 })),
-                snapshot: ApplicationSnapshot {
-                    items,
-                    tracking: TrackingState::Idle,
-                },
             },
+            items,
+            TrackingState::Idle,
         );
         assert_eq!(state.shell().screen(), Screen::TaskList);
     }
@@ -592,11 +581,11 @@ mod navigation_tests {
     fn page(worklogs: Vec<Worklog>) -> WorklogPage {
         WorklogPage {
             worklogs,
-            snapshot: WorklogPageSnapshot {
+            snapshot: Some(WorklogPageSnapshot {
                 requested_task_latest_work_start: None,
                 active_worklog: None,
                 active_task_latest_work_start: None,
-            },
+            }),
             next_cursor: None,
         }
     }
@@ -604,37 +593,33 @@ mod navigation_tests {
     fn complete_page(state: &mut AppState, page: WorklogPage) {
         let effect = state.take_effect().expect("page request");
         let request = effect.request.clone();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::WorklogPage(Ok(page)),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
     }
 
     fn complete_worklog(state: &mut AppState, result: Result<Worklog, ApplicationError>) {
         let effect = state.take_effect().expect("worklog request");
         let request = effect.request.clone();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::Worklog(result),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
     }
 
     fn state_with_worklog(worklog: Worklog) -> AppState {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state
             .shell_mut()
             .open_history(History::new(worklog.task_id(), vec![worklog], None, None));
@@ -652,7 +637,7 @@ mod navigation_tests {
             id: first.id(),
             revision: 1,
         };
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.shell_mut().open_history(History::new(
             task_id,
             vec![first.clone()],
@@ -690,7 +675,7 @@ mod navigation_tests {
             revision: 2,
             ..cursor
         };
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.shell_mut().open_history(History::new(
             task_id,
             vec![first.clone()],
@@ -714,7 +699,7 @@ mod navigation_tests {
         let task_id = TaskId::generate();
         let first = worklog(task_id, 100);
         let replacement = worklog(task_id, 200);
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state
             .shell_mut()
             .open_history(History::new(task_id, vec![first.clone()], None, None));
@@ -735,7 +720,7 @@ mod navigation_tests {
         let task_id = TaskId::generate();
         let first = worklog(task_id, 100);
         let replacement = worklog(task_id, 200);
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state
             .shell_mut()
             .open_history(History::new(task_id, vec![first.clone()], None, None));
@@ -753,7 +738,7 @@ mod navigation_tests {
     fn history_session_rejects_a_different_task_or_visit() {
         let task_id = TaskId::generate();
         let other_task = TaskId::generate();
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state
             .shell_mut()
             .open_history(History::new(task_id, Vec::new(), None, None));
@@ -782,16 +767,14 @@ mod navigation_tests {
             .open_history(History::new(task_id, vec![original.clone()], None, None));
         state.open_correction();
         let new_session = state.history_state().unwrap().session_id();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::Worklog(Ok(original)),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         assert_eq!(state.history_state().unwrap().session_id(), new_session);
         assert!(state.history_state().unwrap().correction().is_some());
@@ -827,16 +810,14 @@ mod navigation_tests {
             .shell_mut()
             .open_history(History::new(task_id, vec![original.clone()], None, None));
         state.open_deletion();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::Worklog(Ok(original.clone())),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         assert_eq!(state.history().unwrap().worklogs(), &[original]);
         assert!(matches!(
@@ -879,7 +860,7 @@ mod navigation_tests {
         ];
         assert_eq!(items[0].task.id(), worklog.task_id());
         assert_eq!(items[1].task.id(), destination);
-        let mut state = AppState::load_from_snapshot(items, TrackingState::Idle);
+        let mut state = AppState::load_task_list(items, TrackingState::Idle);
         state
             .shell_mut()
             .open_history(History::new(worklog.task_id(), vec![worklog], None, None));
@@ -904,16 +885,14 @@ mod navigation_tests {
             None,
         ));
         state.open_move();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::Worklog(Ok(original.clone())),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         assert_eq!(state.history().unwrap().worklogs(), &[original]);
         assert!(matches!(

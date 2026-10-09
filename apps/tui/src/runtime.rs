@@ -16,7 +16,7 @@ use tracker_storage::SqliteRepository;
 
 use crate::app::{AppEffect, AppState, Status};
 use crate::application_request::{
-    ApplicationRequest, ApplicationSnapshot, CompletedRequest, execute_local, execute_remote,
+    ApplicationRequest, CompletedRequest, execute_local, execute_remote,
 };
 use crate::terminal::TerminalGuard;
 
@@ -99,7 +99,7 @@ async fn event_loop(
                 busy_visible = false;
                 pending = Some(Box::pin(async move {
                     let mut remote = remote;
-                    let result = remote.refresh().await;
+                    let result = remote.refresh_task_list().await;
                     (Backend::Remote(remote), ResultKind::Refresh(result))
                 }));
                 refresh_requested = false;
@@ -136,6 +136,7 @@ async fn event_loop(
                 match result {
                     ResultKind::Request(completed) => {
                         let effect = active_effect.take().expect("request has a completion");
+                        publish_request_resources(&mut state, backend.as_ref().expect("request returned backend"), &completed);
                         state.complete_effect(effect, *completed);
                         if matches!(backend, Some(Backend::Remote(ref remote)) if remote.last_failure() == Some(RemoteFailureKind::Unavailable)) {
                             state.shell_mut().error("Server unavailable");
@@ -175,8 +176,69 @@ fn start_request(backend: Backend, request: ApplicationRequest) -> Pending {
             Backend::Local(application) => execute_local(application, request),
             Backend::Remote(application) => execute_remote(application, request).await,
         };
+        if completed.request.needs_task_list()
+            && completed.request != ApplicationRequest::RefreshTaskList
+        {
+            match &mut backend {
+                Backend::Local(application) => {
+                    let _ = tracker_application::TaskQueries::refresh_task_list(application);
+                }
+                Backend::Remote(application) => {
+                    let _ = application.refresh_task_list().await;
+                }
+            }
+        }
         (backend, ResultKind::Request(Box::new(completed)))
     })
+}
+
+fn publish_request_resources(
+    state: &mut AppState,
+    backend: &Backend,
+    completed: &CompletedRequest,
+) {
+    use tracker_application::{TaskOrdering, TaskQueries, TrackingOperations};
+    match backend {
+        Backend::Local(application) => state.publish_request_resources(
+            completed,
+            application.tasks(TaskOrdering::default()),
+            Some(application.current_tracking().clone()),
+        ),
+        Backend::Remote(application) => {
+            if completed.request.needs_task_list() {
+                if let (Some(tasks), Some(tracking)) = (
+                    application.task_observation(),
+                    application.tracking_observation(),
+                ) && tasks.revision == tracking.revision
+                {
+                    state.publish_request_resources(
+                        completed,
+                        tasks.value.clone(),
+                        Some(tracking.value.clone()),
+                    );
+                }
+            } else {
+                let items = selected_remote_task_items(application, completed);
+                state.publish_request_resources(
+                    completed,
+                    items,
+                    application
+                        .tracking_observation()
+                        .map(|tracking| tracking.value.clone()),
+                );
+            }
+        }
+    }
+}
+
+fn selected_remote_task_items(
+    application: &RemoteApplication,
+    completed: &CompletedRequest,
+) -> Vec<tracker_application::TaskListItem> {
+    let ids = completed.metadata_task_ids(None);
+    ids.into_iter()
+        .filter_map(|id| application.task_item(id).cloned())
+        .collect()
 }
 
 fn apply_refresh(
@@ -186,8 +248,12 @@ fn apply_refresh(
 ) {
     match result {
         Ok(()) => {
-            let snapshot = ApplicationSnapshot::from_remote(remote);
-            state.sync_from_snapshot(snapshot.items, snapshot.tracking, false);
+            if let (Some(tasks), Some(tracking)) =
+                (remote.task_observation(), remote.tracking_observation())
+                && tasks.revision == tracking.revision
+            {
+                state.sync_task_list(tasks.value.clone(), tracking.value.clone(), false);
+            }
             if matches!(state.shell().status(), Status::Info(message) if message == "Connecting to server...")
                 || matches!(state.shell().status(), Status::Error(message) if message == "Server unavailable")
             {
@@ -254,7 +320,7 @@ mod tests {
 
     #[test]
     fn a_busy_refresh_does_not_overlap_an_existing_error_status() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.shell_mut().error("Server unavailable");
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
 
@@ -274,7 +340,7 @@ mod tests {
 
     #[test]
     fn a_busy_refresh_uses_the_empty_status_row_and_leaves_the_footer_intact() {
-        let state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
 
         terminal
@@ -293,7 +359,7 @@ mod tests {
 
     #[test]
     fn a_busy_refresh_does_not_cover_the_small_terminal_warning() {
-        let state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let mut terminal = Terminal::new(TestBackend::new(40, 2)).unwrap();
 
         terminal
@@ -366,7 +432,7 @@ mod tests {
     #[test]
     fn refresh_clears_connection_status_and_reports_wire_failures() {
         let remote = RemoteApplication::disconnected("http://127.0.0.1:1/").unwrap();
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.shell_mut().info("Connecting to server...");
 
         apply_refresh(&mut state, &remote, Ok(()));

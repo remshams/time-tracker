@@ -193,11 +193,10 @@ pub struct WorklogHistoryState {
 }
 
 pub(crate) fn active_worklog_for_task(
-    active_worklog: &Option<Worklog>,
+    active_worklog: Option<&Worklog>,
     task_id: TaskId,
 ) -> Option<(WorklogId, DateTime<Utc>)> {
     active_worklog
-        .as_ref()
         .filter(|worklog| worklog.task_id() == task_id)
         .map(|worklog| (worklog.id(), worklog.start()))
 }

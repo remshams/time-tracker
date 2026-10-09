@@ -364,11 +364,7 @@ impl AppState {
                 let ApplicationOutcome::InactiveTaskPreview(result) = completed.outcome else {
                     unreachable!("inactive task preview returns a preview")
                 };
-                app.sync_from_snapshot(
-                    completed.snapshot.items,
-                    completed.snapshot.tracking,
-                    false,
-                );
+
                 if !same_dialog {
                     return;
                 }
@@ -419,11 +415,7 @@ impl AppState {
                 let ApplicationOutcome::ArchivedInactiveTasks(result) = completed.outcome else {
                     unreachable!("inactive task archive returns a count")
                 };
-                app.sync_from_snapshot(
-                    completed.snapshot.items,
-                    completed.snapshot.tracking,
-                    false,
-                );
+
                 match result {
                     Ok(count) => {
                         if same_dialog {
@@ -500,11 +492,6 @@ impl AppState {
             };
             match (purpose, result) {
                 (InputPurpose::Add, Ok(task)) => {
-                    app.sync_from_snapshot(
-                        completed.snapshot.items,
-                        completed.snapshot.tracking,
-                        false,
-                    );
                     if same_dialog {
                         app.shell_mut()
                             .task_list_mut()
@@ -514,11 +501,6 @@ impl AppState {
                     app.shell_mut().info(format!("Added \"{}\"", task.name()));
                 }
                 (InputPurpose::Rename { .. }, Ok(task)) => {
-                    app.sync_from_snapshot(
-                        completed.snapshot.items,
-                        completed.snapshot.tracking,
-                        false,
-                    );
                     if same_dialog {
                         app.shell_mut().task_list_mut().close_mode();
                     }
@@ -550,11 +532,7 @@ impl AppState {
                 let ApplicationOutcome::Task(result) = completed.outcome else {
                     unreachable!("archive returns a task")
                 };
-                app.sync_from_snapshot(
-                    completed.snapshot.items,
-                    completed.snapshot.tracking,
-                    false,
-                );
+
                 match result {
                     Ok(task) => {
                         app.shell_mut()
@@ -600,11 +578,7 @@ impl AppState {
                 let ApplicationOutcome::Task(result) = completed.outcome else {
                     unreachable!("unarchive returns a task")
                 };
-                app.sync_from_snapshot(
-                    completed.snapshot.items,
-                    completed.snapshot.tracking,
-                    false,
-                );
+
                 match result {
                     Ok(restored) => {
                         app.shell_mut()
@@ -667,12 +641,7 @@ impl AppState {
                 _ => unreachable!("tracking request returns a tracking outcome"),
             };
             match result {
-                Ok((action, fresh_active)) => {
-                    app.sync_from_snapshot(
-                        completed.snapshot.items,
-                        completed.snapshot.tracking,
-                        fresh_active,
-                    );
+                Ok((action, _fresh_active)) => {
                     let message = match action {
                         "started" => format!("Started \"{}\"", task.name()),
                         "switched" => format!("Switched to \"{}\"", task.name()),
@@ -681,11 +650,6 @@ impl AppState {
                     app.shell_mut().info(message);
                 }
                 Err(error) => {
-                    app.sync_from_snapshot(
-                        completed.snapshot.items,
-                        completed.snapshot.tracking,
-                        false,
-                    );
                     app.shell_mut().error(application_error_text(&error));
                 }
             }
@@ -708,9 +672,7 @@ fn task_name_error_text(error: TaskNameError) -> String {
 mod navigation_tests {
     use crate::app::Status;
     use crate::app::{AppEffect, AppState};
-    use crate::application_request::{
-        ApplicationOutcome, ApplicationRequest, ApplicationSnapshot, CompletedRequest,
-    };
+    use crate::application_request::{ApplicationOutcome, ApplicationRequest, CompletedRequest};
     use crate::command::Command;
     use crate::screens::task_list::{InactiveTaskPreview, TaskListCommand, TaskListMode, TaskView};
     use crate::test_support::{TestService, app_in_timezone, task};
@@ -719,7 +681,7 @@ mod navigation_tests {
 
     fn pending_archive() -> (AppState, AppEffect, Task) {
         let selected = task(1, "selected task");
-        let mut state = AppState::load_from_snapshot(
+        let mut state = AppState::load_task_list(
             vec![TaskListItem {
                 task: selected.clone(),
                 latest_work_start: None,
@@ -734,7 +696,7 @@ mod navigation_tests {
 
     #[test]
     fn a_late_inactive_preview_does_not_reopen_after_cancel() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.handle_task_list_command(TaskListCommand::OpenInactiveArchivePreview);
         let effect = state.take_effect().expect("preview request");
         let TaskListMode::PreviewingInactiveTasks { as_of } = state.shell().task_list().mode()
@@ -749,16 +711,14 @@ mod navigation_tests {
 
         state.handle_task_list_command(TaskListCommand::Cancel);
         let request = effect.request.clone();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::InactiveTaskPreview(Ok(preview)),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
 
         assert_eq!(state.shell().task_list().mode(), &TaskListMode::Normal);
@@ -766,7 +726,7 @@ mod navigation_tests {
 
     #[test]
     fn changed_candidates_close_the_in_flight_dialog_and_require_a_new_preview() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state
             .shell_mut()
             .task_list_mut()
@@ -778,18 +738,16 @@ mod navigation_tests {
         state.handle_task_list_command(TaskListCommand::Confirm);
         let effect = state.take_effect().expect("bulk archive request");
         let request = effect.request.clone();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::ArchivedInactiveTasks(Err(
                     tracker_application::RepositoryError::InactiveTaskCandidatesChanged.into(),
                 )),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
 
         assert_eq!(state.shell().task_list().mode(), &TaskListMode::Normal);
@@ -801,7 +759,7 @@ mod navigation_tests {
 
     #[test]
     fn a_bulk_archive_completion_keeps_a_newer_task_list_mode_open() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state
             .shell_mut()
             .task_list_mut()
@@ -815,16 +773,14 @@ mod navigation_tests {
         let request = effect.request.clone();
         state.shell_mut().task_list_mut().open_search();
 
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::ArchivedInactiveTasks(Ok(1)),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
 
         assert_eq!(state.shell().task_list().mode(), &TaskListMode::Search);
@@ -836,7 +792,7 @@ mod navigation_tests {
 
     #[test]
     fn a_rejected_preview_request_closes_the_loading_modal() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         for _ in 0..32 {
             assert!(state.enqueue(ApplicationRequest::AllWorklogs { after: None }, |_, _| {}));
         }
@@ -854,19 +810,17 @@ mod navigation_tests {
     fn finish_archive(state: &mut AppState, effect: AppEffect, mut selected: Task) {
         selected.archive(chrono::Utc::now());
         let request = effect.request.clone();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::Task(Ok(selected.clone())),
-                snapshot: ApplicationSnapshot {
-                    items: vec![TaskListItem {
-                        task: selected,
-                        latest_work_start: None,
-                    }],
-                    tracking: TrackingState::Idle,
-                },
             },
+            vec![TaskListItem {
+                task: selected,
+                latest_work_start: None,
+            }],
+            TrackingState::Idle,
         );
     }
 
@@ -922,7 +876,7 @@ mod navigation_tests {
 
     #[test]
     fn completed_add_keeps_a_newer_dialog_open() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.handle_task_list_command(TaskListCommand::OpenAdd);
         state.handle_task_list_command(TaskListCommand::Insert('a'));
         state.handle_task_list_command(TaskListCommand::Confirm);
@@ -933,19 +887,17 @@ mod navigation_tests {
 
         let added = task(1, "a");
         let request = effect.request.clone();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::Task(Ok(added.clone())),
-                snapshot: ApplicationSnapshot {
-                    items: vec![TaskListItem {
-                        task: added,
-                        latest_work_start: None,
-                    }],
-                    tracking: TrackingState::Idle,
-                },
             },
+            vec![TaskListItem {
+                task: added,
+                latest_work_start: None,
+            }],
+            TrackingState::Idle,
         );
         assert!(matches!(
             state.shell().task_list().mode(),

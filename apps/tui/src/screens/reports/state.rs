@@ -5,6 +5,37 @@ use tracker_application::ReportTotals;
 use tracker_application::calendar_reports::{self, CalendarPreset};
 use tracker_domain::TaskId;
 
+/// Confirmed report totals with labels resolved independently of their durations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReportPresentation {
+    pub(crate) rows: Vec<ReportPresentationRow>,
+    pub(crate) total: Duration,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReportPresentationRow {
+    pub(crate) task_id: TaskId,
+    pub(crate) task_name: Option<String>,
+    pub(crate) duration: Duration,
+}
+
+impl From<ReportTotals> for ReportPresentation {
+    fn from(totals: ReportTotals) -> Self {
+        Self {
+            rows: totals
+                .rows
+                .into_iter()
+                .map(|row| ReportPresentationRow {
+                    task_id: row.task.id(),
+                    task_name: Some(row.task.name().to_string()),
+                    duration: row.duration,
+                })
+                .collect(),
+            total: totals.total,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReportPreset {
     Today,
@@ -72,7 +103,7 @@ pub struct ReportState {
     pub(crate) mode: ReportMode,
     pub(crate) focus: ReportFocus,
     pub(crate) preset_cursor: usize,
-    pub(crate) totals: Option<ReportTotals>,
+    pub(crate) totals: Option<ReportPresentation>,
     pub(crate) selected: Option<TaskId>,
     pub(crate) g_prefix: bool,
     pub(crate) follow_calendar: bool,
@@ -114,7 +145,7 @@ impl ReportState {
             .as_ref()?
             .rows
             .iter()
-            .position(|row| row.task.id() == id)
+            .position(|row| row.task_id == id)
     }
 
     pub(crate) fn select_index(&mut self, index: usize) {
@@ -122,17 +153,18 @@ impl ReportState {
             .totals
             .as_ref()
             .and_then(|totals| totals.rows.get(index))
-            .map(|row| row.task.id());
+            .map(|row| row.task_id);
     }
 
-    pub(crate) fn set_totals(&mut self, totals: ReportTotals) {
+    pub(crate) fn set_totals(&mut self, totals: impl Into<ReportPresentation>) {
+        let totals = totals.into();
         if totals.rows.is_empty() && self.focus == ReportFocus::Rows {
             self.focus = ReportFocus::Presets;
         }
         let previous = self.selected;
         self.selected = previous
-            .filter(|id| totals.rows.iter().any(|row| row.task.id() == *id))
-            .or_else(|| totals.rows.first().map(|row| row.task.id()));
+            .filter(|id| totals.rows.iter().any(|row| row.task_id == *id))
+            .or_else(|| totals.rows.first().map(|row| row.task_id));
         self.totals = Some(totals);
         self.report_error = false;
     }

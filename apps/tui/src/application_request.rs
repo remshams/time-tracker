@@ -3,16 +3,17 @@
 use chrono::{DateTime, Utc};
 use tracker_application::{
     ApplicationError, ClearActiveTaskOutcome, GlobalWorklogCursor, GlobalWorklogPage, ReportTotals,
-    SetActiveTaskOutcome, TaskListItem, TaskOrdering, TrackerApplicationService, WorklogCursor,
-    WorklogPage,
+    SetActiveTaskOutcome, TrackerApplicationService, WorklogCursor, WorklogPage,
 };
 use tracker_domain::{Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes};
 use tracker_remote::RemoteApplication;
 
+use crate::screens::reports::{ReportPresentation, ReportPresentationRow};
 use crate::screens::task_list::InactiveTaskPreview;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ApplicationRequest {
+    RefreshTaskList,
     CreateTask {
         name: TaskName,
         occurred_at: DateTime<Utc>,
@@ -173,6 +174,7 @@ enum WriteIntent<'a> {
 
 #[derive(Debug)]
 pub(crate) enum ApplicationOutcome {
+    TaskListRefresh(Result<(), ApplicationError>),
     Task(Result<Task, ApplicationError>),
     InactiveTaskPreview(Result<InactiveTaskPreview, ApplicationError>),
     ArchivedInactiveTasks(Result<usize, ApplicationError>),
@@ -182,34 +184,75 @@ pub(crate) enum ApplicationOutcome {
     GlobalWorklogPage(Result<GlobalWorklogPage, ApplicationError>),
     Worklog(Result<Worklog, ApplicationError>),
     ReportTotals(Result<ReportTotals, ApplicationError>),
-}
-
-#[derive(Debug)]
-pub(crate) struct ApplicationSnapshot {
-    pub(crate) items: Vec<TaskListItem>,
-    pub(crate) tracking: TrackingState,
+    RemoteReportTotals(Result<ReportPresentation, ApplicationError>),
 }
 
 #[derive(Debug)]
 pub(crate) struct CompletedRequest {
     pub(crate) request: ApplicationRequest,
     pub(crate) outcome: ApplicationOutcome,
-    pub(crate) snapshot: ApplicationSnapshot,
 }
 
-impl ApplicationSnapshot {
-    pub(crate) fn from_local<S: TrackerApplicationService>(application: &S) -> Self {
-        Self {
-            items: application.tasks(TaskOrdering::default()),
-            tracking: application.current_tracking().clone(),
+impl CompletedRequest {
+    pub(crate) fn metadata_task_ids(
+        &self,
+        tracking: Option<&TrackingState>,
+    ) -> std::collections::BTreeSet<TaskId> {
+        match &self.outcome {
+            ApplicationOutcome::GlobalWorklogPage(Ok(page)) => page
+                .worklogs
+                .iter()
+                .map(Worklog::task_id)
+                .chain(page.task_items.iter().map(|item| item.task.id()))
+                .chain(
+                    page.tracking
+                        .as_ref()
+                        .and_then(|read| read.active_task_item.as_ref())
+                        .map(|item| item.task.id()),
+                )
+                .collect(),
+            ApplicationOutcome::WorklogPage(Ok(page)) => {
+                let ApplicationRequest::WorklogsForTask { task_id, .. } = self.request else {
+                    unreachable!("task history is requested for a task")
+                };
+                Some(task_id)
+                    .into_iter()
+                    .chain(
+                        page.snapshot
+                            .as_ref()
+                            .and_then(|snapshot| snapshot.active_worklog.as_ref())
+                            .map(Worklog::task_id),
+                    )
+                    .collect()
+            }
+            ApplicationOutcome::ReportTotals(Ok(totals)) => totals
+                .rows
+                .iter()
+                .map(|row| row.task.id())
+                .chain(tracking.and_then(active_task_id))
+                .collect(),
+            ApplicationOutcome::RemoteReportTotals(Ok(totals)) => {
+                totals.rows.iter().map(|row| row.task_id).collect()
+            }
+            _ => std::collections::BTreeSet::new(),
         }
     }
+}
 
-    pub(crate) fn from_remote(application: &RemoteApplication) -> Self {
-        Self {
-            items: application.tasks(TaskOrdering::default()),
-            tracking: application.current_tracking().clone(),
-        }
+fn active_task_id(tracking: &TrackingState) -> Option<TaskId> {
+    match tracking {
+        TrackingState::Idle => None,
+        TrackingState::Running { worklog } => Some(worklog.task_id()),
+    }
+}
+
+impl ApplicationRequest {
+    pub(crate) fn needs_task_list(&self) -> bool {
+        self.is_write()
+            || matches!(
+                self,
+                Self::PreviewInactiveTasks { .. } | Self::RefreshTaskList
+            )
     }
 }
 
@@ -218,6 +261,9 @@ pub(crate) fn execute_local<S: TrackerApplicationService>(
     request: ApplicationRequest,
 ) -> CompletedRequest {
     let outcome = match &request {
+        ApplicationRequest::RefreshTaskList => {
+            ApplicationOutcome::TaskListRefresh(application.refresh_task_list())
+        }
         ApplicationRequest::CreateTask { .. }
         | ApplicationRequest::RenameTask { .. }
         | ApplicationRequest::ArchiveTask { .. }
@@ -276,12 +322,7 @@ pub(crate) fn execute_local<S: TrackerApplicationService>(
             ApplicationOutcome::ReportTotals(application.report_totals(*start, *end, *now))
         }
     };
-    let snapshot = ApplicationSnapshot::from_local(application);
-    CompletedRequest {
-        request,
-        outcome,
-        snapshot,
-    }
+    CompletedRequest { request, outcome }
 }
 
 pub(crate) async fn execute_remote(
@@ -289,6 +330,15 @@ pub(crate) async fn execute_remote(
     request: ApplicationRequest,
 ) -> CompletedRequest {
     let outcome = match &request {
+        ApplicationRequest::RefreshTaskList => ApplicationOutcome::TaskListRefresh(
+            application.refresh_task_list().await.map_err(|error| {
+                if error.is_unavailable() {
+                    ApplicationError::RemoteUnavailable(error.to_string())
+                } else {
+                    ApplicationError::RemoteProtocol(error.to_string())
+                }
+            }),
+        ),
         ApplicationRequest::CreateTask { .. }
         | ApplicationRequest::RenameTask { .. }
         | ApplicationRequest::ArchiveTask { .. }
@@ -297,6 +347,31 @@ pub(crate) async fn execute_remote(
         | ApplicationRequest::UnarchiveTask { .. } => {
             execute_remote_task(application, &request).await
         }
+        ApplicationRequest::SetActiveTask { .. } | ApplicationRequest::ClearActiveTask { .. } => {
+            execute_remote_tracking(application, &request).await
+        }
+        ApplicationRequest::WorklogsForTask { .. } | ApplicationRequest::AllWorklogs { .. } => {
+            execute_remote_history(application, &request).await
+        }
+        ApplicationRequest::MoveWorklog { .. }
+        | ApplicationRequest::CorrectWorklog { .. }
+        | ApplicationRequest::DeleteCompletedWorklog { .. } => {
+            execute_remote_worklog(application, &request).await
+        }
+        ApplicationRequest::ReportTotals { start, end, now } => {
+            ApplicationOutcome::RemoteReportTotals(
+                execute_remote_report(application, *start, *end, *now).await,
+            )
+        }
+    };
+    CompletedRequest { request, outcome }
+}
+
+async fn execute_remote_tracking(
+    application: &mut RemoteApplication,
+    request: &ApplicationRequest,
+) -> ApplicationOutcome {
+    match request {
         ApplicationRequest::SetActiveTask {
             task_id,
             expected_active,
@@ -314,14 +389,40 @@ pub(crate) async fn execute_remote(
                 .clear_active_task(*expected_active, *occurred_at)
                 .await,
         ),
-        ApplicationRequest::WorklogsForTask { task_id, after } => ApplicationOutcome::WorklogPage(
-            application
+        _ => unreachable!("remote tracking dispatch receives its own requests"),
+    }
+}
+
+async fn execute_remote_history(
+    application: &mut RemoteApplication,
+    request: &ApplicationRequest,
+) -> ApplicationOutcome {
+    match request {
+        ApplicationRequest::WorklogsForTask { task_id, after } => {
+            let result = application
                 .worklogs_for_task(*task_id, after.as_ref())
-                .await,
-        ),
-        ApplicationRequest::AllWorklogs { after } => {
-            ApplicationOutcome::GlobalWorklogPage(application.all_worklogs(after.as_ref()).await)
+                .await;
+            if result.is_ok() {
+                let _ = application.read_task(*task_id).await;
+            }
+            ApplicationOutcome::WorklogPage(result)
         }
+        ApplicationRequest::AllWorklogs { after } => {
+            let result = application.all_worklogs(after.as_ref()).await;
+            if let Ok(page) = &result {
+                resolve_history_tasks(application, &page.worklogs).await;
+            }
+            ApplicationOutcome::GlobalWorklogPage(result)
+        }
+        _ => unreachable!("remote history dispatch receives its own requests"),
+    }
+}
+
+async fn execute_remote_worklog(
+    application: &mut RemoteApplication,
+    request: &ApplicationRequest,
+) -> ApplicationOutcome {
+    match request {
         ApplicationRequest::MoveWorklog {
             id,
             expected_source_task_id,
@@ -356,15 +457,39 @@ pub(crate) async fn execute_remote(
                 .delete_completed_worklog(*id, *expected_task_id, *expected)
                 .await,
         ),
-        ApplicationRequest::ReportTotals { start, end, now } => {
-            ApplicationOutcome::ReportTotals(application.report_totals(*start, *end, *now).await)
-        }
-    };
-    let snapshot = ApplicationSnapshot::from_remote(application);
-    CompletedRequest {
-        request,
-        outcome,
-        snapshot,
+        _ => unreachable!("remote worklog dispatch receives its own requests"),
+    }
+}
+
+async fn execute_remote_report(
+    application: &mut RemoteApplication,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Result<ReportPresentation, ApplicationError> {
+    let dto = application.task_totals(start, end, now).await?;
+    let mut rows = Vec::with_capacity(dto.rows.len());
+    for row in dto.rows {
+        let id: TaskId = row.task_id.parse().map_err(|_| {
+            ApplicationError::RemoteProtocol("Invalid report task identifier".to_owned())
+        })?;
+        let _ = application.read_task(id).await;
+        rows.push(ReportPresentationRow {
+            task_id: id,
+            task_name: application.task(id).map(|task| task.name().to_string()),
+            duration: chrono::TimeDelta::microseconds(row.duration_us),
+        });
+    }
+    Ok(ReportPresentation {
+        rows,
+        total: chrono::TimeDelta::microseconds(dto.total_us),
+    })
+}
+
+async fn resolve_history_tasks(application: &mut RemoteApplication, worklogs: &[Worklog]) {
+    let ids: std::collections::BTreeSet<_> = worklogs.iter().map(Worklog::task_id).collect();
+    for id in ids {
+        let _ = application.read_task(id).await;
     }
 }
 
@@ -488,9 +613,10 @@ mod intent_tests {
     use super::ApplicationRequest as Request;
 
     #[test]
-    fn local_bulk_archive_uses_the_preview_and_returns_the_updated_snapshot() {
+    fn local_bulk_archive_uses_the_preview_and_updates_the_task_list() {
         use super::{ApplicationOutcome, execute_local};
         use crate::test_support::{TestService, at, task};
+        use tracker_application::TaskQueries;
 
         let old_task = task(1, "Old task");
         let recent_task = task(2, "Recently tracked task");
@@ -509,15 +635,12 @@ mod intent_tests {
             completed.outcome,
             ApplicationOutcome::ArchivedInactiveTasks(Ok(1))
         ));
-        let archived = completed
-            .snapshot
-            .items
+        let items = service.tasks(tracker_application::TaskOrdering::default());
+        let archived = items
             .iter()
             .find(|item| item.task.id() == old_task.id())
             .unwrap();
-        let active = completed
-            .snapshot
-            .items
+        let active = items
             .iter()
             .find(|item| item.task.id() == recent_task.id())
             .unwrap();
@@ -920,5 +1043,119 @@ mod reviewed_intent_tests {
             occurred_at: at,
         };
         assert!(!tracking(None).same_write_intent(&tracking(Some(WorklogId::generate()))));
+    }
+}
+
+#[cfg(test)]
+mod remote_report_tests {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use super::{ApplicationOutcome, ApplicationRequest, execute_remote};
+    use crate::test_support::{at, task};
+    use tracker_remote::RemoteApplication;
+
+    fn report_server(
+        task_id: tracker_domain::TaskId,
+        metadata_available: bool,
+    ) -> (String, thread::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let report = format!(
+            r#"{{"start":"{}","end":"{}","now":"{}","rows":[{{"task_id":"{task_id}","duration_us":60000000}}],"total_us":60000000,"revision":"report-1"}}"#,
+            at(100).to_rfc3339(),
+            at(300).to_rfc3339(),
+            at(200).to_rfc3339(),
+        );
+        let metadata = format!(
+            r#"{{"task":{{"id":"{task_id}","name":"Report task","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":null}},"revision":"task-2"}}"#,
+            at(100).to_rfc3339(),
+            at(100).to_rfc3339(),
+        );
+        let responses = [
+            (200, r#"{"status":"ok","protocol_version":3}"#.to_owned()),
+            (200, report),
+            if metadata_available {
+                (200, metadata)
+            } else {
+                (
+                    404,
+                    r#"{"code":"not_found","message":"Task metadata is unavailable"}"#.to_owned(),
+                )
+            },
+        ];
+        let worker = thread::spawn(move || {
+            let mut paths = Vec::new();
+            let deadline = Instant::now() + Duration::from_secs(3);
+            for (status, body) in responses {
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(connection) => break connection,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            if Instant::now() >= deadline {
+                                return paths;
+                            }
+                            thread::sleep(Duration::from_millis(2));
+                        }
+                        Err(error) => panic!("could not accept report request: {error}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                let mut request = String::new();
+                BufReader::new(&mut stream).read_line(&mut request).unwrap();
+                paths.push(request.split_whitespace().nth(1).unwrap().to_owned());
+                write!(stream, "HTTP/1.1 {status} Reply\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+            paths
+        });
+        (endpoint, worker)
+    }
+
+    async fn read_report(metadata_available: bool) {
+        let task_id = task(1, "Report task").id();
+        let (endpoint, worker) = report_server(task_id, metadata_available);
+        let mut application = RemoteApplication::disconnected(&endpoint).unwrap();
+        let completed = execute_remote(
+            &mut application,
+            ApplicationRequest::ReportTotals {
+                start: at(100),
+                end: at(300),
+                now: at(200),
+            },
+        )
+        .await;
+        let paths = worker.join().unwrap();
+        assert_eq!(paths.len(), 3);
+        assert_eq!(paths[0], "/v1/health");
+        assert!(paths[1].starts_with("/v1/reports/task-totals?"));
+        assert_eq!(paths[2], format!("/v1/tasks/{task_id}"));
+        let ApplicationOutcome::RemoteReportTotals(Ok(totals)) = completed.outcome else {
+            panic!("report totals must survive an unavailable task label");
+        };
+        assert_eq!(totals.total, chrono::TimeDelta::seconds(60));
+        assert_eq!(totals.rows.len(), 1);
+        assert_eq!(totals.rows[0].task_id, task_id);
+        assert_eq!(totals.rows[0].duration, totals.total);
+        assert_eq!(
+            totals.rows[0].task_name.as_deref(),
+            metadata_available.then_some("Report task")
+        );
+        assert!(application.task_observation().is_none());
+        assert!(application.tracking_observation().is_none());
+    }
+
+    #[tokio::test]
+    async fn report_totals_survive_missing_labels_without_loading_tasks_or_tracking() {
+        read_report(false).await;
+    }
+
+    #[tokio::test]
+    async fn report_labels_use_independent_task_resources_without_replacing_totals() {
+        read_report(true).await;
     }
 }

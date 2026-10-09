@@ -159,11 +159,11 @@ fn successful_move_uses_the_selected_snapshot_and_refreshes_source_history() {
     let (mut app, spy, source, beta, _, worklog) = move_app(true);
     app.application_mut().worklog_pages.push(Ok(WorklogPage {
         worklogs: Vec::new(),
-        snapshot: WorklogPageSnapshot {
+        snapshot: Some(WorklogPageSnapshot {
             requested_task_latest_work_start: None,
             active_worklog: Some(Worklog::begin(worklog.id(), beta.id(), worklog.start())),
             active_task_latest_work_start: Some(worklog.start()),
-        },
+        }),
         next_cursor: None,
     }));
 
