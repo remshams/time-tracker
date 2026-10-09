@@ -2907,3 +2907,197 @@ async fn coherent_command_preflight_initializes_tasks_after_a_tracking_only_read
     assert_eq!(client.task_items()[0].task.id(), task.id());
     assert_eq!(client.task_revision(), client.tracking_revision());
 }
+
+#[tokio::test]
+async fn coherent_tracking_command_rejects_an_unavailable_pair_before_attempting_a_write() {
+    use axum::http::StatusCode;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tracker_domain::TaskId;
+    use tracker_protocol::{TaskDto, TaskResourceDto, TasksDto, TrackingDto};
+
+    for catalog_unavailable in [false, true] {
+        let writes = Arc::new(AtomicUsize::new(0));
+        let catalog_reads = Arc::new(AtomicUsize::new(0));
+        let target_reads = Arc::new(AtomicUsize::new(0));
+        let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+        let task = TaskDto {
+            id: TaskId::generate().to_string(),
+            name: "Timer task".into(),
+            archived: false,
+            created_at: at,
+            updated_at: at,
+            latest_work_start: None,
+        };
+        let target = task.id.parse().unwrap();
+        let catalog_task = task.clone();
+        let router = Router::new()
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(HealthDto {
+                        status: "ok".into(),
+                        protocol_version: VERSION,
+                    })
+                }),
+            )
+            .route(
+                "/v1/tasks",
+                get({
+                    let reads = catalog_reads.clone();
+                    move || {
+                        let task = catalog_task.clone();
+                        reads.fetch_add(1, Ordering::SeqCst);
+                        async move {
+                            (
+                                if catalog_unavailable {
+                                    StatusCode::SERVICE_UNAVAILABLE
+                                } else {
+                                    StatusCode::OK
+                                },
+                                Json(TasksDto {
+                                    tasks: vec![task],
+                                    revision: "catalog-revision".into(),
+                                }),
+                            )
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/v1/tasks/{id}",
+                get({
+                    let reads = target_reads.clone();
+                    move || {
+                        let task = task.clone();
+                        reads.fetch_add(1, Ordering::SeqCst);
+                        async move {
+                            Json(TaskResourceDto {
+                                task,
+                                revision: "tracking-revision".into(),
+                            })
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/v1/tracking",
+                get(|| async {
+                    Json(TrackingDto {
+                        active_worklog: None,
+                        revision: "tracking-revision".into(),
+                    })
+                })
+                .put({
+                    let writes = writes.clone();
+                    move || {
+                        writes.fetch_add(1, Ordering::SeqCst);
+                        async { StatusCode::INTERNAL_SERVER_ERROR }
+                    }
+                }),
+            );
+        let server = StubServer::from_router(router);
+        let mut client = RemoteApplication::connect(&server.endpoint())
+            .await
+            .unwrap()
+            .with_coherent_task_views();
+        client.refresh_tracking().await.unwrap();
+        let confirmed_tracking = client.tracking_observation().cloned();
+        assert!(client.task_observation().is_none());
+
+        client
+            .set_active_task_with_expected_active(target, None, at)
+            .await
+            .unwrap_err();
+
+        assert!(!client.last_write_attempted());
+        assert_eq!(writes.load(Ordering::SeqCst), 0);
+        assert_eq!(target_reads.load(Ordering::SeqCst), 0);
+        assert!(catalog_reads.load(Ordering::SeqCst) > 0);
+        assert!(client.task_observation().is_none());
+        assert_eq!(client.tracking_observation(), confirmed_tracking.as_ref());
+    }
+}
+
+#[tokio::test]
+async fn coherent_tracking_only_stop_preserves_the_reviewed_start_during_initialization() {
+    let server = TestServer::start();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let mut other = connected(&server.endpoint()).await.unwrap();
+    let task = other.create_task(name("Timer task"), at).await.unwrap();
+    let started = match other
+        .set_active_task(task.id(), at + Duration::seconds(1))
+        .await
+        .unwrap()
+    {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        _ => panic!("expected a running timer"),
+    };
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap()
+        .with_coherent_task_views();
+    client.refresh_tracking().await.unwrap();
+    assert!(client.task_observation().is_none());
+    assert_eq!(client.active_worklog(), Some(started.clone()));
+    let corrected = other
+        .correct_worklog(
+            started.id(),
+            started.times(),
+            WorklogTimes::new(at + Duration::seconds(2), None),
+            at + Duration::seconds(3),
+        )
+        .await
+        .unwrap();
+
+    let error = client
+        .clear_active_task(started.id(), at + Duration::seconds(4))
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.failure().message(),
+        "Tracker state changed. Refresh and retry."
+    );
+    assert!(!client.last_write_attempted());
+    assert_eq!(client.active_worklog(), Some(corrected.clone()));
+    assert_eq!(client.task_revision(), client.tracking_revision());
+    other.refresh_tracking().await.unwrap();
+    assert_eq!(other.active_worklog(), Some(corrected));
+}
+
+#[tokio::test]
+async fn coherent_catalog_only_start_preserves_the_reviewed_task_during_initialization() {
+    let server = TestServer::start();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let mut other = connected(&server.endpoint()).await.unwrap();
+    let task = other.create_task(name("Reviewed task"), at).await.unwrap();
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap()
+        .with_coherent_task_views();
+    client.refresh_tasks().await.unwrap();
+    assert!(client.tracking_observation().is_none());
+    assert_eq!(client.task(task.id()), Some(&task));
+    let renamed = other
+        .rename_task(task.id(), name("Changed task"), at + Duration::seconds(1))
+        .await
+        .unwrap();
+
+    let error = client
+        .set_active_task_with_expected_active(task.id(), None, at + Duration::seconds(2))
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.failure().message(),
+        "Tracker state changed. Refresh and retry."
+    );
+    assert!(!client.last_write_attempted());
+    assert_eq!(client.task(task.id()), Some(&renamed));
+    assert_eq!(client.task_revision(), client.tracking_revision());
+    other.refresh_tracking().await.unwrap();
+    assert!(other.active_worklog().is_none());
+}
