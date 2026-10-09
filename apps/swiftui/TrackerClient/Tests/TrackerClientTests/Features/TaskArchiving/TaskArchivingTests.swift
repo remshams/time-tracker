@@ -8,6 +8,28 @@ final class TaskArchivingTests: XCTestCase {
     }
 
     @MainActor
+    func testAvailabilityDistinguishesRunningInactiveAndArchivedTasks() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
+
+        XCTAssertEqual(fixture.session.taskArchivingAvailability[firstTask.id], false)
+        XCTAssertEqual(fixture.session.taskArchivingAvailability[secondTask.id], true)
+        XCTAssertEqual(fixture.session.taskArchivingAvailability[archivedTask.id], true)
+    }
+
+    @MainActor
+    func testUnarchiveAvailabilityRequiresAnArchivedTaskWithTheRequestedIdentity() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TrackerSnapshot(tasks: [firstTask, archivedTask], active: nil))
+
+        XCTAssertTrue(fixture.session.canUnarchiveTask(taskID: archivedTask.id))
+        XCTAssertFalse(fixture.session.canUnarchiveTask(taskID: firstTask.id))
+        XCTAssertFalse(fixture.session.canUnarchiveTask(taskID: "missing-task"))
+    }
+
+    @MainActor
     func testArchiveCapturesClickedTaskAndCancelDoesNotWrite() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
@@ -355,8 +377,10 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertEqual(fixture.client.operations.count, 4)
         fixture.session.wake()
         let awakeRead = try await fixture.client.next()
+        XCTAssertEqual(awakeRead.operation, .snapshot)
         awakeRead.succeed(snapshot)
         let command = try await fixture.client.next()
+        XCTAssertEqual(command.operation, .archive(task: secondTask.id, at: "2025-01-01T00:00:00.000Z"))
         command.succeed(TrackerSnapshot(tasks: [firstTask, archived(secondTask)], active: nil))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.taskArchiving.isPresented)
@@ -420,11 +444,14 @@ final class TaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
         fixture.session.openTaskArchive(taskID: secondTask.id)
+        var publishedMessage: String?
+        fixture.session.onChange = { publishedMessage = fixture.session.connectionMessage }
         let connected = await fixture.session.connect(serverSettings)
         XCTAssertFalse(connected)
         XCTAssertTrue(fixture.session.taskArchiving.isPresented)
         XCTAssertEqual(fixture.session.taskArchiving.taskID, secondTask.id)
         XCTAssertEqual(fixture.client.operations.count, 2)
+        XCTAssertEqual(publishedMessage, "Finish or retry task archiving before changing connections.")
     }
 
     @MainActor
