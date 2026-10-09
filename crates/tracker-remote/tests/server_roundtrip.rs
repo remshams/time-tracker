@@ -11,6 +11,7 @@ use tracker_domain::{TaskName, WorklogId, WorklogTimes};
 use tracker_protocol::{HealthDto, VERSION};
 use tracker_remote::RemoteApplication;
 use tracker_remote::RemoteFailureKind;
+use tracker_remote::ResourceSelection;
 
 struct TestServer {
     _directory: TempDir,
@@ -150,7 +151,7 @@ impl Drop for StubServer {
 
 async fn connected(endpoint: &str) -> Result<RemoteApplication, tracker_remote::RemoteError> {
     let mut client = RemoteApplication::connect(endpoint).await?;
-    client.refresh().await?;
+    client.refresh_task_list().await?;
     Ok(client)
 }
 
@@ -168,7 +169,7 @@ async fn remote_inactive_archive_uses_the_preview_revision() {
         .create_task(name("Old remote task"), as_of - Duration::days(20))
         .await
         .unwrap();
-    other.refresh().await.unwrap();
+    other.refresh_task_list().await.unwrap();
 
     let preview = client.preview_inactive_tasks(as_of).await.unwrap();
     assert_eq!(preview.count, 1);
@@ -180,7 +181,7 @@ async fn remote_inactive_archive_uses_the_preview_revision() {
         .create_task(name("New remote task"), as_of)
         .await
         .unwrap();
-    client.refresh().await.unwrap();
+    client.refresh_task_list().await.unwrap();
 
     let error = client.archive_inactive_tasks(&preview).await.unwrap_err();
     assert_eq!(
@@ -229,11 +230,11 @@ async fn remote_client_rejects_each_invalid_health_field_before_adopting_a_snaps
         let server = StubServer::with_health(health);
         let mut client = RemoteApplication::disconnected(&server.endpoint()).unwrap();
         assert!(matches!(
-            client.refresh().await,
+            client.refresh_task_list().await,
             Err(tracker_remote::RemoteError::Protocol(_))
         ));
         assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
-        assert!(client.snapshot().task_items.is_empty());
+        assert!(client.task_items().is_empty());
     }
 }
 
@@ -345,10 +346,10 @@ async fn remote_client_round_trips_every_application_operation() {
             .any(|worklog| worklog.id() == second_active.id())
     );
     let report = client
-        .report_totals(at, at + Duration::seconds(30), at + Duration::seconds(30))
+        .task_totals(at, at + Duration::seconds(30), at + Duration::seconds(30))
         .await
         .unwrap();
-    assert_eq!(report.total, Duration::seconds(17));
+    assert_eq!(report.total_us, 17_000_000);
 
     let individual = client.read_worklog(started.id()).await.unwrap();
     assert_eq!(client.cached_worklog(started.id()), Some(&individual));
@@ -458,7 +459,7 @@ async fn stale_client_refreshes_after_conflicting_write() {
         )
         .await
         .unwrap();
-    first.refresh().await.unwrap();
+    first.refresh_task_list().await.unwrap();
     assert_eq!(
         first.task(task.id()).unwrap().name().as_str(),
         "Updated by second"
@@ -504,14 +505,14 @@ async fn disconnected_client_keeps_last_confirmed_state_and_rejects_writes() {
     assert_eq!(count, 1);
     drop(server);
 
-    let error = client.refresh().await.unwrap_err();
+    let error = client.refresh_task_list().await.unwrap_err();
     assert!(error.is_unavailable());
     assert_eq!(client.last_failure(), Some(RemoteFailureKind::Unavailable));
     assert_eq!(client.tasks(TaskOrdering::RecentlyCreated).len(), count);
     assert!(client.create_task(name("Offline task"), at).await.is_err());
     assert_eq!(client.tasks(TaskOrdering::RecentlyCreated).len(), count);
     let failure = client
-        .report_totals(at, at + Duration::seconds(1), at)
+        .task_totals(at, at + Duration::seconds(1), at)
         .await
         .unwrap_err()
         .failure();
@@ -570,8 +571,7 @@ async fn task_history_rejects_other_scope_and_keeps_task_and_tracking_caches() {
         .await
         .unwrap();
     assert_eq!(page.worklogs.len(), 1);
-    assert_eq!(page.snapshot.requested_task_latest_work_start, None);
-    assert_eq!(page.snapshot.active_task_latest_work_start, None);
+    assert!(page.snapshot.is_none());
     assert!(matches!(
         second.current_tracking(),
         tracker_domain::TrackingState::Idle
@@ -582,7 +582,7 @@ async fn task_history_rejects_other_scope_and_keeps_task_and_tracking_caches() {
             .iter()
             .all(|item| item.latest_work_start.is_none())
     );
-    second.refresh().await.unwrap();
+    second.refresh_task_list().await.unwrap();
     assert_eq!(
         second
             .tasks(TaskOrdering::RecentlyWorked)
@@ -605,12 +605,13 @@ async fn task_history_rejects_other_scope_and_keeps_task_and_tracking_caches() {
         .worklogs_for_task(requested.id(), None)
         .await
         .unwrap();
+    assert!(current_page.snapshot.is_none());
     assert_eq!(
-        current_page.snapshot.requested_task_latest_work_start,
+        second.task_item(requested.id()).unwrap().latest_work_start,
         Some(requested_at)
     );
     assert_eq!(
-        current_page.snapshot.active_task_latest_work_start,
+        second.task_item(active.id()).unwrap().latest_work_start,
         Some(started_at)
     );
 }
@@ -666,31 +667,31 @@ async fn global_history_keeps_task_cache_and_reports_exclude_the_end_instant() {
 
     let feed = second.all_worklogs(None).await.unwrap();
     assert_eq!(feed.worklogs[0].id(), started.id());
-    assert!(feed.snapshot.task_items.is_empty());
+    assert!(feed.task_items.is_empty());
     assert!(second.task(task.id()).is_none());
     assert_eq!(
         second
-            .report_totals(
+            .task_totals(
                 at + Duration::seconds(15),
                 at + Duration::seconds(20),
                 at + Duration::seconds(30)
             )
             .await
             .unwrap()
-            .total,
-        Duration::seconds(5)
+            .total_us,
+        5_000_000
     );
     assert_eq!(
         second
-            .report_totals(
+            .task_totals(
                 at + Duration::seconds(20),
                 at + Duration::seconds(30),
                 at + Duration::seconds(30)
             )
             .await
             .unwrap()
-            .total,
-        Duration::zero()
+            .total_us,
+        0
     );
 }
 
@@ -703,7 +704,7 @@ async fn connection_checks_health_without_initializing_resources() {
     let client = RemoteApplication::connect(&server.endpoint())
         .await
         .unwrap();
-    assert!(client.snapshot().task_items.is_empty());
+    assert!(client.task_items().is_empty());
     assert!(client.task_revision().is_empty());
     assert!(client.tracking_revision().is_empty());
     assert_eq!(client.last_failure(), None);
@@ -750,7 +751,7 @@ async fn report_and_history_reads_never_authorize_stale_task_or_tracking_intent(
         second.task(task.id()).unwrap().name().as_str(),
         "Changed by other client"
     );
-    second.refresh().await.unwrap();
+    second.refresh_task_list().await.unwrap();
     first
         .set_active_task(task.id(), at + Duration::seconds(3))
         .await
@@ -852,7 +853,7 @@ async fn coherent_refresh_retries_once_and_retains_the_confirmed_view_during_wri
     let mut client = RemoteApplication::connect(&server.endpoint())
         .await
         .unwrap();
-    assert!(client.refresh().await.is_err());
+    assert!(client.refresh_task_list().await.is_err());
     assert_eq!(task_reads.load(Ordering::SeqCst), 2);
     assert_eq!(tracking_reads.load(Ordering::SeqCst), 2);
     assert!(client.task_revision().is_empty());
@@ -925,12 +926,12 @@ async fn coherent_refresh_rejects_missing_or_archived_active_tasks_without_adopt
             .await
             .unwrap();
         assert!(matches!(
-            client.refresh().await,
+            client.refresh_task_list().await,
             Err(tracker_remote::RemoteError::Protocol(_))
         ));
         assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
-        assert!(client.snapshot().task_items.is_empty());
-        assert!(client.snapshot().active_worklog.is_none());
+        assert!(client.task_items().is_empty());
+        assert!(client.active_worklog().is_none());
         assert!(client.task_revision().is_empty());
         assert!(client.tracking_revision().is_empty());
     }
@@ -1022,6 +1023,10 @@ async fn replayed_receipt_returns_original_result_without_overwriting_a_newer_re
         "Renamed after original command"
     );
     assert_eq!(client.task_revision(), "newer-read");
+    let receipt = client.last_command_receipt().unwrap();
+    assert_eq!(receipt.applied_revision, "original-receipt");
+    assert!(receipt.replayed);
+    assert!(!receipt.request_id.is_empty());
 }
 
 #[tokio::test]
@@ -1196,12 +1201,7 @@ async fn independent_task_totals_keep_valid_rows_without_metadata_or_tracking_re
     assert!(client.task(id).is_none());
     assert!(client.task_revision().is_empty());
     assert!(client.tracking_revision().is_empty());
-    assert!(
-        client
-            .report_totals(at, at + Duration::seconds(10), at)
-            .await
-            .is_err()
-    );
+    assert!(client.read_task_observation(id).await.is_err());
     assert_eq!(client.cached_task_totals(), Some(&expected));
 }
 
@@ -1529,7 +1529,7 @@ async fn queued_switch_preserves_the_active_worklog_seen_at_click_time() {
         .set_active_task(concurrent.id(), at + Duration::seconds(2))
         .await
         .unwrap();
-    second.refresh().await.unwrap();
+    second.refresh_task_list().await.unwrap();
     assert!(
         second
             .set_active_task_with_expected_active(
@@ -1544,7 +1544,7 @@ async fn queued_switch_preserves_the_active_worklog_seen_at_click_time() {
     assert!(
         matches!(first.current_tracking(),tracker_domain::TrackingState::Running {worklog} if worklog.task_id()==concurrent.id())
     );
-    let current = first.snapshot().active_worklog.as_ref().unwrap().id();
+    let current = first.active_worklog().as_ref().unwrap().id();
     second
         .set_active_task_with_expected_active(
             destination.id(),
@@ -2166,7 +2166,7 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
         );
     let server = StubServer::from_router(router);
     let mut client = connected(&server.endpoint()).await.unwrap();
-    let error = client
+    let corrected = client
         .correct_worklog(
             id,
             WorklogTimes::new(at, original.end),
@@ -2174,12 +2174,14 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
             at + Duration::seconds(20),
         )
         .await
-        .unwrap_err();
+        .unwrap();
     assert!(committed.load(Ordering::SeqCst));
     assert!(client.last_write_attempted());
+    assert_eq!(corrected.start(), at + Duration::seconds(1));
+    assert_eq!(client.last_failure(), Some(RemoteFailureKind::Conflict));
     assert_eq!(
-        error.failure().source(),
-        tracker_application::ApplicationFailureSource::Operation
+        client.last_command_receipt().unwrap().applied_revision,
+        "committed-worklog"
     );
     assert_eq!(client.task_revision(), "confirmed");
     assert_eq!(client.tracking_revision(), "confirmed");
@@ -2187,7 +2189,7 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
         client.task(task_id).unwrap().name().as_str(),
         "Confirmed task name"
     );
-    assert!(client.snapshot().active_worklog.is_none());
+    assert!(client.active_worklog().is_none());
     assert_eq!(
         client.cached_worklog(id).unwrap().worklog.start,
         at + Duration::seconds(1)
@@ -2425,29 +2427,34 @@ async fn coherent_task_creation_recovers_the_original_id_after_failed_post_write
         .await
         .unwrap()
         .with_coherent_task_views();
-    client.refresh().await.unwrap();
+    client.refresh_task_list().await.unwrap();
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
-    client
+    let created = client
         .create_task(name("Original creation"), at)
         .await
-        .unwrap_err();
+        .unwrap();
+    assert_eq!(client.last_failure(), Some(RemoteFailureKind::Conflict));
+    assert_eq!(
+        client.last_command_receipt().unwrap().applied_revision,
+        "committed"
+    );
     assert!(client.last_write_attempted());
     assert_eq!(writes.load(Ordering::SeqCst), 1);
-    assert!(client.snapshot().task_items.is_empty());
+    assert!(client.task_items().is_empty());
     assert_eq!(client.task_revision(), "confirmed");
     assert_eq!(client.tracking_revision(), "confirmed");
     let original = current.lock().unwrap()[0].clone();
     coherent.store(true, Ordering::SeqCst);
-    let recovered = client
-        .create_task(name("Original creation"), at + Duration::seconds(20))
-        .await
-        .unwrap();
-    assert_eq!(recovered.id().to_string(), original.id);
-    assert_eq!(recovered.created_at(), at);
-    assert_eq!(recovered.name().as_str(), "Original creation");
+    client.refresh_task_list().await.unwrap();
+    assert_eq!(created.id().to_string(), original.id);
+    assert_eq!(created.created_at(), at);
+    assert_eq!(created.name().as_str(), "Original creation");
+    assert_eq!(
+        client.task(created.id()).unwrap().name().as_str(),
+        "Original creation"
+    );
     assert_eq!(writes.load(Ordering::SeqCst), 1);
-    assert!(!client.last_write_attempted());
-    assert_eq!(client.snapshot().task_items.len(), 1);
+    assert_eq!(client.task_items().len(), 1);
     assert_eq!(client.task_revision(), client.tracking_revision());
 }
 
@@ -2569,9 +2576,9 @@ async fn coherent_tracking_preflight_preserves_the_confirmed_view_when_a_new_tas
         .await
         .unwrap()
         .with_coherent_task_views();
-    second.refresh().await.unwrap();
+    second.refresh_task_list().await.unwrap();
     let revision = second.task_revision().to_owned();
-    let confirmed_active = second.snapshot().active_worklog.clone();
+    let confirmed_active = second.active_worklog().clone();
     let new_task = first
         .create_task(name("New timer task"), at + Duration::seconds(2))
         .await
@@ -2588,12 +2595,11 @@ async fn coherent_tracking_preflight_preserves_the_confirmed_view_when_a_new_tas
     assert!(!second.last_write_attempted());
     assert_eq!(second.task_revision(), second.tracking_revision());
     assert_eq!(second.task_revision(), revision);
-    assert_eq!(second.snapshot().active_worklog, confirmed_active);
-    let active_task_id = second.snapshot().active_worklog.as_ref().unwrap().task_id();
+    assert_eq!(second.active_worklog(), confirmed_active);
+    let active_task_id = second.active_worklog().as_ref().unwrap().task_id();
     assert!(
         second
-            .snapshot()
-            .task_items
+            .task_items()
             .iter()
             .any(|item| item.task.id() == active_task_id)
     );
@@ -2635,15 +2641,11 @@ async fn coherent_tracking_preflight_initializes_a_pair_before_rejecting_an_unre
         assert!(!client.last_write_attempted());
         assert!(!client.task_revision().is_empty());
         assert_eq!(client.task_revision(), client.tracking_revision());
-        assert_eq!(
-            client.snapshot().active_worklog.as_ref().unwrap().id(),
-            running.id()
-        );
-        let active_task_id = client.snapshot().active_worklog.as_ref().unwrap().task_id();
+        assert_eq!(client.active_worklog().as_ref().unwrap().id(), running.id());
+        let active_task_id = client.active_worklog().as_ref().unwrap().task_id();
         assert!(
             client
-                .snapshot()
-                .task_items
+                .task_items()
                 .iter()
                 .any(|item| item.task.id() == active_task_id)
         );
@@ -2661,12 +2663,247 @@ async fn coherent_tracking_preflight_initializes_a_pair_before_rejecting_an_unre
     ));
     assert_eq!(initial.task_revision(), initial.tracking_revision());
     assert_eq!(
-        initial
-            .snapshot()
-            .active_worklog
-            .as_ref()
-            .unwrap()
-            .task_id(),
+        initial.active_worklog().as_ref().unwrap().task_id(),
         target.id()
     );
+}
+
+#[tokio::test]
+async fn selected_totals_refreshes_publish_together_and_keep_confirmed_resources_on_failure() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tracker_domain::{TaskId, TrackingState};
+    use tracker_protocol::{ReportDto, TaskDto, TasksDto, TrackingDto, WorklogDto};
+
+    let mode = Arc::new(AtomicUsize::new(0));
+    let task_reads = Arc::new(AtomicUsize::new(0));
+    let tracking_reads = Arc::new(AtomicUsize::new(0));
+    let report_reads = Arc::new(AtomicUsize::new(0));
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let task_id = TaskId::generate();
+    let worklog_id = WorklogId::generate();
+    let report_mode = mode.clone();
+    let report_count = report_reads.clone();
+    let tracking_mode = mode.clone();
+    let tracking_count = tracking_reads.clone();
+    let tasks_mode = mode.clone();
+    let tasks_count = task_reads.clone();
+    let server = StubServer::from_router(
+        Router::new()
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(HealthDto {
+                        status: "ok".into(),
+                        protocol_version: VERSION,
+                    })
+                }),
+            )
+            .route(
+                "/v1/reports/task-totals",
+                get(move || {
+                    let revision = if report_mode.load(Ordering::SeqCst) == 0 {
+                        "confirmed"
+                    } else {
+                        "new"
+                    };
+                    report_count.fetch_add(1, Ordering::SeqCst);
+                    async move {
+                        Json(ReportDto {
+                            start: at,
+                            end: at + Duration::hours(1),
+                            now: at,
+                            rows: vec![],
+                            total_us: 0,
+                            revision: revision.into(),
+                        })
+                    }
+                }),
+            )
+            .route(
+                "/v1/tracking",
+                get(move || {
+                    let mode = tracking_mode.load(Ordering::SeqCst);
+                    let count = tracking_count.fetch_add(1, Ordering::SeqCst);
+                    let revision = match mode {
+                        0 => "confirmed",
+                        1 => "different",
+                        4 if count == 0 => "different",
+                        _ => "new",
+                    };
+                    async move {
+                        Json(TrackingDto {
+                            active_worklog: (mode >= 5).then(|| WorklogDto {
+                                id: worklog_id.to_string(),
+                                task_id: task_id.to_string(),
+                                start: at,
+                                end: None,
+                            }),
+                            revision: revision.into(),
+                        })
+                    }
+                }),
+            )
+            .route(
+                "/v1/tasks",
+                get(move || {
+                    let mode = tasks_mode.load(Ordering::SeqCst);
+                    tasks_count.fetch_add(1, Ordering::SeqCst);
+                    async move {
+                        Json(TasksDto {
+                            tasks: (mode >= 6)
+                                .then(|| TaskDto {
+                                    id: task_id.to_string(),
+                                    name: "Timer task".into(),
+                                    archived: mode == 6,
+                                    created_at: at,
+                                    updated_at: at,
+                                    latest_work_start: Some(at),
+                                })
+                                .into_iter()
+                                .collect(),
+                            revision: if mode == 2 {
+                                "different"
+                            } else if mode == 0 {
+                                "confirmed"
+                            } else {
+                                "new"
+                            }
+                            .into(),
+                        })
+                    }
+                }),
+            ),
+    );
+    let mut client = RemoteApplication::disconnected(&server.endpoint()).unwrap();
+    assert!(client.task_observation().is_none());
+    assert!(client.tracking_observation().is_none());
+    assert!(client.report_observation().is_none());
+    let daily = ResourceSelection::DailyTotals {
+        start: at,
+        end: at + Duration::hours(1),
+        now: at,
+    };
+    let task_list = ResourceSelection::TaskListWithTotals {
+        start: at,
+        end: at + Duration::hours(1),
+        now: at,
+    };
+
+    client.refresh_resources(daily).await.unwrap();
+    assert!(client.task_observation().is_none());
+    assert_eq!(task_reads.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        client.tracking_observation().unwrap().value,
+        TrackingState::Idle
+    );
+    assert_eq!(client.report_revision(), "confirmed");
+    let tracking = client.tracking_observation().cloned();
+    let report = client.report_observation().cloned();
+
+    mode.store(1, Ordering::SeqCst);
+    report_reads.store(0, Ordering::SeqCst);
+    tracking_reads.store(0, Ordering::SeqCst);
+    client.refresh_resources(daily).await.unwrap_err();
+    assert_eq!(report_reads.load(Ordering::SeqCst), 2);
+    assert_eq!(tracking_reads.load(Ordering::SeqCst), 2);
+    assert_eq!(client.tracking_observation(), tracking.as_ref());
+    assert_eq!(client.report_observation(), report.as_ref());
+    assert!(client.task_observation().is_none());
+
+    mode.store(2, Ordering::SeqCst);
+    client.refresh_resources(task_list).await.unwrap_err();
+    assert_eq!(client.tracking_observation(), tracking.as_ref());
+    assert_eq!(client.report_observation(), report.as_ref());
+    assert!(client.task_observation().is_none());
+    assert_eq!(task_reads.load(Ordering::SeqCst), 2);
+
+    mode.store(3, Ordering::SeqCst);
+    client.refresh_resources(task_list).await.unwrap();
+    assert_eq!(client.task_revision(), "new");
+    assert_eq!(client.tracking_revision(), "new");
+    assert_eq!(client.report_revision(), "new");
+    let tasks = client.task_observation().cloned();
+    let tracking = client.tracking_observation().cloned();
+    let report = client.report_observation().cloned();
+    for invalid_mode in [5, 6] {
+        mode.store(invalid_mode, Ordering::SeqCst);
+        client.refresh_resources(task_list).await.unwrap_err();
+        assert_eq!(client.task_observation(), tasks.as_ref());
+        assert_eq!(client.tracking_observation(), tracking.as_ref());
+        assert_eq!(client.report_observation(), report.as_ref());
+    }
+    mode.store(7, Ordering::SeqCst);
+    client.refresh_resources(task_list).await.unwrap();
+    assert_eq!(client.active_worklog().unwrap().task_id(), task_id);
+    assert_eq!(client.task_items()[0].task.id(), task_id);
+
+    mode.store(4, Ordering::SeqCst);
+    report_reads.store(0, Ordering::SeqCst);
+    tracking_reads.store(0, Ordering::SeqCst);
+    client.refresh_resources(daily).await.unwrap();
+    assert_eq!(report_reads.load(Ordering::SeqCst), 2);
+    assert_eq!(tracking_reads.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        client.tracking_observation().unwrap().value,
+        TrackingState::Idle
+    );
+    assert_eq!(
+        client.task_observation().unwrap().value[0].task.id(),
+        task_id
+    );
+    assert_eq!(client.last_failure(), None);
+}
+
+#[tokio::test]
+async fn selected_empty_resources_are_loaded_independently() {
+    let server = TestServer::start();
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
+    client
+        .refresh_resources(ResourceSelection::Tracking)
+        .await
+        .unwrap();
+    assert!(client.task_observation().is_none());
+    assert!(client.tracking_observation().is_some());
+    assert!(client.active_worklog().is_none());
+    let tracking = client.tracking_observation().cloned();
+    client
+        .refresh_resources(ResourceSelection::Tasks)
+        .await
+        .unwrap();
+    assert!(client.task_observation().unwrap().value.is_empty());
+    assert_eq!(client.tracking_observation(), tracking.as_ref());
+    client
+        .refresh_resources(ResourceSelection::TaskList)
+        .await
+        .unwrap();
+    assert_eq!(client.task_revision(), client.tracking_revision());
+}
+
+#[tokio::test]
+async fn coherent_command_preflight_initializes_tasks_after_a_tracking_only_read() {
+    let server = TestServer::start();
+    let mut first = connected(&server.endpoint()).await.unwrap();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let task = first.create_task(name("Timer task"), at).await.unwrap();
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap()
+        .with_coherent_task_views();
+    client
+        .refresh_resources(ResourceSelection::Tracking)
+        .await
+        .unwrap();
+    assert!(client.task_observation().is_none());
+    let started = client
+        .set_active_task_with_expected_active(task.id(), None, at)
+        .await
+        .unwrap();
+    assert!(matches!(started, SetActiveTaskOutcome::Started { .. }));
+    assert_eq!(client.task_items()[0].task.id(), task.id());
+    assert_eq!(client.task_revision(), client.tracking_revision());
 }
