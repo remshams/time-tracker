@@ -3,6 +3,21 @@ import XCTest
 @testable import TrackerClient
 
 final class WorklogCorrectionTests: XCTestCase {
+    @MainActor
+    func testReviewRejectsAnInvalidCompletedTimestamp() {
+        let state = WorklogCorrectionState()
+        state.open(oldWorklog, taskName: firstTask.name)
+        let invalid = WorklogItem(
+            id: oldWorklog.id, taskId: oldWorklog.taskId,
+            start: oldWorklog.start, end: "invalid timestamp")
+        state.requireReview(latest: invalid, message: "Changed on another client")
+
+        state.reviewLatest(taskName: nil)
+
+        XCTAssertTrue(state.presentation.requiresReview)
+        XCTAssertEqual(state.presentation.original, oldWorklog)
+    }
+
     private let preciseLog = WorklogItem(
         id: "precise-log", taskId: firstTask.id,
         start: "2024-12-30T09:00:12.123456Z",
