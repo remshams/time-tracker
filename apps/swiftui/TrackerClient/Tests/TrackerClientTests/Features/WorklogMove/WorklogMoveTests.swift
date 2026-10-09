@@ -252,7 +252,8 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertFalse(fixture.session.canOpenTaskCreation)
         XCTAssertFalse(fixture.session.canOpenTaskRename)
         XCTAssertFalse(fixture.session.canOpenWorklogCorrection)
-        let connected = await fixture.session.connect(serverSettings)
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
         fixture.session.openWorklogMove(worklogID: "ignored")
         fixture.session.setWorklogMoveQuery("ignored")
@@ -424,6 +425,32 @@ final class WorklogMoveTests: XCTestCase {
     }
 
     @MainActor
+    func testCandidateSearchRetriesWhenItsInitialSnapshotArrivesDuringSleep() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
+        try await fixture.start(snapshot)
+        fixture.session.openWorklogMove(worklogID: activeWorklog.id)
+        let openingSnapshot = try await fixture.client.next()
+        XCTAssertEqual(openingSnapshot.operation, .snapshot)
+        fixture.session.sleep()
+        openingSnapshot.succeed(snapshot)
+        try await fixture.settled()
+        XCTAssertTrue(fixture.session.worklogMove.isSearching)
+
+        fixture.session.wake()
+        let refresh = try await fixture.client.next()
+        refresh.succeed(snapshot)
+        let retry = try await fixture.client.next()
+        XCTAssertEqual(retry.operation, .candidates(source: firstTask.id, query: ""))
+        retry.candidates([candidate])
+        try await fixture.settled()
+
+        XCTAssertFalse(fixture.session.worklogMove.isSearching)
+        XCTAssertEqual(fixture.session.worklogMove.selectedTaskID, secondTask.id)
+    }
+
+    @MainActor
     func testCandidateSearchRetriesAfterItsResponseArrivesDuringSleep() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
@@ -455,7 +482,8 @@ final class WorklogMoveTests: XCTestCase {
         var publishedMessage: String?
         fixture.session.onChange = { publishedMessage = fixture.session.connectionMessage }
 
-        let connected = await fixture.session.connect(serverSettings)
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connected = try await fixture.taskValue(connecting)
 
         XCTAssertFalse(connected)
         XCTAssertEqual(publishedMessage, "Finish or retry worklog moving before changing connections.")
