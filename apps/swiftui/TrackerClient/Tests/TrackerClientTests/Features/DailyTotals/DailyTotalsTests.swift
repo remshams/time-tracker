@@ -195,12 +195,15 @@ final class DailyTotalsTests: XCTestCase {
     func testReportValidationRejectsInvalidRowsAndActiveIdentity() async {
         let state = DailyTotalsState(calendar: dailyCalendar())
         let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
-        for rows in [[total(firstTask, -1)], [total(firstTask, 1), total(firstTask, 2)], [total(secondTask, 1)]] {
+        for rows in [
+            [total(firstTask, -1)], [total(firstTask, 1), total(firstTask, 2)],
+            [TaskReportTotal(taskId: "", durationMicroseconds: 1)],
+        ] {
             XCTAssertThrowsError(try state.validate(TrackerReport(snapshot: snapshot, rows: rows)))
         }
         for active in [
             WorklogItem(id: "", taskId: firstTask.id, start: activeWorklog.start, end: nil),
-            WorklogItem(id: "invalid", taskId: secondTask.id, start: activeWorklog.start, end: nil),
+            WorklogItem(id: "invalid", taskId: "", start: activeWorklog.start, end: nil),
             WorklogItem(id: "invalid", taskId: firstTask.id, start: "invalid", end: nil),
             WorklogItem(id: "invalid", taskId: firstTask.id, start: activeWorklog.start, end: activeWorklog.start),
         ] {
@@ -212,6 +215,46 @@ final class DailyTotalsTests: XCTestCase {
             try state.validate(
                 TrackerReport(snapshot: TrackerSnapshot(tasks: [firstTask, firstTask], active: nil), rows: [])))
         XCTAssertNoThrow(try state.validate(TrackerReport(snapshot: snapshot, rows: [])))
+    }
+
+    @MainActor
+    func testTotalsRemainValidWhenMetadataIsMissingAndRevisionMismatchFreezesProjection() async throws {
+        let clock = FakeClock()
+        let state = DailyTotalsState(calendar: dailyCalendar())
+        let requested = try XCTUnwrap(state.begin(clock: clock))
+        let snapshot = TrackerSnapshot(
+            tasks: [], active: activeWorklog, tasksRevision: "epoch:1", trackingRevision: "epoch:1")
+        let report = TrackerReport(
+            snapshot: snapshot, rows: [total(secondTask, 12)], revision: "epoch:2", now: requested.now)
+        try state.validate(report)
+        state.accept(report, requested: requested, clock: clock)
+        clock.uptime += 8
+        clock.now.addTimeInterval(8)
+        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 12)
+        XCTAssertEqual(state.status, .cached)
+        XCTAssertFalse(state.pending)
+        XCTAssertFalse(
+            TrackerSnapshot(tasks: [], active: nil, tasksRevision: "epoch:1", trackingRevision: "epoch:2")
+                .resourcesAreCoherent)
+    }
+
+    @MainActor
+    func testProjectionUsesEchoedCutoffOnlyAfterMatchingTrackingRevision() async throws {
+        let clock = FakeClock()
+        let state = DailyTotalsState(calendar: dailyCalendar())
+        let requested = try XCTUnwrap(state.begin(clock: clock))
+        let snapshot = TrackerSnapshot(
+            tasks: [], active: activeWorklog, tasksRevision: "epoch:2", trackingRevision: "epoch:2")
+        let cutoff = commandTimestamp(clock.now.addingTimeInterval(2))
+        let report = TrackerReport(snapshot: snapshot, rows: [total(firstTask, 5)], revision: "epoch:2", now: cutoff)
+        try state.validate(report)
+        state.accept(report, requested: requested, clock: clock)
+        clock.uptime += 3
+        clock.now.addTimeInterval(3)
+        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 8)
+        XCTAssertEqual(state.status, .current)
+        XCTAssertThrowsError(
+            try state.validate(TrackerReport(snapshot: snapshot, rows: [], revision: "epoch:2", now: "invalid")))
     }
 
     @MainActor
@@ -691,7 +734,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         report.succeed(
             TrackerReport(
                 snapshot: TrackerSnapshot(tasks: [secondTask], active: replacementActive),
-                rows: [total(firstTask, 8)]))
+                rows: [total(firstTask, 8), total(firstTask, 2)]))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.tasks, [firstTask])
         XCTAssertEqual(fixture.session.active, activeWorklog)
