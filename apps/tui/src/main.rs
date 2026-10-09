@@ -86,7 +86,8 @@ fn run_local_tui() -> Result<(), Box<dyn Error>> {
 }
 
 fn run_remote_tui(server: &str) -> Result<(), Box<dyn Error>> {
-    let application = tracker_remote::RemoteApplication::disconnected(server)?;
+    let application =
+        tracker_remote::RemoteApplication::disconnected(server)?.with_coherent_task_views();
     let mut state = AppState::load_from_snapshot(
         application.tasks(tracker_application::TaskOrdering::default()),
         application.current_tracking().clone(),
