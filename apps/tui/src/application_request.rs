@@ -473,7 +473,9 @@ async fn execute_remote_report(
         let id: TaskId = row.task_id.parse().map_err(|_| {
             ApplicationError::RemoteProtocol("Invalid report task identifier".to_owned())
         })?;
-        let _ = application.read_task(id).await;
+        if application.task_item(id).is_none() {
+            let _ = application.read_task(id).await;
+        }
         rows.push(ReportPresentationRow {
             task_id: id,
             task_name: application.task(id).map(|task| task.name().to_string()),
@@ -489,7 +491,9 @@ async fn execute_remote_report(
 async fn resolve_history_tasks(application: &mut RemoteApplication, worklogs: &[Worklog]) {
     let ids: std::collections::BTreeSet<_> = worklogs.iter().map(Worklog::task_id).collect();
     for id in ids {
-        let _ = application.read_task(id).await;
+        if application.task_item(id).is_none() {
+            let _ = application.read_task(id).await;
+        }
     }
 }
 
@@ -1075,9 +1079,9 @@ mod remote_report_tests {
             at(100).to_rfc3339(),
             at(100).to_rfc3339(),
         );
-        let responses = [
+        let mut responses = vec![
             (200, r#"{"status":"ok","protocol_version":3}"#.to_owned()),
-            (200, report),
+            (200, report.clone()),
             if metadata_available {
                 (200, metadata)
             } else {
@@ -1087,6 +1091,9 @@ mod remote_report_tests {
                 )
             },
         ];
+        if metadata_available {
+            responses.push((200, report));
+        }
         let worker = thread::spawn(move || {
             let mut paths = Vec::new();
             let deadline = Instant::now() + Duration::from_secs(3);
@@ -1129,8 +1136,32 @@ mod remote_report_tests {
             },
         )
         .await;
+        if metadata_available {
+            let repeated = execute_remote(
+                &mut application,
+                ApplicationRequest::ReportTotals {
+                    start: at(100),
+                    end: at(300),
+                    now: at(200),
+                },
+            )
+            .await;
+            let ApplicationOutcome::RemoteReportTotals(Ok(totals)) = repeated.outcome else {
+                panic!("a repeated report must reuse confirmed task labels");
+            };
+            assert_eq!(totals.total, chrono::TimeDelta::seconds(60));
+            assert_eq!(totals.rows[0].task_name.as_deref(), Some("Report task"));
+            let worklog = tracker_domain::ActiveWorklog::begin(
+                tracker_domain::WorklogId::generate(),
+                task_id,
+                at(200),
+            )
+            .to_worklog();
+            super::resolve_history_tasks(&mut application, &[worklog]).await;
+            assert!(application.last_failure().is_none());
+        }
         let paths = worker.join().unwrap();
-        assert_eq!(paths.len(), 3);
+        assert_eq!(paths.len(), if metadata_available { 4 } else { 3 });
         assert_eq!(paths[0], "/v1/health");
         assert!(paths[1].starts_with("/v1/reports/task-totals?"));
         assert_eq!(paths[2], format!("/v1/tasks/{task_id}"));
@@ -1155,7 +1186,7 @@ mod remote_report_tests {
     }
 
     #[tokio::test]
-    async fn report_labels_use_independent_task_resources_without_replacing_totals() {
+    async fn report_and_history_labels_reuse_independent_task_resources_without_replacing_totals() {
         read_report(true).await;
     }
 }
