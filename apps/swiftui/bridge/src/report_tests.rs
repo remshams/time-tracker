@@ -937,6 +937,53 @@ fn resource_exports_and_selected_refresh_reject_null_handles_and_unknown_selecti
 }
 
 #[test]
+fn local_resource_refresh_adopts_only_the_requested_observation() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("independent-local.db");
+    let mut bridge = open_fixture(&path).unwrap();
+    let mut writer = open_fixture(&path).unwrap();
+    let original = writer.application.tasks(TaskOrdering::default());
+    writer
+        .application
+        .create_task(TaskName::new("Added task").unwrap(), at(0))
+        .unwrap();
+    writer
+        .application
+        .set_active_task(original[0].task.id(), at(900))
+        .unwrap();
+
+    // SAFETY: Each call has exclusive access to a live bridge handle.
+    unsafe {
+        let idle_tracking = response(tt_bridge_tracking(&mut bridge));
+        assert!(idle_tracking["data"]["value"].is_null());
+        let refreshed = response(tt_bridge_refresh_resources(&mut bridge, 1));
+        assert!(refreshed.get("error").is_none(), "{refreshed}");
+        let refreshed_tasks = response(tt_bridge_tasks(&mut bridge));
+        assert_eq!(refreshed_tasks, response(tt_bridge_tasks(&mut writer)));
+        assert_eq!(response(tt_bridge_tracking(&mut bridge)), idle_tracking);
+
+        let unrelated = writer
+            .application
+            .create_task(TaskName::new("Later task").unwrap(), at(0))
+            .unwrap();
+        let refreshed = response(tt_bridge_refresh_resources(&mut bridge, 2));
+        assert!(refreshed.get("error").is_none(), "{refreshed}");
+        assert_eq!(
+            response(tt_bridge_tracking(&mut bridge)),
+            response(tt_bridge_tracking(&mut writer))
+        );
+        assert_eq!(response(tt_bridge_tasks(&mut bridge)), refreshed_tasks);
+        assert!(
+            !bridge
+                .application
+                .tasks(TaskOrdering::default())
+                .iter()
+                .any(|item| item.task.id() == unrelated.id())
+        );
+    }
+}
+
+#[test]
 fn local_selected_totals_refresh_only_the_requested_catalog_and_preserve_failed_reads() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("selected-local.db");

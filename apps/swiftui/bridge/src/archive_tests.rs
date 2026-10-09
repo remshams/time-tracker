@@ -708,6 +708,9 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
     let write_failures = failed_reads.clone();
     let writes = Arc::new(AtomicUsize::new(0));
     let write_count = writes.clone();
+    let task_reads = Arc::new(AtomicUsize::new(0));
+    let catalog_reads = task_reads.clone();
+    let single_task_reads = task_reads.clone();
     let server = report_tests::Server::start(
         Router::new()
             .route(
@@ -722,6 +725,7 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
             .route(
                 "/v1/tasks",
                 get(move || {
+                    catalog_reads.fetch_add(1, Ordering::SeqCst);
                     let tasks = tasks_state.lock().unwrap().0.clone();
                     async move { Json(tasks) }
                 }),
@@ -750,6 +754,7 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
             .route(
                 "/v1/tasks/{id}",
                 get(move || {
+                    single_task_reads.fetch_add(1, Ordering::SeqCst);
                     let tasks = task_state.lock().unwrap().0.clone();
                     async move {
                         Json(TaskResourceDto {
@@ -805,25 +810,28 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
         .application
         .rename_task(task.id(), TaskName::new("Next name").unwrap(), at(500))
         .unwrap_err();
+    assert_eq!(blocked.kind, "unavailable");
     assert!(blocked.requires_refresh);
     assert!(!blocked.uncertain);
     assert_eq!(writes.load(Ordering::SeqCst), 1);
 
     failed_reads.store(false, Ordering::SeqCst);
-    bridge.application.refresh_resources(2).unwrap();
-    assert!(
-        bridge
+    for selection in [2, 1] {
+        bridge.application.refresh_resources(selection).unwrap();
+        let reads_before = task_reads.load(Ordering::SeqCst);
+        let blocked = bridge
             .application
             .rename_task(task.id(), TaskName::new("Next name").unwrap(), at(500))
-            .is_err()
-    );
-    bridge.application.refresh_resources(1).unwrap();
-    assert!(
-        bridge
-            .application
-            .rename_task(task.id(), TaskName::new("Next name").unwrap(), at(500))
-            .is_err()
-    );
+            .unwrap_err();
+        assert_eq!(blocked.kind, "unavailable");
+        assert_eq!(
+            blocked.message,
+            "Refresh server state before changing tracker state"
+        );
+        assert!(blocked.requires_refresh);
+        assert!(!blocked.uncertain);
+        assert_eq!(task_reads.load(Ordering::SeqCst), reads_before);
+    }
     assert_eq!(writes.load(Ordering::SeqCst), 1);
     bridge.application.refresh_resources(3).unwrap();
     let next = bridge

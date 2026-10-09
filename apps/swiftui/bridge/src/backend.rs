@@ -556,7 +556,7 @@ impl RemoteBackend {
             selection,
             ResourceSelection::TaskList | ResourceSelection::TaskListWithTotals { .. }
         ) {
-            self.requires_refresh = result.is_err() || self.application.last_failure().is_some();
+            self.requires_refresh = result.is_err();
         } else {
             self.requires_refresh |= result.is_err();
         }
