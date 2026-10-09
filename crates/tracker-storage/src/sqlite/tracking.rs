@@ -2,10 +2,10 @@
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
-use tracker_application::TrackerSnapshot;
+use tracker_application::{ActiveTrackingRead, TaskListItem};
 use tracker_domain::{Worklog, WorklogId};
 
-use super::tasks::list_task_items_on;
+use super::tasks::{list_task_items_on, task_item_by_id_on};
 use super::worklogs::worklog_by_id_on;
 use super::{
     SqliteRepository, error,
@@ -23,17 +23,31 @@ pub(crate) fn active_worklog_on(conn: &Connection) -> Result<Option<Worklog>, St
         .transpose()
 }
 
+pub(crate) fn active_tracking_read_on(
+    conn: &Connection,
+) -> Result<ActiveTrackingRead, StorageError> {
+    let active_worklog = active_worklog_on(conn)?;
+    let active_task_item = active_worklog
+        .as_ref()
+        .map(|active| task_item_by_id_on(conn, active.task_id()))
+        .transpose()?
+        .flatten();
+    Ok(ActiveTrackingRead {
+        active_worklog,
+        active_task_item,
+    })
+}
+
 impl SqliteRepository {
     /// Reads task aggregates and global tracking from one SQLite read transaction.
-    pub fn tracker_snapshot(&self) -> Result<TrackerSnapshot, StorageError> {
+    pub fn load_task_tracking_resources(
+        &self,
+    ) -> Result<(Vec<TaskListItem>, Option<Worklog>), StorageError> {
         let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Deferred)?;
         let task_items = list_task_items_on(&transaction)?;
         let active_worklog = active_worklog_on(&transaction)?;
         transaction.commit()?;
-        Ok(TrackerSnapshot {
-            task_items,
-            active_worklog,
-        })
+        Ok((task_items, active_worklog))
     }
 
     pub fn insert_worklog(&self, worklog: &Worklog) -> Result<(), StorageError> {

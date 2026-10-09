@@ -68,7 +68,7 @@ fn configurable_inactivity_period_uses_exact_metadata_and_work_boundaries() {
                 .all(|task| task.is_archived() && task.updated_at() == as_of)
         );
         assert_eq!(
-            archived.snapshot.active_worklog.as_ref().unwrap().task_id(),
+            archived.tracking.active_worklog.as_ref().unwrap().task_id(),
             task_id(6)
         );
         assert!(
@@ -291,7 +291,7 @@ fn inactive_preview_reads_candidates_and_tracking_from_one_current_snapshot() {
     let as_of = at(2_000_000);
     let old = stamped_task(1, "old task", 100, 100);
     writer.create_task(old.clone()).unwrap();
-    assert_eq!(reader.tracker_snapshot().unwrap().task_items.len(), 1);
+    assert_eq!(reader.load_task_tracking_resources().unwrap().0.len(), 1);
 
     let recent = stamped_task(2, "recent task", 1_999_000, 1_999_000);
     writer.create_task(recent.clone()).unwrap();
@@ -300,11 +300,22 @@ fn inactive_preview_reads_candidates_and_tracking_from_one_current_snapshot() {
 
     let preview = reader.preview_inactive_tasks(as_of).unwrap();
     assert!(preview.tasks.is_empty());
-    assert_eq!(preview.snapshot.active_worklog, Some(running.clone()));
-    assert_eq!(preview.snapshot.task_items.len(), 2);
-    assert_eq!(preview.snapshot.task_items[1].task, recent);
+    assert_eq!(preview.tracking.active_worklog, Some(running.clone()));
     assert_eq!(
-        preview.snapshot.task_items[0].latest_work_start,
+        preview.tracking.active_task_item.as_ref().unwrap().task,
+        old
+    );
+    assert_ne!(
+        preview.tracking.active_task_item.as_ref().unwrap().task,
+        recent
+    );
+    assert_eq!(
+        preview
+            .tracking
+            .active_task_item
+            .as_ref()
+            .unwrap()
+            .latest_work_start,
         Some(running.start())
     );
 }
@@ -502,8 +513,20 @@ fn inactive_bulk_archive_rechecks_candidates_and_rolls_back_failed_writes() {
     assert_eq!(archive.tasks.len(), 1);
     assert_eq!(archive.tasks[0].updated_at(), as_of);
     assert!(archive.tasks[0].is_archived());
-    assert!(archive.snapshot.task_items[0].task.is_archived());
-    assert!(!archive.snapshot.task_items[1].task.is_archived());
+    assert!(
+        repository
+            .find_task(task_id(1))
+            .unwrap()
+            .unwrap()
+            .is_archived()
+    );
+    assert!(
+        !repository
+            .find_task(task_id(2))
+            .unwrap()
+            .unwrap()
+            .is_archived()
+    );
 
     repository
         .create_task(stamped_task(3, "newly added old task", 100, 100))
@@ -1137,4 +1160,77 @@ fn foreign_keys_are_enforced_per_connection() {
         .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
         .unwrap();
     assert_eq!(value, 1);
+}
+
+#[test]
+fn inactive_preview_and_archive_ignore_invalid_metadata_of_unrelated_archived_tasks() {
+    let repository = repo();
+    let candidate = stamped_task(1, "candidate", 100, 100);
+    repository.create_task(candidate.clone()).unwrap();
+    repository.create_task(named_task(2, "unrelated")).unwrap();
+    repository.archive_task(task_id(2), at(300)).unwrap();
+    repository
+        .connection()
+        .execute(
+            "UPDATE tasks SET name = '' WHERE id = ?1",
+            [task_id(2).to_string()],
+        )
+        .unwrap();
+    let as_of = at(2_000_000);
+
+    let preview = repository.preview_inactive_tasks(as_of).unwrap();
+
+    assert_eq!(preview.tasks, vec![candidate]);
+    assert!(preview.tracking.active_worklog.is_none());
+    assert!(preview.tracking.active_task_item.is_none());
+
+    let archived = repository
+        .archive_inactive_tasks(&[task_id(1)], as_of)
+        .unwrap();
+
+    assert_eq!(archived.tasks.len(), 1);
+    assert_eq!(archived.tasks[0].id(), task_id(1));
+    assert!(archived.tasks[0].is_archived());
+    assert_eq!(archived.tasks[0].updated_at(), as_of);
+    assert!(archived.tracking.active_worklog.is_none());
+    assert!(archived.tracking.active_task_item.is_none());
+    assert!(
+        repository
+            .find_task(task_id(1))
+            .unwrap()
+            .unwrap()
+            .is_archived()
+    );
+    assert!(repository.load_task_tracking_resources().is_err());
+}
+
+#[test]
+fn single_task_resource_reads_ignore_unrelated_invalid_metadata_and_preserve_missing_rows() {
+    let repository = repo();
+    repository.create_task(named_task(1, "requested")).unwrap();
+    repository.create_task(named_task(2, "unrelated")).unwrap();
+    repository
+        .insert_worklog(&Worklog::begin(worklog_id(1), task_id(1), at(200)))
+        .unwrap();
+    repository
+        .connection()
+        .execute(
+            "UPDATE tasks SET name = '' WHERE id = ?1",
+            [task_id(2).to_string()],
+        )
+        .unwrap();
+
+    let read = tracker_application::TaskRepository::load_task_item(&repository, task_id(1))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(read.task.id(), task_id(1));
+    assert_eq!(read.task.name().as_str(), "requested");
+    assert_eq!(read.latest_work_start, Some(at(200)));
+    assert_eq!(
+        tracker_application::TaskRepository::load_task_item(&repository, task_id(3)).unwrap(),
+        None
+    );
+    assert!(tracker_application::TaskRepository::load_task_item(&repository, task_id(2)).is_err());
+    assert!(repository.load_task_tracking_resources().is_err());
 }

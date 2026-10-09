@@ -3,13 +3,13 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 use tracker_application::{
-    GlobalWorklogCursor, GlobalWorklogPage, TrackerSnapshot, WORKLOG_PAGE_SIZE, WorklogCorrection,
-    WorklogCursor, WorklogDeletion, WorklogMove, WorklogPage, WorklogPageSnapshot,
+    GlobalWorklogCursor, GlobalWorklogPage, WORKLOG_PAGE_SIZE, WorklogCorrection, WorklogCursor,
+    WorklogDeletion, WorklogMove, WorklogPage, WorklogPageSnapshot,
 };
 use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
 
-use super::tasks::list_task_items_on;
-use super::tracking::active_worklog_on;
+use super::tasks::task_item_by_id_on;
+use super::tracking::{active_tracking_read_on, active_worklog_on};
 use super::{
     SqliteRepository, error,
     mapping::{RawWorklog, raw_worklog, timestamp_to_us, us_to_timestamp, worklog_from_raw},
@@ -183,7 +183,7 @@ fn list_worklogs_on(conn: &Connection, task_id: TaskId) -> Result<Vec<Worklog>, 
 }
 
 impl SqliteRepository {
-    /// Reads a global worklog page and tracker state in one SQLite snapshot.
+    /// Reads a global page, its task metadata, and active tracking together.
     ///
     /// A write to any worklog invalidates an earlier cursor. This makes a
     /// continuation safe when another client changes ordering or page rows.
@@ -215,14 +215,20 @@ impl SqliteRepository {
                 revision,
             }
         });
-        let snapshot = TrackerSnapshot {
-            task_items: list_task_items_on(&transaction)?,
-            active_worklog: active_worklog_on(&transaction)?,
-        };
+        let task_ids = worklogs
+            .iter()
+            .map(Worklog::task_id)
+            .collect::<std::collections::BTreeSet<_>>();
+        let task_items = task_ids
+            .into_iter()
+            .filter_map(|id| task_item_by_id_on(&transaction, id).transpose())
+            .collect::<Result<Vec<_>, _>>()?;
+        let tracking = active_tracking_read_on(&transaction)?;
         transaction.commit()?;
         Ok(GlobalWorklogPage {
             worklogs,
-            snapshot,
+            task_items,
+            tracking: Some(tracking),
             next_cursor,
         })
     }
@@ -457,11 +463,11 @@ impl SqliteRepository {
         transaction.commit()?;
         Ok(WorklogPage {
             worklogs,
-            snapshot: WorklogPageSnapshot {
+            snapshot: Some(WorklogPageSnapshot {
                 requested_task_latest_work_start,
                 active_worklog,
                 active_task_latest_work_start,
-            },
+            }),
             next_cursor,
         })
     }
