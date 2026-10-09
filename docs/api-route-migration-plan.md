@@ -4,7 +4,7 @@ Implement [ADR 0017](adr/0017-separate-http-resources-from-client-refreshes.md) 
 
 ## Status and scope
 
-Updated on 9 October 2026 after acceptance of a coordinated server-and-client cutover. The source basis is `main` revision `2d8b96cff1d097c18c31e06eadbd665616c0a54d`. Basic application E2E coverage is merged and passing on the previous `/v1` contract. Production still uses protocol 2; implementation will replace its responses under `/v1` and require protocol 3. This branch contains documentation only. The ADR owns the target contract. This plan owns the implementation sequence, client changes and acceptance checks.
+Updated on 9 October 2026 after implementation of the coordinated server-and-client cutover. Planning used `main` revision `2d8b96cff1d097c18c31e06eadbd665616c0a54d` and the passing protocol-2 application E2E baseline. The implementation replaces the response shapes under `/v1` and requires protocol 3 in the server and every remote client. The ADR owns the contract. This plan records the implementation sequence, client changes and acceptance checks.
 
 Keep local SQLite mode, offline rejection in remote mode, existing search/ranking policies, tracking timestamps and domain validation. Introduce no database schema change, task deletion, manual worklog creation, push subscription or combined convenience read.
 
@@ -31,7 +31,7 @@ Complete. The baseline was merged independently in [PR #10](https://github.com/r
 
 The [native coverage map](../apps/swiftui/e2e-coverage.md) records task creation/display, start/switch/stop, history, daily totals, refresh/reconnect, relaunch persistence and retained bulk archive scenarios in local and real-server modes. Fixtures drive the real app and production bridge, use isolated preferences and databases, and verify server/storage outcomes. Existing TUI E2E tests remain part of workspace CI. Native diagnostics include logs and Xcode result bundles.
 
-This evidence satisfies the start prerequisite for protocol/server changes, cache refactoring and client migration. Select a passing source revision for implementation; the latest `main` build at `2d8b96c` was queued when this plan was updated. Keep the existing E2E baseline as regression coverage. The user approved updating affected E2E tests during implementation. Route fault matches now follow protocol 3, while existing workflow assertions remain.
+This evidence satisfied the start prerequisite for protocol/server changes, cache refactoring and client migration. The existing E2E baseline remains regression coverage. The user approved updating affected E2E tests during implementation. Route fault matches now follow protocol 3, while existing workflow assertions remain.
 
 Migration-specific E2E scenarios for stale previews, concurrent changes, receipt recovery and `/v1` resource composition are part of implementation acceptance. Extend the established baseline for those cases as the affected features migrate.
 
@@ -70,7 +70,7 @@ The coordinated protocol-3 implementation replaces the server responses and migr
 - Use the preflight table below to construct guarded intent. Compare relevant freshly read values with the user's reviewed values before adopting a new guard. Preserve rename drafts, selected tasks, original worklog values and click timestamps.
 - Bound reconciliation of mismatched resource revisions to one immediate retry. Keep marked cached state and retry later when ongoing writes prevent coherence.
 - Apply a receipt immediately only while it still belongs to the in-flight command and unchanged pre-command cache. Prevent delayed receipts from overwriting newer resource reads. Reread affected resources after an uncertain write or replay.
-- Mark dependent caches stale. Worklog changes can affect task activity ordering, history and reports; a bulk archive can affect the task catalog. Refresh the dependencies used by the current feature.
+- Mark dependent caches stale. Worklog changes can affect task activity ordering, history and reports; a bulk archive can affect the task catalog. Refresh the dependencies used by the current feature. TUI and bridge task commands require coherent task and tracking views during creation preflight and recovery; CLI task commands retain narrow catalog reads. Preserve the original creation ID when a confirmed receipt is followed by failed recovery.
 - Retain existing transport limits, retry count, request-size restrictions and no-fallback behavior.
 
 | # | Command | Reads needed to form the guarded intent |
