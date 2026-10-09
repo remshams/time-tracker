@@ -2,6 +2,12 @@
 
 The suite drives the shipped macOS application through XCUITest and the production Rust bridge. The CLI creates fixtures, acts as another client, and verifies stored results. It does not perform the UI action under test.
 
+## Test layout
+
+Native suites follow the application's `App`, `Features`, and `Infrastructure` folders. Feature-specific UI helpers live beside their suites, including creation, renaming, worklog editing, menu actions, and connection settings. Window helpers live in `App`; lifecycle suites live in `Infrastructure/MacLifecycle`.
+
+`Support` owns the shared test base, database fixtures, process management, proxy controls, and assertions used across features. Local and server variants remain together, and the six CI groups select the same test classes independently of their file paths. Portable `TrackerClientTests` follow that package's `App`, `Contracts`, and `Features` folders, with shared fakes in `Support`.
+
 Implementation checkpoint `aade67e`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
 
 ## Run the tests
@@ -41,27 +47,27 @@ Paths below are relative to this directory. Local feature suites also have real-
 
 | Index | Workflow | Native evidence |
 | --- | --- | --- |
-| 1 | Launch, isolation, cleanup, diagnostics | [SmokeUITests](Tests/UITests/SmokeUITests.swift) and [shared support](Tests/UITests/Support/TrackerUITestCase.swift) |
-| 2 | Active/Archived, ordering, ID selection | [TaskCatalogUITests](Tests/UITests/TaskCatalogUITests.swift) |
-| 3 | Creation entry points, validation, cancellation, timer preservation | [TaskCreationUITests](Tests/UITests/TaskCreationUITests.swift) |
-| 4 | Start, switch, stop, exact running identity after relaunch | [TrackingUITests](Tests/UITests/TrackingUITests.swift) |
-| 5 | History order, 50-row pagination, empty/running states, selection and response ownership | [WorklogHistoryUITests](Tests/UITests/WorklogHistoryUITests.swift), [ServerRecoveryUITests](Tests/UITests/ServerRecoveryUITests.swift) |
-| 6 | Rename, clicked target, preserved history/timer, conflicts | [TaskRenameUITests](Tests/UITests/TaskRenameUITests.swift) |
-| 7 | Archive/unarchive, cancellation, fallback selection, running guard | [TaskArchivingUITests](Tests/UITests/TaskArchivingUITests.swift) |
-| 8 | Bulk preview, period, geometry, confirmation, concurrent candidates and lost response | [retained cases](Tests/UITests/BulkTaskArchivingUITests.swift), [extended cases](Tests/UITests/BulkTaskArchivingExtendedUITests.swift) |
-| 9 | Completed/running correction, precision, validation, conflicts | [WorklogCorrectionUITests](Tests/UITests/WorklogCorrectionUITests.swift) |
-| 10 | Completed/running moves, search, archived source, overlap, conflict | [WorklogMoveUITests](Tests/UITests/WorklogMoveUITests.swift) |
-| 11 | Test/adopt connection, distinct sources, rollback, saved settings | [ConnectionUITests](Tests/UITests/ConnectionUITests.swift) |
-| 12 | Initial/later outage, cached state, disabled writes, Retry, incompatible endpoint | [ConnectionUITests](Tests/UITests/ConnectionUITests.swift), [ServerRecoveryUITests](Tests/UITests/ServerRecoveryUITests.swift) |
-| 13 | Captured commands, other-client replacement, uncertain writes and retained editor intent | [ServerRecoveryUITests](Tests/UITests/ServerRecoveryUITests.swift) |
-| 14 | Native menu opening, navigation, Return and dismissal | [MenuBarUITests](Tests/UITests/MenuBarUITests.swift) |
+| 1 | Launch, isolation, cleanup, diagnostics | [SmokeUITests](Tests/UITests/App/SmokeUITests.swift) and [shared support](Tests/UITests/Support/TrackerUITestCase.swift) |
+| 2 | Active/Archived, ordering, ID selection | [TaskCatalogUITests](Tests/UITests/Features/TaskCatalog/TaskCatalogUITests.swift) |
+| 3 | Creation entry points, validation, cancellation, timer preservation | [TaskCreationUITests](Tests/UITests/Features/TaskCreation/TaskCreationUITests.swift) |
+| 4 | Start, switch, stop, exact running identity after relaunch | [TrackingUITests](Tests/UITests/Features/Tracking/TrackingUITests.swift) |
+| 5 | History order, 50-row pagination, empty/running states, selection and response ownership | [WorklogHistoryUITests](Tests/UITests/Features/WorklogHistory/WorklogHistoryUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
+| 6 | Rename, clicked target, preserved history/timer, conflicts | [TaskRenameUITests](Tests/UITests/Features/TaskRename/TaskRenameUITests.swift) |
+| 7 | Archive/unarchive, cancellation, fallback selection, running guard | [TaskArchivingUITests](Tests/UITests/Features/TaskArchiving/TaskArchivingUITests.swift) |
+| 8 | Bulk preview, period, geometry, confirmation, concurrent candidates and lost response | [retained cases](Tests/UITests/Features/BulkTaskArchiving/BulkTaskArchivingUITests.swift), [extended cases](Tests/UITests/Features/BulkTaskArchiving/BulkTaskArchivingExtendedUITests.swift) |
+| 9 | Completed/running correction, precision, validation, conflicts | [WorklogCorrectionUITests](Tests/UITests/Features/WorklogHistory/WorklogCorrectionUITests.swift) |
+| 10 | Completed/running moves, search, archived source, overlap, conflict | [WorklogMoveUITests](Tests/UITests/Features/WorklogHistory/WorklogMoveUITests.swift) |
+| 11 | Test/adopt connection, distinct sources, rollback, saved settings | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
+| 12 | Initial/later outage, cached state, disabled writes, Retry, incompatible endpoint | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
+| 13 | Captured commands, other-client replacement, uncertain writes and retained editor intent | [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
+| 14 | Native menu opening, navigation, Return and dismissal | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
 | 15 | Menu tracking, primary clicks, remembered task per source | `MenuBarUITests`, `ServerMenuBarUITests`, and `MenuSourceUITests` in the same file |
-| 16 | Clipboard, zero/archived/cached values, menu identity during refresh and ticks | [MenuBarUITests](Tests/UITests/MenuBarUITests.swift) |
-| 17 | Saved toggles, shortcut recording/cancellation/defaults, registration conflict | [SettingsUITests](Tests/UITests/SettingsUITests.swift) |
-| 18 | Windows, editor ownership, reopening, quit with running timer | [WindowRoutingUITests](Tests/UITests/WindowRoutingUITests.swift) |
-| 19 | Daily totals against CLI reports, overnight/live totals, source clearing | [DailyTotalsUITests](Tests/UITests/DailyTotalsUITests.swift), [ConnectionUITests](Tests/UITests/ConnectionUITests.swift) |
-| 20 | Visibility, controlled lock/unlock/sleep/wake, display ticks without requests | [LifecycleUITests](Tests/UITests/LifecycleUITests.swift); real-event checks below remain open |
-| 21 | Light/Dark identity, size, sidebar, text status, task color identity | [AppearanceUITests](Tests/UITests/AppearanceUITests.swift); platform checks below remain open |
+| 16 | Clipboard, zero/archived/cached values, menu identity during refresh and ticks | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
+| 17 | Saved toggles, shortcut recording/cancellation/defaults, registration conflict | [SettingsUITests](Tests/UITests/Features/Connection/SettingsUITests.swift) |
+| 18 | Windows, editor ownership, reopening, quit with running timer | [WindowRoutingUITests](Tests/UITests/App/WindowRoutingUITests.swift) |
+| 19 | Daily totals against CLI reports, overnight/live totals, source clearing | [DailyTotalsUITests](Tests/UITests/Features/DailyTotals/DailyTotalsUITests.swift), [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
+| 20 | Visibility, controlled lock/unlock/sleep/wake, display ticks without requests | [LifecycleUITests](Tests/UITests/Infrastructure/MacLifecycle/LifecycleUITests.swift); real-event checks below remain open |
+| 21 | Light/Dark identity, size, sidebar, text status, task color identity | [AppearanceUITests](Tests/UITests/App/AppearanceUITests.swift); platform checks below remain open |
 
 ## Dedicated-Mac acceptance
 
