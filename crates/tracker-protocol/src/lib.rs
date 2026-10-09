@@ -98,6 +98,7 @@ impl From<&Worklog> for WorklogDto {
     }
 }
 
+/// Task activity paired for local presentation and CLI output.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct TaskItemDto {
@@ -114,6 +115,7 @@ impl From<&TaskListItem> for TaskItemDto {
     }
 }
 
+/// A client-side composition of task and tracking resources.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct SnapshotDto {
