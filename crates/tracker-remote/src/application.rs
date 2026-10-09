@@ -897,9 +897,11 @@ impl RemoteApplication {
     }
 
     async fn tracking_guard(&mut self, target: Option<TaskId>) -> Result<String, ApplicationError> {
-        self.initialize_tracking_command_view(target).await?;
         let reviewed = self.reviewed_tracking_state();
         let reviewed_task = target.and_then(|id| self.task(id).cloned());
+        self.initialize_tracking_command_view(target).await?;
+        let reviewed = reviewed.or_else(|| self.reviewed_tracking_state());
+        let reviewed_task = reviewed_task.or_else(|| target.and_then(|id| self.task(id).cloned()));
         for _ in 0..2 {
             self.ensure_version()
                 .await
