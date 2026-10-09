@@ -165,7 +165,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
         _ = try fixture.start(first)
         let proxy = try fixture.enableProxy()
         launch()
-        try proxy.arm(method: "GET", path: "/v1/reports", mode: .holdBefore)
+        try proxy.arm(method: "GET", path: "/v1/reports/task-totals", mode: .holdBefore)
         openStatusMenu()
         menuTask(first).hover()
         XCTAssertTrue(menuTask(first).menuItems["Stop tracking"].waitForExistence(timeout: timeout))
@@ -218,7 +218,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
         _ = try fixture.start(first, at: Date().addingTimeInterval(-65))
         let proxy = try fixture.enableProxy()
         launch()
-        try proxy.arm(method: "GET", path: "/v1/reports", mode: .holdBefore)
+        try proxy.arm(method: "GET", path: "/v1/reports/task-totals", mode: .holdBefore)
         withRestoredClipboard {
             openStatusMenu()
             menuTask(first).hover()
