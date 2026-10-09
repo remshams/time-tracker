@@ -106,27 +106,58 @@ final class TaskArchivingState {
 
     func deferUntilWake() { pending = true }
 
+    private struct PreflightDecision {
+        let result: Preflight
+        var message: String?
+        var latest: TaskItem?
+    }
+
     func preflight(_ intent: Intent, snapshot: TaskListResources) -> Preflight {
-        guard let task = snapshot.catalog.value.first(where: { $0.id == intent.taskID }) else {
-            requireReview("The task no longer exists. Cancel and refresh the task list.", latest: nil)
-            return .review
+        let decision = preflightDecision(intent, snapshot: snapshot)
+        applyReviewDecision(decision)
+        return decision.result
+    }
+
+    private func preflightDecision(_ intent: Intent, snapshot: TaskListResources) -> PreflightDecision {
+        guard let task = task(withID: intent.taskID, in: snapshot.catalog.value) else {
+            return PreflightDecision(
+                result: .review, message: "The task no longer exists. Cancel and refresh the task list.")
         }
-        if responseMatches(snapshot, intent: intent) { return .applied }
+        if responseMatches(snapshot, intent: intent) { return PreflightDecision(result: .applied) }
         guard task.archived == intent.originalArchived && task.name == intent.taskName else {
-            requireReview(
-                "The task changed on another client. Review its current state before continuing.", latest: task)
-            return .review
+            return PreflightDecision(
+                result: .review,
+                message: "The task changed on another client. Review its current state before continuing.", latest: task
+            )
         }
         guard intent.action != .archive || snapshot.tracking.value?.taskId != intent.taskID else {
-            requireReview("Stop tracking this task before archiving it.", latest: task)
-            return .review
+            return PreflightDecision(
+                result: .review, message: "Stop tracking this task before archiving it.", latest: task)
         }
-        return .apply
+        return PreflightDecision(result: .apply)
+    }
+
+    private func applyReviewDecision(_ decision: PreflightDecision) {
+        if let message = decision.message { requireReview(message, latest: decision.latest) }
+    }
+
+    private func task(withID id: String, in tasks: [TaskItem]) -> TaskItem? {
+        for task in tasks {
+            if task.id == id { return task }
+        }
+        return nil
     }
 
     func responseMatches(_ snapshot: TaskListResources, intent: Intent) -> Bool {
-        snapshot.catalog.value.contains { $0.id == intent.taskID && $0.archived == intent.action.desiredArchived }
+        hasDesiredTaskState(in: snapshot.catalog.value, intent: intent)
             && (intent.action != .archive || snapshot.tracking.value?.taskId != intent.taskID)
+    }
+
+    private func hasDesiredTaskState(in tasks: [TaskItem], intent: Intent) -> Bool {
+        for task in tasks {
+            if task.id == intent.taskID && task.archived == intent.action.desiredArchived { return true }
+        }
+        return false
     }
 
     func requireReview(_ message: String, latest: TaskItem?) {

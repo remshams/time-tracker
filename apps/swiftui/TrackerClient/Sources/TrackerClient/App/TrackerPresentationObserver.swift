@@ -99,7 +99,7 @@ public final class TrackerPresentationObserver {
         let timerChanged = timerText != nextTimerText
         let dailyChanged = daily != nextDaily
         let changedTaskTotals = Set(daily.taskTotals.keys).union(nextDaily.taskTotals.keys)
-            .filter { daily.taskTotals[$0] != nextDaily.taskTotals[$0] }
+            .filter { totalChanged(daily.taskTotals[$0], nextDaily.taskTotals[$0]) }
         let creationChanged = creation != nextCreation || canOpenCreation != nextCanOpenCreation
         let renameChanged = rename != nextRename || canOpenRename != nextCanOpenRename
         let correctionChanged = correction != nextCorrection || canOpenCorrection != nextCanOpenCorrection
@@ -126,6 +126,10 @@ public final class TrackerPresentationObserver {
         if creationChanged { onTaskCreationChange?() }
         if renameChanged { onTaskRenameChange?() }
         if correctionChanged { onWorklogCorrectionChange?() }
+    }
+
+    private func totalChanged(_ previous: TaskDailyTotalPresentation?, _ current: TaskDailyTotalPresentation?) -> Bool {
+        previous != current
     }
 
     private struct DailyPresentation: Equatable {

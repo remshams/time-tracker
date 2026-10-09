@@ -3,6 +3,24 @@ import XCTest
 @testable import TrackerClient
 
 final class TaskArchivingTests: XCTestCase {
+    @MainActor
+    func testArchiveConfirmationRequiresTheTargetTaskAndDesiredStateTogether() {
+        let state = TaskArchivingState()
+        let intent = TaskArchivingState.Intent(
+            taskID: firstTask.id, taskName: firstTask.name, originalArchived: false,
+            action: .archive, occurredAt: "2025-01-01T00:00:00.000Z")
+        let unrelatedArchived = TaskItem(
+            id: secondTask.id, name: secondTask.name, archived: true, latestStart: nil)
+        XCTAssertFalse(
+            state.responseMatches(
+                TaskListResources(tasks: [firstTask, unrelatedArchived], active: nil), intent: intent))
+        let archivedTarget = TaskItem(
+            id: firstTask.id, name: firstTask.name, archived: true, latestStart: nil)
+        XCTAssertTrue(
+            state.responseMatches(
+                TaskListResources(tasks: [archivedTarget, secondTask], active: nil), intent: intent))
+    }
+
     private func archived(_ task: TaskItem, _ value: Bool = true, name: String? = nil) -> TaskItem {
         TaskItem(id: task.id, name: name ?? task.name, archived: value, latestStart: task.latestStart)
     }
