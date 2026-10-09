@@ -41,12 +41,22 @@ public struct TrackerMenuContent: Equatable {
         let today = session.todayTasks
         let todayIDs = Set(today.map(\.id))
         todayTasks = today.map { Self.entry($0, session: session) }
-        otherTasks = session.tasks.filter { !$0.archived && !todayIDs.contains($0.id) }
-            .sorted {
-                if $0.name == $1.name { return $0.id < $1.id }
-                return $0.name < $1.name
-            }
+        otherTasks = session.tasks.filter { Self.isOtherTask($0, todayIDs: todayIDs) }
+            .sorted(by: Self.isOrderedBefore)
             .map { Self.entry($0, session: session) }
+    }
+
+    private static func isOtherTask(_ task: TaskItem, todayIDs: Set<String>) -> Bool {
+        !task.archived && !todayIDs.contains(task.id)
+    }
+
+    private static func isOrderedBefore(_ left: TaskItem, _ right: TaskItem) -> Bool {
+        if left.name == right.name { return isEarlierID(left, right) }
+        return left.name < right.name
+    }
+
+    private static func isEarlierID(_ left: TaskItem, _ right: TaskItem) -> Bool {
+        left.id < right.id
     }
 
     @MainActor
@@ -72,7 +82,7 @@ public struct TrackerMenuLabelContent: Equatable {
             taskID: session.active?.taskId ?? session.lastTrackedTaskID,
             isRunning: session.active != nil, isStale: session.isStale)
         if session.isStale {
-            let name = session.lastTrackedTask?.name ?? (session.lastTrackedTaskID == nil ? nil : "Unavailable task")
+            let name = session.lastTrackedTask?.name ?? Self.unavailableTaskName(session.lastTrackedTaskID)
             status =
                 name.map { "Tracking status unavailable. Last confirmed task: \($0)" }
                 ?? "Tracking status unavailable. No task tracked yet"
@@ -90,7 +100,7 @@ public struct TrackerMenuLabelContent: Equatable {
             if let duration = session.totalDailyDuration {
                 let minutes = Int(max(0, duration)) / 60
                 let text = String(format: "%02d:%02d", minutes / 60, minutes % 60)
-                total = session.dailyTotalsStatus == .cached ? "~\(text)" : text
+                total = Self.totalLabel(text, status: session.dailyTotalsStatus)
             } else {
                 total = "-"
             }
@@ -100,5 +110,13 @@ public struct TrackerMenuLabelContent: Equatable {
             totalText = nil
             help = status
         }
+    }
+
+    private static func unavailableTaskName(_ taskID: String?) -> String? {
+        taskID == nil ? nil : "Unavailable task"
+    }
+
+    private static func totalLabel(_ text: String, status: DailyTotalsStatus) -> String {
+        status == .cached ? "~\(text)" : text
     }
 }
