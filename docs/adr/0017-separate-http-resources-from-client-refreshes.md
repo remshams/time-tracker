@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 9 October 2026. The server, CLI, TUI and macOS clients will switch together to the new contract under `/v1`, with protocol compatibility number 3. Production still implements the previous `/v1` contract with protocol number 2. Implementation steps and acceptance checks are in the [route migration plan](../api-route-migration-plan.md).
+Accepted and implemented on 9 October 2026. The server, CLI, TUI and macOS clients use the new contract under `/v1`, with protocol compatibility number 3. Deploy the server and all supported clients together.
 
 ## Date
 
@@ -102,6 +102,6 @@ Some repeated data remains intentional. A task appears in collection, individual
 
 The coordinated release intentionally breaks compatibility with protocol-2 clients. It removes parallel-version maintenance but requires the server and all supported clients to be updated together.
 
-This decision adds no resource-version database migration, task pagination, server-side search, push subscription or convenience endpoint. The [migration plan](../api-route-migration-plan.md) contains implementation order, examples and acceptance checks.
+This decision adds no resource-version database migration, task pagination, server-side search, push subscription or convenience endpoint.
 
 Source basis: production code and client documentation on `main` at revision `2d8b96cff1d097c18c31e06eadbd665616c0a54d`, inspected on 9 October 2026. The [historical communication diagrams](https://github.com/remshams/time-tracker/blob/2ee9ce88ef7fe431044cb77f24b9df9301dffab2/docs/client-server-communication.html) describe `/v1` protocol 2 at source snapshot `3806193` and predate configurable bulk archiving. The [current architecture diagrams](../architecture.html) describe the protocol-3 implementation and retain explicitly scoped historical quality measurements.
