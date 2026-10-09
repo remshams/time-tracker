@@ -38,7 +38,7 @@ Select a task and click the pencil in the toolbar, or right-click a task and cho
 
 The dialog captures the task you clicked and keeps its draft through background refreshes. Before saving, the app refreshes authoritative state. If that read shows another client changed the task's name, it asks you to cancel and reopen the dialog to review the change. Server mode also checks the tracker revision when applying the write. Local mode retains the shared SQLite database's existing last-write behavior: a direct database client can still rename between the preflight read and the write.
 
-Validation errors appear inline. Save is disabled during submission. An uncertain response retains the original target, name, and timestamp for Retry, and blocks changing connections until the outcome is resolved. If a fresh snapshot already confirms the requested name, the app completes without sending another rename. Pending recovery is kept in memory and does not survive quitting. Creation and renaming use one dialog at a time.
+Validation errors appear inline. Save is disabled during submission. An uncertain response retains the original target, name, and timestamp for Retry, and blocks changing connections until the outcome is resolved. If a fresh task read already confirms the requested name, the app completes without sending another rename. Pending recovery is kept in memory and does not survive quitting. Creation and renaming use one dialog at a time.
 
 ## Archive and unarchive tasks
 
@@ -76,7 +76,7 @@ Choose Move to task from a worklog's actions menu or context menu. Search destin
 
 Moving preserves the worklog's identity and exact timestamps. A running worklog keeps running on its destination task. The command checks the original task and timestamps before writing, and rejects overlaps or an unavailable destination. Errors stay in the dialog with the search and selection. An uncertain response retains the original move for reconciliation; Retry first checks whether the move already committed. Connection changes and other editors are blocked until that outcome is resolved. Pending recovery does not survive quitting.
 
-Destination search uses the client's cached Rust task snapshot, without database or server requests for each keystroke. Opening the dialog refreshes the snapshot. Successful moves refresh history, task state, and daily totals while keeping the selected task. Dialog contents stay stable throughout dismissal.
+Destination search uses the client's confirmed Rust task catalog, without database or server requests for each keystroke. Opening the dialog explicitly refreshes the task-list resources. Successful moves refresh history, task state, and daily totals while keeping the selected task. Dialog contents stay stable throughout dismissal.
 
 ## Tracking
 
@@ -86,7 +86,7 @@ The menu bar popup also controls tracking. Click an active task in Today to star
 
 Commands capture the selected task, expected running worklog, and UTC time when you click. The server checks its revision and active worklog before accepting a change. If another client changes tracking first, the app reports the conflict and refreshes. A Stop command never stops a replacement worklog.
 
-Background refreshes keep tracking and connection controls enabled. A click during a read captures its target and time, then waits for that read to finish. Tracking commands check the refreshed state before running; a changed timer or unavailable task produces an error rather than applying the click to another target. Controls are disabled while a user command is queued or running, or tracking state is stale. Sleep and shutdown cancel queued commands. If a write fails, the app refreshes authoritative state before allowing another write because the server may already have committed it. During an outage, the app labels its last confirmed state as unavailable. Before the first successful snapshot, the timer displays Unavailable rather than claiming Idle.
+Background refreshes keep tracking and connection controls enabled. A click during a read captures its target and time, then waits for that read to finish. Tracking commands check the refreshed state before running; a changed timer or unavailable task produces an error rather than applying the click to another target. Controls are disabled while a user command is queued or running, or tracking state is stale. Sleep and shutdown cancel queued commands. If a write fails, the app refreshes authoritative state before allowing another write because the server may already have committed it. During an outage, the app labels its last confirmed state as unavailable. Before the first confirmed tracking read, the timer displays Unavailable. A confirmed idle resource is distinct from unloaded tracking.
 
 ## Menu bar clicks and task colors
 
@@ -94,7 +94,7 @@ Right-click the menu bar dot to open its menu. Control-click also opens it. Left
 
 The dot is filled while tracking and outlined while idle. Both use the current or last tracked task's color. Task entries in Today and Start tracking show their own colored dots, including when macOS hides optional menu images. An unavailable connection shows an outline and labels the task as last confirmed. Hover shows the running task's name, the last tracked task when idle, or that no task has been tracked yet. Tooltips resolve names from the current catalog, so renaming is reflected there too.
 
-Task colors use a fixed palette selected by a stable hash of the permanent task ID. Sidebar rows and menu entries share the same mapping. Colors remain stable across restarts and devices; different tasks can share a palette color. System colors adapt to Light and Dark appearance. The last tracked task ID is saved on this Mac separately for each server URL and for the local database. It changes only from accepted snapshots. A newer completed worklog reported by another client can update the last task even when its running state was never observed.
+Task colors use a fixed palette selected by a stable hash of the permanent task ID. Sidebar rows and menu entries share the same mapping. Colors remain stable across restarts and devices; different tasks can share a palette color. System colors adapt to Light and Dark appearance. The last tracked task ID is saved on this Mac separately for each server URL and for the local database. It changes only from accepted task-list and tracking observations. A newer completed worklog reported by another client can update the last task even when its running state was never observed.
 
 The native AppKit status-item controller owns mouse events, tooltip, appearance updates, and menu presentation. It creates one menu snapshot per opening and holds it across the complete popup tracking loop. It reuses the portable session for tracking and does not add a network poll or display timer. Its subscriptions and status item are removed when the app terminates.
 
@@ -104,7 +104,7 @@ In Settings > Tracking, enable "Automatically pause tracking when the screen is 
 
 Locking the screen stops the current worklog at the captured notification time. Unlocking starts a new worklog for the same task after refreshing tracker state, so the locked interval does not count as work. The app resumes only after a confirmed automatic stop and only if tracking is idle and the task is available. Selecting a different task does not change the remembered task.
 
-Disabling the preference, changing the connection, manually changing tracking, or quitting cancels automatic resume. The preference persists across launches; a paused task does not. Failed or uncertain writes require reconciliation, and an idle snapshot alone does not prove that this app paused the task. Errors remain visible instead of claiming that tracking stopped.
+Disabling the preference, changing the connection, manually changing tracking, or quitting cancels automatic resume. The preference persists across launches; a paused task does not. Failed or uncertain writes require reconciliation, and an idle tracking read alone does not prove that this app paused the task. Errors remain visible instead of claiming that tracking stopped.
 
 The app must remain running to receive lock and unlock events. A locked Mac waking from sleep does not resume until it unlocks. macOS can suspend or lose its network connection before a server write completes; automatic tracking cannot guarantee a successful stop during an outage. The feature uses distributed lock notifications with undocumented names, so notification delivery requires validation on a Mac. It adds requests on transitions and no repeating timer or polling interval.
 
@@ -118,7 +118,9 @@ Today follows the Mac's local calendar and time zone. Calendar boundaries accoun
 
 Settings > Menu bar > Show today's total next to the icon controls the status bar total. It is enabled by default, applies immediately, and is saved on this Mac. Turn it off to show just the tracking icon. The Today section inside the menu still shows the total. Hiding the status bar total stops its minute display clock.
 
-The Rust application report query aggregates the full day independently of paged worklog history. Its response includes totals and an authoritative tracker snapshot from the same read. Healthy synchronization uses this report instead of a separate snapshot request. Swift advances the matching running worklog's contribution locally between reports. Ordinary display ticks make no network request. One local day-boundary timer clears yesterday's totals and requests today's report, even while tracking is idle.
+The Rust report query aggregates the full day independently of paged worklog history. A report read returns totals, its revision and its echoed cutoff. It does not read or attach the task catalog or tracking resource. For ordinary synchronization, `TrackerSession` explicitly requests tasks, tracking and today's totals together. The Rust coordinator stages those resource observations, reconciles differing revisions once and publishes a coherent group together. Local mode reads the same group in one SQLite transaction. The serialized Swift worker captures each resource separately before another bridge operation can run.
+
+Daily totals can also request report and tracking without the task catalog. Swift advances running time only when the tracking and report revisions match and the running worklog still matches the projection anchor. Totals remain valid when task metadata is missing; an unsafe projection keeps the confirmed report value. Ordinary display ticks make no network request. One local day-boundary timer clears yesterday's totals and requests today's report, even while tracking is idle.
 
 ## Menu navigation and task actions
 
@@ -259,17 +261,20 @@ flowchart TD
     Lifecycle[AppKit notifications] --> Session
     Session --> Port[Injected TrackerClient and ReportClient interfaces]
     Port --> Worker[Serial background connection worker]
-    Worker --> ABI[C functions and JSON]
+    Worker --> ABI[Selected refresh, separate resource JSON and focused command outcomes]
     ABI --> Backend[Rust bridge backend]
     Backend --> Local[TrackerApplication]
     Local --> DB[Local SQLite tt.db]
     Backend --> Remote[RemoteApplication and persistent Tokio runtime]
-    Remote --> HTTP[HTTP client]
+    Remote --> Coordinator[Shared resource reconciliation and guarded command recovery]
+    Coordinator --> HTTP[HTTP client]
     HTTP --> Server[Configured tracker-server]
     Server --> ServerDB[Server SQLite tt.db]
 ```
 
-A candidate connection must return a valid snapshot before replacing the current backend. The session coordinates operations one at a time. Selection and connection generations prevent older history results from replacing the current selection. The Rust remote backend also blocks writes after failures until an explicit snapshot refresh succeeds.
+A candidate connection must load coherent task-list resources before replacing the current backend. The session coordinates operations one at a time. Selection and connection generations prevent older history results from replacing the current selection. Each task, tracking and report cache pairs its value with its own revision, and an absent observation means that resource has not loaded. Rust owns revision comparison, command guards, identical retries and recovery after uncertain writes.
+
+Bridge commands return committed tasks, worklogs or tracking outcomes and the original remote receipt metadata. They attach no task catalog, report or unrelated tracking state. The controller explicitly refreshes the resources its next view needs. If that read fails after a validated command receipt, the edit remains successful and the previously confirmed presentation becomes stale. A receipt's applied revision does not replace a newer resource observation.
 
 The package organizes state under `Features/Connection`, `Features/TaskCatalog`, `Features/TaskCreation`, `Features/TaskRename`, `Features/Tracking`, `Features/DailyTotals`, and `Features/WorklogHistory`. `App/TrackerSession` coordinates them through injected client, clock, scheduler, and settings interfaces. Shared task name editing rules live under `Features/TaskEditing`. `Features/TaskIndicators` owns the deterministic color and dot presentation, and `Features/MenuBar` owns remembered-task state and menu snapshot presentation. The remembered-task repository stores identifiers without duplicating tasks or worklogs. The macOS app organizes its views by the same capabilities and shares the name form between creation and renaming. Its `Infrastructure` directory owns Rust bridge calls, real timers, preferences, and AppKit lifecycle notifications. Rust remains responsible for domain rules and persistence.
 
@@ -285,7 +290,7 @@ AppKit remains at macOS integration points. `MacLifecycleObserver` receives slee
 
 SwiftUI chooses toolbar spacing and grouping from the declared placements. The controls may not match the previous AppKit toolbar pixel for pixel, and their appearance can vary between macOS releases. Validate the layout, window reopening, Settings, and dialog ownership on a Mac before relying on the migration. Rust and portable client checks do not validate native SwiftUI scenes.
 
-A session moves once from idle to running, then to stopped on shutdown. A running session distinguishes unconfirmed, confirmed, and stale snapshots. The request gate permits one operation at a time. Background reads leave controls available, while an accepted user command reserves the next operation and blocks duplicate clicks. Queued tracking commands retain their task or worklog ID and click timestamp, then check authoritative state before writing. A queued command behind a history read obtains a snapshot first because history alone does not confirm active tracking. Failed writes trigger an authoritative read before another write can proceed. Successful connection changes replace feature state and persist settings; failed changes retain the previous source.
+A session moves once from idle to running, then to stopped on shutdown. A running session distinguishes unloaded, confirmed and stale resource observations. The request gate permits one operation at a time. Background reads leave controls available, while an accepted user command reserves the next operation and blocks duplicate clicks. Queued tracking commands retain their task or worklog ID and click timestamp, then check authoritative state before writing. A queued command behind a history read explicitly refreshes the task-list resources first because history alone does not confirm active tracking. Failed writes trigger an authoritative read before another write can proceed. Successful connection changes replace feature state and persist settings; failed changes retain the previous source.
 
 History responses carry the selection generation captured at request time. Timer callbacks carry their scheduling generation. Shutdown invalidates both, cancels scheduled timers, and rejects late results. An already running C call can finish on its queue and release its handle there. Sleep cancels timers while allowing an in-flight operation to finish; wake resets the elapsed anchor and refreshes.
 
@@ -293,7 +298,7 @@ Task totals have one stable presentation adapter per task ID. The portable obser
 
 Refreshing history for the same task retains its rows and pagination cursor until the replacement page arrives. Selecting another task or connecting to another data source clears that history immediately. Rows stay visible during synchronization without displaying another task's cached rows.
 
-The bridge passes JSON snapshots, daily reports, and history pages across an in-process function call. Its costs are serialization and decoding, with no separate bridge process or IPC. Server response time and network activity need measurement on a Mac before making battery or latency claims.
+The bridge passes separate task and tracking observations, daily reports, history pages and focused command outcomes across an in-process function call. Its costs are serialization and decoding, with no separate bridge process or IPC. Server response time and network activity need measurement on a Mac before making battery or latency claims.
 
 ## Refresh and battery behavior
 
