@@ -849,6 +849,82 @@ async fn coherent_refresh_retries_once_and_retains_the_confirmed_view_during_wri
 }
 
 #[tokio::test]
+async fn coherent_refresh_rejects_missing_or_archived_active_tasks_without_adopting_resources() {
+    use tracker_protocol::{TaskDto, TasksDto, TrackingDto, WorklogDto};
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let active_task_id = tracker_domain::TaskId::generate();
+    for archived in [false, true] {
+        let unrelated = TaskDto {
+            id: tracker_domain::TaskId::generate().to_string(),
+            name: "Unrelated task".into(),
+            archived: false,
+            created_at: at,
+            updated_at: at,
+            latest_work_start: None,
+        };
+        let mut tasks = vec![unrelated.clone()];
+        if archived {
+            tasks.push(TaskDto {
+                id: active_task_id.to_string(),
+                name: "Archived active task".into(),
+                archived: true,
+                ..unrelated
+            });
+        }
+        let catalog = TasksDto {
+            tasks,
+            revision: "same-revision".into(),
+        };
+        let tracking = TrackingDto {
+            active_worklog: Some(WorklogDto {
+                id: WorklogId::generate().to_string(),
+                task_id: active_task_id.to_string(),
+                start: at,
+                end: None,
+            }),
+            revision: "same-revision".into(),
+        };
+        let router = Router::new()
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(HealthDto {
+                        status: "ok".into(),
+                        protocol_version: VERSION,
+                    })
+                }),
+            )
+            .route(
+                "/v1/tasks",
+                get(move || {
+                    let catalog = catalog.clone();
+                    async move { Json(catalog) }
+                }),
+            )
+            .route(
+                "/v1/tracking",
+                get(move || {
+                    let tracking = tracking.clone();
+                    async move { Json(tracking) }
+                }),
+            );
+        let server = StubServer::from_router(router);
+        let mut client = RemoteApplication::connect(&server.endpoint())
+            .await
+            .unwrap();
+        assert!(matches!(
+            client.refresh().await,
+            Err(tracker_remote::RemoteError::Protocol(_))
+        ));
+        assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
+        assert!(client.snapshot().task_items.is_empty());
+        assert!(client.snapshot().active_worklog.is_none());
+        assert!(client.task_revision().is_empty());
+        assert!(client.tracking_revision().is_empty());
+    }
+}
+
+#[tokio::test]
 async fn candidate_metadata_keeps_original_preview_revision() {
     let server = TestServer::start();
     let mut client = connected(&server.endpoint()).await.unwrap();

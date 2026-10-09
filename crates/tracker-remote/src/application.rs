@@ -57,6 +57,13 @@ enum Recovery {
     Worklog,
 }
 
+#[derive(Clone, Copy)]
+struct MutationScope {
+    recovery: Recovery,
+    worklog_id: Option<WorklogId>,
+    task_id: Option<TaskId>,
+}
+
 impl RemoteApplication {
     pub fn disconnected(endpoint: &str) -> Result<Self, RemoteError> {
         Ok(Self {
@@ -361,60 +368,76 @@ impl RemoteApplication {
         path: &str,
         body: &B,
         guard: &WriteGuard,
-        recovery: Recovery,
-        worklog_id: Option<WorklogId>,
-        task_id: Option<TaskId>,
+        scope: MutationScope,
         decode: impl FnOnce(MutationResultDto) -> Result<T, ApplicationError>,
     ) -> Result<T, ApplicationError> {
         self.ensure_version()
             .await
-            .map_err(|error| map_application_error(&error, worklog_id, task_id))?;
+            .map_err(|error| map_application_error(&error, scope.worklog_id, scope.task_id))?;
         self.last_write_attempted = true;
-        let response: Result<MutationDto, _> = self
+        let response = self
             .transport
             .send(method, self.transport.url(path), Some(body))
             .await;
-        let result = match response {
+        let result = self.decode_receipt(response, guard, scope, decode);
+        let recovered = self.recover_mutation(scope).await;
+        match (result, recovered) {
+            (Ok(value), Ok(())) => {
+                self.confirmed();
+                Ok(value)
+            }
+            (Ok(_), Err(error)) => Err(map_application_error(
+                &error,
+                scope.worklog_id,
+                scope.task_id,
+            )),
+            (Err(error), Ok(())) => Err(error),
+            (Err(error), Err(recovery_error)) => {
+                Err(error.with_recovery_failure(map_application_error(&recovery_error, None, None)))
+            }
+        }
+    }
+
+    fn decode_receipt<T>(
+        &mut self,
+        response: Result<MutationDto, RemoteError>,
+        guard: &WriteGuard,
+        scope: MutationScope,
+        decode: impl FnOnce(MutationResultDto) -> Result<T, ApplicationError>,
+    ) -> Result<T, ApplicationError> {
+        match response {
             Ok(dto) if dto.request_id == guard.request_id && !dto.applied_revision.is_empty() => {
                 decode(dto.result)
             }
             Ok(_) => Err(protocol_failure("invalid command receipt")),
             Err(error) => {
                 self.record_error(error.clone());
-                Err(map_application_error(&error, worklog_id, task_id))
+                Err(map_application_error(
+                    &error,
+                    scope.worklog_id,
+                    scope.task_id,
+                ))
             }
-        };
-        // Receipts describe a past command. Explicit reads own the current caches,
-        // including when transport replay returns an earlier applied revision.
-        let recovered = async {
-            if matches!(recovery, Recovery::Worklog)
-                && let Some(id) = worklog_id
-            {
-                match self.read_worklog(id).await {
-                    Ok(_) => {}
-                    Err(RemoteError::Http {
-                        status: StatusCode::NOT_FOUND,
-                        ..
-                    }) => {
-                        self.worklog_cache.remove(&id);
-                    }
-                    Err(error) => return Err(error),
+        }
+    }
+
+    async fn recover_mutation(&mut self, scope: MutationScope) -> Result<(), RemoteError> {
+        // Receipts describe a past command. Explicit reads own current caches.
+        if matches!(scope.recovery, Recovery::Worklog)
+            && let Some(id) = scope.worklog_id
+        {
+            match self.read_worklog(id).await {
+                Ok(_) => {}
+                Err(RemoteError::Http {
+                    status: StatusCode::NOT_FOUND,
+                    ..
+                }) => {
+                    self.worklog_cache.remove(&id);
                 }
-            }
-            self.recover(recovery).await
-        }
-        .await;
-        match (result, recovered) {
-            (Ok(value), Ok(())) => {
-                self.confirmed();
-                Ok(value)
-            }
-            (Ok(_), Err(error)) => Err(map_application_error(&error, worklog_id, task_id)),
-            (Err(error), Ok(())) => Err(error),
-            (Err(error), Err(recovery_error)) => {
-                Err(error.with_recovery_failure(map_application_error(&recovery_error, None, None)))
+                Err(error) => return Err(error),
             }
         }
+        self.recover(scope.recovery).await
     }
 
     pub async fn create_task(
@@ -465,9 +488,11 @@ impl RemoteApplication {
                 "v1/tasks",
                 &body,
                 &body.guard,
-                Recovery::Tasks,
-                None,
-                Some(id),
+                MutationScope {
+                    recovery: Recovery::Tasks,
+                    worklog_id: None,
+                    task_id: Some(id),
+                },
                 |result| {
                     let task = task_result(result, id)?;
                     if task.name().as_str() != body.name
@@ -603,9 +628,11 @@ impl RemoteApplication {
             &format!("v1/tasks/{id}"),
             &body,
             body.guard(),
-            Recovery::Tasks,
-            None,
-            Some(id),
+            MutationScope {
+                recovery: Recovery::Tasks,
+                worklog_id: None,
+                task_id: Some(id),
+            },
             |result| {
                 let task = task_result(result, id)?;
                 let valid = match &body {
@@ -672,9 +699,11 @@ impl RemoteApplication {
             "v1/tasks/archive-inactive",
             &body,
             &body.guard,
-            Recovery::Tasks,
-            None,
-            None,
+            MutationScope {
+                recovery: Recovery::Tasks,
+                worklog_id: None,
+                task_id: None,
+            },
             |result| match result {
                 MutationResultDto::ArchivedInactive { count } => Ok(count),
                 _ => Err(protocol_failure("invalid inactive task archive result")),
@@ -715,10 +744,12 @@ impl RemoteApplication {
             if task.as_ref().is_some_and(|(_, r)| r != &revision) {
                 continue;
             }
-            let changed = reviewed.as_ref().is_some_and(|old| old != &state)
-                || task.as_ref().is_some_and(|(item, _)| {
-                    reviewed_task.as_ref().is_some_and(|old| old != &item.task)
-                });
+            let changed = reviewed_tracking_changed(
+                reviewed.as_ref(),
+                &state,
+                reviewed_task.as_ref(),
+                task.as_ref().map(|(item, _)| item),
+            );
             self.snapshot.active_worklog = active;
             self.tracking = state;
             self.tracking_revision = revision.clone();
@@ -788,9 +819,11 @@ impl RemoteApplication {
             "v1/tracking",
             &body,
             &body.guard,
-            Recovery::Tracking,
-            None,
-            Some(task_id),
+            MutationScope {
+                recovery: Recovery::Tracking,
+                worklog_id: None,
+                task_id: Some(task_id),
+            },
             |result| {
                 let outcome = set_tracking_result(result, task_id, new_id, old_active)?;
                 let valid = match &outcome {
@@ -841,9 +874,11 @@ impl RemoteApplication {
             "v1/tracking",
             &body,
             &body.guard,
-            Recovery::Tracking,
-            Some(expected_active),
-            None,
+            MutationScope {
+                recovery: Recovery::Tracking,
+                worklog_id: Some(expected_active),
+                task_id: None,
+            },
             |result| {
                 let outcome = clear_tracking_result(result, expected_active)?;
                 let valid = match &outcome {
@@ -1012,10 +1047,7 @@ impl RemoteApplication {
                 .await
                 .map_err(|error| map_application_error(&error, Some(id), None))?;
             let worklog = app_decode_worklog(dto.worklog)?;
-            if expected_task.is_some_and(|task_id| task_id != worklog.task_id())
-                || worklog.start() != canonical(expected.start())
-                || worklog.end() != expected.end().map(canonical)
-            {
+            if !original_worklog_matches(&worklog, expected_task, expected) {
                 self.last_failure = Some(RemoteFailureKind::Conflict);
                 let primary = ApplicationError::worklog_changed(id);
                 if let Err(recovery) = self.recover(Recovery::Worklog).await {
@@ -1070,9 +1102,11 @@ impl RemoteApplication {
             &format!("v1/worklogs/{id}"),
             &body,
             body.guard(),
-            Recovery::Worklog,
-            Some(id),
-            None,
+            MutationScope {
+                recovery: Recovery::Worklog,
+                worklog_id: Some(id),
+                task_id: None,
+            },
             |result| {
                 let worklog = worklog_result(result, id)?;
                 if worklog.task_id() != destination_task_id
@@ -1115,9 +1149,11 @@ impl RemoteApplication {
             &format!("v1/worklogs/{id}"),
             &body,
             body.guard(),
-            Recovery::Worklog,
-            Some(id),
-            None,
+            MutationScope {
+                recovery: Recovery::Worklog,
+                worklog_id: Some(id),
+                task_id: None,
+            },
             |result| {
                 let worklog = worklog_result(result, id)?;
                 if worklog.task_id().to_string() != expected_task_id
@@ -1155,9 +1191,11 @@ impl RemoteApplication {
             &format!("v1/worklogs/{id}"),
             &body,
             &body.guard,
-            Recovery::Worklog,
-            Some(id),
-            None,
+            MutationScope {
+                recovery: Recovery::Worklog,
+                worklog_id: Some(id),
+                task_id: None,
+            },
             |result| {
                 let worklog = worklog_result(result, id)?;
                 if worklog.task_id() != expected_task_id
@@ -1245,6 +1283,26 @@ impl RemoteApplication {
             total: TimeDelta::microseconds(dto.total_us),
         })
     }
+}
+
+fn reviewed_tracking_changed(
+    reviewed: Option<&TrackingState>,
+    current: &TrackingState,
+    reviewed_task: Option<&Task>,
+    current_task: Option<&TaskListItem>,
+) -> bool {
+    reviewed.is_some_and(|old| old != current)
+        || current_task.is_some_and(|item| reviewed_task.is_some_and(|old| old != &item.task))
+}
+
+fn original_worklog_matches(
+    worklog: &Worklog,
+    expected_task: Option<TaskId>,
+    expected: WorklogTimes,
+) -> bool {
+    expected_task.is_none_or(|id| id == worklog.task_id())
+        && worklog.start() == canonical(expected.start())
+        && worklog.end() == expected.end().map(canonical)
 }
 
 fn validate_inactive_preview(preview: &InactiveTaskPreviewDto) -> Result<(), ApplicationError> {
