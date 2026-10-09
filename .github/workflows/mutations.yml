@@ -75,7 +75,7 @@ jobs:
       - name: Test the mutation installer and ternary rewriting
         run: python3 -m unittest discover -s scripts/tests -p 'test_install_swift_muter.py'
       - name: Test all Swift mutants
-        run: python3 scripts/swift-mutations.py --timeout 7200
+        run: python3 scripts/swift-mutations.py --timeout 7200 --test-workers 16
       - name: Upload Swift mutation results and logs
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
