@@ -8,6 +8,7 @@ final class ConnectionUITests: ConnectionUITestCase {
         let remote = try TrackerFixture(source: .server)
         addTeardownBlock { try remote.cleanup() }
         let serverTask = try remote.create("Server planning")
+        let proxy = try remote.enableProxy()
         launch()
         XCTAssertTrue(element("task-sidebar.task.\(local.id)").waitForExistence(timeout: timeout))
         openConnectionSettings()
@@ -18,6 +19,9 @@ final class ConnectionUITests: ConnectionUITestCase {
         }
         XCTAssertTrue(element("task-sidebar.task.\(local.id)").exists)
         XCTAssertFalse(element("task-sidebar.task.\(serverTask.id)").exists)
+        let testRequests = try proxy.requests()
+        XCTAssertFalse(testRequests.isEmpty)
+        XCTAssertTrue(testRequests.allSatisfy { $0.method == "GET" && $0.path == "/v1/health" })
         app.buttons["connection.connect"].click()
         waitUntil("Connect finishes") { self.elementText("connection.result").contains("Connected.") }
         closeConnectionSettings()
