@@ -34,7 +34,7 @@ class WorklogCorrectionUITests: TrackerUITestCase {
     func testCompletedEndCorrectionPreservesUntouchedStart() throws {
         let task = try fixture.create("End correction")
         let log = try fixture.completed(task, start: Date().addingTimeInterval(-3600.375), end: Date().addingTimeInterval(-1800.625))
-        enableButtonKeyboardNavigation()
+        try enableButtonKeyboardNavigation()
         launch()
         select(task)
         openCorrection(log)
@@ -164,21 +164,22 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         return try XCTUnwrap(formatter.date(from: timestamp) ?? ISO8601DateFormatter().date(from: timestamp))
     }
 
-    private func enableButtonKeyboardNavigation() {
+    private func enableButtonKeyboardNavigation() throws {
         let key = "AppleKeyboardUIMode" as CFString
         let applicationID = kCFPreferencesAnyApplication
         let user = kCFPreferencesCurrentUser
         let host = kCFPreferencesAnyHost
         XCTAssertTrue(CFPreferencesSynchronize(applicationID, user, host))
         let previous = CFPreferencesCopyValue(key, applicationID, user, host)
-        let previousKeyboardAccess = NSApplication.shared.isFullKeyboardAccessEnabled
+        let directory = fixture.directory
+        let previousKeyboardAccess = try Self.keyboardAccessInFreshProcess(directory: directory)
         let notify: @MainActor () -> Void = {
             DistributedNotificationCenter.default().postNotificationName(
                 Notification.Name("com.apple.KeyboardUIModeDidChange"), object: nil,
                 userInfo: nil, deliverImmediately: true
             )
         }
-        let restore: @MainActor () -> Void = {
+        let restore: @MainActor () throws -> Void = {
             CFPreferencesSetValue(key, previous, applicationID, user, host)
             XCTAssertTrue(CFPreferencesSynchronize(applicationID, user, host),
                           "Restore the original system keyboard-navigation preference.")
@@ -190,14 +191,10 @@ class WorklogCorrectionUITests: TrackerUITestCase {
             } else {
                 XCTAssertNil(restored)
             }
-            let appKitRestored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                _ = CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
-                return NSApplication.shared.isFullKeyboardAccessEnabled == previousKeyboardAccess
-            }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [appKitRestored], timeout: 15), .completed,
-                           "AppKit returns to the original keyboard-navigation mode.")
+            XCTAssertEqual(try Self.keyboardAccessInFreshProcess(directory: directory), previousKeyboardAccess,
+                           "A fresh AppKit process reads the original keyboard-navigation mode.")
         }
-        addTeardownBlock { await restore() }
+        addTeardownBlock { try await restore() }
         CFPreferencesSetValue(key, NSNumber(value: 3), applicationID, user, host)
         XCTAssertTrue(CFPreferencesSynchronize(applicationID, user, host))
         notify()
@@ -206,6 +203,26 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         waitUntil("AppKit enables keyboard navigation through buttons") {
             _ = CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
             return NSApplication.shared.isFullKeyboardAccessEnabled
+        }
+    }
+
+    private static func keyboardAccessInFreshProcess(directory: URL) throws -> Bool {
+        // The UI test runner can retain its previous AppKit keyboard-navigation mode.
+        let marker = "time-tracker-keyboard-access="
+        let source = "import AppKit\nprint(\"\(marker)\" + (NSApplication.shared.isFullKeyboardAccessEnabled ? \"1\" : \"0\"))\n"
+        let log = directory.appendingPathComponent("keyboard-\(UUID().uuidString).log")
+        let child = try ManagedProcess(executable: URL(fileURLWithPath: "/usr/bin/xcrun"),
+                                       arguments: ["swift", "-e", source], log: log)
+        defer { child.stop() }
+        let output = String(decoding: try child.wait(seconds: 45), as: UTF8.self)
+        let values = output.split(separator: "\n").filter { $0.hasPrefix(marker) }.map(String.init)
+        guard values.count == 1 else {
+            throw FixtureError("AppKit did not report its keyboard-navigation mode. See \(log.lastPathComponent).")
+        }
+        switch values[0] {
+        case "\(marker)1": return true
+        case "\(marker)0": return false
+        default: throw FixtureError("AppKit reported an invalid keyboard-navigation mode. See \(log.lastPathComponent).")
         }
     }
 
