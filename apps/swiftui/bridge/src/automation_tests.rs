@@ -371,7 +371,7 @@ fn remote_pause_conflict_does_not_claim_another_clients_stop() {
 }
 
 #[test]
-fn remote_pause_connection_failure_is_uncertain_and_requires_reconciliation() {
+fn remote_pause_preflight_connection_failure_is_certain_and_requires_refresh() {
     let mut server = Server::start();
     let mut bridge = server.client();
     let task_id = bridge.application.tasks(TaskOrdering::default())[0]
@@ -382,7 +382,7 @@ fn remote_pause_connection_failure_is_uncertain_and_requires_reconciliation() {
     server.stop();
     let rejected = pause(&mut bridge, worklog_id, "2026-10-04T10:10:00Z");
     assert_eq!(rejected["kind"], "unavailable");
-    assert_eq!(rejected["uncertain"], true);
+    assert_eq!(rejected["uncertain"], false);
     assert_eq!(rejected["requiresRefresh"], true);
     assert!(rejected.get("data").is_none());
     let refused = resume(&mut bridge, task_id, "2026-10-04T10:20:00Z");

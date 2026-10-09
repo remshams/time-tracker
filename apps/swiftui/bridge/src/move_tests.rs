@@ -410,11 +410,17 @@ fn remote_moves_refresh_revision_keep_original_guards_and_candidates_never_use_h
     );
 }
 
-fn mock_server(snapshot: tracker_protocol::SnapshotDto, reply: Value) -> report_tests::Server {
+fn mock_server(
+    snapshot: tracker_protocol::SnapshotDto,
+    original: &Worklog,
+    reply: Value,
+) -> report_tests::Server {
     use axum::{
         Json, Router,
         routing::{get, patch},
     };
+    let state = std::sync::Arc::new(std::sync::Mutex::new(snapshot));
+    let write_state = state.clone();
     let router = Router::new()
         .route(
             "/v1/health",
@@ -425,25 +431,45 @@ fn mock_server(snapshot: tracker_protocol::SnapshotDto, reply: Value) -> report_
                 })
             }),
         )
-        .route(
-            "/v1/snapshot",
-            get(move || {
-                let snapshot = snapshot.clone();
-                async move { Json(snapshot) }
-            }),
-        )
+        .merge(report_tests::resource_router_state(
+            state,
+            vec![tracker_protocol::WorklogDto::from(original)],
+        ))
         .route(
             "/v1/worklogs/{id}",
-            patch(move || {
-                let reply = reply.clone();
-                async move { Json(reply) }
+            patch(move |Json(body): Json<Value>| {
+                let mut reply = reply.clone();
+                if reply["request_id"] == "" {
+                    reply["request_id"] = body["request_id"].clone();
+                }
+                let state = write_state.clone();
+                async move {
+                    if let Ok(receipt) =
+                        serde_json::from_value::<tracker_protocol::MutationDto>(reply.clone())
+                    {
+                        if let tracker_protocol::MutationResultDto::Worklog(worklog) =
+                            receipt.result
+                        {
+                            let mut snapshot = state.lock().unwrap();
+                            if snapshot
+                                .active_worklog
+                                .as_ref()
+                                .is_some_and(|active| active.id == worklog.id)
+                            {
+                                snapshot.active_worklog = worklog.end.is_none().then_some(worklog);
+                            }
+                            snapshot.revision = receipt.applied_revision;
+                        }
+                    }
+                    Json(reply)
+                }
             }),
         );
     report_tests::Server::start(router)
 }
 
 #[test]
-fn remote_move_rejects_wrong_identity_destination_times_active_state_and_snapshot() {
+fn remote_move_rejects_wrong_identity_destination_times_and_invalid_receipts() {
     use tracker_protocol::{MutationDto, MutationResultDto, SnapshotDto, WorklogDto};
     let directory = tempfile::tempdir().unwrap();
     for end in [Some(200), None] {
@@ -466,7 +492,9 @@ fn remote_move_rejects_wrong_identity_destination_times_active_state_and_snapsho
         updated.revision = "43".into();
         let baseline = serde_json::to_value(MutationDto {
             result: MutationResultDto::Worklog(WorklogDto::from(&moved)),
-            snapshot: updated,
+            request_id: String::new(),
+            applied_revision: updated.revision,
+            replayed: false,
         })
         .unwrap();
         for index in 0..11 {
@@ -482,55 +510,16 @@ fn remote_move_rejects_wrong_identity_destination_times_active_state_and_snapsho
                         json!(timestamp(at(200)))
                     }
                 }
-                4 => {
-                    reply["snapshot"]["active_worklog"] = if end.is_some() {
-                        serde_json::to_value(WorklogDto::from(&Worklog::begin(
-                            original.id(),
-                            destination,
-                            original.start(),
-                        )))
-                        .unwrap()
-                    } else {
-                        Value::Null
-                    }
-                }
-                5 => {
-                    reply["snapshot"]["active_worklog"] = serde_json::to_value(WorklogDto::from(
-                        &Worklog::begin(WorklogId::generate(), source, original.start()),
-                    ))
-                    .unwrap()
-                }
-                6 => reply["snapshot"]["task_items"]
-                    .as_array_mut()
-                    .unwrap()
-                    .retain(|item| item["task"]["id"] != destination.to_string()),
+                4 => reply["request_id"] = json!(WorklogId::generate().to_string()),
+                5 => reply["applied_revision"] = json!(""),
+                6 => reply["unexpected"] = json!(true),
                 7 => reply["result"]["kind"] = json!("tracking_already_idle"),
-                8 => {
-                    let mut active =
-                        WorklogDto::from(&Worklog::begin(original.id(), source, original.start()));
-                    if end.is_some() {
-                        active.id = WorklogId::generate().to_string();
-                    }
-                    reply["snapshot"]["active_worklog"] = serde_json::to_value(active).unwrap();
-                }
-                9 => {
-                    reply["snapshot"]["active_worklog"] = serde_json::to_value(WorklogDto::from(
-                        &Worklog::begin(original.id(), destination, at(110)),
-                    ))
-                    .unwrap()
-                }
-                10 => {
-                    let task = reply["snapshot"]["task_items"]
-                        .as_array_mut()
-                        .unwrap()
-                        .iter_mut()
-                        .find(|item| item["task"]["id"] == destination.to_string())
-                        .unwrap();
-                    task["task"]["archived"] = json!(true);
-                }
+                8 => reply["replayed"] = json!("invalid"),
+                9 => reply["result"]["value"]["start"] = json!(timestamp(at(110))),
+                10 => reply["result"]["value"]["unexpected"] = json!(true),
                 _ => unreachable!(),
             }
-            let server = mock_server(initial.clone(), reply);
+            let server = mock_server(initial.clone(), &original, reply);
             let mut bridge = server.client();
             let failure = move_to(&mut bridge, &original, destination);
             assert_eq!(failure["kind"], "protocol", "{index}: {failure}");
@@ -538,7 +527,7 @@ fn remote_move_rejects_wrong_identity_destination_times_active_state_and_snapsho
             assert_eq!(failure["requiresRefresh"], true);
             assert!(failure.get("data").is_none());
         }
-        let server = mock_server(initial.clone(), baseline);
+        let server = mock_server(initial.clone(), &original, baseline);
         let mut bridge = server.client();
         assert!(
             move_to(&mut bridge, &original, destination)
@@ -619,13 +608,10 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
                     })
                 }),
             )
-            .route(
-                "/v1/snapshot",
-                get(move || {
-                    let snapshot = snapshot.clone();
-                    async move { Json(snapshot) }
-                }),
-            )
+            .merge(report_tests::resource_router(
+                snapshot,
+                vec![tracker_protocol::WorklogDto::from(&original)],
+            ))
             .route(
                 "/v1/worklogs/{id}",
                 patch(
@@ -724,12 +710,7 @@ fn remote_move_classifies_archived_and_missing_destination_from_recovered_snapsh
 
 #[test]
 fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
-    use axum::{
-        Json, Router,
-        http::StatusCode,
-        response::IntoResponse,
-        routing::{get, patch},
-    };
+    use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing::get};
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -747,7 +728,28 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
         "42".into(),
     );
     let reads = Arc::new(AtomicUsize::new(0));
+    let task_resources = snapshot.task_items.clone();
+    let original_dto = tracker_protocol::WorklogDto::from(&original);
     let router = Router::new()
+        .route(
+            "/v1/tasks/{id}",
+            get(
+                move |axum::extract::Path(id): axum::extract::Path<String>| {
+                    let task = task_resources
+                        .iter()
+                        .find(|item| item.task.id == id)
+                        .unwrap()
+                        .task
+                        .clone();
+                    async move {
+                        Json(tracker_protocol::TaskResourceDto {
+                            task,
+                            revision: "42".into(),
+                        })
+                    }
+                },
+            ),
+        )
         .route(
             "/v1/health",
             get(|| async {
@@ -758,7 +760,7 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
             }),
         )
         .route(
-            "/v1/snapshot",
+            "/v1/tasks",
             get(move || {
                 let fail = reads.fetch_add(1, Ordering::SeqCst) > 0;
                 let snapshot = snapshot.clone();
@@ -773,14 +775,44 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
                         )
                             .into_response()
                     } else {
-                        Json(snapshot).into_response()
+                        Json(tracker_protocol::TasksDto {
+                            tasks: snapshot
+                                .task_items
+                                .into_iter()
+                                .map(|item| {
+                                    let mut task = item.task;
+                                    task.latest_work_start = item.latest_work_start;
+                                    task
+                                })
+                                .collect(),
+                            revision: snapshot.revision,
+                        })
+                        .into_response()
                     }
                 }
             }),
         )
         .route(
+            "/v1/tracking",
+            get(|| async {
+                Json(tracker_protocol::TrackingDto {
+                    active_worklog: None,
+                    revision: "42".into(),
+                })
+            }),
+        )
+        .route(
             "/v1/worklogs/{id}",
-            patch(|| async {
+            get(move || {
+                let worklog = original_dto.clone();
+                async move {
+                    Json(tracker_protocol::WorklogResourceDto {
+                        worklog,
+                        revision: "42".into(),
+                    })
+                }
+            })
+            .patch(|| async {
                 (
                     StatusCode::CONFLICT,
                     Json(ErrorDto {
@@ -792,8 +824,115 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
         );
     let server = report_tests::Server::start(router);
     let mut bridge = server.client();
+    bridge.application.refresh().unwrap();
     let failure = move_to(&mut bridge, &original, tasks[1].task.id());
     assert_eq!(failure["kind"], "unavailable");
     assert_eq!(failure["uncertain"], true);
     assert_eq!(failure["requiresRefresh"], true);
+}
+
+#[test]
+fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads() {
+    use axum::{
+        Json, Router,
+        routing::{get, patch},
+    };
+    use std::sync::{Arc, Mutex};
+    use tracker_protocol::{MutationDto, MutationResultDto, SnapshotDto, WorklogDto};
+    let directory = tempfile::tempdir().unwrap();
+    for end in [Some(200), None] {
+        let mut writer =
+            open_fixture(&directory.path().join(format!("recovery-{end:?}.db"))).unwrap();
+        let tasks = writer.application.tasks(TaskOrdering::default());
+        let source = tasks[0].task.id();
+        let destination = tasks[1].task.id();
+        let competing_task = tasks[2].task.id();
+        let original = record(&mut writer, source, 100, end);
+        let moved = original.moved_to(destination).unwrap();
+        let initial = SnapshotDto::from_snapshot(
+            &tracker_application::TrackerSnapshot {
+                task_items: writer.application.tasks(TaskOrdering::default()),
+                active_worklog: end.is_none().then(|| original.clone()),
+            },
+            "before".into(),
+        );
+        let state = Arc::new(Mutex::new(initial));
+        let worklogs = Arc::new(Mutex::new(vec![WorklogDto::from(&original)]));
+        let changed_state = state.clone();
+        let changed_worklogs = worklogs.clone();
+        let applied = moved.clone();
+        let later_active = Worklog::begin(WorklogId::generate(), competing_task, at(250));
+        let expected_active = later_active.clone();
+        let router = Router::new()
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(tracker_protocol::HealthDto {
+                        status: "ok".into(),
+                        protocol_version: tracker_protocol::VERSION,
+                    })
+                }),
+            )
+            .merge(report_tests::resource_router_resources(state, worklogs))
+            .route(
+                "/v1/worklogs/{id}",
+                patch(move |Json(body): Json<Value>| {
+                    let changed_state = changed_state.clone();
+                    let changed_worklogs = changed_worklogs.clone();
+                    let applied = applied.clone();
+                    let later_active = later_active.clone();
+                    async move {
+                        {
+                            let mut state = changed_state.lock().unwrap();
+                            state.active_worklog = Some(WorklogDto::from(&later_active));
+                            state
+                                .task_items
+                                .iter_mut()
+                                .find(|item| item.task.id == destination.to_string())
+                                .unwrap()
+                                .task
+                                .archived = true;
+                            state.revision = "later".into();
+                        }
+                        changed_worklogs.lock().unwrap()[0] = WorklogDto::from(
+                            &Worklog::new(
+                                applied.id(),
+                                destination,
+                                applied.start(),
+                                Some(at(250)),
+                            )
+                            .unwrap(),
+                        );
+                        Json(MutationDto {
+                            request_id: body["request_id"].as_str().unwrap().into(),
+                            applied_revision: "applied".into(),
+                            replayed: true,
+                            result: MutationResultDto::Worklog(WorklogDto::from(&applied)),
+                        })
+                    }
+                }),
+            );
+        let server = report_tests::Server::start(router);
+        let mut bridge = server.client();
+        let result = move_to(&mut bridge, &original, destination);
+        assert!(result.get("error").is_none(), "{end:?}: {result}");
+        assert_eq!(result["data"]["worklog"]["id"], moved.id().to_string());
+        assert_eq!(
+            result["data"]["snapshot"]["active"]["id"],
+            expected_active.id().to_string()
+        );
+        assert_eq!(result["data"]["snapshot"]["tasksRevision"], "later");
+        assert_eq!(result["data"]["snapshot"]["trackingRevision"], "later");
+        assert_eq!(
+            bridge
+                .application
+                .tasks(TaskOrdering::default())
+                .iter()
+                .find(|item| item.task.id() == destination)
+                .unwrap()
+                .task
+                .is_archived(),
+            true
+        );
+    }
 }
