@@ -355,6 +355,7 @@ mod tests {
         );
         assert_eq!(
             busy_label(&ApplicationRequest::ArchiveTask {
+                expected_name: tracker_domain::TaskName::new("Reviewed task").unwrap(),
                 id: tracker_domain::TaskId::generate(),
                 occurred_at: chrono::Utc::now(),
             }),
