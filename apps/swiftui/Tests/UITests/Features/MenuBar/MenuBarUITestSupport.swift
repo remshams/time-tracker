@@ -1,4 +1,5 @@
 import AppKit
+import Vision
 import XCTest
 
 @MainActor
@@ -14,19 +15,38 @@ extension TrackerUITestCase {
 
     func assertStatusTooltip(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
         trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
-        waitUntil("The previous tooltip closes", file: file, line: line) {
-            !self.app.descendants(matching: .helpTag).firstMatch.exists
-        }
         statusButton.hover()
-        let tooltip = app.descendants(matching: .helpTag).firstMatch
+        var screenshot: XCUIScreenshot?
+        var recognizedText = ""
         waitUntil("Hover shows the full tracking status", file: file, line: line) {
-            guard tooltip.exists else { return false }
-            return tooltip.label.components(separatedBy: "\n").first == expected
-                || (tooltip.value as? String)?.components(separatedBy: "\n").first == expected
-                || tooltip.descendants(matching: .any)
-                    .matching(NSPredicate(
-                        format: "label == %@ OR value == %@ OR label BEGINSWITH %@ OR value BEGINSWITH %@",
-                        expected, expected, expected + "\n", expected + "\n")).firstMatch.exists
+            let captured = XCUIScreen.main.screenshot()
+            screenshot = captured
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            request.usesLanguageCorrection = false
+            request.regionOfInterest = CGRect(x: 0, y: 0.75, width: 1, height: 0.25)
+            do {
+                try VNImageRequestHandler(data: captured.pngRepresentation, options: [:]).perform([request])
+                recognizedText = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                    .joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+                return recognizedText.contains(expected)
+            } catch {
+                recognizedText = "Text recognition failed: \(error)"
+                return false
+            }
+        }
+        if !recognizedText.contains(expected) {
+            if let screenshot {
+                let attachment = XCTAttachment(screenshot: screenshot)
+                attachment.name = "Status tooltip desktop"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+            let attachment = XCTAttachment(string: recognizedText)
+            attachment.name = "Status tooltip recognized text"
+            attachment.lifetime = .keepAlways
+            add(attachment)
         }
         trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
     }
