@@ -19,6 +19,7 @@ final class WorklogMoveTests: XCTestCase {
             try await fixture.settled()
         }
         fixture.session.openWorklogMove(worklogID: log.id)
+        XCTAssertEqual(fixture.session.worklogMove.sourceTaskName, firstTask.name)
         let refresh = try await fixture.client.next()
         XCTAssertEqual(refresh.operation, .snapshot)
         refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: log.end == nil ? log : nil))
@@ -183,6 +184,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertFalse(fixture.session.worklogMove.canSubmit)
         XCTAssertEqual(fixture.session.worklogMove.latest, stopped)
         fixture.session.reviewLatestWorklogMove()
+        XCTAssertEqual(fixture.session.worklogMove.sourceTaskName, firstTask.name)
         let refresh = try await fixture.client.next()
         refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
         let search = try await fixture.client.next()
@@ -402,6 +404,206 @@ final class WorklogMoveTests: XCTestCase {
     }
 
     @MainActor
+    func testPreflightConnectionFailureIsReportedWithoutSendingAMove() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        _ = try await open(fixture, worklog: activeWorklog)
+        fixture.session.submitWorklogMove()
+        let snapshot = try await fixture.client.next()
+        snapshot.fail(BridgeFailure(message: "Move preflight offline", kind: "unavailable"))
+        try await fixture.settled()
+
+        XCTAssertTrue(fixture.session.isStale)
+        XCTAssertEqual(fixture.session.connectionStatusText, "Unavailable")
+        XCTAssertEqual(fixture.session.error, "Move preflight offline")
+        XCTAssertEqual(fixture.session.worklogMove.error, "Move preflight offline")
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .move = $0 { return true }; return false
+            })
+    }
+
+    @MainActor
+    func testCandidateSearchRetriesAfterItsResponseArrivesDuringSleep() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        _ = try await open(fixture)
+        fixture.session.setWorklogMoveQuery("Destination")
+        let search = try await fixture.client.next()
+        fixture.session.sleep()
+        search.candidates([candidate])
+        try await fixture.settled()
+        XCTAssertTrue(fixture.session.worklogMove.isSearching)
+
+        fixture.session.wake()
+        let refresh = try await fixture.client.next()
+        refresh.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        let retry = try await fixture.client.next()
+        XCTAssertEqual(retry.operation, .candidates(source: firstTask.id, query: "Destination"))
+        retry.candidates([candidate])
+        try await fixture.settled()
+
+        XCTAssertFalse(fixture.session.worklogMove.isSearching)
+        XCTAssertEqual(fixture.session.worklogMove.selectedTaskID, secondTask.id)
+    }
+
+    @MainActor
+    func testAnOpenMoverPublishesWhyAConnectionChangeIsBlocked() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        _ = try await open(fixture)
+        var publishedMessage: String?
+        fixture.session.onChange = { publishedMessage = fixture.session.connectionMessage }
+
+        let connected = await fixture.session.connect(serverSettings)
+
+        XCTAssertFalse(connected)
+        XCTAssertEqual(publishedMessage, "Finish or retry worklog moving before changing connections.")
+        XCTAssertEqual(fixture.session.connectionSettings, .local)
+    }
+
+    @MainActor
+    func testHistoryRefreshRequiresReviewWhenTheCompletedWorklogChanged() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let log = try await open(fixture)
+        fixture.session.retryHistory()
+        let history = try await fixture.client.next()
+        let changed = WorklogItem(
+            id: log.id, taskId: log.taskId, start: log.start, end: "2024-12-30T10:30:00.000000Z")
+        history.succeed(HistoryPage(worklogs: [changed], nextCursor: nil, reset: false))
+        try await fixture.settled()
+
+        XCTAssertTrue(fixture.session.worklogMove.requiresReview)
+        XCTAssertEqual(fixture.session.worklogMove.latest, changed)
+        XCTAssertFalse(fixture.session.worklogMove.canSubmit)
+    }
+
+    @MainActor
+    func testPreflightIncludesHistoryLoadedAfterTheMoverOpened() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let log = try await open(fixture)
+        fixture.session.loadOlder()
+        let older = try await fixture.client.next()
+        let rows = (0..<100).map {
+            WorklogItem(id: "older-worklog-\($0)", taskId: log.taskId, start: log.start, end: log.end)
+        }
+        older.succeed(HistoryPage(worklogs: rows, nextCursor: "more-history", reset: false))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.worklogs.count, 101)
+        fixture.session.submitWorklogMove()
+        let snapshot = try await fixture.client.next()
+        snapshot.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        for cursor in ["second-page", "third-page"] {
+            let page = try await fixture.client.next()
+            page.succeed(HistoryPage(worklogs: [], nextCursor: cursor, reset: false))
+        }
+        let third = try await fixture.client.next()
+        XCTAssertEqual(third.operation, .history(task: firstTask.id, cursor: "third-page"))
+        third.succeed(HistoryPage(worklogs: [log], nextCursor: nil, reset: false))
+        let command = try await fixture.client.next()
+        XCTAssertEqual(command.operation, .move(expected: log, destination: secondTask.id))
+        let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: log.end)
+        command.moved(worklog: moved, snapshot: TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        try await finishHistory(fixture)
+
+        XCTAssertFalse(fixture.session.worklogMove.isPresented)
+    }
+
+    @MainActor
+    func testDeletedWorklogRequiresReviewWithoutSendingAMove() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        _ = try await open(fixture)
+        fixture.session.submitWorklogMove()
+        let snapshot = try await fixture.client.next()
+        snapshot.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        let history = try await fixture.client.next()
+        history.succeed(emptyPage)
+        try await fixture.settled()
+
+        XCTAssertTrue(fixture.session.worklogMove.requiresReview)
+        XCTAssertFalse(fixture.session.worklogMove.canSubmit)
+        XCTAssertNil(fixture.session.worklogMove.latest)
+        XCTAssertEqual(
+            fixture.session.worklogMove.error,
+            "This worklog was moved or deleted. Cancel the mover and refresh history.")
+    }
+
+    @MainActor
+    func testMissingDestinationDoesNotMisreportAnExistingWorklogAsDeleted() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let log = try await open(fixture)
+        fixture.session.submitWorklogMove()
+        try await preflight(fixture, log: log, tasks: [firstTask])
+        try await fixture.settled()
+
+        XCTAssertFalse(fixture.session.worklogMove.requiresReview)
+        XCTAssertTrue(fixture.session.worklogMove.canEdit)
+        XCTAssertNotNil(fixture.session.worklogMove.error)
+        XCTAssertEqual(fixture.session.worklogMove.original, log)
+    }
+
+    @MainActor
+    func testMovePreflightFailuresOnlyMarkTheConnectionStaleWhenRequested() async throws {
+        for refresh in [false, true] {
+            let fixture = Fixture()
+            defer { fixture.cleanup() }
+            _ = try await open(fixture, worklog: activeWorklog)
+            fixture.session.submitWorklogMove()
+            let snapshot = try await fixture.client.next()
+            snapshot.fail(BridgeFailure(message: "Move preflight rejected", kind: "conflict", requiresRefresh: refresh))
+            try await fixture.settled()
+
+            XCTAssertEqual(fixture.session.isStale, refresh)
+            XCTAssertEqual(fixture.session.error, refresh ? "Move preflight rejected" : nil)
+            XCTAssertTrue(fixture.session.worklogMove.canEdit)
+        }
+    }
+
+    @MainActor
+    func testUnavailableAndProtocolWriteFailuresRetainTheMoveForRetry() async throws {
+        for kind in ["unavailable", "protocol"] {
+            let fixture = Fixture()
+            defer { fixture.cleanup() }
+            let log = try await open(fixture, worklog: activeWorklog)
+            fixture.session.submitWorklogMove()
+            try await preflight(fixture, log: log)
+            let command = try await fixture.client.next()
+            command.fail(BridgeFailure(message: "Move response unavailable", kind: kind))
+            try await preflight(fixture, log: log)
+            try await fixture.settled()
+
+            XCTAssertFalse(fixture.session.worklogMove.canEdit, kind)
+            XCTAssertTrue(fixture.session.worklogMove.canSubmit, kind)
+            XCTAssertEqual(fixture.session.worklogMove.original, log, kind)
+            XCTAssertEqual(fixture.session.worklogMove.error, "Move response unavailable", kind)
+        }
+    }
+
+    @MainActor
+    func testMoveResponseWithAnArchivedDestinationRequiresReconciliation() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let log = try await open(fixture, worklog: activeWorklog)
+        fixture.session.submitWorklogMove()
+        try await preflight(fixture, log: log)
+        let command = try await fixture.client.next()
+        let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
+        let archived = TaskItem(id: secondTask.id, name: secondTask.name, archived: true, latestStart: nil)
+        command.moved(worklog: moved, snapshot: TrackerSnapshot(tasks: [firstTask, archived], active: moved))
+        try await preflight(fixture, log: log)
+        try await fixture.settled()
+
+        XCTAssertEqual(fixture.session.active, log)
+        XCTAssertFalse(fixture.session.worklogMove.canEdit)
+        XCTAssertTrue(fixture.session.worklogMove.canSubmit)
+        XCTAssertEqual(fixture.session.worklogMove.error, "The move response does not contain the moved worklog.")
+    }
+
+    @MainActor
     func testEntryConflictRequiresReviewEvenWhenLatestMatchesOriginal() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
@@ -589,6 +791,31 @@ final class WorklogMoveTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertEqual(observer.worklogMoveSheetContent, visible)
+    }
+
+    @MainActor
+    func testKeyboardSelectionMovesFromTheSelectedCandidateAndStopsAtTheBounds() throws {
+        let state = WorklogMoveState()
+        state.open(precise, sourceTaskName: firstTask.name, historyPageLimit: 2)
+        let search = try XCTUnwrap(state.takeSearch())
+        let candidates = [
+            WorklogMoveCandidate(id: "destination-one", name: "First destination"),
+            WorklogMoveCandidate(id: "destination-two", name: "Second destination"),
+            WorklogMoveCandidate(id: "destination-three", name: "Third destination"),
+        ]
+        state.accept(candidates, search: search)
+        state.select(candidates[1].id)
+
+        state.moveSelection(by: 1)
+        XCTAssertEqual(state.presentation.selectedTaskID, candidates[2].id)
+        state.moveSelection(by: 1)
+        XCTAssertEqual(state.presentation.selectedTaskID, candidates[2].id)
+        state.moveSelection(by: -1)
+        XCTAssertEqual(state.presentation.selectedTaskID, candidates[1].id)
+        state.moveSelection(by: -2)
+        XCTAssertEqual(state.presentation.selectedTaskID, candidates[0].id)
+        state.moveSelection(by: -1)
+        XCTAssertEqual(state.presentation.selectedTaskID, candidates[0].id)
     }
 
     func testExactTimestampComparisonKeepsMicrosecondsAndEquivalentOffsets() {
