@@ -2,15 +2,13 @@
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
-use tracker_application::{
-    InactiveTaskArchive, InactiveTaskPreviewRead, TaskListItem, TrackerSnapshot,
-};
+use tracker_application::{InactiveTaskArchive, InactiveTaskPreviewRead, TaskListItem};
 use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName};
 
 use super::{
     SqliteRepository, error,
     mapping::{raw_task, raw_task_item, task_from_stored, timestamp_to_us, us_to_timestamp},
-    tracking::active_worklog_on,
+    tracking::active_tracking_read_on,
 };
 use crate::StorageError;
 
@@ -47,6 +45,30 @@ pub(crate) fn list_task_items_on(conn: &Connection) -> Result<Vec<TaskListItem>,
         });
     }
     Ok(items)
+}
+
+/// Reads one task and its latest start without scanning the task catalog.
+pub(crate) fn task_item_by_id_on(
+    conn: &Connection,
+    id: TaskId,
+) -> Result<Option<TaskListItem>, StorageError> {
+    let mut statement = conn.prepare(
+        "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us,
+                (SELECT MAX(w.start_us) FROM worklogs AS w WHERE w.task_id = t.id) AS latest_start_us
+         FROM tasks AS t WHERE t.id = ?1",
+    )?;
+    statement
+        .query_row([id.to_string()], raw_task_item)
+        .optional()?
+        .map(
+            |((id, name, archived, created_us, updated_us), latest_us)| {
+                Ok(TaskListItem {
+                    task: task_from_stored(id, name, archived, created_us, updated_us)?,
+                    latest_work_start: latest_us.map(us_to_timestamp).transpose()?,
+                })
+            },
+        )
+        .transpose()
 }
 
 const DAY_US: i64 = 24 * 60 * 60 * 1_000_000;
@@ -230,12 +252,9 @@ impl SqliteRepository {
     ) -> Result<InactiveTaskPreviewRead, StorageError> {
         let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Deferred)?;
         let tasks = inactive_tasks_on(&transaction, as_of, period)?;
-        let snapshot = TrackerSnapshot {
-            task_items: list_task_items_on(&transaction)?,
-            active_worklog: active_worklog_on(&transaction)?,
-        };
+        let tracking = active_tracking_read_on(&transaction)?;
         transaction.commit()?;
-        Ok(InactiveTaskPreviewRead { tasks, snapshot })
+        Ok(InactiveTaskPreviewRead { tasks, tracking })
     }
 
     /// Rechecks the previewed set and archives all rows under one write lock.
@@ -268,11 +287,8 @@ impl SqliteRepository {
                 )
                 .map_err(|error| error::archive_task_error(error, task.id()))?;
         }
-        let snapshot = TrackerSnapshot {
-            task_items: list_task_items_on(&transaction)?,
-            active_worklog: active_worklog_on(&transaction)?,
-        };
+        let tracking = active_tracking_read_on(&transaction)?;
         transaction.commit()?;
-        Ok(InactiveTaskArchive { tasks, snapshot })
+        Ok(InactiveTaskArchive { tasks, tracking })
     }
 }

@@ -279,11 +279,24 @@ struct SynchronizingRepository {
 }
 
 impl TaskRepository for SynchronizingRepository {
+    fn load_task_item(
+        &self,
+        id: TaskId,
+    ) -> Result<Option<tracker_application::TaskListItem>, RepositoryError> {
+        tracker_application::TaskRepository::load_task_item(&self.repository, id)
+    }
+
+    fn load_task_catalog(&self) -> Result<Vec<tracker_application::TaskListItem>, RepositoryError> {
+        self.repository.list_task_items().map_err(Into::into)
+    }
+
     fn create_task(&self, task: Task) -> Result<(), RepositoryError> {
         self.repository.create_task(task).map_err(Into::into)
     }
 
-    fn tracker_snapshot(&self) -> Result<tracker_application::TrackerSnapshot, RepositoryError> {
+    fn load_task_tracking_resources(
+        &self,
+    ) -> Result<(Vec<tracker_application::TaskListItem>, Option<Worklog>), RepositoryError> {
         if self.fail_next_active_read.swap(false, Ordering::SeqCst) {
             return Err(RepositoryError::Backend {
                 message: "recovery read failed".to_owned(),
@@ -291,7 +304,7 @@ impl TaskRepository for SynchronizingRepository {
         }
         let snapshot = self
             .repository
-            .tracker_snapshot()
+            .load_task_tracking_resources()
             .map_err(RepositoryError::from)?;
         if self.synchronize_active_read.swap(false, Ordering::SeqCst) {
             self.ready.send(()).map_err(|_| RepositoryError::Backend {
@@ -348,6 +361,17 @@ impl TaskRepository for SynchronizingRepository {
 }
 
 impl ReportRepository for SynchronizingRepository {
+    fn task_list_report_read(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<(Vec<tracker_application::TaskListItem>, ReportRead), RepositoryError> {
+        self.repository
+            .task_list_report_read(start, end, now)
+            .map_err(Into::into)
+    }
+
     fn report_read(
         &self,
         start: DateTime<Utc>,
@@ -420,6 +444,10 @@ impl WorklogRepository for SynchronizingRepository {
 }
 
 impl TrackingRepository for SynchronizingRepository {
+    fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError> {
+        self.repository.active_worklog().map_err(Into::into)
+    }
+
     fn insert_worklog(&self, worklog: &Worklog) -> Result<(), RepositoryError> {
         self.repository.insert_worklog(worklog).map_err(Into::into)
     }

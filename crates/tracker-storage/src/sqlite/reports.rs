@@ -3,18 +3,33 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, Transaction, TransactionBehavior};
-use tracker_application::{ReportRead, ReportRow, TrackerSnapshot};
+use tracker_application::{ReportRead, ReportRow, TaskListItem};
 
 use super::{
     SqliteRepository,
     mapping::{task_from_stored, timestamp_to_us},
     tasks::list_task_items_on,
-    tracking::active_worklog_on,
+    tracking::active_tracking_read_on,
 };
 use crate::StorageError;
 
 impl SqliteRepository {
-    /// Reads the report and tracker snapshot in one SQLite read transaction.
+    /// Reads task-list display resources and totals in one SQLite transaction.
+    pub fn task_list_report_read(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<(Vec<TaskListItem>, ReportRead), StorageError> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Deferred)?;
+        let items = list_task_items_on(&transaction)?;
+        let rows = report_rows_on(&transaction, start, end, now)?;
+        let tracking = active_tracking_read_on(&transaction)?;
+        transaction.commit()?;
+        Ok((items, ReportRead { rows, tracking }))
+    }
+
+    /// Reads report rows and active tracking in one SQLite read transaction.
     pub fn report_read(
         &self,
         start: DateTime<Utc>,
@@ -23,12 +38,9 @@ impl SqliteRepository {
     ) -> Result<ReportRead, StorageError> {
         let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Deferred)?;
         let rows = report_rows_on(&transaction, start, end, now)?;
-        let snapshot = TrackerSnapshot {
-            task_items: list_task_items_on(&transaction)?,
-            active_worklog: active_worklog_on(&transaction)?,
-        };
+        let tracking = active_tracking_read_on(&transaction)?;
         transaction.commit()?;
-        Ok(ReportRead { rows, snapshot })
+        Ok(ReportRead { rows, tracking })
     }
 }
 

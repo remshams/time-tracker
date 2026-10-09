@@ -38,7 +38,7 @@ unsafe extern "C" fn pause_after_report_query(
 }
 
 #[test]
-fn report_snapshot_uses_indexed_latest_work_probes() {
+fn task_list_uses_indexed_latest_work_probes() {
     let repository = repo();
     let plan: Vec<String> = repository
         .connection()
@@ -187,7 +187,16 @@ fn report_adopts_changes_written_by_another_connection() {
 }
 
 #[test]
-fn report_rows_and_tracker_snapshot_use_one_read_version() {
+fn report_rows_and_active_tracking_use_one_read_version() {
+    assert_report_read_is_coherent(false);
+}
+
+#[test]
+fn selected_task_list_report_and_tracking_use_one_read_version() {
+    assert_report_read_is_coherent(true);
+}
+
+fn assert_report_read_is_coherent(include_task_list: bool) {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tracker.db");
     let repository = SqliteRepository::open(&path).unwrap();
@@ -198,7 +207,7 @@ fn report_rows_and_tracker_snapshot_use_one_read_version() {
     let task = named_task(1, "before");
     repository.create_task(task.clone()).unwrap();
     repository
-        .insert_worklog(&Worklog::new(worklog_id(1), task.id(), at(100), Some(at(120))).unwrap())
+        .insert_worklog(&Worklog::new(worklog_id(1), task.id(), at(100), None).unwrap())
         .unwrap();
 
     let (reached_send, reached) = sync_channel(1);
@@ -226,10 +235,23 @@ fn report_rows_and_tracker_snapshot_use_one_read_version() {
         writer
             .rename_task(task.id(), TaskName::new("after").unwrap(), at(300))
             .unwrap();
+        writer
+            .stop_worklog(worklog_id(1), at(100), at(320))
+            .unwrap();
         release_send.send(()).unwrap();
     });
 
-    let read = repository.report_read(at(100), at(130), at(130)).unwrap();
+    let read = if include_task_list {
+        let (items, read) = repository
+            .task_list_report_read(at(100), at(130), at(130))
+            .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].task.name().as_str(), "before");
+        assert_eq!(items[0].latest_work_start, Some(at(100)));
+        read
+    } else {
+        repository.report_read(at(100), at(130), at(130)).unwrap()
+    };
 
     assert_eq!(
         unsafe {
@@ -245,7 +267,11 @@ fn report_rows_and_tracker_snapshot_use_one_read_version() {
     writer.join().unwrap();
     assert!(pause.paused.load(Ordering::SeqCst));
     assert_eq!(read.rows[0].task.name().as_str(), "before");
-    assert_eq!(read.snapshot.task_items[0].task.name().as_str(), "before");
+    assert!(read.tracking.active_worklog.unwrap().is_active());
+    assert_eq!(
+        read.tracking.active_task_item.unwrap().task.name().as_str(),
+        "before"
+    );
     assert_eq!(
         repository
             .find_task(task_id(1))
@@ -283,4 +309,30 @@ fn report_rejects_a_duration_that_exceeds_signed_microseconds() {
         ),
         Err(ApplicationError::ReportDurationOverflow)
     ));
+}
+
+#[test]
+fn report_read_ignores_invalid_metadata_of_tasks_without_report_rows() {
+    let repository = repo();
+    repository.create_task(named_task(1, "reported")).unwrap();
+    repository.create_task(named_task(2, "unrelated")).unwrap();
+    repository
+        .insert_worklog(&Worklog::new(worklog_id(1), task_id(1), at(100), Some(at(120))).unwrap())
+        .unwrap();
+    repository
+        .connection()
+        .execute(
+            "UPDATE tasks SET name = '' WHERE id = ?1",
+            [task_id(2).to_string()],
+        )
+        .unwrap();
+
+    let read = repository.report_read(at(100), at(130), at(130)).unwrap();
+
+    assert_eq!(read.rows.len(), 1);
+    assert_eq!(read.rows[0].task.id(), task_id(1));
+    assert_eq!(read.rows[0].duration, TimeDelta::seconds(20));
+    assert!(read.tracking.active_worklog.is_none());
+    assert!(read.tracking.active_task_item.is_none());
+    assert!(repository.load_task_tracking_resources().is_err());
 }
