@@ -38,7 +38,7 @@ impl AppState {
                 && matches!(state.history_state().map(|state| state.mode()),
                     Some(WorklogHistoryMode::ConfirmDeletion { worklog }) if worklog.id() == target_id);
             let ApplicationOutcome::Worklog(result) = completed.outcome else { unreachable!() };
-            state.sync_from_snapshot(completed.snapshot.items, completed.snapshot.tracking, false);
+
             if !current { return; }
             match result {
                 Ok(_) => {
@@ -74,11 +74,7 @@ impl AppState {
                 let ApplicationOutcome::WorklogPage(result) = completed.outcome else {
                     unreachable!()
                 };
-                state.sync_from_snapshot(
-                    completed.snapshot.items,
-                    completed.snapshot.tracking,
-                    false,
-                );
+
                 if !current {
                     return;
                 }

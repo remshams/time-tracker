@@ -128,7 +128,10 @@ fn render_rows(frame: &mut Frame, area: Rect, list_area: Rect, state: &ReportSta
             .iter()
             .map(|row| {
                 let duration = format_exact(row.duration);
-                let name = text::fit_prefix(row.task.name().as_str(), name_width);
+                let name = text::fit_prefix(
+                    row.task_name.as_deref().unwrap_or("unknown task"),
+                    name_width,
+                );
                 let padding = " ".repeat(name_width.saturating_sub(name.width()));
                 ListItem::new(Line::from(vec![
                     Span::raw(name),
@@ -193,6 +196,35 @@ mod tests {
     use ratatui::style::{Color, Modifier};
     use ratatui::{Terminal, backend::TestBackend};
     use tracker_application::{ReportRow, ReportTotals};
+
+    #[test]
+    fn unresolved_task_labels_keep_their_rows_selection_and_confirmed_total() {
+        use crate::screens::reports::{ReportPresentation, ReportPresentationRow};
+        let task_id = task(1, "Unresolved label").id();
+        let mut state = ReportState::new(Utc::now(), chrono_tz::UTC);
+        state.set_totals(ReportPresentation {
+            rows: vec![ReportPresentationRow {
+                task_id,
+                task_name: None,
+                duration: TimeDelta::minutes(15),
+            }],
+            total: TimeDelta::minutes(15),
+        });
+        assert_eq!(state.selected, Some(task_id));
+        let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();
+        terminal
+            .draw(|frame| render(frame, frame.area(), &state))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("unknown task"), "{text}");
+        assert!(text.contains("Total: 15m 0s"), "{text}");
+    }
 
     #[test]
     fn wide_task_names_keep_durations_in_one_display_column() {

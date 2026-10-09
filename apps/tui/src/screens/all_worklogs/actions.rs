@@ -44,11 +44,6 @@ impl AppState {
                     Ok(page) => {
                         app.shell_mut()
                             .open_all_worklogs(AllWorklogsState::new(page));
-                        app.sync_from_snapshot(
-                            completed.snapshot.items,
-                            completed.snapshot.tracking,
-                            false,
-                        );
                     }
                     Err(error) => app.shell_mut().error(application_error_text(&error)),
                 }
@@ -99,6 +94,7 @@ impl AppState {
                     .task_list_mut()
                     .show(TaskView::Archived, first);
                 self.reload_tasks();
+                self.refresh_task_list();
             }
             C::ShowReports => {
                 self.shell_mut()
@@ -215,11 +211,7 @@ impl AppState {
                 let ApplicationOutcome::GlobalWorklogPage(result) = completed.outcome else {
                     unreachable!("global history request returns a page")
                 };
-                app.sync_from_snapshot(
-                    completed.snapshot.items,
-                    completed.snapshot.tracking,
-                    false,
-                );
+
                 if !current {
                     return;
                 }
@@ -277,11 +269,7 @@ impl AppState {
                 match result {
                     Ok(page) => {
                         app.global_mut().replace(page, keep);
-                        app.sync_from_snapshot(
-                            completed.snapshot.items,
-                            completed.snapshot.tracking,
-                            false,
-                        );
+
                         app.shell_mut().info("Refreshed");
                     }
                     Err(error) => app.shell_mut().error(application_error_text(&error)),
@@ -303,11 +291,7 @@ impl AppState {
                 let ApplicationOutcome::GlobalWorklogPage(result) = completed.outcome else {
                     unreachable!("global history request returns a page")
                 };
-                app.sync_from_snapshot(
-                    completed.snapshot.items,
-                    completed.snapshot.tracking,
-                    false,
-                );
+
                 if !current {
                     return;
                 }
@@ -381,16 +365,6 @@ impl AppState {
                 let ApplicationOutcome::Worklog(result) = completed.outcome else {
                     unreachable!("move request returns a worklog")
                 };
-                if result.is_ok() {
-                    app.replace_items(completed.snapshot.items);
-                    app.sync_tracking_after_history_reload(completed.snapshot.tracking);
-                } else {
-                    app.sync_from_snapshot(
-                        completed.snapshot.items,
-                        completed.snapshot.tracking,
-                        false,
-                    );
-                }
                 if !current {
                     return;
                 }
@@ -440,12 +414,12 @@ mod tests {
 
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use tracker_application::{
-        GlobalWorklogCursor, GlobalWorklogPage, TaskListItem, TrackerSnapshot,
+        ActiveTrackingRead, GlobalWorklogCursor, GlobalWorklogPage, TaskListItem,
     };
     use tracker_domain::{ActiveWorklog, TrackingState, Worklog, WorklogId};
 
     use crate::app::AppState;
-    use crate::application_request::{ApplicationOutcome, ApplicationSnapshot, CompletedRequest};
+    use crate::application_request::{ApplicationOutcome, CompletedRequest};
     use crate::command::Command;
     use crate::screens::{Screen, TaskListCommand};
     use crate::test_support::{TestService, app_in_timezone, app_with_test_clock, at, task};
@@ -469,10 +443,11 @@ mod tests {
     fn page(worklogs: Vec<Worklog>) -> GlobalWorklogPage {
         GlobalWorklogPage {
             worklogs,
-            snapshot: TrackerSnapshot {
-                task_items: Vec::new(),
+            task_items: Vec::new(),
+            tracking: Some(ActiveTrackingRead {
                 active_worklog: None,
-            },
+                active_task_item: None,
+            }),
             next_cursor: None,
         }
     }
@@ -489,22 +464,20 @@ mod tests {
         page: GlobalWorklogPage,
     ) {
         let request = effect.request.clone();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::GlobalWorklogPage(Ok(page)),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
     }
 
     #[test]
     fn repeated_load_older_queues_one_cursor_and_appends_one_page() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let task_id = tracker_domain::TaskId::generate();
         let first = worklog(task_id, 1);
         let cursor = GlobalWorklogCursor {
@@ -526,7 +499,7 @@ mod tests {
 
     #[test]
     fn replaced_page_with_the_same_cursor_discards_a_pending_older_page() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let task_id = tracker_domain::TaskId::generate();
         let first = worklog(task_id, 1);
         let cursor = GlobalWorklogCursor {
@@ -551,7 +524,7 @@ mod tests {
 
     #[test]
     fn older_page_queued_before_refresh_result_is_ignored() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let task_id = tracker_domain::TaskId::generate();
         let first = worklog(task_id, 1);
         let cursor = GlobalWorklogCursor {
@@ -586,7 +559,7 @@ mod tests {
                 latest_work_start: None,
             })
             .collect();
-        let mut state = AppState::load_from_snapshot(items, TrackingState::Idle);
+        let mut state = AppState::load_task_list(items, TrackingState::Idle);
         let entry = worklog(source.id(), 1);
         state
             .shell_mut()
@@ -598,22 +571,20 @@ mod tests {
         state.open_global_move();
         let newer_generation = state.shell().all_worklogs().unwrap().move_draft_generation;
         let request = effect.request.clone();
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::Worklog(Ok(entry.moved_to(destination_id).unwrap())),
-                snapshot: ApplicationSnapshot {
-                    items: vec![source, destination]
-                        .into_iter()
-                        .map(|task| TaskListItem {
-                            task,
-                            latest_work_start: None,
-                        })
-                        .collect(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            vec![source, destination]
+                .into_iter()
+                .map(|task| TaskListItem {
+                    task,
+                    latest_work_start: None,
+                })
+                .collect(),
+            TrackingState::Idle,
         );
         let state = state.shell().all_worklogs().unwrap();
         assert_eq!(state.move_draft_generation, newer_generation);
@@ -623,7 +594,7 @@ mod tests {
 
     #[test]
     fn old_refresh_does_not_replace_a_new_global_session() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let task_id = tracker_domain::TaskId::generate();
         state
             .shell_mut()
@@ -635,16 +606,14 @@ mod tests {
         state
             .shell_mut()
             .open_all_worklogs(AllWorklogsState::new(page(vec![current.clone()])));
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request: ApplicationRequest::AllWorklogs { after: None },
                 outcome: ApplicationOutcome::GlobalWorklogPage(Ok(page(vec![worklog(task_id, 3)]))),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         assert_eq!(
             state.shell().all_worklogs().unwrap().worklogs()[0].id(),
@@ -654,7 +623,7 @@ mod tests {
 
     #[test]
     fn pending_open_does_not_reopen_after_leaving_and_returning_to_tasks() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.open_all_worklogs();
         let effect = state.take_effect().expect("global open request");
         let original_view_generation = state.shell().task_list().view_generation();
@@ -675,7 +644,7 @@ mod tests {
 
     #[test]
     fn pending_open_does_not_reopen_after_switching_task_views() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.open_all_worklogs();
         let effect = state.take_effect().expect("global open request");
         let original_screen_generation = state.shell().screen_generation();
@@ -702,7 +671,7 @@ mod tests {
 
     #[test]
     fn pending_open_from_reports_does_not_override_a_new_period() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.shell_mut().open_reports(chrono::Utc::now());
         state.open_all_worklogs();
         let effect = state.take_effect().expect("global open request");

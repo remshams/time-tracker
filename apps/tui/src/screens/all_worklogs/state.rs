@@ -145,7 +145,7 @@ impl AllWorklogsState {
 
 #[cfg(test)]
 mod tests {
-    use tracker_application::TrackerSnapshot;
+    use tracker_application::ActiveTrackingRead;
     use tracker_domain::{TaskId, WorklogId};
 
     use super::*;
@@ -161,10 +161,11 @@ mod tests {
     fn page(worklogs: Vec<Worklog>) -> GlobalWorklogPage {
         GlobalWorklogPage {
             worklogs,
-            snapshot: TrackerSnapshot {
-                task_items: Vec::new(),
+            task_items: Vec::new(),
+            tracking: Some(ActiveTrackingRead {
                 active_worklog: None,
-            },
+                active_task_item: None,
+            }),
             next_cursor: None,
         }
     }

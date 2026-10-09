@@ -4,7 +4,7 @@ mod state;
 pub mod view;
 
 pub(crate) use keymap::{footer_hints, map};
-pub(crate) use state::DateShift;
+pub(crate) use state::{DateShift, ReportPresentation, ReportPresentationRow};
 pub use state::{ReportFocus, ReportMode, ReportPreset, ReportState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
