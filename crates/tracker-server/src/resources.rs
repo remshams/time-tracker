@@ -87,28 +87,33 @@ pub(super) struct PageQuery {
     after_revision: Option<i64>,
 }
 
+fn scoped_worklog_cursor(
+    query: PageQuery,
+    task: Option<TaskId>,
+) -> Result<Option<GlobalWorklogCursor>, ApiError> {
+    let continuation_scope = query.after_task_id.as_deref().map(task_id).transpose()?;
+    match (query.after_start, query.after_id, query.after_revision) {
+        (None, None, None) if continuation_scope.is_none() => Ok(None),
+        (Some(start), Some(id), Some(revision)) if revision >= 0 && task == continuation_scope => {
+            Ok(Some(GlobalWorklogCursor {
+                start,
+                id: worklog_id(&id)?,
+                revision,
+            }))
+        }
+        _ => Err(ApiError::invalid(
+            "Incomplete or mismatched worklog cursor scope",
+        )),
+    }
+}
+
 pub(super) async fn all_worklogs(
     State(shared): State<Shared>,
     input: Result<Query<PageQuery>, QueryRejection>,
 ) -> ApiResult<WorklogPageDto> {
     let query = query_payload(input)?;
     let task = query.task_id.as_deref().map(task_id).transpose()?;
-    let continuation_scope = query.after_task_id.as_deref().map(task_id).transpose()?;
-    let cursor = match (query.after_start, query.after_id, query.after_revision) {
-        (None, None, None) if continuation_scope.is_none() => None,
-        (Some(start), Some(id), Some(revision)) if revision >= 0 && task == continuation_scope => {
-            Some(GlobalWorklogCursor {
-                start,
-                id: worklog_id(&id)?,
-                revision,
-            })
-        }
-        _ => {
-            return Err(ApiError::invalid(
-                "Incomplete or mismatched worklog cursor scope",
-            ));
-        }
-    };
+    let cursor = scoped_worklog_cursor(query, task)?;
     let mut core = lock(&shared)?;
     let page = match task {
         Some(id) => {
