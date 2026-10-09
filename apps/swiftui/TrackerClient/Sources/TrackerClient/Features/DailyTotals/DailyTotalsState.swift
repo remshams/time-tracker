@@ -89,21 +89,27 @@ final class DailyTotalsState {
         }
         var rowIDs = Set<String>()
         for row in report.rows {
-            guard !row.taskId.isEmpty, row.durationMicroseconds >= 0,
-                rowIDs.insert(row.taskId).inserted
+            guard validTotal(row), rowIDs.insert(row.taskId).inserted
             else {
                 throw BridgeFailure(
                     message: "The report contains invalid task totals.", kind: "protocol", requiresRefresh: true)
             }
         }
         if let active = tracking?.value {
-            guard !active.id.isEmpty, !active.taskId.isEmpty, active.end == nil, timestamp(active.start) != nil
-            else {
+            guard validRunningWorklog(active) else {
                 throw BridgeFailure(
                     message: "The report contains invalid running worklog data.", kind: "protocol",
                     requiresRefresh: true)
             }
         }
+    }
+
+    private func validTotal(_ row: TaskReportTotal) -> Bool {
+        !row.taskId.isEmpty && row.durationMicroseconds >= 0
+    }
+
+    private func validRunningWorklog(_ worklog: WorklogItem) -> Bool {
+        !worklog.id.isEmpty && !worklog.taskId.isEmpty && worklog.end == nil && timestamp(worklog.start) != nil
     }
 
     func fail(_ failure: Error, clock: any TrackerClock) {
