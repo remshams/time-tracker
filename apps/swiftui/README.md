@@ -276,6 +276,8 @@ The Active and Archived tabs remember their selections. Worklogs load 50 at a ti
 
 ## Check on a Mac
 
+Native UI tests are grouped under `Tests/UITests/App`, `Features`, and `Infrastructure`, matching application ownership. Feature helpers live beside their suites; `Support` contains shared fixtures, processes, proxy controls, and assertions. Portable tests use the same convention inside `TrackerClient/Tests/TrackerClientTests`. The [native coverage map](e2e-coverage.md) links each workflow to its suite and records the remaining dedicated-Mac checks.
+
 1. Build and run in Xcode. Check readable text in Light and Dark appearance and at the minimum window size.
 2. Test and connect to the tracker server on tabit. Confirm its tasks and timer appear. Quit and reopen to confirm the connection setting persists.
 3. Start a task, switch to another, then stop it. Confirm history and running state from another client. Change tracking in that client before clicking Stop in the Mac app and confirm the new timer is preserved.
