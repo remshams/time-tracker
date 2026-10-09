@@ -47,7 +47,7 @@ final class WorklogCorrectionState {
     private(set) var pending = false
 
     var presentation: WorklogCorrectionPresentation {
-        let changed = original.map { replacementStart != $0.start || replacementEnd != $0.end } ?? false
+        let changed = original.map { hasChangedTimes(from: $0) } ?? false
         return WorklogCorrectionPresentation(
             isPresented: isPresented, taskName: taskName, original: original,
             start: timestamp(replacementStart) ?? start,
@@ -78,6 +78,18 @@ final class WorklogCorrectionState {
         guard let end else { return nil }
         if let value = original?.end, let date = timestamp(value), minute(end) == minute(date) { return value }
         return commandTimestamp(minute(end))
+    }
+
+    private func hasChangedTimes(from original: WorklogItem) -> Bool {
+        replacementStart != original.start || replacementEnd != original.end
+    }
+
+    private static func isNotInFuture(_ value: Date, now: Date) -> Bool {
+        value <= now
+    }
+
+    private static func isOrderedInterval(start: Date, end: Date) -> Bool {
+        end >= start
     }
 
     func open(_ worklog: WorklogItem, taskName: String, timezone: TimeZone = .current, historyPageLimit: Int = 2) {
@@ -111,16 +123,17 @@ final class WorklogCorrectionState {
     func submit(at date: Date) -> Bool {
         guard presentation.canSubmit, let original else { return false }
         if intent == nil {
-            guard let replacementDate = timestamp(replacementStart), replacementDate <= date else {
+            guard let replacementDate = timestamp(replacementStart), Self.isNotInFuture(replacementDate, now: date)
+            else {
                 error = "Start must not be in the future."
                 return false
             }
             if let replacementEnd, let endDate = timestamp(replacementEnd) {
-                guard endDate >= replacementDate else {
+                guard Self.isOrderedInterval(start: replacementDate, end: endDate) else {
                     error = "End must not be before Start."
                     return false
                 }
-                guard endDate <= date else {
+                guard Self.isNotInFuture(endDate, now: date) else {
                     error = "End must not be in the future."
                     return false
                 }
