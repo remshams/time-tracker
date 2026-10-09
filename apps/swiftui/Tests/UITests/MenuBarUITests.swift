@@ -231,6 +231,9 @@ final class ServerMenuBarUITests: MenuBarUITests {
             let copyName = menuTask(first).menuItems["Copy task name"]
             waitUntil("The captured Copy action is reachable") { copyName.exists && copyName.isHittable }
             copyName.click()
+            waitUntil("The captured task name reaches the clipboard") {
+                NSPasteboard.general.string(forType: .string) == first.name
+            }
             XCTAssertEqual(NSPasteboard.general.string(forType: .string), first.name)
             openStatusMenu()
             menuTask(first).hover()
