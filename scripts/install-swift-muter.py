@@ -97,6 +97,49 @@ def patch_source(source: Path) -> None:
             raise ValueError("Pinned Muter source no longer matches the ternary expression patch")
         contents = contents.replace(original, replacement)
     ternary.write_text(contents, encoding="utf-8")
+    patch_flag_lookups(source)
+
+
+def patch_flag_lookups(source: Path) -> None:
+    # Copying the entire environment for each flag check makes instrumented
+    # async loops much slower. getenv checks the same flag without that copy.
+    switch = source / "Sources/muterCore/Rewriters/MutationSwitch.swift"
+    contents = switch.read_text(encoding="utf-8")
+    marker = "    private static func buildSchemataCondition(\n"
+    if contents.count(marker) != 1 or contents.count('baseName: .identifier("environment")') != 1:
+        raise ValueError("Pinned Muter source no longer matches the environment lookup patch")
+    contents = contents.split(marker)[0] + (
+        "    private static func buildSchemataCondition(withId id: String) -> ConditionElementListSyntax {\n"
+        '        let expression = Parser.parse(source: "getenv(\\(id.debugDescription)) != nil")\n'
+        "            .statements.first!.item.as(ExprSyntax.self)!\n"
+        "        return ConditionElementListSyntax([\n"
+        "            ConditionElementSyntax(condition: .expression(expression))\n"
+        "        ])\n"
+        "    }\n"
+        "}\n"
+    )
+    switch.write_text(contents.replace("import SwiftSyntax\n", "import SwiftSyntax\nimport SwiftParser\n", 1),
+                      encoding="utf-8")
+    imports = source / "Sources/muterCore/Rewriters/AddImportRewriter.swift"
+    contents = imports.read_text(encoding="utf-8")
+    marker = "    private func insertImportFoundation(\n"
+    ending = "\n}\n\nfinal class AddImportVisitior"
+    if contents.count(marker) != 1 or contents.count(ending) != 1:
+        raise ValueError("Pinned Muter source no longer matches the Foundation import patch")
+    before, remaining = contents.split(marker)
+    _, after = remaining.split(ending)
+    replacement = (
+        "    private func insertImportFoundation(in node: CodeBlockItemListSyntax) -> CodeBlockItemListSyntax {\n"
+        '        let imports = Parser.parse(source: "import Foundation").statements\n'
+        "            .withTrailingTrivia(.newlines(2))\n"
+        "        return CodeBlockItemListSyntax(Array(imports) + Array(node))\n"
+        "    }\n"
+    )
+    contents = before + replacement + ending + after
+    contents = contents.replace("import SwiftSyntax\n", "import SwiftSyntax\nimport SwiftParser\n", 1)
+    contents = contents.replace("if isImportingProcessInfo(node) || isImportingFoundation(node)",
+                                "if isImportingFoundation(node)")
+    imports.write_text(contents, encoding="utf-8")
 
 
 def install(swift: str, jobs: int) -> Path:

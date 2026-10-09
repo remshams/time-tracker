@@ -287,6 +287,11 @@ class SwiftMutationTests(unittest.TestCase):
             with self.subTest(timeout=timeout), self.assertRaisesRegex(mutations.MutationError, "positive, finite"):
                 mutations.collect("swift", "muter", timeout=timeout)
 
+    def test_invalid_worker_count_fails_before_spawning(self) -> None:
+        for workers in (0, -1):
+            with self.subTest(workers=workers), self.assertRaisesRegex(mutations.MutationError, "worker count"):
+                mutations.collect("swift", "muter", test_workers=workers)
+
     def assert_child_stopped(self, marker: Path) -> None:
         self.assertTrue(marker.exists(), "The subprocess did not reach its child-process fixture")
         pid = int(marker.read_text(encoding="utf-8"))
