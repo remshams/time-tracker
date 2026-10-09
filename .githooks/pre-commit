@@ -1,3 +1,5 @@
 #!/bin/sh
-# Fail the commit if any Rust file is not formatted.
+set -eu
+
 cargo fmt --all --check
+python3 scripts/swift-style.py --format-check --staged
