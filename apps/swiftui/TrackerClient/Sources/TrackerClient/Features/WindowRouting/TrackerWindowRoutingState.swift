@@ -20,9 +20,13 @@ public struct TrackerWindowRoutingState: Sendable {
     }
 
     public mutating func disappeared(_ id: UUID) {
-        windowIDs.removeAll { $0 == id }
+        windowIDs.removeAll { Self.matchesWindowID($0, id) }
         activeWindowIDs.remove(id)
         if preferredWindowID == id { preferredWindowID = nil }
+    }
+
+    private static func matchesWindowID(_ windowID: UUID, _ removedID: UUID) -> Bool {
+        windowID == removedID
     }
 
     public mutating func setActive(_ id: UUID, isActive: Bool) {
