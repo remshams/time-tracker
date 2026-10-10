@@ -1,4 +1,4 @@
-//! Active tracking persistence and tracking snapshots.
+//! Active tracking persistence and transactional resource reads.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};

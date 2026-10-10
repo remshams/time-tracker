@@ -3,7 +3,7 @@
 use super::*;
 
 #[test]
-fn moving_a_completed_worklog_preserves_it_and_returns_every_affected_snapshot_value() {
+fn moving_a_completed_worklog_preserves_it_and_returns_every_affected_adoption_value() {
     let repository = repo();
     let source = named_task(1, "source");
     let destination = named_task(2, "destination");

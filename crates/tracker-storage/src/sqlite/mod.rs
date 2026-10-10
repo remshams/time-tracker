@@ -306,20 +306,20 @@ mod unit_tests {
 
         let page = repository.worklog_page(task.id(), None).unwrap();
 
-        assert_eq!(page.snapshot.as_ref().unwrap().active_worklog, Some(active));
+        assert_eq!(page.adoption.as_ref().unwrap().active_worklog, Some(active));
         assert_eq!(
-            page.snapshot
+            page.adoption
                 .as_ref()
                 .unwrap()
                 .requested_task_latest_work_start,
             Some(DateTime::from_timestamp(200, 0).unwrap())
         );
         assert_eq!(
-            page.snapshot
+            page.adoption
                 .as_ref()
                 .unwrap()
                 .active_task_latest_work_start,
-            page.snapshot
+            page.adoption
                 .as_ref()
                 .unwrap()
                 .requested_task_latest_work_start

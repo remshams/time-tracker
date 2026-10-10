@@ -125,16 +125,16 @@ fn an_active_worklog_is_part_of_a_history_page() {
     assert_eq!(page.worklogs[0].end(), None);
     assert_eq!(page.worklogs[1].id(), stopped.id());
     assert_eq!(page.next_cursor, None);
-    assert_eq!(page.snapshot.as_ref().unwrap().active_worklog, Some(active));
+    assert_eq!(page.adoption.as_ref().unwrap().active_worklog, Some(active));
     assert_eq!(
-        page.snapshot
+        page.adoption
             .as_ref()
             .unwrap()
             .requested_task_latest_work_start,
         Some(at(200))
     );
     assert_eq!(
-        page.snapshot
+        page.adoption
             .as_ref()
             .unwrap()
             .active_task_latest_work_start,
@@ -195,12 +195,12 @@ fn a_two_connection_continuation_adopts_a_switched_active_worklog_without_cursor
     let continuation = first.worklog_page(requested.id(), Some(&cursor)).unwrap();
     assert_eq!(continuation.worklogs.len(), 1);
     assert_eq!(
-        continuation.snapshot.as_ref().unwrap().active_worklog,
+        continuation.adoption.as_ref().unwrap().active_worklog,
         Some(replacement)
     );
     assert_eq!(
         continuation
-            .snapshot
+            .adoption
             .as_ref()
             .unwrap()
             .active_task_latest_work_start,
@@ -208,7 +208,7 @@ fn a_two_connection_continuation_adopts_a_switched_active_worklog_without_cursor
     );
     assert_eq!(
         continuation
-            .snapshot
+            .adoption
             .as_ref()
             .unwrap()
             .requested_task_latest_work_start,
@@ -257,15 +257,15 @@ fn history_page_reads_use_indexed_bounded_rows_and_two_task_aggregates() {
     let page = repository.worklog_page(requested.id(), None).unwrap();
     assert_eq!(page.worklogs.len(), WORKLOG_PAGE_SIZE);
     assert_eq!(
-        page.snapshot
+        page.adoption
             .as_ref()
             .unwrap()
             .requested_task_latest_work_start,
         Some(at(510))
     );
-    assert_eq!(page.snapshot.as_ref().unwrap().active_worklog, Some(active));
+    assert_eq!(page.adoption.as_ref().unwrap().active_worklog, Some(active));
     assert_eq!(
-        page.snapshot
+        page.adoption
             .as_ref()
             .unwrap()
             .active_task_latest_work_start,
