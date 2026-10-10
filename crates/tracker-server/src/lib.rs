@@ -534,7 +534,7 @@ async fn delete_worklog(
 }
 
 /// Creates a router backed by one SQLite database. Each handler serializes access
-/// to the application service, including reads that refresh its snapshot.
+/// to the application service, including reads that refresh its resource caches.
 pub fn router_for_database(path: &Path) -> Result<Router, Box<dyn Error + Send + Sync>> {
     let database_lock = lock_database(path)?;
     let repository = SqliteRepository::open(path)?;
