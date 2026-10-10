@@ -205,7 +205,7 @@ final class TrackingTests: XCTestCase {
     }
 
     @MainActor
-    func testFailedWriteConfirmsSnapshotBeforeEnablingAnotherCommand() async throws {
+    func testFailedWriteConfirmsResourcesBeforeEnablingAnotherCommand() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
@@ -228,7 +228,7 @@ final class TrackingTests: XCTestCase {
     }
 
     @MainActor
-    func testFailedReconciliationRetainsSnapshotAndDisablesWrites() async throws {
+    func testFailedReconciliationRetainsResourcesAndDisablesWrites() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
