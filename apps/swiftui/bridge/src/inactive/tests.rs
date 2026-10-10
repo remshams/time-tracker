@@ -256,7 +256,7 @@ fn remote_preview_and_archive_use_server_candidates_and_captured_revision() {
             .iter()
             .all(|task| task["id"] != id.to_string())
     );
-    // Polling a snapshot does not replace the retained preview's revision.
+    // Polling resources does not replace the retained preview's revision.
     bridge.application.refresh_resources(3).unwrap();
     let result = archive(&mut bridge, 7, as_of);
     assert_eq!(result["data"]["archivedCount"], 2, "{result}");

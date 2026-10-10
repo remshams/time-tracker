@@ -418,7 +418,7 @@ fn remote_moves_refresh_revision_keep_original_guards_and_candidates_never_use_h
 }
 
 fn mock_server(
-    snapshot: (tracker_protocol::TasksDto, tracker_protocol::TrackingDto),
+    resources: (tracker_protocol::TasksDto, tracker_protocol::TrackingDto),
     original: &Worklog,
     reply: Value,
 ) -> report_tests::Server {
@@ -426,7 +426,7 @@ fn mock_server(
         Json, Router,
         routing::{get, patch},
     };
-    let state = std::sync::Arc::new(std::sync::Mutex::new(snapshot));
+    let state = std::sync::Arc::new(std::sync::Mutex::new(resources));
     let write_state = state.clone();
     let router = Router::new()
         .route(
@@ -456,17 +456,17 @@ fn mock_server(
                         && let tracker_protocol::MutationResultDto::Worklog(worklog) =
                             receipt.result
                     {
-                        let mut snapshot = state.lock().unwrap();
-                        if snapshot
+                        let mut resources = state.lock().unwrap();
+                        if resources
                             .1
                             .active_worklog
                             .as_ref()
                             .is_some_and(|active| active.id == worklog.id)
                         {
-                            snapshot.1.active_worklog = worklog.end.is_none().then_some(worklog);
+                            resources.1.active_worklog = worklog.end.is_none().then_some(worklog);
                         }
-                        snapshot.0.revision = receipt.applied_revision;
-                        snapshot.1.revision = snapshot.0.revision.clone();
+                        resources.0.revision = receipt.applied_revision;
+                        resources.1.revision = resources.0.revision.clone();
                     }
                     Json(reply)
                 }
@@ -556,7 +556,7 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
     let mut writer = open_fixture(&directory.path().join("payload.db")).unwrap();
     let tasks = writer.application.tasks(TaskOrdering::default());
     let original = record(&mut writer, tasks[0].task.id(), 100, Some(200));
-    let snapshot = report_tests::resource_dtos(
+    let resources = report_tests::resource_dtos(
         writer.application.tasks(TaskOrdering::default()),
         None,
         "42".into(),
@@ -601,7 +601,7 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
     ] {
         let received = Arc::new(Mutex::new(None));
         let captured = received.clone();
-        let snapshot = snapshot.clone();
+        let resources = resources.clone();
         let router = Router::new()
             .route(
                 "/v1/health",
@@ -613,7 +613,7 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
                 }),
             )
             .merge(report_tests::resource_router(
-                snapshot,
+                resources,
                 vec![tracker_protocol::WorklogDto::from(&original)],
             ))
             .route(
@@ -684,7 +684,7 @@ fn remote_move_preflight_failure_is_certain_and_does_not_write() {
 }
 
 #[test]
-fn remote_move_classifies_archived_and_missing_destination_from_recovered_snapshot() {
+fn remote_move_classifies_archived_and_missing_destination_from_recovered_resources() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("destinations.db");
     let mut writer = open_fixture(&path).unwrap();
@@ -724,13 +724,13 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
     let mut writer = open_fixture(&directory.path().join("recovery.db")).unwrap();
     let tasks = writer.application.tasks(TaskOrdering::default());
     let original = record(&mut writer, tasks[0].task.id(), 100, Some(200));
-    let snapshot = report_tests::resource_dtos(
+    let resources = report_tests::resource_dtos(
         writer.application.tasks(TaskOrdering::default()),
         None,
         "42".into(),
     );
     let reads = Arc::new(AtomicUsize::new(0));
-    let task_resources = snapshot.0.tasks.clone();
+    let task_resources = resources.0.tasks.clone();
     let original_dto = tracker_protocol::WorklogDto::from(&original);
     let router = Router::new()
         .route(
@@ -764,7 +764,7 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
             "/v1/tasks",
             get(move || {
                 let fail = reads.fetch_add(1, Ordering::SeqCst) > 0;
-                let snapshot = snapshot.clone();
+                let resources = resources.clone();
                 async move {
                     if fail {
                         (
@@ -777,8 +777,8 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
                             .into_response()
                     } else {
                         Json(tracker_protocol::TasksDto {
-                            tasks: snapshot.0.tasks.into_iter().collect(),
-                            revision: snapshot.0.revision,
+                            tasks: resources.0.tasks.into_iter().collect(),
+                            revision: resources.0.revision,
                         })
                         .into_response()
                     }

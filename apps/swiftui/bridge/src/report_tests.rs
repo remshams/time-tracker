@@ -583,7 +583,7 @@ fn remote_report_failure_retains_resource_caches_until_an_explicit_refresh() {
         None,
         "42".into(),
     );
-    let snapshots = Arc::new(AtomicUsize::new(0));
+    let task_reads = Arc::new(AtomicUsize::new(0));
     let router = Router::new()
         .route(
             "/v1/health",
@@ -597,7 +597,7 @@ fn remote_report_failure_retains_resource_caches_until_an_explicit_refresh() {
         .route(
             "/v1/tasks",
             get(move || {
-                let snapshot = if snapshots.fetch_add(1, Ordering::SeqCst) == 0 {
+                let resources = if task_reads.fetch_add(1, Ordering::SeqCst) == 0 {
                     (
                         TasksDto {
                             tasks: vec![],
@@ -613,8 +613,8 @@ fn remote_report_failure_retains_resource_caches_until_an_explicit_refresh() {
                 };
                 async move {
                     Json(TasksDto {
-                        tasks: snapshot.0.tasks.into_iter().collect(),
-                        revision: snapshot.0.revision,
+                        tasks: resources.0.tasks.into_iter().collect(),
+                        revision: resources.0.revision,
                     })
                 }
             }),

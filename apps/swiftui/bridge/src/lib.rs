@@ -1338,7 +1338,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_exposes_explicit_tasks_in_the_swift_schema() {
+    fn task_resources_expose_explicit_tasks_in_the_swift_schema() {
         let directory = tempfile::tempdir().unwrap();
         let bridge = open_fixture(&directory.path().join("tt.db")).unwrap();
 

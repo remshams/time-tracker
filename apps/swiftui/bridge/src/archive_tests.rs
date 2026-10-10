@@ -242,15 +242,15 @@ fn mock_server(
                             serde_json::from_value::<tracker_protocol::MutationDto>(reply.clone())
                             && let tracker_protocol::MutationResultDto::Task(task) = receipt.result
                         {
-                            let mut snapshot = state.lock().unwrap();
+                            let mut resources = state.lock().unwrap();
                             if let Some(item) =
-                                snapshot.0.tasks.iter_mut().find(|item| item.id == task.id)
+                                resources.0.tasks.iter_mut().find(|item| item.id == task.id)
                             {
                                 *item = task;
                             }
                             if !receipt.applied_revision.is_empty() {
-                                snapshot.0.revision = receipt.applied_revision;
-                                snapshot.1.revision = snapshot.0.revision.clone();
+                                resources.0.revision = receipt.applied_revision;
+                                resources.1.revision = resources.0.revision.clone();
                             }
                         }
                         Json(reply)
