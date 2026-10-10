@@ -218,9 +218,9 @@ impl CompletedRequest {
                 Some(task_id)
                     .into_iter()
                     .chain(
-                        page.snapshot
+                        page.adoption
                             .as_ref()
-                            .and_then(|snapshot| snapshot.active_worklog.as_ref())
+                            .and_then(|adoption| adoption.active_worklog.as_ref())
                             .map(Worklog::task_id),
                     )
                     .collect()
@@ -1364,7 +1364,7 @@ pub(crate) mod remote_resource_tests {
             panic!("task history must load with its independently resolved label");
         };
         assert!(page.worklogs.is_empty());
-        assert!(page.snapshot.is_none());
+        assert!(page.adoption.is_none());
         let resolved = application.task_item(task_id).unwrap().clone();
 
         state.publish_request_resources(&completed, vec![resolved], None);
