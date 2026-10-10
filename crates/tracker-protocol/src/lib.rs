@@ -3,8 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tracker_application::{
-    GlobalWorklogCursor, GlobalWorklogPage, ReportTotals, TaskListItem, TrackerSnapshot,
-    WorklogCursor, WorklogPage,
+    GlobalWorklogCursor, GlobalWorklogPage, ReportTotals, TaskListItem, WorklogCursor, WorklogPage,
 };
 use tracker_domain::{Task, TaskId, Worklog, WorklogId};
 
@@ -111,25 +110,6 @@ impl From<&TaskListItem> for TaskItemDto {
         Self {
             task: TaskDto::from(&item.task),
             latest_work_start: item.latest_work_start,
-        }
-    }
-}
-
-/// A client-side composition of task and tracking resources.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct SnapshotDto {
-    pub task_items: Vec<TaskItemDto>,
-    pub active_worklog: Option<WorklogDto>,
-    pub revision: String,
-}
-
-impl SnapshotDto {
-    pub fn from_snapshot(snapshot: &TrackerSnapshot, revision: String) -> Self {
-        Self {
-            task_items: snapshot.task_items.iter().map(TaskItemDto::from).collect(),
-            active_worklog: snapshot.active_worklog.as_ref().map(WorklogDto::from),
-            revision,
         }
     }
 }

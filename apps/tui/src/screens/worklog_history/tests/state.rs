@@ -34,12 +34,12 @@ fn history_owns_the_exact_task_list_state_it_will_restore() {
 }
 
 #[test]
-fn history_keeps_task_navigation_after_its_read_changes_membership() {
+fn history_read_keeps_unrelated_tasks_until_returning_to_the_task_list() {
     let alpha = task(1, "alpha");
     let beta = task(2, "beta");
     let gamma = task(3, "gamma");
     let mut service = TestService::with_tasks(vec![alpha, beta.clone(), gamma.clone()]);
-    service.tasks_after_next_worklog_read = Some(vec![beta.clone(), gamma]);
+    service.tasks_after_next_worklog_read = Some(vec![beta.clone(), gamma.clone()]);
     service.worklog_pages = vec![Ok(page(vec![history_worklog(10, beta.id(), 100)], None))];
     let mut app = App::load(service);
     app.handle(Command::TaskList(TaskListCommand::MoveDown));
@@ -54,13 +54,13 @@ fn history_keeps_task_navigation_after_its_read_changes_membership() {
     assert_eq!(app.app_view().screen(), Screen::WorklogHistory);
     assert_eq!(
         app.app_view().tasks().len(),
-        2,
-        "the history read removed alpha"
+        3,
+        "the history read leaves unrelated task metadata unchanged"
     );
     assert_eq!(
         app.app_view().selected(),
-        Some(0),
-        "selection followed beta's stable id"
+        Some(1),
+        "selection remains on beta's stable id"
     );
     assert_eq!(
         app.app_view().tasks()[app.app_view().selected().unwrap()].id(),
@@ -81,6 +81,15 @@ fn history_keeps_task_navigation_after_its_read_changes_membership() {
         ScreenState::TaskList(_)
     ));
     assert_eq!(app.app_view().task_list(), &expected);
+    assert_eq!(
+        app.app_view()
+            .tasks()
+            .iter()
+            .map(|task| task.id())
+            .collect::<Vec<_>>(),
+        vec![beta.id(), gamma.id()],
+        "returning to the task list publishes the changed catalog"
+    );
     assert_eq!(
         app.app_view().tasks()[app.app_view().selected().unwrap()].id(),
         beta.id()

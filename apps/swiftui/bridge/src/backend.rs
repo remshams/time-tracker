@@ -2,14 +2,14 @@ use chrono::{DateTime, Utc};
 use tokio::runtime::{Builder, Runtime};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ApplicationFailureSource, ClearActiveTaskOutcome,
-    InactiveTaskOperations, MoveCandidate, ReportQueries, ReportTotals, SetActiveTaskOutcome,
-    TaskListItem, TaskOperations, TaskOrdering, TaskQueries, TrackerApplication,
-    TrackingOperations, WorklogCursor, WorklogOperations, WorklogPage, WorklogQueries,
+    InactiveTaskOperations, MoveCandidate, ReportQueries, SetActiveTaskOutcome, TaskListItem,
+    TaskOperations, TaskOrdering, TaskQueries, TrackerApplication, TrackingOperations,
+    WorklogCursor, WorklogOperations, WorklogPage, WorklogQueries,
 };
 use tracker_domain::{
     InactivityPeriod, Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes,
 };
-use tracker_remote::{InactiveTaskPreviewDto, RemoteApplication, RemoteError};
+use tracker_remote::{InactiveTaskPreviewDto, RemoteApplication, RemoteError, ResourceSelection};
 use tracker_storage::SqliteRepository;
 
 pub(crate) enum Backend {
@@ -133,6 +133,7 @@ impl Backend {
                         .application
                         .archive_inactive_tasks_with_period(&preview),
                 );
+                remote.record_write_completion();
                 result.map_err(|error| remote.operation_error(error, true))
             }
             _ => Err("Archive preview does not match the current data source"
@@ -171,13 +172,61 @@ impl Backend {
         }
     }
 
-    pub fn resource_revisions(&self) -> (Option<String>, Option<String>) {
+    pub fn task_observation(&self) -> Option<(Vec<TaskListItem>, Option<String>)> {
         match self {
-            Self::Local(_) => (None, None),
-            Self::Remote(remote) => (
-                Some(remote.application.task_revision().to_owned()),
-                Some(remote.application.tracking_revision().to_owned()),
-            ),
+            Self::Local(application) => Some((application.tasks(TaskOrdering::default()), None)),
+            Self::Remote(remote) => remote.application.task_observation().map(|observation| {
+                (
+                    observation.value.clone(),
+                    Some(observation.revision.clone()),
+                )
+            }),
+        }
+    }
+
+    pub fn tracking_observation(&self) -> Option<(TrackingState, Option<String>)> {
+        match self {
+            Self::Local(application) => Some((application.current_tracking().clone(), None)),
+            Self::Remote(remote) => remote
+                .application
+                .tracking_observation()
+                .map(|observation| {
+                    (
+                        observation.value.clone(),
+                        Some(observation.revision.clone()),
+                    )
+                }),
+        }
+    }
+
+    pub fn command_receipt(&self) -> Option<serde_json::Value> {
+        match self {
+            Self::Local(_) => None,
+            Self::Remote(remote) => remote.application.last_command_receipt().map(|receipt| {
+                serde_json::json!({ "requestId": receipt.request_id,
+                    "appliedRevision": receipt.applied_revision, "replayed": receipt.replayed })
+            }),
+        }
+    }
+
+    pub fn refresh_resources(&mut self, selection: u32) -> Result<(), BridgeError> {
+        let selection = resource_selection(selection)?;
+        match self {
+            Self::Local(application) => refresh_local_resources(application, selection),
+            Self::Remote(remote) => remote.refresh_resources(selection),
+        }
+    }
+
+    pub fn refresh_totals(
+        &mut self,
+        include_tasks: bool,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<super::ReportJson, BridgeError> {
+        match self {
+            Self::Local(application) => local_totals(application, include_tasks, start, end, now),
+            Self::Remote(remote) => remote.refresh_totals(include_tasks, start, end, now),
         }
     }
 
@@ -188,8 +237,10 @@ impl Backend {
         now: DateTime<Utc>,
     ) -> Result<ReportRows, BridgeError> {
         match self {
-            Self::Local(_) => {
-                let totals = self.report_totals(start, end, now)?;
+            Self::Local(application) => {
+                let totals = application
+                    .report_totals(start, end, now)
+                    .map_err(local_error)?;
                 let rows = totals
                     .rows
                     .into_iter()
@@ -209,29 +260,10 @@ impl Backend {
                 Ok((rows, None, now))
             }
             Self::Remote(remote) => {
-                let mut report = remote
+                let report = remote
                     .runtime
                     .block_on(remote.application.task_totals(start, end, now))
                     .map_err(|error| remote.operation_error(error, false))?;
-                // The sidebar and timer explicitly request their resources independently of totals.
-                if remote
-                    .runtime
-                    .block_on(remote.application.refresh())
-                    .is_ok()
-                {
-                    remote.requires_refresh = false;
-                    if remote.application.tracking_revision() != report.revision {
-                        // Reconcile once. Continued writes leave reported totals without projection.
-                        if let Ok(reconciled) = remote
-                            .runtime
-                            .block_on(remote.application.task_totals(start, end, now))
-                        {
-                            report = reconciled;
-                        }
-                    }
-                } else {
-                    remote.requires_refresh = true;
-                }
                 let rows = report
                     .rows
                     .into_iter()
@@ -245,6 +277,7 @@ impl Backend {
         }
     }
 
+    #[cfg(test)]
     pub fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
         match self {
             Self::Local(application) => application.tasks(ordering),
@@ -256,29 +289,6 @@ impl Backend {
         match self {
             Self::Local(application) => application.current_tracking(),
             Self::Remote(remote) => remote.application.current_tracking(),
-        }
-    }
-
-    pub fn refresh(&mut self) -> Result<(), BridgeError> {
-        match self {
-            Self::Local(application) => application
-                .refresh_authoritative_state()
-                .map_err(local_error),
-            Self::Remote(remote) => match remote.runtime.block_on(remote.application.refresh()) {
-                Ok(()) => {
-                    remote.requires_refresh = false;
-                    Ok(())
-                }
-                Err(error) => {
-                    remote.requires_refresh = true;
-                    Err(BridgeError {
-                        message: error.to_string(),
-                        kind: remote_error_kind(&error),
-                        uncertain: false,
-                        requires_refresh: true,
-                    })
-                }
-            },
         }
     }
 
@@ -296,6 +306,7 @@ impl Backend {
                 let result = remote
                     .runtime
                     .block_on(remote.application.set_active_task(task_id, occurred_at));
+                remote.record_write_completion();
                 result.map_err(|error| remote.operation_error(error, true))
             }
         }
@@ -315,6 +326,7 @@ impl Backend {
                 let result = remote
                     .runtime
                     .block_on(remote.application.create_task(name, occurred_at));
+                remote.record_write_completion();
                 result.map_err(|error| remote.operation_error(error, true))
             }
         }
@@ -337,6 +349,7 @@ impl Backend {
                     name,
                     occurred_at,
                 ));
+                remote.record_write_completion();
                 result.map_err(|error| remote.operation_error(error, true))
             }
         }
@@ -358,6 +371,7 @@ impl Backend {
                         .application
                         .clear_active_task(worklog_id, occurred_at),
                 );
+                remote.record_write_completion();
                 result.map_err(|error| remote.operation_error(error, true))
             }
         }
@@ -381,9 +395,7 @@ impl Backend {
                     replacement,
                     occurred_at,
                 ));
-                if result.is_ok() {
-                    remote.requires_refresh = false;
-                }
+                remote.record_write_completion();
                 result.map_err(|error| {
                     let kind = correction_error_kind(&error);
                     let mut mapped = remote.operation_error(error, true);
@@ -470,38 +482,6 @@ impl Backend {
         }
     }
 
-    pub fn report_totals(
-        &mut self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-        now: DateTime<Utc>,
-    ) -> Result<ReportTotals, BridgeError> {
-        if end <= start {
-            return Err(local_error(ApplicationError::InvalidReportRange));
-        }
-        match self {
-            Self::Local(application) => application
-                .report_totals(start, end, now)
-                .map_err(local_error),
-            Self::Remote(remote) => {
-                match remote
-                    .runtime
-                    .block_on(remote.application.report_totals(start, end, now))
-                {
-                    Ok(totals) => {
-                        remote.requires_refresh = false;
-                        Ok(totals)
-                    }
-                    Err(error) => {
-                        // A failed remote query can refresh Rust's cache without returning it to Swift.
-                        remote.requires_refresh = true;
-                        Err(remote.operation_error(error, false))
-                    }
-                }
-            }
-        }
-    }
-
     pub fn history_error(&mut self, error: ApplicationError) -> BridgeError {
         match self {
             Self::Local(_) => local_error(error),
@@ -551,6 +531,7 @@ impl Backend {
                         .runtime
                         .block_on(remote.application.unarchive_task(task_id, occurred_at))
                 };
+                remote.record_write_completion();
                 match result {
                     Ok(task) => Ok(task),
                     Err(error) => {
@@ -567,6 +548,52 @@ impl Backend {
 }
 
 impl RemoteBackend {
+    fn refresh_resources(&mut self, selection: ResourceSelection) -> Result<(), BridgeError> {
+        let result = self
+            .runtime
+            .block_on(self.application.refresh_resources(selection));
+        if matches!(
+            selection,
+            ResourceSelection::TaskList | ResourceSelection::TaskListWithTotals { .. }
+        ) {
+            self.requires_refresh = result.is_err();
+        } else {
+            self.requires_refresh |= result.is_err();
+        }
+        result.map_err(remote_read_error)
+    }
+
+    fn refresh_totals(
+        &mut self,
+        include_tasks: bool,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<super::ReportJson, BridgeError> {
+        let selection = if include_tasks {
+            ResourceSelection::TaskListWithTotals { start, end, now }
+        } else {
+            ResourceSelection::DailyTotals { start, end, now }
+        };
+        self.refresh_resources(selection)?;
+        let report = self
+            .application
+            .report_observation()
+            .ok_or_else(|| BridgeError::from("Report resource was not loaded".to_owned()))?;
+        Ok(super::ReportJson {
+            rows: report
+                .rows
+                .iter()
+                .map(|row| super::ReportRowJson {
+                    task_id: row.task_id.clone(),
+                    duration_microseconds: row.duration_us,
+                })
+                .collect(),
+            revision: Some(report.revision.clone()),
+            now: super::timestamp(report.now),
+        })
+    }
+
     fn move_worklog(
         &mut self,
         id: WorklogId,
@@ -580,9 +607,7 @@ impl RemoteBackend {
             expected,
             destination_task_id,
         ));
-        if result.is_ok() {
-            self.requires_refresh = false;
-        }
+        self.record_write_completion();
         result.map_err(|error| self.move_error(error, destination_task_id))
     }
 
@@ -613,8 +638,12 @@ impl RemoteBackend {
         mapped
     }
 
+    fn record_write_completion(&mut self) {
+        self.requires_refresh |= self.application.last_failure().is_some();
+    }
+
     fn check_write(&self) -> Result<(), BridgeError> {
-        if self.requires_refresh {
+        if self.requires_refresh || self.application.last_failure().is_some() {
             return Err(BridgeError {
                 message: "Refresh server state before changing tracker state".into(),
                 kind: "unavailable",
@@ -638,6 +667,69 @@ impl RemoteBackend {
             uncertain,
             requires_refresh: self.requires_refresh,
         }
+    }
+}
+
+fn resource_selection(selection: u32) -> Result<ResourceSelection, BridgeError> {
+    match selection {
+        1 => Ok(ResourceSelection::Tasks),
+        2 => Ok(ResourceSelection::Tracking),
+        3 => Ok(ResourceSelection::TaskList),
+        _ => Err("Invalid resource selection".to_owned().into()),
+    }
+}
+
+fn refresh_local_resources(
+    application: &mut TrackerApplication<SqliteRepository>,
+    selection: ResourceSelection,
+) -> Result<(), BridgeError> {
+    match selection {
+        ResourceSelection::Tasks => application.refresh_task_catalog(),
+        ResourceSelection::Tracking => application.refresh_tracking_resource(),
+        ResourceSelection::TaskList => application.refresh_authoritative_state(),
+        _ => unreachable!("totals selections use the totals coordinator"),
+    }
+    .map_err(local_error)
+}
+
+fn local_totals(
+    application: &mut TrackerApplication<SqliteRepository>,
+    include_tasks: bool,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Result<super::ReportJson, BridgeError> {
+    let totals = if include_tasks {
+        application.task_list_report_totals(start, end, now)
+    } else {
+        application.report_totals(start, end, now)
+    }
+    .map_err(local_error)?;
+    let rows = totals
+        .rows
+        .into_iter()
+        .map(|row| {
+            Ok(super::ReportRowJson {
+                task_id: row.task.id().to_string(),
+                duration_microseconds: row.duration.num_microseconds().ok_or_else(|| {
+                    BridgeError::from("Report duration exceeds the supported range".to_owned())
+                })?,
+            })
+        })
+        .collect::<Result<Vec<_>, BridgeError>>()?;
+    Ok(super::ReportJson {
+        rows,
+        revision: None,
+        now: super::timestamp(now),
+    })
+}
+
+fn remote_read_error(error: RemoteError) -> BridgeError {
+    BridgeError {
+        message: error.to_string(),
+        kind: remote_error_kind(&error),
+        uncertain: false,
+        requires_refresh: true,
     }
 }
 
@@ -755,6 +847,8 @@ fn move_error(error: ApplicationError) -> BridgeError {
 fn remote_error_kind(error: &RemoteError) -> &'static str {
     if error.is_unavailable() {
         "unavailable"
+    } else if matches!(error, RemoteError::Http { status, .. } if status.as_u16() == 409) {
+        "conflict"
     } else {
         "protocol"
     }

@@ -26,7 +26,11 @@ fn resume(bridge: &mut Bridge, task_id: TaskId, at: &str) -> Value {
 
 fn refresh(bridge: &mut Bridge) -> Value {
     // SAFETY: The bridge is live and uniquely accessed.
-    response(unsafe { tt_bridge_snapshot(bridge, true) })
+    let result = response(unsafe { tt_bridge_refresh_resources(bridge, 3) });
+    if result.get("error").is_some() {
+        return result;
+    }
+    response(unsafe { tt_bridge_tracking(bridge) })
 }
 
 #[test]
@@ -37,14 +41,15 @@ fn pause_owns_only_a_successful_stop_and_resume_excludes_the_locked_interval() {
         .task
         .id();
     let started = resume(&mut bridge, task_id, "2026-10-04T10:00:00.123456789Z");
+    let started_tasks = crate::tests::test_task_values(&bridge.application);
     assert!(started.get("error").is_none(), "{started}");
     let worklog_id = started["data"]["active"]["id"].as_str().unwrap();
     let paused = pause(&mut bridge, worklog_id, "2026-10-04T10:10:00.987654321Z");
     assert_eq!(paused["data"]["didStop"], true);
-    assert!(paused["data"]["snapshot"]["active"].is_null());
+    assert!(paused["data"]["active"].is_null());
     assert_eq!(
-        paused["data"]["snapshot"]["tasks"],
-        started["data"]["tasks"]
+        crate::tests::test_task_values(&bridge.application),
+        started_tasks
     );
     let repeated = pause(&mut bridge, worklog_id, "2026-10-04T10:11:00Z");
     assert_eq!(repeated["data"]["didStop"], false);
@@ -83,14 +88,14 @@ fn local_automation_never_stops_or_switches_a_competing_clients_timer() {
         .application
         .set_active_task(tasks[1].task.id(), "2026-10-04T10:10:00Z".parse().unwrap())
         .unwrap_or_else(|error| panic!("{}", error.message));
-    let foreign = serde_json::to_value(snapshot(&second.application)).unwrap()["active"].clone();
+    let foreign = crate::tests::test_active_value(&second.application).clone();
 
     let rejected = pause(&mut first, old_id, "2026-10-04T10:20:00Z");
     assert!(rejected.get("error").is_some());
     assert!(rejected.get("data").is_none());
     let rejected = resume(&mut first, tasks[0].task.id(), "2026-10-04T10:30:00Z");
     assert!(rejected.get("error").is_some());
-    assert_eq!(refresh(&mut first)["data"]["active"], foreign);
+    assert_eq!(refresh(&mut first)["data"]["value"], foreign);
     let page = second
         .application
         .worklogs_for_task(tasks[1].task.id(), None)
@@ -110,7 +115,7 @@ fn local_resume_rejects_a_timer_started_after_the_idle_snapshot() {
     let rejected = resume(&mut first, tasks[0].task.id(), "2026-10-04T10:10:00Z");
     assert!(rejected.get("error").is_some());
     assert_eq!(
-        refresh(&mut first)["data"]["active"],
+        refresh(&mut first)["data"]["value"],
         foreign["data"]["active"]
     );
 }
@@ -135,7 +140,7 @@ fn local_resume_rejects_missing_and_archived_tasks() {
         resume(&mut bridge, TaskId::generate(), "2026-10-04T10:10:00Z")["error"],
         "Task not found"
     );
-    assert!(refresh(&mut bridge)["data"]["active"].is_null());
+    assert!(refresh(&mut bridge)["data"]["value"].is_null());
 }
 
 #[test]
@@ -202,7 +207,7 @@ fn automation_commands_reject_null_bridges_identifiers_and_timestamps() {
             );
         }
     }
-    assert!(refresh(&mut bridge)["data"]["active"].is_null());
+    assert!(refresh(&mut bridge)["data"]["value"].is_null());
 }
 
 #[test]
@@ -295,7 +300,7 @@ fn remote_pause_reports_ownership_and_resume_commits_the_captured_timestamp() {
     let worklog_id = started["data"]["active"]["id"].as_str().unwrap();
     let stopped = pause(&mut bridge, worklog_id, "2026-10-04T10:10:00Z");
     assert_eq!(stopped["data"]["didStop"], true);
-    assert!(stopped["data"]["snapshot"]["active"].is_null());
+    assert!(stopped["data"]["active"].is_null());
     assert_eq!(
         pause(&mut bridge, worklog_id, "2026-10-04T10:11:00Z")["data"]["didStop"],
         false
@@ -333,14 +338,14 @@ fn remote_resume_revision_guard_preserves_a_competing_clients_timer() {
     assert_eq!(rejected["uncertain"], false);
     assert_eq!(rejected["requiresRefresh"], true);
     assert_eq!(
-        refresh(&mut first)["data"]["active"],
+        refresh(&mut first)["data"]["value"],
         foreign["data"]["active"]
     );
     let cached_rejection = resume(&mut first, tasks[0].task.id(), "2026-10-04T10:20:00Z");
     assert_eq!(cached_rejection["kind"], "conflict");
     assert_eq!(cached_rejection["requiresRefresh"], true);
     assert_eq!(
-        refresh(&mut second)["data"]["active"],
+        refresh(&mut second)["data"]["value"],
         foreign["data"]["active"]
     );
 }
@@ -363,7 +368,7 @@ fn remote_pause_conflict_does_not_claim_another_clients_stop() {
     assert_eq!(rejected["kind"], "conflict");
     assert_eq!(rejected["uncertain"], false);
     assert!(rejected.get("data").is_none());
-    assert!(refresh(&mut first)["data"]["active"].is_null());
+    assert!(refresh(&mut first)["data"]["value"].is_null());
     assert_eq!(
         pause(&mut first, worklog_id, "2026-10-04T10:30:00Z")["data"]["didStop"],
         false

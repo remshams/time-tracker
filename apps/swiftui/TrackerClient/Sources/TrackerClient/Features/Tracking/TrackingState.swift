@@ -36,15 +36,11 @@ private let isoFormatterLock = NSLock()
 
 public func timestamp(_ value: String?) -> Date? {
     guard let value else { return nil }
-    isoFormatterLock.lock()
-    defer { isoFormatterLock.unlock() }
-    return isoFormatter.date(from: value)
+    return isoFormatterLock.withLock { isoFormatter.date(from: value) }
 }
 
 func commandTimestamp(_ date: Date) -> String {
-    isoFormatterLock.lock()
-    defer { isoFormatterLock.unlock() }
-    return isoFormatter.string(from: date)
+    isoFormatterLock.withLock { isoFormatter.string(from: date) }
 }
 
 public func clockDuration(_ seconds: TimeInterval) -> String {

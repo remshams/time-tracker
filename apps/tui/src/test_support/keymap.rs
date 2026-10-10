@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tracker_application::{GlobalWorklogPage, TrackerSnapshot};
+use tracker_application::{ActiveTrackingRead, GlobalWorklogPage};
 use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
 
 use crate::command::Command;
@@ -163,10 +163,11 @@ pub(crate) fn valid_input_states() -> Vec<TestInputState> {
         TestInputState::Reports(crate::screens::ReportState::new(Utc::now(), chrono_tz::UTC)),
         TestInputState::AllWorklogs(Box::new(AllWorklogsState::new(GlobalWorklogPage {
             worklogs: Vec::new(),
-            snapshot: TrackerSnapshot {
-                task_items: Vec::new(),
+            task_items: Vec::new(),
+            tracking: Some(ActiveTrackingRead {
                 active_worklog: None,
-            },
+                active_task_item: None,
+            }),
             next_cursor: None,
         }))),
     ]

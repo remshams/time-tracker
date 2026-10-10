@@ -20,11 +20,16 @@ public struct TrackerMenuValues: Equatable, Sendable {
             ? (session.dailyTotalsStatus == .cached ? "~\(total)" : total) : "Unavailable"
         taskDurationTexts = Dictionary(
             uniqueKeysWithValues: content.todayTasks.map {
-                ($0.id, sameConnection ? session.dailyDuration(taskID: $0.id).map(clockDuration) ?? "-" : "-")
+                ($0.id, Self.taskDurationText(session, taskID: $0.id, sameConnection: sameConnection))
             })
         totalsExplanation =
             sameConnection
             ? session.dailyTotalsExplanation
             : "The connection changed. Reopen the menu to see the current tracker."
+    }
+
+    @MainActor
+    private static func taskDurationText(_ session: TrackerSession, taskID: String, sameConnection: Bool) -> String {
+        sameConnection ? session.dailyDuration(taskID: taskID).map(clockDuration) ?? "-" : "-"
     }
 }

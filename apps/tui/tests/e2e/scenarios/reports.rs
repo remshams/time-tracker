@@ -496,12 +496,11 @@ fn reports_adopt_external_tracking_and_return_to_current_active_tasks() {
     let context = TestContext::new();
     let database = context.database();
     let now = Utc::now();
+    let today = now.date_naive();
+    let existing_start = today.and_hms_opt(0, 0, 0).unwrap().and_utc();
+    let existing_end = existing_start + Duration::seconds(1);
     database.create_task("Existing task");
-    database.create_worklog(
-        "Existing task",
-        now - Duration::minutes(30),
-        Some(now - Duration::minutes(20)),
-    );
+    database.create_worklog("Existing task", existing_start, Some(existing_end));
 
     let mut tt = context.launch();
     tt.wait_for_first_frame("the active tab", |screen| {
@@ -546,7 +545,11 @@ fn reports_adopt_external_tracking_and_return_to_current_active_tasks() {
         .to_owned();
 
     database.create_task("External task");
-    database.create_worklog("External task", Utc::now() - Duration::seconds(30), None);
+    database.create_worklog(
+        "External task",
+        (now - Duration::seconds(30)).max(existing_end),
+        None,
+    );
 
     tt.wait_for("the external worklog in the report and header", |screen| {
         let page = TimeTrackerPage::new(screen.clone());

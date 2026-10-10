@@ -13,6 +13,9 @@ public final class TrackerSession {
 
     private enum Lifecycle { case idle, running, stopped }
     private var lifecycle: Lifecycle = .idle
+    public private(set) var taskCatalogResource: TaskCatalogObservation?
+    public private(set) var trackingResource: TrackingObservation?
+    public private(set) var reportResource: TrackerReport?
     private let client: any TrackerClient
     private let reports: (any ReportClient)?
     private let clock: any TrackerClock
@@ -41,7 +44,7 @@ public final class TrackerSession {
     private var generation = 0
     private var pendingRefresh = false
     private var operationBlocksControls = true
-    private var operationHasSnapshot = false
+    private var operationHasResources = false
     private var controlGeneration = 0
     private enum TrackingCommand {
         case start(taskID: String, expectedActiveID: String?, occurredAt: String)
@@ -144,7 +147,7 @@ public final class TrackerSession {
     }
     public func canStartTracking(taskID: String) -> Bool {
         guard running, !sleeping, !isBlockingControls, !isStale, connection.confirmed,
-            let task = tasks.first(where: { $0.id == taskID })
+            let task = task(withID: taskID, in: tasks)
         else { return false }
         return !task.archived && active?.taskId != task.id
     }
@@ -157,7 +160,7 @@ public final class TrackerSession {
         guard running, !sleeping, !automation.locked, !isBusy, !isStale,
             !connection.changing, connection.confirmed
         else { return .disabled }
-        if let active { return canStopTracking ? .stop(worklogID: active.id) : .disabled }
+        if let active { return stopPrimaryAction(worklogID: active.id) }
         guard let task = lastTrackedTask, !task.archived else { return .openMenu }
         return canStartTracking(taskID: task.id) ? .start(taskID: task.id) : .disabled
     }
@@ -206,7 +209,7 @@ public final class TrackerSession {
     public var todayTasks: [TaskItem] {
         tasks.filter { (dailyDuration(taskID: $0.id) ?? 0) > 0 }
             .sorted {
-                if $0.name == $1.name { return $0.id < $1.id }
+                if $0.name == $1.name { return taskIDComesBefore($0.id, $1.id) }
                 return $0.name < $1.name
             }
     }
@@ -231,8 +234,7 @@ public final class TrackerSession {
             defer { finishOperation(token: token) }
             do {
                 let snapshot = try await client.openConfigured(settings)
-                guard isCurrent(token) else { return }
-                acceptSnapshot(snapshot)
+                guard acceptTaskListIfCurrent(snapshot, token: token) else { return }
             } catch {
                 guard isCurrent(token) else { return }
                 recordConnectionFailure(error)
@@ -366,11 +368,11 @@ public final class TrackerSession {
     }
 
     public func canArchiveTask(taskID: String) -> Bool {
-        canBeginTaskArchiving && active?.taskId != taskID && tasks.contains { $0.id == taskID && !$0.archived }
+        canBeginTaskArchiving && active?.taskId != taskID && hasTask(withID: taskID, archived: false, in: tasks)
     }
 
     public func canUnarchiveTask(taskID: String) -> Bool {
-        canBeginTaskArchiving && tasks.contains { $0.id == taskID && $0.archived }
+        canBeginTaskArchiving && hasTask(withID: taskID, archived: true, in: tasks)
     }
 
     public func openTaskArchive(taskID: String) {
@@ -447,7 +449,7 @@ public final class TrackerSession {
 
     public func openTaskRename(taskID: String? = nil) {
         guard canOpenTaskRename else { return }
-        let target = taskID.flatMap { id in tasks.first { $0.id == id } } ?? (taskID == nil ? selectedTask : nil)
+        let target = taskID.flatMap { task(withID: $0, in: tasks) } ?? (taskID == nil ? selectedTask : nil)
         rename.open(target)
         publish()
     }
@@ -477,20 +479,21 @@ public final class TrackerSession {
     public func openWorklogCorrection(worklogID: String) {
         guard canOpenWorklogCorrection else { return }
         let worklog =
-            correction.original ?? worklogs.first { $0.id == worklogID } ?? (active?.id == worklogID ? active : nil)
+            correction.original ?? worklog(withID: worklogID, in: worklogs) ?? (active?.id == worklogID ? active : nil)
         guard let worklog else { return }
         correction.open(
-            worklog, taskName: tasks.first { $0.id == worklog.taskId }?.name ?? "Unknown task",
+            worklog, taskName: task(withID: worklog.taskId, in: tasks)?.name ?? "Unknown task",
             historyPageLimit: max(1, (worklogs.count + 49) / 50) + 1)
         publish()
     }
 
     public func openWorklogMove(worklogID: String) {
         guard canOpenWorklogMove else { return }
-        let worklog = move.original ?? worklogs.first { $0.id == worklogID } ?? (active?.id == worklogID ? active : nil)
+        let worklog =
+            move.original ?? worklog(withID: worklogID, in: worklogs) ?? (active?.id == worklogID ? active : nil)
         guard let worklog else { return }
         move.open(
-            worklog, sourceTaskName: tasks.first { $0.id == worklog.taskId }?.name ?? "Unknown task",
+            worklog, sourceTaskName: task(withID: worklog.taskId, in: tasks)?.name ?? "Unknown task",
             historyPageLimit: max(2, (worklogs.count + 49) / 50 + 1))
         drainMoveSearch()
         publish()
@@ -645,34 +648,22 @@ public final class TrackerSession {
 
     public func connect(_ settings: ConnectionSettings) async -> Bool {
         guard !bulkArchiving.ownsPresentation else {
-            connection.message = "Close the archive dialog before changing connections."
-            publish()
-            return false
+            return rejectConnection("Close the archive dialog before changing connections.")
         }
         guard !archiving.blocksConnectionChange else {
-            connection.message = "Finish or retry task archiving before changing connections."
-            publish()
-            return false
+            return rejectConnection("Finish or retry task archiving before changing connections.")
         }
         guard !move.blocksConnectionChange else {
-            connection.message = "Finish or retry worklog moving before changing connections."
-            publish()
-            return false
+            return rejectConnection("Finish or retry worklog moving before changing connections.")
         }
         guard !correction.blocksConnectionChange && !move.blocksConnectionChange else {
-            connection.message = "Finish worklog editing before changing connections."
-            publish()
-            return false
+            return rejectConnection("Finish worklog editing before changing connections.")
         }
         guard !rename.blocksConnectionChange else {
-            connection.message = "Finish or retry task renaming before changing connections."
-            publish()
-            return false
+            return rejectConnection("Finish or retry task renaming before changing connections.")
         }
         guard !creation.blocksConnectionChange else {
-            connection.message = "Finish or retry task creation before changing connections."
-            publish()
-            return false
+            return rejectConnection("Finish or retry task creation before changing connections.")
         }
         automation.cancel()
         let operation: ControlOperation
@@ -703,18 +694,7 @@ public final class TrackerSession {
             let normalized = try connection.normalized(settings)
             let snapshot = try await client.connect(normalized)
             guard isCurrent(token) else { return false }
-            automation.cancel()
-            pendingRefresh = false
-            connection.settings = normalized
-            dailyTotals.clear(at: clock.now)
-            settingsRepository.save(normalized)
-            catalog.resetSelections()
-            rename.reset()
-            archiving.reset()
-            history.request(selectedTaskID: nil)
-            tracking.error = nil
-            acceptSnapshot(snapshot)
-            return true
+            return finishConnection(snapshot, settings: normalized)
         } catch {
             guard isCurrent(token) else { return false }
             connection.message = "Connection unchanged. \(error.localizedDescription)"
@@ -814,7 +794,7 @@ public final class TrackerSession {
             continuation.resume(returning: operation)
         case .tracking(let intent, let queued):
             // A history page cannot confirm the timer targeted by a queued click.
-            executeTracking(intent, requiresSnapshot: queued && !operationHasSnapshot)
+            executeTracking(intent, requiresResources: queued && !operationHasResources)
         case .history(let taskID, let cursor, let historyToken):
             guard taskID == selectedTaskID, historyToken == history.generation, cursor == nextCursor else {
                 return false
@@ -827,7 +807,7 @@ public final class TrackerSession {
     private func beginOperation(blocksControls: Bool = true) {
         isBusy = true
         operationBlocksControls = blocksControls
-        operationHasSnapshot = false
+        operationHasResources = false
         cancelPolling()
         publish()
     }
@@ -877,9 +857,9 @@ public final class TrackerSession {
             defer { finishOperation(token: token) }
             do {
                 if connection.stale {
-                    let snapshot = try await client.snapshot()
+                    let snapshot = try await client.refreshTaskList()
                     guard isCurrent(token), !sleeping else { return }
-                    acceptSnapshot(snapshot)
+                    acceptTaskList(snapshot)
                 }
                 guard bulkArchiving.matches(search) else { return }
                 let currentSearch = BulkTaskArchivingState.Search(
@@ -920,8 +900,8 @@ public final class TrackerSession {
                         message: "The tracker returned an invalid archived count.", kind: "protocol",
                         requiresRefresh: true)
                 }
-                acceptSnapshot(result.snapshot)
                 bulkArchiving.complete(count: result.archivedCount)
+                await refreshAfterCommit(token: token)
             } catch {
                 guard isCurrent(token) else { return }
                 await reconcileWriteFailure(token: token)
@@ -944,16 +924,16 @@ public final class TrackerSession {
             var commandStarted = false
             do {
                 if !connection.confirmed || connection.stale {
-                    let snapshot: TrackerSnapshot
+                    let snapshot: TaskListResources
                     do {
-                        snapshot = try await client.snapshot()
+                        snapshot = try await client.refreshTaskList()
                     } catch {
                         guard isCurrent(token) else { return }
                         recordConnectionFailure(error)
                         throw error
                     }
                     guard isCurrent(token) else { return }
-                    acceptSnapshot(snapshot)
+                    acceptTaskList(snapshot)
                 }
                 if sleeping {
                     creation.pending = true
@@ -962,18 +942,19 @@ public final class TrackerSession {
                 commandStarted = true
                 let result = try await client.createTask(name: intent.name, occurredAt: intent.occurredAt)
                 guard isCurrent(token) else { return }
-                guard !result.taskId.isEmpty,
-                    let created = result.snapshot.tasks.first(where: { $0.id == result.taskId })
-                else {
+                let created = result.task
+                guard !created.id.isEmpty else {
                     throw BridgeFailure(
                         message: "The creation response does not contain the created task.",
                         kind: "protocol", uncertain: true, requiresRefresh: true)
                 }
-                acceptSnapshot(result.snapshot)
-                let changedTab = catalog.changeTab(created.archived ? .archived : .active)
-                let changedSelection = catalog.select(result.taskId)
-                if changedTab || changedSelection { requestHistory() }
                 creation.reset()
+                await refreshAfterCommit(token: token)
+                guard isCurrent(token) else { return }
+                let confirmed = task(withID: created.id, in: tasks) ?? created
+                let changedTab = catalog.changeTab(confirmed.archived ? .archived : .active)
+                let changedSelection = catalog.select(created.id)
+                if changedTab || changedSelection { requestHistory() }
             } catch {
                 guard isCurrent(token) else { return }
                 let unresolved = TaskCreationState.requiresRecovery(error)
@@ -987,19 +968,31 @@ public final class TrackerSession {
     }
 
     @discardableResult
-    private func reconcileWriteFailure(token: Int) async -> TrackerSnapshot? {
+    private func reconcileWriteFailure(token: Int) async -> TaskListResources? {
         connection.stale = true
         publish()
         do {
             // A lost write response can follow a committed change.
-            let snapshot = try await client.snapshot()
+            let snapshot = try await client.refreshTaskList()
             guard isCurrent(token) else { return nil }
-            acceptSnapshot(snapshot)
+            acceptTaskList(snapshot)
             return snapshot
         } catch {
             guard isCurrent(token) else { return nil }
             recordConnectionFailure(error)
             return nil
+        }
+    }
+
+    private func refreshAfterCommit(token: Int) async {
+        do {
+            let resources = try await client.refreshTaskList()
+            guard isCurrent(token) else { return }
+            acceptTaskList(resources)
+        } catch {
+            guard isCurrent(token) else { return }
+            recordConnectionFailure(error)
+            publish()
         }
     }
 
@@ -1018,14 +1011,14 @@ public final class TrackerSession {
             defer { finishOperation(token: token) }
             var commandStarted = false
             do {
-                let snapshot: TrackerSnapshot
-                do { snapshot = try await client.snapshot() } catch {
+                let snapshot: TaskListResources
+                do { snapshot = try await client.refreshTaskList() } catch {
                     guard isCurrent(token) else { return }
                     recordConnectionFailure(error)
                     throw error
                 }
                 guard isCurrent(token) else { return }
-                acceptSnapshot(snapshot)
+                acceptTaskList(snapshot)
                 switch archiving.preflight(intent, snapshot: snapshot) {
                 case .applied: finishTaskArchiving(intent); return
                 case .review: archiving.setStatusVisibility(windowVisible); return
@@ -1033,7 +1026,7 @@ public final class TrackerSession {
                 }
                 if sleeping { archiving.deferUntilWake(); return }
                 commandStarted = true
-                let result: TrackerSnapshot
+                let result: TaskCommandResult
                 switch intent.action {
                 case .archive:
                     result = try await client.archiveTask(taskID: intent.taskID, occurredAt: intent.occurredAt)
@@ -1041,14 +1034,17 @@ public final class TrackerSession {
                     result = try await client.unarchiveTask(taskID: intent.taskID, occurredAt: intent.occurredAt)
                 }
                 guard isCurrent(token) else { return }
-                // Remote receipts confirm the command; separately read resources may include later changes.
-                guard result.tasksRevision != nil || archiving.responseMatches(result, intent: intent) else {
+                guard result.task.id == intent.taskID,
+                    result.task.archived == intent.action.desiredArchived
+                else {
                     throw BridgeFailure(
                         message: "The response does not confirm the task's archive state.",
                         kind: "protocol", uncertain: true, requiresRefresh: true)
                 }
-                acceptSnapshot(result)
-                finishTaskArchiving(intent)
+                archiving.reset()
+                await refreshAfterCommit(token: token)
+                guard isCurrent(token) else { return }
+                if intent.action == .unarchive { catalog.rememberRestoredTask(intent.taskID) }
             } catch {
                 guard isCurrent(token) else { return }
                 let confirmed = commandStarted ? await reconcileWriteFailure(token: token) : nil
@@ -1080,16 +1076,16 @@ public final class TrackerSession {
             defer { finishOperation(token: token) }
             var commandStarted = false
             do {
-                let snapshot: TrackerSnapshot
+                let snapshot: TaskListResources
                 do {
-                    snapshot = try await client.snapshot()
+                    snapshot = try await client.refreshTaskList()
                 } catch {
                     guard isCurrent(token) else { return }
                     recordConnectionFailure(error)
                     throw error
                 }
                 guard isCurrent(token) else { return }
-                acceptSnapshot(snapshot)
+                acceptTaskList(snapshot)
                 guard renameCanApply(intent, snapshot: snapshot) else { return }
                 if sleeping {
                     rename.deferUntilWake()
@@ -1100,16 +1096,13 @@ public final class TrackerSession {
                     taskID: intent.taskID, name: intent.name,
                     occurredAt: intent.occurredAt)
                 guard isCurrent(token) else { return }
-                guard
-                    result.tasksRevision != nil
-                        || result.tasks.contains(where: { $0.id == intent.taskID && $0.name == intent.desiredName })
-                else {
+                guard result.task.id == intent.taskID, result.task.name == intent.desiredName else {
                     throw BridgeFailure(
                         message: "The rename response does not contain the updated task.",
                         kind: "protocol", uncertain: true, requiresRefresh: true)
                 }
-                acceptSnapshot(result)
                 rename.reset()
+                await refreshAfterCommit(token: token)
             } catch {
                 guard isCurrent(token) else { return }
                 let uncertain = TaskNameEditingPolicy.requiresRecovery(error)
@@ -1120,7 +1113,10 @@ public final class TrackerSession {
                     rename.requireReview(
                         "The task changed on another client. Cancel and reopen the editor to review its current state.")
                 } else {
-                    rename.fail(error, retainIntent: uncertain || (commandStarted && confirmed == nil))
+                    rename.fail(
+                        error,
+                        retainIntent: retainRenameIntent(
+                            uncertain: uncertain, commandStarted: commandStarted, confirmed: confirmed))
                 }
                 publish()
             }
@@ -1128,19 +1124,17 @@ public final class TrackerSession {
         return true
     }
 
-    private func renameCanApply(_ intent: TaskRenameState.Intent, snapshot: TrackerSnapshot) -> Bool {
-        guard let task = snapshot.tasks.first(where: { $0.id == intent.taskID }) else {
-            rename.requireReview("The task no longer exists. Cancel the editor and refresh the task list.")
-            return false
+    private func renameCanApply(_ intent: TaskRenameState.Intent, snapshot: TaskListResources) -> Bool {
+        guard let task = task(withID: intent.taskID, in: snapshot.catalog.value) else {
+            return requireRenameReview("The task no longer exists. Cancel the editor and refresh the task list.")
         }
         if task.name == intent.desiredName {
             rename.reset()
             return false
         }
         guard task.name == intent.originalName else {
-            rename.requireReview(
+            return requireRenameReview(
                 "The task name changed on another client. Cancel and reopen the editor to review its current name.")
-            return false
         }
         return true
     }
@@ -1156,12 +1150,12 @@ public final class TrackerSession {
             var search = initialSearch
             do {
                 if search.refresh {
-                    let snapshot = try await client.snapshot()
+                    let snapshot = try await client.refreshTaskList()
                     guard isCurrent(token) else { return }
-                    acceptSnapshot(snapshot)
+                    acceptTaskList(snapshot)
                     move.didRefresh(search)
                 }
-                guard !sleeping else { move.deferSearch(); return }
+                guard prepareMoveSearch() else { return }
                 guard let currentSearch = move.currentSearch(replacing: search) else { return }
                 search = currentSearch
                 let values = try await client.moveCandidates(sourceTaskID: search.sourceTaskID, query: search.query)
@@ -1178,21 +1172,21 @@ public final class TrackerSession {
 
     private func currentMoveWorklog(
         _ intent: WorklogMoveState.Intent,
-        snapshot: TrackerSnapshot, token: Int, includeDestination: Bool
+        snapshot: TaskListResources, token: Int, includeDestination: Bool
     ) async throws -> WorklogItem? {
-        if let active = snapshot.active, active.id == intent.expected.id { return active }
+        if let active = snapshot.tracking.value, active.id == intent.expected.id { return active }
         let taskIDs =
             includeDestination ? [intent.destinationTaskID, intent.expected.taskId] : [intent.expected.taskId]
         var verificationFailure: BridgeFailure?
         for taskID in taskIDs {
-            guard snapshot.tasks.contains(where: { $0.id == taskID }) else { continue }
+            guard containsTask(withID: taskID, in: snapshot.catalog.value) else { continue }
             var cursor: String?
             var seen = Set<String>()
             var pagesRead = 0
-            let loadedPages = selectedTaskID == taskID ? (worklogs.count + 49) / 50 : 0
+            let loadedPages = loadedHistoryPages(for: taskID)
             let limit = max(intent.historyPageLimit, loadedPages + 1)
             repeat {
-                guard pagesRead < limit else {
+                guard withinHistoryLimit(pagesRead, limit: limit) else {
                     verificationFailure = BridgeFailure(
                         message:
                             "Could not verify this worklog within the history limit. Cancel and reopen the mover before retrying."
@@ -1202,22 +1196,22 @@ public final class TrackerSession {
                 pagesRead += 1
                 let page = try await client.history(taskID: taskID, cursor: cursor)
                 guard isCurrent(token), !sleeping else { return nil }
-                if let worklog = page.worklogs.first(where: { $0.id == intent.expected.id }) { return worklog }
+                if let worklog = worklog(withID: intent.expected.id, in: page.worklogs) { return worklog }
                 cursor = page.nextCursor
                 if let cursor, !seen.insert(cursor).inserted {
                     verificationFailure = BridgeFailure(
                         message: "Worklog history returned a repeated cursor.", kind: "protocol")
                     break
                 }
-            } while cursor != nil
+            } while hasMoreHistory(cursor)
         }
         if let verificationFailure { throw verificationFailure }
         return nil
     }
 
-    private func finishMove(_ intent: WorklogMoveState.Intent, snapshot: TrackerSnapshot? = nil) {
+    private func finishMove(_ intent: WorklogMoveState.Intent, snapshot: TaskListResources? = nil) {
         move.reset()
-        if let snapshot { acceptSnapshot(snapshot) }
+        if let snapshot { acceptTaskList(snapshot) }
         if selectedTaskID == intent.expected.taskId || selectedTaskID == intent.destinationTaskID {
             history.clearAfterCorrection()
         }
@@ -1226,29 +1220,24 @@ public final class TrackerSession {
 
     private func moveCanApply(
         _ intent: WorklogMoveState.Intent, latest: WorklogItem?,
-        snapshot: TrackerSnapshot, resolveCommitted: Bool
+        snapshot: TaskListResources, resolveCommitted: Bool
     ) -> Bool {
         if resolveCommitted, let latest, intent.matchesReplacement(latest) {
             finishMove(intent)
             return false
         }
         guard let latest else {
-            move.requireReview(
+            return requireMoveReview(
                 latest: nil, message: "This worklog was moved or deleted. Cancel the mover and refresh history.")
-            return false
         }
         guard latest.id == intent.expected.id, latest.taskId == intent.expected.taskId,
             sameWorklogTimestamp(latest.start, intent.expected.start),
             sameWorklogTimestamp(latest.end, intent.expected.end)
         else {
-            move.requireReview(latest: latest, message: "This worklog changed. Review it before moving.")
-            return false
+            return requireMoveReview(latest: latest, message: "This worklog changed. Review it before moving.")
         }
-        guard snapshot.tasks.contains(where: { $0.id == intent.destinationTaskID && !$0.archived }) else {
-            move.fail(
-                BridgeFailure(message: "The destination task is unavailable or archived. Choose another task."),
-                retainIntent: false)
-            return false
+        guard hasTask(withID: intent.destinationTaskID, archived: false, in: snapshot.catalog.value) else {
+            return failMoveDestination()
         }
         return true
     }
@@ -1263,9 +1252,9 @@ public final class TrackerSession {
             defer { finishOperation(token: token) }
             var commandStarted = false
             do {
-                let snapshot = try await client.snapshot()
+                let snapshot = try await client.refreshTaskList()
                 guard isCurrent(token) else { return }
-                acceptSnapshot(snapshot)
+                acceptTaskList(snapshot)
                 if sleeping { move.deferUntilWake(); return }
                 let latest = try await currentMoveWorklog(
                     intent, snapshot: snapshot, token: token, includeDestination: move.mayHaveCommitted)
@@ -1278,18 +1267,13 @@ public final class TrackerSession {
                 let result = try await client.moveWorklog(
                     expected: intent.expected, destinationTaskID: intent.destinationTaskID)
                 guard isCurrent(token) else { return }
-                guard intent.matchesReplacement(result.worklog),
-                    result.snapshot.tasksRevision != nil
-                        || (result.snapshot.tasks.contains(where: { $0.id == result.worklog.taskId && !$0.archived })
-                            && (result.worklog.end == nil
-                                ? result.snapshot.active == result.worklog
-                                : result.snapshot.active?.id != result.worklog.id))
-                else {
+                guard intent.matchesReplacement(result.worklog) else {
                     throw BridgeFailure(
                         message: "The move response does not contain the moved worklog.",
                         kind: "protocol", uncertain: true, requiresRefresh: true)
                 }
-                finishMove(intent, snapshot: result.snapshot)
+                finishMove(intent)
+                await refreshAfterCommit(token: token)
             } catch {
                 guard isCurrent(token) else { return }
                 let failure = error as? BridgeFailure
@@ -1308,7 +1292,7 @@ public final class TrackerSession {
                             reconciled = true
                             guard moveCanApply(intent, latest: latest, snapshot: snapshot, resolveCommitted: uncertain)
                             else { return }
-                            if failure?.kind == "worklog_changed" {
+                            if isWorklogChangedFailure(failure) {
                                 move.requireReview(
                                     latest: latest, message: "This worklog changed. Review it before moving.")
                                 return
@@ -1330,18 +1314,18 @@ public final class TrackerSession {
 
     private func currentCorrectionWorklog(
         _ intent: WorklogCorrectionState.Intent,
-        snapshot: TrackerSnapshot, token: Int
+        snapshot: TaskListResources, token: Int
     ) async throws -> WorklogItem? {
-        if let active = snapshot.active, active.id == intent.expected.id { return active }
+        if let active = snapshot.tracking.value, active.id == intent.expected.id { return active }
         let taskID = intent.expected.taskId
-        if snapshot.tasks.contains(where: { $0.id == taskID }) {
+        if containsTask(withID: taskID, in: snapshot.catalog.value) {
             var cursor: String?
             var seen = Set<String>()
-            let loadedPages = selectedTaskID == taskID ? (worklogs.count + 49) / 50 : 0
+            let loadedPages = loadedHistoryPages(for: taskID)
             let pageLimit = max(intent.historyPageLimit, loadedPages + 1)
             var pagesRead = 0
             repeat {
-                guard pagesRead < pageLimit else {
+                guard withinHistoryLimit(pagesRead, limit: pageLimit) else {
                     throw BridgeFailure(
                         message:
                             "Could not verify this worklog within the history limit. Cancel and reopen the editor before retrying."
@@ -1350,12 +1334,12 @@ public final class TrackerSession {
                 pagesRead += 1
                 let page = try await client.history(taskID: taskID, cursor: cursor)
                 guard isCurrent(token), !sleeping else { return nil }
-                if let worklog = page.worklogs.first(where: { $0.id == intent.expected.id }) { return worklog }
+                if let worklog = worklog(withID: intent.expected.id, in: page.worklogs) { return worklog }
                 cursor = page.nextCursor
                 if let cursor, !seen.insert(cursor).inserted {
                     throw BridgeFailure(message: "Worklog history returned a repeated cursor.", kind: "protocol")
                 }
-            } while cursor != nil
+            } while hasMoreHistory(cursor)
         }
         return nil
     }
@@ -1365,20 +1349,18 @@ public final class TrackerSession {
         resolveCommitted: Bool
     ) -> Bool {
         guard let latest else {
-            correction.requireReview(
+            return requireCorrectionReview(
                 latest: nil, message: "This worklog was moved or deleted. Cancel the editor and refresh history.")
-            return false
         }
         if resolveCommitted && intent.matchesReplacement(latest) {
             correction.reset()
-            if selectedTaskID == intent.expected.taskId { history.clearAfterCorrection() }
+            if selectedTaskMatches(intent.expected.taskId) { history.clearAfterCorrection() }
             requestHistory()
             return false
         }
         guard latest == intent.expected else {
-            correction.requireReview(
+            return requireCorrectionReview(
                 latest: latest, message: "This worklog changed. Review its latest times before saving.")
-            return false
         }
         return true
     }
@@ -1393,9 +1375,9 @@ public final class TrackerSession {
             defer { finishOperation(token: token) }
             var commandStarted = false
             do {
-                let snapshot = try await client.snapshot()
+                let snapshot = try await client.refreshTaskList()
                 guard isCurrent(token) else { return }
-                acceptSnapshot(snapshot)
+                acceptTaskList(snapshot)
                 if sleeping { correction.deferUntilWake(); return }
                 let latest = try await currentCorrectionWorklog(intent, snapshot: snapshot, token: token)
                 guard isCurrent(token) else { return }
@@ -1408,18 +1390,15 @@ public final class TrackerSession {
                     replacementEnd: intent.replacementEnd,
                     occurredAt: intent.occurredAt)
                 guard isCurrent(token) else { return }
-                guard intent.matchesReplacement(result.worklog),
-                    result.snapshot.tasks.contains(where: { $0.id == result.worklog.taskId }),
-                    (result.worklog.end == nil
-                        ? result.snapshot.active == result.worklog : result.snapshot.active?.id != result.worklog.id)
-                else {
+                guard intent.matchesReplacement(result.worklog) else {
                     throw BridgeFailure(
                         message: "The correction response does not contain the updated worklog.",
                         kind: "protocol", uncertain: true, requiresRefresh: true)
                 }
                 correction.reset()
-                acceptSnapshot(result.snapshot)
-                if selectedTaskID == intent.expected.taskId { history.clearAfterCorrection() }
+                await refreshAfterCommit(token: token)
+                guard isCurrent(token) else { return }
+                if selectedTaskMatches(intent.expected.taskId) { history.clearAfterCorrection() }
                 requestHistory()
             } catch {
                 guard isCurrent(token) else { return }
@@ -1447,7 +1426,7 @@ public final class TrackerSession {
                             guard correctionCanApply(intent, latest: latest, resolveCommitted: uncertain) else {
                                 return
                             }
-                            if failure?.kind == "worklog_changed" {
+                            if isWorklogChangedFailure(failure) {
                                 correction.requireReview(
                                     latest: latest,
                                     message: "This worklog changed. Review its latest times before saving.")
@@ -1501,19 +1480,19 @@ public final class TrackerSession {
             do {
                 // Reconcile before an automatic write. A second client may have
                 // changed tracking while this request waited behind another one.
-                let snapshot = try await client.snapshot()
+                let snapshot = try await client.refreshTaskList()
                 guard isCurrent(token) else { return }
-                acceptSnapshot(snapshot)
+                acceptTaskList(snapshot)
                 guard automationToken == automation.generation, automation.enabled else { return }
                 if let action {
-                    guard let worklog = snapshot.active,
-                        action.discoverAtStartup || action.expectedWorklogID == worklog.id
+                    guard let worklog = snapshot.tracking.value,
+                        pauseTargetsWorklog(action, worklog: worklog)
                     else { return }
                     guard let start = timestamp(worklog.start) else {
                         tracking.error = "Cannot pause tracking because its start time is invalid."
                         return
                     }
-                    guard start <= action.occurredAt else {
+                    guard pauseTimeIsValid(start, occurredAt: action.occurredAt) else {
                         tracking.error = "Cannot pause tracking before the worklog start time."
                         return
                     }
@@ -1521,20 +1500,15 @@ public final class TrackerSession {
                         worklogID: worklog.id,
                         occurredAt: commandTimestamp(action.occurredAt))
                     guard isCurrent(token) else { return }
-                    acceptSnapshot(result.snapshot)
-                    guard automationToken == automation.generation, automation.enabled else { return }
-                    if result.didStop && result.snapshot.active == nil {
+                    await refreshAfterCommit(token: token)
+                    guard isCurrent(token), automationIsCurrent(automationToken) else { return }
+                    if canRetainPausedTask(result) {
                         automation.pausedTaskID = worklog.taskId
                     } else {
                         automation.cancel()
                     }
                 } else if let taskID, let resumeAt {
-                    guard snapshot.active == nil,
-                        snapshot.tasks.contains(where: { $0.id == taskID && !$0.archived })
-                    else {
-                        automation.cancel()
-                        return
-                    }
+                    guard prepareAutomationResume(snapshot, taskID: taskID) else { return }
                     guard !automation.locked, !sleeping else { return }
                     automation.pausedTaskID = nil
                     pendingOwnStartTaskID = taskID
@@ -1544,7 +1518,7 @@ public final class TrackerSession {
                         occurredAt: commandTimestamp(resumeAt))
                     guard isCurrent(token) else { return }
                     automation.acknowledgeOwnStart(resumed.active, taskID: taskID)
-                    acceptSnapshot(resumed)
+                    await refreshAfterCommit(token: token)
                 }
             } catch {
                 guard isCurrent(token) else { return }
@@ -1572,9 +1546,8 @@ public final class TrackerSession {
             guard let self, isCurrent(token) else { return }
             defer { finishOperation(token: token) }
             do {
-                let snapshot = try await client.refresh(settings: settings)
-                guard isCurrent(token) else { return }
-                acceptSnapshot(snapshot)
+                let snapshot = try await client.refreshTaskList(settings: settings)
+                guard acceptTaskListIfCurrent(snapshot, token: token) else { return }
             } catch {
                 guard isCurrent(token) else { return }
                 recordConnectionFailure(error)
@@ -1582,7 +1555,7 @@ public final class TrackerSession {
         }
     }
 
-    private func executeTracking(_ command: TrackingCommand, requiresSnapshot: Bool) {
+    private func executeTracking(_ command: TrackingCommand, requiresResources: Bool) {
         tracking.error = nil
         let token = generation
         let commandGeneration = controlGeneration
@@ -1595,17 +1568,14 @@ public final class TrackerSession {
             }
             var writeStarted = false
             do {
-                guard !sleeping, commandGeneration == controlGeneration,
-                    connection.confirmed, !connection.stale
-                else {
+                guard trackingControlIsCurrent(commandGeneration) else {
                     throw BridgeFailure(
                         message: "Tracking changed or became unavailable while the command was waiting. Try again.")
                 }
-                if requiresSnapshot {
+                if requiresResources {
                     do {
-                        let snapshot = try await client.snapshot()
-                        guard isCurrent(token) else { return }
-                        acceptSnapshot(snapshot)
+                        let snapshot = try await client.refreshTaskList()
+                        guard acceptTaskListIfCurrent(snapshot, token: token) else { return }
                     } catch {
                         guard isCurrent(token) else { return }
                         recordConnectionFailure(error)
@@ -1613,19 +1583,15 @@ public final class TrackerSession {
                     }
                 }
                 guard isCurrent(token) else { return }
-                guard !sleeping, commandGeneration == controlGeneration,
-                    connection.confirmed, !connection.stale
-                else {
+                guard trackingControlIsCurrent(commandGeneration) else {
                     throw BridgeFailure(
                         message: "Tracking changed or became unavailable while the command was waiting. Try again.")
                 }
-                let snapshot: TrackerSnapshot
+                let result: TrackingCommandResult
                 switch command {
                 case .start(let taskID, let expectedActiveID, let occurredAt):
-                    guard active?.id == expectedActiveID,
-                        tasks.contains(where: { $0.id == taskID && !$0.archived }),
-                        active?.taskId != taskID,
-                        active == nil || trackingTimestampIsValid(occurredAt)
+                    guard
+                        startCommandCanApply(taskID: taskID, expectedActiveID: expectedActiveID, occurredAt: occurredAt)
                     else {
                         throw BridgeFailure(
                             message: "Tracking changed while Start was waiting. Review the current timer and try again."
@@ -1633,21 +1599,21 @@ public final class TrackerSession {
                     }
                     pendingOwnStartTaskID = taskID
                     writeStarted = true
-                    snapshot = try await client.startTracking(
+                    result = try await client.startTracking(
                         taskID: taskID, expectedActiveID: expectedActiveID,
                         occurredAt: occurredAt)
                     guard isCurrent(token) else { return }
-                    automation.acknowledgeOwnStart(snapshot.active, taskID: taskID)
+                    automation.acknowledgeOwnStart(result.active, taskID: taskID)
                 case .stop(let worklogID, let occurredAt):
-                    guard active?.id == worklogID, trackingTimestampIsValid(occurredAt) else {
+                    guard stopCommandCanApply(worklogID: worklogID, occurredAt: occurredAt) else {
                         throw BridgeFailure(
                             message: "Tracking changed while Stop was waiting. Review the current timer and try again.")
                     }
                     writeStarted = true
-                    snapshot = try await client.stopTracking(worklogID: worklogID, occurredAt: occurredAt)
+                    result = try await client.stopTracking(worklogID: worklogID, occurredAt: occurredAt)
                 }
                 guard isCurrent(token) else { return }
-                acceptSnapshot(snapshot)
+                await refreshAfterCommit(token: token)
             } catch {
                 guard isCurrent(token) else { return }
                 let message = error.localizedDescription
@@ -1663,18 +1629,20 @@ public final class TrackerSession {
         return date >= start
     }
 
-    private func acceptSnapshot(_ snapshot: TrackerSnapshot, requestReport: Bool = true) {
-        operationHasSnapshot = true
+    private func acceptTaskList(_ snapshot: TaskListResources, requestReport: Bool = true) {
+        operationHasResources = true
+        taskCatalogResource = snapshot.catalog
+        trackingResource = snapshot.tracking
         dailyTotals.updateDay(at: clock.now)
         let retryFailedHistory = connection.stale && history.unavailable
-        connection.acceptSnapshot()
+        connection.acceptTaskList()
         lastTracked.observe(snapshot, settings: connection.settings)
         let previousActive = active
-        automation.observeActive(snapshot.active)
-        tracking.apply(snapshot.active, clock: clock)
-        if let active = snapshot.active { correction.observe(active); move.observe(active) }
+        automation.observeActive(snapshot.tracking.value)
+        tracking.apply(snapshot.tracking.value, clock: clock)
+        if let active = snapshot.tracking.value { correction.observe(active); move.observe(active) }
         if reports != nil && requestReport { dailyTotals.invalidate() }
-        if catalog.apply(snapshot.tasks, previousActive: previousActive, active: active) {
+        if catalog.apply(snapshot.catalog.value, previousActive: previousActive, active: active) {
             requestHistory()
         } else if !history.unavailable {
             history.error = nil
@@ -1696,17 +1664,16 @@ public final class TrackerSession {
             guard let self, isCurrent(token) else { return }
             defer { finishOperation(token: token) }
             do {
-                let report = try await reports.report(
+                let refreshed = try await reports.refreshTaskListWithTotals(
                     settings: settings, start: requested.start,
                     end: requested.end, now: requested.now)
                 guard isCurrent(token) else { return }
-                try dailyTotals.validate(report)
-                dailyTotals.accept(report, requested: requested, clock: clock)
-                if report.snapshot.resourcesAreCoherent {
-                    acceptSnapshot(report.snapshot, requestReport: false)
-                } else {
-                    publish()
-                }
+                try dailyTotals.validate(refreshed.report, tracking: refreshed.taskList.tracking)
+                reportResource = refreshed.report
+                dailyTotals.accept(
+                    refreshed.report, tracking: refreshed.taskList.tracking,
+                    requested: requested, clock: clock)
+                acceptTaskList(refreshed.taskList, requestReport: false)
             } catch {
                 guard isCurrent(token) else { return }
                 dailyTotals.fail(error, clock: clock)
@@ -1744,16 +1711,15 @@ public final class TrackerSession {
             defer { finishOperation(token: token) }
             do {
                 let page = try await client.history(taskID: taskID, cursor: cursor)
-                guard isCurrent(token), historyToken == history.generation, taskID == selectedTaskID else { return }
-                history.accept(page, cursor: cursor)
-                for worklog in page.worklogs { correction.observe(worklog); move.observe(worklog) }
+                guard
+                    acceptHistoryPageIfCurrent(
+                        page, cursor: cursor, token: token, historyToken: historyToken, taskID: taskID)
+                else { return }
             } catch {
-                guard isCurrent(token), historyToken == history.generation, taskID == selectedTaskID else { return }
+                guard historyRequestIsCurrent(token: token, historyToken: historyToken, taskID: taskID) else { return }
                 history.unavailable = true
                 history.error = error.localizedDescription
-                if let failure = error as? BridgeFailure,
-                    failure.kind == "unavailable" || failure.kind == "protocol" || failure.requiresRefresh
-                {
+                if let failure = error as? BridgeFailure, historyFailureRequiresRecovery(failure) {
                     recordConnectionFailure(error)
                 }
             }
@@ -1782,9 +1748,9 @@ public final class TrackerSession {
         now = clock.now
         let token = displayGeneration
         displayTimer = scheduler.schedule(after: 1, repeating: true, tolerance: 0.2) { [weak self] in
-            guard let self, token == displayGeneration, running, !sleeping, uiVisible, active != nil else { return }
+            guard let self, displayTickIsCurrent(token) else { return }
             now = clock.now
-            if reports != nil, dailyTotals.updateDay(at: clock.now), !isBusy {
+            if hasReportClient(), dailyTotals.updateDay(at: clock.now), !isBusy {
                 updateRolloverTimer()
                 if !connection.protocolBlocked { refresh() }
             }
@@ -1810,7 +1776,7 @@ public final class TrackerSession {
             after: max(0.001, day.end.timeIntervalSince(clock.now)),
             repeating: false, tolerance: 0
         ) { [weak self] in
-            guard let self, token == rolloverGeneration, running, !sleeping else { return }
+            guard let self, rolloverTickIsCurrent(token) else { return }
             dailyTotals.updateDay(at: clock.now)
             updateRolloverTimer()
             if !connection.protocolBlocked { refresh() }
@@ -1839,6 +1805,178 @@ public final class TrackerSession {
         }
         publish()
     }
+
+    private func task(withID id: String, in tasks: [TaskItem]) -> TaskItem? {
+        for task in tasks {
+            if task.id == id { return task }
+        }
+        return nil
+    }
+
+    private func hasTask(withID id: String, archived: Bool, in tasks: [TaskItem]) -> Bool {
+        for task in tasks {
+            if task.id == id && task.archived == archived { return true }
+        }
+        return false
+    }
+
+    private func containsTask(withID id: String, in tasks: [TaskItem]) -> Bool {
+        task(withID: id, in: tasks) != nil
+    }
+
+    private func worklog(withID id: String, in worklogs: [WorklogItem]) -> WorklogItem? {
+        for worklog in worklogs {
+            if worklog.id == id { return worklog }
+        }
+        return nil
+    }
+
+    private func taskIDComesBefore(_ left: String, _ right: String) -> Bool { left < right }
+
+    private func stopPrimaryAction(worklogID: String) -> MenuPrimaryAction {
+        canStopTracking ? .stop(worklogID: worklogID) : .disabled
+    }
+
+    private func rejectConnection(_ message: String) -> Bool {
+        connection.message = message
+        publish()
+        return false
+    }
+
+    private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) -> Bool {
+        automation.cancel()
+        pendingRefresh = false
+        connection.settings = settings
+        dailyTotals.clear(at: clock.now)
+        reportResource = nil
+        settingsRepository.save(settings)
+        catalog.resetSelections()
+        rename.reset()
+        archiving.reset()
+        history.request(selectedTaskID: nil)
+        tracking.error = nil
+        acceptTaskList(resources)
+        return true
+    }
+
+    private func acceptTaskListIfCurrent(_ resources: TaskListResources, token: Int) -> Bool {
+        guard isCurrent(token) else { return false }
+        acceptTaskList(resources)
+        return true
+    }
+
+    private func retainRenameIntent(uncertain: Bool, commandStarted: Bool, confirmed: TaskListResources?) -> Bool {
+        uncertain || (commandStarted && confirmed == nil)
+    }
+
+    private func requireRenameReview(_ message: String) -> Bool {
+        rename.requireReview(message)
+        return false
+    }
+
+    private func prepareMoveSearch() -> Bool {
+        guard !sleeping else {
+            move.deferSearch()
+            return false
+        }
+        return true
+    }
+
+    private func loadedHistoryPages(for taskID: String) -> Int {
+        selectedTaskMatches(taskID) ? (worklogs.count + 49) / 50 : 0
+    }
+
+    private func selectedTaskMatches(_ taskID: String) -> Bool { selectedTaskID == taskID }
+
+    private func withinHistoryLimit(_ pagesRead: Int, limit: Int) -> Bool { pagesRead < limit }
+
+    private func hasMoreHistory(_ cursor: String?) -> Bool { cursor != nil }
+
+    private func requireMoveReview(latest: WorklogItem?, message: String) -> Bool {
+        move.requireReview(latest: latest, message: message)
+        return false
+    }
+
+    private func failMoveDestination() -> Bool {
+        move.fail(
+            BridgeFailure(message: "The destination task is unavailable or archived. Choose another task."),
+            retainIntent: false)
+        return false
+    }
+
+    private func isWorklogChangedFailure(_ failure: BridgeFailure?) -> Bool { failure?.kind == "worklog_changed" }
+
+    private func requireCorrectionReview(latest: WorklogItem?, message: String) -> Bool {
+        correction.requireReview(latest: latest, message: message)
+        return false
+    }
+
+    private func pauseTargetsWorklog(_ action: TrackingAutomationState.Pause, worklog: WorklogItem) -> Bool {
+        action.discoverAtStartup || action.expectedWorklogID == worklog.id
+    }
+
+    private func pauseTimeIsValid(_ start: Date, occurredAt: Date) -> Bool { start <= occurredAt }
+
+    private func automationIsCurrent(_ token: Int) -> Bool { token == automation.generation && automation.enabled }
+
+    private func canRetainPausedTask(_ result: TrackingCommandResult) -> Bool {
+        result.didStop && active == nil && !connection.stale
+    }
+
+    private func canResumeAutomation(_ resources: TaskListResources, taskID: String) -> Bool {
+        resources.tracking.value == nil && hasTask(withID: taskID, archived: false, in: resources.catalog.value)
+    }
+
+    private func prepareAutomationResume(_ resources: TaskListResources, taskID: String) -> Bool {
+        guard canResumeAutomation(resources, taskID: taskID) else {
+            automation.cancel()
+            return false
+        }
+        return true
+    }
+
+    private func trackingControlIsCurrent(_ token: Int) -> Bool {
+        !sleeping && token == controlGeneration && connection.confirmed && !connection.stale
+    }
+
+    private func startCommandCanApply(taskID: String, expectedActiveID: String?, occurredAt: String) -> Bool {
+        active?.id == expectedActiveID && hasTask(withID: taskID, archived: false, in: tasks)
+            && active?.taskId != taskID && (active == nil || trackingTimestampIsValid(occurredAt))
+    }
+
+    private func stopCommandCanApply(worklogID: String, occurredAt: String) -> Bool {
+        active?.id == worklogID && trackingTimestampIsValid(occurredAt)
+    }
+
+    private func historyRequestIsCurrent(token: Int, historyToken: Int, taskID: String) -> Bool {
+        isCurrent(token) && historyToken == history.generation && taskID == selectedTaskID
+    }
+
+    private func acceptHistoryPageIfCurrent(
+        _ page: HistoryPage, cursor: String?, token: Int, historyToken: Int, taskID: String
+    ) -> Bool {
+        guard historyRequestIsCurrent(token: token, historyToken: historyToken, taskID: taskID) else { return false }
+        history.accept(page, cursor: cursor)
+        page.worklogs.forEach(observeHistoryWorklog)
+        return true
+    }
+
+    private func observeHistoryWorklog(_ worklog: WorklogItem) {
+        correction.observe(worklog)
+        move.observe(worklog)
+    }
+
+    private func historyFailureRequiresRecovery(_ failure: BridgeFailure) -> Bool {
+        failure.kind == "unavailable" || failure.kind == "protocol" || failure.requiresRefresh
+    }
+
+    private func displayTickIsCurrent(_ token: Int) -> Bool {
+        token == displayGeneration && running && !sleeping && uiVisible && active != nil
+    }
+
+    private func rolloverTickIsCurrent(_ token: Int) -> Bool { token == rolloverGeneration && running && !sleeping }
+
+    private func hasReportClient() -> Bool { reports != nil }
 
     private func publish() { onChange?() }
 }

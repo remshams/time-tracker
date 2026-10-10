@@ -12,6 +12,10 @@ use crate::{
 };
 
 impl<R: TrackerRepository> TaskQueries for TrackerApplication<R> {
+    fn refresh_task_list(&mut self) -> Result<(), ApplicationError> {
+        self.refresh_authoritative_state()
+    }
+
     fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
         let mut items = self.tasks.clone();
         ordering.sort_items(&mut items);
@@ -105,7 +109,10 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
         let preview = self
             .repository
             .preview_inactive_tasks(canonical_timestamp(as_of))?;
-        self.adopt_snapshot(preview.snapshot)?;
+        self.adopt_tracking_read(preview.tracking)?;
+        for task in &preview.tasks {
+            self.replace_task(task.clone());
+        }
         Ok(preview.tasks)
     }
 
@@ -119,7 +126,10 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
             .archive_inactive_tasks(expected_ids, canonical_timestamp(as_of));
         match result {
             Ok(archive) => {
-                self.adopt_snapshot(archive.snapshot)?;
+                self.adopt_tracking_read(archive.tracking)?;
+                for task in &archive.tasks {
+                    self.replace_task(task.clone());
+                }
                 Ok(archive.tasks)
             }
             Err(error) => Err(self.task_failure_with_recovery(error.into())),
@@ -138,7 +148,10 @@ impl<R: TrackerRepository + InactiveTaskRepository> InactiveTaskOperations
         let preview = self
             .repository
             .preview_inactive_tasks_with_period(canonical_timestamp(as_of), period)?;
-        self.adopt_snapshot(preview.snapshot)?;
+        self.adopt_tracking_read(preview.tracking)?;
+        for task in &preview.tasks {
+            self.replace_task(task.clone());
+        }
         Ok(preview.tasks)
     }
 
@@ -154,7 +167,10 @@ impl<R: TrackerRepository + InactiveTaskRepository> InactiveTaskOperations
             period,
         ) {
             Ok(archive) => {
-                self.adopt_snapshot(archive.snapshot)?;
+                self.adopt_tracking_read(archive.tracking)?;
+                for task in &archive.tasks {
+                    self.replace_task(task.clone());
+                }
                 Ok(archive.tasks)
             }
             Err(error) => Err(self.task_failure_with_recovery(error.into())),

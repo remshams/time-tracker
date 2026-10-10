@@ -31,3 +31,4 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0015](0015-use-github-hosted-runners-for-ci.md) | Use GitHub-hosted runners for CI | Accepted |
 | [0016](0016-configurable-inactive-task-archiving.md) | Configurable inactive task archiving | Partially superseded by ADR 0017; all other decisions remain accepted. |
 | [0017](0017-separate-http-resources-from-client-refreshes.md) | Separate HTTP resources from client refreshes | Accepted |
+| [0018](0018-compose-resource-state-in-client-workflows.md) | Compose resource state in client workflows | Accepted |

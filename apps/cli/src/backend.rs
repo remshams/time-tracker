@@ -138,4 +138,51 @@ operation!(all_worklogs(after: Option<&GlobalWorklogCursor>) -> GlobalWorklogPag
 operation!(move_worklog(id: WorklogId, source: TaskId, expected: WorklogTimes, destination: TaskId) -> Worklog);
 operation!(correct_worklog(id: WorklogId, expected: WorklogTimes, replacement: WorklogTimes, now: DateTime<Utc>) -> Worklog);
 operation!(delete_completed_worklog(id: WorklogId, task: TaskId, expected: WorklogTimes) -> Worklog);
-operation!(report_totals(start: DateTime<Utc>, end: DateTime<Utc>, now: DateTime<Utc>) -> ReportTotals);
+impl Backend {
+    pub async fn report_totals(
+        &mut self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportTotals, CliError> {
+        match &mut self.kind {
+            BackendKind::Local(application) => application
+                .report_totals(start, end, now)
+                .map_err(CliError::application),
+            BackendKind::Remote(application) => {
+                let report = application
+                    .task_totals(start, end, now)
+                    .await
+                    .map_err(CliError::application)?;
+                let mut rows = Vec::with_capacity(report.rows.len());
+                for row in report.rows {
+                    let id: TaskId = row.task_id.parse().map_err(|_| {
+                        CliError::application(
+                            tracker_application::ApplicationError::RemoteProtocol(
+                                "Invalid report task identifier".to_owned(),
+                            ),
+                        )
+                    })?;
+                    let task = if let Some(task) = application.task(id) {
+                        task.clone()
+                    } else {
+                        application
+                            .read_task_observation(id)
+                            .await
+                            .map_err(CliError::application)?
+                            .value
+                            .task
+                    };
+                    rows.push(tracker_application::ReportRow {
+                        task,
+                        duration: chrono::TimeDelta::microseconds(row.duration_us),
+                    });
+                }
+                Ok(ReportTotals {
+                    rows,
+                    total: chrono::TimeDelta::microseconds(report.total_us),
+                })
+            }
+        }
+    }
+}

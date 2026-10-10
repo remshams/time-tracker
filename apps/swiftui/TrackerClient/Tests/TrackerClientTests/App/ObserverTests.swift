@@ -7,7 +7,7 @@ final class ObserverTests: XCTestCase {
     func testFailureObserverCanStopSessionBeforeOperationSchedulesAnotherPoll() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         let stopped = XCTestExpectation(description: "Failure observer stops the session during its request")
         var didStop = false
         fixture.session.onChange = {
@@ -38,7 +38,7 @@ final class ObserverTests: XCTestCase {
     func testRefreshKeepsCommandsEnabledAndCancelsScheduledPoll() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: nil)
+        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(snapshot)
         let previousPoll = try XCTUnwrap(fixture.scheduler.poll)
         XCTAssertTrue(fixture.session.canStartSelectedTask)
@@ -65,7 +65,7 @@ final class ObserverTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         fixture.session.setWindowVisible(true)
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         let display = try XCTUnwrap(fixture.scheduler.display)
         let operationCount = fixture.client.operations.count
         var observedNow: Date?
@@ -87,7 +87,7 @@ final class ObserverTests: XCTestCase {
     func testShowingWindowDuringRefreshNotifiesUpdatedTimeAndSchedulesDisplay() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.refresh()
         let request = try await fixture.client.next()
@@ -125,7 +125,7 @@ final class ObserverTests: XCTestCase {
         }
         fixture.session.start()
         let open = try await fixture.client.next()
-        open.succeed(TrackerSnapshot(tasks: [firstTask, secondTask], active: nil))
+        open.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let history = try await fixture.client.next()
         XCTAssertTrue(choseTask)
         XCTAssertEqual(fixture.session.selectedTaskID, secondTask.id)

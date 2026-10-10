@@ -44,7 +44,7 @@ fn global_pages_include_archived_tasks_and_keep_tied_rows_in_id_order() {
 }
 
 #[test]
-fn global_query_adopts_the_catalog_and_tracking_from_its_page() {
+fn global_query_adopts_page_task_metadata_and_tracking() {
     let alpha = task(1, "alpha");
     let beta = task(2, "beta");
     let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
@@ -58,7 +58,8 @@ fn global_query_adopts_the_catalog_and_tracking_from_its_page() {
         data.worklogs.push(worklog(10, beta.id(), 200));
     }
     let page = application.all_worklogs(None).unwrap();
-    assert_eq!(page.snapshot.task_items.len(), 2);
+    assert_eq!(page.task_items.len(), 1);
+    assert_eq!(page.task_items[0].task.id(), beta.id());
     assert_eq!(
         application.tasks(TaskOrdering::RecentlyWorked)[0].task.id(),
         beta.id()

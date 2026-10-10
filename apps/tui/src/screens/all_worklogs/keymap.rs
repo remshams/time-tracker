@@ -125,7 +125,7 @@ pub(crate) fn footer_hints(state: &AllWorklogsState, width: u16) -> &'static str
 
 #[cfg(test)]
 mod tests {
-    use tracker_application::{GlobalWorklogPage, TrackerSnapshot};
+    use tracker_application::{ActiveTrackingRead, GlobalWorklogPage};
     use tracker_domain::{TaskId, Worklog, WorklogId};
 
     use crate::screens::worklog_history::MoveDraft;
@@ -135,10 +135,11 @@ mod tests {
     fn state() -> AllWorklogsState {
         AllWorklogsState::new(GlobalWorklogPage {
             worklogs: Vec::new(),
-            snapshot: TrackerSnapshot {
-                task_items: Vec::new(),
+            task_items: Vec::new(),
+            tracking: Some(ActiveTrackingRead {
                 active_worklog: None,
-            },
+                active_task_item: None,
+            }),
             next_cursor: None,
         })
     }

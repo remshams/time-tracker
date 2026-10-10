@@ -236,3 +236,72 @@ fn remote_commands_use_the_server_and_preserve_guards_and_committed_values() {
         0
     );
 }
+
+#[tokio::test]
+async fn report_metadata_failure_keeps_the_existing_semantic_cli_error() {
+    use crate::backend::{Backend, BackendKind};
+    use axum::Json;
+    use axum::http::StatusCode;
+    use axum::routing::get;
+    use tracker_protocol::{ErrorCode, ErrorDto, HealthDto, ReportDto, ReportRowDto};
+
+    let start = chrono::DateTime::from_timestamp(100, 0).unwrap();
+    let end = chrono::DateTime::from_timestamp(300, 0).unwrap();
+    let now = chrono::DateTime::from_timestamp(200, 0).unwrap();
+    let task_id = tracker_domain::TaskId::generate();
+    let router = axum::Router::new()
+        .route(
+            "/v1/health",
+            get(|| async {
+                Json(HealthDto {
+                    status: "ok".to_owned(),
+                    protocol_version: tracker_protocol::VERSION,
+                })
+            }),
+        )
+        .route(
+            "/v1/reports/task-totals",
+            get(move || async move {
+                Json(ReportDto {
+                    start,
+                    end,
+                    now,
+                    rows: vec![ReportRowDto {
+                        task_id: task_id.to_string(),
+                        duration_us: 60_000_000,
+                    }],
+                    total_us: 60_000_000,
+                    revision: "report-1".to_owned(),
+                })
+            }),
+        )
+        .route(
+            "/v1/tasks/{id}",
+            get(|| async {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorDto {
+                        code: ErrorCode::NotFound,
+                        message: "Report task was not found".to_owned(),
+                    }),
+                )
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let application = tracker_remote::RemoteApplication::connect(&endpoint)
+        .await
+        .unwrap();
+    let mut backend = Backend {
+        identity: endpoint,
+        kind: BackendKind::Remote(Box::new(application)),
+    };
+    let error = backend.report_totals(start, end, now).await.unwrap_err();
+    server.abort();
+    assert_eq!(error.code, "operation_failed");
+    assert_eq!(error.exit_code, 3);
+    assert_eq!(error.message, "Report task was not found");
+}

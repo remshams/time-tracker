@@ -7,9 +7,9 @@ use std::ptr;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::{Value, json};
-use tracker_application::{
-    ApplicationFailureCategory, TaskOrdering, TrackerApplication, WorklogCursor,
-};
+#[cfg(test)]
+use tracker_application::TaskOrdering;
+use tracker_application::{ApplicationFailureCategory, TrackerApplication, WorklogCursor};
 
 mod backend;
 mod database;
@@ -23,6 +23,7 @@ use tracker_storage::{SqliteRepository, default_database_path, ensure_app_data_d
 pub struct Bridge {
     application: Backend,
     inactive_preview: Option<InactivePreview>,
+    report_observation: Option<ReportJson>,
 }
 
 impl Bridge {
@@ -30,6 +31,7 @@ impl Bridge {
         Self {
             application,
             inactive_preview: None,
+            report_observation: None,
         }
     }
 }
@@ -53,12 +55,9 @@ struct WorklogJson {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SnapshotJson {
-    tasks: Vec<TaskJson>,
-    active: Option<WorklogJson>,
-    tasks_revision: Option<String>,
-    tracking_revision: Option<String>,
+struct ResourceJson<T> {
+    value: T,
+    revision: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -78,7 +77,6 @@ struct ReportRowJson {
 
 #[derive(Serialize)]
 struct ReportJson {
-    snapshot: SnapshotJson,
     rows: Vec<ReportRowJson>,
     revision: Option<String>,
     now: String,
@@ -97,33 +95,83 @@ fn worklog_json(worklog: &tracker_domain::Worklog) -> WorklogJson {
     }
 }
 
-fn snapshot(application: &Backend) -> SnapshotJson {
-    let tasks = application
-        .tasks(TaskOrdering::default())
-        .into_iter()
-        .map(|item| TaskJson {
-            id: item.task.id().to_string(),
-            name: item.task.name().as_str().to_owned(),
-            archived: item.task.is_archived(),
-            latest_start: item.latest_work_start.map(timestamp),
-        })
-        .collect();
-    let active = match application.current_tracking() {
-        TrackingState::Idle => None,
-        TrackingState::Running { worklog } => Some(WorklogJson {
-            id: worklog.id().to_string(),
-            task_id: worklog.task_id().to_string(),
-            start: timestamp(worklog.start()),
-            end: None,
-        }),
-    };
-    let (tasks_revision, tracking_revision) = application.resource_revisions();
-    SnapshotJson {
-        tasks,
-        active,
-        tasks_revision,
-        tracking_revision,
+fn task_json(task: &tracker_domain::Task, latest_start: Option<DateTime<Utc>>) -> TaskJson {
+    TaskJson {
+        id: task.id().to_string(),
+        name: task.name().as_str().to_owned(),
+        archived: task.is_archived(),
+        latest_start: latest_start.map(timestamp),
     }
+}
+
+fn tasks_json(application: &Backend) -> Option<ResourceJson<Vec<TaskJson>>> {
+    application
+        .task_observation()
+        .map(|(items, revision)| ResourceJson {
+            value: items
+                .iter()
+                .map(|item| task_json(&item.task, item.latest_work_start))
+                .collect(),
+            revision,
+        })
+}
+
+fn tracking_json(application: &Backend) -> Option<ResourceJson<Option<WorklogJson>>> {
+    application
+        .tracking_observation()
+        .map(|(tracking, revision)| ResourceJson {
+            value: match tracking {
+                TrackingState::Idle => None,
+                TrackingState::Running { worklog } => Some(WorklogJson {
+                    id: worklog.id().to_string(),
+                    task_id: worklog.task_id().to_string(),
+                    start: timestamp(worklog.start()),
+                    end: None,
+                }),
+            },
+            revision,
+        })
+}
+
+fn task_result(application: &Backend, task: &tracker_domain::Task) -> Value {
+    json!({ "task": task_json(task, None), "receipt": application.command_receipt() })
+}
+
+fn start_result(
+    application: &Backend,
+    outcome: tracker_application::SetActiveTaskOutcome,
+) -> Value {
+    use tracker_application::SetActiveTaskOutcome;
+    let (active, stopped) = match outcome {
+        SetActiveTaskOutcome::Started { worklog } => (worklog_json(&worklog), None),
+        SetActiveTaskOutcome::AlreadyActive { worklog } => (
+            WorklogJson {
+                id: worklog.id().to_string(),
+                task_id: worklog.task_id().to_string(),
+                start: timestamp(worklog.start()),
+                end: None,
+            },
+            None,
+        ),
+        SetActiveTaskOutcome::Switched { stopped, started } => {
+            (worklog_json(&started), Some(worklog_json(&stopped)))
+        }
+    };
+    json!({ "active": active, "stopped": stopped, "didStop": false,
+        "receipt": application.command_receipt() })
+}
+
+fn stop_result(
+    application: &Backend,
+    outcome: tracker_application::ClearActiveTaskOutcome,
+) -> Value {
+    use tracker_application::ClearActiveTaskOutcome;
+    let (stopped, did_stop) = match outcome {
+        ClearActiveTaskOutcome::Stopped { worklog } => (Some(worklog_json(&worklog)), true),
+        ClearActiveTaskOutcome::AlreadyIdle => (None, false),
+    };
+    json!({ "active": null, "stopped": stopped, "didStop": did_stop,
+        "receipt": application.command_receipt() })
 }
 
 fn encode(result: Result<Value, BridgeError>) -> *mut c_char {
@@ -199,7 +247,7 @@ unsafe fn open_bridge(
 }
 
 /// Opens a disconnected remote client without creating a local database.
-/// Call `tt_bridge_snapshot` with refresh enabled to test the connection.
+/// Call `tt_bridge_check_connection` to test the connection.
 ///
 /// # Safety
 /// `endpoint` must be null or a valid C string. `error` must point to writable
@@ -271,28 +319,113 @@ pub unsafe extern "C" fn tt_bridge_check_connection(bridge: *mut Bridge) -> *mut
     )
 }
 
-/// Returns a JSON snapshot. A refresh rereads the authoritative backend state.
+/// Refreshes the resources selected by a client workflow.
+/// Selection 1 reads tasks, 2 reads tracking, and 3 reads a coherent task list.
 ///
 /// # Safety
-/// `bridge` must point to a live bridge, and calls for a bridge must be serialized.
+/// `bridge` must be live and uniquely accessed. Free the returned owned string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tt_bridge_snapshot(bridge: *mut Bridge, refresh: bool) -> *mut c_char {
-    // SAFETY: The caller guarantees the bridge is live and uniquely accessed.
+pub unsafe extern "C" fn tt_bridge_refresh_resources(
+    bridge: *mut Bridge,
+    selection: u32,
+) -> *mut c_char {
+    // SAFETY: The caller supplies exclusive access to a live bridge or null.
     let Some(bridge) = (unsafe { bridge.as_mut() }) else {
         return encode(Err("Database is not open".to_owned().into()));
     };
-    let result = if refresh {
-        bridge.application.refresh()
-    } else {
-        Ok(())
-    };
-    encode(result.and_then(|_| {
-        serde_json::to_value(snapshot(&bridge.application))
-            .map_err(|error| error.to_string().into())
-    }))
+    encode(
+        bridge
+            .application
+            .refresh_resources(selection)
+            .map(|_| json!({ "refreshed": true })),
+    )
 }
 
-/// Returns task totals and separately composed task and tracking caches.
+/// Returns the last confirmed task resource, or null before its first read.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Free the returned owned string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_tasks(bridge: *mut Bridge) -> *mut c_char {
+    // SAFETY: The caller supplies exclusive access to a live bridge or null.
+    let Some(bridge) = (unsafe { bridge.as_ref() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    encode(
+        serde_json::to_value(tasks_json(&bridge.application))
+            .map_err(|error| error.to_string().into()),
+    )
+}
+
+/// Returns confirmed tracking, or null before its first read.
+/// A confirmed idle resource has a null value inside the resource observation.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Free the returned owned string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_tracking(bridge: *mut Bridge) -> *mut c_char {
+    // SAFETY: The caller supplies exclusive access to a live bridge or null.
+    let Some(bridge) = (unsafe { bridge.as_ref() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    encode(
+        serde_json::to_value(tracking_json(&bridge.application))
+            .map_err(|error| error.to_string().into()),
+    )
+}
+
+/// Refreshes totals with tracking and, when requested, the task list.
+/// The coordinator publishes the requested remote observations together.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be valid C strings
+/// or null. Free the returned owned string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_refresh_totals(
+    bridge: *mut Bridge,
+    include_tasks: bool,
+    start: *const c_char,
+    end: *const c_char,
+    now: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller supplies exclusive access to a live bridge or null.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    let result = (|| {
+        // SAFETY: The caller supplies valid C strings or null.
+        let (start, end, now) = unsafe {
+            (
+                read_identifier(start, "Invalid report start")?,
+                read_identifier(end, "Invalid report end")?,
+                read_identifier(now, "Invalid report timestamp")?,
+            )
+        };
+        let report = bridge
+            .application
+            .refresh_totals(include_tasks, start, end, now)?;
+        bridge.report_observation = Some(report);
+        Ok(json!({ "refreshed": true }))
+    })();
+    encode(result)
+}
+
+/// Returns the report captured by the last successful selected totals refresh.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Free the returned owned string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_report_observation(bridge: *mut Bridge) -> *mut c_char {
+    // SAFETY: The caller supplies exclusive access to a live bridge or null.
+    let Some(bridge) = (unsafe { bridge.as_ref() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    encode(
+        serde_json::to_value(&bridge.report_observation).map_err(|error| error.to_string().into()),
+    )
+}
+
+/// Returns task totals without reading task or tracking resources.
 /// The caller supplies the UTC interval and the instant used to cap active work.
 ///
 /// # Safety
@@ -321,7 +454,6 @@ pub unsafe extern "C" fn tt_bridge_report(
             .map_err(BridgeError::from)?;
         let (rows, revision, cutoff) = bridge.application.report_rows(start, end, now)?;
         serde_json::to_value(ReportJson {
-            snapshot: snapshot(&bridge.application),
             rows,
             revision,
             now: timestamp(cutoff),
@@ -348,7 +480,7 @@ unsafe fn read_identifier<T: std::str::FromStr>(
 }
 
 /// Creates a task with a permanent Rust-generated ID at the submitted timestamp.
-/// Returns its task ID and the committed snapshot without another database read.
+/// Returns its task ID and the committed outcome without another database read.
 ///
 /// # Safety
 /// `bridge` must be live and uniquely accessed. Strings must be null or valid
@@ -372,15 +504,12 @@ pub unsafe extern "C" fn tt_bridge_create_task_at(
         let occurred_at = unsafe { read_identifier(occurred_at, "Invalid creation timestamp") }
             .map_err(BridgeError::from)?;
         let task = bridge.application.create_task(name, occurred_at)?;
-        Ok(json!({
-            "taskId": task.id().to_string(),
-            "snapshot": snapshot(&bridge.application)
-        }))
+        Ok(task_result(&bridge.application, &task))
     })();
     encode(result)
 }
 
-/// Renames an existing task at the submitted timestamp and returns its snapshot.
+/// Renames an existing task at the submitted timestamp and returns the committed task.
 /// Task identity, archive state, and worklogs remain intact.
 ///
 /// # Safety
@@ -408,14 +537,13 @@ pub unsafe extern "C" fn tt_bridge_rename_task_at(
         // SAFETY: The caller supplies a valid C string or null.
         let occurred_at = unsafe { read_identifier(occurred_at, "Invalid rename timestamp") }
             .map_err(BridgeError::from)?;
-        bridge.application.rename_task(task_id, name, occurred_at)?;
-        serde_json::to_value(snapshot(&bridge.application))
-            .map_err(|error| error.to_string().into())
+        let task = bridge.application.rename_task(task_id, name, occurred_at)?;
+        Ok(task_result(&bridge.application, &task))
     })();
     encode(result)
 }
 
-/// Archives a stopped task and returns the committed snapshot.
+/// Archives a stopped task and returns the committed outcome.
 ///
 /// # Safety
 /// `bridge` must be live and uniquely accessed. Strings must be null or valid
@@ -430,7 +558,7 @@ pub unsafe extern "C" fn tt_bridge_archive_task_at(
     unsafe { change_task_archive_at(bridge, task_id, occurred_at, true) }
 }
 
-/// Restores a task and returns the committed snapshot.
+/// Restores a task and returns the committed outcome.
 ///
 /// # Safety
 /// `bridge` must be live and uniquely accessed. Strings must be null or valid
@@ -462,19 +590,18 @@ unsafe fn change_task_archive_at(
         // SAFETY: The caller supplies valid C strings or null.
         let occurred_at = unsafe { read_identifier(occurred_at, "Invalid archive timestamp") }
             .map_err(BridgeError::from)?;
-        if archived {
-            bridge.application.archive_task(task_id, occurred_at)?;
+        let task = if archived {
+            bridge.application.archive_task(task_id, occurred_at)?
         } else {
-            bridge.application.unarchive_task(task_id, occurred_at)?;
-        }
-        serde_json::to_value(snapshot(&bridge.application))
-            .map_err(|error| error.to_string().into())
+            bridge.application.unarchive_task(task_id, occurred_at)?
+        };
+        Ok(task_result(&bridge.application, &task))
     })();
     encode(result)
 }
 
 /// Starts the requested task, or atomically switches from the running task.
-/// Returns the committed snapshot without a second database read.
+/// Returns the committed outcome without a second database read.
 ///
 /// # Safety
 /// `bridge` must point to a live, uniquely accessed bridge. `task_id` must be
@@ -492,14 +619,11 @@ pub unsafe extern "C" fn tt_bridge_start_tracking(
     let result = unsafe { read_identifier(task_id, "Invalid task ID") }
         .map_err(BridgeError::from)
         .and_then(|task_id| bridge.application.set_active_task(task_id, Utc::now()));
-    encode(result.and_then(|_| {
-        serde_json::to_value(snapshot(&bridge.application))
-            .map_err(|error| error.to_string().into())
-    }))
+    encode(result.map(|outcome| start_result(&bridge.application, outcome)))
 }
 
 /// Stops the expected worklog without stopping a different client's new timer.
-/// Returns the committed snapshot without a second database read.
+/// Returns the committed outcome without a second database read.
 ///
 /// # Safety
 /// `bridge` must point to a live, uniquely accessed bridge. `worklog_id` must be
@@ -517,10 +641,7 @@ pub unsafe extern "C" fn tt_bridge_stop_tracking(
     let result = unsafe { read_identifier(worklog_id, "Invalid worklog ID") }
         .map_err(BridgeError::from)
         .and_then(|id| bridge.application.clear_active_task(id, Utc::now()));
-    encode(result.and_then(|_| {
-        serde_json::to_value(snapshot(&bridge.application))
-            .map_err(|error| error.to_string().into())
-    }))
+    encode(result.map(|outcome| stop_result(&bridge.application, outcome)))
 }
 
 /// Starts or switches tracking at the timestamp captured when the user clicked.
@@ -547,10 +668,7 @@ pub unsafe extern "C" fn tt_bridge_start_tracking_at(
                 .map_err(BridgeError::from)?;
             bridge.application.set_active_task(task_id, occurred_at)
         });
-    encode(result.and_then(|_| {
-        serde_json::to_value(snapshot(&bridge.application))
-            .map_err(|error| error.to_string().into())
-    }))
+    encode(result.map(|outcome| start_result(&bridge.application, outcome)))
 }
 
 /// Stops the expected worklog at the timestamp captured when the user clicked.
@@ -579,10 +697,7 @@ pub unsafe extern "C" fn tt_bridge_stop_tracking_at(
                 .application
                 .clear_active_task(worklog_id, occurred_at)
         });
-    encode(result.and_then(|_| {
-        serde_json::to_value(snapshot(&bridge.application))
-            .map_err(|error| error.to_string().into())
-    }))
+    encode(result.map(|outcome| stop_result(&bridge.application, outcome)))
 }
 
 /// Starts or switches only if cached tracking still matches the rendered timer.
@@ -622,10 +737,7 @@ pub unsafe extern "C" fn tt_bridge_start_tracking_if_active_at(
                 .application
                 .set_active_task_if_active(task_id, expected_active, occurred_at)
         });
-    encode(result.and_then(|_| {
-        serde_json::to_value(snapshot(&bridge.application))
-            .map_err(|error| error.to_string().into())
-    }))
+    encode(result.map(|outcome| start_result(&bridge.application, outcome)))
 }
 
 /// Pauses the expected worklog and reports whether this command stopped it.
@@ -654,12 +766,7 @@ pub unsafe extern "C" fn tt_bridge_pause_tracking_at(
                 .application
                 .clear_active_task(worklog_id, occurred_at)
         });
-    encode(result.map(|outcome| {
-        json!({
-            "snapshot": snapshot(&bridge.application),
-            "didStop": matches!(outcome, tracker_application::ClearActiveTaskOutcome::Stopped { .. })
-        })
-    }))
+    encode(result.map(|outcome| stop_result(&bridge.application, outcome)))
 }
 
 /// Resumes a task only when the authoritative tracker remains idle.
@@ -686,10 +793,7 @@ pub unsafe extern "C" fn tt_bridge_resume_tracking_at(
                 .map_err(BridgeError::from)?;
             bridge.application.resume_tracking(task_id, occurred_at)
         });
-    encode(result.and_then(|_| {
-        serde_json::to_value(snapshot(&bridge.application))
-            .map_err(|error| error.to_string().into())
-    }))
+    encode(result.map(|outcome| start_result(&bridge.application, outcome)))
 }
 
 /// Corrects timestamps only when the stored worklog still matches the editor.
@@ -732,7 +836,7 @@ pub unsafe extern "C" fn tt_bridge_correct_worklog_at(
         )?;
         Ok(json!({
             "worklog": worklog_json(&worklog),
-            "snapshot": snapshot(&bridge.application)
+            "receipt": bridge.application.command_receipt()
         }))
     })();
     encode(result)
@@ -810,7 +914,9 @@ pub unsafe extern "C" fn tt_bridge_move_worklog(
             WorklogTimes::new(start, end),
             destination,
         )?;
-        Ok(json!({ "worklog": worklog_json(&worklog), "snapshot": snapshot(&bridge.application) }))
+        Ok(
+            json!({ "worklog": worklog_json(&worklog), "receipt": bridge.application.command_receipt() }),
+        )
     })();
     encode(result)
 }
@@ -941,6 +1047,22 @@ mod archive_tests;
 
 #[cfg(test)]
 mod tests {
+    pub(super) fn test_task_values(application: &Backend) -> Value {
+        serde_json::to_value(tasks_json(application).map(|resource| resource.value)).unwrap()
+    }
+
+    pub(super) fn test_active_value(application: &Backend) -> Value {
+        serde_json::to_value(tracking_json(application).and_then(|resource| resource.value))
+            .unwrap()
+    }
+
+    pub(super) fn test_resource_values(application: &Backend) -> (Value, Value) {
+        (
+            test_task_values(application),
+            test_active_value(application),
+        )
+    }
+
     use super::*;
     use tracker_application::{TaskOperations, TrackingOperations};
 
@@ -1034,7 +1156,8 @@ mod tests {
         assert!(started["data"]["active"]["end"].is_null());
         let worklog_id = started["data"]["active"]["id"].as_str().unwrap();
         let start = started["data"]["active"]["start"].as_str().unwrap();
-        let task = started["data"]["tasks"]
+        let observed_tasks = test_task_values(&bridge.application);
+        let task = observed_tasks
             .as_array()
             .unwrap()
             .iter()
@@ -1048,7 +1171,10 @@ mod tests {
         let stopped = stop_tracking(&mut bridge, worklog_id);
         assert!(stopped.get("error").is_none(), "{stopped}");
         assert!(stopped["data"]["active"].is_null());
-        assert_eq!(stop_tracking(&mut bridge, worklog_id), stopped);
+        let repeated_stop = stop_tracking(&mut bridge, worklog_id);
+        assert!(repeated_stop["data"]["active"].is_null());
+        assert_eq!(repeated_stop["data"]["didStop"], false);
+        assert!(repeated_stop["data"]["stopped"].is_null());
         drop(bridge);
 
         let mut reopened = open_fixture(&path).unwrap();
@@ -1110,7 +1236,7 @@ mod tests {
             "Tracking state changed in another client. Refreshed state."
         );
         assert_eq!(
-            serde_json::to_value(snapshot(&first.application)).unwrap()["active"],
+            test_active_value(&first.application),
             switched["data"]["active"]
         );
         let page = second
@@ -1144,7 +1270,7 @@ mod tests {
             "Task not found"
         );
         assert_eq!(
-            serde_json::to_value(snapshot(&bridge.application)).unwrap()["active"],
+            test_active_value(&bridge.application),
             started["data"]["active"]
         );
     }
@@ -1216,10 +1342,10 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let bridge = open_fixture(&directory.path().join("tt.db")).unwrap();
 
-        let value = serde_json::to_value(snapshot(&bridge.application)).unwrap();
-        let tasks = value["tasks"].as_array().unwrap();
+        let value = test_resource_values(&bridge.application);
+        let tasks = value.0.as_array().unwrap();
         assert_eq!(tasks.len(), 3);
-        assert_eq!(value["active"], Value::Null);
+        assert_eq!(value.1, Value::Null);
         assert!(tasks.iter().all(|task| {
             task["id"].is_string()
                 && task["name"].is_string()
@@ -1233,21 +1359,18 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("tt.db");
         let mut first = open_at(&path).unwrap();
-        assert!(snapshot(&first.application).tasks.is_empty());
+        assert!(tasks_json(&first.application).unwrap().value.is_empty());
         let task = first
             .application
             .create_task(TaskName::new("Saved project").unwrap(), Utc::now())
             .unwrap_or_else(|error| panic!("{}", error.message));
-        let before = serde_json::to_value(snapshot(&first.application)).unwrap();
+        let before = test_resource_values(&first.application);
         drop(first);
 
         let second = open_at(&path).unwrap();
+        assert_eq!(test_resource_values(&second.application), before);
         assert_eq!(
-            serde_json::to_value(snapshot(&second.application)).unwrap(),
-            before
-        );
-        assert_eq!(
-            snapshot(&second.application).tasks[0].id,
+            tasks_json(&second.application).unwrap().value[0].id,
             task.id().to_string()
         );
     }
@@ -1303,7 +1426,7 @@ mod tests {
     #[test]
     fn null_bridge_returns_an_error_envelope() {
         // SAFETY: The null pointer is explicitly supported by the function.
-        let response = unsafe { tt_bridge_snapshot(ptr::null_mut(), true) };
+        let response = unsafe { tt_bridge_tasks(ptr::null_mut()) };
         // SAFETY: The bridge returns a valid C string.
         let text = unsafe { CStr::from_ptr(response) }.to_str().unwrap();
         assert!(text.contains("Database is not open"));

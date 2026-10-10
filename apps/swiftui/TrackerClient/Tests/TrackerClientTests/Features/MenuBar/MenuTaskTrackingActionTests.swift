@@ -6,7 +6,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
     func testIdleTaskStartsAndRunningTaskStopsItsCapturedWorklog() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         let content = TrackerMenuContent(fixture.session)
         let running = try XCTUnwrap((content.todayTasks + content.otherTasks).first { $0.id == firstTask.id })
         let idle = try XCTUnwrap(content.otherTasks.first { $0.id == secondTask.id })
@@ -18,7 +18,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
     func testBusyRunningTaskCannotFallBackToStarting() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         fixture.session.startTracking(taskID: secondTask.id)
         let content = TrackerMenuContent(fixture.session)
         XCTAssertFalse(content.canStopTracking)
@@ -33,7 +33,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
     func testRunningTaskWithoutAnActiveWorklogCannotFallBackToStarting() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         let content = TrackerMenuContent(fixture.session)
         XCTAssertNil(content.activeWorklogID)
         let running = TrackerMenuTask(task: firstTask, durationText: "-", isRunning: true, canStart: true)
@@ -44,7 +44,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
     func testStaleMenuCannotStartOrStopTracking() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
         poll.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable"))
@@ -62,7 +62,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
-            TrackerSnapshot(tasks: [archivedTask], active: nil),
+            TaskListResources(tasks: [archivedTask], active: nil),
             rows: [TaskReportTotal(taskId: archivedTask.id, durationMicroseconds: 60_000_000)])
         let content = TrackerMenuContent(fixture.session)
         let entry = try XCTUnwrap(content.todayTasks.first)
@@ -82,7 +82,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
     func testFrozenStopActionKeepsItsWorklogIdentityAndTheSessionRejectsAChangedWorklog() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         fixture.session.onChange = { observer.update(from: fixture.session, showDailyTotal: true) }
         observer.menuOpened(from: fixture.session, showDailyTotal: true)
@@ -93,7 +93,7 @@ final class MenuTaskTrackingActionTests: XCTestCase {
             start: activeWorklog.start, end: nil)
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
-        poll.succeed(TrackerSnapshot(tasks: [firstTask], active: changed))
+        poll.succeed(TaskListResources(tasks: [firstTask], active: changed))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()

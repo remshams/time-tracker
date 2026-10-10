@@ -7,6 +7,17 @@ private struct BridgeEnvelope<Value: Decodable>: Decodable {
     let kind: String?
     let uncertain: Bool?
     let requiresRefresh: Bool?
+    private enum CodingKeys: String, CodingKey { case data, error, kind, uncertain, requiresRefresh }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        data = values.contains(.data) ? .some(try values.decode(Value.self, forKey: .data)) : nil
+        error = try values.decodeIfPresent(String.self, forKey: .error)
+        kind = try values.decodeIfPresent(String.self, forKey: .kind)
+        uncertain = try values.decodeIfPresent(Bool.self, forKey: .uncertain)
+        requiresRefresh = try values.decodeIfPresent(Bool.self, forKey: .requiresRefresh)
+    }
+
 }
 
 private final class RustBridge {
@@ -71,7 +82,58 @@ private final class RustBridge {
         guard result.compatible else { throw BridgeFailure(message: "The tracker connection is incompatible.") }
     }
 
-    func snapshot() throws -> TrackerSnapshot { try decode(tt_bridge_snapshot(handle, true)) }
+    func refreshTaskList() throws -> TaskListResources {
+        try refreshResources(3)
+        return try taskListResources()
+    }
+
+    private func refreshResources(_ selection: UInt32) throws {
+        struct Refreshed: Decodable { let refreshed: Bool }
+        let result: Refreshed = try decode(tt_bridge_refresh_resources(handle, selection))
+        guard result.refreshed else { throw BridgeFailure(message: "The resource refresh did not complete.") }
+    }
+
+    func readTaskCatalog() throws -> TaskCatalogObservation {
+        try refreshResources(1)
+        return try decode(tt_bridge_tasks(handle))
+    }
+
+    func readTracking() throws -> TrackingObservation {
+        try refreshResources(2)
+        return try decode(tt_bridge_tracking(handle))
+    }
+
+    private func taskListResources() throws -> TaskListResources {
+        let catalog: TaskCatalogObservation = try decode(tt_bridge_tasks(handle))
+        let tracking: TrackingObservation = try decode(tt_bridge_tracking(handle))
+        return TaskListResources(catalog: catalog, tracking: tracking)
+    }
+
+    private func refreshTotals(includeTasks: Bool, start: String, end: String, now: String) throws {
+        struct Refreshed: Decodable { let refreshed: Bool }
+        let result: Refreshed = try start.withCString { start in
+            try end.withCString { end in
+                try now.withCString { now in
+                    try decode(tt_bridge_refresh_totals(handle, includeTasks, start, end, now))
+                }
+            }
+        }
+        guard result.refreshed else { throw BridgeFailure(message: "The resource refresh did not complete.") }
+    }
+
+    func refreshTaskListWithTotals(start: String, end: String, now: String) throws -> TaskListTotalsRefresh {
+        try refreshTotals(includeTasks: true, start: start, end: end, now: now)
+        let taskList = try taskListResources()
+        let report: TrackerReport = try decode(tt_bridge_report_observation(handle))
+        return TaskListTotalsRefresh(taskList: taskList, report: report)
+    }
+
+    func refreshDailyTotals(start: String, end: String, now: String) throws -> DailyTotalsResources {
+        try refreshTotals(includeTasks: false, start: start, end: end, now: now)
+        let tracking: TrackingObservation = try decode(tt_bridge_tracking(handle))
+        let report: TrackerReport = try decode(tt_bridge_report_observation(handle))
+        return DailyTotalsResources(report: report, tracking: tracking)
+    }
 
     func createTask(name: String, occurredAt: String) throws -> TaskCreationResult {
         guard !name.utf8.contains(0) else {
@@ -84,7 +146,7 @@ private final class RustBridge {
         }
     }
 
-    func renameTask(taskID: String, name: String, occurredAt: String) throws -> TrackerSnapshot {
+    func renameTask(taskID: String, name: String, occurredAt: String) throws -> TaskCommandResult {
         guard !name.utf8.contains(0) else {
             throw BridgeFailure(message: "Task names must not contain control characters.")
         }
@@ -115,7 +177,7 @@ private final class RustBridge {
         }
     }
 
-    func archiveTask(taskID: String, occurredAt: String) throws -> TrackerSnapshot {
+    func archiveTask(taskID: String, occurredAt: String) throws -> TaskCommandResult {
         try taskID.withCString { task in
             try occurredAt.withCString { instant in
                 try decode(tt_bridge_archive_task_at(handle, task, instant), requiresRefreshOnMalformed: true)
@@ -123,7 +185,7 @@ private final class RustBridge {
         }
     }
 
-    func unarchiveTask(taskID: String, occurredAt: String) throws -> TrackerSnapshot {
+    func unarchiveTask(taskID: String, occurredAt: String) throws -> TaskCommandResult {
         try taskID.withCString { task in
             try occurredAt.withCString { instant in
                 try decode(tt_bridge_unarchive_task_at(handle, task, instant), requiresRefreshOnMalformed: true)
@@ -141,7 +203,7 @@ private final class RustBridge {
         }
     }
 
-    func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) throws -> TrackerSnapshot {
+    func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) throws -> TrackingCommandResult {
         try taskID.withCString { task in
             try occurredAt.withCString { instant in
                 if let expectedActiveID {
@@ -154,7 +216,7 @@ private final class RustBridge {
         }
     }
 
-    func stopTracking(worklogID: String, occurredAt: String) throws -> TrackerSnapshot {
+    func stopTracking(worklogID: String, occurredAt: String) throws -> TrackingCommandResult {
         try worklogID.withCString { worklog in
             try occurredAt.withCString { instant in
                 try decode(tt_bridge_stop_tracking_at(handle, worklog, instant))
@@ -170,7 +232,7 @@ private final class RustBridge {
         }
     }
 
-    func resumeTracking(taskID: String, occurredAt: String) throws -> TrackerSnapshot {
+    func resumeTracking(taskID: String, occurredAt: String) throws -> TrackingCommandResult {
         try taskID.withCString { task in
             try occurredAt.withCString { instant in
                 try decode(tt_bridge_resume_tracking_at(handle, task, instant))
@@ -275,11 +337,11 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         return bridge
     }
 
-    func openConfigured(_ settings: ConnectionSettings) async throws -> TrackerSnapshot {
+    func openConfigured(_ settings: ConnectionSettings) async throws -> TaskListResources {
         try await perform { worker in
             // Keep a saved server handle when its first refresh fails. Never fall back to SQLite.
             worker.bridge = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
-            return try worker.currentBridge().snapshot()
+            return try worker.currentBridge().refreshTaskList()
         }
     }
 
@@ -290,33 +352,52 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         }
     }
 
-    func connect(_ settings: ConnectionSettings) async throws -> TrackerSnapshot {
+    func connect(_ settings: ConnectionSettings) async throws -> TaskListResources {
         try await perform { worker in
             let candidate = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
-            let snapshot = try candidate.snapshot()
+            let snapshot = try candidate.refreshTaskList()
             worker.bridge = candidate
             return snapshot
         }
     }
 
-    func refresh(settings: ConnectionSettings) async throws -> TrackerSnapshot {
+    func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources {
         try await perform { worker in
             if worker.bridge == nil {
                 worker.bridge = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
             }
-            return try worker.currentBridge().snapshot()
+            return try worker.currentBridge().refreshTaskList()
         }
     }
 
-    func snapshot() async throws -> TrackerSnapshot {
-        try await perform { try $0.currentBridge().snapshot() }
+    func refreshTaskList() async throws -> TaskListResources {
+        try await perform { try $0.currentBridge().refreshTaskList() }
+    }
+
+    func readTaskCatalog() async throws -> TaskCatalogObservation {
+        try await perform { try $0.currentBridge().readTaskCatalog() }
+    }
+
+    func readTracking() async throws -> TrackingObservation {
+        try await perform { try $0.currentBridge().readTracking() }
+    }
+
+    func refreshDailyTotals(settings: ConnectionSettings, start: String, end: String, now: String)
+        async throws -> DailyTotalsResources
+    {
+        try await perform { worker in
+            if worker.bridge == nil {
+                worker.bridge = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
+            }
+            return try worker.currentBridge().refreshDailyTotals(start: start, end: end, now: now)
+        }
     }
 
     func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult {
         try await perform { try $0.currentBridge().createTask(name: name, occurredAt: occurredAt) }
     }
 
-    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TrackerSnapshot {
+    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TaskCommandResult {
         try await perform { try $0.currentBridge().renameTask(taskID: taskID, name: name, occurredAt: occurredAt) }
     }
 
@@ -328,11 +409,11 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         try await perform { try $0.currentBridge().archiveInactiveTasks(preview: preview) }
     }
 
-    func archiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
+    func archiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult {
         try await perform { try $0.currentBridge().archiveTask(taskID: taskID, occurredAt: occurredAt) }
     }
 
-    func unarchiveTask(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
+    func unarchiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult {
         try await perform { try $0.currentBridge().unarchiveTask(taskID: taskID, occurredAt: occurredAt) }
     }
 
@@ -345,14 +426,27 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         }
     }
 
-    func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws -> TrackerSnapshot {
+    func refreshTaskListWithTotals(settings: ConnectionSettings, start: String, end: String, now: String)
+        async throws -> TaskListTotalsRefresh
+    {
+        try await perform { worker in
+            if worker.bridge == nil {
+                worker.bridge = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
+            }
+            return try worker.currentBridge().refreshTaskListWithTotals(start: start, end: end, now: now)
+        }
+    }
+
+    func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws
+        -> TrackingCommandResult
+    {
         try await perform {
             try $0.currentBridge().startTracking(
                 taskID: taskID, expectedActiveID: expectedActiveID, occurredAt: occurredAt)
         }
     }
 
-    func stopTracking(worklogID: String, occurredAt: String) async throws -> TrackerSnapshot {
+    func stopTracking(worklogID: String, occurredAt: String) async throws -> TrackingCommandResult {
         try await perform { try $0.currentBridge().stopTracking(worklogID: worklogID, occurredAt: occurredAt) }
     }
 
@@ -360,7 +454,7 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         try await perform { try $0.currentBridge().pauseTracking(worklogID: worklogID, occurredAt: occurredAt) }
     }
 
-    func resumeTracking(taskID: String, occurredAt: String) async throws -> TrackerSnapshot {
+    func resumeTracking(taskID: String, occurredAt: String) async throws -> TrackingCommandResult {
         try await perform { try $0.currentBridge().resumeTracking(taskID: taskID, occurredAt: occurredAt) }
     }
 

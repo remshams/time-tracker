@@ -149,7 +149,7 @@ fn inactive_preview_reads_current_worklogs_and_bulk_archive_rechecks_them() {
 }
 
 #[test]
-fn empty_inactive_preview_adopts_tasks_and_tracking_written_by_another_client() {
+fn empty_inactive_preview_adopts_tracking_and_leaves_catalog_refresh_explicit() {
     let as_of = at(2_000_000);
     let old = stamped_task(1, "old task", 100, 100);
     let recent = stamped_task(2, "recent task", 1_999_000, 1_999_000);
@@ -166,6 +166,8 @@ fn empty_inactive_preview_adopts_tasks_and_tracking_written_by_another_client() 
             .unwrap()
             .is_empty()
     );
+    assert_eq!(application.task(recent.id()), None);
+    application.refresh_task_list().unwrap();
     assert_eq!(application.task(recent.id()), Some(&recent));
     assert_eq!(
         application.current_tracking(),

@@ -17,7 +17,7 @@ use tracker_domain::TrackingState;
 
 #[cfg(test)]
 use crate::application_request::execute_local;
-use crate::application_request::{ApplicationRequest, CompletedRequest};
+use crate::application_request::{ApplicationOutcome, ApplicationRequest, CompletedRequest};
 use crate::command::Command;
 use crate::screens::Screen;
 use crate::screens::task_list::TaskListState;
@@ -66,7 +66,7 @@ const MAX_PENDING_EFFECTS: usize = 32;
 impl<S: TrackerApplicationService> App<S> {
     /// Builds presentation state from an already loaded application service.
     pub fn load(application: S) -> Self {
-        let state = AppState::load_from_snapshot(
+        let state = AppState::load_task_list(
             application.tasks(TaskOrdering::default()),
             application.current_tracking().clone(),
         );
@@ -125,6 +125,16 @@ impl<S: TrackerApplicationService> App<S> {
                 return;
             };
             let completed = execute_local(&mut self.application, effect.request.clone());
+            if completed.request.needs_task_list()
+                && completed.request != ApplicationRequest::RefreshTaskList
+            {
+                let _ = self.application.refresh_task_list();
+            }
+            self.state.publish_request_resources(
+                &completed,
+                self.application.tasks(TaskOrdering::default()),
+                Some(self.application.current_tracking().clone()),
+            );
             self.state.complete_effect(effect, completed);
         }
         panic!("application effects did not settle after 32 completions");
@@ -210,7 +220,7 @@ impl AppState {
         }
     }
 
-    pub(crate) fn load_from_snapshot(items: Vec<TaskListItem>, tracking: TrackingState) -> Self {
+    pub(crate) fn load_task_list(items: Vec<TaskListItem>, tracking: TrackingState) -> Self {
         let (timezone, timezone_status) = startup_timezone();
         Self::assemble(
             items,
@@ -305,6 +315,18 @@ impl AppState {
     }
 
     #[cfg(test)]
+    pub(crate) fn complete_effect_with_resources(
+        &mut self,
+        effect: AppEffect,
+        completed: CompletedRequest,
+        items: Vec<TaskListItem>,
+        tracking: TrackingState,
+    ) {
+        self.publish_request_resources(&completed, items, Some(tracking));
+        self.complete_effect(effect, completed);
+    }
+
+    #[cfg(test)]
     pub(crate) fn has_pending_effect(&self) -> bool {
         !self.pending_effects.is_empty()
     }
@@ -369,10 +391,6 @@ impl AppState {
         &self.tracking
     }
 
-    pub(crate) fn tracking_mut(&mut self) -> &mut TrackingSession {
-        &mut self.tracking
-    }
-
     pub(crate) fn shell(&self) -> &ShellState {
         &self.shell
     }
@@ -400,7 +418,92 @@ impl AppState {
         self.shell.task_list_mut().set_selection(resolved);
     }
 
-    pub(crate) fn sync_from_snapshot(
+    pub(crate) fn refresh_task_list(&mut self) {
+        self.enqueue(ApplicationRequest::RefreshTaskList, |state, completed| {
+            let ApplicationOutcome::TaskListRefresh(result) = completed.outcome else {
+                unreachable!("task-list refresh returns its completion status")
+            };
+            if let Err(error) = result {
+                state
+                    .shell_mut()
+                    .error(crate::support::errors::application_error_text(&error));
+            }
+        });
+    }
+
+    pub(crate) fn publish_request_resources(
+        &mut self,
+        completed: &CompletedRequest,
+        items: Vec<TaskListItem>,
+        tracking: Option<TrackingState>,
+    ) {
+        self.publish_task_metadata(completed, items, tracking.as_ref());
+        if let Some(tracking) = tracking {
+            self.publish_tracking_outcome(&completed.outcome, tracking);
+        }
+    }
+
+    fn publish_task_metadata(
+        &mut self,
+        completed: &CompletedRequest,
+        items: Vec<TaskListItem>,
+        tracking: Option<&TrackingState>,
+    ) {
+        if completed.request.needs_task_list() {
+            self.replace_items(items);
+            return;
+        }
+        let ids = completed.metadata_task_ids(tracking);
+        let mut selected: Vec<_> = items
+            .into_iter()
+            .filter(|item| ids.contains(&item.task.id()))
+            .collect();
+        if let ApplicationOutcome::GlobalWorklogPage(Ok(page)) = &completed.outcome {
+            selected.extend(page.task_items.iter().cloned());
+            selected.extend(
+                page.tracking
+                    .as_ref()
+                    .and_then(|read| read.active_task_item.clone()),
+            );
+        }
+        self.merge_task_items(selected);
+    }
+
+    fn publish_tracking_outcome(&mut self, outcome: &ApplicationOutcome, tracking: TrackingState) {
+        let started = match outcome {
+            ApplicationOutcome::SetActiveTask(Ok(
+                tracker_application::SetActiveTaskOutcome::Started { worklog },
+            )) => Some(worklog),
+            ApplicationOutcome::SetActiveTask(Ok(
+                tracker_application::SetActiveTaskOutcome::Switched { started, .. },
+            )) => Some(started),
+            _ => None,
+        };
+        let fresh_active = started.is_some_and(|started| matches!(&tracking,
+            TrackingState::Running { worklog } if worklog.id() == started.id() && worklog.start() == started.start()));
+        if matches!(outcome, ApplicationOutcome::Worklog(Ok(_))) {
+            self.tracking.sync_after_history_reload(tracking);
+        } else {
+            self.tracking.sync(tracking, fresh_active);
+        }
+    }
+
+    pub(crate) fn merge_task_items(&mut self, items: Vec<TaskListItem>) {
+        for item in items {
+            if let Some(existing) = self
+                .cached_items
+                .iter_mut()
+                .find(|entry| entry.task.id() == item.task.id())
+            {
+                *existing = item;
+            } else {
+                self.cached_items.push(item);
+            }
+        }
+        self.reload_tasks();
+    }
+
+    pub(crate) fn sync_task_list(
         &mut self,
         items: Vec<TaskListItem>,
         tracking: TrackingState,
@@ -428,8 +531,7 @@ mod effect_tests {
     use tracker_storage::SqliteRepository;
 
     use crate::application_request::{
-        ApplicationOutcome, ApplicationRequest, ApplicationSnapshot, CompletedRequest,
-        execute_local,
+        ApplicationOutcome, ApplicationRequest, CompletedRequest, execute_local,
     };
     use crate::command::Command;
     use crate::screens::task_list::{TaskListCommand, TaskListMode};
@@ -438,7 +540,7 @@ mod effect_tests {
 
     #[test]
     fn reads_queue_during_a_write_and_follow_ups_can_be_queued_after_completion() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let request = ApplicationRequest::CreateTask {
             name: TaskName::new("New task").unwrap(),
             occurred_at: Utc::now(),
@@ -457,16 +559,14 @@ mod effect_tests {
         assert!(state.enqueue(ApplicationRequest::AllWorklogs { after: None }, |_, _| {}));
         assert!(state.take_effect().is_none());
 
-        state.complete_effect(
+        state.complete_effect_with_resources(
             effect,
             CompletedRequest {
                 request,
                 outcome: ApplicationOutcome::Task(Err(ApplicationError::InvalidReportRange)),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         assert!(state.has_pending_effect());
         assert!(!state.request_in_flight());
@@ -474,7 +574,7 @@ mod effect_tests {
 
     #[test]
     fn pending_report_reads_keep_only_the_latest_request() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let active = ApplicationRequest::AllWorklogs { after: None };
         assert!(state.enqueue(active, |_, _| {}));
         let _active_effect = state.take_effect().expect("active read");
@@ -500,7 +600,7 @@ mod effect_tests {
 
     #[test]
     fn canceling_a_queued_inactive_preview_unblocks_later_reads() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let active_request = ApplicationRequest::AllWorklogs { after: None };
         assert!(state.enqueue(active_request.clone(), |_, _| {}));
         let active_effect = state.take_effect().expect("active read");
@@ -528,40 +628,36 @@ mod effect_tests {
         }));
         assert!(state.take_effect().is_none());
 
-        state.complete_effect(
+        state.complete_effect_with_resources(
             active_effect,
             CompletedRequest {
                 request: active_request,
                 outcome: ApplicationOutcome::GlobalWorklogPage(Err(
                     ApplicationError::InvalidReportRange,
                 )),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         let follow_up_effect = state.take_effect().expect("later read");
         assert_eq!(follow_up_effect.request, later_read);
-        state.complete_effect(
+        state.complete_effect_with_resources(
             follow_up_effect,
             CompletedRequest {
                 request: later_read,
                 outcome: ApplicationOutcome::GlobalWorklogPage(Err(
                     ApplicationError::InvalidReportRange,
                 )),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         assert!(completed_follow_up.get());
     }
 
     #[test]
     fn a_write_waits_for_an_active_read_and_a_second_write_is_rejected() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let read = ApplicationRequest::AllWorklogs { after: None };
         assert!(state.enqueue(read.clone(), |_, _| {}));
         let active = state.take_effect().expect("active read");
@@ -572,18 +668,16 @@ mod effect_tests {
         assert!(state.enqueue(write.clone(), |_, _| {}));
         assert!(!state.enqueue(write.clone(), |_, _| {}));
         assert!(state.take_effect().is_none());
-        state.complete_effect(
+        state.complete_effect_with_resources(
             active,
             CompletedRequest {
                 request: read,
                 outcome: ApplicationOutcome::GlobalWorklogPage(Err(
                     ApplicationError::InvalidReportRange,
                 )),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         assert_eq!(state.take_effect().expect("queued write").request, write);
     }
@@ -592,7 +686,7 @@ mod effect_tests {
     fn distinct_writes_execute_in_confirmation_order() {
         let mut application =
             TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap();
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
         let first = ApplicationRequest::CreateTask {
             name: TaskName::new("First task").unwrap(),
@@ -631,7 +725,7 @@ mod effect_tests {
     fn queued_worklog_write_keeps_its_expected_times_for_backend_validation() {
         let mut application =
             TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap();
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
         let task = application
             .create_task(TaskName::new("Tracked task").unwrap(), at)
@@ -693,7 +787,7 @@ mod effect_tests {
 
     #[test]
     fn distinct_pending_writes_stop_at_the_queue_limit_with_a_visible_error() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
         for index in 0..MAX_PENDING_EFFECTS {
             assert!(state.enqueue(
@@ -720,11 +814,13 @@ mod effect_tests {
 
     #[test]
     fn quitting_discards_queued_reads_and_keeps_an_accepted_write() {
-        let mut state = AppState::load_from_snapshot(Vec::new(), TrackingState::Idle);
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
+        assert!(!state.has_queued_write());
         let read = ApplicationRequest::AllWorklogs { after: None };
         assert!(state.enqueue(read.clone(), |_, _| {}));
         let active = state.take_effect().expect("active read");
         assert!(state.enqueue(read.clone(), |_, _| {}));
+        assert!(!state.has_queued_write());
         let write = ApplicationRequest::CreateTask {
             name: TaskName::new("Saved task").unwrap(),
             occurred_at: Utc::now(),
@@ -738,20 +834,197 @@ mod effect_tests {
         assert_eq!(state.pending_effects.len(), 1);
         assert!(!state.enqueue(read.clone(), |_, _| {}));
 
-        state.complete_effect(
+        state.complete_effect_with_resources(
             active,
             CompletedRequest {
                 request: read,
                 outcome: ApplicationOutcome::GlobalWorklogPage(Err(
                     ApplicationError::InvalidReportRange,
                 )),
-                snapshot: ApplicationSnapshot {
-                    items: Vec::new(),
-                    tracking: TrackingState::Idle,
-                },
             },
+            Vec::new(),
+            TrackingState::Idle,
         );
         assert_eq!(state.take_effect().expect("accepted write").request, write);
+        assert!(!state.has_queued_write());
         assert!(state.active_request_is_write());
+    }
+}
+
+#[cfg(test)]
+mod resource_publication_tests {
+    use super::AppState;
+    use crate::application_request::{ApplicationOutcome, ApplicationRequest, CompletedRequest};
+    use crate::screens::reports::{ReportPresentation, ReportPresentationRow};
+    use crate::test_support::{at, task, worklog_id};
+    use tracker_application::{
+        ActiveTrackingRead, GlobalWorklogCursor, GlobalWorklogPage, ReportRow, ReportTotals,
+        TaskListItem,
+    };
+    use tracker_domain::{ActiveWorklog, TaskName, TrackingState};
+
+    #[test]
+    fn local_report_publishes_the_active_task_outside_the_report_interval() {
+        let confirmed = task(1, "Confirmed task");
+        let reported = task(2, "Reported task");
+        let active = task(3, "New active task");
+        let unrelated = task(4, "Unrelated fetched task");
+        let running = ActiveWorklog::begin(worklog_id(1), active.id(), at(400));
+        let mut state = AppState::load_task_list(
+            vec![TaskListItem {
+                task: confirmed.clone(),
+                latest_work_start: None,
+            }],
+            TrackingState::Idle,
+        );
+        let completed = CompletedRequest {
+            request: ApplicationRequest::ReportTotals {
+                start: at(100),
+                end: at(300),
+                now: at(500),
+            },
+            outcome: ApplicationOutcome::ReportTotals(Ok(ReportTotals {
+                rows: vec![ReportRow {
+                    task: reported.clone(),
+                    duration: chrono::TimeDelta::seconds(60),
+                }],
+                total: chrono::TimeDelta::seconds(60),
+            })),
+        };
+
+        state.publish_request_resources(
+            &completed,
+            vec![
+                TaskListItem {
+                    task: reported.clone(),
+                    latest_work_start: Some(at(150)),
+                },
+                TaskListItem {
+                    task: active.clone(),
+                    latest_work_start: Some(at(400)),
+                },
+                TaskListItem {
+                    task: unrelated.clone(),
+                    latest_work_start: None,
+                },
+            ],
+            Some(TrackingState::Running {
+                worklog: running.clone(),
+            }),
+        );
+
+        assert_eq!(state.app_view().active_task_name(), Some("New active task"));
+        assert_eq!(state.tracking().active_worklog(), Some(&running));
+        assert_eq!(state.catalog().task(confirmed.id()), Some(&confirmed));
+        assert_eq!(state.catalog().task(reported.id()), Some(&reported));
+        assert_eq!(state.catalog().task(unrelated.id()), None);
+    }
+
+    #[test]
+    fn local_global_history_publishes_active_task_metadata_outside_the_page() {
+        let active = task(1, "Old active name");
+        let mut renamed = active.clone();
+        renamed.rename(TaskName::new("New active name").unwrap(), at(200));
+        let unrelated = task(2, "Unrelated fetched task");
+        let running = ActiveWorklog::begin(worklog_id(1), active.id(), at(100));
+        let active_item = TaskListItem {
+            task: active.clone(),
+            latest_work_start: Some(at(100)),
+        };
+        let mut state = AppState::load_task_list(
+            vec![active_item.clone()],
+            TrackingState::Running {
+                worklog: running.clone(),
+            },
+        );
+        let completed = CompletedRequest {
+            request: ApplicationRequest::AllWorklogs {
+                after: Some(GlobalWorklogCursor {
+                    start: at(50),
+                    id: worklog_id(2),
+                    revision: 1,
+                }),
+            },
+            outcome: ApplicationOutcome::GlobalWorklogPage(Ok(GlobalWorklogPage {
+                worklogs: Vec::new(),
+                task_items: Vec::new(),
+                tracking: Some(ActiveTrackingRead {
+                    active_worklog: Some(running.to_worklog()),
+                    active_task_item: Some(TaskListItem {
+                        task: renamed.clone(),
+                        latest_work_start: Some(at(100)),
+                    }),
+                }),
+                next_cursor: None,
+            })),
+        };
+
+        state.publish_request_resources(
+            &completed,
+            vec![
+                active_item,
+                TaskListItem {
+                    task: unrelated.clone(),
+                    latest_work_start: None,
+                },
+            ],
+            Some(TrackingState::Running {
+                worklog: running.clone(),
+            }),
+        );
+
+        assert_eq!(state.app_view().active_task_name(), Some("New active name"));
+        assert_eq!(state.catalog().task(active.id()), Some(&renamed));
+        assert_eq!(state.catalog().task(unrelated.id()), None);
+        assert_eq!(state.tracking().active_worklog(), Some(&running));
+    }
+
+    #[test]
+    fn independent_report_metadata_preserves_unrelated_tasks_and_unloaded_tracking() {
+        let confirmed = task(1, "Confirmed task");
+        let reported = task(2, "Resolved report label");
+        let running = ActiveWorklog::begin(worklog_id(1), confirmed.id(), at(100));
+        let mut state = AppState::load_task_list(
+            vec![TaskListItem {
+                task: confirmed.clone(),
+                latest_work_start: Some(at(100)),
+            }],
+            TrackingState::Running {
+                worklog: running.clone(),
+            },
+        );
+        let completed = CompletedRequest {
+            request: ApplicationRequest::ReportTotals {
+                start: at(100),
+                end: at(300),
+                now: at(200),
+            },
+            outcome: ApplicationOutcome::RemoteReportTotals(Ok(ReportPresentation {
+                rows: vec![ReportPresentationRow {
+                    task_id: reported.id(),
+                    task_name: Some(reported.name().to_string()),
+                    duration: chrono::TimeDelta::seconds(60),
+                }],
+                total: chrono::TimeDelta::seconds(60),
+            })),
+        };
+        state.publish_request_resources(
+            &completed,
+            vec![
+                TaskListItem {
+                    task: reported.clone(),
+                    latest_work_start: Some(at(150)),
+                },
+                TaskListItem {
+                    task: task(3, "Unrelated fetched task"),
+                    latest_work_start: None,
+                },
+            ],
+            None,
+        );
+        assert_eq!(state.catalog().task(confirmed.id()), Some(&confirmed));
+        assert_eq!(state.catalog().task(reported.id()), Some(&reported));
+        assert_eq!(state.cached_items.len(), 2);
+        assert_eq!(state.tracking().active_worklog(), Some(&running));
     }
 }

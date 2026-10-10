@@ -7,7 +7,7 @@ final class MenuPresentationTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
         fixture.session.setWindowVisible(true)
-        let snapshot = TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         let rows = [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)]
         try await fixture.start(snapshot, rows: rows)
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
@@ -49,7 +49,7 @@ final class MenuPresentationTests: XCTestCase {
                     taskId: firstTask.id,
                     durationMicroseconds: Int64(10 + step * 60) * 1_000_000)
             ]
-            poll.succeed(TrackerReport(snapshot: snapshot, rows: updatedRows))
+            poll.succeed(TaskListTotalsRefresh(snapshot: snapshot, rows: updatedRows))
             let finished = Task { @MainActor in
                 while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
             }
@@ -77,7 +77,7 @@ final class MenuPresentationTests: XCTestCase {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
-            TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
+            TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)])
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         var changes = 0
@@ -115,7 +115,7 @@ final class MenuPresentationTests: XCTestCase {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
-            TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
+            TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 5_000_000)])
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         fixture.clock.now.addTimeInterval(60)
@@ -152,7 +152,7 @@ final class MenuPresentationTests: XCTestCase {
             TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
         ]
         try await fixture.start(
-            TrackerSnapshot(
+            TaskListResources(
                 tasks: [secondTask, twin, archivedTask, emptyArchive, firstTask, another],
                 active: activeWorklog), rows: rows)
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
@@ -171,7 +171,7 @@ final class MenuPresentationTests: XCTestCase {
     func testFrozenMenuTargetsAreRevalidatedAgainstChangedServerState() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         fixture.session.onChange = { observer.update(from: fixture.session, showDailyTotal: true) }
         observer.menuOpened(from: fixture.session, showDailyTotal: true)
@@ -183,7 +183,7 @@ final class MenuPresentationTests: XCTestCase {
         let archived = TaskItem(id: secondTask.id, name: secondTask.name, archived: true, latestStart: nil)
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
-        poll.succeed(TrackerSnapshot(tasks: [firstTask, archived], active: changed))
+        poll.succeed(TaskListResources(tasks: [firstTask, archived], active: changed))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         let finished = Task { @MainActor in
@@ -214,7 +214,7 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertNil(observer.content.activeWorklogID)
         XCTAssertNil(observer.content.elapsedText)
         XCTAssertTrue(observer.content.todayTasks.isEmpty)
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: nil))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         observer.update(from: fixture.session, showDailyTotal: true)
         XCTAssertEqual(observer.label.symbol, "circle")
         XCTAssertEqual(observer.label.status, "No task tracked yet")
@@ -252,7 +252,7 @@ final class MenuPresentationTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
-            TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
+            TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 90_000_000)])
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         fixture.scheduler.poll?.fire()

@@ -84,8 +84,9 @@ fn correction_preserves_identity_precision_and_archived_task_and_updates_totals(
             "start": timestamp(at(90)), "end": timestamp(at(220))
         })
     );
-    assert!(corrected["data"]["snapshot"]["active"].is_null());
-    let updated_task = corrected["data"]["snapshot"]["tasks"]
+    assert!(crate::tests::test_active_value(&bridge.application).is_null());
+    let observed_tasks = crate::tests::test_task_values(&bridge.application);
+    let updated_task = observed_tasks
         .as_array()
         .unwrap()
         .iter()
@@ -93,14 +94,11 @@ fn correction_preserves_identity_precision_and_archived_task_and_updates_totals(
         .unwrap();
     assert_eq!(updated_task["archived"], true);
     assert_eq!(updated_task["latestStart"], timestamp(at(90)));
-    let totals = bridge
+    let (rows, _, _) = bridge
         .application
-        .report_totals(at(0), at(1000), at(1000))
+        .report_rows(at(0), at(1000), at(1000))
         .unwrap_or_else(|error| panic!("{}", error.message));
-    assert_eq!(
-        totals.rows[0].duration.num_microseconds(),
-        Some(130_000_000)
-    );
+    assert_eq!(rows[0].duration_microseconds, 130_000_000);
     drop(bridge);
     let mut reopened = open_at(&path).unwrap();
     let stored = reopened.application.worklogs_for_task(task, None).unwrap();
@@ -120,7 +118,7 @@ fn correcting_active_start_keeps_timer_running_and_updates_snapshot() {
     let corrected = correct(&mut bridge, &expected, 80, None);
     assert!(corrected.get("error").is_none(), "{corrected}");
     assert_eq!(
-        corrected["data"]["snapshot"]["active"],
+        crate::tests::test_active_value(&bridge.application),
         corrected["data"]["worklog"]
     );
     assert_eq!(corrected["data"]["worklog"]["start"], timestamp(at(80)));
@@ -152,7 +150,11 @@ fn correction_rejects_other_clients_timestamp_changes_and_stopped_timer() {
     assert_eq!(failure["requiresRefresh"], true);
     assert!(failure.get("data").is_none());
     assert_eq!(
-        snapshot(&first.application).active.unwrap().start,
+        tracking_json(&first.application)
+            .unwrap()
+            .value
+            .unwrap()
+            .start,
         timestamp(at(80))
     );
     let current = second
@@ -167,7 +169,7 @@ fn correction_rejects_other_clients_timestamp_changes_and_stopped_timer() {
         .unwrap_or_else(|error| panic!("{}", error.message));
     let failure = correct(&mut first, &current, 70, None);
     assert_eq!(failure["kind"], "worklog_changed");
-    assert!(snapshot(&first.application).active.is_none());
+    assert!(tracking_json(&first.application).unwrap().value.is_none());
     let stored = first
         .application
         .worklogs_for_task(task, None)
@@ -322,11 +324,11 @@ fn remote_correction_refreshes_revision_but_keeps_original_timestamp_guard() {
     let mut second = server.client();
     first
         .application
-        .refresh()
+        .refresh_resources(3)
         .unwrap_or_else(|error| panic!("{}", error.message));
     second
         .application
-        .refresh()
+        .refresh_resources(3)
         .unwrap_or_else(|error| panic!("{}", error.message));
     second
         .application
@@ -335,14 +337,14 @@ fn remote_correction_refreshes_revision_but_keeps_original_timestamp_guard() {
     let corrected = correct(&mut first, &original, 90, None);
     assert!(corrected.get("error").is_none(), "{corrected}");
     assert_eq!(
-        corrected["data"]["snapshot"]["tasks"]
+        crate::tests::test_task_values(&first.application)
             .as_array()
             .unwrap()
             .len(),
         4
     );
     assert_eq!(
-        corrected["data"]["snapshot"]["active"]["start"],
+        crate::tests::test_active_value(&first.application)["start"],
         timestamp(at(90))
     );
     let failure = correct(&mut second, &original, 80, None);
@@ -350,7 +352,11 @@ fn remote_correction_refreshes_revision_but_keeps_original_timestamp_guard() {
     assert_eq!(failure["uncertain"], false);
     assert_eq!(failure["requiresRefresh"], true);
     assert_eq!(
-        snapshot(&second.application).active.unwrap().start,
+        tracking_json(&second.application)
+            .unwrap()
+            .value
+            .unwrap()
+            .start,
         timestamp(at(90))
     );
     let latest = first
@@ -374,7 +380,7 @@ fn remote_correction_refreshes_revision_but_keeps_original_timestamp_guard() {
     let corrected = correct(&mut second, &completed, 60, Some(210));
     assert!(corrected.get("error").is_none(), "{corrected}");
     assert_eq!(corrected["data"]["worklog"]["end"], timestamp(at(210)));
-    assert!(corrected["data"]["snapshot"]["active"].is_null());
+    assert!(crate::tests::test_active_value(&second.application).is_null());
 }
 
 #[test]
@@ -385,7 +391,7 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
         routing::{get, patch},
     };
     use std::sync::{Arc, Mutex};
-    use tracker_protocol::{ErrorCode, ErrorDto, HealthDto, SnapshotDto};
+    use tracker_protocol::{ErrorCode, ErrorDto, HealthDto};
 
     let directory = tempfile::tempdir().unwrap();
     let mut writer = open_fixture(&directory.path().join("payload.db")).unwrap();
@@ -393,11 +399,9 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
         .task
         .id();
     let original = record(&mut writer, task, 100, Some(200));
-    let snapshot = SnapshotDto::from_snapshot(
-        &tracker_application::TrackerSnapshot {
-            task_items: writer.application.tasks(TaskOrdering::default()),
-            active_worklog: None,
-        },
+    let snapshot = report_tests::resource_dtos(
+        writer.application.tasks(TaskOrdering::default()),
+        None,
         "42".into(),
     );
     for (code, message, status, kind, uncertain) in [

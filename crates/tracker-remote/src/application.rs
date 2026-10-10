@@ -4,13 +4,14 @@ use std::{
 };
 
 use crate::{RemoteError, transport::Transport};
-use chrono::{DateTime, TimeDelta, Utc};
+#[cfg(test)]
+use chrono::TimeDelta;
+use chrono::{DateTime, Utc};
 use reqwest::{Method, StatusCode};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ApplicationFailureSource, ClearActiveTaskOutcome,
-    GlobalWorklogCursor, GlobalWorklogPage, MoveCandidate, ReportRow, ReportTotals,
-    SetActiveTaskOutcome, TaskListItem, TaskOrdering, TrackerSnapshot, WorklogCursor, WorklogPage,
-    WorklogPageSnapshot,
+    GlobalWorklogCursor, GlobalWorklogPage, MoveCandidate, SetActiveTaskOutcome, TaskListItem,
+    TaskOrdering, WorklogCursor, WorklogPage,
 };
 use tracker_domain::{
     ActiveWorklog, InactivityPeriod, Task, TaskId, TaskName, Tracker, TrackingState, Worklog,
@@ -30,15 +31,38 @@ pub enum RemoteFailureKind {
     Protocol,
 }
 
+/// A confirmed resource value and the opaque revision observed with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResourceObservation<T> {
+    pub value: T,
+    pub revision: String,
+}
+
+/// Resources requested by an explicit client workflow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceSelection {
+    Tasks,
+    Tracking,
+    TaskList,
+    DailyTotals {
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    },
+    TaskListWithTotals {
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    },
+}
+
 /// Remote resources retain the revision of their own confirmed observation.
 pub struct RemoteApplication {
     transport: Transport,
-    snapshot: TrackerSnapshot,
-    tracking: TrackingState,
-    task_revision: String,
+    task_observation: Option<ResourceObservation<Vec<TaskListItem>>>,
+    tracking_observation: Option<ResourceObservation<TrackingState>>,
     task_cache: HashMap<TaskId, (TaskListItem, String)>,
-    tracking_revision: String,
-    report_revision: String,
+    last_command_receipt: Option<MutationDto>,
     report_cache: Option<ReportDto>,
     history_cache: HashMap<Option<TaskId>, WorklogPageDto>,
     worklog_cache: HashMap<WorklogId, WorklogResourceDto>,
@@ -73,15 +97,10 @@ impl RemoteApplication {
     pub fn disconnected(endpoint: &str) -> Result<Self, RemoteError> {
         Ok(Self {
             transport: Transport::new(endpoint)?,
-            snapshot: TrackerSnapshot {
-                task_items: vec![],
-                active_worklog: None,
-            },
-            tracking: TrackingState::Idle,
-            task_revision: String::new(),
+            task_observation: None,
+            tracking_observation: None,
             task_cache: HashMap::new(),
-            tracking_revision: String::new(),
-            report_revision: String::new(),
+            last_command_receipt: None,
             report_cache: None,
             history_cache: HashMap::new(),
             worklog_cache: HashMap::new(),
@@ -147,29 +166,36 @@ impl RemoteApplication {
 
     pub async fn refresh_tasks(&mut self) -> Result<(), RemoteError> {
         self.ensure_version().await?;
-        let dto: TasksDto = self.read("v1/tasks").await?;
-        let (items, revision) = decode_tasks(dto).map_err(|error| self.record_error(error))?;
+        let (items, revision) = self.fetch_task_catalog().await?;
         self.task_cache.clear();
-        self.snapshot.task_items = items;
-        self.task_revision = revision;
+        self.task_observation = Some(ResourceObservation {
+            value: items,
+            revision,
+        });
         self.confirmed();
         Ok(())
+    }
+
+    async fn fetch_task_catalog(&mut self) -> Result<(Vec<TaskListItem>, String), RemoteError> {
+        let dto: TasksDto = self.read("v1/tasks").await?;
+        decode_tasks(dto).map_err(|error| self.record_error(error))
     }
 
     pub async fn refresh_tracking(&mut self) -> Result<(), RemoteError> {
         self.ensure_version().await?;
         let dto: TrackingDto = self.read("v1/tracking").await?;
-        let (active, tracking, revision) =
+        let (_, tracking, revision) =
             decode_tracking(dto).map_err(|error| self.record_error(error))?;
-        self.snapshot.active_worklog = active;
-        self.tracking = tracking;
-        self.tracking_revision = revision;
+        self.tracking_observation = Some(ResourceObservation {
+            value: tracking,
+            revision,
+        });
         self.confirmed();
         Ok(())
     }
 
     /// Composes a coherent task and tracking view, retrying reconciliation once.
-    pub async fn refresh(&mut self) -> Result<(), RemoteError> {
+    pub async fn refresh_task_list(&mut self) -> Result<(), RemoteError> {
         self.ensure_version().await?;
         for _ in 0..2 {
             let tasks: TasksDto = self.read("v1/tasks").await?;
@@ -181,23 +207,82 @@ impl RemoteApplication {
             if task_revision != tracking_revision {
                 continue;
             }
-            if let Some(active) = &active
-                && !items
-                    .iter()
-                    .any(|item| item.task.id() == active.task_id() && !item.task.is_archived())
-            {
-                return Err(self.record_error(RemoteError::Protocol(
-                    "active worklog has no active task".into(),
-                )));
-            }
+            validate_active_task(&items, active.as_ref())
+                .map_err(|error| self.record_error(error))?;
             self.task_cache.clear();
-            self.snapshot = TrackerSnapshot {
-                task_items: items,
-                active_worklog: active,
+            self.task_observation = Some(ResourceObservation {
+                value: items,
+                revision: task_revision,
+            });
+            self.tracking_observation = Some(ResourceObservation {
+                value: state,
+                revision: tracking_revision,
+            });
+            self.confirmed();
+            return Ok(());
+        }
+        Err(self.record_error(RemoteError::Http {
+            status: StatusCode::CONFLICT,
+            body: vec![],
+        }))
+    }
+
+    /// Refreshes only the selected resources. Task-list observations publish together.
+    pub async fn refresh_resources(
+        &mut self,
+        selection: ResourceSelection,
+    ) -> Result<(), RemoteError> {
+        match selection {
+            ResourceSelection::Tasks => self.refresh_tasks().await,
+            ResourceSelection::Tracking => self.refresh_tracking().await,
+            ResourceSelection::TaskList => self.refresh_task_list().await,
+            ResourceSelection::DailyTotals { start, end, now } => {
+                self.refresh_totals_resources(start, end, now, false).await
+            }
+            ResourceSelection::TaskListWithTotals { start, end, now } => {
+                self.refresh_totals_resources(start, end, now, true).await
+            }
+        }
+    }
+
+    async fn refresh_totals_resources(
+        &mut self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+        include_tasks: bool,
+    ) -> Result<(), RemoteError> {
+        for _ in 0..2 {
+            let report = self.fetch_task_totals(start, end, now).await?;
+            let tracking: TrackingDto = self.read("v1/tracking").await?;
+            let (active, state, revision) =
+                decode_tracking(tracking).map_err(|error| self.record_error(error))?;
+            let tasks = if include_tasks {
+                Some(self.fetch_task_catalog().await?)
+            } else {
+                None
             };
-            self.tracking = state;
-            self.task_revision = task_revision;
-            self.tracking_revision = tracking_revision;
+            if report.revision != revision
+                || tasks.as_ref().is_some_and(|(_, token)| token != &revision)
+            {
+                continue;
+            }
+            if let Some((items, _)) = &tasks {
+                validate_active_task(items, active.as_ref())
+                    .map_err(|error| self.record_error(error))?;
+            }
+            if let Some((items, task_revision)) = tasks {
+                self.task_cache.clear();
+                self.task_observation = Some(ResourceObservation {
+                    value: items,
+                    revision: task_revision,
+                });
+            }
+            self.tracking_observation = Some(ResourceObservation {
+                value: state,
+                revision,
+            });
+            self.report_cache = Some(report);
             self.confirmed();
             return Ok(());
         }
@@ -214,17 +299,43 @@ impl RemoteApplication {
     pub fn last_failure(&self) -> Option<RemoteFailureKind> {
         self.last_failure
     }
-    pub fn snapshot(&self) -> &TrackerSnapshot {
-        &self.snapshot
+    pub fn task_observation(&self) -> Option<&ResourceObservation<Vec<TaskListItem>>> {
+        self.task_observation.as_ref()
+    }
+    pub fn tracking_observation(&self) -> Option<&ResourceObservation<TrackingState>> {
+        self.tracking_observation.as_ref()
+    }
+    pub fn task_items(&self) -> &[TaskListItem] {
+        self.task_observation
+            .as_ref()
+            .map_or(&[], |observation| observation.value.as_slice())
+    }
+    pub fn active_worklog(&self) -> Option<Worklog> {
+        match self.current_tracking() {
+            TrackingState::Idle => None,
+            TrackingState::Running { worklog } => Some(worklog.to_worklog()),
+        }
     }
     pub fn task_revision(&self) -> &str {
-        &self.task_revision
+        self.task_observation
+            .as_ref()
+            .map_or("", |observation| observation.revision.as_str())
     }
     pub fn tracking_revision(&self) -> &str {
-        &self.tracking_revision
+        self.tracking_observation
+            .as_ref()
+            .map_or("", |observation| observation.revision.as_str())
     }
     pub fn report_revision(&self) -> &str {
-        &self.report_revision
+        self.report_cache
+            .as_ref()
+            .map_or("", |report| report.revision.as_str())
+    }
+    pub fn last_command_receipt(&self) -> Option<&MutationDto> {
+        self.last_command_receipt.as_ref()
+    }
+    pub fn report_observation(&self) -> Option<&ReportDto> {
+        self.report_cache.as_ref()
     }
     pub fn cached_task_totals(&self) -> Option<&ReportDto> {
         self.report_cache.as_ref()
@@ -237,29 +348,26 @@ impl RemoteApplication {
     }
 
     pub fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
-        let mut items = self.snapshot.task_items.clone();
+        let mut items = self.task_items().to_vec();
         ordering.sort_items(&mut items);
         items
     }
     pub fn move_candidates(&self, source_task_id: TaskId, query: &str) -> Vec<MoveCandidate> {
-        tracker_application::move_candidates_for_tasks(
-            &self.snapshot.task_items,
-            source_task_id,
-            query,
-        )
+        tracker_application::move_candidates_for_tasks(self.task_items(), source_task_id, query)
+    }
+    pub fn task_item(&self, id: TaskId) -> Option<&TaskListItem> {
+        self.task_cache
+            .get(&id)
+            .map(|(item, _)| item)
+            .or_else(|| self.task_items().iter().find(|item| item.task.id() == id))
     }
     pub fn task(&self, id: TaskId) -> Option<&Task> {
-        if let Some((item, _)) = self.task_cache.get(&id) {
-            return Some(&item.task);
-        }
-        self.snapshot
-            .task_items
-            .iter()
-            .find(|item| item.task.id() == id)
-            .map(|item| &item.task)
+        self.task_item(id).map(|item| &item.task)
     }
     pub fn current_tracking(&self) -> &TrackingState {
-        &self.tracking
+        self.tracking_observation
+            .as_ref()
+            .map_or(&TrackingState::Idle, |observation| &observation.value)
     }
 
     fn guard(revision: &str) -> WriteGuard {
@@ -291,6 +399,17 @@ impl RemoteApplication {
             .await
             .map_err(|error| map_application_error(&error, None, Some(id)))?;
         Ok((item, dto.revision))
+    }
+
+    /// Reads one task with its own revision and preserves application error categories.
+    pub async fn read_task_observation(
+        &mut self,
+        id: TaskId,
+    ) -> Result<ResourceObservation<TaskListItem>, ApplicationError> {
+        let (value, revision) = self.read_task_item(id).await?;
+        self.adopt_task(value.clone(), revision.clone());
+        self.confirmed();
+        Ok(ResourceObservation { value, revision })
     }
 
     pub async fn read_task(&mut self, id: TaskId) -> Result<TaskResourceDto, RemoteError> {
@@ -365,7 +484,7 @@ impl RemoteApplication {
 
     async fn refresh_task_command_view(&mut self) -> Result<(), RemoteError> {
         if self.coherent_task_views {
-            self.refresh().await
+            self.refresh_task_list().await
         } else {
             self.refresh_tasks().await
         }
@@ -374,7 +493,7 @@ impl RemoteApplication {
     async fn recover(&mut self, recovery: Recovery) -> Result<(), RemoteError> {
         match recovery {
             Recovery::Tasks => self.refresh_task_command_view().await,
-            Recovery::Tracking | Recovery::Worklog => self.refresh().await,
+            Recovery::Tracking | Recovery::Worklog => self.refresh_task_list().await,
         }
     }
 
@@ -402,11 +521,8 @@ impl RemoteApplication {
                 self.confirmed();
                 Ok(value)
             }
-            (Ok(_), Err(error)) => Err(map_application_error(
-                &error,
-                scope.worklog_id,
-                scope.task_id,
-            )),
+            // A validated receipt confirms the write even if resource recovery fails.
+            (Ok(value), Err(_)) => Ok(value),
             (Err(error), Ok(())) => Err(error),
             (Err(error), Err(recovery_error)) => {
                 Err(error.with_recovery_failure(map_application_error(&recovery_error, None, None)))
@@ -423,7 +539,9 @@ impl RemoteApplication {
     ) -> Result<T, ApplicationError> {
         match response {
             Ok(dto) if dto.request_id == guard.request_id && !dto.applied_revision.is_empty() => {
-                decode(dto.result)
+                let result = decode(dto.result.clone())?;
+                self.last_command_receipt = Some(dto);
+                Ok(result)
             }
             Ok(_) => Err(protocol_failure("invalid command receipt")),
             Err(error) => {
@@ -462,6 +580,7 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         self.refresh_task_command_view()
             .await
             .map_err(|error| map_application_error(&error, None, None))?;
@@ -488,10 +607,10 @@ impl RemoteApplication {
                 task_id: TaskId::generate().to_string(),
                 name: name.as_str().to_owned(),
                 occurred_at: canonical(occurred_at),
-                guard: Self::guard(&self.task_revision),
+                guard: Self::guard(self.task_revision()),
             });
-        if body.guard.expected_revision != self.task_revision {
-            body.guard = Self::guard(&self.task_revision);
+        if body.guard.expected_revision != self.task_revision() {
+            body.guard = Self::guard(self.task_revision());
         }
         let id = body
             .task_id
@@ -540,6 +659,7 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         if let Some(expected_name) = self.task(id).map(|task| task.name().clone()) {
             return self
                 .rename_task_with_expected_name(id, &expected_name, name, occurred_at)
@@ -562,6 +682,7 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         let revision = self.task_guard(id).await?;
         if self
             .task(id)
@@ -583,6 +704,7 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         let revision = self.task_guard(id).await?;
         self.task_mutation(
             id,
@@ -600,6 +722,7 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         let revision = self.task_guard(id).await?;
         if self
             .task(id)
@@ -623,6 +746,7 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         let revision = self.task_guard(id).await?;
         self.task_mutation(
             id,
@@ -703,6 +827,7 @@ impl RemoteApplication {
         preview: &InactiveTaskPreviewDto,
     ) -> Result<usize, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         validate_inactive_preview(preview)?;
         let body = ArchiveInactiveTasksRequest {
             as_of: preview.as_of,
@@ -731,6 +856,7 @@ impl RemoteApplication {
         preview: &InactiveTaskPreviewDto,
     ) -> Result<usize, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         self.archive_inactive_tasks(preview).await
     }
 
@@ -738,8 +864,10 @@ impl RemoteApplication {
         &mut self,
         target: Option<TaskId>,
     ) -> Result<(), ApplicationError> {
-        if self.coherent_task_views && self.tracking_revision.is_empty() {
-            self.refresh()
+        if self.coherent_task_views
+            && (self.task_observation.is_none() || self.tracking_observation.is_none())
+        {
+            self.refresh_task_list()
                 .await
                 .map_err(|error| map_application_error(&error, None, target))?;
         }
@@ -748,29 +876,32 @@ impl RemoteApplication {
 
     fn adopt_tracking_preflight(
         &mut self,
-        active: Option<Worklog>,
+        _active: Option<Worklog>,
         state: TrackingState,
         revision: &str,
     ) {
         if !self.coherent_task_views {
-            self.snapshot.active_worklog = active;
-            self.tracking = state;
-            self.tracking_revision = revision.to_owned();
+            self.tracking_observation = Some(ResourceObservation {
+                value: state,
+                revision: revision.to_owned(),
+            });
         }
     }
 
     fn reviewed_tracking_state(&self) -> Option<TrackingState> {
-        if self.tracking_revision.is_empty() {
+        if self.tracking_revision().is_empty() {
             None
         } else {
-            Some(self.tracking.clone())
+            Some(self.current_tracking().clone())
         }
     }
 
     async fn tracking_guard(&mut self, target: Option<TaskId>) -> Result<String, ApplicationError> {
-        self.initialize_tracking_command_view(target).await?;
         let reviewed = self.reviewed_tracking_state();
         let reviewed_task = target.and_then(|id| self.task(id).cloned());
+        self.initialize_tracking_command_view(target).await?;
+        let reviewed = reviewed.or_else(|| self.reviewed_tracking_state());
+        let reviewed_task = reviewed_task.or_else(|| target.and_then(|id| self.task(id).cloned()));
         for _ in 0..2 {
             self.ensure_version()
                 .await
@@ -812,11 +943,12 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
         self.last_write_attempted = false;
-        if !self.tracking_revision.is_empty() {
+        self.last_command_receipt = None;
+        if !self.tracking_revision().is_empty() {
             return self
                 .set_active_task_with_expected_active(
                     task_id,
-                    active_id(&self.tracking),
+                    active_id(self.current_tracking()),
                     occurred_at,
                 )
                 .await;
@@ -833,8 +965,9 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         let revision = self.tracking_guard(Some(task_id)).await?;
-        if active_id(&self.tracking) != expected_active {
+        if active_id(self.current_tracking()) != expected_active {
             return Err(self.intent_changed());
         }
         self.set_active_task_guarded(task_id, occurred_at, revision)
@@ -847,8 +980,8 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
         revision: String,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
-        let original_active = self.snapshot.active_worklog.clone();
-        let old_active = active_id(&self.tracking);
+        let original_active = self.active_worklog();
+        let old_active = active_id(self.current_tracking());
         let new_id = WorklogId::generate();
         let body = SetTrackingRequest {
             task_id: Some(task_id.to_string()),
@@ -900,15 +1033,17 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
     ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         let revision = self.tracking_guard(None).await?;
-        if active_id(&self.tracking).is_some_and(|id| id != expected_active) {
+        if active_id(self.current_tracking()).is_some_and(|id| id != expected_active) {
             return Err(self.intent_changed());
         }
-        let original_active = self.snapshot.active_worklog.clone();
+        let original_active = self.active_worklog();
         let body = SetTrackingRequest {
             task_id: None,
             worklog_id: None,
-            expected_active: active_id(&self.tracking).map(|_| expected_active.to_string()),
+            expected_active: active_id(self.current_tracking())
+                .map(|_| expected_active.to_string()),
             occurred_at: canonical(occurred_at),
             guard: Self::guard(&revision),
         };
@@ -1004,26 +1139,7 @@ impl RemoteApplication {
                 id: cursor.id,
                 revision: cursor.revision,
             }),
-            snapshot: WorklogPageSnapshot {
-                requested_task_latest_work_start: self
-                    .snapshot
-                    .task_items
-                    .iter()
-                    .find(|item| item.task.id() == task_id)
-                    .and_then(|item| item.latest_work_start),
-                active_worklog: self.snapshot.active_worklog.clone(),
-                active_task_latest_work_start: self
-                    .snapshot
-                    .active_worklog
-                    .as_ref()
-                    .and_then(|active| {
-                        self.snapshot
-                            .task_items
-                            .iter()
-                            .find(|item| item.task.id() == active.task_id())
-                    })
-                    .and_then(|item| item.latest_work_start),
-            },
+            snapshot: None,
         })
     }
     pub async fn all_worklogs(
@@ -1037,9 +1153,10 @@ impl RemoteApplication {
             )
             .await?;
         Ok(GlobalWorklogPage {
-            worklogs: dto.worklogs,
             next_cursor: dto.next_cursor,
-            snapshot: self.snapshot.clone(),
+            task_items: vec![],
+            tracking: None,
+            worklogs: dto.worklogs,
         })
     }
 
@@ -1095,6 +1212,7 @@ impl RemoteApplication {
         destination_task_id: TaskId,
     ) -> Result<Worklog, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         let revision = self
             .worklog_guard(
                 id,
@@ -1141,6 +1259,7 @@ impl RemoteApplication {
         occurred_at: DateTime<Utc>,
     ) -> Result<Worklog, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         let revision = self.worklog_guard(id, None, expected, None).await?;
         let expected_task_id = self
             .worklog_cache
@@ -1187,6 +1306,7 @@ impl RemoteApplication {
         expected: WorklogTimes,
     ) -> Result<Worklog, ApplicationError> {
         self.last_write_attempted = false;
+        self.last_command_receipt = None;
         let end = expected
             .end()
             .ok_or_else(|| ApplicationError::active_worklog(id))?;
@@ -1223,23 +1343,21 @@ impl RemoteApplication {
         .await
     }
 
-    pub async fn task_totals(
+    async fn fetch_task_totals(
         &mut self,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         now: DateTime<Utc>,
-    ) -> Result<ReportDto, ApplicationError> {
+    ) -> Result<ReportDto, RemoteError> {
         if end <= start {
-            return Err(ApplicationError::InvalidReportRange);
+            return Err(self.record_error(RemoteError::Protocol("invalid report range".into())));
         }
         if report_cooldown_active(self.last_unavailable_at, Instant::now()) {
-            return Err(ApplicationError::RemoteUnavailable(
+            return Err(RemoteError::Unavailable(
                 "tracker server is unavailable".into(),
             ));
         }
-        self.ensure_version()
-            .await
-            .map_err(|error| map_application_error(&error, None, None))?;
+        self.ensure_version().await?;
         let (start, end, now) = (canonical(start), canonical(end), canonical(now));
         let mut url = self.transport.url("v1/reports/task-totals");
         url.query_pairs_mut()
@@ -1250,51 +1368,32 @@ impl RemoteApplication {
             .transport
             .send(Method::GET, url, None::<&()>)
             .await
-            .map_err(|error| {
-                self.record_error(error.clone());
-                map_application_error(&error, None, None)
-            })?;
+            .map_err(|error| self.record_error(error))?;
         validate_report(&dto)
-            .inspect_err(|_| self.last_failure = Some(RemoteFailureKind::Protocol))?;
+            .map_err(|error| self.record_error(RemoteError::Protocol(error.to_string())))?;
         if dto.start != canonical(start) || dto.end != canonical(end) || dto.now != canonical(now) {
-            self.last_failure = Some(RemoteFailureKind::Protocol);
-            return Err(protocol_failure("report context does not match request"));
+            return Err(self.record_error(RemoteError::Protocol(
+                "report context does not match request".into(),
+            )));
         }
-        self.report_cache = Some(dto.clone());
-        self.report_revision = dto.revision.clone();
-        self.confirmed();
         Ok(dto)
     }
-    pub async fn report_totals(
+    pub async fn task_totals(
         &mut self,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         now: DateTime<Utc>,
-    ) -> Result<ReportTotals, ApplicationError> {
-        let dto = self.task_totals(start, end, now).await?;
-        let mut rows = Vec::with_capacity(dto.rows.len());
-        for row in dto.rows {
-            let id: TaskId = row
-                .task_id
-                .parse()
-                .map_err(|_| protocol_failure("invalid report task id"))?;
-            let task = if let Some(task) = self.task(id) {
-                task.clone()
-            } else {
-                let (item, revision) = self.read_task_item(id).await?;
-                let task = item.task.clone();
-                self.adopt_task(item, revision);
-                task
-            };
-            rows.push(ReportRow {
-                task,
-                duration: TimeDelta::microseconds(row.duration_us),
-            });
+    ) -> Result<ReportDto, ApplicationError> {
+        if end <= start {
+            return Err(ApplicationError::InvalidReportRange);
         }
-        Ok(ReportTotals {
-            rows,
-            total: TimeDelta::microseconds(dto.total_us),
-        })
+        let dto = self
+            .fetch_task_totals(start, end, now)
+            .await
+            .map_err(|error| map_application_error(&error, None, None))?;
+        self.report_cache = Some(dto.clone());
+        self.confirmed();
+        Ok(dto)
     }
 }
 
@@ -1365,6 +1464,21 @@ fn validate_report(dto: &ReportDto) -> Result<(), ApplicationError> {
     }
     if sum != dto.total_us {
         return Err(protocol_failure("report total does not match rows"));
+    }
+    Ok(())
+}
+fn validate_active_task(
+    items: &[TaskListItem],
+    active: Option<&Worklog>,
+) -> Result<(), RemoteError> {
+    if let Some(active) = active
+        && !items
+            .iter()
+            .any(|item| item.task.id() == active.task_id() && !item.task.is_archived())
+    {
+        return Err(RemoteError::Protocol(
+            "active worklog has no active task".into(),
+        ));
     }
     Ok(())
 }
@@ -2229,17 +2343,20 @@ mod resource_tests {
         let destination = TaskId::generate();
         let archived = TaskId::generate();
         let mut client = RemoteApplication::disconnected("http://127.0.0.1:1").unwrap();
-        client.snapshot.task_items = vec![
-            task(source),
-            task(destination),
-            TaskDto {
-                archived: true,
-                ..task(archived)
-            },
-        ]
-        .into_iter()
-        .map(|dto| decode_task_item(dto).unwrap())
-        .collect();
+        client.task_observation = Some(ResourceObservation {
+            revision: "confirmed".into(),
+            value: vec![
+                task(source),
+                task(destination),
+                TaskDto {
+                    archived: true,
+                    ..task(archived)
+                },
+            ]
+            .into_iter()
+            .map(|dto| decode_task_item(dto).unwrap())
+            .collect(),
+        });
         let candidates = client.move_candidates(source, "pW");
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].id, destination);

@@ -32,10 +32,9 @@ fn global_history_pages_cross_tasks_and_archived_history_without_losing_ties() {
     assert_eq!(first.worklogs.len(), WORKLOG_PAGE_SIZE);
     assert_eq!(first.worklogs.first().unwrap().id(), worklog_id(1));
     assert_eq!(first.worklogs.last().unwrap().id(), worklog_id(50));
-    assert_eq!(first.snapshot.task_items.len(), 2);
+    assert_eq!(first.task_items.len(), 2);
     assert!(
         first
-            .snapshot
             .task_items
             .iter()
             .any(|item| item.task.id() == task_id(2) && item.task.is_archived())
@@ -124,7 +123,7 @@ fn global_cursor_rejects_other_client_insert_update_and_delete() {
 }
 
 #[test]
-fn global_history_reads_active_work_and_current_catalog() {
+fn global_history_reads_active_work_and_only_page_task_metadata() {
     let repository = repo();
     repository.create_task(named_task(1, "first")).unwrap();
     repository.create_task(named_task(2, "second")).unwrap();
@@ -133,15 +132,51 @@ fn global_history_reads_active_work_and_current_catalog() {
         .unwrap();
     let page = repository.global_worklog_page(None).unwrap();
     assert_eq!(page.worklogs.len(), 1);
-    assert_eq!(page.snapshot.active_worklog.unwrap().id(), worklog_id(1));
-    assert_eq!(page.snapshot.task_items.len(), 2);
     assert_eq!(
-        page.snapshot
-            .task_items
+        page.tracking
+            .as_ref()
+            .unwrap()
+            .active_worklog
+            .as_ref()
+            .unwrap()
+            .id(),
+        worklog_id(1)
+    );
+    assert_eq!(page.task_items.len(), 1);
+    assert_eq!(
+        page.task_items
             .iter()
             .find(|item| item.task.id() == task_id(1))
             .unwrap()
             .latest_work_start,
         Some(at(200))
     );
+}
+
+#[test]
+fn global_history_ignores_invalid_metadata_of_tasks_absent_from_the_page() {
+    let repository = repo();
+    repository.create_task(named_task(1, "history")).unwrap();
+    repository.create_task(named_task(2, "unrelated")).unwrap();
+    repository
+        .insert_worklog(&Worklog::new(worklog_id(1), task_id(1), at(100), Some(at(120))).unwrap())
+        .unwrap();
+    repository
+        .connection()
+        .execute(
+            "UPDATE tasks SET name = '' WHERE id = ?1",
+            [task_id(2).to_string()],
+        )
+        .unwrap();
+
+    let page = repository.global_worklog_page(None).unwrap();
+
+    assert_eq!(page.worklogs.len(), 1);
+    assert_eq!(page.worklogs[0].id(), worklog_id(1));
+    assert_eq!(page.task_items.len(), 1);
+    assert_eq!(page.task_items[0].task.id(), task_id(1));
+    assert_eq!(page.task_items[0].latest_work_start, Some(at(100)));
+    assert!(page.tracking.as_ref().unwrap().active_worklog.is_none());
+    assert!(page.tracking.as_ref().unwrap().active_task_item.is_none());
+    assert!(repository.load_task_tracking_resources().is_err());
 }

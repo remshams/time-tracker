@@ -72,7 +72,7 @@ final class LifecycleTests: XCTestCase {
     func testDisplayTimerNeedsRunningTaskAndVisibilityAndDoesNotFetchData() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(snapshot)
         XCTAssertNil(fixture.scheduler.display)
         XCTAssertEqual(fixture.session.timerDisplayText, "00:00:30")
@@ -99,7 +99,7 @@ final class LifecycleTests: XCTestCase {
     func testCancelledTimerCallbacksAlreadyQueuedCannotRefreshOrUpdateDisplay() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.setWindowVisible(true)
         let refresh = try await fixture.client.next()
@@ -118,6 +118,46 @@ final class LifecycleTests: XCTestCase {
         XCTAssertEqual(fixture.session.now, previousNow)
         XCTAssertEqual(fixture.scheduler.poll?.delay, 60)
         XCTAssertNil(fixture.scheduler.display)
+    }
+
+    @MainActor
+    func testReplacedTimersCannotPublishAfterSessionResumes() async throws {
+        let fixture = Fixture(reports: true)
+        defer { fixture.cleanup() }
+        fixture.session.setWindowVisible(true)
+        let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(resources)
+        let replacedTimers = fixture.scheduler.active
+        XCTAssertTrue(replacedTimers.contains { $0.repeating })
+        XCTAssertTrue(replacedTimers.contains { !$0.repeating && $0.tolerance == 0 })
+
+        fixture.session.sleep()
+        fixture.clock.now.addTimeInterval(30)
+        fixture.clock.uptime += 30
+        fixture.session.wake()
+        let resumed = try await fixture.client.next()
+        resumed.succeed(TaskListTotalsRefresh(snapshot: resources, rows: []))
+        try await fixture.settled()
+        let currentDisplay = try XCTUnwrap(fixture.scheduler.display)
+        let publishedNow = fixture.session.now
+        let operationCount = fixture.client.operations.count
+        let scheduledCount = fixture.scheduler.scheduled.count
+        var changes = 0
+        fixture.session.onChange = { changes += 1 }
+        fixture.clock.now.addTimeInterval(10)
+        fixture.clock.uptime += 10
+
+        replacedTimers.forEach { $0.deliverQueuedAction() }
+        XCTAssertEqual(changes, 0, "Callbacks from replaced timers must not publish into the resumed session.")
+        XCTAssertEqual(fixture.session.now, publishedNow)
+        XCTAssertFalse(fixture.session.isBusy)
+        XCTAssertEqual(fixture.client.operations.count, operationCount)
+        XCTAssertEqual(fixture.scheduler.scheduled.count, scheduledCount)
+
+        currentDisplay.fire()
+        XCTAssertEqual(changes, 1)
+        XCTAssertEqual(fixture.session.now, fixture.clock.now)
+        XCTAssertEqual(fixture.client.operations.count, operationCount)
     }
 
     @MainActor
@@ -156,7 +196,7 @@ final class LifecycleTests: XCTestCase {
     func testElapsedUsesMonotonicClockUntilWakeResetsWallTimeAnchor() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TrackerSnapshot(tasks: [firstTask], active: activeWorklog)
+        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(snapshot)
         fixture.session.setWindowVisible(true)
         let refresh = try await fixture.client.next()
@@ -185,10 +225,10 @@ final class LifecycleTests: XCTestCase {
     func testShutdownCancelsTimersAndIgnoresLateConnectionResult() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         fixture.session.setWindowVisible(true)
         let refresh = try await fixture.client.next()
-        refresh.succeed(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        refresh.succeed(TaskListResources(tasks: [firstTask], active: activeWorklog))
         try await fixture.settled()
         let tokens = fixture.scheduler.active
         let connecting = Task { await fixture.session.connect(serverSettings) }
@@ -196,7 +236,7 @@ final class LifecycleTests: XCTestCase {
         fixture.session.shutdown()
         XCTAssertTrue(tokens.allSatisfy { $0.cancelled })
         XCTAssertTrue(fixture.scheduler.active.isEmpty)
-        candidate.succeed(TrackerSnapshot(tasks: [secondTask], active: nil))
+        candidate.succeed(TaskListResources(tasks: [secondTask], active: nil))
         let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
         XCTAssertEqual(fixture.session.connectionSettings, .local)

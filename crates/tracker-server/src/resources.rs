@@ -13,7 +13,8 @@ pub(super) async fn tasks(
     input: Result<Query<TasksQuery>, QueryRejection>,
 ) -> ApiResult<TasksDto> {
     let query = query_payload(input)?;
-    let core = lock(&shared)?;
+    let mut core = lock(&shared)?;
+    core.app.refresh_task_catalog()?;
     let tasks = core
         .app
         .tasks(TaskOrdering::RecentlyCreated)
@@ -31,11 +32,10 @@ pub(super) async fn tasks(
     }))
 }
 
-fn task_resource(core: &Core, id: TaskId) -> Result<TaskDto, ApiError> {
+fn task_resource(core: &mut Core, id: TaskId) -> Result<TaskDto, ApiError> {
     core.app
-        .tasks(TaskOrdering::RecentlyCreated)
-        .iter()
-        .find(|item| item.task.id() == id)
+        .read_task_item(id)?
+        .as_ref()
         .map(TaskDto::from)
         .ok_or_else(|| {
             ApplicationError::from(tracker_application::RepositoryError::TaskNotFound { id }).into()
@@ -47,15 +47,16 @@ pub(super) async fn task(
     RoutePath(raw_id): RoutePath<String>,
 ) -> ApiResult<TaskResourceDto> {
     let id = task_id(&raw_id)?;
-    let core = lock(&shared)?;
+    let mut core = lock(&shared)?;
     Ok(Json(TaskResourceDto {
-        task: task_resource(&core, id)?,
+        task: task_resource(&mut core, id)?,
         revision: core.revision(),
     }))
 }
 
 pub(super) async fn tracking(State(shared): State<Shared>) -> ApiResult<TrackingDto> {
-    let core = lock(&shared)?;
+    let mut core = lock(&shared)?;
+    core.app.refresh_tracking_resource()?;
     Ok(Json(TrackingDto {
         active_worklog: core.active_worklog(),
         revision: core.revision(),
@@ -117,7 +118,7 @@ pub(super) async fn all_worklogs(
     let mut core = lock(&shared)?;
     let page = match task {
         Some(id) => {
-            task_resource(&core, id)?;
+            task_resource(&mut core, id)?;
             let task_cursor = cursor.map(|cursor| WorklogCursor {
                 task_id: id,
                 start: cursor.start,
