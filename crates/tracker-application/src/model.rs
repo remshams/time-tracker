@@ -113,7 +113,7 @@ pub struct WorklogCursor {
 /// requested task and, when tracking is active, the active task. It avoids
 /// materializing every task and worklog aggregate for each history page.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorklogPageSnapshot {
+pub struct WorklogPageAdoption {
     /// The requested task's authoritative latest worklog start.
     pub requested_task_latest_work_start: Option<DateTime<Utc>>,
     /// The global active worklog, if one exists.
@@ -127,7 +127,7 @@ pub struct WorklogPageSnapshot {
 /// One bounded page of a task's worklog history.
 ///
 /// Worklogs appear in history order: start descending, then `WorklogId`
-/// ascending. Active worklogs are part of the history. `snapshot` comes from
+/// ascending. Active worklogs are part of the history. `adoption` comes from
 /// the same backend read as the page. A `next_cursor` of `None` means the page
 /// reached the end of the history; it does not mean the page was full.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,7 +136,7 @@ pub struct WorklogPage {
     pub worklogs: Vec<Worklog>,
     /// Local aggregate and tracking adoption state from the page transaction.
     /// Independent remote pages carry no adoption state.
-    pub snapshot: Option<WorklogPageSnapshot>,
+    pub adoption: Option<WorklogPageAdoption>,
     /// The cursor to pass for the next page, or `None` at the end of the
     /// history.
     pub next_cursor: Option<WorklogCursor>,

@@ -17,7 +17,7 @@ use crate::{
     ActiveTrackingRead, ApplicationError, ClearActiveTaskOutcome, GlobalWorklogCursor,
     GlobalWorklogPage, ReportTotals, RepositoryError, SetActiveTaskOutcome, TaskListItem,
     TaskOrdering, TrackerRepository, WorklogCorrection, WorklogCursor, WorklogDeletion,
-    WorklogMove, WorklogPage, WorklogPageSnapshot,
+    WorklogMove, WorklogPage, WorklogPageAdoption,
 };
 
 fn canonical_timestamp(timestamp: DateTime<Utc>) -> DateTime<Utc> {
@@ -34,7 +34,7 @@ fn canonical_worklog_times(times: WorklogTimes) -> WorklogTimes {
 
 /// Task queries available to presentation and transport layers.
 ///
-/// The service keeps its task snapshot current on every committed write, so
+/// The service keeps its task catalog current on every committed write, so
 /// querying never reads the backend again and cannot fail.
 pub trait TaskQueries {
     /// The tasks of the selected backend, ordered by the given ordering.
@@ -136,7 +136,7 @@ pub trait TrackingOperations {
 /// Queries for worklog history and move destinations. History page reads
 /// adopt page task metadata and active tracking from the same read.
 pub trait WorklogQueries: TaskQueries {
-    /// Eligible destinations from the current task snapshot, fuzzy matched and
+    /// Eligible destinations from the current task catalog, fuzzy matched and
     /// ordered by recent activity, creation time, then task identity.
     fn move_candidates(&self, source_task_id: TaskId, query: &str) -> Vec<crate::MoveCandidate> {
         move_candidates_for_tasks(
@@ -231,22 +231,22 @@ impl<T> TrackerApplicationService for T where
 
 /// Stateful application service backed by one repository.
 ///
-/// The service owns persistence sequencing. It keeps the task snapshot and
+/// The service owns persistence sequencing. It keeps the task catalog and
 /// current tracking queries ready for a synchronous client, updates the
-/// snapshot itself on every committed write instead of reading the backend
+/// catalog itself on every committed write instead of reading the backend
 /// again behind an ambiguous result, commits switches through the
 /// repository's atomic operation, and reloads authoritative state after any
 /// tracking write conflict.
 pub struct TrackerApplication<R> {
     repository: R,
-    /// The snapshot in canonical `TaskId` order; queries sort it per the
+    /// The task catalog in canonical `TaskId` order; queries sort it per the
     /// requested ordering.
     tasks: Vec<TaskListItem>,
     tracker: Tracker,
 }
 
 impl<R: TrackerRepository> TrackerApplication<R> {
-    /// Loads task and tracking state from one coherent backend snapshot.
+    /// Loads task and tracking state from one coherent backend read.
     pub fn load(repository: R) -> Result<Self, ApplicationError> {
         let (tasks, active_worklog) = repository.load_task_tracking_resources()?;
         let (tasks, tracker) = Self::state_from_resources(tasks, active_worklog)?;
@@ -321,7 +321,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         }
     }
 
-    fn adopt_active_worklog_snapshot(
+    fn adopt_active_worklog(
         &mut self,
         active_worklog: Option<Worklog>,
         active_task_latest_work_start: Option<DateTime<Utc>>,
@@ -336,15 +336,15 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         Ok(())
     }
 
-    fn adopt_worklog_page_snapshot(
+    fn adopt_worklog_page(
         &mut self,
         task_id: TaskId,
-        snapshot: WorklogPageSnapshot,
+        adoption: WorklogPageAdoption,
     ) -> Result<(), ApplicationError> {
-        self.set_latest_work_start(task_id, snapshot.requested_task_latest_work_start);
-        self.adopt_active_worklog_snapshot(
-            snapshot.active_worklog,
-            snapshot.active_task_latest_work_start,
+        self.set_latest_work_start(task_id, adoption.requested_task_latest_work_start);
+        self.adopt_active_worklog(
+            adoption.active_worklog,
+            adoption.active_task_latest_work_start,
         )
     }
 
@@ -430,7 +430,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             correction.task_latest_work_start,
         );
         let worklog = correction.worklog;
-        self.adopt_active_worklog_snapshot(
+        self.adopt_active_worklog(
             correction.active_worklog,
             correction.active_task_latest_work_start,
         )?;
@@ -448,7 +448,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             movement.destination_task_latest_work_start,
         );
         let worklog = movement.worklog;
-        self.adopt_active_worklog_snapshot(
+        self.adopt_active_worklog(
             movement.active_worklog,
             movement.active_task_latest_work_start,
         )?;
@@ -484,7 +484,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
     }
 
     /// Records that a worklog started on a task at `at`, keeping the
-    /// snapshot's latest-work value equal to the stored `MAX(start)`
+    /// task catalog's latest-work value equal to the stored `MAX(start)`
     /// without reading the backend again.
     fn note_work_start(&mut self, task_id: TaskId, at: DateTime<Utc>) {
         if let Some(item) = self.tasks.iter_mut().find(|item| item.task.id() == task_id) {

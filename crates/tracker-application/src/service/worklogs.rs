@@ -12,7 +12,7 @@ use crate::{
     TaskListItem, TrackerRepository, WorklogCursor, WorklogPage,
 };
 
-/// Selects move destinations from a caller's cached task snapshot.
+/// Selects move destinations from a caller's cached task catalog.
 /// Archived tasks and the source task are excluded even when the query is empty.
 pub fn move_candidates_for_tasks(
     items: &[TaskListItem],
@@ -72,8 +72,8 @@ impl<R: TrackerRepository> WorklogQueries for TrackerApplication<R> {
         after: Option<&WorklogCursor>,
     ) -> Result<WorklogPage, ApplicationError> {
         let page = self.repository.worklog_page(task_id, after)?;
-        if let Some(adoption) = page.snapshot.clone() {
-            self.adopt_worklog_page_snapshot(task_id, adoption)?;
+        if let Some(adoption) = page.adoption.clone() {
+            self.adopt_worklog_page(task_id, adoption)?;
         }
         Ok(page)
     }
