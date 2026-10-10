@@ -687,9 +687,9 @@ async fn a_new_server_database_stays_empty_after_restart() {
     let path = temp.path().join("tracker.db");
     for _ in 0..2 {
         let router = tracker_server::router_for_database(&path).unwrap();
-        let snapshot = state(&router).await;
-        assert!(snapshot.0.tasks.is_empty());
-        assert!(snapshot.1.active_worklog.is_none());
+        let resources = state(&router).await;
+        assert!(resources.0.tasks.is_empty());
+        assert!(resources.1.active_worklog.is_none());
     }
     let repository = SqliteRepository::open(&path).unwrap();
     assert!(repository.list_tasks().unwrap().is_empty());
