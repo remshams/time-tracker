@@ -108,7 +108,7 @@ fn correction_preserves_identity_precision_and_archived_task_and_updates_totals(
 }
 
 #[test]
-fn correcting_active_start_keeps_timer_running_and_updates_snapshot() {
+fn correcting_active_start_keeps_timer_running_and_updates_resources() {
     let directory = tempfile::tempdir().unwrap();
     let mut bridge = open_fixture(&directory.path().join("active.db")).unwrap();
     let task = bridge.application.tasks(TaskOrdering::default())[0]
@@ -399,7 +399,7 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
         .task
         .id();
     let original = record(&mut writer, task, 100, Some(200));
-    let snapshot = report_tests::resource_dtos(
+    let resources = report_tests::resource_dtos(
         writer.application.tasks(TaskOrdering::default()),
         None,
         "42".into(),
@@ -436,7 +436,7 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
     ] {
         let received = Arc::new(Mutex::new(None));
         let captured = received.clone();
-        let snapshot = snapshot.clone();
+        let resources = resources.clone();
         let router = Router::new()
             .route(
                 "/v1/health",
@@ -448,7 +448,7 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
                 }),
             )
             .merge(report_tests::resource_router(
-                snapshot,
+                resources,
                 vec![tracker_protocol::WorklogDto::from(&original)],
             ))
             .route(

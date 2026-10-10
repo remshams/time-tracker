@@ -105,7 +105,7 @@ fn local_automation_never_stops_or_switches_a_competing_clients_timer() {
 }
 
 #[test]
-fn local_resume_rejects_a_timer_started_after_the_idle_snapshot() {
+fn local_resume_rejects_a_timer_started_after_the_idle_observation() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("tracker.db");
     let mut first = open_fixture(&path).unwrap();
@@ -211,7 +211,7 @@ fn automation_commands_reject_null_bridges_identifiers_and_timestamps() {
 }
 
 #[test]
-fn remote_resume_requires_an_authoritative_snapshot_before_writing() {
+fn remote_resume_requires_authoritative_resources_before_writing() {
     let mut bridge = Bridge::new(Backend::remote("http://127.0.0.1:12345").unwrap());
     let rejected = resume(&mut bridge, TaskId::generate(), "2026-10-04T10:00:00Z");
     assert_eq!(rejected["kind"], "unavailable");

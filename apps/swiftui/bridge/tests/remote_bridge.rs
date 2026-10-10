@@ -226,8 +226,8 @@ fn remote_mode_uses_only_server_tasks_and_preserves_click_timestamps() {
     assert!(unloaded.1["data"].is_null());
     let disconnected = client.start("00000000-0000-0000-0000-000000000001", at());
     assert_eq!(disconnected["requiresRefresh"], true);
-    let snapshot = client.task_list(true);
-    let tasks = snapshot.0["data"]["value"].as_array().unwrap();
+    let resources = client.task_list(true);
+    let tasks = resources.0["data"]["value"].as_array().unwrap();
     let first = tasks[0]["id"].as_str().unwrap();
     let second = tasks[1]["id"].as_str().unwrap();
     let started = client.start(first, at());
@@ -590,10 +590,10 @@ fn start_never_switches_a_timer_learned_from_history_but_not_rendered_yet() {
     let server = Server::start();
     let mut first = Client::open(&server.endpoint());
     let mut second = Client::open(&server.endpoint());
-    let snapshot = first.task_list(true);
+    let resources = first.task_list(true);
     second.task_list(true);
-    let first_task = snapshot.0["data"]["value"][0]["id"].as_str().unwrap();
-    let second_task = snapshot.0["data"]["value"][1]["id"].as_str().unwrap();
+    let first_task = resources.0["data"]["value"][0]["id"].as_str().unwrap();
+    let second_task = resources.0["data"]["value"][1]["id"].as_str().unwrap();
     let started = second.start(first_task, at());
     let active_id = started["data"]["active"]["id"].as_str().unwrap();
     first.history(first_task, None);
@@ -628,14 +628,14 @@ fn start_never_switches_a_timer_learned_from_history_but_not_rendered_yet() {
 fn unavailable_server_keeps_confirmed_cache_and_blocks_writes_without_local_fallback() {
     let mut server = Server::start();
     let mut client = Client::open(&server.endpoint());
-    let snapshot = client.task_list(true);
+    let resources = client.task_list(true);
     server.stop();
-    let task = snapshot.0["data"]["value"][0]["id"].as_str().unwrap();
+    let task = resources.0["data"]["value"][0]["id"].as_str().unwrap();
     let failure = client.start(task, at());
     assert_eq!(failure["kind"], "unavailable", "{failure}");
     assert_eq!(failure["uncertain"], false);
     assert_eq!(failure["requiresRefresh"], true);
-    assert_eq!(client.task_list(false), snapshot);
+    assert_eq!(client.task_list(false), resources);
     assert_eq!(client.task_list(true).0["kind"], "unavailable");
     assert_eq!(client.start(task, at())["uncertain"], false);
     let repository = SqliteRepository::open(server.path()).unwrap();
@@ -801,8 +801,8 @@ fn invalid_remote_endpoints_and_tracking_timestamps_are_rejected() {
     }
     let server = Server::start();
     let mut client = Client::open(&server.endpoint());
-    let snapshot = client.task_list(true);
-    let task = CString::new(snapshot.0["data"]["value"][0]["id"].as_str().unwrap()).unwrap();
+    let resources = client.task_list(true);
+    let task = CString::new(resources.0["data"]["value"][0]["id"].as_str().unwrap()).unwrap();
     let invalid = CString::new("not a timestamp").unwrap();
     // SAFETY: Inputs are live C strings and bridge access is exclusive.
     let failure =
