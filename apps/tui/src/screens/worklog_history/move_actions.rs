@@ -13,7 +13,7 @@ impl AppState {
         let Some(worklog) = self.selected_history_worklog() else {
             return;
         };
-        let tasks = self.catalog().move_task_snapshot();
+        let tasks = self.catalog().move_candidate_tasks();
         self.history_state_mut()
             .expect("history is open")
             .open_move(MoveDraft::new(worklog, tasks));
