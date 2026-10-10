@@ -97,13 +97,6 @@ impl Backend {
         }
     }
 
-    pub fn task(&self, id: TaskId) -> Option<&Task> {
-        match &self.kind {
-            BackendKind::Local(app) => app.task(id),
-            BackendKind::Remote(app) => app.task(id),
-        }
-    }
-
     pub fn current_tracking(&self) -> &TrackingState {
         match &self.kind {
             BackendKind::Local(app) => app.current_tracking(),
