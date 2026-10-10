@@ -355,9 +355,9 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
     func connect(_ settings: ConnectionSettings) async throws -> TaskListResources {
         try await perform { worker in
             let candidate = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
-            let snapshot = try candidate.refreshTaskList()
+            let resources = try candidate.refreshTaskList()
             worker.bridge = candidate
-            return snapshot
+            return resources
         }
     }
 
