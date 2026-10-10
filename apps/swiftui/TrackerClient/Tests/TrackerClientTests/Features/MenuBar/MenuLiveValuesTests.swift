@@ -35,9 +35,9 @@ final class MenuLiveValuesTests: XCTestCase {
     func testPollUpdatesOnlyCapturedTaskValuesAndRefreshesStructureAfterClosing() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
+        let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(
-            snapshot,
+            resources,
             rows: [
                 TaskReportTotal(
                     taskId: firstTask.id,
@@ -51,7 +51,7 @@ final class MenuLiveValuesTests: XCTestCase {
         let poll = try await fixture.client.next()
         poll.succeed(
             TaskListTotalsRefresh(
-                snapshot: snapshot,
+                taskList: resources,
                 rows: [
                     TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 20_000_000),
                     TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 50_000_000),
@@ -103,9 +103,9 @@ final class MenuLiveValuesTests: XCTestCase {
     func testConnectionChangeWithReusedIDsCannotUpdateCapturedMenuValues() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
+        let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(
-            snapshot,
+            resources,
             rows: [
                 TaskReportTotal(
                     taskId: firstTask.id,
@@ -116,13 +116,13 @@ final class MenuLiveValuesTests: XCTestCase {
         fixture.session.onChange = { observer.update(from: fixture.session, showDailyTotal: true) }
         let connect = Task { await fixture.session.connect(serverSettings) }
         let request = try await fixture.client.next()
-        request.succeed(snapshot)
+        request.succeed(resources)
         let connected = try await fixture.taskValue(connect)
         XCTAssertTrue(connected)
         let report = try await fixture.client.next()
         report.succeed(
             TaskListTotalsRefresh(
-                snapshot: snapshot,
+                taskList: resources,
                 rows: [
                     TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 900_000_000)
                 ]))

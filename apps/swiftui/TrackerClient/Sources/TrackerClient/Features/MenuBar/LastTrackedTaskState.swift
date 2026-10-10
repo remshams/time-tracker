@@ -25,16 +25,16 @@ final class LastTrackedTaskState {
         remembered[settings.trackingIdentityKey] = taskID
     }
 
-    func observe(_ snapshot: TaskListResources, settings: ConnectionSettings) {
+    func observe(_ resources: TaskListResources, settings: ConnectionSettings) {
         let key = settings.trackingIdentityKey
         let stored = remembered[key] ?? repository?.load(for: settings)
-        let latest = snapshot.catalog.value.compactMap { task -> (String, Date)? in
+        let latest = resources.catalog.value.compactMap { task -> (String, Date)? in
             guard let start = timestamp(task.latestStart) else { return nil }
             return (task.id, start)
         }.max(by: lessRecent)
         let idleTaskID: String?
         if let stored {
-            if let previous = task(withID: stored, in: snapshot.catalog.value), let latest,
+            if let previous = task(withID: stored, in: resources.catalog.value), let latest,
                 isNewer(latest.1, than: previous)
             {
                 idleTaskID = latest.0
@@ -44,7 +44,7 @@ final class LastTrackedTaskState {
         } else {
             idleTaskID = latest?.0
         }
-        taskID = snapshot.tracking.value?.taskId ?? idleTaskID
+        taskID = resources.tracking.value?.taskId ?? idleTaskID
         guard let taskID else { return }
         if stored != taskID { repository?.save(taskID: taskID, for: settings) }
         remembered[key] = taskID

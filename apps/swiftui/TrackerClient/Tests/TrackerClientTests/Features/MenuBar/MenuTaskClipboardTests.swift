@@ -6,12 +6,12 @@ final class MenuTaskClipboardTests: XCTestCase {
     func testCopyUsesHighlightedTaskRatherThanWindowSelectionOrRunningTask() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
+        let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         let rows = [
             TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 30_000_000),
             TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 5_025_000_000),
         ]
-        try await fixture.start(snapshot, rows: rows)
+        try await fixture.start(resources, rows: rows)
         fixture.session.select(firstTask.id)
         XCTAssertEqual(
             fixture.session.menuCopyValue(.copyName, taskID: secondTask.id, connection: .local), "Second task")
