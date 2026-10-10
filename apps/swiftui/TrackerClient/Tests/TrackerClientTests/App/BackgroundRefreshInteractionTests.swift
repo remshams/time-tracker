@@ -489,7 +489,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
             fixture.session.onChange = {
                 guard fixture.session.isBusy, fixture.session.isBlockingControls else { return }
                 publications += 1
-                // The resources publishes before the reservation transfers to the next operation.
+                // The resources publish before the reservation transfers to the next operation.
                 if publications == 2 {
                     fixture.session.onChange = nil
                     fixture.session.screenLocked(at: fixture.clock.now)
