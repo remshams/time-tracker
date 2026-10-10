@@ -50,7 +50,7 @@ impl TaskCatalog {
         matches
     }
 
-    pub(crate) fn move_task_snapshot(&self) -> Vec<TaskListItem> {
+    pub(crate) fn move_candidate_tasks(&self) -> Vec<TaskListItem> {
         self.active_tasks
             .iter()
             .map(|task| TaskListItem {
@@ -241,7 +241,7 @@ mod tests {
         let mut catalog = TaskCatalog::new(vec![source.clone(), first.clone(), second.clone()]);
         let destinations = |catalog: &TaskCatalog| {
             tracker_application::move_candidates_for_tasks(
-                &catalog.move_task_snapshot(),
+                &catalog.move_candidate_tasks(),
                 source_id,
                 "bt",
             )
