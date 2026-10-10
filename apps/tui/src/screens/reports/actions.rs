@@ -403,9 +403,9 @@ impl AppState {
                 match result {
                     Ok(page) => {
                         let baseline = crate::screens::worklog_history::active_worklog_for_task(
-                            page.snapshot
+                            page.adoption
                                 .as_ref()
-                                .and_then(|snapshot| snapshot.active_worklog.as_ref()),
+                                .and_then(|adoption| adoption.active_worklog.as_ref()),
                             task_id,
                         );
                         app.shell_mut().open_report_history(History::new(
@@ -504,7 +504,7 @@ mod tests {
     use crate::screens::TaskListCommand;
     use crate::test_support::{TestService, app_in_timezone, archived_task, at, task};
     use tracker_application::{ApplicationError, RepositoryError};
-    use tracker_application::{ReportRow, ReportTotals, WorklogPage, WorklogPageSnapshot};
+    use tracker_application::{ReportRow, ReportTotals, WorklogPage, WorklogPageAdoption};
     use tracker_domain::TrackingState;
 
     fn finish_empty_report(state: &mut AppState, effect: AppEffect) {
@@ -625,7 +625,7 @@ mod tests {
                 request,
                 outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
                     worklogs: Vec::new(),
-                    snapshot: Some(WorklogPageSnapshot {
+                    adoption: Some(WorklogPageAdoption {
                         requested_task_latest_work_start: None,
                         active_worklog: None,
                         active_task_latest_work_start: None,
@@ -668,7 +668,7 @@ mod tests {
                 request,
                 outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
                     worklogs: Vec::new(),
-                    snapshot: Some(WorklogPageSnapshot {
+                    adoption: Some(WorklogPageAdoption {
                         requested_task_latest_work_start: None,
                         active_worklog: None,
                         active_task_latest_work_start: None,
@@ -721,7 +721,7 @@ mod tests {
                 request,
                 outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
                     worklogs: Vec::new(),
-                    snapshot: Some(WorklogPageSnapshot {
+                    adoption: Some(WorklogPageAdoption {
                         requested_task_latest_work_start: None,
                         active_worklog: None,
                         active_task_latest_work_start: None,
