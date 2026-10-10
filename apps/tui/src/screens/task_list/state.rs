@@ -79,7 +79,7 @@ pub struct TaskListState {
     mode: TaskListMode,
     rename_original_name: Option<TaskName>,
     search_query: Option<String>,
-    search_snapshot: Option<(Option<String>, Option<TaskId>)>,
+    search_restore_point: Option<(Option<String>, Option<TaskId>)>,
     before_filter_selection: Option<TaskId>,
     g_prefix: bool,
     dialog_generation: u64,
@@ -95,7 +95,7 @@ impl TaskListState {
             mode: TaskListMode::Normal,
             rename_original_name: None,
             search_query: None,
-            search_snapshot: None,
+            search_restore_point: None,
             before_filter_selection: None,
             g_prefix: false,
             dialog_generation: 0,
@@ -124,7 +124,7 @@ impl TaskListState {
     }
 
     pub(crate) fn open_search(&mut self) {
-        self.search_snapshot = Some((self.search_query.clone(), self.selection()));
+        self.search_restore_point = Some((self.search_query.clone(), self.selection()));
         if self.search_query.is_none() {
             self.before_filter_selection = self.selection();
             self.search_query = Some(String::new());
@@ -149,17 +149,17 @@ impl TaskListState {
     pub(crate) fn commit_search(&mut self) {
         if self.search_query.as_deref() == Some("") {
             self.search_query = None;
-            if let Some((_, selection)) = &self.search_snapshot {
+            if let Some((_, selection)) = &self.search_restore_point {
                 self.set_selection(*selection);
             }
             self.before_filter_selection = None;
         }
-        self.search_snapshot = None;
+        self.search_restore_point = None;
         self.mode = TaskListMode::Normal;
     }
 
     pub(crate) fn cancel_search(&mut self) {
-        if let Some((query, selection)) = self.search_snapshot.take() {
+        if let Some((query, selection)) = self.search_restore_point.take() {
             self.search_query = query;
             self.set_selection(selection);
         }
