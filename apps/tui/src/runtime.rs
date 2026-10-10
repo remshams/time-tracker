@@ -16,13 +16,16 @@ use tracker_storage::SqliteRepository;
 
 use crate::app::{AppEffect, AppState, Status};
 use crate::application_request::{
-    ApplicationRequest, CompletedRequest, execute_local, execute_remote,
+    ApplicationOutcome, ApplicationRequest, CompletedRequest, execute_local, execute_remote,
 };
 use crate::terminal::TerminalGuard;
 
 const TICK: Duration = Duration::from_millis(250);
 const REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 const BUSY_DELAY: Duration = Duration::from_millis(100);
+const TRACKING_STALE_STATUS: &str = "Tracking saved; refresh failed. Timer may be stale.";
+const TRACKING_UNAVAILABLE_STATUS: &str =
+    "Tracking saved; refresh failed. Server unavailable. Timer may be stale.";
 
 pub(crate) enum Backend {
     Local(TrackerApplication<SqliteRepository>),
@@ -136,11 +139,7 @@ async fn event_loop(
                 match result {
                     ResultKind::Request(completed) => {
                         let effect = active_effect.take().expect("request has a completion");
-                        publish_request_resources(&mut state, backend.as_ref().expect("request returned backend"), &completed);
-                        state.complete_effect(effect, *completed);
-                        if matches!(backend, Some(Backend::Remote(ref remote)) if remote.last_failure() == Some(RemoteFailureKind::Unavailable)) {
-                            state.shell_mut().error("Server unavailable");
-                        }
+                        complete_request(&mut state, backend.as_ref().expect("request returned backend"), effect, *completed);
                     }
                     ResultKind::Refresh(result) => {
                         let remote = match backend.as_ref().expect("refresh returned backend") {
@@ -171,6 +170,31 @@ async fn event_loop(
 
 fn should_exit(state: &AppState) -> bool {
     !state.is_running() && !state.active_request_is_write() && !state.has_queued_write()
+}
+
+fn complete_request(
+    state: &mut AppState,
+    backend: &Backend,
+    effect: AppEffect,
+    completed: CompletedRequest,
+) {
+    let saved_tracking = matches!(
+        &completed.outcome,
+        ApplicationOutcome::SetActiveTask(Ok(_)) | ApplicationOutcome::ClearActiveTask(Ok(_))
+    );
+    publish_request_resources(state, backend, &completed);
+    state.complete_effect(effect, completed);
+    let Backend::Remote(remote) = backend else {
+        return;
+    };
+    match remote.last_failure() {
+        Some(RemoteFailureKind::Unavailable) if saved_tracking => {
+            state.shell_mut().info(TRACKING_UNAVAILABLE_STATUS)
+        }
+        Some(_) if saved_tracking => state.shell_mut().info(TRACKING_STALE_STATUS),
+        Some(RemoteFailureKind::Unavailable) => state.shell_mut().error("Server unavailable"),
+        _ => {}
+    }
 }
 
 fn start_request(backend: Backend, request: ApplicationRequest) -> Pending {
@@ -258,7 +282,11 @@ fn apply_refresh(
             {
                 state.sync_task_list(tasks.value.clone(), tracking.value.clone(), false);
             }
-            if matches!(state.shell().status(), Status::Info(message) if message == "Connecting to server...")
+            if matches!(state.shell().status(), Status::Info(message) if [
+                "Connecting to server...",
+                TRACKING_STALE_STATUS,
+                TRACKING_UNAVAILABLE_STATUS,
+            ].contains(&message.as_str()))
                 || matches!(state.shell().status(), Status::Error(message) if message == "Server unavailable")
             {
                 state.shell_mut().clear_status();
@@ -309,22 +337,30 @@ fn busy_label(request: &ApplicationRequest) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
     use std::time::{Duration, Instant};
 
     use ratatui::{Terminal, backend::TestBackend};
-    use tracker_application::TaskListItem;
-    use tracker_domain::{ActiveWorklog, Task, TrackingState};
-    use tracker_remote::{RemoteApplication, RemoteError};
+    use tracker_application::{
+        TaskListItem, TaskOperations, TaskOrdering, TaskQueries, TrackerApplication,
+        TrackingOperations,
+    };
+    use tracker_domain::{ActiveWorklog, Task, TaskName, TrackingState};
+    use tracker_remote::{RemoteApplication, RemoteError, RemoteFailureKind};
+    use tracker_storage::SqliteRepository;
 
     use super::{
-        Backend, ResultKind, apply_refresh, busy_label, pending_busy_deadline,
-        publish_request_resources, render_frame, should_exit, start_request, visible_busy_label,
-        wait_until,
+        Backend, ResultKind, TRACKING_STALE_STATUS, TRACKING_UNAVAILABLE_STATUS, apply_refresh,
+        busy_label, complete_request, pending_busy_deadline, publish_request_resources,
+        render_frame, should_exit, start_request, visible_busy_label, wait_until,
     };
     use crate::app::{AppState, Status};
     use crate::application_request::remote_resource_tests::stoppable_resource_server;
     use crate::application_request::{ApplicationOutcome, ApplicationRequest, CompletedRequest};
     use crate::command::Command;
+    use crate::screens::task_list::TaskListCommand;
     use crate::test_support::{at, task, worklog_id};
 
     fn confirmed_state() -> (AppState, Task, ActiveWorklog) {
@@ -353,6 +389,404 @@ mod tests {
                 format!(r#"{{"active_worklog":null,"revision":"{tracking_revision}"}}"#),
             ),
         ]
+    }
+
+    #[derive(Clone, Copy)]
+    enum TrackingRefresh {
+        Failed(RemoteFailureKind),
+        Saved,
+        Newer,
+        NewerThenFailed,
+    }
+
+    fn json_request_string<'a>(body: &'a str, field: &str) -> &'a str {
+        body.split(&format!("\"{field}\":\""))
+            .nth(1)
+            .unwrap_or_else(|| panic!("request must contain {field}: {body}"))
+            .split('"')
+            .next()
+            .unwrap()
+    }
+
+    fn tracking_completion_server(
+        refresh: TrackingRefresh,
+        stopping: bool,
+        accepted: bool,
+    ) -> (String, thread::JoinHandle<Vec<String>>) {
+        let alpha = task(1, "alpha");
+        let beta = task(2, "beta");
+        let task_json = |task: &Task| {
+            format!(
+                r#"{{"id":"{}","name":"{}","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":null}}"#,
+                task.id(),
+                task.name(),
+                at(100).to_rfc3339(),
+                at(100).to_rfc3339()
+            )
+        };
+        let alpha_json = task_json(&alpha);
+        let beta_json = task_json(&beta);
+        let old_worklog = format!(
+            r#"{{"id":"{}","task_id":"{}","start":"{}","end":null}}"#,
+            worklog_id(10),
+            alpha.id(),
+            at(100).to_rfc3339()
+        );
+        let catalog = |revision: &str| {
+            format!(r#"{{"tasks":[{alpha_json},{beta_json}],"revision":"{revision}"}}"#)
+        };
+        let tracking = |active: &str, revision: &str| {
+            format!(r#"{{"active_worklog":{active},"revision":"{revision}"}}"#)
+        };
+        let mut replies = vec![
+            (200, r#"{"status":"ok","protocol_version":3}"#.to_owned()),
+            (200, catalog("before")),
+            (200, tracking(&old_worklog, "before")),
+            (200, tracking(&old_worklog, "before")),
+        ];
+        if !stopping {
+            replies.push((
+                200,
+                format!(r#"{{"task":{beta_json},"revision":"before"}}"#),
+            ));
+        }
+        let stopped = old_worklog.replace("\"end\":null", "\"end\":\"$occurred_at\"");
+        let started = format!(
+            r#"{{"id":"$worklog_id","task_id":"{}","start":"$occurred_at","end":null}}"#,
+            beta.id()
+        );
+        if accepted {
+            let result = if stopping {
+                format!(r#"{{"kind":"worklog","value":{stopped}}}"#)
+            } else {
+                format!(
+                    r#"{{"kind":"tracking_switched","value":{{"stopped":{stopped},"started":{started}}}}}"#
+                )
+            };
+            replies.push((200, format!(
+                r#"{{"request_id":"$request_id","applied_revision":"saved","replayed":false,"result":{result}}}"#
+            )));
+        } else {
+            replies.push((
+                400,
+                r#"{"code":"invalid_request","message":"Tracking rejected"}"#.to_owned(),
+            ));
+        }
+        match refresh {
+            TrackingRefresh::Failed(RemoteFailureKind::Protocol) => {
+                replies.extend([(200, "{}".to_owned()), (200, "{}".to_owned())]);
+            }
+            TrackingRefresh::Failed(RemoteFailureKind::Unavailable) => {
+                replies.extend([(503, "".to_owned()), (503, "".to_owned())]);
+            }
+            TrackingRefresh::Failed(RemoteFailureKind::Conflict) => {
+                for _ in 0..4 {
+                    replies.push((200, catalog("catalog-after")));
+                    replies.push((200, tracking(&old_worklog, "tracking-after")));
+                }
+            }
+            TrackingRefresh::Saved | TrackingRefresh::Newer | TrackingRefresh::NewerThenFailed => {
+                let active = match refresh {
+                    TrackingRefresh::Newer | TrackingRefresh::NewerThenFailed => format!(
+                        r#"{{"id":"{}","task_id":"{}","start":"{}","end":null}}"#,
+                        worklog_id(30),
+                        alpha.id(),
+                        at(300).to_rfc3339()
+                    ),
+                    _ if stopping => "null".to_owned(),
+                    _ => started,
+                };
+                replies.push((200, catalog("newer")));
+                replies.push((200, tracking(&active, "newer")));
+                if matches!(refresh, TrackingRefresh::NewerThenFailed) {
+                    replies.push((200, "{}".to_owned()));
+                } else {
+                    replies.push((200, catalog("newer")));
+                    replies.push((200, tracking(&active, "newer")));
+                }
+            }
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let worker = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let mut paths = Vec::new();
+            let mut substitutions = Vec::new();
+            for (status, mut reply) in replies {
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(connection) => break connection,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < deadline, "expected tracking request");
+                            thread::sleep(Duration::from_millis(2));
+                        }
+                        Err(error) => panic!("tracking server failed: {error}"),
+                    }
+                };
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                let mut request = BufReader::new(&stream);
+                let mut line = String::new();
+                request.read_line(&mut line).unwrap();
+                paths.push(
+                    line.split_whitespace()
+                        .take(2)
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
+                let mut length = 0;
+                loop {
+                    line.clear();
+                    request.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if let Some((name, value)) = line.split_once(':')
+                        && name.eq_ignore_ascii_case("content-length")
+                    {
+                        length = value.trim().parse().unwrap();
+                    }
+                }
+                let mut body = vec![0; length];
+                request.read_exact(&mut body).unwrap();
+                if !body.is_empty() {
+                    let body = String::from_utf8(body).unwrap();
+                    for field in ["request_id", "occurred_at"] {
+                        substitutions.push((
+                            format!("${field}"),
+                            json_request_string(&body, field).to_owned(),
+                        ));
+                    }
+                    if !stopping {
+                        substitutions.push((
+                            "$worklog_id".to_owned(),
+                            json_request_string(&body, "worklog_id").to_owned(),
+                        ));
+                    }
+                }
+                for (token, value) in &substitutions {
+                    reply = reply.replace(token, value);
+                }
+                write!(stream, "HTTP/1.1 {status} Reply\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len()).unwrap();
+            }
+            paths
+        });
+        (endpoint, worker)
+    }
+
+    async fn finish_remote_tracking(
+        refresh: TrackingRefresh,
+        stopping: bool,
+        accepted: bool,
+    ) -> (AppState, Backend, Vec<String>) {
+        let (endpoint, worker) = tracking_completion_server(refresh, stopping, accepted);
+        let mut application = RemoteApplication::disconnected(&endpoint)
+            .unwrap()
+            .with_coherent_task_views();
+        application.refresh_task_list().await.unwrap();
+        let mut state = AppState::load_task_list(
+            application.tasks(TaskOrdering::default()),
+            application.current_tracking().clone(),
+        );
+        if !stopping {
+            state.handle_command(Command::TaskList(TaskListCommand::MoveDown));
+        }
+        state.handle_command(Command::TaskList(TaskListCommand::ToggleTracking));
+        let effect = state.take_effect().expect("tracking command was accepted");
+        let (backend, result) = start_request(
+            Backend::Remote(Box::new(application)),
+            effect.request.clone(),
+        )
+        .await;
+        let paths = worker.join().unwrap();
+        let ResultKind::Request(completed) = result else {
+            panic!("tracking completion")
+        };
+        let saved = match &completed.outcome {
+            ApplicationOutcome::SetActiveTask(result) => result.is_ok(),
+            ApplicationOutcome::ClearActiveTask(result) => result.is_ok(),
+            _ => panic!("tracking command outcome"),
+        };
+        assert_eq!(saved, accepted);
+        if let Backend::Remote(remote) = &backend {
+            assert_eq!(remote.last_command_receipt().is_some(), accepted);
+        }
+        complete_request(&mut state, &backend, effect, *completed);
+        assert!(!state.has_pending_effect());
+        assert!(!state.active_request_is_write());
+        (state, backend, paths)
+    }
+
+    #[tokio::test]
+    async fn saved_remote_tracking_reports_stale_state_when_recovery_and_refresh_fail() {
+        for failure in [
+            RemoteFailureKind::Protocol,
+            RemoteFailureKind::Conflict,
+            RemoteFailureKind::Unavailable,
+        ] {
+            for stopping in [false, true] {
+                let (state, backend, paths) =
+                    finish_remote_tracking(TrackingRefresh::Failed(failure), stopping, true).await;
+                let Backend::Remote(remote) = backend else {
+                    panic!("remote backend")
+                };
+                assert_eq!(remote.last_failure(), Some(failure));
+                assert_eq!(
+                    state.tracking().active_worklog().unwrap().id(),
+                    worklog_id(10)
+                );
+                assert_eq!(
+                    state
+                        .catalog()
+                        .tasks(crate::screens::TaskView::Active)
+                        .len(),
+                    2
+                );
+                let expected = if failure == RemoteFailureKind::Unavailable {
+                    "Tracking saved; refresh failed. Server unavailable. Timer may be stale."
+                } else {
+                    "Tracking saved; refresh failed. Timer may be stale."
+                };
+                assert_eq!(state.shell().status(), &Status::Info(expected.to_owned()));
+                assert_eq!(
+                    paths
+                        .iter()
+                        .filter(|path| *path == "PUT /v1/tracking")
+                        .count(),
+                    1
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn saved_tracking_reports_refresh_status_and_preserves_newer_observations() {
+        for refresh in [
+            TrackingRefresh::Saved,
+            TrackingRefresh::Newer,
+            TrackingRefresh::NewerThenFailed,
+        ] {
+            for stopping in [false, true] {
+                let (state, backend, _) = finish_remote_tracking(refresh, stopping, true).await;
+                let Backend::Remote(remote) = backend else {
+                    panic!("remote backend")
+                };
+                let expected_failure = matches!(refresh, TrackingRefresh::NewerThenFailed)
+                    .then_some(RemoteFailureKind::Protocol);
+                assert_eq!(remote.last_failure(), expected_failure);
+                let expected_active = match remote.current_tracking() {
+                    TrackingState::Idle => None,
+                    TrackingState::Running { worklog } => Some(worklog),
+                };
+                assert_eq!(state.tracking().active_worklog(), expected_active);
+                let message = if matches!(refresh, TrackingRefresh::NewerThenFailed) {
+                    TRACKING_STALE_STATUS
+                } else if stopping {
+                    "Stopped \"alpha\""
+                } else {
+                    "Switched to \"beta\""
+                };
+                assert_eq!(state.shell().status(), &Status::Info(message.to_owned()));
+                if matches!(
+                    refresh,
+                    TrackingRefresh::Newer | TrackingRefresh::NewerThenFailed
+                ) {
+                    assert_eq!(
+                        state.tracking().active_worklog().unwrap().id(),
+                        worklog_id(30)
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_remote_tracking_keeps_the_rejection_and_unavailable_status() {
+        for failure in [RemoteFailureKind::Protocol, RemoteFailureKind::Unavailable] {
+            let (state, _, _) =
+                finish_remote_tracking(TrackingRefresh::Failed(failure), false, false).await;
+            let Status::Error(message) = state.shell().status() else {
+                panic!("failed tracking must remain an error")
+            };
+            if failure == RemoteFailureKind::Unavailable {
+                assert_eq!(message, "Server unavailable");
+            } else {
+                assert!(message.contains("Tracking rejected"), "{message}");
+                assert!(message.contains("State recovery failed"), "{message}");
+            }
+            assert_eq!(
+                state.tracking().active_worklog().unwrap().id(),
+                worklog_id(10)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn local_tracking_completion_keeps_its_success_status_and_published_state() {
+        let mut application =
+            TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap();
+        application
+            .create_task(TaskName::new("Local task").unwrap(), at(100))
+            .unwrap();
+        let mut state = AppState::load_task_list(
+            application.tasks(TaskOrdering::default()),
+            application.current_tracking().clone(),
+        );
+        let mut backend = Backend::Local(application);
+        for action in ["Started", "Stopped"] {
+            state.handle_command(Command::TaskList(TaskListCommand::ToggleTracking));
+            let effect = state.take_effect().unwrap();
+            let result;
+            (backend, result) = start_request(backend, effect.request.clone()).await;
+            let ResultKind::Request(completed) = result else {
+                panic!("local tracking completion")
+            };
+            complete_request(&mut state, &backend, effect, *completed);
+            assert_eq!(
+                state.shell().status(),
+                &Status::Info(format!("{action} \"Local task\""))
+            );
+            let Backend::Local(application) = &backend else {
+                panic!("local backend")
+            };
+            let expected_active = match application.current_tracking() {
+                TrackingState::Idle => None,
+                TrackingState::Running { worklog } => Some(worklog),
+            };
+            assert_eq!(state.tracking().active_worklog(), expected_active);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_coherent_refresh_clears_saved_tracking_warnings_and_preserves_other_messages() {
+        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":3}"#.to_owned())];
+        responses.extend(task_list_responses("fresh", "fresh"));
+        let (endpoint, worker, _) = stoppable_resource_server(responses);
+        let mut remote = RemoteApplication::disconnected(&endpoint).unwrap();
+        remote.refresh_task_list().await.unwrap();
+        worker.join().unwrap();
+        for warning in [TRACKING_STALE_STATUS, TRACKING_UNAVAILABLE_STATUS] {
+            let (mut state, _, _) = confirmed_state();
+            state.shell_mut().info(warning);
+            apply_refresh(&mut state, &remote, Ok(()));
+            assert!(state.tracking().active_worklog().is_none());
+            assert!(
+                state
+                    .catalog()
+                    .tasks(crate::screens::TaskView::Active)
+                    .is_empty()
+            );
+            assert_eq!(state.shell().status(), &Status::Empty);
+        }
+        for message in ["Started \"alpha\"", "Stopped \"alpha\"", "History loaded"] {
+            let (mut state, _, _) = confirmed_state();
+            state.shell_mut().info(message);
+            apply_refresh(&mut state, &remote, Ok(()));
+            assert_eq!(state.shell().status(), &Status::Info(message.to_owned()));
+        }
     }
 
     #[test]
