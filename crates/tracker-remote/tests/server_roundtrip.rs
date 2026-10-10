@@ -212,7 +212,7 @@ async fn remote_inactive_archive_uses_the_preview_revision() {
 }
 
 #[tokio::test]
-async fn remote_client_rejects_each_invalid_health_field_before_adopting_a_snapshot() {
+async fn remote_client_rejects_each_invalid_health_field_before_adopting_resources() {
     for health in [
         HealthDto {
             status: "ok".into(),
@@ -571,7 +571,7 @@ async fn task_history_rejects_other_scope_and_keeps_task_and_tracking_caches() {
         .await
         .unwrap();
     assert_eq!(page.worklogs.len(), 1);
-    assert!(page.snapshot.is_none());
+    assert!(page.adoption.is_none());
     assert!(matches!(
         second.current_tracking(),
         tracker_domain::TrackingState::Idle
@@ -605,7 +605,7 @@ async fn task_history_rejects_other_scope_and_keeps_task_and_tracking_caches() {
         .worklogs_for_task(requested.id(), None)
         .await
         .unwrap();
-    assert!(current_page.snapshot.is_none());
+    assert!(current_page.adoption.is_none());
     assert_eq!(
         second.task_item(requested.id()).unwrap().latest_work_start,
         Some(requested_at)
