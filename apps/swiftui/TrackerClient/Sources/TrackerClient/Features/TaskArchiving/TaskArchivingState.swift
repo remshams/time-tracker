@@ -112,25 +112,25 @@ final class TaskArchivingState {
         var latest: TaskItem?
     }
 
-    func preflight(_ intent: Intent, snapshot: TaskListResources) -> Preflight {
-        let decision = preflightDecision(intent, snapshot: snapshot)
+    func preflight(_ intent: Intent, resources: TaskListResources) -> Preflight {
+        let decision = preflightDecision(intent, resources: resources)
         applyReviewDecision(decision)
         return decision.result
     }
 
-    private func preflightDecision(_ intent: Intent, snapshot: TaskListResources) -> PreflightDecision {
-        guard let task = task(withID: intent.taskID, in: snapshot.catalog.value) else {
+    private func preflightDecision(_ intent: Intent, resources: TaskListResources) -> PreflightDecision {
+        guard let task = task(withID: intent.taskID, in: resources.catalog.value) else {
             return PreflightDecision(
                 result: .review, message: "The task no longer exists. Cancel and refresh the task list.")
         }
-        if responseMatches(snapshot, intent: intent) { return PreflightDecision(result: .applied) }
+        if responseMatches(resources, intent: intent) { return PreflightDecision(result: .applied) }
         guard task.archived == intent.originalArchived && task.name == intent.taskName else {
             return PreflightDecision(
                 result: .review,
                 message: "The task changed on another client. Review its current state before continuing.", latest: task
             )
         }
-        guard intent.action != .archive || snapshot.tracking.value?.taskId != intent.taskID else {
+        guard intent.action != .archive || resources.tracking.value?.taskId != intent.taskID else {
             return PreflightDecision(
                 result: .review, message: "Stop tracking this task before archiving it.", latest: task)
         }
@@ -148,9 +148,9 @@ final class TaskArchivingState {
         return nil
     }
 
-    func responseMatches(_ snapshot: TaskListResources, intent: Intent) -> Bool {
-        hasDesiredTaskState(in: snapshot.catalog.value, intent: intent)
-            && (intent.action != .archive || snapshot.tracking.value?.taskId != intent.taskID)
+    func responseMatches(_ resources: TaskListResources, intent: Intent) -> Bool {
+        hasDesiredTaskState(in: resources.catalog.value, intent: intent)
+            && (intent.action != .archive || resources.tracking.value?.taskId != intent.taskID)
     }
 
     private func hasDesiredTaskState(in tasks: [TaskItem], intent: Intent) -> Bool {
