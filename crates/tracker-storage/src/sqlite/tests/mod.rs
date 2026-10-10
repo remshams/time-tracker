@@ -302,7 +302,7 @@ impl TaskRepository for SynchronizingRepository {
                 message: "recovery read failed".to_owned(),
             });
         }
-        let snapshot = self
+        let resources = self
             .repository
             .load_task_tracking_resources()
             .map_err(RepositoryError::from)?;
@@ -316,7 +316,7 @@ impl TaskRepository for SynchronizingRepository {
                     message: "the competing client did not start within five seconds".to_owned(),
                 })?;
         }
-        Ok(snapshot)
+        Ok(resources)
     }
 
     fn rename_task(

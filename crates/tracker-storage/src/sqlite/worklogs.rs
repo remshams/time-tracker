@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 use tracker_application::{
     GlobalWorklogCursor, GlobalWorklogPage, WORKLOG_PAGE_SIZE, WorklogCorrection, WorklogCursor,
-    WorklogDeletion, WorklogMove, WorklogPage, WorklogPageSnapshot,
+    WorklogDeletion, WorklogMove, WorklogPage, WorklogPageAdoption,
 };
 use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
 
@@ -463,7 +463,7 @@ impl SqliteRepository {
         transaction.commit()?;
         Ok(WorklogPage {
             worklogs,
-            snapshot: Some(WorklogPageSnapshot {
+            adoption: Some(WorklogPageAdoption {
                 requested_task_latest_work_start,
                 active_worklog,
                 active_task_latest_work_start,
