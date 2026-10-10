@@ -136,12 +136,16 @@ pub(crate) async fn execute(
 }
 
 fn get(backend: &Backend, task_id: TaskId) -> Result<Value, CliError> {
-    let task = backend.task(task_id).ok_or_else(|| {
-        CliError::application(
-            tracker_application::RepositoryError::TaskNotFound { id: task_id }.into(),
-        )
-    })?;
-    crate::json(TaskDto::from(task))
+    let item = backend
+        .tasks(TaskOrdering::RecentlyCreated)
+        .into_iter()
+        .find(|item| item.task.id() == task_id)
+        .ok_or_else(|| {
+            CliError::application(
+                tracker_application::RepositoryError::TaskNotFound { id: task_id }.into(),
+            )
+        })?;
+    crate::json(TaskDto::from(&item))
 }
 
 async fn change_task(

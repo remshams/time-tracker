@@ -96,6 +96,40 @@ fn tasks_start_empty_and_support_create_rename_archive_restore_and_search() {
 }
 
 #[test]
+fn task_reads_include_the_latest_start_for_running_and_completed_work() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tt.db");
+    let tracked = command(&path, T0, &["tasks", "create", "Tracked"]).unwrap();
+    let untouched = command(&path, T0, &["tasks", "create", "Untouched"]).unwrap();
+    let tracked_id = tracked["id"].as_str().unwrap();
+    let untouched_id = untouched["id"].as_str().unwrap();
+    let started = command(&path, T1, &["tracking", "start", tracked_id]).unwrap();
+    assert_eq!(
+        command(&path, T2, &["tasks", "get", tracked_id]).unwrap()["latest_work_start"],
+        T1
+    );
+    assert!(
+        command(&path, T2, &["tasks", "get", untouched_id]).unwrap()["latest_work_start"].is_null()
+    );
+    let worklog_id = started["worklog"]["id"].as_str().unwrap();
+    command(
+        &path,
+        T2,
+        &["tracking", "stop", "--expected-active", worklog_id],
+    )
+    .unwrap();
+    assert_eq!(
+        command(&path, T3, &["tasks", "get", tracked_id]).unwrap()["latest_work_start"],
+        T1
+    );
+    command(&path, T3, &["tracking", "start", tracked_id]).unwrap();
+    assert_eq!(
+        command(&path, T3, &["tasks", "get", tracked_id]).unwrap()["latest_work_start"],
+        T3
+    );
+}
+
+#[test]
 fn desired_state_tracking_is_idempotent_and_stale_stop_cannot_stop_a_newer_timer() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tt.db");
