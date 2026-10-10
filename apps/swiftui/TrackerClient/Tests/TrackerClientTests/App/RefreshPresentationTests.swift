@@ -58,9 +58,9 @@ final class RefreshPresentationTests: XCTestCase {
     func testServerPollUpdatesOnlyChangedTotalWithoutInvalidatingLists() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
+        let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(
-            snapshot,
+            resources,
             rows: [
                 TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
                 TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
@@ -75,7 +75,7 @@ final class RefreshPresentationTests: XCTestCase {
         let poll = try await fixture.client.next()
         poll.succeed(
             TaskListTotalsRefresh(
-                snapshot: snapshot,
+                taskList: resources,
                 rows: [
                     TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
                     TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 25_000_000),
@@ -93,9 +93,9 @@ final class RefreshPresentationTests: XCTestCase {
     func testPollKeepsCompletedRowStableWhileRunningProjectionAdvances() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
+        let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(
-            snapshot,
+            resources,
             rows: [
                 TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
                 TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
@@ -112,7 +112,7 @@ final class RefreshPresentationTests: XCTestCase {
         let poll = try await fixture.client.next()
         poll.succeed(
             TaskListTotalsRefresh(
-                snapshot: snapshot,
+                taskList: resources,
                 rows: [
                     TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 15_000_000),
                     TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
@@ -167,7 +167,7 @@ final class RefreshPresentationTests: XCTestCase {
         let poll = try await fixture.client.next()
         poll.succeed(
             TaskListTotalsRefresh(
-                snapshot: TaskListResources(tasks: [firstTask, added], active: nil),
+                taskList: TaskListResources(tasks: [firstTask, added], active: nil),
                 rows: [
                     TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
                     TaskReportTotal(taskId: added.id, durationMicroseconds: 30_000_000),

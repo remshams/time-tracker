@@ -38,8 +38,8 @@ final class ObserverTests: XCTestCase {
     func testRefreshKeepsCommandsEnabledAndCancelsScheduledPoll() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
-        try await fixture.start(snapshot)
+        let resources = TaskListResources(tasks: [firstTask], active: nil)
+        try await fixture.start(resources)
         let previousPoll = try XCTUnwrap(fixture.scheduler.poll)
         XCTAssertTrue(fixture.session.canStartSelectedTask)
         var observedBusy: Bool?
@@ -56,7 +56,7 @@ final class ObserverTests: XCTestCase {
         XCTAssertEqual(observedStartEnabled, true)
         XCTAssertEqual(observedPollCancelled, true)
         let request = try await fixture.client.next()
-        request.succeed(snapshot)
+        request.succeed(resources)
         try await fixture.settled()
     }
 
@@ -87,8 +87,8 @@ final class ObserverTests: XCTestCase {
     func testShowingWindowDuringRefreshNotifiesUpdatedTimeAndSchedulesDisplay() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
-        try await fixture.start(snapshot)
+        let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(resources)
         fixture.session.refresh()
         let request = try await fixture.client.next()
         let operationCount = fixture.client.operations.count
@@ -107,14 +107,14 @@ final class ObserverTests: XCTestCase {
         XCTAssertEqual(observedBusy, true)
         XCTAssertEqual(observedDisplayScheduled, true)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
-        request.succeed(snapshot)
+        request.succeed(resources)
         let queuedRefresh = try await fixture.client.next()
-        queuedRefresh.succeed(snapshot)
+        queuedRefresh.succeed(resources)
         try await fixture.settled()
     }
 
     @MainActor
-    func testSnapshotObserverCanChooseTaskBeforeItsHistoryIsFetched() async throws {
+    func testResourceObserverCanChooseTaskBeforeItsHistoryIsFetched() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         var choseTask = false

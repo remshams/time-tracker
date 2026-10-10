@@ -7,8 +7,8 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
     func testQueuedStartCapturesTaskExpectedWorklogAndClickTimeWithoutOverlappingRequests() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
-        try await fixture.start(snapshot)
+        let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
+        try await fixture.start(resources)
         fixture.session.refresh()
         let poll = try await fixture.client.next()
         XCTAssertTrue(fixture.session.isBusy)
@@ -23,7 +23,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         fixture.clock.now.addTimeInterval(120)
         fixture.session.startTracking(taskID: firstTask.id)
         XCTAssertEqual(fixture.client.operations.count, count)
-        poll.succeed(snapshot)
+        poll.succeed(resources)
 
         let start = try await fixture.client.next()
         XCTAssertEqual(
@@ -31,7 +31,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
             .start(
                 task: secondTask.id, expected: activeWorklog.id,
                 at: "2025-01-01T00:00:00.000Z"))
-        start.succeed(snapshot)
+        start.succeed(resources)
         try await fixture.settled()
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
         XCTAssertEqual(fixture.client.operations.count, count + 2)
@@ -42,8 +42,8 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
     func testQueuedStopCapturesWorklogAndClickTimeAndIgnoresDoubleClick() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
-        try await fixture.start(snapshot)
+        let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(resources)
         fixture.session.refresh()
         let poll = try await fixture.client.next()
         let count = fixture.client.operations.count
@@ -52,7 +52,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         fixture.clock.now.addTimeInterval(90)
         fixture.session.stopTracking(worklogID: activeWorklog.id)
         XCTAssertEqual(fixture.client.operations.count, count)
-        poll.succeed(snapshot)
+        poll.succeed(resources)
 
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
@@ -69,25 +69,25 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
     func testQueuedStartKeepsClickedTaskAndRunsBeforeCoalescedRefreshAndSelectionHistory() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: nil)
-        try await fixture.start(snapshot)
+        let resources = TaskListResources(tasks: [firstTask, secondTask], active: nil)
+        try await fixture.start(resources)
         fixture.session.refresh()
         let poll = try await fixture.client.next()
         fixture.session.startTracking(taskID: try XCTUnwrap(fixture.session.selectedTaskID))
         fixture.session.select(secondTask.id)
         fixture.session.refresh()
         fixture.session.refresh()
-        poll.succeed(snapshot)
+        poll.succeed(resources)
         let start = try await fixture.client.next()
         XCTAssertEqual(
             start.operation,
             .start(
                 task: firstTask.id, expected: nil,
                 at: "2025-01-01T00:00:00.000Z"))
-        start.succeed(snapshot)
+        start.succeed(resources)
         let coalesced = try await fixture.client.next()
         XCTAssertEqual(coalesced.operation, .refresh(.local))
-        coalesced.succeed(snapshot)
+        coalesced.succeed(resources)
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
         history.succeed(emptyPage)
@@ -177,8 +177,8 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
             let current = WorklogItem(
                 id: activeWorklog.id, taskId: firstTask.id,
                 start: "2025-01-01T00:00:00.000Z", end: nil)
-            let snapshot = TaskListResources(tasks: tasks, active: current)
-            try await fixture.start(snapshot)
+            let resources = TaskListResources(tasks: tasks, active: current)
+            try await fixture.start(resources)
             fixture.session.refresh()
             let poll = try await fixture.client.next()
             if stop {
@@ -186,7 +186,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
             } else {
                 fixture.session.startTracking(taskID: secondTask.id)
             }
-            poll.succeed(snapshot)
+            poll.succeed(resources)
             let command = try await fixture.client.next()
             let expected: FakeClient.Operation =
                 stop
@@ -268,8 +268,8 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
     func testReportReadKeepsControlsEnabledAndQueuesTracking() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
-        try await fixture.start(snapshot)
+        let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
+        try await fixture.start(resources)
         fixture.scheduler.poll?.fire()
         let report = try await fixture.client.next()
         XCTAssertFalse(fixture.session.isBlockingControls)
@@ -278,16 +278,16 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         let count = fixture.client.operations.count
         fixture.session.startTracking(taskID: secondTask.id)
         XCTAssertEqual(fixture.client.operations.count, count)
-        report.succeed(TaskListTotalsRefresh(snapshot: snapshot, rows: []))
+        report.succeed(TaskListTotalsRefresh(taskList: resources, rows: []))
         let start = try await fixture.client.next()
         XCTAssertEqual(
             start.operation,
             .start(
                 task: secondTask.id, expected: activeWorklog.id,
                 at: "2025-01-01T00:00:00.000Z"))
-        start.succeed(snapshot)
+        start.succeed(resources)
         let totals = try await fixture.client.next()
-        totals.succeed(TaskListTotalsRefresh(snapshot: snapshot, rows: []))
+        totals.succeed(TaskListTotalsRefresh(taskList: resources, rows: []))
         try await fixture.settled()
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
     }
@@ -296,8 +296,8 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
     func testHistoryReadKeepsControlsEnabledAndConfirmsStateBeforeQueuedWrite() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
-        try await fixture.start(snapshot)
+        let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
+        try await fixture.start(resources)
         fixture.session.retryHistory()
         let history = try await fixture.client.next()
         XCTAssertFalse(fixture.session.isBlockingControls)
@@ -308,10 +308,10 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         history.succeed(emptyPage)
         let confirmation = try await fixture.client.next()
         XCTAssertEqual(confirmation.operation, .taskList)
-        confirmation.succeed(snapshot)
+        confirmation.succeed(resources)
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
-        stop.succeed(snapshot)
+        stop.succeed(resources)
         try await fixture.settled()
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
     }
@@ -328,7 +328,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         let testing = Task { try await fixture.session.testConnection(serverSettings) }
         try await fixture.waitUntil("connection test to queue") { fixture.session.isBlockingControls }
         XCTAssertEqual(fixture.client.operations.count, count)
-        poll.succeed(emptySnapshot)
+        poll.succeed(emptyTaskListResources)
         let test = try await fixture.client.next()
         XCTAssertEqual(test.operation, .test(serverSettings))
         test.tested()
@@ -350,10 +350,10 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         try await fixture.waitUntil("connection change to queue") { fixture.session.isBlockingControls }
         XCTAssertEqual(fixture.client.operations.count, count)
         XCTAssertTrue(fixture.settings.writes.isEmpty)
-        poll.succeed(emptySnapshot)
+        poll.succeed(emptyTaskListResources)
         let connect = try await fixture.client.next()
         XCTAssertEqual(connect.operation, .connect(serverSettings))
-        connect.succeed(emptySnapshot)
+        connect.succeed(emptyTaskListResources)
         let connected = try await fixture.taskValue(connecting)
         XCTAssertTrue(connected)
         try await fixture.settled()
@@ -377,7 +377,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
             XCTFail("Cancelling a queued test must throw cancellation.")
         } catch is CancellationError {}
         XCTAssertFalse(fixture.session.isBlockingControls)
-        poll.succeed(emptySnapshot)
+        poll.succeed(emptyTaskListResources)
         try await fixture.settled()
         XCTAssertEqual(fixture.client.operations.count, count)
         XCTAssertTrue(fixture.settings.writes.isEmpty)
@@ -397,7 +397,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
         XCTAssertFalse(fixture.session.isBlockingControls)
-        poll.succeed(emptySnapshot)
+        poll.succeed(emptyTaskListResources)
         try await fixture.settled()
         XCTAssertEqual(fixture.client.operations.count, count)
         XCTAssertTrue(fixture.settings.writes.isEmpty)
@@ -420,7 +420,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
                 try await fixture.taskValue(testing)
                 XCTFail("Stopping queued work must cancel the connection test.")
             } catch is CancellationError {}
-            poll.succeed(emptySnapshot)
+            poll.succeed(emptyTaskListResources)
             try await fixture.settled()
             XCTAssertEqual(fixture.client.operations.count, count)
             XCTAssertTrue(fixture.settings.writes.isEmpty)
@@ -441,7 +441,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
             if sleeping { fixture.session.sleep() } else { fixture.session.shutdown() }
             let connected = try await fixture.taskValue(connecting)
             XCTAssertFalse(connected)
-            poll.succeed(emptySnapshot)
+            poll.succeed(emptyTaskListResources)
             try await fixture.settled()
             XCTAssertEqual(fixture.client.operations.count, count)
             XCTAssertTrue(fixture.settings.writes.isEmpty)
@@ -454,14 +454,14 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         for sleeping in [false, true] {
             let fixture = Fixture()
             defer { fixture.cleanup() }
-            let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
-            try await fixture.start(snapshot)
+            let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
+            try await fixture.start(resources)
             fixture.session.refresh()
             let poll = try await fixture.client.next()
             fixture.session.stopTracking(worklogID: activeWorklog.id)
             let count = fixture.client.operations.count
             if sleeping { fixture.session.sleep() } else { fixture.session.shutdown() }
-            poll.succeed(snapshot)
+            poll.succeed(resources)
             try await fixture.settled()
             XCTAssertEqual(fixture.client.operations.count, count)
             XCTAssertEqual(fixture.session.active, activeWorklog)
@@ -489,13 +489,13 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
             fixture.session.onChange = {
                 guard fixture.session.isBusy, fixture.session.isBlockingControls else { return }
                 publications += 1
-                // The snapshot publishes before the reservation transfers to the next operation.
+                // The resources publishes before the reservation transfers to the next operation.
                 if publications == 2 {
                     fixture.session.onChange = nil
                     fixture.session.screenLocked(at: fixture.clock.now)
                 }
             }
-            poll.succeed(emptySnapshot)
+            poll.succeed(emptyTaskListResources)
             do {
                 let succeeded = try await fixture.taskValue(action)
                 XCTAssertTrue(changingConnection)

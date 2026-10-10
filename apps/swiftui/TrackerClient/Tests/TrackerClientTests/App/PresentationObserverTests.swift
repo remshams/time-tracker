@@ -92,8 +92,8 @@ final class PresentationObserverTests: XCTestCase {
     func testUnchangedServerPollsDoNotInvalidateControlsOrLists() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask], active: activeWorklog)
-        try await fixture.start(snapshot)
+        let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(resources)
         let observer = TrackerPresentationObserver(session: fixture.session)
         var contentUpdates = 0
         var activityUpdates = 0
@@ -109,7 +109,7 @@ final class PresentationObserverTests: XCTestCase {
             XCTAssertTrue(fixture.session.isBusy)
             XCTAssertTrue(fixture.session.canStopTracking)
             XCTAssertFalse(fixture.session.isBlockingControls)
-            refresh.succeed(snapshot)
+            refresh.succeed(resources)
             let settled = XCTestExpectation(description: "The poll finishes")
             let completed = Task { @MainActor in
                 while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
