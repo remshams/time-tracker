@@ -97,7 +97,7 @@ final class StatusItemTests: XCTestCase {
         for persistence in [nil, repository] as [(any LastTrackedTaskRepository)?] {
             let state = LastTrackedTaskState(repository: persistence, settings: .local)
             state.observe(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
-            state.observe(emptySnapshot, settings: serverSettings)
+            state.observe(emptyTaskListResources, settings: serverSettings)
             XCTAssertNil(state.taskID)
             let remoteActive = WorklogItem(id: "remote", taskId: secondTask.id, start: activeWorklog.start, end: nil)
             state.observe(TaskListResources(tasks: [secondTask], active: remoteActive), settings: serverSettings)
@@ -158,7 +158,7 @@ final class StatusItemTests: XCTestCase {
     }
 
     @MainActor
-    func testRestartLoadsLastIdentityAndResolvesRenamedTaskFromConfirmedSnapshot() async throws {
+    func testRestartLoadsLastIdentityAndResolvesRenamedTaskFromConfirmedResources() async throws {
         let repository = MemoryLastTrackedTasks()
         repository.save(taskID: firstTask.id, for: .local)
         let fixture = Fixture(lastTrackedTasks: repository)

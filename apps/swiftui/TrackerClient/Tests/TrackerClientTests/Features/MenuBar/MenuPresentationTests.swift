@@ -7,9 +7,9 @@ final class MenuPresentationTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
         fixture.session.setWindowVisible(true)
-        let snapshot = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
+        let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         let rows = [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)]
-        try await fixture.start(snapshot, rows: rows)
+        try await fixture.start(resources, rows: rows)
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         var contentChanges = 0
         var labelChanges = 0
@@ -49,7 +49,7 @@ final class MenuPresentationTests: XCTestCase {
                     taskId: firstTask.id,
                     durationMicroseconds: Int64(10 + step * 60) * 1_000_000)
             ]
-            poll.succeed(TaskListTotalsRefresh(snapshot: snapshot, rows: updatedRows))
+            poll.succeed(TaskListTotalsRefresh(taskList: resources, rows: updatedRows))
             let finished = Task { @MainActor in
                 while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
             }
@@ -234,7 +234,7 @@ final class MenuPresentationTests: XCTestCase {
         defer { fixture.cleanup() }
         fixture.session.start()
         let open = try await fixture.client.next()
-        open.succeed(emptySnapshot)
+        open.succeed(emptyTaskListResources)
         let report = try await fixture.client.next()
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         XCTAssertEqual(observer.content.dailyTotalsStatus, .loading)
