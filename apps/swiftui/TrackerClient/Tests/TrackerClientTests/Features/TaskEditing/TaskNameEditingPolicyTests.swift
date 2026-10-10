@@ -30,7 +30,7 @@ final class TaskNameEditingPolicyTests: XCTestCase {
         let creation = try await fixture.client.next()
         XCTAssertEqual(creation.operation, .create(name: "\u{200b}", at: "2025-01-01T00:00:00.000Z"))
         let task = TaskItem(id: "zero-width-task", name: "\u{200b}", archived: false, latestStart: nil)
-        creation.created(taskID: task.id, snapshot: TaskListResources(tasks: [task], active: nil))
+        creation.created(taskID: task.id, resources: TaskListResources(tasks: [task], active: nil))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
