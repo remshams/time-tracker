@@ -791,7 +791,7 @@ impl WorklogRepository for MemoryRepository {
         });
         Ok(WorklogPage {
             worklogs,
-            snapshot: Some(WorklogPageSnapshot {
+            adoption: Some(WorklogPageAdoption {
                 requested_task_latest_work_start,
                 active_worklog,
                 active_task_latest_work_start,

@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn explicit_refresh_adopts_one_authoritative_snapshot_and_preserves_state_on_read_failure() {
+fn explicit_refresh_adopts_authoritative_resources_and_preserves_state_on_read_failure() {
     let first = stamped_task(1, "First", 100, 100);
     let second = stamped_task(2, "Second", 200, 200);
     let repository = MemoryRepository::with_tasks(vec![first]);
@@ -208,7 +208,7 @@ fn load_exposes_tasks_and_recovered_tracking() {
 }
 
 #[test]
-fn snapshot_alignment_keeps_an_active_task_recently_worked() {
+fn resource_alignment_keeps_an_active_task_recently_worked() {
     let active_task = stamped_task(1, "active", 100, 100);
     let other_task = stamped_task(2, "other", 500, 500);
     let active = worklog(10, active_task.id(), 200);

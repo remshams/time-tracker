@@ -153,7 +153,7 @@ fn memory_repository_honors_worklog_ordering_and_write_contracts() {
 }
 
 #[test]
-fn worklog_queries_adopt_the_backend_snapshot() {
+fn worklog_queries_adopt_the_transaction_state() {
     let alpha = task(1, "alpha");
     let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
     let mut application = TrackerApplication::load(repository.clone()).unwrap();

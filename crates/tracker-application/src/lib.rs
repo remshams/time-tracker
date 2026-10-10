@@ -14,7 +14,7 @@ pub use error::{
 pub use model::{
     ClearActiveTaskOutcome, GlobalWorklogCursor, GlobalWorklogPage, MoveCandidate, ReportRow,
     ReportTotals, SetActiveTaskOutcome, TaskListItem, TaskOrdering, WORKLOG_PAGE_SIZE,
-    WorklogCursor, WorklogPage, WorklogPageSnapshot,
+    WorklogCursor, WorklogPage, WorklogPageAdoption,
 };
 pub use repository::{
     ActiveTrackingRead, InactiveTaskArchive, InactiveTaskPreviewRead, InactiveTaskRepository,

@@ -347,7 +347,7 @@ fn start_and_switch_reorder_recently_worked_but_stop_does_not() {
     assert_eq!(
         repository.0.borrow().list_reads,
         list_reads_before,
-        "the snapshot reordered without rereading the backend"
+        "the task catalog reordered without rereading the backend"
     );
 
     // Stopping changes nothing about the ordering.
@@ -389,9 +389,9 @@ fn a_committed_write_never_triggers_a_fallible_backend_read() {
     assert_eq!(
         repository.0.borrow().list_reads,
         list_reads_after_load,
-        "successful writes update the snapshot without another list read"
+        "successful writes update the task catalog without another list read"
     );
-    // The snapshot still reflects every write.
+    // The task catalog still reflects every write.
     let names: Vec<String> = application
         .tasks(TaskOrdering::RecentlyWorked)
         .into_iter()

@@ -121,7 +121,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             && active.task_id() == task_id
         {
             // Another client may have started this worklog after our task
-            // snapshot was loaded. Keep the derived latest-work value current
+            // catalog was loaded. Keep the derived latest-work value current
             // even though the desired tracking state already exists.
             self.note_work_start(task_id, active.start());
             return Ok(SetActiveTaskOutcome::AlreadyActive { worklog: active });
@@ -135,8 +135,8 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             .ok_or_else(|| ApplicationError::from(RepositoryError::TaskNotFound { id: task_id }))?;
         let (candidate, outcome) = self.persist_tracking_change(&task, worklog_id, occurred_at)?;
         self.tracker = candidate;
-        // Starting or switching work makes this task the latest work on the
-        // snapshot; stopping never touches it.
+        // Starting or switching work makes this task the latest work in the
+        // task catalog; stopping never touches it.
         self.note_work_start(task_id, occurred_at);
         Ok(outcome)
     }
