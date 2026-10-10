@@ -321,7 +321,7 @@ impl AppState {
         else {
             return;
         };
-        let tasks = self.catalog().move_task_snapshot();
+        let tasks = self.catalog().move_candidate_tasks();
         let state = self.global_mut();
         state.move_draft_generation = state.move_draft_generation.wrapping_add(1);
         state.move_draft = Some(MoveDraft::new(worklog, tasks));
