@@ -68,11 +68,11 @@ final class HistoryTests: XCTestCase {
     }
 
     @MainActor
-    func testHistoryRequiringRefreshDisablesTrackingUntilSnapshotIsConfirmed() async throws {
+    func testHistoryRequiringRefreshDisablesTrackingUntilResourcesAreConfirmed() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
-        try await fixture.start(snapshot)
+        let resources = TaskListResources(tasks: [firstTask], active: nil)
+        try await fixture.start(resources)
         XCTAssertTrue(fixture.session.canStartSelectedTask)
         fixture.session.retryHistory()
         let history = try await fixture.client.next()
@@ -88,7 +88,7 @@ final class HistoryTests: XCTestCase {
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
         XCTAssertFalse(fixture.session.canStartSelectedTask)
-        refresh.succeed(snapshot)
+        refresh.succeed(resources)
         let retry = try await fixture.client.next()
         retry.succeed(emptyPage)
         try await fixture.settled()
@@ -101,8 +101,8 @@ final class HistoryTests: XCTestCase {
     func testSelectionsAreRememberedPerTabAndRemovedSelectionFallsBack() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil)
-        try await fixture.start(snapshot)
+        let resources = TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil)
+        try await fixture.start(resources)
         fixture.session.select(secondTask.id)
         let selected = try await fixture.client.next()
         selected.succeed(emptyPage)
@@ -254,11 +254,11 @@ final class HistoryTests: XCTestCase {
     }
 
     @MainActor
-    func testUnavailableHistoryMarksSnapshotStaleAndRefreshRetriesHistory() async throws {
+    func testUnavailableHistoryMarksResourcesStaleAndRefreshRetriesHistory() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let snapshot = TaskListResources(tasks: [firstTask], active: nil)
-        try await fixture.start(snapshot)
+        let resources = TaskListResources(tasks: [firstTask], active: nil)
+        try await fixture.start(resources)
         fixture.session.retryHistory()
         let history = try await fixture.client.next()
         history.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
@@ -267,7 +267,7 @@ final class HistoryTests: XCTestCase {
         XCTAssertFalse(fixture.session.canStartSelectedTask)
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
-        refresh.succeed(snapshot)
+        refresh.succeed(resources)
         let retry = try await fixture.client.next()
         XCTAssertEqual(retry.operation, .history(task: firstTask.id, cursor: nil))
         retry.succeed(emptyPage)
