@@ -155,11 +155,11 @@ fn move_with_no_matches_keeps_the_dialog_open_and_does_not_write() {
 }
 
 #[test]
-fn successful_move_uses_the_selected_snapshot_and_refreshes_source_history() {
+fn successful_move_uses_the_selected_worklog_and_refreshes_source_history() {
     let (mut app, spy, source, beta, _, worklog) = move_app(true);
     app.application_mut().worklog_pages.push(Ok(WorklogPage {
         worklogs: Vec::new(),
-        snapshot: Some(WorklogPageSnapshot {
+        adoption: Some(WorklogPageAdoption {
             requested_task_latest_work_start: None,
             active_worklog: Some(Worklog::begin(worklog.id(), beta.id(), worklog.start())),
             active_task_latest_work_start: Some(worklog.start()),

@@ -196,9 +196,9 @@ impl AppState {
                 match result {
                     Ok(page) => {
                         let baseline = active_worklog_for_task(
-                            page.snapshot
+                            page.adoption
                                 .as_ref()
-                                .and_then(|snapshot| snapshot.active_worklog.as_ref()),
+                                .and_then(|adoption| adoption.active_worklog.as_ref()),
                             task_id,
                         );
                         state.shell_mut().open_history(History::new(
@@ -333,12 +333,12 @@ impl AppState {
                 match result {
                     Ok(page) => {
                         let active = active_worklog_for_task(
-                            page.snapshot
+                            page.adoption
                                 .as_ref()
-                                .and_then(|snapshot| snapshot.active_worklog.as_ref()),
+                                .and_then(|adoption| adoption.active_worklog.as_ref()),
                             task_id,
                         );
-                        if page.snapshot.is_some() && active != baseline {
+                        if page.adoption.is_some() && active != baseline {
                             state.reload_newest_history_after_change(task_id);
                             return;
                         }
@@ -446,9 +446,9 @@ impl AppState {
         page: WorklogPage,
     ) {
         let baseline = active_worklog_for_task(
-            page.snapshot
+            page.adoption
                 .as_ref()
-                .and_then(|snapshot| snapshot.active_worklog.as_ref()),
+                .and_then(|adoption| adoption.active_worklog.as_ref()),
             task_id,
         );
         let Some(history) = self.history_mut() else {
@@ -473,7 +473,7 @@ impl AppState {
 #[cfg(test)]
 mod navigation_tests {
     use tracker_application::{
-        ApplicationError, TaskListItem, WorklogCursor, WorklogPage, WorklogPageSnapshot,
+        ApplicationError, TaskListItem, WorklogCursor, WorklogPage, WorklogPageAdoption,
     };
     use tracker_domain::{TaskId, TrackingState, Worklog, WorklogId};
 
@@ -519,7 +519,7 @@ mod navigation_tests {
                 request,
                 outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
                     worklogs: Vec::new(),
-                    snapshot: Some(WorklogPageSnapshot {
+                    adoption: Some(WorklogPageAdoption {
                         requested_task_latest_work_start: None,
                         active_worklog: None,
                         active_task_latest_work_start: None,
@@ -554,7 +554,7 @@ mod navigation_tests {
                 request,
                 outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
                     worklogs: Vec::new(),
-                    snapshot: Some(WorklogPageSnapshot {
+                    adoption: Some(WorklogPageAdoption {
                         requested_task_latest_work_start: None,
                         active_worklog: None,
                         active_task_latest_work_start: None,
@@ -581,7 +581,7 @@ mod navigation_tests {
     fn page(worklogs: Vec<Worklog>) -> WorklogPage {
         WorklogPage {
             worklogs,
-            snapshot: Some(WorklogPageSnapshot {
+            adoption: Some(WorklogPageAdoption {
                 requested_task_latest_work_start: None,
                 active_worklog: None,
                 active_task_latest_work_start: None,

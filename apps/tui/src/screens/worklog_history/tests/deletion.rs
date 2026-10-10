@@ -40,7 +40,7 @@ fn deletion_opening_requires_normal_history_mode() {
     );
 }
 #[test]
-fn completed_deletion_uses_the_snapshot_and_preserves_the_cursor() {
+fn completed_deletion_uses_the_original_worklog_and_preserves_the_cursor() {
     let alpha = task(1, "alpha");
     let target = history_worklog(12, alpha.id(), 300);
     let following = history_worklog(11, alpha.id(), 200);
@@ -141,7 +141,7 @@ fn repeated_successful_deletions_update_the_latest_work_aggregate() {
     }
 }
 #[test]
-fn test_deletion_uses_authoritative_worklogs_and_validates_the_snapshot() {
+fn test_deletion_uses_authoritative_worklogs_and_validates_the_original_worklog() {
     let alpha = task(1, "alpha");
     let beta = task(2, "beta");
     let target = history_worklog(10, alpha.id(), 300);
@@ -239,7 +239,7 @@ fn active_history_rows_are_not_deletable_and_archived_rows_are() {
     assert_eq!(app.app_view().deletion(), Some(&completed));
 }
 #[test]
-fn deletion_cancel_and_ordinary_failure_keep_the_snapshot() {
+fn deletion_cancel_and_ordinary_failure_keep_the_original_worklog() {
     let alpha = task(1, "alpha");
     let target = history_worklog(10, alpha.id(), 100);
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
@@ -263,7 +263,7 @@ fn deletion_cancel_and_ordinary_failure_keep_the_snapshot() {
     );
 }
 #[test]
-fn deletion_recovery_failure_keeps_the_snapshot_without_refreshing_history() {
+fn deletion_recovery_failure_keeps_the_original_worklog_without_refreshing_history() {
     let alpha = task(1, "alpha");
     let target = history_worklog(10, alpha.id(), 100);
     let mut service = TestService::with_tasks(vec![alpha.clone()]);

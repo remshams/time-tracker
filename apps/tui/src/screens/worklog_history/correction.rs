@@ -17,7 +17,7 @@ pub enum CorrectionField {
     End,
 }
 
-/// Editable timestamps and the immutable snapshot used for stale detection.
+/// Editable timestamps and the original worklog used for stale detection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CorrectionDraft {
     pub(crate) id: tracker_domain::WorklogId,
