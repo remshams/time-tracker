@@ -1139,7 +1139,7 @@ impl RemoteApplication {
                 id: cursor.id,
                 revision: cursor.revision,
             }),
-            snapshot: None,
+            adoption: None,
         })
     }
     pub async fn all_worklogs(
