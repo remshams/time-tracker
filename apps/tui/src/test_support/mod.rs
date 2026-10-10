@@ -14,7 +14,7 @@ pub(crate) use tracker_application::{
     GlobalWorklogCursor, GlobalWorklogPage, ReportQueries, ReportTotals, RepositoryError,
     SetActiveTaskOutcome, TaskListItem, TaskOperations, TaskOrdering, TaskQueries,
     TrackerApplication, TrackerApplicationService, TrackingOperations, WorklogCursor,
-    WorklogOperations, WorklogPage, WorklogPageSnapshot, WorklogQueries,
+    WorklogOperations, WorklogPage, WorklogPageAdoption, WorklogQueries,
 };
 pub(crate) use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, TrackingState, Worklog, WorklogCorrectionError,
@@ -811,7 +811,7 @@ impl WorklogQueries for TestService {
         let result = self.worklog_pages.get(read).cloned().unwrap_or_else(|| {
             Ok(WorklogPage {
                 worklogs: Vec::new(),
-                snapshot: Some(WorklogPageSnapshot {
+                adoption: Some(WorklogPageAdoption {
                     requested_task_latest_work_start: None,
                     active_worklog: None,
                     active_task_latest_work_start: None,
@@ -820,9 +820,9 @@ impl WorklogQueries for TestService {
             })
         });
         if let Ok(page) = &result
-            && let Some(snapshot) = &page.snapshot
+            && let Some(adoption) = &page.adoption
         {
-            self.tracking = match snapshot.active_worklog.as_ref() {
+            self.tracking = match adoption.active_worklog.as_ref() {
                 Some(worklog) => TrackingState::Running {
                     worklog: ActiveWorklog::begin(worklog.id(), worklog.task_id(), worklog.start()),
                 },
@@ -894,7 +894,7 @@ pub(crate) fn page(worklogs: Vec<Worklog>, next_cursor: Option<WorklogCursor>) -
     let requested_task_latest_work_start = worklogs.iter().map(Worklog::start).max();
     let active_worklog = worklogs.iter().find(|worklog| worklog.is_active()).cloned();
     WorklogPage {
-        snapshot: Some(WorklogPageSnapshot {
+        adoption: Some(WorklogPageAdoption {
             requested_task_latest_work_start,
             active_task_latest_work_start: active_worklog.as_ref().map(Worklog::start),
             active_worklog,
@@ -911,7 +911,7 @@ pub(crate) fn page_with_active(
 ) -> WorklogPage {
     let requested_task_latest_work_start = worklogs.iter().map(Worklog::start).max();
     WorklogPage {
-        snapshot: Some(WorklogPageSnapshot {
+        adoption: Some(WorklogPageAdoption {
             requested_task_latest_work_start,
             active_task_latest_work_start: active_worklog.as_ref().map(Worklog::start),
             active_worklog,
