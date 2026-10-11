@@ -55,7 +55,7 @@ fn local_preview_uses_chosen_period_and_archive_preserves_running_work() {
     application
         .set_active_task(running.id(), as_of - Duration::hours(1))
         .unwrap();
-    let mut bridge = Bridge::new(Backend::Local(application));
+    let mut bridge = Bridge::new(Backend::local(application).unwrap());
     let week = preview(&mut bridge, 7, as_of);
     let tasks = week["data"]["tasks"].as_array().unwrap();
     assert_eq!(tasks.len(), 2);

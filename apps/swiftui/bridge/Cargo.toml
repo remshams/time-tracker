@@ -13,6 +13,7 @@ chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+tracker-client = { path = "../../../crates/tracker-client" }
 tracker-application = { path = "../../../crates/tracker-application" }
 tracker-domain = { path = "../../../crates/tracker-domain" }
 tracker-protocol = { path = "../../../crates/tracker-protocol" }
