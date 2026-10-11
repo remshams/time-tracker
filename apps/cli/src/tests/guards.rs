@@ -1,5 +1,5 @@
 use chrono::{Duration, TimeZone, Utc};
-use tracker_application::{TaskOperations, TrackerApplication, TrackingOperations};
+use tracker_application::TrackerApplication;
 use tracker_domain::TaskName;
 use tracker_storage::SqliteRepository;
 

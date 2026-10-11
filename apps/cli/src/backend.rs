@@ -2,10 +2,9 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use tracker_application::{
-    ClearActiveTaskOutcome, GlobalWorklogCursor, GlobalWorklogPage, ReportQueries, ReportTotals,
-    SetActiveTaskOutcome, TaskListItem, TaskOperations, TaskOrdering, TaskQueries,
-    TrackerApplication, TrackingOperations, WorklogCursor, WorklogOperations, WorklogPage,
-    WorklogQueries,
+    ClearActiveTaskOutcome, GlobalWorklogCursor, GlobalWorklogPage, ReportTotals,
+    SetActiveTaskOutcome, TaskListItem, TaskOrdering, TrackerApplication, WorklogCursor,
+    WorklogPage,
 };
 use tracker_domain::{Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes};
 use tracker_remote::RemoteApplication;
@@ -106,7 +105,7 @@ impl Backend {
 }
 
 macro_rules! operation {
-    ($name:ident($($arg:ident: $ty:ty),*) -> $result:ty) => {
+    ($name:ident($($arg:ident: $ty:ty),* $(,)?) -> $result:ty) => {
         impl Backend {
             pub async fn $name(&mut self, $($arg: $ty),*) -> Result<$result, CliError> {
                 match &mut self.kind {
@@ -128,9 +127,25 @@ operation!(set_active_task(id: TaskId, now: DateTime<Utc>) -> SetActiveTaskOutco
 operation!(clear_active_task(expected: WorklogId, now: DateTime<Utc>) -> ClearActiveTaskOutcome);
 operation!(worklogs_for_task(id: TaskId, after: Option<&WorklogCursor>) -> WorklogPage);
 operation!(all_worklogs(after: Option<&GlobalWorklogCursor>) -> GlobalWorklogPage);
-operation!(move_worklog(id: WorklogId, source: TaskId, expected: WorklogTimes, destination: TaskId) -> Worklog);
-operation!(correct_worklog(id: WorklogId, expected: WorklogTimes, replacement: WorklogTimes, now: DateTime<Utc>) -> Worklog);
-operation!(delete_completed_worklog(id: WorklogId, task: TaskId, expected: WorklogTimes) -> Worklog);
+operation!(
+    move_worklog(
+        id: WorklogId,
+        source: TaskId,
+        expected: WorklogTimes,
+        destination: TaskId,
+    ) -> Worklog
+);
+operation!(
+    correct_worklog(
+        id: WorklogId,
+        expected: WorklogTimes,
+        replacement: WorklogTimes,
+        now: DateTime<Utc>,
+    ) -> Worklog
+);
+operation!(
+    delete_completed_worklog(id: WorklogId, task: TaskId, expected: WorklogTimes) -> Worklog
+);
 impl Backend {
     pub async fn report_totals(
         &mut self,
