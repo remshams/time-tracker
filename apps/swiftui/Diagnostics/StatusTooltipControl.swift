@@ -37,14 +37,26 @@ final class TooltipControl: NSObject, NSApplicationDelegate {
             print("Explicit status tooltip region: \(button.bounds), tag: \(tag)")
             self.hover(button, leadingIcon: true)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 22) {
             self.capture("status-control")
             self.movePointer(to: CGPoint(x: 400, y: 400))
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 9) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 24) {
+            guard let window = button.window else { fatalError("Status button has no window") }
+            print("Status window accepts mouse moved before: \(window.acceptsMouseMovedEvents)")
+            print("Status window ignores mouse events: \(window.ignoresMouseEvents)")
+            window.acceptsMouseMovedEvents = true
+            print("Status window accepts mouse moved after: \(window.acceptsMouseMovedEvents)")
+            self.hover(button, leadingIcon: true)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 44) {
+            self.capture("status-mouse-events")
+            self.movePointer(to: CGPoint(x: 400, y: 400))
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 46) {
             self.hover(self.toolbarButton, leadingIcon: false)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 14) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 51) {
             self.capture("toolbar-control")
             NSApplication.shared.terminate(nil)
         }
