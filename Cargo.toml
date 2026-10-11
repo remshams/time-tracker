@@ -7,6 +7,7 @@ members = [
     "crates/tracker-protocol",
     "crates/tracker-server",
     "crates/tracker-remote",
+    "crates/tracker-client",
     "apps/tui",
     "apps/cli",
     "apps/swiftui/bridge",
