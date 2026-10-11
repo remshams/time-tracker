@@ -1,10 +1,12 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
-import subprocess
 import tempfile
 import unittest
+
+from scripts.swift_muter_tools import run_tool
 
 
 SPEC = importlib.util.spec_from_file_location(
@@ -12,10 +14,12 @@ SPEC = importlib.util.spec_from_file_location(
 )
 INSTALLER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(INSTALLER)
+SWIFT = shutil.which(os.environ.get("SWIFT_EXECUTABLE", "swift"))
+MUTER = shutil.which(os.environ.get("SWIFT_MUTER_EXECUTABLE", str(INSTALLER.OUTPUT / "muter")))
 
 
 class MuterInstallerTests(unittest.TestCase):
-    @unittest.skipUnless(shutil.which("swift") and (INSTALLER.OUTPUT / "muter").exists(),
+    @unittest.skipUnless(SWIFT and MUTER,
                          "Requires Swift and the installed Muter tool")
     def test_ternary_comparison_mutants_compile_and_are_killed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -39,19 +43,23 @@ class MuterInstallerTests(unittest.TestCase):
                 '        XCTAssertFalse(choose(false, "task", "task"))\n'
                 '        XCTAssertTrue(choose(false, "other", "task"))\n    }\n}\n', encoding="utf-8")
             configuration = package / "muter.conf.yml"
-            configuration.write_text(json.dumps({"executable": shutil.which("swift"),
+            configuration.write_text(json.dumps({"executable": SWIFT,
                                                  "arguments": ["test", "-j", "2"],
                                                  "exclude": ["/Tests/", "/Package.swift"]}), encoding="utf-8")
             report = Path(directory) / "report.json"
-            result = subprocess.run([str(INSTALLER.OUTPUT / "muter"), "--configuration", str(configuration),
-                                     "--skip-update-check", "--skip-coverage", "--format", "json",
-                                     "--output", str(report)], cwd=package, capture_output=True, text=True, timeout=120)
+            result = run_tool([MUTER, "--configuration", str(configuration),
+                             "--skip-update-check", "--skip-coverage", "--format", "json",
+                             "--output", str(report)], cwd=package, timeout=300)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertTrue(report.exists(), result.stdout + result.stderr)
             contents = json.loads(report.read_text(encoding="utf-8"))
             self.assertGreater(contents["totalAppliedMutationOperators"], 0)
             self.assertEqual(contents["numberOfKilledMutants"], contents["totalAppliedMutationOperators"])
             self.assertTrue(any(entry["mutationPoint"]["mutationOperatorId"] == "SwapTernary"
                                 for file in contents["fileReports"] for entry in file["appliedOperators"]))
+            self.assertTrue(all(entry["testSuiteOutcome"] == "failed"
+                                for file in contents["fileReports"] for entry in file["appliedOperators"]),
+                            "Each probe mutant must fail an assertion, rather than crash or fail to compile")
             instrumented = Path(str(package) + "_mutated") / "Sources/Probe/Probe.swift"
             self.assertIn("getenv(", instrumented.read_text(encoding="utf-8"))
             self.assertNotIn("ProcessInfo.processInfo.environment", instrumented.read_text(encoding="utf-8"))
