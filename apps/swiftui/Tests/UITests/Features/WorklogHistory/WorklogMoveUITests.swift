@@ -145,4 +145,46 @@ final class ServerWorklogMoveUITests: WorklogMoveUITests {
         XCTAssertEqual(try fixture.worklogs(source), [log])
     }
 
+
+    func testHeldMoveRefreshPreservesOtherRowsAndRemovesMovedEntry() throws {
+        let source = try fixture.create("Source with two entries")
+        let destination = try fixture.create("Move destination")
+        let now = Date()
+        let retained = try fixture.completed(source, start: now.addingTimeInterval(-7200), end: now.addingTimeInterval(-5400))
+        let moved = try fixture.completed(source, start: now.addingTimeInterval(-3600), end: now.addingTimeInterval(-1800))
+        let proxy = try fixture.enableProxy()
+        launch()
+        select(source)
+        XCTAssertTrue(element("worklog-history.row.\(retained.id)").waitForExistence(timeout: timeout))
+        openMove(moved)
+        element("worklog-move.candidate.\(destination.id)").click()
+        try proxy.arm([
+            .init(method: "PATCH", path: "/v1/worklogs/\(moved.id)", mode: .holdAfter),
+            .init(method: "GET", path: "/v1/tasks", mode: .holdAfter),
+            .init(method: "GET", path: "/v1/worklogs?task_id=\(source.id)", mode: .holdAfter),
+        ])
+        app.buttons["worklog-move.confirm"].click()
+        XCTAssertEqual(try proxy.waitForHeldRequest().method, "PATCH")
+        try proxy.release()
+        waitUntil("Post-commit task refresh reaches its response gate") {
+            (try? proxy.waitForHeldRequest(timeout: 0.1))?.path.contains("/v1/tasks") == true
+        }
+        waitUntil("Committed move sheet closes") { !self.element("worklog-move.search").exists }
+        XCTAssertTrue(element("worklog-history.row.\(retained.id)").exists)
+        XCTAssertFalse(element("worklog-history.row.\(moved.id)").exists)
+        XCTAssertFalse(element("worklog-history.actions.\(moved.id)").exists)
+        XCTAssertFalse(element("worklog-history.empty").exists)
+        XCTAssertFalse(app.buttons["worklog-history.load-older"].exists)
+        try proxy.release()
+        waitUntil("History refresh reaches its response gate") {
+            (try? proxy.waitForHeldRequest(timeout: 0.1))?.path.contains("task_id=\(source.id)") == true
+        }
+        XCTAssertTrue(element("worklog-history.row.\(retained.id)").exists)
+        XCTAssertFalse(element("worklog-history.row.\(moved.id)").exists)
+        XCTAssertFalse(element("worklog-history.empty").exists)
+        try proxy.release()
+        XCTAssertTrue(element("worklog-history.row.\(retained.id)").exists)
+        XCTAssertEqual(try fixture.worklogs(source).map(\.id), [retained.id])
+        XCTAssertEqual(try fixture.worklogs(destination).map(\.id), [moved.id])
+    }
 }
