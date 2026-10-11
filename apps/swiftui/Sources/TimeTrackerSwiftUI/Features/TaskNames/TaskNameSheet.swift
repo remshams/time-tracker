@@ -41,10 +41,9 @@ struct TaskNameSheet: View {
             }
 
             HStack(spacing: 12) {
-                if isSubmitting {
-                    ProgressView().controlSize(.small)
-                    Text(progressTitle).foregroundStyle(.secondary)
-                }
+                DelayedProgressIndicator(
+                    isBusy: isSubmitting, title: progressTitle,
+                    identifier: "task-name.progress")
                 Spacer()
                 Button("Cancel", action: cancel)
                     .accessibilityIdentifier("task-name.cancel")
