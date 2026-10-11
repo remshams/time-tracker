@@ -20,7 +20,7 @@ jobs:
       - name: Compile and run the AppKit control
         run: |
           mkdir -p .build/tooltip-control
-          swiftc apps/swiftui/Diagnostics/StatusTooltipControl.swift -o .build/tooltip-control/control
+          swiftc -parse-as-library apps/swiftui/Diagnostics/StatusTooltipControl.swift -o .build/tooltip-control/control
           .build/tooltip-control/control .build/tooltip-control | tee .build/tooltip-control/control.log
       - name: Upload native tooltip evidence
         if: always()

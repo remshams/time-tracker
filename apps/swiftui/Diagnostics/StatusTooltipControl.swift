@@ -78,8 +78,14 @@ final class TooltipControl: NSObject, NSApplicationDelegate {
     }
 }
 
-let app = NSApplication.shared
-app.setActivationPolicy(.regular)
-let delegate = TooltipControl()
-app.delegate = delegate
-app.run()
+@main
+@MainActor
+enum TooltipControlMain {
+    static func main() {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.regular)
+        let delegate = TooltipControl()
+        app.delegate = delegate
+        app.run()
+    }
+}
