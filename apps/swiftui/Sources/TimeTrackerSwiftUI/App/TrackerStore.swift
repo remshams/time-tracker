@@ -71,6 +71,7 @@ final class TrackerStore {
     var error: String? { session.error }
     var trackingError: String? { session.trackingError }
     var historyUnavailable: Bool { session.historyUnavailable }
+    var isHistoryLoading: Bool { session.isHistoryLoading }
     var selectedTaskID: String? { session.selectedTaskID }
     var tab: TaskTab { session.tab }
     var connectionSettings: ConnectionSettings { session.connectionSettings }
