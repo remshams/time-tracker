@@ -70,6 +70,25 @@ pub struct TrackingDto {
     pub revision: String,
 }
 
+/// Task catalog and active tracking captured in one database read transaction.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TaskListStateDto {
+    pub tasks: Vec<TaskDto>,
+    pub active_worklog: Option<WorklogDto>,
+    pub revision: String,
+}
+
+/// Task-list state and interval totals sharing the report's single revision.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DailyOverviewDto {
+    pub tasks: Vec<TaskDto>,
+    pub active_worklog: Option<WorklogDto>,
+    #[serde(flatten)]
+    pub totals: ReportDto,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct WorklogResourceDto {
