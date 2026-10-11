@@ -60,7 +60,7 @@ Confirmation archives all currently eligible tasks for the displayed period. Loc
 
 Changing the period or cancelling discards the preview. A failed confirmation requires a fresh preview before another submission. An uncertain response triggers a state refresh and never automatically repeats the archive command. Connection changes and other editors wait while the dialog owns the interaction. Dialog contents remain stable during dismissal.
 
-Remote mode requires `/v1` protocol 3. One inactive preview and archive route serves both configurable native periods and the fixed 14-day TUI operation. Upgrade all clients and the server together. The TUI does not gain a configurable period.
+Remote mode requires `/v1` protocol 3 and the aggregate state routes. Upgrade the server before clients that use these routes. One inactive preview and archive route serves both configurable native periods and the fixed 14-day TUI operation. Upgrade all clients and the server together. The TUI does not gain a configurable period.
 
 ## Edit worklog times
 
@@ -118,7 +118,7 @@ Today follows the Mac's local calendar and time zone. Calendar boundaries accoun
 
 Settings > Menu bar > Show today's total next to the icon controls the status bar total. It is enabled by default, applies immediately, and is saved on this Mac. Turn it off to show just the tracking icon. The Today section inside the menu still shows the total. Hiding the status bar total stops its minute display clock.
 
-The Rust report query aggregates the full day independently of paged worklog history. A report read returns totals, its revision and its echoed cutoff. It does not read or attach the task catalog or tracking resource. For ordinary synchronization, `TrackerSession` explicitly requests tasks, tracking and today's totals together. The Rust coordinator stages those resource observations, reconciles differing revisions once and publishes a coherent group together. Local mode reads the same group in one SQLite transaction. The serialized Swift worker captures each resource separately before another bridge operation can run.
+The Rust report query aggregates the full day independently of paged worklog history. A report read returns totals, its revision and its echoed cutoff. It does not read or attach the task catalog or tracking resource. For ordinary synchronization, `TrackerSession` explicitly requests tasks, tracking and today's totals together. The remote Rust adapter reads `/v1/state/daily-overview` once, validates its common revision and context, and publishes the selected observations together. Local mode reads the same group in one SQLite transaction. The serialized Swift worker captures each resource separately before another bridge operation can run.
 
 Daily totals can also request report and tracking without the task catalog. Swift advances running time only when the tracking and report revisions match and the running worklog still matches the projection anchor. Totals remain valid when task metadata is missing; an unsafe projection keeps the confirmed report value. Ordinary display ticks make no network request. One local day-boundary timer clears yesterday's totals and requests today's report, even while tracking is idle.
 
@@ -280,13 +280,13 @@ flowchart TD
     Backend --> Local[TrackerApplication]
     Local --> DB[Local SQLite tt.db]
     Backend --> Remote[RemoteApplication and persistent Tokio runtime]
-    Remote --> Coordinator[Shared resource reconciliation and guarded command recovery]
+    Remote --> Coordinator[Coherent aggregate reads and guarded command recovery]
     Coordinator --> HTTP[HTTP client]
     HTTP --> Server[Configured tracker-server]
     Server --> ServerDB[Server SQLite tt.db]
 ```
 
-A candidate connection must load coherent task-list resources before replacing the current backend. The session coordinates operations one at a time. Selection and connection generations prevent older history results from replacing the current selection. Each task, tracking and report cache pairs its value with its own revision, and an absent observation means that resource has not loaded. Rust owns revision comparison, command guards, identical retries and recovery after uncertain writes.
+A candidate connection must load coherent task-list resources before replacing the current backend. The session coordinates operations one at a time. Selection and connection generations prevent older history results from replacing the current selection. Each task, tracking and report cache pairs its value with its own revision, and an absent observation means that resource has not loaded. Rust owns aggregate validation, command guards, identical retries and recovery after uncertain writes.
 
 Bridge commands return committed tasks, worklogs or tracking outcomes and the original remote receipt metadata. They attach no task catalog, report or unrelated tracking state. The controller explicitly refreshes the resources its next view needs. If that read fails after a validated command receipt, the edit remains successful and the previously confirmed presentation becomes stale. A receipt's applied revision does not replace a newer resource observation.
 
@@ -374,4 +374,4 @@ Xcode compilation, native layout, and the lifecycle checks above require a Mac. 
 23. Archive an inactive task through the toolbar and context menu in local and server mode. Check the captured task name, Return to confirm, Escape to cancel, and stable content while closing. Right-click an unselected task and confirm the clicked task is archived while selection stays unchanged. Confirm the running task cannot be archived, including a timer started by another client after opening confirmation. Unarchive from Archived and check the current tab stays open, the restored task is selected on the next Active switch, and history and daily totals are preserved. Test another client's rename or archive change, a lost response, explicit retry, and connection changes during an unresolved command. During a slow Unarchive request, close the tracker window, then fail the request; the window must remain closed until explicitly reopened. Check Review task action, two windows, sleep/wake, Light and Dark appearance, and the minimum window size.
 
 
-Remote resource reads use `/v1` protocol 3. Test connection reads health only. Task and tracking reads keep separate revisions; history pages contain worklogs and continuation data. Daily totals contain task IDs, durations, the server revision and the echoed cutoff. The bridge composes the native view from these caches. Totals remain usable while names are unavailable, but running-total projection pauses until report and tracking revisions match. Successful writes return original command receipts and explicitly refresh the affected resources; an old receipt cannot replace newer reads.
+Remote resource reads use `/v1` protocol 3. Test connection reads health only. Task and tracking reads keep separate revisions; history pages contain worklogs and continuation data. Daily totals contain task IDs, durations, the server revision and the echoed cutoff. Selected task-list refreshes use `/v1/state/task-list`; task-list and totals refreshes use `/v1/state/daily-overview`. Both return one coherent read revision, and the bridge captures the selected caches without changing its public contracts. Totals remain usable while names are unavailable, but running-total projection pauses until report and tracking revisions match. Successful writes return original command receipts and explicitly refresh the affected resources; an old receipt cannot replace newer reads.
