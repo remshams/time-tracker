@@ -71,11 +71,30 @@ final class DialogPresentationTests: XCTestCase {
 
     #if canImport(Combine)
         @MainActor
+        func testSynchronousRoutingCanReadThePresentedMoveFromTheSessionBeforeItsModelChanges() async throws {
+            let fixture = Fixture()
+            defer { fixture.cleanup() }
+            try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
+            let model = fixture.session.moveModel
+            var sessionSnapshots: [Bool] = []
+            var modelSnapshots: [Bool] = []
+            let subscription = model.objectWillChange.sink {
+                sessionSnapshots.append(fixture.session.worklogMove.isPresented)
+                modelSnapshots.append(model.state.isPresented)
+            }
+            defer { subscription.cancel() }
+            fixture.session.openWorklogMove(worklogID: activeWorklog.id)
+            XCTAssertEqual(sessionSnapshots.first, true)
+            XCTAssertEqual(modelSnapshots.first, false)
+            XCTAssertTrue(model.state.isPresented)
+        }
+
+        @MainActor
         func testPublishersIgnoreTimerTicksAndEqualDraftsButPublishValidationAndAvailability() async throws {
             let fixture = Fixture()
             defer { fixture.cleanup() }
             fixture.session.setWindowVisible(true)
-            try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
+            try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
             var creationChanges = 0
             var renameChanges = 0
             var bulkChanges = 0
