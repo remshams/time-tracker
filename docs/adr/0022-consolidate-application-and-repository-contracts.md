@@ -22,6 +22,8 @@ The consumer inventory identified two useful substitution boundaries:
 | 4 | CLI, server and Swift bridge | Concrete `TrackerApplication<SqliteRepository>` methods | Existing integration tests exercise persistence, commands and transport behavior. |
 | 5 | Remote application | Shared domain results and error types, with asynchronous concrete methods | Transport tests control server responses. It implements no local service or repository trait. |
 
+Individual task lookups and move candidates remain inherent methods. The TUI resolves these values from its own TaskCatalog, so its service trait does not include them.
+
 Configurable inactivity operations have concrete server and Swift bridge consumers. The TUI uses the existing 14-day operations, so its service contract does not require the configurable methods.
 
 ## Decision
