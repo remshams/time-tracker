@@ -37,7 +37,6 @@ fn canonical_worklog_times(times: WorklogTimes) -> WorklogTimes {
 pub trait TrackerApplicationService {
     /// The tasks of the selected backend, ordered by the given ordering.
     fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem>;
-    fn task(&self, id: TaskId) -> Option<&Task>;
 
     /// Refreshes the task list and its active-task indication together.
     fn refresh_task_list(&mut self) -> Result<(), ApplicationError> {
@@ -102,16 +101,6 @@ pub trait TrackerApplicationService {
         occurred_at: DateTime<Utc>,
     ) -> Result<ClearActiveTaskOutcome, ApplicationError>;
 
-    /// Eligible destinations from the current task catalog, fuzzy matched and
-    /// ordered by recent activity, creation time, then task identity.
-    fn move_candidates(&self, source_task_id: TaskId, query: &str) -> Vec<crate::MoveCandidate> {
-        move_candidates_for_tasks(
-            &self.tasks(TaskOrdering::RecentlyWorked),
-            source_task_id,
-            query,
-        )
-    }
-
     /// One bounded page of the task's worklog history, continuing strictly
     /// after the optional cursor. The page size is the fixed
     /// [`crate::WORKLOG_PAGE_SIZE`]; callers cannot request more.
@@ -172,10 +161,6 @@ pub trait TrackerApplicationService {
 impl<R: TrackerRepository> TrackerApplicationService for TrackerApplication<R> {
     fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
         TrackerApplication::tasks(self, ordering)
-    }
-
-    fn task(&self, id: TaskId) -> Option<&Task> {
-        TrackerApplication::task(self, id)
     }
 
     fn refresh_task_list(&mut self) -> Result<(), ApplicationError> {
@@ -257,10 +242,6 @@ impl<R: TrackerRepository> TrackerApplicationService for TrackerApplication<R> {
         occurred_at: DateTime<Utc>,
     ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
         TrackerApplication::clear_active_task(self, expected_active, occurred_at)
-    }
-
-    fn move_candidates(&self, source_task_id: TaskId, query: &str) -> Vec<crate::MoveCandidate> {
-        TrackerApplication::move_candidates(self, source_task_id, query)
     }
 
     fn worklogs_for_task(

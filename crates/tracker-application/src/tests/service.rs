@@ -12,7 +12,12 @@ fn tui_service_contract_preserves_task_tracking_and_history_workflows() {
         .create_task(TaskName::new("Review").unwrap(), at(101))
         .unwrap();
     assert_eq!(created.name().as_str(), "Review");
-    assert_eq!(service.task(created.id()), Some(&created));
+    assert!(
+        service
+            .tasks(TaskOrdering::default())
+            .iter()
+            .any(|item| item.task == created)
+    );
     assert_eq!(service.tasks(TaskOrdering::RecentlyCreated).len(), 3);
     let renamed = service
         .rename_task(created.id(), TaskName::new("Release").unwrap(), at(102))
@@ -42,12 +47,6 @@ fn tui_service_contract_preserves_task_tracking_and_history_workflows() {
     let page = service.worklogs_for_task(source.id(), None).unwrap();
     assert_eq!(page.worklogs.len(), 1);
     assert_eq!(service.all_worklogs(None).unwrap().worklogs, page.worklogs);
-    assert!(
-        service
-            .move_candidates(source.id(), "Delivery")
-            .iter()
-            .any(|candidate| candidate.id == destination.id())
-    );
     let original = &page.worklogs[0];
     let replacement = WorklogTimes::new(at(111), Some(at(119)));
     let corrected = service
@@ -76,7 +75,12 @@ fn tui_service_contract_preserves_task_tracking_and_history_workflows() {
     let external = task(4, "External task");
     repository.create_task(external.clone()).unwrap();
     service.refresh_task_list().unwrap();
-    assert_eq!(service.task(external.id()), Some(&external));
+    assert!(
+        service
+            .tasks(TaskOrdering::default())
+            .iter()
+            .any(|item| item.task == external)
+    );
 }
 
 #[test]
@@ -93,5 +97,5 @@ fn tui_service_contract_preserves_reviewed_inactivity_candidates() {
     let archived = service.archive_inactive_tasks(&[old.id()], as_of).unwrap();
     assert_eq!(archived.len(), 1);
     assert!(archived[0].is_archived());
-    assert!(service.task(old.id()).unwrap().is_archived());
+    assert!(service.tasks(TaskOrdering::default())[0].task.is_archived());
 }
