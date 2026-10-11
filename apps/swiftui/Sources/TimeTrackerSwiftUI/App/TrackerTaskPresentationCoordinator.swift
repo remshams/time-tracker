@@ -53,10 +53,13 @@ final class TrackerTaskPresentationCoordinator {
         update()
     }
 
+    // Publishers emit before model snapshots change; routing reads the authoritative session.
     private var hasPresentation: Bool {
-        store.creation.state.isPresented || store.rename.state.isPresented || store.correction.state.isPresented
-            || store.move.state.isPresented || store.deletion.state.isPresented || store.archiving.state.isPresented
-            || store.bulkArchiving.state.isPresented || store.trackingError != nil
+        store.session.taskCreation.isPresented || store.session.taskRename.isPresented
+            || store.session.worklogCorrection.isPresented
+            || store.session.worklogMove.isPresented || store.session.worklogDeletion.isPresented
+            || store.session.taskArchiving.isPresented
+            || store.session.bulkTaskArchiving.isPresented || store.trackingError != nil
     }
 
     private func update() {
@@ -69,9 +72,11 @@ final class TrackerTaskPresentationCoordinator {
         isChoosingOwner = true
         defer { isChoosingOwner = false }
         let needsEditor =
-            store.creation.state.isPresented || store.rename.state.isPresented || store.correction.state.isPresented
-            || store.move.state.isPresented || store.deletion.state.isPresented || store.archiving.state.isPresented
-            || store.bulkArchiving.state.isPresented
+            store.session.taskCreation.isPresented || store.session.taskRename.isPresented
+            || store.session.worklogCorrection.isPresented
+            || store.session.worklogMove.isPresented || store.session.worklogDeletion.isPresented
+            || store.session.taskArchiving.isPresented
+            || store.session.bulkTaskArchiving.isPresented
         setOwner(presentingWindow(needsEditor))
     }
 
