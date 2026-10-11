@@ -5,6 +5,8 @@
 //! states, rollback behavior, concurrent connections, migrations, and the
 //! task-list read model with its latest-work aggregate.
 
+use tracker_application::TrackerRepository;
+
 use std::sync::{
     Arc, Barrier, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -18,10 +20,8 @@ use chrono::{DateTime, Utc};
 use std::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use tempfile::TempDir;
 use tracker_application::{
-    ApplicationError, ClearActiveTaskOutcome, ReportRead, ReportRepository, RepositoryError,
-    SetActiveTaskOutcome, TaskListItem, TaskOperations, TaskOrdering, TaskQueries, TaskRepository,
-    TrackerApplication, TrackingOperations, TrackingRepository, WORKLOG_PAGE_SIZE, WorklogCursor,
-    WorklogPage, WorklogQueries, WorklogRepository,
+    ApplicationError, ClearActiveTaskOutcome, ReportRead, RepositoryError, SetActiveTaskOutcome,
+    TaskListItem, TaskOrdering, TrackerApplication, WORKLOG_PAGE_SIZE, WorklogCursor, WorklogPage,
 };
 use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingError, TrackingOutcome, TrackingState,
@@ -278,12 +278,12 @@ struct SynchronizingRepository {
     fail_next_active_read: Arc<AtomicBool>,
 }
 
-impl TaskRepository for SynchronizingRepository {
+impl TrackerRepository for SynchronizingRepository {
     fn load_task_item(
         &self,
         id: TaskId,
     ) -> Result<Option<tracker_application::TaskListItem>, RepositoryError> {
-        tracker_application::TaskRepository::load_task_item(&self.repository, id)
+        tracker_application::TrackerRepository::load_task_item(&self.repository, id)
     }
 
     fn load_task_catalog(&self) -> Result<Vec<tracker_application::TaskListItem>, RepositoryError> {
@@ -325,7 +325,7 @@ impl TaskRepository for SynchronizingRepository {
         name: TaskName,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, RepositoryError> {
-        TaskRepository::rename_task(&self.repository, id, name, occurred_at)
+        TrackerRepository::rename_task(&self.repository, id, name, occurred_at)
     }
 
     fn archive_task(
@@ -333,7 +333,7 @@ impl TaskRepository for SynchronizingRepository {
         id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, RepositoryError> {
-        TaskRepository::archive_task(&self.repository, id, occurred_at)
+        TrackerRepository::archive_task(&self.repository, id, occurred_at)
     }
 
     fn unarchive_task(
@@ -341,14 +341,14 @@ impl TaskRepository for SynchronizingRepository {
         id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, RepositoryError> {
-        TaskRepository::unarchive_task(&self.repository, id, occurred_at)
+        TrackerRepository::unarchive_task(&self.repository, id, occurred_at)
     }
 
     fn preview_inactive_tasks(
         &self,
         as_of: DateTime<Utc>,
     ) -> Result<tracker_application::InactiveTaskPreviewRead, RepositoryError> {
-        TaskRepository::preview_inactive_tasks(&self.repository, as_of)
+        TrackerRepository::preview_inactive_tasks(&self.repository, as_of)
     }
 
     fn archive_inactive_tasks(
@@ -356,11 +356,9 @@ impl TaskRepository for SynchronizingRepository {
         expected_ids: &[TaskId],
         as_of: DateTime<Utc>,
     ) -> Result<tracker_application::InactiveTaskArchive, RepositoryError> {
-        TaskRepository::archive_inactive_tasks(&self.repository, expected_ids, as_of)
+        TrackerRepository::archive_inactive_tasks(&self.repository, expected_ids, as_of)
     }
-}
 
-impl ReportRepository for SynchronizingRepository {
     fn task_list_report_read(
         &self,
         start: DateTime<Utc>,
@@ -382,9 +380,7 @@ impl ReportRepository for SynchronizingRepository {
             .report_read(start, end, now)
             .map_err(Into::into)
     }
-}
 
-impl WorklogRepository for SynchronizingRepository {
     fn global_worklog_page(
         &self,
         after: Option<&tracker_application::GlobalWorklogCursor>,
@@ -441,9 +437,7 @@ impl WorklogRepository for SynchronizingRepository {
             .worklog_page(task_id, after)
             .map_err(Into::into)
     }
-}
 
-impl TrackingRepository for SynchronizingRepository {
     fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError> {
         self.repository.active_worklog().map_err(Into::into)
     }
@@ -473,6 +467,28 @@ impl TrackingRepository for SynchronizingRepository {
         self.repository
             .switch_worklog(id, expected_start, stop_at, next)
             .map_err(Into::into)
+    }
+
+    fn preview_inactive_tasks_with_period(
+        &self,
+        as_of: DateTime<Utc>,
+        period: tracker_domain::InactivityPeriod,
+    ) -> Result<tracker_application::InactiveTaskPreviewRead, RepositoryError> {
+        TrackerRepository::preview_inactive_tasks_with_period(&self.repository, as_of, period)
+    }
+
+    fn archive_inactive_tasks_with_period(
+        &self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+        period: tracker_domain::InactivityPeriod,
+    ) -> Result<tracker_application::InactiveTaskArchive, RepositoryError> {
+        TrackerRepository::archive_inactive_tasks_with_period(
+            &self.repository,
+            expected_ids,
+            as_of,
+            period,
+        )
     }
 }
 

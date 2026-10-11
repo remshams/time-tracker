@@ -1,6 +1,5 @@
 use super::*;
 use chrono::TimeDelta;
-use tracker_application::ReportQueries;
 
 struct ReportPause {
     paused: AtomicBool,
