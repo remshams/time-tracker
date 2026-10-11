@@ -114,7 +114,7 @@ public final class TrackerSession {
     public var isStale: Bool { connection.stale }
     public var visibleTasks: [TaskItem] { catalog.visibleTasks }
     public var selectedTask: TaskItem? { catalog.selectedTask }
-    public var hasMoreHistory: Bool { nextCursor != nil && !isHistoryLoading }
+    public var hasMoreHistory: Bool { nextCursor != nil }
     public var taskCreation: TaskCreationPresentation { creation.presentation }
     public var canOpenTaskCreation: Bool {
         running && connection.confirmed && !connection.changing && !rename.presentation.isPresented
