@@ -1,4 +1,4 @@
-//! Independent resource reads captured under the server operation lock.
+//! Resource and workflow reads captured under the server operation lock.
 
 use super::*;
 
