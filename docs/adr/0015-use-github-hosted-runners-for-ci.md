@@ -21,13 +21,14 @@ Use standard GitHub-hosted runners for all workflows.
 - Run portable checks, dependency audits, and mutation tests on `ubuntu-24.04`.
 - Run Rust macOS tests on `macos-26`.
 - Run native builds and layout checks on `xcode-27`. [GitHub's image manifest](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md) lists macOS 27, Xcode 27.0, and the required macOS 27 SDK.
-- Run every regular check for every pull request, push to `main`, and manual CI run. Do not filter checks by changed files.
-- Keep the full Rust and portable Swift mutation suites manual only, through `workflow_dispatch`. Do not schedule them or include them in pull-request and push runs.
+- Run every regular check for every pull request, push to `main`, and manual CI run. Do not filter checks by changed files. The focused Swift mutation job is pull-request-only and selects production files from the PR diff.
+- Run the focused portable Swift mutation check as a required pull-request-only job. It always runs the Muter regression checks and mutates the selected complete production files with the full package test suite. Documentation, native UI, Rust, and CI-tooling-only changes use an explicit empty production scope. Broad dependency or shared test-support changes, deleted production files, and changed tests without a curated mapping return `review-required`; the gate stays red until the selector or mapping defines a bounded scope instead of triggering a full run.
+- Keep full Rust and portable Swift mutation suites manual only, through `workflow_dispatch`. Do not schedule them or include full-suite runs in pull-request and push workflows.
 - Run dependency audits weekly and on manual request.
 
 Retain the existing checks, pinned tool and action versions, caches, artifacts, and the required `CI passed` aggregate check.
 
-This replaces ADR 0014's plan to introduce routine scheduled full mutation runs when CI is set up. Its local mutation scope and failure rules remain accepted.
+This replaces ADR 0014's plan to introduce routine scheduled full mutation runs when CI is set up. ADR 0014's local mutation scope and failure rules remain accepted, with focused Swift mutation checks added to pull request CI.
 
 ## Consequences
 
@@ -35,4 +36,4 @@ CI requires no Blacksmith installation or organization membership. [GitHub's sta
 
 Runner hardware and cache performance differ from Blacksmith. The native `xcode-27` image is in public preview, so its first CI run must confirm the builds and desktop layout checks work. Existing caches and report uploads use GitHub's services.
 
-Full mutation coverage depends on someone starting the manual workflow. Regular CI still checks tests, coverage, and complexity on every run.
+Full mutation coverage depends on someone starting the manual workflow. Pull request CI runs the selected Swift mutations and their regression checks; regular CI also checks tests, coverage, and complexity on every run.

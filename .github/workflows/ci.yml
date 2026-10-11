@@ -166,6 +166,74 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
+  swift-mutations:
+    name: Focused Swift mutation tests
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
+        with:
+          swift-version: '6.1.3'
+      - name: Cache the pinned Muter binary
+        id: tools
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            .build/swift-tools/muter
+            .build/swift-tools/muter-revision.txt
+          key: muter-${{ runner.os }}-${{ runner.arch }}-swift-6.1.3-${{ hashFiles('scripts/install-swift-muter.py') }}
+      - name: Build the pinned Muter binary
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: python3 scripts/install-swift-muter.py
+      - name: Require the real Muter regression checks
+        run: python3 scripts/swift-muter-regressions.py
+      - name: Select whole production files from the complete PR diff
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags origin "$PR_BASE"
+          python3 scripts/swift-mutation-scope.py --base "$PR_BASE" --head "$PR_HEAD" \
+            --output .build/swift-mutation-scope.json
+      - name: Test the selected Swift mutants with the complete test suite
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          scope = json.loads(Path('.build/swift-mutation-scope.json').read_text())
+          if scope['status'] == 'empty' and not scope['files']:
+              print('No portable Swift production files changed or exercised by changed tests.')
+          elif scope['status'] == 'focused' and scope['files']:
+              subprocess.run([
+                  sys.executable, 'scripts/swift-mutations.py', '--timeout', '7200',
+                  '--test-workers', '16', '--files', *scope['files'],
+              ], check=True)
+          else:
+              raise SystemExit('The mutation scope needs review; refusing an implicit full run.')
+          PY
+      - name: Upload the selected scope and mutation diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: swift-pr-mutations
+          path: |
+            .build/swift-mutation-scope.json
+            .build/swift-mutations
+          include-hidden-files: true
+          retention-days: 7
+
   native-macos:
     name: Native macOS UI tests, ${{ matrix.group }}
     strategy:
@@ -247,7 +315,7 @@ jobs:
 
   ci-passed:
     name: CI passed
-    needs: [lint, rust-tests, rust-quality, swift-quality, native-macos]
+    needs: [lint, rust-tests, rust-quality, swift-quality, swift-mutations, native-macos]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -255,6 +323,7 @@ jobs:
       - name: Require every CI job to succeed
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           python3 - <<'PY'
           import json
@@ -262,7 +331,12 @@ jobs:
           import sys
 
           jobs = json.loads(os.environ['JOB_RESULTS'])
-          failures = [name for name, job in jobs.items() if job['result'] != 'success']
+          failures = [
+              name for name, job in jobs.items()
+              if job['result'] != 'success'
+              and not (name == 'swift-mutations' and job['result'] == 'skipped'
+                       and os.environ['EVENT_NAME'] != 'pull_request')
+          ]
           for name, job in jobs.items():
               print(f"{name}: {job['result']}")
           if failures:
