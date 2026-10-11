@@ -9,6 +9,7 @@ final class WorklogHistoryState {
     private(set) var generation = 0
     private var taskID: String?
     var pending = false
+    private(set) var isLoading = false
 
     func request(selectedTaskID: String?) {
         generation += 1
@@ -20,6 +21,7 @@ final class WorklogHistoryState {
         unavailable = false
         error = nil
         pending = selectedTaskID != nil
+        isLoading = pending
     }
 
     func clearAfterCorrection() {
@@ -27,12 +29,33 @@ final class WorklogHistoryState {
         nextCursor = nil
     }
 
+    func removeMovedWorklog(id: String) {
+        worklogs.removeAll { $0.id == id }
+        nextCursor = nil
+    }
+
+    func invalidateCursor() {
+        nextCursor = nil
+    }
+
+    func beginLoading() {
+        isLoading = true
+    }
+
+    func fail(_ failure: Error) {
+        isLoading = false
+        unavailable = true
+        error = failure.localizedDescription
+    }
+
     func invalidate() {
         generation += 1
         pending = false
+        isLoading = false
     }
 
     func accept(_ page: HistoryPage, cursor: String?) {
+        isLoading = false
         if cursor == nil || page.reset { worklogs = page.worklogs } else { worklogs.append(contentsOf: page.worklogs) }
         nextCursor = page.nextCursor
         unavailable = false
