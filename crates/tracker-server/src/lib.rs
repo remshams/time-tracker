@@ -28,9 +28,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, GlobalWorklogCursor,
-    InactiveTaskOperations, ReportQueries, SetActiveTaskOutcome, TaskOperations, TaskOrdering,
-    TaskQueries, TrackerApplication, TrackingOperations, WorklogCursor, WorklogOperations,
-    WorklogQueries,
+    SetActiveTaskOutcome, TaskOrdering, TrackerApplication, WorklogCursor,
 };
 use tracker_domain::{
     InactivityPeriod, Task, TaskId, TaskName, TrackingState, WorklogId, WorklogTimes,
