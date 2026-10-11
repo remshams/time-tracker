@@ -56,7 +56,7 @@ final class MenuBarDisplayTests: XCTestCase {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
-            TrackerSnapshot(tasks: [firstTask], active: activeWorklog),
+            TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 90_000_000)])
         let observer = TrackerMenuPresentationObserver(session: fixture.session, display: .time)
         let content = observer.content
@@ -96,7 +96,7 @@ final class MenuBarDisplayTests: XCTestCase {
             let fixture = Fixture()
             defer { fixture.cleanup() }
             let task = TaskItem(id: firstTask.id, name: name, archived: false, latestStart: nil)
-            try await fixture.start(TrackerSnapshot(tasks: [task], active: activeWorklog))
+            try await fixture.start(TaskListResources(tasks: [task], active: activeWorklog))
             let label = TrackerMenuLabelContent(fixture.session, display: .taskName)
             XCTAssertEqual(label.text, expected)
             XCTAssertEqual(label.text?.count, min(name.count, 24))
@@ -105,33 +105,33 @@ final class MenuBarDisplayTests: XCTestCase {
     }
 
     @MainActor
-    func testTaskLabelFollowsRenamesSwitchesAndStoppingFromConfirmedSnapshots() async throws {
+    func testTaskLabelFollowsRenamesSwitchesAndStoppingFromConfirmedResources() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask, secondTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
         let observer = TrackerMenuPresentationObserver(session: fixture.session, display: .taskName)
         XCTAssertEqual(observer.label.text, firstTask.name)
         let renamed = TaskItem(id: firstTask.id, name: "Renamed active task", archived: false, latestStart: nil)
         let switched = WorklogItem(id: "switched-worklog", taskId: secondTask.id, start: activeWorklog.start, end: nil)
-        let snapshots = [
-            TrackerSnapshot(tasks: [renamed, secondTask], active: activeWorklog),
-            TrackerSnapshot(tasks: [renamed, secondTask], active: switched),
-            TrackerSnapshot(tasks: [renamed, secondTask], active: nil),
+        let observations = [
+            TaskListResources(tasks: [renamed, secondTask], active: activeWorklog),
+            TaskListResources(tasks: [renamed, secondTask], active: switched),
+            TaskListResources(tasks: [renamed, secondTask], active: nil),
         ]
-        for (index, snapshot) in snapshots.enumerated() {
+        for (index, resources) in observations.enumerated() {
             fixture.scheduler.poll?.fire()
             let poll = try await fixture.client.next()
-            poll.succeed(TrackerReport(snapshot: snapshot, rows: []))
+            poll.succeed(TaskListTotalsRefresh(taskList: resources, rows: []))
             if index == 1 {
                 let history = try await fixture.client.next()
                 history.succeed(emptyPage)
             }
             try await fixture.settled()
             observer.update(from: fixture.session, display: .taskName)
-            if snapshot.active?.taskId == firstTask.id {
+            if resources.tracking.value?.taskId == firstTask.id {
                 XCTAssertEqual(observer.label.text, renamed.name)
                 XCTAssertEqual(observer.label.help, "Tracking: Renamed active task")
-            } else if snapshot.active != nil {
+            } else if resources.tracking.value != nil {
                 XCTAssertEqual(observer.label.text, secondTask.name)
                 XCTAssertEqual(observer.label.help, "Tracking: Second task")
             } else {
@@ -145,7 +145,7 @@ final class MenuBarDisplayTests: XCTestCase {
     func testStaleTaskLabelKeepsTheConfirmedNameAndOutlinesItsIndicator() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
         poll.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable"))
@@ -161,7 +161,7 @@ final class MenuBarDisplayTests: XCTestCase {
         for active in [nil, activeWorklog] as [WorklogItem?] {
             let fixture = Fixture()
             defer { fixture.cleanup() }
-            try await fixture.start(TrackerSnapshot(tasks: [], active: active))
+            try await fixture.start(TaskListResources(tasks: [], active: active))
             let label = TrackerMenuLabelContent(fixture.session, display: .taskName)
             XCTAssertNil(label.text)
             XCTAssertEqual(label.help, active == nil ? "No task tracked yet" : "Tracking: Unknown task")
@@ -172,7 +172,7 @@ final class MenuBarDisplayTests: XCTestCase {
     func testDisplayAndRenamesStayFrozenUntilTheRootMenuCloses() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
-        try await fixture.start(TrackerSnapshot(tasks: [firstTask], active: activeWorklog))
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         let observer = TrackerMenuPresentationObserver(session: fixture.session, display: .taskName)
         observer.menuOpened(from: fixture.session, display: .taskName)
         observer.menuOpened(from: fixture.session, display: .none)
@@ -180,7 +180,8 @@ final class MenuBarDisplayTests: XCTestCase {
         let renamed = TaskItem(id: firstTask.id, name: "Renamed while menu is open", archived: false, latestStart: nil)
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
-        poll.succeed(TrackerReport(snapshot: TrackerSnapshot(tasks: [renamed], active: activeWorklog), rows: []))
+        poll.succeed(
+            TaskListTotalsRefresh(taskList: TaskListResources(tasks: [renamed], active: activeWorklog), rows: []))
         try await fixture.settled()
         observer.update(from: fixture.session, display: .none)
         observer.menuClosed(from: fixture.session, display: .none)
