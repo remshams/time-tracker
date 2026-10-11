@@ -119,10 +119,9 @@ private struct WorklogCorrectionSheet: View {
             }
 
             HStack(spacing: 12) {
-                if state.isSubmitting {
-                    ProgressView().controlSize(.small)
-                    Text("Saving worklog...").foregroundStyle(.secondary)
-                }
+                DelayedProgressIndicator(
+                    isBusy: state.isSubmitting, title: "Saving worklog...",
+                    identifier: "worklog-correction.progress")
                 Spacer()
                 Button("Cancel") { correction.cancel() }
                     .accessibilityIdentifier("worklog-correction.cancel")
