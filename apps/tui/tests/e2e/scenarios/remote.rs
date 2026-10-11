@@ -100,7 +100,7 @@ fn remote_input_resize_and_timer_redraw_while_task_response_is_held() {
             .is_some()
     });
 
-    proxy.hold(Route::Tasks);
+    proxy.hold(Route::TaskList);
     proxy.wait_for_request();
     let mut samples = Vec::new();
     for index in 0..5 {
@@ -964,10 +964,10 @@ fn an_empty_server_stays_empty_after_restart_and_accepts_its_first_task() {
 }
 
 #[test]
-fn remote_retries_split_resources_when_another_client_changes_tracking() {
+fn remote_aggregate_refresh_keeps_task_list_and_timer_coherent_during_another_clients_write() {
     let context = RemoteTestContext::new_with_tasks();
     let proxy = context.proxy();
-    proxy.hold(Route::Tasks);
+    proxy.hold(Route::TaskList);
     let mut first = context.launch_through(&proxy);
     proxy.wait_for_request();
 
@@ -999,19 +999,35 @@ fn remote_retries_split_resources_when_another_client_changes_tracking() {
     });
     proxy.release();
     proxy.wait_for_delivery();
-    first.wait_for_first_frame("a coherent task list and timer after retry", |screen| {
+    first.wait_for_first_frame("a coherent aggregate task list", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
-        page.header()
+        let initial_idle = page.header().is_idle() && page.task_panel().task_names().len() == 3;
+        let current_running = page
+            .header()
             .active_task()
             .is_some_and(|task| task.name() == "Track the coordinated release")
             && page
                 .task_panel()
                 .task_names()
-                .contains(&"Track the coordinated release".to_owned())
+                .contains(&"Track the coordinated release".to_owned());
+        initial_idle || current_running
     });
+    first.wait_for(
+        "the next aggregate containing the competing write",
+        |screen| {
+            let page = TimeTrackerPage::new(screen.clone());
+            page.header()
+                .active_task()
+                .is_some_and(|task| task.name() == "Track the coordinated release")
+                && page
+                    .task_panel()
+                    .task_names()
+                    .contains(&"Track the coordinated release".to_owned())
+        },
+    );
     assert!(
         proxy.request_count() >= 2,
-        "the mismatched resources must trigger another catalog read"
+        "a later aggregate must observe the write committed after the held read"
     );
     first.quit().assert_clean_exit();
     second.quit().assert_clean_exit();
@@ -1075,7 +1091,7 @@ fn remote_queued_start_does_not_replace_a_timer_started_by_another_client() {
             page.header().is_idle() && page.task_panel().task_names().len() == 3
         });
     }
-    proxy.hold(Route::Tasks);
+    proxy.hold(Route::TaskList);
     proxy.wait_for_request();
     second.press_and_wait(Key::Char('j'), "the competing task selection", |screen| {
         TimeTrackerPage::new(screen.clone())
