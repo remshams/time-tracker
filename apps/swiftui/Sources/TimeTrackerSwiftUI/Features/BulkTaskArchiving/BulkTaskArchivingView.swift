@@ -3,7 +3,8 @@ import TrackerClient
 
 @MainActor
 struct BulkTaskArchivingDialog: View {
-    @ObservedObject var archiving: BulkTaskArchivingStore
+    let session: TrackerSession
+    @ObservedObject var archiving: BulkTaskArchivingModel
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -11,17 +12,18 @@ struct BulkTaskArchivingDialog: View {
             .sheet(
                 isPresented: Binding(
                     get: { isPresentationOwner && archiving.state.isPresented },
-                    set: { if isPresentationOwner && !$0 { archiving.cancel() } }
+                    set: { if isPresentationOwner && !$0 { session.cancelBulkTaskArchiving() } }
                 )
             ) {
-                BulkTaskArchivingSheet(archiving: archiving)
+                BulkTaskArchivingSheet(session: session, archiving: archiving)
             }
     }
 }
 
 @MainActor
 private struct BulkTaskArchivingSheet: View {
-    @ObservedObject var archiving: BulkTaskArchivingStore
+    let session: TrackerSession
+    @ObservedObject var archiving: BulkTaskArchivingModel
 
     var body: some View {
         let state = archiving.sheetContent
@@ -34,7 +36,7 @@ private struct BulkTaskArchivingSheet: View {
             .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Text("Inactive for more than")
-                TextField("Days", text: Binding(get: { state.daysText }, set: archiving.updateDays))
+                TextField("Days", text: Binding(get: { state.daysText }, set: session.updateBulkArchiveDays))
                     .frame(width: 100)
                     .textFieldStyle(.roundedBorder)
                     .disabled(state.isSubmitting)
@@ -43,7 +45,7 @@ private struct BulkTaskArchivingSheet: View {
                 Text("days")
                 Spacer()
                 Button {
-                    archiving.refresh()
+                    session.refreshBulkArchivePreview()
                 } label: {
                     DelayedProgress(isBusy: state.isLoading) { visible in
                         ZStack {
@@ -114,12 +116,12 @@ private struct BulkTaskArchivingSheet: View {
                     isBusy: state.isSubmitting, title: "Archiving tasks...",
                     identifier: "bulk-archive.submit-progress")
                 Spacer()
-                Button(state.archivedCount == nil ? "Cancel" : "Done") { archiving.cancel() }
+                Button(state.archivedCount == nil ? "Cancel" : "Done") { session.cancelBulkTaskArchiving() }
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
                     .accessibilityIdentifier("bulk-archive.cancel")
                 if state.archivedCount == nil {
-                    Button("Archive all") { archiving.submit() }
+                    Button("Archive all") { session.submitBulkTaskArchiving() }
                         .keyboardShortcut(.defaultAction)
                         .buttonStyle(.borderedProminent)
                         .disabled(!state.canSubmit)

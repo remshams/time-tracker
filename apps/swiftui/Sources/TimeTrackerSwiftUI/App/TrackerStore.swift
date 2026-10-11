@@ -5,7 +5,7 @@ import TrackerClient
 @MainActor
 final class TrackerStore {
     let objectWillChange = ObservableObjectPublisher()
-    private let session: TrackerSession
+    let session: TrackerSession
     private let presentation: TrackerPresentationObserver
     private let menuBarPreferences: UserDefaultsMenuBarPreferences
     private(set) var showDailyTotalInMenuBar: Bool
@@ -20,12 +20,12 @@ final class TrackerStore {
     let timer: TrackerTimerStore
     let dailyTotals: TrackerDailyTotalsStore
     let menu: TrackerMenuStore
-    let creation: TaskCreationStore
-    let rename: TaskRenameStore
-    let bulkArchiving: BulkTaskArchivingStore
-    let archiving: TaskArchivingStore
-    let correction: WorklogCorrectionStore
-    let move: WorklogMoveStore
+    let creation: TaskCreationModel
+    let rename: TaskRenameModel
+    let bulkArchiving: BulkTaskArchivingModel
+    let archiving: TaskArchivingModel
+    let correction: WorklogCorrectionModel
+    let move: WorklogMoveModel
     private var lifecycle: MacLifecycleObserver?
 
     init() {
@@ -49,12 +49,12 @@ final class TrackerStore {
         dailyTotals = TrackerDailyTotalsStore(presentation: presentation)
         menu = TrackerMenuStore(
             session: session, showDailyTotal: showDailyTotalInMenuBar, taskOrder: menuTaskOrder)
-        creation = TaskCreationStore(session: session, presentation: presentation)
-        rename = TaskRenameStore(session: session, presentation: presentation)
-        bulkArchiving = BulkTaskArchivingStore(session: session, presentation: presentation)
-        archiving = TaskArchivingStore(session: session, presentation: presentation)
-        correction = WorklogCorrectionStore(session: session, presentation: presentation)
-        move = WorklogMoveStore(session: session, presentation: presentation)
+        creation = session.creationModel
+        rename = session.renameModel
+        bulkArchiving = session.bulkArchivingModel
+        archiving = session.archivingModel
+        correction = session.correctionModel
+        move = session.moveModel
         dailyTotals.onMenuBarTick = { [weak self] in self?.menu.update() }
         presentation.onContentChange = { [weak self] in self?.objectWillChange.send() }
         session.onChange = { [weak self] in

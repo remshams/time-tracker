@@ -57,7 +57,7 @@ struct TrackerSidebar: View {
                     .accessibilityIdentifier("task-sidebar.task.\(task.id)")
                     .contextMenu {
                         TaskContextMenu(
-                            creation: store.creation, rename: store.rename,
+                            session: store.session, creation: store.creation, rename: store.rename,
                             archiving: store.archiving, taskID: task.id,
                             taskIsArchived: task.archived,
                             taskIsRunning: store.active?.taskId == task.id)
@@ -68,7 +68,7 @@ struct TrackerSidebar: View {
             .accessibilityIdentifier("task-sidebar.list")
             .contextMenu {
                 TaskContextMenu(
-                    creation: store.creation, rename: store.rename,
+                    session: store.session, creation: store.creation, rename: store.rename,
                     archiving: store.archiving, taskID: nil)
             }
             .overlay {
