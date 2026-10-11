@@ -82,3 +82,9 @@ fn category_code(category: ApplicationFailureCategory) -> &'static str {
         ApplicationFailureCategory::InactiveTaskCandidatesChanged => "inactive_candidates_changed",
     }
 }
+
+impl From<ApplicationError> for CliError {
+    fn from(error: ApplicationError) -> Self {
+        Self::application(error)
+    }
+}

@@ -203,11 +203,14 @@ fn list(
 }
 
 async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, CliError> {
-    match &mut backend.kind {
-        BackendKind::Local(app) => {
-            let tasks = app
-                .preview_inactive_tasks(as_of)
-                .map_err(CliError::application)?;
+    match backend
+        .preview_inactive_tasks(
+            as_of,
+            tracker_domain::InactivityPeriod::new(14).expect("default inactivity period is valid"),
+        )
+        .await?
+    {
+        tracker_client::InactivePreview::Local { tasks, .. } => {
             let token = PreviewToken::Local {
                 backend: backend.identity.clone(),
                 as_of,
@@ -217,19 +220,11 @@ async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, C
                 json!({"count": tasks.len(), "tasks": tasks.iter().map(TaskDto::from).collect::<Vec<_>>(), "preview": token}),
             )
         }
-        BackendKind::Remote(app) => {
-            let preview = app
-                .preview_inactive_tasks(as_of)
-                .await
-                .map_err(CliError::application)?;
+        tracker_client::InactivePreview::Remote { preview, tasks } => {
             let token = PreviewToken::Remote {
                 backend: backend.identity.clone(),
                 preview: preview.clone(),
             };
-            let tasks = app
-                .resolve_preview_tasks(&preview)
-                .await
-                .map_err(CliError::application)?;
             let sample_names: Vec<_> = tasks.iter().take(5).map(|task| &task.name).collect();
             Ok(json!({"count": preview.count, "sample_names": sample_names, "preview": token}))
         }

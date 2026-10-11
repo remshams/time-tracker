@@ -1,12 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
-use tracker_application::{
-    ClearActiveTaskOutcome, GlobalWorklogCursor, GlobalWorklogPage, ReportTotals,
-    SetActiveTaskOutcome, TaskListItem, TaskOrdering, TrackerApplication, WorklogCursor,
-    WorklogPage,
-};
-use tracker_domain::{Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes};
+use tracker_application::TrackerApplication;
+use tracker_client::TrackerBackend;
 use tracker_remote::RemoteApplication;
 use tracker_storage::{SqliteRepository, default_database_path, ensure_app_data_dir};
 
@@ -17,10 +12,7 @@ pub(crate) struct Backend {
     pub kind: BackendKind,
 }
 
-pub(crate) enum BackendKind {
-    Local(TrackerApplication<SqliteRepository>),
-    Remote(Box<RemoteApplication>),
-}
+pub(crate) type BackendKind = TrackerBackend;
 
 pub(crate) fn identity(database: Option<&Path>, server: Option<&str>) -> Result<String, CliError> {
     if let Some(server) = server {
@@ -67,6 +59,18 @@ fn canonical_database_path(path: &Path) -> std::io::Result<PathBuf> {
 }
 
 impl Backend {
+    pub async fn report_totals(
+        &mut self,
+        start: chrono::DateTime<chrono::Utc>,
+        end: chrono::DateTime<chrono::Utc>,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<tracker_application::ReportTotals, CliError> {
+        self.kind
+            .report_totals(start, end, now)
+            .await
+            .map_err(CliError::application)
+    }
+
     pub async fn open(database: Option<PathBuf>, server: Option<String>) -> Result<Self, CliError> {
         let identity = identity(database.as_deref(), server.as_deref())?;
         let kind = if let Some(server) = server {
@@ -88,109 +92,18 @@ impl Backend {
         };
         Ok(Self { identity, kind })
     }
+}
 
-    pub fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
-        match &self.kind {
-            BackendKind::Local(app) => app.tasks(ordering),
-            BackendKind::Remote(app) => app.tasks(ordering),
-        }
-    }
+impl std::ops::Deref for Backend {
+    type Target = TrackerBackend;
 
-    pub fn current_tracking(&self) -> &TrackingState {
-        match &self.kind {
-            BackendKind::Local(app) => app.current_tracking(),
-            BackendKind::Remote(app) => app.current_tracking(),
-        }
+    fn deref(&self) -> &Self::Target {
+        &self.kind
     }
 }
 
-macro_rules! operation {
-    ($name:ident($($arg:ident: $ty:ty),* $(,)?) -> $result:ty) => {
-        impl Backend {
-            pub async fn $name(&mut self, $($arg: $ty),*) -> Result<$result, CliError> {
-                match &mut self.kind {
-                    BackendKind::Local(app) => app.$name($($arg),*)
-                        .map_err(CliError::application),
-                    BackendKind::Remote(app) => app.$name($($arg),*).await
-                        .map_err(CliError::application),
-                }
-            }
-        }
-    };
-}
-
-operation!(create_task(name: TaskName, now: DateTime<Utc>) -> Task);
-operation!(rename_task(id: TaskId, name: TaskName, now: DateTime<Utc>) -> Task);
-operation!(archive_task(id: TaskId, now: DateTime<Utc>) -> Task);
-operation!(unarchive_task(id: TaskId, now: DateTime<Utc>) -> Task);
-operation!(set_active_task(id: TaskId, now: DateTime<Utc>) -> SetActiveTaskOutcome);
-operation!(clear_active_task(expected: WorklogId, now: DateTime<Utc>) -> ClearActiveTaskOutcome);
-operation!(worklogs_for_task(id: TaskId, after: Option<&WorklogCursor>) -> WorklogPage);
-operation!(all_worklogs(after: Option<&GlobalWorklogCursor>) -> GlobalWorklogPage);
-operation!(
-    move_worklog(
-        id: WorklogId,
-        source: TaskId,
-        expected: WorklogTimes,
-        destination: TaskId,
-    ) -> Worklog
-);
-operation!(
-    correct_worklog(
-        id: WorklogId,
-        expected: WorklogTimes,
-        replacement: WorklogTimes,
-        now: DateTime<Utc>,
-    ) -> Worklog
-);
-operation!(
-    delete_completed_worklog(id: WorklogId, task: TaskId, expected: WorklogTimes) -> Worklog
-);
-impl Backend {
-    pub async fn report_totals(
-        &mut self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-        now: DateTime<Utc>,
-    ) -> Result<ReportTotals, CliError> {
-        match &mut self.kind {
-            BackendKind::Local(application) => application
-                .report_totals(start, end, now)
-                .map_err(CliError::application),
-            BackendKind::Remote(application) => {
-                let report = application
-                    .task_totals(start, end, now)
-                    .await
-                    .map_err(CliError::application)?;
-                let mut rows = Vec::with_capacity(report.rows.len());
-                for row in report.rows {
-                    let id: TaskId = row.task_id.parse().map_err(|_| {
-                        CliError::application(
-                            tracker_application::ApplicationError::RemoteProtocol(
-                                "Invalid report task identifier".to_owned(),
-                            ),
-                        )
-                    })?;
-                    let task = if let Some(task) = application.task(id) {
-                        task.clone()
-                    } else {
-                        application
-                            .read_task_observation(id)
-                            .await
-                            .map_err(CliError::application)?
-                            .value
-                            .task
-                    };
-                    rows.push(tracker_application::ReportRow {
-                        task,
-                        duration: chrono::TimeDelta::microseconds(row.duration_us),
-                    });
-                }
-                Ok(ReportTotals {
-                    rows,
-                    total: chrono::TimeDelta::microseconds(report.total_us),
-                })
-            }
-        }
+impl std::ops::DerefMut for Backend {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.kind
     }
 }
