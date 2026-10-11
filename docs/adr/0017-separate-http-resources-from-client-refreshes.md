@@ -2,6 +2,8 @@
 
 ## Status
 
+Partially superseded on 11 October 2026 by [ADR 0019](0019-read-coherent-workflow-state.md). Selected task-list and daily totals refreshes now use coherent aggregate routes. Independent resource contracts, guarded writes, resource observations, command recovery and lifecycle remain accepted.
+
 Accepted and implemented on 9 October 2026. The server, CLI, TUI and macOS clients use the new contract under `/v1`, with protocol compatibility number 3. Deploy the server and all supported clients together.
 
 ## Date
