@@ -81,7 +81,6 @@ final class WorklogMoveState {
 
     private func requestSearch() {
         revision += 1
-        candidates = []
         selectedTaskID = nil
         error = nil
         isSearching = true

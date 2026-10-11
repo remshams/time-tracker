@@ -112,12 +112,34 @@ final class WorklogMoveTests: XCTestCase {
         first.candidates([WorklogMoveCandidate(id: "obsolete", name: "Obsolete")])
         let latest = try await fixture.client.next()
         XCTAssertEqual(latest.operation, .candidates(source: firstTask.id, query: "second"))
-        XCTAssertEqual(fixture.session.worklogMove.candidates, [])
+        XCTAssertEqual(fixture.session.worklogMove.candidates, [candidate])
         latest.candidates([candidate])
         try await fixture.settled()
         XCTAssertEqual(fixture.session.worklogMove.selectedTaskID, secondTask.id)
         XCTAssertEqual(fixture.client.operations.filter { $0 == .taskList }.count, 1)
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
+    }
+
+    @MainActor
+    func testSearchRetainsCandidatesButBlocksSelectionUntilFreshResultsArrive() {
+        let state = WorklogMoveState()
+        state.open(precise, sourceTaskName: firstTask.name, historyPageLimit: 2)
+        let initial = state.takeSearch()!
+        state.accept([candidate], search: initial)
+        state.updateQuery("Another destination")
+        XCTAssertEqual(state.presentation.candidates, [candidate])
+        XCTAssertTrue(state.presentation.isSearching)
+        XCTAssertNil(state.presentation.selectedTaskID)
+        XCTAssertFalse(state.presentation.canSubmit)
+        state.select(candidate.id)
+        state.moveSelection(by: 1)
+        XCTAssertNil(state.presentation.selectedTaskID)
+        XCTAssertFalse(state.submit())
+        let search = state.takeSearch()!
+        state.failSearch(BridgeFailure(message: "Search unavailable"), search: search)
+        XCTAssertEqual(state.presentation.candidates, [])
+        XCTAssertFalse(state.presentation.isSearching)
+        XCTAssertFalse(state.presentation.canSubmit)
     }
 
     @MainActor
