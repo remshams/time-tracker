@@ -130,6 +130,6 @@ private struct HistoryPaginationButton: View {
     var body: some View {
         Button("Load older worklogs") { store.loadOlder() }
             .accessibilityIdentifier("worklog-history.load-older")
-            .disabled(activity.isBlockingControls || store.isStale)
+            .disabled(activity.isBlockingControls || store.isStale || store.isHistoryLoading)
     }
 }
