@@ -118,4 +118,31 @@ class WorklogMoveUITests: TrackerUITestCase {
 
 final class ServerWorklogMoveUITests: WorklogMoveUITests {
     override var fixtureSource: TrackerFixture.Source { .server }
+
+    func testDelayedSearchKeepsPreviousResultsDisabledUntilTheQueryCompletes() throws {
+        let source = try fixture.create("Search source")
+        let destination = try fixture.create("Search destination")
+        let log = try fixture.completed(source, start: Date().addingTimeInterval(-3600), end: Date().addingTimeInterval(-1800))
+        let proxy = try fixture.enableProxy()
+        launch()
+        select(source)
+        openMove(log)
+        let candidate = element("worklog-move.candidate.\(destination.id)")
+        XCTAssertTrue(candidate.waitForExistence(timeout: timeout))
+        let frame = app.sheets.firstMatch.frame
+        try proxy.arm(method: "GET", path: "/v1/reports/task-totals", mode: .holdAfter)
+        _ = try proxy.waitForHeldRequest()
+        replaceText(app.textFields["worklog-move.search"], "No matching destination")
+        XCTAssertTrue(element("worklog-move.search-progress").waitForExistence(timeout: timeout))
+        XCTAssertTrue(candidate.exists)
+        XCTAssertFalse(app.buttons["worklog-move.confirm"].isEnabled)
+        XCTAssertEqual(app.sheets.firstMatch.frame.height, frame.height, accuracy: 1)
+        try proxy.release()
+        XCTAssertTrue(element("worklog-move.empty").waitForExistence(timeout: timeout))
+        XCTAssertFalse(candidate.exists)
+        XCTAssertFalse(element("worklog-move.search-progress").exists)
+        app.buttons["worklog-move.cancel"].click()
+        XCTAssertEqual(try fixture.worklogs(source), [log])
+    }
+
 }
