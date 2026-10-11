@@ -2,7 +2,9 @@
 
 mod resources;
 
-use resources::{all_worklogs, report, task, tasks, tracking, worklog};
+use resources::{
+    all_worklogs, daily_overview, report, task, task_list_state, tasks, tracking, worklog,
+};
 
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
@@ -34,11 +36,11 @@ use tracker_domain::{
     InactivityPeriod, Task, TaskId, TaskName, TrackingState, WorklogId, WorklogTimes,
 };
 use tracker_protocol::{
-    ArchiveInactiveTasksRequest, CreateTaskRequest, DeleteWorklogRequest, ErrorCode, ErrorDto,
-    HealthDto, InactiveTaskPreviewDto, MutationDto, MutationResultDto, ReportDto,
-    SetTrackingRequest, TaskChangeRequest, TaskDto, TaskResourceDto, TasksDto, TrackingDto,
-    WorklogChangeRequest, WorklogDto, WorklogPageDto, WorklogResourceDto, WriteGuard,
-    parse_task_id, parse_worklog_id,
+    ArchiveInactiveTasksRequest, CreateTaskRequest, DailyOverviewDto, DeleteWorklogRequest,
+    ErrorCode, ErrorDto, HealthDto, InactiveTaskPreviewDto, MutationDto, MutationResultDto,
+    ReportDto, SetTrackingRequest, TaskChangeRequest, TaskDto, TaskListStateDto, TaskResourceDto,
+    TasksDto, TrackingDto, WorklogChangeRequest, WorklogDto, WorklogPageDto, WorklogResourceDto,
+    WriteGuard, parse_task_id, parse_worklog_id,
 };
 use tracker_storage::SqliteRepository;
 use uuid::Uuid;
@@ -562,6 +564,8 @@ pub fn router_for_database(path: &Path) -> Result<Router, Box<dyn Error + Send +
             get(worklog).patch(change_worklog).delete(delete_worklog),
         )
         .route("/v1/reports/task-totals", get(report))
+        .route("/v1/state/task-list", get(task_list_state))
+        .route("/v1/state/daily-overview", get(daily_overview))
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .with_state(shared))
 }
