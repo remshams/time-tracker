@@ -81,6 +81,7 @@
 		C4B8D2780242899B1CF0E69B /* TrackingUITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6EC2B5D092266BF82C8603 /* TrackingUITestSupport.swift */; };
 		745BDF4445457BB07CA3C29C /* WorklogUITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32D251D129980236EBE71C01 /* WorklogUITestSupport.swift */; };
 		B7C4923B11B8BB1AF3B416C2 /* TrackerUITestAssertions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC884A44C0C6D93268EC277 /* TrackerUITestAssertions.swift */; };
+		F70000000000000000000001 /* DelayedProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000002 /* DelayedProgress.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -173,6 +174,7 @@
 		FB6EC2B5D092266BF82C8603 /* TrackingUITestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingUITestSupport.swift; sourceTree = "<group>"; };
 		32D251D129980236EBE71C01 /* WorklogUITestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogUITestSupport.swift; sourceTree = "<group>"; };
 		CEC884A44C0C6D93268EC277 /* TrackerUITestAssertions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerUITestAssertions.swift; sourceTree = "<group>"; };
+		F70000000000000000000002 /* DelayedProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DelayedProgress.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -253,6 +255,7 @@
 			children = (
 				67815C35FE40B6535CB0E7B6 /* MenuBar */,
 				AB152630AD047C1EBC9B65BC /* TaskIndicators */,
+				F70000000000000000000003 /* ProgressPresentation */,
 				7B61613478C091D18A157689 /* TaskCreation */,
 				7896A35DF77F32F16827239B /* TaskNames */,
 				95106349D1A9FA32ACFC23AF /* TaskRename */,
@@ -566,6 +569,12 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		F70000000000000000000003 /* ProgressPresentation */ = {
+			isa = PBXGroup;
+			children = (F70000000000000000000002 /* DelayedProgress.swift */);
+			path = ProgressPresentation;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -702,6 +711,7 @@
 				DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */,
 				D2317EF3D3102BB20A00689F /* TaskCreationView.swift in Sources */,
 				571C4049FF3FE8699EB2B9C6 /* TaskNameSheet.swift in Sources */,
+				F70000000000000000000001 /* DelayedProgress.swift in Sources */,
 				E6DA1C7C47CC0387A8918374 /* TaskRenameStore.swift in Sources */,
 				42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */,
 				2507B5FE7BE977C63473174B /* TaskArchivingView.swift in Sources */,
