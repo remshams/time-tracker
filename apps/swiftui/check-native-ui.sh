@@ -54,6 +54,10 @@ elif (( $# != 0 )); then
     echo 'Usage: check-native-ui.sh [--smoke | --group core|tasks|worklogs|server|menu|mac]' >&2
     exit 2
 fi
+if (( $# == 0 )) || [[ "${1:-}" == --group && "${2:-}" == mac ]]; then
+    xcrun swiftc -parse-as-library scripts/probe-window-accessibility.swift \
+        -o .build/probe-window-accessibility
+fi
 xcodebuild -project apps/swiftui/TimeTracker.xcodeproj -scheme TimeTracker \
     -configuration Debug -destination "platform=macOS,arch=$(uname -m)" \
     -derivedDataPath .build/native-ui -resultBundlePath .build/native-ui.xcresult \
