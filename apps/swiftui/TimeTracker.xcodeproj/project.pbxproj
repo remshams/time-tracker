@@ -16,8 +16,6 @@
 		8BE6CE736C624EFAB0D710CC /* ConnectionActionsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11F96E69433F249D449B83E0 /* ConnectionActionsSection.swift */; };
 		C4A122BD963E40B822BDBE80 /* ConnectionSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9B47B96FF5B18ABDE339C8F /* ConnectionSettingsSection.swift */; };
 		8F47CEF34016B75C457130B1 /* ConnectionDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF4B35BBAC9E510A4F1B6719 /* ConnectionDraftStore.swift */; };
-		04FBC52E93CEB524F6B023B1 /* WorklogCorrectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373690BD6F341E81B72C511D /* WorklogCorrectionStore.swift */; };
-		7C4433CC7C90A7FF3715CE06 /* WorklogMoveStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E333FB30857DC1841F6A488 /* WorklogMoveStore.swift */; };
 		C88EDC1E136D70620F0B0ECF /* WorklogDeletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FDBB33BC912AB6A8A85E66B /* WorklogDeletionStore.swift */; };
 		EA53E0B162E3868C3E6CD353 /* WorklogCorrectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */; };
 		8FB1818DF921B787854DFCA6 /* WorklogMoveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40EB26AD584B87CAF03F7FD /* WorklogMoveView.swift */; };
@@ -40,19 +38,15 @@
 		E724446CA77190001E61A002 /* UserDefaultsPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EECD295169E48244028EE41 /* UserDefaultsPreferences.swift */; };
 		5F1D759FC3D354345CBF0671 /* TrackerWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0597366B0A0E2028788E2696 /* TrackerWorker.swift */; };
 		7E768477586D21659FFEC5F7 /* TrackerClient in Frameworks */ = {isa = PBXBuildFile; productRef = C8DF62E0CBC32AE617C1EA99 /* TrackerClient */; };
-		18D2319E48E082F857DD0A32 /* TaskCreationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B10C5FD690BABFF199F3775 /* TaskCreationStore.swift */; };
 		D2317EF3D3102BB20A00689F /* TaskCreationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20F8E9711E94B95EA2CFCD6 /* TaskCreationView.swift */; };
 		571C4049FF3FE8699EB2B9C6 /* TaskNameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2E5632984C1A5E1F29AED39 /* TaskNameSheet.swift */; };
-		E6DA1C7C47CC0387A8918374 /* TaskRenameStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6513C7EF1F6EF6F64D7705F /* TaskRenameStore.swift */; };
 		42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */; };
 		DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8778858BF38637F9573E8E50 /* TaskContextMenu.swift */; };
 		DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */; };
 		06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */; };
 		C66F80324842D1AACBE93B6B /* TrackerMenuValueBindings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58AD268792A6ACD87F3B08AA /* TrackerMenuValueBindings.swift */; };
 		25C8A3D06E8274ADA6BBAC4F /* MenuKeyboardSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */; };
-		8503050BDB83B0C4D676D937 /* TaskArchivingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B61905FCBC755118476CFF /* TaskArchivingStore.swift */; };
 		2507B5FE7BE977C63473174B /* TaskArchivingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */; };
-		BD73674A963DDEAA117CE002 /* BulkTaskArchivingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */; };
 		BD73674A963DDEAA117CE004 /* BulkTaskArchivingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */; };
 		A10000000000000000000001 /* ArchiveFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* ArchiveFixture.swift */; };
 		A10000000000000000000002 /* BulkTaskArchivingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* BulkTaskArchivingUITests.swift */; };
@@ -115,8 +109,6 @@
 		11F96E69433F249D449B83E0 /* ConnectionActionsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionActionsSection.swift; sourceTree = "<group>"; };
 		B9B47B96FF5B18ABDE339C8F /* ConnectionSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSettingsSection.swift; sourceTree = "<group>"; };
 		DF4B35BBAC9E510A4F1B6719 /* ConnectionDraftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionDraftStore.swift; sourceTree = "<group>"; };
-		373690BD6F341E81B72C511D /* WorklogCorrectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogCorrectionStore.swift; sourceTree = "<group>"; };
-		9E333FB30857DC1841F6A488 /* WorklogMoveStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogMoveStore.swift; sourceTree = "<group>"; };
 		0FDBB33BC912AB6A8A85E66B /* WorklogDeletionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogDeletionStore.swift; sourceTree = "<group>"; };
 		C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogCorrectionView.swift; sourceTree = "<group>"; };
 		B40EB26AD584B87CAF03F7FD /* WorklogMoveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogMoveView.swift; sourceTree = "<group>"; };
@@ -143,19 +135,15 @@
 		804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLifecycleObserver.swift; sourceTree = "<group>"; };
 		7EECD295169E48244028EE41 /* UserDefaultsPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsPreferences.swift; sourceTree = "<group>"; };
 		0597366B0A0E2028788E2696 /* TrackerWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerWorker.swift; sourceTree = "<group>"; };
-		3B10C5FD690BABFF199F3775 /* TaskCreationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskCreationStore.swift; sourceTree = "<group>"; };
 		E20F8E9711E94B95EA2CFCD6 /* TaskCreationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskCreationView.swift; sourceTree = "<group>"; };
 		A2E5632984C1A5E1F29AED39 /* TaskNameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskNameSheet.swift; sourceTree = "<group>"; };
-		F6513C7EF1F6EF6F64D7705F /* TaskRenameStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRenameStore.swift; sourceTree = "<group>"; };
 		88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRenameView.swift; sourceTree = "<group>"; };
 		8778858BF38637F9573E8E50 /* TaskContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskContextMenu.swift; sourceTree = "<group>"; };
 		D649F389F0B7709F3298AF50 /* TaskIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskIndicatorView.swift; sourceTree = "<group>"; };
 		D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStatusItemController.swift; sourceTree = "<group>"; };
 		58AD268792A6ACD87F3B08AA /* TrackerMenuValueBindings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerMenuValueBindings.swift; sourceTree = "<group>"; };
 		E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuKeyboardSupport.swift; sourceTree = "<group>"; };
-		B3B61905FCBC755118476CFF /* TaskArchivingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskArchivingStore.swift; sourceTree = "<group>"; };
 		BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskArchivingView.swift; sourceTree = "<group>"; };
-		BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingStore.swift; sourceTree = "<group>"; };
 		BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingView.swift; sourceTree = "<group>"; };
 		A10000000000000000000003 /* ArchiveFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveFixture.swift; sourceTree = "<group>"; };
 		A10000000000000000000004 /* BulkTaskArchivingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingUITests.swift; sourceTree = "<group>"; };
@@ -351,8 +339,6 @@
 		3ABD701C8406AD405352A72E /* WorklogHistory */ = {
 			isa = PBXGroup;
 			children = (
-				373690BD6F341E81B72C511D /* WorklogCorrectionStore.swift */,
-				9E333FB30857DC1841F6A488 /* WorklogMoveStore.swift */,
 				0FDBB33BC912AB6A8A85E66B /* WorklogDeletionStore.swift */,
 				C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */,
 				B40EB26AD584B87CAF03F7FD /* WorklogMoveView.swift */,
@@ -393,7 +379,6 @@
 		7B61613478C091D18A157689 /* TaskCreation */ = {
 			isa = PBXGroup;
 			children = (
-				3B10C5FD690BABFF199F3775 /* TaskCreationStore.swift */,
 				E20F8E9711E94B95EA2CFCD6 /* TaskCreationView.swift */,
 			);
 			path = TaskCreation;
@@ -410,7 +395,6 @@
 		95106349D1A9FA32ACFC23AF /* TaskRename */ = {
 			isa = PBXGroup;
 			children = (
-				F6513C7EF1F6EF6F64D7705F /* TaskRenameStore.swift */,
 				88F132EDD634FB7ABFF70386 /* TaskRenameView.swift */,
 			);
 			path = TaskRename;
@@ -439,7 +423,6 @@
 		96323D4C37A17D8DDEDEE31F /* TaskArchiving */ = {
 			isa = PBXGroup;
 			children = (
-				B3B61905FCBC755118476CFF /* TaskArchivingStore.swift */,
 				BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */,
 			);
 			path = TaskArchiving;
@@ -448,7 +431,6 @@
         BD73674A963DDEAA117CE005 /* BulkTaskArchiving */ = {
             isa = PBXGroup;
             children = (
-                BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */,
                 BD73674A963DDEAA117CE003 /* BulkTaskArchivingView.swift */,
             );
             path = BulkTaskArchiving;
@@ -751,8 +733,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				04FBC52E93CEB524F6B023B1 /* WorklogCorrectionStore.swift in Sources */,
-				7C4433CC7C90A7FF3715CE06 /* WorklogMoveStore.swift in Sources */,
 				C88EDC1E136D70620F0B0ECF /* WorklogDeletionStore.swift in Sources */,
 				EA53E0B162E3868C3E6CD353 /* WorklogCorrectionView.swift in Sources */,
 				8FB1818DF921B787854DFCA6 /* WorklogMoveView.swift in Sources */,
@@ -770,13 +750,9 @@
 				D2317EF3D3102BB20A00689F /* TaskCreationView.swift in Sources */,
 				571C4049FF3FE8699EB2B9C6 /* TaskNameSheet.swift in Sources */,
 				F70000000000000000000001 /* DelayedProgress.swift in Sources */,
-				E6DA1C7C47CC0387A8918374 /* TaskRenameStore.swift in Sources */,
 				42154AF4C0A191DE0462478B /* TaskRenameView.swift in Sources */,
 				2507B5FE7BE977C63473174B /* TaskArchivingView.swift in Sources */,
-				8503050BDB83B0C4D676D937 /* TaskArchivingStore.swift in Sources */,
 				BD73674A963DDEAA117CE004 /* BulkTaskArchivingView.swift in Sources */,
-				BD73674A963DDEAA117CE002 /* BulkTaskArchivingStore.swift in Sources */,
-				18D2319E48E082F857DD0A32 /* TaskCreationStore.swift in Sources */,
 				B17600688A3CEF7769DEE7DE /* TimeTrackerApp.swift in Sources */,
 				A10000000000000000000016 /* TrackerLaunchConfiguration.swift in Sources */,
 				3B56BC67EA3B3C706744AFC4 /* TrackerStore.swift in Sources */,
