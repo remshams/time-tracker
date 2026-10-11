@@ -265,6 +265,32 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
         self.assertEqual(self.select()["status"], "review-required")
 
+    def test_symlink_ancestor_above_the_repository_does_not_reject_regular_sources(self):
+        self.write(scope.PACKAGE + TRACKING, "func changedTracking() {}\n")
+        head = self.commit("Change production source")
+        ancestor = self.root / "ancestor"
+        ancestor.symlink_to(Path(self.root.anchor), target_is_directory=True)
+        repository_alias = ancestor / self.root.relative_to(self.root.anchor)
+
+        result = scope.select_scope(repository_alias, self.base, head)
+
+        self.assertEqual(result["status"], "focused")
+        self.assertEqual(result["files"], [TRACKING])
+        self.assertEqual(repository_alias.resolve(), self.root.resolve())
+
+    def test_symlink_directory_inside_the_repository_cannot_escape_the_package(self):
+        self.write(scope.PACKAGE + TRACKING, "func changedTracking() {}\n")
+        self.commit("Change production source")
+        source_directory = (self.root / scope.PACKAGE / TRACKING).parent
+        outside = self.root / "outside-tracking"
+        source_directory.rename(outside)
+        source_directory.symlink_to(outside, target_is_directory=True)
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "review-required")
+        self.assertEqual(result["files"], [])
+
     def test_unsafe_new_source_name_never_reaches_muter_arguments(self):
         self.write(scope.PACKAGE + scope.SOURCES + "Features/Tracking/unsafe\nname.swift", "func unsafe() {}\n")
         self.commit("Add source with unsafe filename")
