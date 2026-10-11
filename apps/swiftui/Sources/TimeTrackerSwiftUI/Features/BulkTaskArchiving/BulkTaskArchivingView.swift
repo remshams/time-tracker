@@ -45,11 +45,14 @@ private struct BulkTaskArchivingSheet: View {
                 Button {
                     archiving.refresh()
                 } label: {
-                    ZStack {
-                        Image(systemName: "arrow.clockwise")
-                            .opacity(state.isLoading ? 0 : 1)
-                        if state.isLoading {
+                    DelayedProgress(isBusy: state.isLoading) { visible in
+                        ZStack {
+                            Image(systemName: "arrow.clockwise")
+                                .opacity(visible ? 0 : 1)
                             ProgressView().controlSize(.small)
+                                .opacity(visible ? 1 : 0)
+                                .accessibilityHidden(!visible)
+                                .accessibilityIdentifier("bulk-archive.refresh-progress")
                         }
                     }
                     .frame(width: 16, height: 16)
@@ -107,10 +110,9 @@ private struct BulkTaskArchivingSheet: View {
             .frame(height: 220)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
             HStack(spacing: 12) {
-                if state.isSubmitting {
-                    ProgressView().controlSize(.small)
-                    Text("Archiving tasks...").foregroundStyle(.secondary)
-                }
+                DelayedProgressIndicator(
+                    isBusy: state.isSubmitting, title: "Archiving tasks...",
+                    identifier: "bulk-archive.submit-progress")
                 Spacer()
                 Button(state.archivedCount == nil ? "Cancel" : "Done") { archiving.cancel() }
                     .keyboardShortcut(.cancelAction)
