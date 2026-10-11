@@ -233,7 +233,7 @@ fn report_aggregates_all_history_and_clips_completed_and_active_work() {
     application.archive_task(archived.id(), at(1120)).unwrap();
     completed(&mut application, finished.id(), 1180, 1205);
     application.set_active_task(active.id(), at(1210)).unwrap();
-    let mut bridge = Bridge::new(Backend::Local(application));
+    let mut bridge = Bridge::new(Backend::local(application).unwrap());
 
     let value = report(&mut bridge, 1000, 1200, 1190);
     assert!(value.get("error").is_none(), "{value}");
@@ -335,7 +335,7 @@ fn report_preserves_microseconds_and_accepts_utc_offsets() {
     application
         .clear_active_task(worklog.id(), "2026-10-04T00:00:00.987654Z".parse().unwrap())
         .unwrap();
-    let mut bridge = Bridge::new(Backend::Local(application));
+    let mut bridge = Bridge::new(Backend::local(application).unwrap());
     let start = c"2026-10-04T02:00:00+02:00";
     let end = c"2026-10-05T02:00:00+02:00";
     let now = c"2026-10-04T00:00:00.500000Z";
@@ -354,9 +354,8 @@ fn report_preserves_microseconds_and_accepts_utc_offsets() {
 #[test]
 fn report_rejects_null_malformed_and_invalid_ranges_and_returns_empty_totals() {
     let repository = SqliteRepository::open_in_memory().unwrap();
-    let mut bridge = Bridge::new(Backend::Local(
-        TrackerApplication::load(repository).unwrap(),
-    ));
+    let mut bridge =
+        Bridge::new(Backend::local(TrackerApplication::load(repository).unwrap()).unwrap());
     let valid = c"2026-10-04T00:00:00Z";
     let malformed = c"invalid";
     let non_utf8 = CString::new(vec![0xff]).unwrap();
@@ -742,7 +741,7 @@ fn connection_check_uses_only_health_and_rejects_incompatible_servers() {
 fn connection_check_supports_local_handles_and_rejects_null_handles() {
     let application =
         TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap();
-    let mut bridge = Bridge::new(Backend::Local(application));
+    let mut bridge = Bridge::new(Backend::local(application).unwrap());
     // SAFETY: A live bridge and a null pointer are both supported inputs.
     unsafe {
         let value = response(tt_bridge_check_connection(&mut bridge));
@@ -927,9 +926,8 @@ fn failed_aggregate_refresh_retains_each_confirmed_resource_observation() {
 #[test]
 fn resource_exports_and_selected_refresh_reject_null_handles_and_unknown_selections() {
     let repository = SqliteRepository::open_in_memory().unwrap();
-    let mut bridge = Bridge::new(Backend::Local(
-        TrackerApplication::load(repository).unwrap(),
-    ));
+    let mut bridge =
+        Bridge::new(Backend::local(TrackerApplication::load(repository).unwrap()).unwrap());
     // SAFETY: Null handles are supported inputs and the local bridge stays live.
     unsafe {
         for returned in [

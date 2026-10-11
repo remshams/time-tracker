@@ -197,7 +197,7 @@ fn open() -> Result<Bridge, String> {
 fn open_at(path: &Path) -> Result<Bridge, String> {
     let repository = SqliteRepository::open(path).map_err(|error| error.to_string())?;
     let application = TrackerApplication::load(repository).map_err(|error| error.to_string())?;
-    Ok(Bridge::new(Backend::Local(application)))
+    Ok(Bridge::new(Backend::local(application)?))
 }
 
 #[cfg(test)]
@@ -1394,7 +1394,7 @@ mod tests {
                 .unwrap();
         }
 
-        let bridge = Box::into_raw(Box::new(Bridge::new(Backend::Local(application))));
+        let bridge = Box::into_raw(Box::new(Bridge::new(Backend::local(application).unwrap())));
         let task_id = CString::new(task.id().to_string()).unwrap();
         // SAFETY: The bridge and input string are live for both calls.
         let first_ptr = unsafe { tt_bridge_history(bridge, task_id.as_ptr(), ptr::null()) };
