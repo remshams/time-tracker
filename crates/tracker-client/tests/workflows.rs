@@ -22,6 +22,11 @@ impl Server {
     fn start() -> Self {
         let directory = TempDir::new().unwrap();
         let database = directory.path().join("tracker.sqlite3");
+        let router = tracker_server::router_for_database(&database).unwrap();
+        Self::with_router(directory, router)
+    }
+
+    fn with_router(directory: TempDir, router: axum::Router) -> Self {
         let (address_tx, address_rx) = mpsc::channel();
         let (shutdown, stopped) = oneshot::channel();
         let thread = thread::spawn(move || {
@@ -30,7 +35,6 @@ impl Server {
                 .build()
                 .unwrap()
                 .block_on(async {
-                    let router = tracker_server::router_for_database(&database).unwrap();
                     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                     address_tx.send(listener.local_addr().unwrap()).unwrap();
                     axum::serve(listener, router)
@@ -267,6 +271,34 @@ async fn inactivity_confirmation_keeps_the_reviewed_period_and_candidates() {
         assert!(backend.task(old.id()).unwrap().is_archived());
         assert!(!backend.task(recent.id()).unwrap().is_archived());
     }
+}
+
+#[tokio::test]
+async fn incompatible_server_protocol_is_reported_without_adopting_state() {
+    let router = axum::Router::new().route(
+        "/v1/health",
+        axum::routing::get(|| async {
+            axum::Json(tracker_protocol::HealthDto {
+                status: "ok".to_owned(),
+                protocol_version: tracker_protocol::VERSION + 1,
+            })
+        }),
+    );
+    let server = Server::with_router(TempDir::new().unwrap(), router);
+    let mut backend = TrackerBackend::remote(&server.endpoint).unwrap();
+    let error = backend
+        .refresh_task_list()
+        .await
+        .unwrap_err()
+        .into_application_error();
+    assert!(matches!(
+        error,
+        tracker_application::ApplicationError::RemoteProtocol(_)
+    ));
+    assert!(backend.is_remote());
+    assert!(backend.task_observation().is_none());
+    assert!(backend.tracking_observation().is_none());
+    assert!(backend.tasks(TaskOrdering::default()).is_empty());
 }
 
 #[tokio::test]
