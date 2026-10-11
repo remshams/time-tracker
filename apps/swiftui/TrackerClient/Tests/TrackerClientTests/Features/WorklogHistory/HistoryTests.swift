@@ -60,12 +60,41 @@ final class HistoryTests: XCTestCase {
             "Existing rows must remain visible while their replacement is fetched.")
         XCTAssertEqual(fixture.session.nextCursor, "older")
         XCTAssertTrue(fixture.session.isHistoryLoading)
-        XCTAssertFalse(fixture.session.hasMoreHistory)
+        XCTAssertTrue(fixture.session.hasMoreHistory)
         fixture.session.loadOlder()
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
         XCTAssertNil(fixture.session.nextCursor)
+    }
+
+    @MainActor
+    func testRefreshingHistoryRetainsPaginationButRejectsLoadOlderUntilConfirmed() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        fixture.session.retryHistory()
+        let initial = try await fixture.client.next()
+        let page = HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false)
+        initial.succeed(page)
+        try await fixture.settled()
+        fixture.session.retryHistory()
+        let refresh = try await fixture.client.next()
+        XCTAssertEqual(fixture.session.nextCursor, "older")
+        XCTAssertTrue(fixture.session.hasMoreHistory)
+        XCTAssertTrue(fixture.session.isHistoryLoading)
+        XCTAssertFalse(fixture.session.isBlockingControls)
+        fixture.session.loadOlder()
+        refresh.succeed(page)
+        try await fixture.settled()
+        XCTAssertFalse(fixture.session.isHistoryLoading)
+        XCTAssertTrue(fixture.session.hasMoreHistory)
+        fixture.session.loadOlder()
+        let older = try await fixture.client.next()
+        XCTAssertEqual(older.operation, .history(task: firstTask.id, cursor: "older"))
+        older.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertFalse(fixture.session.hasMoreHistory)
     }
 
     @MainActor
@@ -242,7 +271,7 @@ final class HistoryTests: XCTestCase {
         let older = try await fixture.client.next()
         XCTAssertEqual(older.operation, .history(task: firstTask.id, cursor: "page-two"))
         XCTAssertTrue(fixture.session.isHistoryLoading)
-        XCTAssertFalse(fixture.session.hasMoreHistory)
+        XCTAssertTrue(fixture.session.hasMoreHistory)
         fixture.session.loadOlder()
         older.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "page-three", reset: false))
         try await fixture.settled()
