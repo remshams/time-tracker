@@ -251,6 +251,7 @@ final class WorklogMoveTests: XCTestCase {
         search.fail(BridgeFailure(message: "Search unavailable"))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.worklogMove.error, "Search unavailable")
+        XCTAssertEqual(fixture.session.moveModel.state, fixture.session.worklogMove)
         XCTAssertTrue(fixture.session.worklogMove.canEdit)
         XCTAssertFalse(fixture.session.worklogMove.canSubmit)
         fixture.session.retryWorklogMoveCandidates()
@@ -390,19 +391,16 @@ final class WorklogMoveTests: XCTestCase {
         _ = try await open(fixture)
         let observer = TrackerPresentationObserver(session: fixture.session)
         var contentChanges = 0
-        var moveChanges = 0
         observer.onContentChange = { contentChanges += 1 }
-        observer.onWorklogMoveChange = { moveChanges += 1 }
         fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.session.setWorklogMoveQuery("second")
         let search = try await fixture.client.next()
         search.candidates([candidate])
         try await fixture.settled()
         fixture.session.onChange = { observer.update(from: fixture.session) }
-        let visible = observer.worklogMoveSheetContent
+        let visible = fixture.session.moveModel.sheetContent
         fixture.session.cancelWorklogMove()
-        XCTAssertEqual(observer.worklogMoveSheetContent, visible)
-        XCTAssertGreaterThan(moveChanges, 0)
+        XCTAssertEqual(fixture.session.moveModel.sheetContent, visible)
         XCTAssertEqual(contentChanges, 0)
         fixture.session.openTaskCreation()
         XCTAssertFalse(fixture.session.canOpenWorklogMove)
@@ -420,6 +418,7 @@ final class WorklogMoveTests: XCTestCase {
         try await fixture.settled()
         XCTAssertTrue(fixture.session.worklogMove.requiresReview)
         XCTAssertEqual(fixture.session.worklogMove.error, "This worklog changed. Review it before moving.")
+        XCTAssertEqual(fixture.session.moveModel.state, fixture.session.worklogMove)
         XCTAssertFalse(fixture.session.worklogMove.isSearching)
         XCTAssertFalse(
             fixture.client.operations.contains {
@@ -442,6 +441,7 @@ final class WorklogMoveTests: XCTestCase {
         search.fail(BridgeFailure(message: "Search failed"))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.worklogMove.error, "Search failed")
+        XCTAssertEqual(fixture.session.moveModel.state, fixture.session.worklogMove)
         XCTAssertFalse(fixture.session.worklogMove.isSearching)
     }
 
@@ -496,6 +496,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertFalse(fixture.session.worklogMove.canEdit)
         XCTAssertTrue(fixture.session.worklogMove.canSubmit)
         XCTAssertEqual(fixture.session.worklogMove.error, "The move response does not contain the moved worklog.")
+        XCTAssertEqual(fixture.session.moveModel.state, fixture.session.worklogMove)
     }
 
     @MainActor
@@ -512,6 +513,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertEqual(fixture.session.connectionStatusText, "Unavailable")
         XCTAssertEqual(fixture.session.error, "Move preflight offline")
         XCTAssertEqual(fixture.session.worklogMove.error, "Move preflight offline")
+        XCTAssertEqual(fixture.session.moveModel.state, fixture.session.worklogMove)
         XCTAssertFalse(
             fixture.client.operations.contains {
                 if case .move = $0 { return true }; return false
@@ -703,6 +705,7 @@ final class WorklogMoveTests: XCTestCase {
             XCTAssertTrue(fixture.session.worklogMove.canSubmit, kind)
             XCTAssertEqual(fixture.session.worklogMove.original, log, kind)
             XCTAssertEqual(fixture.session.worklogMove.error, "Move response unavailable", kind)
+            XCTAssertEqual(fixture.session.moveModel.state, fixture.session.worklogMove)
         }
     }
 
@@ -935,15 +938,15 @@ final class WorklogMoveTests: XCTestCase {
         fixture.session.submitWorklogMove()
         try await preflight(fixture, log: log)
         let command = try await fixture.client.next()
-        let visible = observer.worklogMoveSheetContent
+        let visible = fixture.session.moveModel.sheetContent
         XCTAssertTrue(visible.isSubmitting)
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
         command.moved(worklog: moved, resources: TaskListResources(tasks: [firstTask, secondTask], active: moved))
         let history = try await fixture.client.next()
-        XCTAssertEqual(observer.worklogMoveSheetContent, visible)
+        XCTAssertEqual(fixture.session.moveModel.sheetContent, visible)
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(observer.worklogMoveSheetContent, visible)
+        XCTAssertEqual(fixture.session.moveModel.sheetContent, visible)
     }
 
     @MainActor

@@ -3,35 +3,26 @@ import XCTest
 
 final class PresentationObserverTests: XCTestCase {
     @MainActor
-    func testEditorAvailabilityNotifiesOnlyWhenTheAvailabilityChanges() async throws {
+    func testEditorModelsTrackAvailabilityWithoutChangingTheirDrafts() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var bulkChanges = 0
-        var moveChanges = 0
-        var correctionChanges = 0
-        observer.onBulkTaskArchivingChange = { bulkChanges += 1 }
-        observer.onWorklogMoveChange = { moveChanges += 1 }
-        observer.onWorklogCorrectionChange = { correctionChanges += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
-
-        observer.update(from: fixture.session)
-        XCTAssertEqual(bulkChanges, 0)
-        XCTAssertEqual(moveChanges, 0)
-        XCTAssertEqual(correctionChanges, 0)
+        let bulk = fixture.session.bulkArchivingModel
+        let move = fixture.session.moveModel
+        let correction = fixture.session.correctionModel
+        let drafts = [move.state.isPresented, correction.state.isPresented, bulk.state.isPresented]
+        XCTAssertTrue(bulk.canOpen)
+        XCTAssertTrue(move.canOpen)
+        XCTAssertTrue(correction.canOpen)
         fixture.session.openTaskCreation()
-        XCTAssertEqual(bulkChanges, 1)
-        XCTAssertEqual(moveChanges, 1)
-        XCTAssertEqual(correctionChanges, 1)
+        XCTAssertFalse(bulk.canOpen)
+        XCTAssertFalse(move.canOpen)
+        XCTAssertFalse(correction.canOpen)
+        XCTAssertEqual([move.state.isPresented, correction.state.isPresented, bulk.state.isPresented], drafts)
         fixture.session.cancelTaskCreation()
-        XCTAssertEqual(bulkChanges, 2)
-        XCTAssertEqual(moveChanges, 2)
-        XCTAssertEqual(correctionChanges, 2)
-        observer.update(from: fixture.session)
-        XCTAssertEqual(bulkChanges, 2)
-        XCTAssertEqual(moveChanges, 2)
-        XCTAssertEqual(correctionChanges, 2)
+        XCTAssertTrue(bulk.canOpen)
+        XCTAssertTrue(move.canOpen)
+        XCTAssertTrue(correction.canOpen)
     }
 
     @MainActor
