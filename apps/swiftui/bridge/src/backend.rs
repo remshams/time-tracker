@@ -2,9 +2,8 @@ use chrono::{DateTime, Utc};
 use tokio::runtime::{Builder, Runtime};
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ApplicationFailureSource, ClearActiveTaskOutcome,
-    InactiveTaskOperations, MoveCandidate, ReportQueries, SetActiveTaskOutcome, TaskListItem,
-    TaskOperations, TaskOrdering, TaskQueries, TrackerApplication, TrackingOperations,
-    WorklogCursor, WorklogOperations, WorklogPage, WorklogQueries,
+    MoveCandidate, SetActiveTaskOutcome, TaskListItem, TaskOrdering, TrackerApplication,
+    WorklogCursor, WorklogPage,
 };
 use tracker_domain::{
     InactivityPeriod, Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes,

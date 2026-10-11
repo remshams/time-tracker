@@ -1064,7 +1064,6 @@ mod tests {
     }
 
     use super::*;
-    use tracker_application::{TaskOperations, TrackingOperations};
 
     #[test]
     fn opening_without_error_storage_does_not_open_a_database() {

@@ -1,5 +1,4 @@
 use super::*;
-use tracker_application::TaskQueries;
 
 fn response(pointer: *mut c_char) -> Value {
     assert!(!pointer.is_null());
@@ -49,7 +48,7 @@ fn archive_and_restore_preserve_history_other_tracking_and_concurrent_names() {
         .unwrap()
         .worklogs;
     let mut writer = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
-    use tracker_application::{TaskOperations, TrackingOperations};
+
     writer
         .rename_task(target, TaskName::new("Concurrent rename").unwrap(), at(250))
         .unwrap();
@@ -394,7 +393,7 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     };
-    use tracker_application::TaskOperations;
+
     use tracker_protocol::{
         HealthDto, MutationDto, MutationResultDto, TaskDto, TaskResourceDto, WorklogDto,
     };
@@ -543,7 +542,7 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
         routing::{get, patch},
     };
     use std::sync::{Arc, Mutex};
-    use tracker_application::TaskOperations;
+
     use tracker_protocol::{MutationDto, MutationResultDto, TaskDto};
     for action in ["rename", "archive", "restore"] {
         for replayed in [false, true] {
@@ -674,7 +673,7 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     };
-    use tracker_application::TaskOperations;
+
     use tracker_protocol::{
         ErrorCode, ErrorDto, HealthDto, MutationDto, MutationResultDto, TaskResourceDto,
     };

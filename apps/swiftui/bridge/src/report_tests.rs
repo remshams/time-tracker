@@ -1,5 +1,5 @@
 use super::*;
-use tracker_application::{TaskOperations, TaskQueries, TrackingOperations, WORKLOG_PAGE_SIZE};
+use tracker_application::WORKLOG_PAGE_SIZE;
 
 fn response(pointer: *mut c_char) -> Value {
     assert!(!pointer.is_null());
