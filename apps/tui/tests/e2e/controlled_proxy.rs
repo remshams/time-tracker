@@ -12,6 +12,7 @@ const REQUEST_LIMIT: Duration = Duration::from_secs(5);
 #[derive(Clone, Copy)]
 pub(crate) enum Route {
     Tasks,
+    TaskList,
     CreateTask,
     InactivePreview,
     ArchiveInactive,
@@ -22,6 +23,7 @@ impl Route {
     fn matches(self, method: &str, path: &str) -> bool {
         match self {
             Self::Tasks => method == "GET" && path == "/v1/tasks",
+            Self::TaskList => method == "GET" && path == "/v1/state/task-list",
             Self::CreateTask => method == "POST" && path == "/v1/tasks",
             Self::InactivePreview => {
                 method == "GET" && path.starts_with("/v1/tasks/inactive-preview?")
