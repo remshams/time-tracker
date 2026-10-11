@@ -3,7 +3,8 @@ import TrackerClient
 
 @MainActor
 struct TaskCreationDialog: View {
-    @ObservedObject var creation: TaskCreationStore
+    let session: TrackerSession
+    @ObservedObject var creation: TaskCreationModel
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -12,27 +13,28 @@ struct TaskCreationDialog: View {
             .sheet(
                 isPresented: Binding(
                     get: { isPresentationOwner && creation.state.isPresented },
-                    set: { if isPresentationOwner && !$0 { creation.cancel() } }
+                    set: { if isPresentationOwner && !$0 { session.cancelTaskCreation() } }
                 )
             ) {
-                TaskCreationSheet(creation: creation)
+                TaskCreationSheet(session: session, creation: creation)
             }
     }
 }
 
 @MainActor
 private struct TaskCreationSheet: View {
-    @ObservedObject var creation: TaskCreationStore
+    let session: TrackerSession
+    @ObservedObject var creation: TaskCreationModel
 
     var body: some View {
-        let state = creation.state
+        let state = creation.sheetContent
         TaskNameSheet(
             title: "New task",
             name: Binding(
-                get: { creation.state.name }, set: { creation.setName($0) }
+                get: { creation.sheetContent.name }, set: { session.setTaskCreationName($0) }
             ), actionTitle: state.error != nil && !state.canEditName ? "Retry" : "Create",
             progressTitle: "Creating task...", isSubmitting: state.isSubmitting,
             canEditName: state.canEditName, canSubmit: state.canSubmit, error: state.error,
-            cancel: creation.cancel, submit: creation.submit)
+            cancel: session.cancelTaskCreation, submit: session.submitTaskCreation)
     }
 }

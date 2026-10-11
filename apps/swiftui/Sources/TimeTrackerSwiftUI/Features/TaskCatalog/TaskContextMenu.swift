@@ -1,10 +1,12 @@
 import SwiftUI
+import TrackerClient
 
 @MainActor
 struct TaskContextMenu: View {
-    @ObservedObject var creation: TaskCreationStore
-    @ObservedObject var rename: TaskRenameStore
-    @ObservedObject var archiving: TaskArchivingStore
+    let session: TrackerSession
+    @ObservedObject var creation: TaskCreationModel
+    @ObservedObject var rename: TaskRenameModel
+    @ObservedObject var archiving: TaskArchivingModel
     let taskID: String?
     var taskIsArchived = false
     var taskIsRunning = false
@@ -16,23 +18,23 @@ struct TaskContextMenu: View {
     var body: some View {
         Button("New task") {
             guard creation.canOpen, !hasTaskEditor else { return }
-            creation.open()
+            session.openTaskCreation()
         }
         .disabled(!creation.canOpen || hasTaskEditor)
         if let taskID {
             Button("Edit name") {
                 guard rename.canOpen, !hasTaskEditor else { return }
-                rename.open(taskID: taskID)
+                session.openTaskRename(taskID: taskID)
             }
             .disabled(!rename.canOpen || hasTaskEditor)
 
             Divider()
             if taskIsArchived {
-                Button("Unarchive task") { archiving.unarchive(taskID: taskID) }
-                    .disabled(!archiving.canUnarchive(taskID: taskID))
+                Button("Unarchive task") { session.unarchiveTask(taskID: taskID) }
+                    .disabled(!session.canUnarchiveTask(taskID: taskID))
             } else {
-                Button("Archive task...") { archiving.openArchive(taskID: taskID) }
-                    .disabled(!archiving.canArchive(taskID: taskID))
+                Button("Archive task...") { session.openTaskArchive(taskID: taskID) }
+                    .disabled(!session.canArchiveTask(taskID: taskID))
                     .help(taskIsRunning ? "Stop tracking before archiving this task" : "Archive this task")
             }
         }

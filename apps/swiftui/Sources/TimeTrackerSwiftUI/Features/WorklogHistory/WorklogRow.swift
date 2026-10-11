@@ -2,11 +2,12 @@ import SwiftUI
 import TrackerClient
 
 struct WorklogRow: View {
+    let session: TrackerSession
     let worklog: WorklogItem
     let active: WorklogItem?
     let timer: TrackerTimerStore
-    let correction: WorklogCorrectionStore
-    let move: WorklogMoveStore
+    let correction: WorklogCorrectionModel
+    let move: WorklogMoveModel
     let deletion: WorklogDeletionStore
 
     private var duration: TimeInterval {
@@ -36,7 +37,8 @@ struct WorklogRow: View {
             .foregroundStyle(.primary)
             .monospacedDigit()
             .fixedSize()
-            WorklogActionsMenu(correction: correction, move: move, deletion: deletion, worklog: worklog)
+            WorklogActionsMenu(
+                session: session, correction: correction, move: move, deletion: deletion, worklog: worklog)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("worklog-history.row.\(worklog.id)")
@@ -47,21 +49,24 @@ struct WorklogRow: View {
                 .stroke(.quaternary, lineWidth: 1)
         }
         .contextMenu {
-            WorklogContextMenu(correction: correction, move: move, deletion: deletion, worklog: worklog)
+            WorklogContextMenu(
+                session: session, correction: correction, move: move, deletion: deletion, worklog: worklog)
         }
     }
 }
 
 @MainActor
 private struct WorklogActionsMenu: View {
-    @ObservedObject var correction: WorklogCorrectionStore
-    @ObservedObject var move: WorklogMoveStore
+    let session: TrackerSession
+    @ObservedObject var correction: WorklogCorrectionModel
+    @ObservedObject var move: WorklogMoveModel
     @ObservedObject var deletion: WorklogDeletionStore
     let worklog: WorklogItem
 
     var body: some View {
         Menu {
-            WorklogContextMenu(correction: correction, move: move, deletion: deletion, worklog: worklog)
+            WorklogContextMenu(
+                session: session, correction: correction, move: move, deletion: deletion, worklog: worklog)
         } label: {
             Label("Worklog actions", systemImage: "ellipsis.circle")
                 .labelStyle(.iconOnly)
@@ -80,15 +85,16 @@ private struct WorklogActionsMenu: View {
 
 @MainActor
 private struct WorklogContextMenu: View {
-    @ObservedObject var correction: WorklogCorrectionStore
-    @ObservedObject var move: WorklogMoveStore
+    let session: TrackerSession
+    @ObservedObject var correction: WorklogCorrectionModel
+    @ObservedObject var move: WorklogMoveModel
     @ObservedObject var deletion: WorklogDeletionStore
     let worklog: WorklogItem
 
     var body: some View {
-        Button("Edit times...") { correction.open(worklogID: worklog.id) }
+        Button("Edit times...") { session.openWorklogCorrection(worklogID: worklog.id) }
             .disabled(!correction.canOpen || correction.state.isPresented)
-        Button("Move to task...") { move.open(worklogID: worklog.id) }
+        Button("Move to task...") { session.openWorklogMove(worklogID: worklog.id) }
             .disabled(!move.canOpen || move.state.isPresented)
         Divider()
         // Running worklogs cannot be deleted. Stop the timer first.

@@ -3,7 +3,8 @@ import TrackerClient
 
 @MainActor
 struct WorklogCorrectionDialog: View {
-    @ObservedObject var correction: WorklogCorrectionStore
+    let session: TrackerSession
+    @ObservedObject var correction: WorklogCorrectionModel
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -12,17 +13,18 @@ struct WorklogCorrectionDialog: View {
             .sheet(
                 isPresented: Binding(
                     get: { isPresentationOwner && correction.state.isPresented },
-                    set: { if isPresentationOwner && !$0 { correction.cancel() } }
+                    set: { if isPresentationOwner && !$0 { session.cancelWorklogCorrection() } }
                 )
             ) {
-                WorklogCorrectionSheet(correction: correction)
+                WorklogCorrectionSheet(session: session, correction: correction)
             }
     }
 }
 
 @MainActor
 private struct WorklogCorrectionSheet: View {
-    @ObservedObject var correction: WorklogCorrectionStore
+    let session: TrackerSession
+    @ObservedObject var correction: WorklogCorrectionModel
 
     private var timezone: TimeZone {
         TimeZone(identifier: correction.sheetContent.timezoneIdentifier) ?? .gmt
@@ -44,7 +46,7 @@ private struct WorklogCorrectionSheet: View {
                     DatePicker(
                         "Start",
                         selection: Binding(
-                            get: { correction.sheetContent.start }, set: { correction.setStart($0) }
+                            get: { correction.sheetContent.start }, set: { session.setWorklogCorrectionStart($0) }
                         ), displayedComponents: [.date, .hourAndMinute]
                     )
                     .labelsHidden()
@@ -58,7 +60,7 @@ private struct WorklogCorrectionSheet: View {
                             "End",
                             selection: Binding(
                                 get: { correction.sheetContent.end ?? correction.sheetContent.start },
-                                set: { correction.setEnd($0) }
+                                set: { session.setWorklogCorrectionEnd($0) }
                             ), displayedComponents: [.date, .hourAndMinute]
                         )
                         .labelsHidden()
@@ -109,7 +111,7 @@ private struct WorklogCorrectionSheet: View {
                     Text("Latest saved times").font(.subheadline.weight(.semibold))
                     Text("Start: \(formatted(latest.start))")
                     Text(latest.end.map { "End: \(formatted($0))" } ?? "Still running")
-                    Button("Review latest entry") { correction.reviewLatest() }
+                    Button("Review latest entry") { session.reviewLatestWorklogCorrection() }
                         .accessibilityIdentifier("worklog-correction.review")
                         .disabled(state.isSubmitting)
                 }
@@ -123,12 +125,12 @@ private struct WorklogCorrectionSheet: View {
                     isBusy: state.isSubmitting, title: "Saving worklog...",
                     identifier: "worklog-correction.progress")
                 Spacer()
-                Button("Cancel") { correction.cancel() }
+                Button("Cancel") { session.cancelWorklogCorrection() }
                     .accessibilityIdentifier("worklog-correction.cancel")
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
                 Button(state.error != nil && !state.canEdit && state.canSubmit ? "Retry" : "Save") {
-                    correction.submit()
+                    session.submitWorklogCorrection()
                 }
                 .accessibilityIdentifier("worklog-correction.save")
                 .keyboardShortcut(.defaultAction)
@@ -150,16 +152,17 @@ private struct WorklogCorrectionSheet: View {
 
 @MainActor
 struct WorklogHistoryHeading: View {
-    @ObservedObject var correction: WorklogCorrectionStore
-    @ObservedObject var move: WorklogMoveStore
+    let session: TrackerSession
+    @ObservedObject var correction: WorklogCorrectionModel
+    @ObservedObject var move: WorklogMoveModel
     @ObservedObject var deletion: WorklogDeletionStore
 
     var body: some View {
         HStack {
             Text("Worklogs").font(.title3.weight(.semibold))
             Spacer()
-            PendingWorklogCorrectionButton(correction: correction)
-            PendingWorklogMoveButton(move: move)
+            PendingWorklogCorrectionButton(session: session, correction: correction)
+            PendingWorklogMoveButton(session: session, move: move)
             PendingWorklogDeletionButton(deletion: deletion)
         }
         .padding(.bottom, 4)
@@ -168,11 +171,12 @@ struct WorklogHistoryHeading: View {
 
 @MainActor
 struct PendingWorklogCorrectionButton: View {
-    @ObservedObject var correction: WorklogCorrectionStore
+    let session: TrackerSession
+    @ObservedObject var correction: WorklogCorrectionModel
 
     var body: some View {
         if !correction.state.isPresented, let original = correction.state.original {
-            Button("Retry worklog edit") { correction.open(worklogID: original.id) }
+            Button("Retry worklog edit") { session.openWorklogCorrection(worklogID: original.id) }
                 .disabled(!correction.canOpen)
         }
     }
