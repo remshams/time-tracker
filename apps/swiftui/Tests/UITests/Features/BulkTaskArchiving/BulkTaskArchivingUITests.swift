@@ -76,6 +76,30 @@ final class BulkTaskArchivingUITests: TrackerUITestCase {
         try assertRunningTimer()
     }
 
+    func testDelayedRefreshShowsProgressWithoutMovingTheDialogAndCancelsOnDismissal() throws {
+        openDialog()
+        assertCandidates([seed.old, seed.medium], count: 2)
+        let frame = app.sheets.firstMatch.frame
+        let progress = element("bulk-archive.refresh-progress")
+        XCTAssertFalse(progress.exists)
+        try fixture.withLockedDatabase {
+            app.buttons["bulk-archive.refresh"].click()
+            assertLoading()
+            XCTAssertFalse(confirm.isEnabled)
+            XCTAssertTrue(progress.waitForExistence(timeout: timeout))
+            XCTAssertTrue(element("bulk-archive.candidate.\(seed.old.id)").exists)
+            assertDialogFrame(frame)
+            cancelDialog()
+        }
+        openDialog()
+        assertCandidates([seed.old, seed.medium], count: 2)
+        waitUntil("Refresh completes with no stale progress indicator") {
+            self.app.buttons["bulk-archive.refresh"].isEnabled && !progress.exists
+        }
+        assertDialogFrame(frame)
+        cancelDialog()
+    }
+
     func testInvalidPeriodsDisableConfirmationAndValidInputRecovers() throws {
         openDialog()
         assertCandidates([seed.old, seed.medium], count: 2)
