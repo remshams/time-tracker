@@ -66,18 +66,19 @@ private struct WorklogMoveSheet: View {
             }
             .onSubmit { if move.state.canSubmit { move.submit() } }
 
-            Group {
-                if state.isSearching {
-                    VStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading destinations...").foregroundStyle(.secondary)
+            VStack(spacing: 8) {
+                DelayedProgressIndicator(
+                    isBusy: state.isSearching, title: "Loading destinations...",
+                    identifier: "worklog-move.search-progress")
+                if state.candidates.isEmpty {
+                    if !state.isSearching {
+                        Text(state.query.isEmpty ? "No available destination tasks." : "No matching tasks.")
+                            .accessibilityIdentifier("worklog-move.empty")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        Spacer()
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if state.candidates.isEmpty {
-                    Text(state.query.isEmpty ? "No available destination tasks." : "No matching tasks.")
-                        .accessibilityIdentifier("worklog-move.empty")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollViewReader { proxy in
                         List(
@@ -96,7 +97,7 @@ private struct WorklogMoveSheet: View {
                             }
                         }
                         .listStyle(.inset)
-                        .disabled(!state.canEdit)
+                        .disabled(!state.canEdit || state.isSearching)
                         .onChange(of: state.selectedTaskID) { _, taskID in
                             if let taskID { proxy.scrollTo(taskID) }
                         }
@@ -130,10 +131,9 @@ private struct WorklogMoveSheet: View {
             }
 
             HStack(spacing: 12) {
-                if state.isSubmitting {
-                    ProgressView().controlSize(.small)
-                    Text("Moving worklog...").foregroundStyle(.secondary)
-                }
+                DelayedProgressIndicator(
+                    isBusy: state.isSubmitting, title: "Moving worklog...",
+                    identifier: "worklog-move.submit-progress")
                 Spacer()
                 Button("Cancel") { move.cancel() }
                     .accessibilityIdentifier("worklog-move.cancel")
