@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TaskCreationPresentation: Equatable, Sendable {
+public struct TaskCreationPresentation: TrackerDialogState {
     public let isPresented: Bool
     public let name: String
     public let isSubmitting: Bool

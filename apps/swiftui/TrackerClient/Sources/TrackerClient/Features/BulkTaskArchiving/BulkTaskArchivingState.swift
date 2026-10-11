@@ -1,6 +1,6 @@
 import Foundation
 
-public struct BulkTaskArchivingPresentation: Equatable, Sendable {
+public struct BulkTaskArchivingPresentation: TrackerDialogState {
     public let isPresented: Bool
     public let daysText: String
     public let isLoading: Bool

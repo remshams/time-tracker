@@ -12,50 +12,17 @@ public final class TrackerPresentationObserver {
     public var onTimerChange: (() -> Void)?
     public var onDailyTotalsChange: (() -> Void)?
     public var onTaskDailyTotalsChange: ((Set<String>) -> Void)?
-    public var onTaskCreationChange: (() -> Void)?
-    public var onBulkTaskArchivingChange: (() -> Void)?
-    public private(set) var bulkTaskArchivingSheetContent: BulkTaskArchivingPresentation
-    private var bulkArchiving: BulkTaskArchivingPresentation
-    private var canOpenBulkArchiving: Bool
-    public var onTaskArchivingChange: (() -> Void)?
-    public private(set) var taskArchivingSheetContent: TaskArchivingPresentation
-    private var archiving: TaskArchivingPresentation
-    private var archiveAvailability: [String: Bool]
-    public var onTaskRenameChange: (() -> Void)?
-    public var onWorklogMoveChange: (() -> Void)?
-    public private(set) var worklogMoveSheetContent: WorklogMovePresentation
-    private var move: WorklogMovePresentation
-    private var canOpenMove: Bool
-    public var onWorklogCorrectionChange: (() -> Void)?
-    public private(set) var worklogCorrectionSheetContent: WorklogCorrectionPresentation
     public var onWorklogDeletionChange: (() -> Void)?
     public private(set) var worklogDeletionSheetContent: WorklogDeletionPresentation
     private var deletion: WorklogDeletionPresentation
     private var canOpenDeletion: Bool
-
     private var content: Content
     private var activity: Activity
     private var timerText: String
     private var daily: DailyPresentation
-    private var creation: TaskCreationPresentation
-    private var canOpenCreation: Bool
-    private var rename: TaskRenamePresentation
-    private var canOpenRename: Bool
-    private var correction: WorklogCorrectionPresentation
-    private var canOpenCorrection: Bool
-
     public var taskDailyTotals: [String: TaskDailyTotalPresentation] { daily.taskTotals }
 
     public init(session: TrackerSession) {
-        bulkArchiving = session.bulkTaskArchiving
-        bulkTaskArchivingSheetContent = bulkArchiving
-        canOpenBulkArchiving = session.canOpenBulkTaskArchiving
-        archiving = session.taskArchiving
-        taskArchivingSheetContent = archiving
-        archiveAvailability = session.taskArchivingAvailability
-        move = session.worklogMove
-        canOpenMove = session.canOpenWorklogMove
-        worklogMoveSheetContent = move
         deletion = session.worklogDeletion
         canOpenDeletion = session.canOpenWorklogDeletion
         worklogDeletionSheetContent = deletion
@@ -63,34 +30,9 @@ public final class TrackerPresentationObserver {
         activity = Activity(session)
         timerText = session.timerDisplayText
         daily = DailyPresentation(session)
-        creation = session.taskCreation
-        canOpenCreation = session.canOpenTaskCreation
-        rename = session.taskRename
-        canOpenRename = session.canOpenTaskRename
-        correction = session.worklogCorrection
-        worklogCorrectionSheetContent = correction
-        canOpenCorrection = session.canOpenWorklogCorrection
     }
 
     public func update(from session: TrackerSession) {
-        let nextBulk = session.bulkTaskArchiving
-        let nextCanOpenBulk = session.canOpenBulkTaskArchiving
-        let bulkChanged = bulkArchiving != nextBulk || canOpenBulkArchiving != nextCanOpenBulk
-        bulkArchiving = nextBulk
-        canOpenBulkArchiving = nextCanOpenBulk
-        if nextBulk.isPresented { bulkTaskArchivingSheetContent = nextBulk }
-        let nextArchiving = session.taskArchiving
-        let nextArchiveAvailability = session.taskArchivingAvailability
-        let archivingChanged = archiving != nextArchiving || archiveAvailability != nextArchiveAvailability
-        archiving = nextArchiving
-        archiveAvailability = nextArchiveAvailability
-        if nextArchiving.isPresented { taskArchivingSheetContent = nextArchiving }
-        let nextMove = session.worklogMove
-        let nextCanOpenMove = session.canOpenWorklogMove
-        let moveChanged = move != nextMove || canOpenMove != nextCanOpenMove
-        move = nextMove
-        canOpenMove = nextCanOpenMove
-        if nextMove.isPresented { worklogMoveSheetContent = nextMove }
         let nextDeletion = session.worklogDeletion
         let nextCanOpenDeletion = session.canOpenWorklogDeletion
         let deletionChanged = deletion != nextDeletion || canOpenDeletion != nextCanOpenDeletion
@@ -101,45 +43,22 @@ public final class TrackerPresentationObserver {
         let nextActivity = Activity(session)
         let nextTimerText = session.timerDisplayText
         let nextDaily = DailyPresentation(session)
-        let nextCreation = session.taskCreation
-        let nextCanOpenCreation = session.canOpenTaskCreation
-        let nextRename = session.taskRename
-        let nextCanOpenRename = session.canOpenTaskRename
-        let nextCorrection = session.worklogCorrection
-        let nextCanOpenCorrection = session.canOpenWorklogCorrection
         let contentChanged = content != nextContent
         let activityChanged = activity != nextActivity
         let timerChanged = timerText != nextTimerText
         let dailyChanged = daily != nextDaily
         let changedTaskTotals = Set(daily.taskTotals.keys).union(nextDaily.taskTotals.keys)
             .filter { totalChanged(daily.taskTotals[$0], nextDaily.taskTotals[$0]) }
-        let creationChanged = creation != nextCreation || canOpenCreation != nextCanOpenCreation
-        let renameChanged = rename != nextRename || canOpenRename != nextCanOpenRename
-        let correctionChanged = correction != nextCorrection || canOpenCorrection != nextCanOpenCorrection
         content = nextContent
         activity = nextActivity
         timerText = nextTimerText
         daily = nextDaily
-        creation = nextCreation
-        canOpenCreation = nextCanOpenCreation
-        rename = nextRename
-        canOpenRename = nextCanOpenRename
-        correction = nextCorrection
-        // SwiftUI continues rendering the sheet while its dismissal animates.
-        if nextCorrection.isPresented { worklogCorrectionSheetContent = nextCorrection }
-        canOpenCorrection = nextCanOpenCorrection
-        if bulkChanged { onBulkTaskArchivingChange?() }
-        if archivingChanged { onTaskArchivingChange?() }
-        if moveChanged { onWorklogMoveChange?() }
         if deletionChanged { onWorklogDeletionChange?() }
         if contentChanged { onContentChange?() }
         if activityChanged { onActivityChange?() }
         if timerChanged { onTimerChange?() }
         if dailyChanged { onDailyTotalsChange?() }
         if !changedTaskTotals.isEmpty { onTaskDailyTotalsChange?(changedTaskTotals) }
-        if creationChanged { onTaskCreationChange?() }
-        if renameChanged { onTaskRenameChange?() }
-        if correctionChanged { onWorklogCorrectionChange?() }
     }
 
     private func totalChanged(_ previous: TaskDailyTotalPresentation?, _ current: TaskDailyTotalPresentation?) -> Bool {
