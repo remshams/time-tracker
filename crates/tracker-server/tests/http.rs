@@ -1155,6 +1155,45 @@ async fn reports_echo_normalized_times_and_include_archived_and_running_work_wit
         rows[1],
         json!({"task_id": running_task.id().to_string(), "duration_us": 2_123_456})
     );
+    let aggregate_uri = uri.replace("/v1/reports/task-totals", "/v1/state/daily-overview");
+    let (status, aggregate) = call(&router, Method::GET, &aggregate_uri, None).await;
+    assert_eq!(status, StatusCode::OK, "{aggregate}");
+    let overview: tracker_protocol::DailyOverviewDto =
+        serde_json::from_value(aggregate.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&overview.totals).unwrap(), report);
+    assert_eq!(overview.tasks.len(), 2);
+    assert!(
+        overview
+            .tasks
+            .iter()
+            .any(|task| task.id == completed_task.id().to_string() && task.archived)
+    );
+    assert_eq!(
+        overview.active_worklog.as_ref().unwrap().id,
+        running.id().to_string()
+    );
+    assert_eq!(
+        overview
+            .tasks
+            .iter()
+            .find(|task| task.id == running_task.id().to_string())
+            .unwrap()
+            .latest_work_start,
+        Some(at(20))
+    );
+    assert_keys(
+        &aggregate,
+        &[
+            "tasks",
+            "active_worklog",
+            "start",
+            "end",
+            "now",
+            "rows",
+            "total_us",
+            "revision",
+        ],
+    );
     let (status, early) = call(&router, Method::GET, "/v1/reports/task-totals?start=1970-01-01T00:00:00Z&end=1970-01-01T00:00:30Z&now=1970-01-01T00:00:10Z", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
@@ -1370,4 +1409,73 @@ async fn removed_bundled_routes_and_parallel_versions_are_unavailable() {
     )
     .await;
     assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+}
+
+#[tokio::test]
+async fn aggregate_routes_load_empty_idle_state_and_validate_interval_parameters() {
+    let directory = TempDir::new().unwrap();
+    let router = tracker_server::router_for_database(&directory.path().join("empty.db")).unwrap();
+    let (status, body) = call(&router, Method::GET, "/v1/state/task-list", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let state: tracker_protocol::TaskListStateDto = serde_json::from_value(body.clone()).unwrap();
+    assert!(state.tasks.is_empty());
+    assert!(state.active_worklog.is_none());
+    assert!(!state.revision.is_empty());
+    assert_keys(&body, &["tasks", "active_worklog", "revision"]);
+    for query in [
+        "",
+        "?start=bad&end=bad&now=bad",
+        "?start=1970-01-01T00:00:10Z&end=1970-01-01T00:00:10Z&now=1970-01-01T00:00:10Z",
+        "?start=1970-01-01T00:00:00Z&end=1970-01-01T00:00:10Z",
+        "?start=1970-01-01T00:00:00Z&end=1970-01-01T00:00:10Z&now=1970-01-01T00:00:05Z&extra=true",
+    ] {
+        let (status, _) = call(
+            &router,
+            Method::GET,
+            &format!("/v1/state/daily-overview{query}"),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{query}");
+    }
+    let uri = "/v1/state/daily-overview?start=1970-01-01T00:00:00Z&end=1970-01-01T00:00:10Z&now=1970-01-01T00:00:05Z";
+    let (status, body) = call(&router, Method::GET, uri, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let overview: tracker_protocol::DailyOverviewDto = serde_json::from_value(body).unwrap();
+    assert!(overview.tasks.is_empty());
+    assert!(overview.active_worklog.is_none());
+    assert!(overview.totals.rows.is_empty());
+    assert_eq!(overview.totals.total_us, 0);
+    assert_eq!(overview.totals.revision, state.revision);
+}
+
+#[tokio::test]
+async fn aggregate_routes_refresh_both_resources_after_database_changes() {
+    use tracker_domain::{Worklog, WorklogId};
+    let directory = TempDir::new().unwrap();
+    let database = directory.path().join("refresh.db");
+    let outside = SqliteRepository::open(&database).unwrap();
+    let router = tracker_server::router_for_database(&database).unwrap();
+    let task = Task::create(
+        TaskId::generate(),
+        TaskName::new("New task").unwrap(),
+        at(1),
+    );
+    outside.create_task(task.clone()).unwrap();
+    let worklog = Worklog::begin(WorklogId::generate(), task.id(), at(2));
+    outside.insert_worklog(&worklog).unwrap();
+    for uri in [
+        "/v1/state/task-list",
+        "/v1/state/daily-overview?start=1970-01-01T00:00:00Z&end=1970-01-01T00:00:10Z&now=1970-01-01T00:00:05Z",
+    ] {
+        let (status, body) = call(&router, Method::GET, uri, None).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["tasks"][0]["id"], task.id().to_string());
+        assert_eq!(body["tasks"][0]["latest_work_start"], json!(at(2)));
+        assert_eq!(body["active_worklog"]["id"], worklog.id().to_string());
+        assert_eq!(body["active_worklog"]["task_id"], body["tasks"][0]["id"]);
+        if uri.contains("daily-overview") {
+            assert_eq!(body["total_us"], 3_000_000);
+        }
+    }
 }
