@@ -2768,8 +2768,16 @@ async fn selected_totals_refreshes_publish_together_and_keep_confirmed_resources
                                 end: None,
                             }),
                             totals: ReportDto {
-                                start: at,
-                                end: at + Duration::hours(1),
+                                start: if mode == 6 {
+                                    at - Duration::seconds(1)
+                                } else {
+                                    at
+                                },
+                                end: if mode == 7 {
+                                    at + Duration::hours(2)
+                                } else {
+                                    at + Duration::hours(1)
+                                },
                                 now: if mode == 1 {
                                     at + Duration::seconds(1)
                                 } else {
@@ -2803,9 +2811,10 @@ async fn selected_totals_refreshes_publish_together_and_keep_confirmed_resources
         TrackingState::Idle
     );
     assert_eq!(client.report_revision(), "confirmed");
+    assert_eq!(client.report_observation().unwrap().total_us, 0);
     let tracking = client.tracking_observation().cloned();
     let report = client.report_observation().cloned();
-    for invalid_mode in [1, 2, 3, 5] {
+    for invalid_mode in [1, 2, 3, 5, 6, 7] {
         mode.store(invalid_mode, Ordering::SeqCst);
         let before = reads.load(Ordering::SeqCst);
         client.refresh_resources(task_list).await.unwrap_err();
