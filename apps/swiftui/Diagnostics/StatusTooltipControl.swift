@@ -54,27 +54,42 @@ final class TooltipControl: NSObject, NSApplicationDelegate {
             self.movePointer(to: CGPoint(x: 400, y: 400))
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 46) {
+            self.hover(button, leadingIcon: true, withDelta: true)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 66) {
+            self.capture("status-movement-delta")
+            self.movePointer(to: CGPoint(x: 400, y: 400))
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 68) {
             self.hover(self.toolbarButton, leadingIcon: false)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 51) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 73) {
             self.capture("toolbar-control")
             NSApplication.shared.terminate(nil)
         }
     }
 
-    private func hover(_ button: NSButton, leadingIcon: Bool) {
+    private func hover(_ button: NSButton, leadingIcon: Bool, withDelta: Bool = false) {
         guard let window = button.window else { fatalError("Button has no window") }
         let frame = window.convertToScreen(button.convert(button.bounds, to: nil))
         let x = leadingIcon ? frame.minX + min(18, frame.width / 2) : frame.midX
         let point = CGPoint(x: x, y: CGDisplayBounds(CGMainDisplayID()).height - frame.midY)
         print("Hover frame: \(frame), Quartz point: \(point)")
-        movePointer(to: point)
+        movePointer(to: point, withDelta: withDelta)
     }
 
-    private func movePointer(to point: CGPoint) {
+    private func movePointer(to point: CGPoint, withDelta: Bool = false) {
         guard let event = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved,
                                   mouseCursorPosition: point, mouseButton: .left) else {
             fatalError("Cannot create mouse event")
+        }
+        if withDelta {
+            print("Default movement delta: \(event.getIntegerValueField(.mouseEventDeltaX)), \(event.getIntegerValueField(.mouseEventDeltaY))")
+            let origin = NSEvent.mouseLocation
+            let originY = CGDisplayBounds(CGMainDisplayID()).height - origin.y
+            event.setIntegerValueField(.mouseEventDeltaX, value: Int64((point.x - origin.x).rounded()))
+            event.setIntegerValueField(.mouseEventDeltaY, value: Int64((point.y - originY).rounded()))
+            print("Posted movement delta: \(event.getIntegerValueField(.mouseEventDeltaX)), \(event.getIntegerValueField(.mouseEventDeltaY))")
         }
         event.post(tap: .cghidEventTap)
     }
