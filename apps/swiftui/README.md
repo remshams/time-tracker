@@ -211,6 +211,27 @@ apps/swiftui/check-native-layout.sh
 
 This check compiles the production `TrackerSplitLayout` without the Rust bridge or a server. A SwiftUI `App` and `WindowGroup` create two fixture windows. It checks that task headings and connection footers stay outside the window chrome at two window sizes, with compact and expanded toolbars and changes in toolbar visibility. It also hides and restores one sidebar, checks that detail width follows the change, and confirms that the other window keeps its layout. It requires a macOS desktop session and cannot run on Linux. It checks the shared split layout, not the complete app. Build the app and use the manual checks below to validate command routing, Settings, and dialog ownership.
 
+## Diagnose external window switching
+
+These diagnostics investigate [issue #22](https://github.com/remshams/time-tracker/issues/22). They add no production workaround. Establish a failing window operation before changing the app's window behavior.
+
+The `mac` UI group includes `WindowRoutingUITests.testExternalAccessibilityCanFocusBackgroundTrackerWindow`. It backgrounds Time Tracker, then uses macOS Accessibility calls to raise and focus its existing window. The test runner must have Accessibility permission. A missing grant fails the test with a prerequisite message.
+
+To inspect the app that a window switcher fails to focus, build the standalone probe on a Mac from the repository root:
+
+```sh
+mkdir -p .build
+xcrun swiftc -parse-as-library scripts/probe-window-accessibility.swift -o .build/probe-window-accessibility
+.build/probe-window-accessibility com.timetracker.swiftui
+.build/probe-window-accessibility com.timetracker.swiftui --focus 0
+```
+
+Keep a Time Tracker window open and activate another app before the focus command. Give the probe Accessibility permission in System Settings if it reports that prerequisite. Inspection lists windows by index; use the desired index for `--focus`. The focus command raises the selected window and brings Time Tracker forward. It does not submit tracker commands or change stored data.
+
+The probe prints JSON records with window roles, supported actions, writable attributes, raw Apple AX error codes, and the focus result. It omits window titles, task names, identifiers, and window geometry values. Exit code 0 means inspection completed or the requested focus succeeded; 1 means an AX operation or focus check failed; 2 means a prerequisite is missing. Inspection records may contain failed attribute reads even when inspection completes, so inspect the individual records.
+
+A successful AX probe does not establish that Raycast's switcher works. Run the failing Raycast action separately on the same app build. Raycast's `AXUIElementRef.Error error 15` belongs to its wrapper; it is not an Apple AX error code. Apple's [raise action](https://developer.apple.com/documentation/applicationservices/kaxraiseaction) raises a window within its application. The probe also requests application activation and verifies the [focused window](https://developer.apple.com/documentation/applicationservices/kaxfocusedwindowattribute).
+
 ## Coverage and mutation testing
 
 Run these commands from the repository root on Linux or macOS. The scripts require Python 3.12 or newer. Coverage uses the selected Swift toolchain's `llvm-cov`, with `xcrun` as a fallback on macOS:
