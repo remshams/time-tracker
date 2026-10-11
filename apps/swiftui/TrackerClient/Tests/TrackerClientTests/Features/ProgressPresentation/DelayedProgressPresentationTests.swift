@@ -12,6 +12,7 @@ final class DelayedProgressPresentationTests: XCTestCase {
         XCTAssertFalse(values.contains(true))
         progress.update(isBusy: false) { values.append($0) }
         await clock.release(0)
+        XCTAssertEqual(clock.cancelled[0], true)
         XCTAssertFalse(values.contains(true))
     }
 
@@ -39,6 +40,7 @@ final class DelayedProgressPresentationTests: XCTestCase {
         progress.update(isBusy: true) { visible = $0 }
         await clock.waitForRequests(2)
         await clock.release(0)
+        XCTAssertEqual(clock.cancelled[0], true)
         XCTAssertFalse(visible)
         await clock.release(1)
         XCTAssertTrue(visible)
@@ -66,6 +68,7 @@ final class DelayedProgressPresentationTests: XCTestCase {
         await clock.waitForRequests(1)
         progress.cancel()
         await clock.release(0)
+        XCTAssertEqual(clock.cancelled[0], true)
         XCTAssertFalse(visible)
         progress.update(isBusy: true) { visible = $0 }
         await clock.waitForRequests(2)
@@ -85,6 +88,7 @@ final class DelayedProgressPresentationTests: XCTestCase {
         progress = nil
         XCTAssertNil(weakProgress)
         await clock.release(0)
+        XCTAssertEqual(clock.cancelled[0], true)
         XCTAssertFalse(visible)
     }
 }
@@ -93,11 +97,13 @@ final class DelayedProgressPresentationTests: XCTestCase {
 private final class ProgressClock {
     private var pending: [Int: CheckedContinuation<Void, Never>] = [:]
     private(set) var delays: [Duration] = []
+    private(set) var cancelled: [Int: Bool] = [:]
 
     func sleep(_ delay: Duration) async throws {
         let index = delays.count
         delays.append(delay)
         await withCheckedContinuation { pending[index] = $0 }
+        cancelled[index] = Task.isCancelled
     }
 
     func waitForRequests(_ count: Int) async {
