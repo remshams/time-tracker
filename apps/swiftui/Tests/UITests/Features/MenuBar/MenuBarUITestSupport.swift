@@ -19,9 +19,9 @@ extension TrackerUITestCase {
     func assertStatusTooltip(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
         trackerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
         let frame = statusButton.frame
-        // Hover the leading icon instead of the text portion of the status button.
-        let iconX = frame.minX + min(18, frame.width / 2)
-        screenCoordinate(at: CGPoint(x: iconX, y: frame.midY)).hover()
+        // Anchor the hover to the status button's window and target its leading icon.
+        let iconOffset = CGVector(dx: min(18, frame.width / 2), dy: frame.height / 2)
+        statusButton.coordinate(withNormalizedOffset: .zero).withOffset(iconOffset).hover()
         var screenshot: XCUIScreenshot?
         var recognizedText = ""
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
