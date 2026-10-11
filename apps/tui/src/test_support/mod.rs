@@ -382,10 +382,6 @@ impl TrackerApplicationService for TestService {
         items
     }
 
-    fn task(&self, id: TaskId) -> Option<&Task> {
-        self.tasks.iter().find(|task| task.id() == id)
-    }
-
     fn create_task(
         &mut self,
         name: TaskName,
