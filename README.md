@@ -185,7 +185,7 @@ Run mutation checks on the production files affected by the task:
 cargo mutants --workspace --file crates/tracker-domain/src/task.rs
 ```
 
-Repeat `--file` for multiple files, or use `--package <name>` for an affected crate. Add `--test-workspace true` when selected mutants rely on tests in other crates. Include production code exercised by changed tests and widen the scope for shared code or build input changes. Documentation-only changes skip mutation checks. The scope rules in `AGENTS.md` also cover the portable Swift client. Routine full mutation runs are deferred until CI is set up.
+Repeat `--file` for multiple files, or use `--package <name>` for an affected crate. Add `--test-workspace true` when selected mutants rely on tests in other crates. Include production code exercised by changed tests and widen the scope for shared code or build input changes. Documentation-only changes skip mutation checks. The scope rules in `AGENTS.md` also cover the portable Swift client. Pull requests run the focused Swift mutation check; full Rust and Swift mutation runs remain manual.
 
 Missed and timed-out mutants fail the check, as do CRAP scores above 12. The pinned tool versions and full rules live in `AGENTS.md`.
 
@@ -203,10 +203,21 @@ action revisions, dependency and build caches, and seven-day report retention.
 | 2 | CI | Full Rust workspace tests on Linux and macOS, including existing integration and TUI E2E tests | Every PR, push to `main`, and manual run |
 | 3 | CI | Rust coverage and the configured CRAP threshold of 12 | Every PR, push to `main`, and manual run |
 | 4 | CI | Pinned Swift formatting and linting, portable Swift tests, and at least 95% executable line coverage on Linux | Every PR, push to `main`, and manual run |
-| 5 | CI | Six required native UI E2E groups, Swift package tests on macOS, native Debug and universal Release builds, and scene layout checks | Every PR, push to `main`, and manual run |
-| 6 | CI | `CI passed` requires every regular job to succeed, including both Rust test platforms | Every PR, push to `main`, and manual run |
-| 7 | [Mutation tests](.github/workflows/mutations.yml) | Full Rust and portable Swift mutation suites on Linux; missed, timed-out, and unresolved mutants fail their jobs | Manual only |
-| 8 | [Dependency audit](.github/workflows/dependencies.yml) | `cargo audit` checks `Cargo.lock` against RustSec advisories | Monday at 06:23 UTC and manual runs |
+| 5 | CI, `swift-mutations` job | Focused portable Swift mutation checks for changed production files and mapped tests; reports are uploaded as `swift-pr-mutations` | Every pull request only |
+| 6 | CI | Six required native UI E2E groups, Swift package tests on macOS, native Debug and universal Release builds, and scene layout checks | Every PR, push to `main`, and manual run |
+| 7 | CI | `CI passed` requires every regular job to succeed, including both Rust test platforms | Every PR, push to `main`, and manual run |
+| 8 | [Mutation tests](.github/workflows/mutations.yml) | Full Rust and portable Swift mutation suites on Linux; missed, timed-out, and unresolved mutants fail their jobs | Manual only |
+| 9 | [Dependency audit](.github/workflows/dependencies.yml) | `cargo audit` checks `Cargo.lock` against RustSec advisories | Monday at 06:23 UTC and manual runs |
+
+The focused Swift job always runs `python3 scripts/swift-muter-regressions.py`, then selects mutation scope from the full pull request diff:
+
+```sh
+python3 scripts/swift-mutation-scope.py --base <SHA> --head <SHA> --output .build/swift-mutation-scope.json
+```
+
+The job mutates complete selected production files and runs the package test suite. Documentation, native UI, Rust, and CI-tooling-only changes produce an explicit empty production scope. Regression checks still run for those changes.
+
+Broad dependency or shared test-support changes, deleted production files, and changed tests without a curated production mapping return `review-required` and keep the gate red. The selector or mapping must define a bounded scope before CI can pass. The `swift-pr-mutations` artifact contains `.build/swift-mutation-scope.json` and `.build/swift-mutations`. Full package runs remain available through the manual workflow.
 
 CI pins Rust 1.98.1 in the [shared Rust setup action](.github/actions/setup-rust/action.yml),
 Swift 6.1.3 for Linux, and Xcode 27.0 for the native app. Coverage and mutation tool
@@ -232,12 +243,14 @@ To enable these workflows:
 3. Confirm the native build and layout checks pass on the `xcode-27` image.
    This image is currently in public preview. Its installed software is listed in
    [GitHub's Xcode 27 image manifest](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md).
-4. Require `CI passed` in the default branch protection rule. Mutation tests and
-   the scheduled dependency audit are separate from that required check.
+4. Require `CI passed` in the default branch protection rule. The focused Swift
+   mutation job is part of required CI. Full mutation tests and the scheduled
+   dependency audit are separate from that required check.
 
-Run mutation testing through Actions > Mutation tests > Run workflow, then
-select the branch to test. It has no pull-request, push, or scheduled trigger.
-This CI policy does not change the local before-handoff checks in `AGENTS.md`.
+Run full mutation testing through Actions > Mutation tests > Run workflow, then
+select the branch to test. That workflow has no pull-request, push, or scheduled
+trigger. The Swift job in regular CI runs only its selected PR scope. This CI
+policy does not change the local before-handoff checks in `AGENTS.md`.
 
 ## Hooks
 

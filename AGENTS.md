@@ -40,4 +40,4 @@ Time Tracker is a Rust time-tracking application. It starts with a TUI and may l
 - For portable Swift production changes, run `python3 scripts/swift-mutations.py --files <path> ...` with package-relative source paths. Include production files exercised by changed tests. Use a full package run when the affected files cannot be identified.
 - Skip mutation checks for documentation-only changes and other changes that cannot affect production behavior, tests, or build inputs. Report the selected scope or reason for skipping at handoff.
 - `--in-diff` and `--iterate` are optional diagnostic shortcuts, not substitutes for the required file or crate checks. They can miss reduced test coverage in unchanged production code.
-- Routine full mutation runs will be scheduled when CI is set up. Until then, focused checks satisfy the handoff requirement; do not add a last-run metadata file or automatic full-run scheduler.
+- Pull requests run a focused portable Swift mutation check. Keep full Rust and Swift mutation runs manual; do not schedule them or add a repository file that tracks the last run.

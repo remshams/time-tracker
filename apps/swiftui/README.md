@@ -242,9 +242,23 @@ Results and logs go to `.build/swift-mutations`, including individual test logs 
 python3 scripts/swift-mutations.py --files Sources/TrackerClient/Features/Connection/ConnectionState.swift
 ```
 
-Focused runs label their scope and satisfy the handoff requirement under the scope rules in `AGENTS.md`. Include production files exercised by changed tests and run the full package when the affected files cannot be identified. Documentation-only changes skip mutation checks. Routine full mutation runs are deferred until CI is set up.
+Focused runs label their scope and satisfy the handoff requirement under the scope rules in `AGENTS.md`. Include production files exercised by changed tests and run the full package when the affected files cannot be identified. Documentation-only changes skip mutation checks. Pull requests run focused Swift mutations; full Swift mutation runs remain manual.
 
-All commands accept `--swift` for a specific toolchain. Coverage also accepts `--llvm-cov`; mutation testing accepts `--muter` for another tool binary. Generated artifacts are ignored by Git.
+Every pull request runs the required `swift-mutations` job, named `Focused Swift mutation tests`. It always runs `python3 scripts/swift-muter-regressions.py`, even when the diff contains only CI tooling changes. The scope selector examines the full merge-base-to-head diff:
+
+```sh
+python3 scripts/swift-mutation-scope.py --base <SHA> --head <SHA> --output .build/swift-mutation-scope.json
+```
+
+For selected production files, Muter checks each complete file with the package test suite enabled. Changed portable production files select their matching files. Changed tests use a curated test-to-production mapping, including coordinator tests.
+
+Documentation, native UI, Rust, and CI-tooling-only changes yield an explicit empty production scope. Regression checks still run. Broad dependency changes, shared test-support changes, deleted production files, and changed tests without a mapping return `review-required` and keep the gate red until the selector or mapping defines a bounded scope. The job does not expand an uncertain scope to the full package.
+
+The `swift-pr-mutations` artifact contains the scope JSON and `.build/swift-mutations` results. Full Swift package runs remain manual through the Mutation tests workflow, which also runs the required regression checks.
+
+Muter can fail closed when a selected file has no supported mutation operators and produces no report. The pull request check stays red until the selector or mapping defines a bounded additional production scope. There is no reviewer approval override, and running the manual full-package workflow alone does not clear the required check.
+
+The style, coverage, and mutation commands accept `--swift` for a specific toolchain. The required regression command reads `SWIFT_EXECUTABLE` and `SWIFT_MUTER_EXECUTABLE` when set. Coverage also accepts `--llvm-cov`; mutation testing accepts `--muter` for another tool binary. Generated artifacts are ignored by Git.
 
 These checks cover the portable client state. The native UI end-to-end suite exercises local and server workflows on macOS through the real Rust bridge. Rust coverage, mutation testing, and CRAP checks cover the Rust application and bridge separately.
 
