@@ -60,10 +60,46 @@ final class WorklogMoveTests: XCTestCase {
     }
 
     @MainActor
-    func testCompletedMovePreservesRawTimesAndClearsSourceHistoryBeforeReload() async throws {
+    func testConfirmedMovePublishesRowsAndDismissalBeforeHeldResourceRefresh() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await open(fixture)
+        fixture.session.retryHistory()
+        let initial = try await fixture.client.next()
+        initial.succeed(HistoryPage(worklogs: [log, oldWorklog], nextCursor: "older", reset: false))
+        try await fixture.settled()
+        fixture.session.submitWorklogMove()
+        try await preflight(fixture, log: log)
+        let command = try await fixture.client.next()
+        let observer = TrackerPresentationObserver(session: fixture.session)
+        var publishedRows = fixture.session.worklogs
+        var moveWasDismissed = false
+        observer.onContentChange = { publishedRows = fixture.session.worklogs }
+        observer.onWorklogMoveChange = { moveWasDismissed = !fixture.session.worklogMove.isPresented }
+        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: log.end)
+        command.moved(worklog: moved)
+        let heldRefresh = try await fixture.client.next()
+        XCTAssertEqual(heldRefresh.operation, .taskList)
+        XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
+        XCTAssertEqual(
+            publishedRows, [oldWorklog], "Confirmed move must publish row removal before awaiting the resource refresh."
+        )
+        XCTAssertTrue(moveWasDismissed)
+        XCTAssertTrue(fixture.session.isHistoryLoading)
+        heldRefresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
+        try await finishHistory(fixture, rows: [oldWorklog])
+    }
+
+    @MainActor
+    func testCompletedMovePreservesOtherSourceRowsAndRemovesMovedRowBeforeReload() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let log = try await open(fixture)
+        fixture.session.retryHistory()
+        let initial = try await fixture.client.next()
+        initial.succeed(HistoryPage(worklogs: [log, oldWorklog], nextCursor: "older", reset: false))
+        try await fixture.settled()
         XCTAssertTrue(fixture.session.worklogMove.canSubmit)
         fixture.session.submitWorklogMove()
         try await preflight(fixture, log: log)
@@ -73,12 +109,48 @@ final class WorklogMoveTests: XCTestCase {
         command.moved(worklog: moved, resources: TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let history = try await fixture.client.next()
         XCTAssertFalse(fixture.session.worklogMove.isPresented)
-        XCTAssertEqual(fixture.session.worklogs, [])
+        XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
+        XCTAssertTrue(fixture.session.isHistoryLoading)
         XCTAssertNil(fixture.session.nextCursor)
+        fixture.session.openWorklogMove(worklogID: log.id)
+        fixture.session.openWorklogCorrection(worklogID: log.id)
+        XCTAssertFalse(fixture.session.worklogMove.isPresented)
+        XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
         history.fail(BridgeFailure(message: "History unavailable"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogs, [])
+        XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
+        XCTAssertFalse(fixture.session.isHistoryLoading)
+        XCTAssertFalse(fixture.session.hasMoreHistory)
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
+    }
+
+    @MainActor
+    func testMovePreservesSelectedDestinationRowsAndInvalidatesItsCursor() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let log = try await open(fixture, worklog: activeWorklog)
+        fixture.session.select(secondTask.id)
+        let destination = try await fixture.client.next()
+        let retained = WorklogItem(
+            id: "destination-history", taskId: secondTask.id,
+            start: oldWorklog.start, end: oldWorklog.end)
+        destination.succeed(HistoryPage(worklogs: [retained], nextCursor: "old-destination", reset: false))
+        try await fixture.settled()
+        fixture.session.submitWorklogMove()
+        try await preflight(fixture, log: log)
+        let command = try await fixture.client.next()
+        let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
+        command.moved(worklog: moved, resources: TaskListResources(tasks: [firstTask, secondTask], active: moved))
+        let history = try await fixture.client.next()
+        XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
+        XCTAssertEqual(fixture.session.worklogs, [retained])
+        XCTAssertNil(fixture.session.nextCursor)
+        XCTAssertTrue(fixture.session.isHistoryLoading)
+        history.succeed(HistoryPage(worklogs: [moved, retained], nextCursor: "new-destination", reset: false))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.worklogs, [moved, retained])
+        XCTAssertEqual(fixture.session.nextCursor, "new-destination")
+        XCTAssertTrue(fixture.session.hasMoreHistory)
     }
 
     @MainActor

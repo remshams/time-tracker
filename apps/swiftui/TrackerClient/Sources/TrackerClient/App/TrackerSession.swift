@@ -104,6 +104,7 @@ public final class TrackerSession {
     public var error: String? { history.error }
     public var trackingError: String? { tracking.error }
     public var historyUnavailable: Bool { history.unavailable }
+    public var isHistoryLoading: Bool { history.isLoading }
     public var selectedTaskID: String? { catalog.selectedTaskID }
     public var tab: TaskTab { catalog.tab }
     public var connectionSettings: ConnectionSettings { connection.settings }
@@ -113,7 +114,7 @@ public final class TrackerSession {
     public var isStale: Bool { connection.stale }
     public var visibleTasks: [TaskItem] { catalog.visibleTasks }
     public var selectedTask: TaskItem? { catalog.selectedTask }
-    public var hasMoreHistory: Bool { nextCursor != nil }
+    public var hasMoreHistory: Bool { nextCursor != nil && !isHistoryLoading }
     public var taskCreation: TaskCreationPresentation { creation.presentation }
     public var canOpenTaskCreation: Bool {
         running && connection.confirmed && !connection.changing && !rename.presentation.isPresented
@@ -729,7 +730,9 @@ public final class TrackerSession {
     }
 
     public func loadOlder() {
-        guard running, !sleeping, !isBlockingControls, let taskID = selectedTaskID, let cursor = nextCursor else {
+        guard running, !sleeping, !isBlockingControls, !isHistoryLoading,
+            let taskID = selectedTaskID, let cursor = nextCursor
+        else {
             return
         }
         pendingControlCommand = .history(taskID: taskID, cursor: cursor, historyToken: history.generation)
@@ -1212,10 +1215,13 @@ public final class TrackerSession {
     private func finishMove(_ intent: WorklogMoveState.Intent, resources: TaskListResources? = nil) {
         move.reset()
         if let resources { acceptTaskList(resources) }
-        if selectedTaskID == intent.expected.taskId || selectedTaskID == intent.destinationTaskID {
-            history.clearAfterCorrection()
+        if selectedTaskID == intent.expected.taskId {
+            history.removeMovedWorklog(id: intent.expected.id)
+        } else if selectedTaskID == intent.destinationTaskID {
+            history.invalidateCursor()
         }
         requestHistory()
+        publish()
     }
 
     private func moveCanApply(
@@ -1706,6 +1712,7 @@ public final class TrackerSession {
     }
 
     private func loadHistory(taskID: String, cursor: String?, historyToken: Int, blocksControls: Bool = true) {
+        history.beginLoading()
         beginOperation(blocksControls: blocksControls)
         let token = generation
         Task { [weak self] in
@@ -1719,8 +1726,7 @@ public final class TrackerSession {
                 else { return }
             } catch {
                 guard historyRequestIsCurrent(token: token, historyToken: historyToken, taskID: taskID) else { return }
-                history.unavailable = true
-                history.error = error.localizedDescription
+                history.fail(error)
                 if let failure = error as? BridgeFailure, historyFailureRequiresRecovery(failure) {
                     recordConnectionFailure(error)
                 }

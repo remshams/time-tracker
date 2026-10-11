@@ -3,7 +3,7 @@ import XCTest
 
 final class HistoryTests: XCTestCase {
     @MainActor
-    func testSelectingAnotherTaskImmediatelyClearsCachedRowsAndCursor() async throws {
+    func testSelectingAnotherTaskShowsLoadingWithoutPreviousRowsOrCursor() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
@@ -13,12 +13,30 @@ final class HistoryTests: XCTestCase {
         try await fixture.settled()
 
         fixture.session.select(secondTask.id)
+        XCTAssertTrue(fixture.session.isHistoryLoading)
         XCTAssertTrue(fixture.session.worklogs.isEmpty)
         XCTAssertNil(fixture.session.nextCursor)
         let selected = try await fixture.client.next()
         XCTAssertEqual(selected.operation, .history(task: secondTask.id, cursor: nil))
         selected.succeed(emptyPage)
         try await fixture.settled()
+        XCTAssertFalse(fixture.session.isHistoryLoading)
+    }
+
+    @MainActor
+    func testShutdownInvalidatesLoadingAndRejectsLateEmptyResponse() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        fixture.session.retryHistory()
+        let request = try await fixture.client.next()
+        XCTAssertTrue(fixture.session.isHistoryLoading)
+        fixture.session.shutdown()
+        XCTAssertFalse(fixture.session.isHistoryLoading)
+        request.succeed(emptyPage)
+        await Task.yield()
+        XCTAssertFalse(fixture.session.isHistoryLoading)
+        XCTAssertFalse(fixture.session.isBusy)
     }
 
     @MainActor
@@ -41,6 +59,9 @@ final class HistoryTests: XCTestCase {
             fixture.session.worklogs, [activeWorklog, oldWorklog],
             "Existing rows must remain visible while their replacement is fetched.")
         XCTAssertEqual(fixture.session.nextCursor, "older")
+        XCTAssertTrue(fixture.session.isHistoryLoading)
+        XCTAssertFalse(fixture.session.hasMoreHistory)
+        fixture.session.loadOlder()
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
@@ -138,11 +159,13 @@ final class HistoryTests: XCTestCase {
         fixture.session.retryHistory()
         let oldRequest = try await fixture.client.next()
         fixture.session.select(secondTask.id)
+        XCTAssertTrue(fixture.session.isHistoryLoading)
         XCTAssertTrue(fixture.session.worklogs.isEmpty)
         oldRequest.fail(BridgeFailure(message: "Old selection failed", kind: "unavailable"))
         let newRequest = try await fixture.client.next()
         XCTAssertEqual(newRequest.operation, .history(task: secondTask.id, cursor: nil))
         XCTAssertFalse(fixture.session.historyUnavailable)
+        XCTAssertTrue(fixture.session.isHistoryLoading)
         XCTAssertNil(fixture.session.error)
         XCTAssertFalse(fixture.session.isStale)
         newRequest.succeed(emptyPage)
@@ -218,6 +241,8 @@ final class HistoryTests: XCTestCase {
         fixture.session.loadOlder()
         let older = try await fixture.client.next()
         XCTAssertEqual(older.operation, .history(task: firstTask.id, cursor: "page-two"))
+        XCTAssertTrue(fixture.session.isHistoryLoading)
+        XCTAssertFalse(fixture.session.hasMoreHistory)
         fixture.session.loadOlder()
         older.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "page-three", reset: false))
         try await fixture.settled()
@@ -241,10 +266,12 @@ final class HistoryTests: XCTestCase {
         failure.fail(BridgeFailure(message: "History read failed"))
         try await fixture.settled()
         XCTAssertTrue(fixture.session.historyUnavailable)
+        XCTAssertFalse(fixture.session.isHistoryLoading)
         XCTAssertEqual(fixture.session.error, "History read failed")
         XCTAssertFalse(fixture.session.isStale)
         fixture.session.retryHistory()
         let retry = try await fixture.client.next()
+        XCTAssertTrue(fixture.session.isHistoryLoading)
         XCTAssertEqual(retry.operation, .history(task: firstTask.id, cursor: nil))
         retry.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
@@ -269,6 +296,7 @@ final class HistoryTests: XCTestCase {
         let refresh = try await fixture.client.next()
         refresh.succeed(resources)
         let retry = try await fixture.client.next()
+        XCTAssertTrue(fixture.session.isHistoryLoading)
         XCTAssertEqual(retry.operation, .history(task: firstTask.id, cursor: nil))
         retry.succeed(emptyPage)
         try await fixture.settled()
