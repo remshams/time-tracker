@@ -3,35 +3,28 @@
 use chrono::{DateTime, Utc};
 use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName, TrackingError};
 
-use super::{
-    InactiveTaskOperations, TaskOperations, TaskQueries, TrackerApplication, canonical_timestamp,
-};
-use crate::{
-    ApplicationError, InactiveTaskRepository, RepositoryError, TaskListItem, TaskOrdering,
-    TrackerRepository,
-};
+use super::{TrackerApplication, canonical_timestamp};
+use crate::{ApplicationError, RepositoryError, TaskListItem, TaskOrdering, TrackerRepository};
 
-impl<R: TrackerRepository> TaskQueries for TrackerApplication<R> {
-    fn refresh_task_list(&mut self) -> Result<(), ApplicationError> {
+impl<R: TrackerRepository> TrackerApplication<R> {
+    pub fn refresh_task_list(&mut self) -> Result<(), ApplicationError> {
         self.refresh_authoritative_state()
     }
 
-    fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
+    pub fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
         let mut items = self.tasks.clone();
         ordering.sort_items(&mut items);
         items
     }
 
-    fn task(&self, id: TaskId) -> Option<&Task> {
+    pub fn task(&self, id: TaskId) -> Option<&Task> {
         self.tasks
             .iter()
             .find(|item| item.task.id() == id)
             .map(|TaskListItem { task, .. }| task)
     }
-}
 
-impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
-    fn create_task(
+    pub fn create_task(
         &mut self,
         name: TaskName,
         occurred_at: DateTime<Utc>,
@@ -39,7 +32,7 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
         self.create_task_with_id(TaskId::generate(), name, occurred_at)
     }
 
-    fn rename_task(
+    pub fn rename_task(
         &mut self,
         id: TaskId,
         name: TaskName,
@@ -53,7 +46,7 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
         Ok(task)
     }
 
-    fn archive_task(
+    pub fn archive_task(
         &mut self,
         id: TaskId,
         occurred_at: DateTime<Utc>,
@@ -81,7 +74,7 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
         }
     }
 
-    fn unarchive_task(
+    pub fn unarchive_task(
         &mut self,
         id: TaskId,
         occurred_at: DateTime<Utc>,
@@ -102,7 +95,7 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
         }
     }
 
-    fn preview_inactive_tasks(
+    pub fn preview_inactive_tasks(
         &mut self,
         as_of: DateTime<Utc>,
     ) -> Result<Vec<Task>, ApplicationError> {
@@ -116,7 +109,7 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
         Ok(preview.tasks)
     }
 
-    fn archive_inactive_tasks(
+    pub fn archive_inactive_tasks(
         &mut self,
         expected_ids: &[TaskId],
         as_of: DateTime<Utc>,
@@ -135,12 +128,8 @@ impl<R: TrackerRepository> TaskOperations for TrackerApplication<R> {
             Err(error) => Err(self.task_failure_with_recovery(error.into())),
         }
     }
-}
 
-impl<R: TrackerRepository + InactiveTaskRepository> InactiveTaskOperations
-    for TrackerApplication<R>
-{
-    fn preview_inactive_tasks_with_period(
+    pub fn preview_inactive_tasks_with_period(
         &mut self,
         as_of: DateTime<Utc>,
         period: InactivityPeriod,
@@ -155,7 +144,7 @@ impl<R: TrackerRepository + InactiveTaskRepository> InactiveTaskOperations
         Ok(preview.tasks)
     }
 
-    fn archive_inactive_tasks_with_period(
+    pub fn archive_inactive_tasks_with_period(
         &mut self,
         expected_ids: &[TaskId],
         as_of: DateTime<Utc>,
@@ -176,9 +165,7 @@ impl<R: TrackerRepository + InactiveTaskRepository> InactiveTaskOperations
             Err(error) => Err(self.task_failure_with_recovery(error.into())),
         }
     }
-}
 
-impl<R: TrackerRepository> TrackerApplication<R> {
     fn task_failure_with_recovery(&mut self, primary: ApplicationError) -> ApplicationError {
         match self.refresh_after_task_operation() {
             Ok(()) => primary,

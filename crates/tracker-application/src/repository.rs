@@ -130,8 +130,8 @@ pub struct WorklogMove {
     pub active_task_latest_work_start: Option<DateTime<Utc>>,
 }
 
-/// Persistence needed by task use cases.
-pub trait TaskRepository {
+/// Persistence contract for the application and its repository test adapters.
+pub trait TrackerRepository {
     /// Reads one task and its latest-work aggregate without loading the catalog.
     fn load_task_item(&self, id: TaskId) -> Result<Option<TaskListItem>, RepositoryError>;
 
@@ -172,10 +172,7 @@ pub trait TaskRepository {
         expected_ids: &[TaskId],
         as_of: DateTime<Utc>,
     ) -> Result<InactiveTaskArchive, RepositoryError>;
-}
 
-/// Persistence for selecting and archiving tasks with a chosen inactivity period.
-pub trait InactiveTaskRepository {
     fn preview_inactive_tasks_with_period(
         &self,
         as_of: DateTime<Utc>,
@@ -189,10 +186,7 @@ pub trait InactiveTaskRepository {
         as_of: DateTime<Utc>,
         period: InactivityPeriod,
     ) -> Result<InactiveTaskArchive, RepositoryError>;
-}
 
-/// Persistence needed to read and change worklog history.
-pub trait WorklogRepository {
     fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, RepositoryError>;
 
     /// Atomically moves a worklog when its task and timestamps exactly match
@@ -238,10 +232,7 @@ pub trait WorklogRepository {
         &self,
         after: Option<&GlobalWorklogCursor>,
     ) -> Result<GlobalWorklogPage, RepositoryError>;
-}
 
-/// Persistence needed by tracking commands.
-pub trait TrackingRepository {
     /// Reads only the global active worklog.
     fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError>;
 
@@ -263,10 +254,7 @@ pub trait TrackingRepository {
         stop_at: DateTime<Utc>,
         next: &Worklog,
     ) -> Result<(), RepositoryError>;
-}
 
-/// A current read of time spent by task in one UTC interval.
-pub trait ReportRepository {
     /// Reads the explicitly requested task list, totals, and active tracking
     /// under one backend transaction for the task-list totals workflow.
     fn task_list_report_read(
@@ -284,15 +272,4 @@ pub trait ReportRepository {
         end: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<ReportRead, RepositoryError>;
-}
-
-/// A backend that supports every current use case.
-pub trait TrackerRepository:
-    TaskRepository + WorklogRepository + TrackingRepository + ReportRepository
-{
-}
-
-impl<T> TrackerRepository for T where
-    T: TaskRepository + WorklogRepository + TrackingRepository + ReportRepository
-{
 }

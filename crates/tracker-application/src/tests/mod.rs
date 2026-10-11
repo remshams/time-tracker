@@ -195,7 +195,7 @@ impl MemoryRepository {
     }
 }
 
-impl TaskRepository for MemoryRepository {
+impl TrackerRepository for MemoryRepository {
     fn load_task_item(&self, id: TaskId) -> Result<Option<TaskListItem>, RepositoryError> {
         self.read_guard()?;
         Ok(Self::task_items(&self.0.borrow())
@@ -353,9 +353,7 @@ impl TaskRepository for MemoryRepository {
             tracking: Self::tracking_read(&data),
         })
     }
-}
 
-impl InactiveTaskRepository for MemoryRepository {
     fn preview_inactive_tasks_with_period(
         &self,
         as_of: DateTime<Utc>,
@@ -398,9 +396,7 @@ impl InactiveTaskRepository for MemoryRepository {
             tracking: Self::tracking_read(&data),
         })
     }
-}
 
-impl ReportRepository for MemoryRepository {
     fn task_list_report_read(
         &self,
         start: DateTime<Utc>,
@@ -444,19 +440,7 @@ impl ReportRepository for MemoryRepository {
             tracking: Self::tracking_read(&data),
         })
     }
-}
 
-fn has_same_task_overlap(
-    worklogs: &[Worklog],
-    candidate: &Worklog,
-    excluded: Option<WorklogId>,
-) -> bool {
-    worklogs
-        .iter()
-        .any(|stored| Some(stored.id()) != excluded && stored.overlaps(candidate))
-}
-
-impl WorklogRepository for MemoryRepository {
     fn global_worklog_page(
         &self,
         after: Option<&GlobalWorklogCursor>,
@@ -799,9 +783,7 @@ impl WorklogRepository for MemoryRepository {
             next_cursor,
         })
     }
-}
 
-impl TrackingRepository for MemoryRepository {
     fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError> {
         MemoryRepository::active_worklog(self)
     }
@@ -930,6 +912,16 @@ impl TrackingRepository for MemoryRepository {
     }
 }
 
+fn has_same_task_overlap(
+    worklogs: &[Worklog],
+    candidate: &Worklog,
+    excluded: Option<WorklogId>,
+) -> bool {
+    worklogs
+        .iter()
+        .any(|stored| Some(stored.id()) != excluded && stored.overlaps(candidate))
+}
+
 fn at(seconds: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(seconds, 0).unwrap()
 }
@@ -989,6 +981,7 @@ fn ordered_names(
 mod error;
 mod model;
 mod reports;
+mod service;
 mod tasks;
 mod tracking;
 mod worklogs;

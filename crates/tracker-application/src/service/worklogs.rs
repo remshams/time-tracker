@@ -3,13 +3,10 @@
 use chrono::{DateTime, Utc};
 use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
 
-use super::{
-    TrackerApplication, WorklogOperations, WorklogQueries, canonical_timestamp,
-    canonical_worklog_times,
-};
+use super::{TrackerApplication, canonical_timestamp, canonical_worklog_times};
 use crate::{
     ApplicationError, GlobalWorklogCursor, GlobalWorklogPage, MoveCandidate, RepositoryError,
-    TaskListItem, TrackerRepository, WorklogCursor, WorklogPage,
+    TaskListItem, TaskOrdering, TrackerRepository, WorklogCursor, WorklogPage,
 };
 
 /// Selects move destinations from a caller's cached task catalog.
@@ -45,14 +42,25 @@ pub fn move_candidates_for_tasks(
 }
 
 impl<R: TrackerRepository> TrackerApplication<R> {
+    /// Eligible move destinations from the current task catalog.
+    pub fn move_candidates(
+        &self,
+        source_task_id: TaskId,
+        query: &str,
+    ) -> Vec<crate::MoveCandidate> {
+        move_candidates_for_tasks(
+            &self.tasks(TaskOrdering::RecentlyWorked),
+            source_task_id,
+            query,
+        )
+    }
+
     /// Reads one worklog without loading unrelated resources.
     pub fn worklog(&self, id: WorklogId) -> Result<Option<Worklog>, ApplicationError> {
         self.repository.find_worklog(id).map_err(Into::into)
     }
-}
 
-impl<R: TrackerRepository> WorklogQueries for TrackerApplication<R> {
-    fn all_worklogs(
+    pub fn all_worklogs(
         &mut self,
         after: Option<&GlobalWorklogCursor>,
     ) -> Result<GlobalWorklogPage, ApplicationError> {
@@ -66,7 +74,7 @@ impl<R: TrackerRepository> WorklogQueries for TrackerApplication<R> {
         Ok(page)
     }
 
-    fn worklogs_for_task(
+    pub fn worklogs_for_task(
         &mut self,
         task_id: TaskId,
         after: Option<&WorklogCursor>,
@@ -77,10 +85,8 @@ impl<R: TrackerRepository> WorklogQueries for TrackerApplication<R> {
         }
         Ok(page)
     }
-}
 
-impl<R: TrackerRepository> WorklogOperations for TrackerApplication<R> {
-    fn move_worklog(
+    pub fn move_worklog(
         &mut self,
         id: WorklogId,
         expected_source_task_id: TaskId,
@@ -114,7 +120,7 @@ impl<R: TrackerRepository> WorklogOperations for TrackerApplication<R> {
         self.adopt_worklog_move(expected_source_task_id, movement)
     }
 
-    fn correct_worklog(
+    pub fn correct_worklog(
         &mut self,
         id: WorklogId,
         expected: WorklogTimes,
@@ -153,7 +159,7 @@ impl<R: TrackerRepository> WorklogOperations for TrackerApplication<R> {
         Ok(worklog)
     }
 
-    fn delete_completed_worklog(
+    pub fn delete_completed_worklog(
         &mut self,
         id: WorklogId,
         expected_task_id: TaskId,

@@ -3,18 +3,18 @@
 use chrono::{DateTime, Utc};
 use tracker_domain::{SwitchedWorklogs, TaskId, TrackingState, WorklogId};
 
-use super::{TrackerApplication, TrackingOperations, canonical_timestamp};
+use super::{TrackerApplication, canonical_timestamp};
 use crate::{
     ApplicationError, ClearActiveTaskOutcome, RepositoryError, SetActiveTaskOutcome, TaskListItem,
     TrackerRepository,
 };
 
-impl<R: TrackerRepository> TrackingOperations for TrackerApplication<R> {
-    fn current_tracking(&self) -> &TrackingState {
+impl<R: TrackerRepository> TrackerApplication<R> {
+    pub fn current_tracking(&self) -> &TrackingState {
         self.tracker.state()
     }
 
-    fn set_active_task(
+    pub fn set_active_task(
         &mut self,
         task_id: TaskId,
         occurred_at: DateTime<Utc>,
@@ -22,7 +22,7 @@ impl<R: TrackerRepository> TrackingOperations for TrackerApplication<R> {
         self.set_active_task_with_id(task_id, WorklogId::generate(), occurred_at)
     }
 
-    fn clear_active_task(
+    pub fn clear_active_task(
         &mut self,
         expected_active: WorklogId,
         occurred_at: DateTime<Utc>,
@@ -57,9 +57,7 @@ impl<R: TrackerRepository> TrackingOperations for TrackerApplication<R> {
             Err(error) => Err(self.recover_after_tracking_write(error)),
         }
     }
-}
 
-impl<R: TrackerRepository> TrackerApplication<R> {
     /// Starts a new worklog only while tracking remains idle.
     /// The repository's single-active constraint guards competing inserts.
     pub fn start_tracking_if_idle(
