@@ -33,3 +33,4 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0017](0017-separate-http-resources-from-client-refreshes.md) | Separate HTTP resources from client refreshes | Partially superseded by ADR 0019; independent resources and guarded writes remain accepted. |
 | [0018](0018-compose-resource-state-in-client-workflows.md) | Compose resource state in client workflows | Partially superseded by ADR 0019; observations, command recovery and lifecycle remain accepted. |
 | [0019](0019-read-coherent-workflow-state.md) | Read coherent workflow state | Accepted |
+| [0022](0022-consolidate-application-and-repository-contracts.md) | Consolidate application and repository contracts | Accepted |
