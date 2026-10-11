@@ -378,17 +378,11 @@ mod tests {
         (state, cached, running)
     }
 
-    fn task_list_responses(task_revision: &str, tracking_revision: &str) -> Vec<(u16, String)> {
-        vec![
-            (
-                200,
-                format!(r#"{{"tasks":[],"revision":"{task_revision}"}}"#),
-            ),
-            (
-                200,
-                format!(r#"{{"active_worklog":null,"revision":"{tracking_revision}"}}"#),
-            ),
-        ]
+    fn task_list_responses(revision: &str) -> Vec<(u16, String)> {
+        vec![(
+            200,
+            format!(r#"{{"tasks":[],"active_worklog":null,"revision":"{revision}"}}"#),
+        )]
     }
 
     #[derive(Clone, Copy)]
@@ -432,16 +426,17 @@ mod tests {
             alpha.id(),
             at(100).to_rfc3339()
         );
-        let catalog = |revision: &str| {
-            format!(r#"{{"tasks":[{alpha_json},{beta_json}],"revision":"{revision}"}}"#)
+        let aggregate = |active: &str, revision: &str| {
+            format!(
+                r#"{{"tasks":[{alpha_json},{beta_json}],"active_worklog":{active},"revision":"{revision}"}}"#
+            )
         };
         let tracking = |active: &str, revision: &str| {
             format!(r#"{{"active_worklog":{active},"revision":"{revision}"}}"#)
         };
         let mut replies = vec![
             (200, r#"{"status":"ok","protocol_version":3}"#.to_owned()),
-            (200, catalog("before")),
-            (200, tracking(&old_worklog, "before")),
+            (200, aggregate(&old_worklog, "before")),
             (200, tracking(&old_worklog, "before")),
         ];
         if !stopping {
@@ -480,10 +475,7 @@ mod tests {
                 replies.extend([(503, "".to_owned()), (503, "".to_owned())]);
             }
             TrackingRefresh::Failed(RemoteFailureKind::Conflict) => {
-                for _ in 0..4 {
-                    replies.push((200, catalog("catalog-after")));
-                    replies.push((200, tracking(&old_worklog, "tracking-after")));
-                }
+                replies.extend([(409, "".to_owned()), (409, "".to_owned())]);
             }
             TrackingRefresh::Saved | TrackingRefresh::Newer | TrackingRefresh::NewerThenFailed => {
                 let active = match refresh {
@@ -496,13 +488,11 @@ mod tests {
                     _ if stopping => "null".to_owned(),
                     _ => started,
                 };
-                replies.push((200, catalog("newer")));
-                replies.push((200, tracking(&active, "newer")));
+                replies.push((200, aggregate(&active, "newer")));
                 if matches!(refresh, TrackingRefresh::NewerThenFailed) {
                     replies.push((200, "{}".to_owned()));
                 } else {
-                    replies.push((200, catalog("newer")));
-                    replies.push((200, tracking(&active, "newer")));
+                    replies.push((200, aggregate(&active, "newer")));
                 }
             }
         }
@@ -763,7 +753,7 @@ mod tests {
     #[tokio::test]
     async fn a_coherent_refresh_clears_saved_tracking_warnings_and_preserves_other_messages() {
         let mut responses = vec![(200, r#"{"status":"ok","protocol_version":3}"#.to_owned())];
-        responses.extend(task_list_responses("fresh", "fresh"));
+        responses.extend(task_list_responses("fresh"));
         let (endpoint, worker, _) = stoppable_resource_server(responses);
         let mut remote = RemoteApplication::disconnected(&endpoint).unwrap();
         remote.refresh_task_list().await.unwrap();
@@ -860,7 +850,7 @@ mod tests {
                 ),
             ),
         ];
-        responses.extend(task_list_responses("state-1", "state-1"));
+        responses.extend(task_list_responses("state-1"));
         let (endpoint, worker, stop) = stoppable_resource_server(responses);
         let application = RemoteApplication::disconnected(&endpoint).unwrap();
         let (backend, result) = start_request(
@@ -901,10 +891,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn explicit_remote_refresh_reads_each_resource_once_and_publishes_a_coherent_pair() {
+    async fn explicit_remote_refresh_reads_one_aggregate_and_publishes_a_coherent_pair() {
         let mut responses = vec![(200, r#"{"status":"ok","protocol_version":3}"#.to_owned())];
-        responses.extend(task_list_responses("state-1", "state-1"));
-        responses.extend(task_list_responses("state-1", "state-1"));
+        responses.extend(task_list_responses("state-1"));
+        responses.extend(task_list_responses("state-1"));
         let (endpoint, worker, stop) = stoppable_resource_server(responses);
         let application = RemoteApplication::disconnected(&endpoint).unwrap();
         let (backend, result) = start_request(
@@ -927,15 +917,20 @@ mod tests {
 
         assert!(state.catalog().task(cached.id()).is_none());
         assert!(state.tracking().active_worklog().is_none());
-        assert_eq!(paths, vec!["/v1/health", "/v1/tasks", "/v1/tracking"]);
+        assert_eq!(paths, vec!["/v1/health", "/v1/state/task-list"]);
     }
 
     #[tokio::test]
     async fn failed_remote_refresh_does_not_publish_independently_loaded_mismatched_resources() {
         let mut responses = vec![(200, r#"{"status":"ok","protocol_version":3}"#.to_owned())];
-        for _ in 0..3 {
-            responses.extend(task_list_responses("tasks-1", "tracking-2"));
-        }
+        responses.extend([
+            (200, r#"{"tasks":[],"revision":"tasks-1"}"#.to_owned()),
+            (
+                200,
+                r#"{"active_worklog":null,"revision":"tracking-2"}"#.to_owned(),
+            ),
+            (409, "".to_owned()),
+        ]);
         let (endpoint, worker, stop) = stoppable_resource_server(responses);
         let mut application = RemoteApplication::disconnected(&endpoint).unwrap();
         application.refresh_tasks().await.unwrap();
@@ -970,10 +965,7 @@ mod tests {
                 "/v1/health",
                 "/v1/tasks",
                 "/v1/tracking",
-                "/v1/tasks",
-                "/v1/tracking",
-                "/v1/tasks",
-                "/v1/tracking"
+                "/v1/state/task-list"
             ]
         );
     }
