@@ -80,7 +80,7 @@ final class BulkTaskArchivingUITests: TrackerUITestCase {
         openDialog()
         assertCandidates([seed.old, seed.medium], count: 2)
         let frame = app.sheets.firstMatch.frame
-        let progress = element("bulk-archive.refresh-progress")
+        let progress = app.activityIndicators["bulk-archive.refresh"]
         XCTAssertFalse(progress.exists)
         try fixture.withLockedDatabase {
             app.buttons["bulk-archive.refresh"].click()
