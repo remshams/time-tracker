@@ -6,6 +6,24 @@ import XCTest
 
 final class DialogPresentationTests: XCTestCase {
     @MainActor
+    func testRenameValidationUpdatesTheDisplayedSnapshotWithoutSendingACommand() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        let rename = fixture.session.renameModel
+        fixture.session.openTaskRename()
+        fixture.session.setTaskRenameName("Invalid\u{0000}name")
+        let operationCount = fixture.client.operations.count
+        XCTAssertNil(rename.sheetContent.error)
+        fixture.session.submitTaskRename()
+        XCTAssertEqual(rename.state.error, "Task names must not contain control characters.")
+        XCTAssertEqual(rename.sheetContent, rename.state)
+        XCTAssertTrue(rename.state.isPresented)
+        XCTAssertFalse(rename.state.isSubmitting)
+        XCTAssertEqual(fixture.client.operations.count, operationCount)
+    }
+
+    @MainActor
     func testNameDraftsStayVisibleDuringDismissalAndAreReplacedOnReopening() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
