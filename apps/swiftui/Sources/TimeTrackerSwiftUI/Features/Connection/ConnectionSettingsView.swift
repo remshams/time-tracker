@@ -125,9 +125,8 @@ struct ConnectionSettingsView: View {
                             .disabled(controlsDisabled || missingEndpoint)
                             .keyboardShortcut(.defaultAction)
                             .accessibilityIdentifier("connection.connect")
-                        if operationPending {
-                            ProgressView().controlSize(.small)
-                        }
+                        DelayedProgressIndicator(
+                            isBusy: operationPending, identifier: "connection.progress")
                     }
 
                     if let resultMessage {
