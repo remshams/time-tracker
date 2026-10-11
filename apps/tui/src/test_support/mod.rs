@@ -11,10 +11,9 @@ pub(crate) use chrono::{
 };
 pub(crate) use tracker_application::{
     ActiveTrackingRead, ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome,
-    GlobalWorklogCursor, GlobalWorklogPage, ReportQueries, ReportTotals, RepositoryError,
-    SetActiveTaskOutcome, TaskListItem, TaskOperations, TaskOrdering, TaskQueries,
-    TrackerApplication, TrackerApplicationService, TrackingOperations, WorklogCursor,
-    WorklogOperations, WorklogPage, WorklogPageAdoption, WorklogQueries,
+    GlobalWorklogCursor, GlobalWorklogPage, ReportTotals, RepositoryError, SetActiveTaskOutcome,
+    TaskListItem, TaskOrdering, TrackerApplication, TrackerApplicationService, WorklogCursor,
+    WorklogPage, WorklogPageAdoption,
 };
 pub(crate) use tracker_domain::{
     ActiveWorklog, Task, TaskId, TaskName, TrackingState, Worklog, WorklogCorrectionError,
@@ -364,7 +363,7 @@ impl TestService {
     }
 }
 
-impl TaskQueries for TestService {
+impl TrackerApplicationService for TestService {
     fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
         let mut items = self
             .tasks
@@ -386,9 +385,7 @@ impl TaskQueries for TestService {
     fn task(&self, id: TaskId) -> Option<&Task> {
         self.tasks.iter().find(|task| task.id() == id)
     }
-}
 
-impl TaskOperations for TestService {
     fn create_task(
         &mut self,
         name: TaskName,
@@ -516,27 +513,7 @@ impl TaskOperations for TestService {
             .cloned()
             .collect())
     }
-}
 
-impl TestService {
-    fn inactive_candidates(&self, as_of: DateTime<Utc>) -> Vec<Task> {
-        let cutoff = as_of - chrono::Duration::days(14);
-        self.tasks
-            .iter()
-            .filter(|task| {
-                !task.is_archived()
-                    && task.created_at() < cutoff
-                    && !self
-                        .latest_work_starts
-                        .iter()
-                        .any(|(id, latest)| *id == task.id() && *latest >= cutoff)
-            })
-            .cloned()
-            .collect()
-    }
-}
-
-impl TrackingOperations for TestService {
     fn current_tracking(&self) -> &TrackingState {
         &self.tracking
     }
@@ -603,9 +580,7 @@ impl TrackingOperations for TestService {
         self.tracking = TrackingState::Idle;
         Ok(ClearActiveTaskOutcome::AlreadyIdle)
     }
-}
 
-impl WorklogOperations for TestService {
     fn move_worklog(
         &mut self,
         id: WorklogId,
@@ -728,9 +703,7 @@ impl WorklogOperations for TestService {
         self.update_latest_work_start(task_id);
         Ok(worklog)
     }
-}
 
-impl WorklogQueries for TestService {
     fn all_worklogs(
         &mut self,
         after: Option<&GlobalWorklogCursor>,
@@ -831,9 +804,7 @@ impl WorklogQueries for TestService {
         }
         result
     }
-}
 
-impl ReportQueries for TestService {
     fn report_totals(
         &mut self,
         start: DateTime<Utc>,
@@ -854,6 +825,24 @@ impl ReportQueries for TestService {
             self.tasks = tasks;
         }
         result
+    }
+}
+
+impl TestService {
+    fn inactive_candidates(&self, as_of: DateTime<Utc>) -> Vec<Task> {
+        let cutoff = as_of - chrono::Duration::days(14);
+        self.tasks
+            .iter()
+            .filter(|task| {
+                !task.is_archived()
+                    && task.created_at() < cutoff
+                    && !self
+                        .latest_work_starts
+                        .iter()
+                        .any(|(id, latest)| *id == task.id() && *latest >= cutoff)
+            })
+            .cloned()
+            .collect()
     }
 }
 

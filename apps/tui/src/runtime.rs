@@ -209,7 +209,7 @@ fn start_request(backend: Backend, request: ApplicationRequest) -> Pending {
         {
             match &mut backend {
                 Backend::Local(application) => {
-                    let _ = tracker_application::TaskQueries::refresh_task_list(application);
+                    let _ = application.refresh_task_list();
                 }
                 Backend::Remote(application) => {
                     let _ = application.refresh_task_list().await;
@@ -225,7 +225,7 @@ fn publish_request_resources(
     backend: &Backend,
     completed: &CompletedRequest,
 ) {
-    use tracker_application::{TaskOrdering, TaskQueries, TrackingOperations};
+    use tracker_application::TaskOrdering;
     match backend {
         Backend::Local(application) => state.publish_request_resources(
             completed,
@@ -343,10 +343,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use ratatui::{Terminal, backend::TestBackend};
-    use tracker_application::{
-        TaskListItem, TaskOperations, TaskOrdering, TaskQueries, TrackerApplication,
-        TrackingOperations,
-    };
+    use tracker_application::{TaskListItem, TaskOrdering, TrackerApplication};
     use tracker_domain::{ActiveWorklog, Task, TaskName, TrackingState};
     use tracker_remote::{RemoteApplication, RemoteError, RemoteFailureKind};
     use tracker_storage::SqliteRepository;
