@@ -8,7 +8,7 @@ use tracker_application::{
     ClearActiveTaskOutcome, SetActiveTaskOutcome, TaskOrdering, WorklogCursor,
 };
 use tracker_domain::{TaskName, WorklogId, WorklogTimes};
-use tracker_protocol::{HealthDto, VERSION};
+use tracker_protocol::{DailyOverviewDto, HealthDto, TaskListStateDto, VERSION};
 use tracker_remote::RemoteApplication;
 use tracker_remote::RemoteFailureKind;
 use tracker_remote::ResourceSelection;
@@ -803,62 +803,68 @@ async fn concurrent_restart_between_stop_and_archive_is_rejected() {
 }
 
 #[tokio::test]
-async fn coherent_refresh_retries_once_and_retains_the_confirmed_view_during_writes() {
+async fn aggregate_refresh_uses_one_read_and_preserves_confirmed_state_on_missing_route() {
+    use axum::http::StatusCode;
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
-    use tracker_protocol::{TasksDto, TrackingDto};
-    let task_reads = Arc::new(AtomicUsize::new(0));
-    let tracking_reads = Arc::new(AtomicUsize::new(0));
-    let tasks_count = task_reads.clone();
-    let tracking_count = tracking_reads.clone();
-    let router = Router::new()
-        .route(
-            "/v1/health",
-            get(|| async {
-                Json(HealthDto {
-                    status: "ok".into(),
-                    protocol_version: VERSION,
-                })
-            }),
-        )
-        .route(
-            "/v1/tasks",
-            get(move || {
-                let counter = tasks_count.clone();
-                async move {
-                    let i = counter.fetch_add(1, Ordering::SeqCst);
-                    Json(TasksDto {
-                        tasks: vec![],
-                        revision: format!("tasks-{i}"),
+    let reads = Arc::new(AtomicUsize::new(0));
+    let count = reads.clone();
+    let server = StubServer::from_router(
+        Router::new()
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(HealthDto {
+                        status: "ok".into(),
+                        protocol_version: VERSION,
                     })
-                }
-            }),
-        )
-        .route(
-            "/v1/tracking",
-            get(move || {
-                let counter = tracking_count.clone();
-                async move {
-                    let i = counter.fetch_add(1, Ordering::SeqCst);
-                    Json(TrackingDto {
-                        active_worklog: None,
-                        revision: format!("tracking-{i}"),
-                    })
-                }
-            }),
-        );
-    let server = StubServer::from_router(router);
+                }),
+            )
+            .route(
+                "/v1/state/task-list",
+                get(move || {
+                    let i = count.fetch_add(1, Ordering::SeqCst);
+                    async move {
+                        (
+                            if i == 0 {
+                                StatusCode::OK
+                            } else {
+                                StatusCode::NOT_FOUND
+                            },
+                            Json(TaskListStateDto {
+                                tasks: vec![],
+                                active_worklog: None,
+                                revision: "confirmed".into(),
+                            }),
+                        )
+                    }
+                }),
+            ),
+    );
     let mut client = RemoteApplication::connect(&server.endpoint())
         .await
         .unwrap();
-    assert!(client.refresh_task_list().await.is_err());
-    assert_eq!(task_reads.load(Ordering::SeqCst), 2);
-    assert_eq!(tracking_reads.load(Ordering::SeqCst), 2);
-    assert!(client.task_revision().is_empty());
-    assert!(client.tracking_revision().is_empty());
-    assert_eq!(client.last_failure(), Some(RemoteFailureKind::Conflict));
+    assert!(client.tracking_observation().is_none());
+    client.refresh_task_list().await.unwrap();
+    let tasks = client.task_observation().cloned();
+    let tracking = client.tracking_observation().cloned();
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        client.current_tracking(),
+        &tracker_domain::TrackingState::Idle
+    );
+    assert!(matches!(
+        client.refresh_task_list().await,
+        Err(tracker_remote::RemoteError::Http {
+            status: StatusCode::NOT_FOUND,
+            ..
+        })
+    ));
+    assert_eq!(reads.load(Ordering::SeqCst), 2);
+    assert_eq!(client.task_observation(), tasks.as_ref());
+    assert_eq!(client.tracking_observation(), tracking.as_ref());
 }
 
 #[tokio::test]
@@ -908,17 +914,14 @@ async fn coherent_refresh_rejects_missing_or_archived_active_tasks_without_adopt
                 }),
             )
             .route(
-                "/v1/tasks",
+                "/v1/state/task-list",
                 get(move || {
-                    let catalog = catalog.clone();
-                    async move { Json(catalog) }
-                }),
-            )
-            .route(
-                "/v1/tracking",
-                get(move || {
-                    let tracking = tracking.clone();
-                    async move { Json(tracking) }
+                    let state = TaskListStateDto {
+                        tasks: catalog.tasks.clone(),
+                        active_worklog: tracking.active_worklog.clone(),
+                        revision: catalog.revision.clone(),
+                    };
+                    async move { Json(state) }
                 }),
             );
         let server = StubServer::from_router(router);
@@ -1739,7 +1742,20 @@ fn command_receipt_server(
         }
     };
     let individual_tasks = tasks.clone();
+    let aggregate_tasks = tasks.clone();
+    let aggregate_active = active.clone();
     let router = Router::new()
+        .route(
+            "/v1/state/task-list",
+            get(move || {
+                let dto = TaskListStateDto {
+                    tasks: aggregate_tasks.clone(),
+                    active_worklog: aggregate_active.clone(),
+                    revision: "read-revision".into(),
+                };
+                async move { Json(dto) }
+            }),
+        )
         .route(
             "/v1/health",
             get(|| async {
@@ -2047,8 +2063,8 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
         atomic::{AtomicBool, Ordering},
     };
     use tracker_protocol::{
-        MutationDto, MutationResultDto, TaskDto, TasksDto, TrackingDto, WorklogChangeRequest,
-        WorklogDto, WorklogResourceDto,
+        MutationDto, MutationResultDto, TaskDto, TrackingDto, WorklogChangeRequest, WorklogDto,
+        WorklogResourceDto,
     };
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
     let task_id = tracker_domain::TaskId::generate();
@@ -2077,27 +2093,35 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
             }),
         )
         .route(
-            "/v1/tasks",
+            "/v1/state/task-list",
             get(move || {
                 let committed = tasks_committed.clone();
                 async move {
                     let changed = committed.load(Ordering::SeqCst);
-                    Json(TasksDto {
-                        tasks: vec![TaskDto {
-                            id: task_id.to_string(),
-                            name: if changed {
-                                "Later task name"
-                            } else {
-                                "Confirmed task name"
-                            }
-                            .into(),
-                            archived: false,
-                            created_at: at,
-                            updated_at: at,
-                            latest_work_start: None,
-                        }],
-                        revision: if changed { "racing-tasks" } else { "confirmed" }.into(),
-                    })
+                    (
+                        if changed {
+                            axum::http::StatusCode::CONFLICT
+                        } else {
+                            axum::http::StatusCode::OK
+                        },
+                        Json(TaskListStateDto {
+                            tasks: vec![TaskDto {
+                                id: task_id.to_string(),
+                                name: if changed {
+                                    "Later task name"
+                                } else {
+                                    "Confirmed task name"
+                                }
+                                .into(),
+                                archived: false,
+                                created_at: at,
+                                updated_at: at,
+                                latest_work_start: None,
+                            }],
+                            active_worklog: None,
+                            revision: "confirmed".into(),
+                        }),
+                    )
                 }
             }),
         )
@@ -2361,6 +2385,31 @@ async fn coherent_task_creation_recovers_the_original_id_after_failed_post_write
                         status: "ok".into(),
                         protocol_version: VERSION,
                     })
+                }),
+            )
+            .route(
+                "/v1/state/task-list",
+                get({
+                    let current = current.clone();
+                    let coherent = coherent.clone();
+                    move || {
+                        let current = current.clone();
+                        let coherent = coherent.clone();
+                        async move {
+                            (
+                                if coherent.load(Ordering::SeqCst) {
+                                    axum::http::StatusCode::OK
+                                } else {
+                                    axum::http::StatusCode::CONFLICT
+                                },
+                                Json(TaskListStateDto {
+                                    tasks: current.lock().unwrap().clone(),
+                                    active_worklog: None,
+                                    revision: "confirmed".into(),
+                                }),
+                            )
+                        }
+                    }
                 }),
             )
             .route(
@@ -2675,21 +2724,13 @@ async fn selected_totals_refreshes_publish_together_and_keep_confirmed_resources
         atomic::{AtomicUsize, Ordering},
     };
     use tracker_domain::{TaskId, TrackingState};
-    use tracker_protocol::{ReportDto, TaskDto, TasksDto, TrackingDto, WorklogDto};
-
+    use tracker_protocol::{ReportDto, TaskDto, WorklogDto};
     let mode = Arc::new(AtomicUsize::new(0));
-    let task_reads = Arc::new(AtomicUsize::new(0));
-    let tracking_reads = Arc::new(AtomicUsize::new(0));
-    let report_reads = Arc::new(AtomicUsize::new(0));
+    let reads = Arc::new(AtomicUsize::new(0));
+    let response_mode = mode.clone();
+    let response_reads = reads.clone();
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
     let task_id = TaskId::generate();
-    let worklog_id = WorklogId::generate();
-    let report_mode = mode.clone();
-    let report_count = report_reads.clone();
-    let tracking_mode = mode.clone();
-    let tracking_count = tracking_reads.clone();
-    let tasks_mode = mode.clone();
-    let tasks_count = task_reads.clone();
     let server = StubServer::from_router(
         Router::new()
             .route(
@@ -2702,85 +2743,48 @@ async fn selected_totals_refreshes_publish_together_and_keep_confirmed_resources
                 }),
             )
             .route(
-                "/v1/reports/task-totals",
+                "/v1/state/daily-overview",
                 get(move || {
-                    let revision = if report_mode.load(Ordering::SeqCst) == 0 {
-                        "confirmed"
-                    } else {
-                        "new"
-                    };
-                    report_count.fetch_add(1, Ordering::SeqCst);
+                    let mode = response_mode.load(Ordering::SeqCst);
+                    response_reads.fetch_add(1, Ordering::SeqCst);
                     async move {
-                        Json(ReportDto {
-                            start: at,
-                            end: at + Duration::hours(1),
-                            now: at,
-                            rows: vec![],
-                            total_us: 0,
-                            revision: revision.into(),
-                        })
-                    }
-                }),
-            )
-            .route(
-                "/v1/tracking",
-                get(move || {
-                    let mode = tracking_mode.load(Ordering::SeqCst);
-                    let count = tracking_count.fetch_add(1, Ordering::SeqCst);
-                    let revision = match mode {
-                        0 => "confirmed",
-                        1 => "different",
-                        4 if count == 0 => "different",
-                        _ => "new",
-                    };
-                    async move {
-                        Json(TrackingDto {
-                            active_worklog: (mode >= 5).then(|| WorklogDto {
-                                id: worklog_id.to_string(),
+                        Json(DailyOverviewDto {
+                            tasks: if mode == 2 {
+                                vec![]
+                            } else {
+                                vec![TaskDto {
+                                    id: task_id.to_string(),
+                                    name: "Timer task".into(),
+                                    archived: mode == 3,
+                                    created_at: at,
+                                    updated_at: at,
+                                    latest_work_start: Some(at),
+                                }]
+                            },
+                            active_worklog: (mode >= 2).then(|| WorklogDto {
+                                id: WorklogId::generate().to_string(),
                                 task_id: task_id.to_string(),
                                 start: at,
                                 end: None,
                             }),
-                            revision: revision.into(),
-                        })
-                    }
-                }),
-            )
-            .route(
-                "/v1/tasks",
-                get(move || {
-                    let mode = tasks_mode.load(Ordering::SeqCst);
-                    tasks_count.fetch_add(1, Ordering::SeqCst);
-                    async move {
-                        Json(TasksDto {
-                            tasks: (mode >= 6)
-                                .then(|| TaskDto {
-                                    id: task_id.to_string(),
-                                    name: "Timer task".into(),
-                                    archived: mode == 6,
-                                    created_at: at,
-                                    updated_at: at,
-                                    latest_work_start: Some(at),
-                                })
-                                .into_iter()
-                                .collect(),
-                            revision: if mode == 2 {
-                                "different"
-                            } else if mode == 0 {
-                                "confirmed"
-                            } else {
-                                "new"
-                            }
-                            .into(),
+                            totals: ReportDto {
+                                start: at,
+                                end: at + Duration::hours(1),
+                                now: if mode == 1 {
+                                    at + Duration::seconds(1)
+                                } else {
+                                    at
+                                },
+                                rows: vec![],
+                                total_us: if mode == 5 { 1 } else { 0 },
+                                revision: if mode == 0 { "confirmed" } else { "new" }.into(),
+                            },
                         })
                     }
                 }),
             ),
     );
     let mut client = RemoteApplication::disconnected(&server.endpoint()).unwrap();
-    assert!(client.task_observation().is_none());
-    assert!(client.tracking_observation().is_none());
-    assert!(client.report_observation().is_none());
     let daily = ResourceSelection::DailyTotals {
         start: at,
         end: at + Duration::hours(1),
@@ -2791,10 +2795,9 @@ async fn selected_totals_refreshes_publish_together_and_keep_confirmed_resources
         end: at + Duration::hours(1),
         now: at,
     };
-
     client.refresh_resources(daily).await.unwrap();
     assert!(client.task_observation().is_none());
-    assert_eq!(task_reads.load(Ordering::SeqCst), 0);
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
     assert_eq!(
         client.tracking_observation().unwrap().value,
         TrackingState::Idle
@@ -2802,58 +2805,30 @@ async fn selected_totals_refreshes_publish_together_and_keep_confirmed_resources
     assert_eq!(client.report_revision(), "confirmed");
     let tracking = client.tracking_observation().cloned();
     let report = client.report_observation().cloned();
-
-    mode.store(1, Ordering::SeqCst);
-    report_reads.store(0, Ordering::SeqCst);
-    tracking_reads.store(0, Ordering::SeqCst);
-    client.refresh_resources(daily).await.unwrap_err();
-    assert_eq!(report_reads.load(Ordering::SeqCst), 2);
-    assert_eq!(tracking_reads.load(Ordering::SeqCst), 2);
-    assert_eq!(client.tracking_observation(), tracking.as_ref());
-    assert_eq!(client.report_observation(), report.as_ref());
-    assert!(client.task_observation().is_none());
-
-    mode.store(2, Ordering::SeqCst);
-    client.refresh_resources(task_list).await.unwrap_err();
-    assert_eq!(client.tracking_observation(), tracking.as_ref());
-    assert_eq!(client.report_observation(), report.as_ref());
-    assert!(client.task_observation().is_none());
-    assert_eq!(task_reads.load(Ordering::SeqCst), 2);
-
-    mode.store(3, Ordering::SeqCst);
+    for invalid_mode in [1, 2, 3, 5] {
+        mode.store(invalid_mode, Ordering::SeqCst);
+        let before = reads.load(Ordering::SeqCst);
+        client.refresh_resources(task_list).await.unwrap_err();
+        assert_eq!(reads.load(Ordering::SeqCst), before + 1);
+        assert_eq!(client.tracking_observation(), tracking.as_ref());
+        assert_eq!(client.report_observation(), report.as_ref());
+        assert!(client.task_observation().is_none());
+    }
+    mode.store(4, Ordering::SeqCst);
     client.refresh_resources(task_list).await.unwrap();
+    assert_eq!(client.active_worklog().unwrap().task_id(), task_id);
+    assert_eq!(client.task_items()[0].task.id(), task_id);
     assert_eq!(client.task_revision(), "new");
     assert_eq!(client.tracking_revision(), "new");
     assert_eq!(client.report_revision(), "new");
     let tasks = client.task_observation().cloned();
-    let tracking = client.tracking_observation().cloned();
-    let report = client.report_observation().cloned();
-    for invalid_mode in [5, 6] {
-        mode.store(invalid_mode, Ordering::SeqCst);
-        client.refresh_resources(task_list).await.unwrap_err();
-        assert_eq!(client.task_observation(), tasks.as_ref());
-        assert_eq!(client.tracking_observation(), tracking.as_ref());
-        assert_eq!(client.report_observation(), report.as_ref());
-    }
-    mode.store(7, Ordering::SeqCst);
-    client.refresh_resources(task_list).await.unwrap();
-    assert_eq!(client.active_worklog().unwrap().task_id(), task_id);
-    assert_eq!(client.task_items()[0].task.id(), task_id);
-
-    mode.store(4, Ordering::SeqCst);
-    report_reads.store(0, Ordering::SeqCst);
-    tracking_reads.store(0, Ordering::SeqCst);
+    mode.store(0, Ordering::SeqCst);
     client.refresh_resources(daily).await.unwrap();
-    assert_eq!(report_reads.load(Ordering::SeqCst), 2);
-    assert_eq!(tracking_reads.load(Ordering::SeqCst), 2);
     assert_eq!(
         client.tracking_observation().unwrap().value,
         TrackingState::Idle
     );
-    assert_eq!(
-        client.task_observation().unwrap().value[0].task.id(),
-        task_id
-    );
+    assert_eq!(client.task_observation(), tasks.as_ref());
     assert_eq!(client.last_failure(), None);
 }
 
@@ -2916,7 +2891,7 @@ async fn coherent_tracking_command_rejects_an_unavailable_pair_before_attempting
         atomic::{AtomicUsize, Ordering},
     };
     use tracker_domain::TaskId;
-    use tracker_protocol::{TaskDto, TaskResourceDto, TasksDto, TrackingDto};
+    use tracker_protocol::{TaskDto, TaskResourceDto, TrackingDto};
 
     for catalog_unavailable in [false, true] {
         let writes = Arc::new(AtomicUsize::new(0));
@@ -2944,7 +2919,7 @@ async fn coherent_tracking_command_rejects_an_unavailable_pair_before_attempting
                 }),
             )
             .route(
-                "/v1/tasks",
+                "/v1/state/task-list",
                 get({
                     let reads = catalog_reads.clone();
                     move || {
@@ -2957,9 +2932,10 @@ async fn coherent_tracking_command_rejects_an_unavailable_pair_before_attempting
                                 } else {
                                     StatusCode::OK
                                 },
-                                Json(TasksDto {
+                                Json(TaskListStateDto {
                                     tasks: vec![task],
-                                    revision: "catalog-revision".into(),
+                                    active_worklog: None,
+                                    revision: String::new(),
                                 }),
                             )
                         }
@@ -3100,4 +3076,163 @@ async fn coherent_catalog_only_start_preserves_the_reviewed_task_during_initiali
     assert_eq!(client.task_revision(), client.tracking_revision());
     other.refresh_tracking().await.unwrap();
     assert!(other.active_worklog().is_none());
+}
+
+#[tokio::test]
+#[ignore = "manual loopback measurement; timings are not a CI assertion"]
+async fn measure_aggregate_reads_and_intervening_writes() {
+    let server = TestServer::start();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let mut writer = connected(&server.endpoint()).await.unwrap();
+    for index in 0..100 {
+        writer
+            .create_task(name(&format!("Measurement task {index:03}")), at)
+            .await
+            .unwrap();
+    }
+    let task = writer.task_items()[0].task.clone();
+    writer.set_active_task(task.id(), at).await.unwrap();
+    let http = reqwest::Client::new();
+    let mut interval = reqwest::Url::parse(&server.endpoint()).unwrap();
+    interval
+        .query_pairs_mut()
+        .append_pair("start", &at.to_rfc3339())
+        .append_pair("end", &(at + Duration::hours(1)).to_rfc3339())
+        .append_pair("now", &(at + Duration::minutes(5)).to_rfc3339());
+    let query = format!("?{}", interval.query().unwrap());
+
+    for (label, routes) in [
+        (
+            "split task list",
+            vec!["v1/tasks".to_owned(), "v1/tracking".to_owned()],
+        ),
+        ("aggregate task list", vec!["v1/state/task-list".to_owned()]),
+        (
+            "split daily overview",
+            vec![
+                "v1/tasks".to_owned(),
+                "v1/tracking".to_owned(),
+                format!("v1/reports/task-totals{query}"),
+            ],
+        ),
+        (
+            "aggregate daily overview",
+            vec![format!("v1/state/daily-overview{query}")],
+        ),
+    ] {
+        let mut durations = vec![];
+        let mut bytes = 0;
+        for sample in 0..55 {
+            let started = std::time::Instant::now();
+            let mut sample_bytes = 0;
+            for route in &routes {
+                sample_bytes += http
+                    .get(format!("{}{route}", server.endpoint()))
+                    .send()
+                    .await
+                    .unwrap()
+                    .error_for_status()
+                    .unwrap()
+                    .bytes()
+                    .await
+                    .unwrap()
+                    .len();
+            }
+            if sample >= 5 {
+                durations.push(started.elapsed());
+                bytes = sample_bytes;
+            }
+        }
+        durations.sort();
+        println!(
+            "{label}: {} requests, {bytes} JSON bytes, p50 {:.3} ms, p95 {:.3} ms, 50 samples after 5 warmups",
+            routes.len(),
+            durations[25].as_secs_f64() * 1000.0,
+            durations[47].as_secs_f64() * 1000.0
+        );
+    }
+    let tasks: tracker_protocol::TasksDto = http
+        .get(format!("{}v1/tasks", server.endpoint()))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    writer
+        .rename_task(
+            task.id(),
+            name("Renamed during refresh"),
+            at + Duration::seconds(1),
+        )
+        .await
+        .unwrap();
+    let tracking: tracker_protocol::TrackingDto = http
+        .get(format!("{}v1/tracking", server.endpoint()))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_ne!(tasks.revision, tracking.revision);
+    writer.refresh_task_list().await.unwrap();
+    assert_eq!(writer.task_revision(), writer.tracking_revision());
+    assert_eq!(
+        writer.task(task.id()).unwrap().name().as_str(),
+        "Renamed during refresh"
+    );
+    println!(
+        "An intervening rename invalidated the split pair; the next aggregate returned the renamed task and tracking with one revision."
+    );
+}
+
+#[tokio::test]
+async fn aggregate_reads_remain_coherent_while_http_commands_switch_tracking() {
+    let server = TestServer::start();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let mut writer = connected(&server.endpoint()).await.unwrap();
+    let first = writer.create_task(name("First timer"), at).await.unwrap();
+    let second = writer.create_task(name("Second timer"), at).await.unwrap();
+    writer.set_active_task(first.id(), at).await.unwrap();
+    let mut reader = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
+    let write = async {
+        for index in 1..=20 {
+            let task = if index % 2 == 0 {
+                first.id()
+            } else {
+                second.id()
+            };
+            writer
+                .set_active_task(task, at + Duration::seconds(index))
+                .await
+                .unwrap();
+        }
+    };
+    let read = async {
+        for index in 0..40 {
+            let selection = if index % 2 == 0 {
+                ResourceSelection::TaskList
+            } else {
+                ResourceSelection::TaskListWithTotals {
+                    start: at,
+                    end: at + Duration::minutes(1),
+                    now: at + Duration::seconds(30),
+                }
+            };
+            reader.refresh_resources(selection).await.unwrap();
+            assert_eq!(reader.task_revision(), reader.tracking_revision());
+            let active = reader.active_worklog().unwrap();
+            let task = reader.task_item(active.task_id()).unwrap();
+            assert!(!task.task.is_archived());
+            assert_eq!(task.latest_work_start, Some(active.start()));
+            if index % 2 == 1 {
+                assert_eq!(reader.task_revision(), reader.report_revision());
+                assert_eq!(reader.cached_task_totals().unwrap().total_us, 30_000_000);
+            }
+        }
+    };
+    tokio::join!(write, read);
 }

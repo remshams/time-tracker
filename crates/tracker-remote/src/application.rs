@@ -18,10 +18,11 @@ use tracker_domain::{
     WorklogId, WorklogTimes,
 };
 use tracker_protocol::{
-    ArchiveInactiveTasksRequest, CreateTaskRequest, DeleteWorklogRequest, ErrorCode, ErrorDto,
-    HealthDto, InactiveTaskPreviewDto, MutationDto, MutationResultDto, ReportDto,
-    SetTrackingRequest, TaskChangeRequest, TaskDto, TaskResourceDto, TasksDto, TrackingDto,
-    WorklogChangeRequest, WorklogDto, WorklogPageDto, WorklogResourceDto, WriteGuard,
+    ArchiveInactiveTasksRequest, CreateTaskRequest, DailyOverviewDto, DeleteWorklogRequest,
+    ErrorCode, ErrorDto, HealthDto, InactiveTaskPreviewDto, MutationDto, MutationResultDto,
+    ReportDto, SetTrackingRequest, TaskChangeRequest, TaskDto, TaskListStateDto, TaskResourceDto,
+    TasksDto, TrackingDto, WorklogChangeRequest, WorklogDto, WorklogPageDto, WorklogResourceDto,
+    WriteGuard,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,37 +195,32 @@ impl RemoteApplication {
         Ok(())
     }
 
-    /// Composes a coherent task and tracking view, retrying reconciliation once.
+    /// Adopts the task catalog and tracking from one coherent server read.
     pub async fn refresh_task_list(&mut self) -> Result<(), RemoteError> {
         self.ensure_version().await?;
-        for _ in 0..2 {
-            let tasks: TasksDto = self.read("v1/tasks").await?;
-            let tracking: TrackingDto = self.read("v1/tracking").await?;
-            let (items, task_revision) =
-                decode_tasks(tasks).map_err(|error| self.record_error(error))?;
-            let (active, state, tracking_revision) =
-                decode_tracking(tracking).map_err(|error| self.record_error(error))?;
-            if task_revision != tracking_revision {
-                continue;
-            }
-            validate_active_task(&items, active.as_ref())
-                .map_err(|error| self.record_error(error))?;
-            self.task_cache.clear();
-            self.task_observation = Some(ResourceObservation {
-                value: items,
-                revision: task_revision,
-            });
-            self.tracking_observation = Some(ResourceObservation {
-                value: state,
-                revision: tracking_revision,
-            });
-            self.confirmed();
-            return Ok(());
-        }
-        Err(self.record_error(RemoteError::Http {
-            status: StatusCode::CONFLICT,
-            body: vec![],
-        }))
+        let dto: TaskListStateDto = self.read("v1/state/task-list").await?;
+        let (items, state, revision) =
+            decode_task_list_state(dto).map_err(|error| self.record_error(error))?;
+        self.adopt_task_list(items, state, revision);
+        self.confirmed();
+        Ok(())
+    }
+
+    fn adopt_task_list(
+        &mut self,
+        items: Vec<TaskListItem>,
+        state: TrackingState,
+        revision: String,
+    ) {
+        self.task_cache.clear();
+        self.task_observation = Some(ResourceObservation {
+            value: items,
+            revision: revision.clone(),
+        });
+        self.tracking_observation = Some(ResourceObservation {
+            value: state,
+            revision,
+        });
     }
 
     /// Refreshes only the selected resources. Task-list observations publish together.
@@ -252,44 +248,50 @@ impl RemoteApplication {
         now: DateTime<Utc>,
         include_tasks: bool,
     ) -> Result<(), RemoteError> {
-        for _ in 0..2 {
-            let report = self.fetch_task_totals(start, end, now).await?;
-            let tracking: TrackingDto = self.read("v1/tracking").await?;
-            let (active, state, revision) =
-                decode_tracking(tracking).map_err(|error| self.record_error(error))?;
-            let tasks = if include_tasks {
-                Some(self.fetch_task_catalog().await?)
-            } else {
-                None
-            };
-            if report.revision != revision
-                || tasks.as_ref().is_some_and(|(_, token)| token != &revision)
-            {
-                continue;
-            }
-            if let Some((items, _)) = &tasks {
-                validate_active_task(items, active.as_ref())
-                    .map_err(|error| self.record_error(error))?;
-            }
-            if let Some((items, task_revision)) = tasks {
-                self.task_cache.clear();
-                self.task_observation = Some(ResourceObservation {
-                    value: items,
-                    revision: task_revision,
-                });
-            }
+        if end <= start {
+            return Err(self.record_error(RemoteError::Protocol("invalid report range".into())));
+        }
+        if report_cooldown_active(self.last_unavailable_at, Instant::now()) {
+            return Err(RemoteError::Unavailable(
+                "tracker server is unavailable".into(),
+            ));
+        }
+        self.ensure_version().await?;
+        let (start, end, now) = (canonical(start), canonical(end), canonical(now));
+        let mut url = self.transport.url("v1/state/daily-overview");
+        url.query_pairs_mut()
+            .append_pair("start", &start.to_rfc3339())
+            .append_pair("end", &end.to_rfc3339())
+            .append_pair("now", &now.to_rfc3339());
+        let dto: DailyOverviewDto = self
+            .transport
+            .send(Method::GET, url, None::<&()>)
+            .await
+            .map_err(|error| self.record_error(error))?;
+        validate_report(&dto.totals)
+            .map_err(|error| self.record_error(RemoteError::Protocol(error.to_string())))?;
+        if dto.totals.start != start || dto.totals.end != end || dto.totals.now != now {
+            return Err(self.record_error(RemoteError::Protocol(
+                "report context does not match request".into(),
+            )));
+        }
+        let (items, state, revision) = decode_task_list_state(TaskListStateDto {
+            tasks: dto.tasks,
+            active_worklog: dto.active_worklog,
+            revision: dto.totals.revision.clone(),
+        })
+        .map_err(|error| self.record_error(error))?;
+        if include_tasks {
+            self.adopt_task_list(items, state, revision);
+        } else {
             self.tracking_observation = Some(ResourceObservation {
                 value: state,
                 revision,
             });
-            self.report_cache = Some(report);
-            self.confirmed();
-            return Ok(());
         }
-        Err(self.record_error(RemoteError::Http {
-            status: StatusCode::CONFLICT,
-            body: vec![],
-        }))
+        self.report_cache = Some(dto.totals);
+        self.confirmed();
+        Ok(())
     }
 
     pub fn last_write_attempted(&self) -> bool {
@@ -1482,6 +1484,21 @@ fn validate_active_task(
     }
     Ok(())
 }
+fn decode_task_list_state(
+    dto: TaskListStateDto,
+) -> Result<(Vec<TaskListItem>, TrackingState, String), RemoteError> {
+    let (items, revision) = decode_tasks(TasksDto {
+        tasks: dto.tasks,
+        revision: dto.revision.clone(),
+    })?;
+    let (active, state, _) = decode_tracking(TrackingDto {
+        active_worklog: dto.active_worklog,
+        revision: dto.revision,
+    })?;
+    validate_active_task(&items, active.as_ref())?;
+    Ok((items, state, revision))
+}
+
 fn decode_tasks(dto: TasksDto) -> Result<(Vec<TaskListItem>, String), RemoteError> {
     if dto.revision.is_empty() {
         return Err(RemoteError::Protocol("empty task revision".into()));
