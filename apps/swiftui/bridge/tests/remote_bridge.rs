@@ -12,7 +12,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::sync::oneshot;
-use tracker_application::{TaskOperations, TaskQueries, TrackerApplication, TrackingOperations};
+use tracker_application::TrackerApplication;
 use tracker_domain::{TaskName, TrackingState};
 use tracker_storage::SqliteRepository;
 use tracker_swift_bridge::{
