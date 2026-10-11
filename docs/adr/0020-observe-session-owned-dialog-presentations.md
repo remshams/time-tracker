@@ -18,7 +18,7 @@ Views send commands to TrackerSession. Dialog models cannot execute commands or 
 
 The generic model retains the last presented content when the session dismisses or resets a dialog. The next presentation replaces that content. Creation and rename use this rule too, so draft text does not disappear while a sheet animates closed.
 
-TrackerPresentationObserver retains its list, activity, elapsed-text and daily-total comparisons. Those adapters have separate publication needs. Clock ticks do not change dialog models or invalidate dialog subscribers. The menu presentation observer remains responsible for native menu snapshots and status-item updates. TrackerTaskPresentationCoordinator still chooses one window to present the shared dialogs.
+TrackerPresentationObserver retains its list, activity, elapsed-text and daily-total comparisons. Those adapters have separate publication needs. Clock ticks do not change dialog models or invalidate dialog subscribers. The menu presentation observer remains responsible for native menu snapshots and status-item updates. TrackerTaskPresentationCoordinator still chooses one window to present the shared dialogs. Its publisher subscriptions read authoritative session state because Combine emits before the model snapshot changes.
 
 Command serialization, connection generations, stale-response rejection, uncertain-write intent and sleep/lock handling stay in TrackerSession and its feature state.
 
