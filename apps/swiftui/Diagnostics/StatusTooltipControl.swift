@@ -7,6 +7,7 @@ final class TooltipControl: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var window: NSWindow?
     private let toolbarButton = NSButton(title: "New task", target: nil, action: nil)
+    private let statusTooltip: NSString = "Tracking: Standalone tooltip control"
     private let output = CommandLine.arguments.dropFirst().first ?? "/tmp"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -31,6 +32,9 @@ final class TooltipControl: NSObject, NSApplicationDelegate {
         print("Status tooltip: \(button.toolTip ?? "")")
         movePointer(to: CGPoint(x: 400, y: 400))
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            button.toolTip = nil
+            let tag = button.addToolTip(button.bounds, owner: self.statusTooltip, userData: nil)
+            print("Explicit status tooltip region: \(button.bounds), tag: \(tag)")
             self.hover(button, leadingIcon: true)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
@@ -86,6 +90,6 @@ enum TooltipControlMain {
         app.setActivationPolicy(.regular)
         let delegate = TooltipControl()
         app.delegate = delegate
-        app.run()
+        withExtendedLifetime(delegate) { app.run() }
     }
 }
