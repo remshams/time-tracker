@@ -48,7 +48,7 @@ elif [[ "${1:-}" == --group && $# == 2 ]]; then
             for suite in MenuBarUITests ServerMenuBarUITests; do
                 for test in \
                     testDisplayChoicesApplyImmediatelyAndTaskNamePersistsAcrossRelaunch \
-                    testLongLabelIsEllipsizedAndHoverKeepsFullTaskNameInEveryDisplayMode \
+                    testLongLabelIsEllipsizedAndNoneHidesText \
                     testTaskLabelFollowsStartRenameSwitchAndStop; do
                     suites+=("$suite/$test")
                 done

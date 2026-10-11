@@ -10,7 +10,7 @@ Native suites follow the application's `App`, `Features`, and `Infrastructure` f
 
 Implementation checkpoint `72b2154`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
 
-The menu bar display change adds three cases to both `MenuBarUITests` and its server subclass, for six additional executions. They cover immediate Time/Task name/None selection, saved Task name selection across relaunch, start/rename/switch/stop updates, ellipsis, and full native hover tooltips in every display mode. The settings test retains saved None and automatic-pause checks. Native execution evidence for these additions is recorded in [PR 3](https://github.com/remshams/time-tracker/pull/3).
+The menu bar display change adds three cases to both `MenuBarUITests` and its server subclass, for six additional executions. They cover immediate Time/Task name/None selection, saved Task name selection across relaunch, start/rename/switch/stop updates, ellipsis, and hiding the label in None mode. The settings test retains saved None and automatic-pause checks. Native execution evidence for these additions is recorded in [PR 3](https://github.com/remshams/time-tracker/pull/3).
 
 ## Run the tests
 
@@ -62,7 +62,7 @@ Paths below are relative to this directory. Local feature suites also have real-
 | 11 | Test/adopt connection, distinct sources, rollback, saved settings | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
 | 12 | Initial/later outage, cached state, disabled writes, Retry, incompatible endpoint | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
 | 13 | Captured commands, other-client replacement, uncertain writes and retained editor intent | [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
-| 14 | Native menu opening, navigation, Return, dismissal, display choices, label updates, ellipsis and hover tooltips | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
+| 14 | Native menu opening, navigation, Return, dismissal, display choices, label updates, ellipsis | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
 | 15 | Menu tracking, primary clicks, remembered task per source | `MenuBarUITests`, `ServerMenuBarUITests`, and `MenuSourceUITests` in the same file |
 | 16 | Clipboard, zero/archived/cached values, menu identity during refresh and ticks | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
 | 17 | Saved menu bar display and automatic pause, shortcut recording/cancellation/defaults, registration conflict | [SettingsUITests](Tests/UITests/Features/Connection/SettingsUITests.swift) |
@@ -85,6 +85,7 @@ Record the macOS/Xcode version, application revision, backend, steps, result, an
 | 6 | Real day rollover and DST transition, alongside portable calendar tests | Open |
 | 7 | Visual readability and control geometry across supported macOS appearances | Automated geometry and identity checks; visual acceptance open |
 | 8 | Drag native window borders to the minimum size and expand them | Open. Hosted pointer drags did not resize the window; CI checks real AppKit window sizing and resulting control geometry through a guarded DEBUG fixture notification. |
+| 9 | Hover the status icon in Time, Task name and None modes to show the full tracked task name | Open. The hosted macOS 27 image did not show native status tooltips, including in a standalone AppKit control outside XCUITest. The CI hover assertions were removed; portable tests still check the full status/help strings. Diagnostic evidence is recorded in [PR 3](https://github.com/remshams/time-tracker/pull/3). |
 
 While a native popup tracks, its label and actions retain the captured task. Live durations continue updating, and the sidebar reconciles current state. Reopening the popup captures the current task.
 
@@ -96,4 +97,4 @@ At checkpoint `a80d4d8`, the Python suite passes 64 tests. Rust workspace tests 
 
 Those `a80d4d8` measurements cover the earlier native UI expansion and its Rust bridge boundary.
 
-The menu bar display change also modifies portable Swift menu logic. At `925b7e4`, all 414 portable tests pass, and focused mutations catch all 37 mutants across the six selected menu production files. The Python suite succeeds with 71 tests total and two platform/toolchain skips. Rust tests, coverage and CRAP pass, with all 1,174 reported functions within the threshold of 12. Rust production behavior is unchanged. Native AppKit behavior is checked through the macOS E2E suite; its line coverage is not inferred from the portable package's coverage percentage.
+The menu bar display change also modifies portable Swift menu logic. At `925b7e4`, all 414 portable tests pass, and focused mutations catch all 37 mutants across the six selected menu production files. The Python suite succeeds with 71 tests total and two platform/toolchain skips. Rust tests, coverage and CRAP pass, with all 1,174 reported functions within the threshold of 12. Rust production behavior is unchanged. Native menu labels and actions are checked through the macOS E2E suite. Native tooltip rendering remains open as described above. AppKit line coverage is not inferred from the portable package's coverage percentage.

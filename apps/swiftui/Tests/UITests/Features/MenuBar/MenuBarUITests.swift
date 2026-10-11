@@ -29,12 +29,11 @@ class MenuBarUITests: TrackerUITestCase {
         XCTAssertEqual(try fixture.activeWorklog(), running)
     }
 
-    func testLongLabelIsEllipsizedAndHoverKeepsFullTaskNameInEveryDisplayMode() throws {
+    func testLongLabelIsEllipsizedAndNoneHidesText() throws {
         let task = try fixture.create("A very long tracked task name for menu bar coverage")
         _ = try fixture.start(task)
-        additionalLaunchArguments = ["-NSInitialToolTipDelay", "100"]
         launch()
-        for mode in ["Task name", "Time", "None"] {
+        for mode in ["Task name", "None"] {
             openSettings()
             chooseMenuBarDisplay(mode)
             closeConnectionSettings()
@@ -45,14 +44,12 @@ class MenuBarUITests: TrackerUITestCase {
             } else if mode == "None" {
                 waitUntil("None hides the long label") { self.statusButton.value as? String == "" }
             }
-            assertStatusTooltip("Tracking: \(task.name)")
         }
     }
 
     func testTaskLabelFollowsStartRenameSwitchAndStop() throws {
         let first = try fixture.create("Planning")
         let second = try fixture.create("Review")
-        additionalLaunchArguments = ["-NSInitialToolTipDelay", "100"]
         launch()
         openSettings()
         chooseMenuBarDisplay("Task name")
@@ -68,12 +65,10 @@ class MenuBarUITests: TrackerUITestCase {
         app.buttons["task-name.submit"].click()
         waitUntil("Rename updates the menu bar label") { self.statusButton.value as? String == "Updated planning" }
         XCTAssertEqual(try fixture.activeWorklog(), running)
-        assertStatusTooltip("Tracking: Updated planning")
         select(second)
         app.buttons["Start tracking"].click()
         assertRunning(second)
         waitUntil("Switching replaces the label") { self.statusButton.value as? String == second.name }
-        assertStatusTooltip("Tracking: \(second.name)")
         statusButton.click()
         assertStopped()
         waitUntil("Stopping removes the task label") { self.statusButton.value as? String == "" }
