@@ -1724,6 +1724,7 @@ fn command_receipt_server(
     tasks: Vec<tracker_protocol::TaskDto>,
     active: Option<tracker_protocol::WorklogDto>,
     worklog: tracker_protocol::WorklogDto,
+    invalid_receipt_field: Option<&'static str>,
     result: impl Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
 ) -> StubServer {
     use axum::extract::Path;
@@ -1733,12 +1734,20 @@ fn command_receipt_server(
     let write = move |Json(body): Json<serde_json::Value>| {
         let result = result.clone();
         async move {
-            Json(serde_json::json!({
+            let mut receipt = serde_json::json!({
                 "request_id": body["request_id"],
                 "applied_revision": "receipt-revision",
                 "replayed": false,
                 "result": result(body),
-            }))
+            });
+            if let Some(field) = invalid_receipt_field {
+                receipt[field] = serde_json::json!(if field == "request_id" {
+                    "another-command"
+                } else {
+                    ""
+                });
+            }
+            Json(receipt)
         }
     };
     let individual_tasks = tasks.clone();
@@ -1826,7 +1835,7 @@ fn command_receipt_server(
 }
 
 #[tokio::test]
-async fn command_receipts_reject_individual_changes_to_reviewed_result_fields() {
+async fn command_receipts_reject_changed_identities_and_reviewed_result_fields() {
     use serde_json::json;
     use tracker_protocol::{TaskDto, WorklogDto};
     #[derive(Clone, Copy, Debug)]
@@ -1880,7 +1889,10 @@ async fn command_receipts_reject_individual_changes_to_reviewed_result_fields() 
         (Command::Delete, vec!["id", "task_id", "start", "end"]),
     ];
     for (command, fields) in commands {
-        for field in fields {
+        for field in fields
+            .into_iter()
+            .chain(["receipt.request_id", "receipt.applied_revision"])
+        {
             let source = TaskDto {
                 id: source_id.to_string(),
                 name: "Source task".into(),
@@ -1912,6 +1924,7 @@ async fn command_receipts_reject_individual_changes_to_reviewed_result_fields() 
                 vec![source, target],
                 running.then_some(original.clone()),
                 original,
+                field.strip_prefix("receipt."),
                 move |body| {
                     let mut value = match command {
                         Command::Create => json!({
@@ -1956,6 +1969,17 @@ async fn command_receipts_reject_individual_changes_to_reviewed_result_fields() 
                             value
                         }
                     };
+                    let kind = match command {
+                        Command::Create | Command::Rename | Command::Archive | Command::Restore => {
+                            "task"
+                        }
+                        Command::Switch => "tracking_switched",
+                        Command::AlreadyActive => "tracking_already_active",
+                        _ => "worklog",
+                    };
+                    if field.starts_with("receipt.") {
+                        return json!({"kind":kind,"value":value});
+                    }
                     let mut parts = field.split('.');
                     let first = parts.next().unwrap();
                     let altered = if let Some(second) = parts.next() {
@@ -1984,14 +2008,6 @@ async fn command_receipts_reject_individual_changes_to_reviewed_result_fields() 
                             }
                         }
                         _ => unreachable!(),
-                    };
-                    let kind = match command {
-                        Command::Create | Command::Rename | Command::Archive | Command::Restore => {
-                            "task"
-                        }
-                        Command::Switch => "tracking_switched",
-                        Command::AlreadyActive => "tracking_already_active",
-                        _ => "worklog",
                     };
                     json!({"kind":kind,"value":value})
                 },
