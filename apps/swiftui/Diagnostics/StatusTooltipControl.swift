@@ -32,16 +32,23 @@ final class TooltipControl: NSObject, NSApplicationDelegate {
         print("Status tooltip: \(button.toolTip ?? "")")
         movePointer(to: CGPoint(x: 400, y: 400))
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            self.hover(button, leadingIcon: true)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 22) {
+            self.capture("status-default-tooltip")
+            self.movePointer(to: CGPoint(x: 400, y: 400))
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 24) {
             button.toolTip = nil
             let tag = button.addToolTip(button.bounds, owner: self.statusTooltip, userData: nil)
             print("Explicit status tooltip region: \(button.bounds), tag: \(tag)")
             self.hover(button, leadingIcon: true)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 22) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 44) {
             self.capture("status-control")
             self.movePointer(to: CGPoint(x: 400, y: 400))
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 24) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 46) {
             guard let window = button.window else { fatalError("Status button has no window") }
             print("Status window accepts mouse moved before: \(window.acceptsMouseMovedEvents)")
             print("Status window ignores mouse events: \(window.ignoresMouseEvents)")
@@ -49,21 +56,21 @@ final class TooltipControl: NSObject, NSApplicationDelegate {
             print("Status window accepts mouse moved after: \(window.acceptsMouseMovedEvents)")
             self.hover(button, leadingIcon: true)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 44) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 66) {
             self.capture("status-mouse-events")
             self.movePointer(to: CGPoint(x: 400, y: 400))
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 46) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 68) {
             self.hover(button, leadingIcon: true, withDelta: true)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 66) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 88) {
             self.capture("status-movement-delta")
             self.movePointer(to: CGPoint(x: 400, y: 400))
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 68) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 90) {
             self.hover(self.toolbarButton, leadingIcon: false)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 73) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 95) {
             self.capture("toolbar-control")
             NSApplication.shared.terminate(nil)
         }
