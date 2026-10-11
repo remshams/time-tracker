@@ -23,7 +23,7 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0007](0007-completed-worklog-deletion.md) | Delete completed worklogs | Accepted |
 | [0008](0008-move-worklogs-between-tasks.md) | Move worklogs between tasks | Partially superseded by ADR 0017; all other decisions remain accepted. |
 | [0009](0009-task-search.md) | Search and rank tasks by recent activity | Accepted |
-| [0010](0010-share-tui-application-requests.md) | Share TUI application requests across local and remote modes | Accepted |
+| [0010](0010-share-tui-application-requests.md) | Share TUI application requests across local and remote modes | Partially superseded by ADR 0021; all other decisions remain accepted. |
 | [0011](0011-use-one-tui-event-loop-with-a-fixed-redraw-tick.md) | Use one TUI event loop with a fixed redraw tick | Accepted |
 | [0012](0012-share-client-query-and-failure-policies.md) | Share client query and failure policies | Partially superseded by ADR 0013; all other decisions remain accepted. |
 | [0013](0013-remove-remote-archive-candidate-fingerprints.md) | Remove remote archive candidate fingerprints | Accepted |
@@ -33,4 +33,5 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0017](0017-separate-http-resources-from-client-refreshes.md) | Separate HTTP resources from client refreshes | Partially superseded by ADR 0019; independent resources and guarded writes remain accepted. |
 | [0018](0018-compose-resource-state-in-client-workflows.md) | Compose resource state in client workflows | Partially superseded by ADR 0019; observations, command recovery and lifecycle remain accepted. |
 | [0019](0019-read-coherent-workflow-state.md) | Read coherent workflow state | Accepted |
+| [0021](0021-share-concrete-client-backend.md) | Share the concrete client backend | Accepted |
 | [0022](0022-consolidate-application-and-repository-contracts.md) | Consolidate application and repository contracts | Accepted |

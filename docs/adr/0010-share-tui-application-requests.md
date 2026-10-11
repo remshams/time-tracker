@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Partially superseded by [ADR 0021](0021-share-concrete-client-backend.md) for separate production local and remote executors; all request, outcome and lifecycle decisions remain accepted.
 
 ## Date
 
