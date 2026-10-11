@@ -66,11 +66,9 @@ private struct TaskArchivingSheet: View {
             }
 
             HStack(spacing: 12) {
-                if state.isSubmitting {
-                    ProgressView().controlSize(.small)
-                    Text(isUnarchiving ? "Unarchiving task..." : "Archiving task...")
-                        .foregroundStyle(.secondary)
-                }
+                DelayedProgressIndicator(
+                    isBusy: state.isSubmitting, title: isUnarchiving ? "Unarchiving task..." : "Archiving task...",
+                    identifier: "task-archive.progress")
                 Spacer()
                 Button("Cancel") { archiving.cancel() }
                     .accessibilityIdentifier("task-archive.cancel")
