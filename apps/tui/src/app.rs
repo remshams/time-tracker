@@ -524,8 +524,7 @@ mod effect_tests {
     use chrono::{DateTime, TimeDelta, Utc};
     use tracker_application::{
         ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, SetActiveTaskOutcome,
-        TaskOperations, TaskOrdering, TaskQueries, TrackerApplication, TrackingOperations,
-        WorklogOperations, WorklogQueries,
+        TaskOrdering, TrackerApplication,
     };
     use tracker_domain::{TaskName, TrackingState, WorklogTimes};
     use tracker_storage::SqliteRepository;

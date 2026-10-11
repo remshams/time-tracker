@@ -610,6 +610,7 @@ async fn execute_remote_task(
 #[cfg(test)]
 mod intent_tests {
     use chrono::{DateTime, TimeDelta, Utc};
+    use tracker_application::TrackerApplicationService;
     use tracker_domain::{TaskId, TaskName, WorklogId, WorklogTimes};
 
     use crate::screens::task_list::InactiveTaskPreview;
@@ -620,7 +621,6 @@ mod intent_tests {
     fn local_bulk_archive_uses_the_preview_and_updates_the_task_list() {
         use super::{ApplicationOutcome, execute_local};
         use crate::test_support::{TestService, at, task};
-        use tracker_application::TaskQueries;
 
         let old_task = task(1, "Old task");
         let recent_task = task(2, "Recently tracked task");
