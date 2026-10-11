@@ -325,12 +325,17 @@ fn uncertain_creation_recovers_the_same_id_after_polling_or_retries_the_original
             let task_for_post = Arc::clone(&task);
             let recovered_for_post = Arc::clone(&recovered);
             let task_list_state = Arc::clone(&task);
+            let aggregate_state = Arc::clone(&task);
             let server = Server::launch(
                 TempDir::new().unwrap(),
                 "127.0.0.1:0".parse().unwrap(),
                 move || {
                     Router::new()
                     .route("/v1/health", get(|| async { Json(json!({"status":"ok","protocol_version":tracker_protocol::VERSION})) }))
+                    .route("/v1/state/task-list", get(move || {
+                        let state = Arc::clone(&aggregate_state);
+                        async move { Json(json!({"tasks":state.lock().unwrap().clone().into_iter().collect::<Vec<_>>(),"active_worklog":null,"revision":"recovered"})) }
+                    }))
                     .route("/v1/tasks", get(move || {
                         let task = Arc::clone(&task_list_state);
                         async move {
@@ -516,9 +521,9 @@ fn remote_rename_rejects_inconsistent_result_names_and_invalid_receipts() {
             move || {
                 Router::new()
                 .route("/v1/health", get(|| async { Json(json!({"status":"ok","protocol_version":tracker_protocol::VERSION})) }))
-                .route("/v1/tasks", get(move || {
+                .route("/v1/state/task-list", get(move || {
                     let task = initial_task.clone();
-                    async move { Json(json!({"tasks":[task],"revision":"initial"})) }
+                    async move { Json(json!({"tasks":[task],"active_worklog":null,"revision":"initial"})) }
                 }))
                 .route("/v1/tracking", get(|| async { Json(json!({"active_worklog":null,"revision":"initial"})) }))
                 .route("/v1/tasks/{id}", get(move || {
@@ -676,7 +681,7 @@ fn failed_write_response_remains_uncertain_after_a_successful_recovery_read() {
         || {
             Router::new()
             .route("/v1/health", get(|| async { Json(json!({"status": "ok", "protocol_version": tracker_protocol::VERSION})) }))
-            .route("/v1/tasks", get(|| async { Json(json!({"tasks": [{"id":"00000000-0000-0000-0000-000000000001","name":"Tracking project","archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null}], "revision": "confirmed"})) }))
+            .route("/v1/state/task-list", get(|| async { Json(json!({"active_worklog":null,"tasks": [{"id":"00000000-0000-0000-0000-000000000001","name":"Tracking project","archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null}], "revision": "confirmed"})) }))
             .route("/v1/tasks/{id}", get(|| async { Json(json!({"task":{"id":"00000000-0000-0000-0000-000000000001","name":"Tracking project","archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null},"revision":"confirmed"})) }))
             .route("/v1/tracking", get(|| async { Json(json!({"active_worklog":null,"revision":"confirmed"})) }).put(|| async { (StatusCode::INTERNAL_SERVER_ERROR, "Unconfirmed write") }))
         },

@@ -115,10 +115,33 @@ pub(super) fn resource_router_resources(
 ) -> axum::Router {
     use axum::{Json, Router, extract::Path, http::StatusCode, routing::get};
     use tracker_protocol::{ErrorCode, ErrorDto, TaskResourceDto, WorklogResourceDto};
+    let aggregate_resources = resources.clone();
     let task_list = resources.clone();
     let tracking_state = resources.clone();
     let worklog_state = resources.clone();
     Router::new()
+        .route(
+            "/v1/state/task-list",
+            get(move || {
+                let resources = aggregate_resources.lock().unwrap();
+                let dto = tracker_protocol::TaskListStateDto {
+                    tasks: resources.0.tasks.clone(),
+                    active_worklog: resources.1.active_worklog.clone(),
+                    revision: resources.0.revision.clone(),
+                };
+                let matches = resources.0.revision == resources.1.revision;
+                async move {
+                    (
+                        if matches {
+                            StatusCode::OK
+                        } else {
+                            StatusCode::CONFLICT
+                        },
+                        Json(dto),
+                    )
+                }
+            }),
+        )
         .route(
             "/v1/tasks",
             get(move || {
@@ -494,74 +517,68 @@ fn remote_report_uses_server_totals_and_composes_task_and_tracking_resources() {
 }
 
 #[test]
-fn remote_report_reconciles_changed_tracking_once_and_keeps_matching_totals() {
+fn remote_selected_report_uses_one_common_revision_without_reconciliation() {
     use axum::{Json, routing::get};
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
-    use tracker_protocol::{HealthDto, ReportDto, ReportRowDto};
-
-    for initial_revision in ["41", "42"] {
-        let repository = SqliteRepository::open_in_memory().unwrap();
-        let mut application = TrackerApplication::load(repository).unwrap();
-        let task_id = application
-            .create_task(TaskName::new("Measured task").unwrap(), at(0))
-            .unwrap()
-            .id();
-        let resources = report_tests::resource_dtos(
-            application.tasks(TaskOrdering::default()),
-            None,
-            "42".into(),
+    use tracker_protocol::{DailyOverviewDto, HealthDto, ReportDto, ReportRowDto};
+    let mut application =
+        TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap();
+    let task = application
+        .create_task(TaskName::new("Measured task").unwrap(), at(0))
+        .unwrap();
+    let resources = resource_dtos(
+        application.tasks(TaskOrdering::default()),
+        None,
+        "42".into(),
+    );
+    let requests = Arc::new(AtomicUsize::new(0));
+    let read_requests = requests.clone();
+    let router = resource_router(resources.clone(), vec![])
+        .route(
+            "/v1/health",
+            get(|| async {
+                Json(HealthDto {
+                    status: "ok".into(),
+                    protocol_version: tracker_protocol::VERSION,
+                })
+            }),
+        )
+        .route(
+            "/v1/state/daily-overview",
+            get(move || {
+                read_requests.fetch_add(1, Ordering::SeqCst);
+                let dto = DailyOverviewDto {
+                    tasks: resources.0.tasks.clone(),
+                    active_worklog: None,
+                    totals: ReportDto {
+                        start: at(1000),
+                        end: at(1100),
+                        now: at(1050),
+                        rows: vec![ReportRowDto {
+                            task_id: task.id().to_string(),
+                            duration_us: 50_000_000,
+                        }],
+                        total_us: 50_000_000,
+                        revision: "42".into(),
+                    },
+                };
+                async move { Json(dto) }
+            }),
         );
-        let requests = Arc::new(AtomicUsize::new(0));
-        let report_requests = requests.clone();
-        let router = resource_router(resources, vec![])
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: tracker_protocol::VERSION,
-                    })
-                }),
-            )
-            .route(
-                "/v1/reports/task-totals",
-                get(move || {
-                    let first = report_requests.fetch_add(1, Ordering::SeqCst) == 0;
-                    async move {
-                        let duration_us = if first { 50_000_000 } else { 60_000_000 };
-                        Json(ReportDto {
-                            start: at(1000),
-                            end: at(1100),
-                            now: at(1050),
-                            rows: vec![ReportRowDto {
-                                task_id: task_id.to_string(),
-                                duration_us,
-                            }],
-                            total_us: duration_us,
-                            revision: if first { initial_revision } else { "42" }.into(),
-                        })
-                    }
-                }),
-            );
-        let server = Server::start(router);
-        let mut bridge = server.client();
-        let value = selected_report(&mut bridge, 1000, 1100, 1050);
-        assert!(value.get("error").is_none(), "{value}");
-        assert_eq!(value["data"]["revision"], "42");
-        assert_eq!(
-            tracking_json(&bridge.application).unwrap().revision,
-            Some("42".into())
-        );
-        let changed = initial_revision != "42";
-        assert_eq!(requests.load(Ordering::SeqCst), if changed { 2 } else { 1 });
-        assert_eq!(
-            value["data"]["rows"][0]["durationMicroseconds"],
-            if changed { 60_000_000 } else { 50_000_000 }
-        );
-    }
+    let server = Server::start(router);
+    let mut bridge = server.client();
+    let value = selected_report(&mut bridge, 1000, 1100, 1050);
+    assert!(value.get("error").is_none(), "{value}");
+    assert_eq!(value["data"]["revision"], "42");
+    assert_eq!(
+        tracking_json(&bridge.application).unwrap().revision,
+        Some("42".into())
+    );
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+    assert_eq!(value["data"]["rows"][0]["durationMicroseconds"], 50_000_000);
 }
 
 #[test]
@@ -595,7 +612,7 @@ fn remote_report_failure_retains_resource_caches_until_an_explicit_refresh() {
             }),
         )
         .route(
-            "/v1/tasks",
+            "/v1/state/task-list",
             get(move || {
                 let resources = if task_reads.fetch_add(1, Ordering::SeqCst) == 0 {
                     (
@@ -612,8 +629,9 @@ fn remote_report_failure_retains_resource_caches_until_an_explicit_refresh() {
                     refreshed.clone()
                 };
                 async move {
-                    Json(TasksDto {
-                        tasks: resources.0.tasks.into_iter().collect(),
+                    Json(tracker_protocol::TaskListStateDto {
+                        tasks: resources.0.tasks,
+                        active_worklog: resources.1.active_worklog,
                         revision: resources.0.revision,
                     })
                 }
@@ -855,7 +873,7 @@ fn independent_remote_report_retains_totals_without_loading_task_or_tracking_met
 }
 
 #[test]
-fn exhausted_selected_refresh_retains_each_confirmed_resource_observation() {
+fn failed_aggregate_refresh_retains_each_confirmed_resource_observation() {
     use axum::{Json, routing::get};
     let server = Server::start(
         resource_router(

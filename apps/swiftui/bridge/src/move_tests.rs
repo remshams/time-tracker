@@ -761,7 +761,7 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
             }),
         )
         .route(
-            "/v1/tasks",
+            "/v1/state/task-list",
             get(move || {
                 let fail = reads.fetch_add(1, Ordering::SeqCst) > 0;
                 let resources = resources.clone();
@@ -776,8 +776,9 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
                         )
                             .into_response()
                     } else {
-                        Json(tracker_protocol::TasksDto {
-                            tasks: resources.0.tasks.into_iter().collect(),
+                        Json(tracker_protocol::TaskListStateDto {
+                            tasks: resources.0.tasks,
+                            active_worklog: resources.1.active_worklog,
                             revision: resources.0.revision,
                         })
                         .into_response()

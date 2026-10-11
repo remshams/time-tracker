@@ -388,7 +388,7 @@ fn unavailable_archive_and_restore_keep_confirmed_state_and_block_writes_until_r
 }
 
 #[test]
-fn task_write_recovery_reconciles_raced_views_or_preserves_the_last_coherent_pair() {
+fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair() {
     use axum::{Json, Router, routing::get};
     use std::sync::{
         Arc,
@@ -396,8 +396,7 @@ fn task_write_recovery_reconciles_raced_views_or_preserves_the_last_coherent_pai
     };
     use tracker_application::TaskOperations;
     use tracker_protocol::{
-        HealthDto, MutationDto, MutationResultDto, TaskDto, TaskResourceDto, TasksDto, TrackingDto,
-        WorklogDto,
+        HealthDto, MutationDto, MutationResultDto, TaskDto, TaskResourceDto, WorklogDto,
     };
 
     for settles in [false, true] {
@@ -423,7 +422,7 @@ fn task_write_recovery_reconciles_raced_views_or_preserves_the_last_coherent_pai
         let task_written = written.clone();
         let task_attempts = attempts.clone();
         let original_task = initial.clone();
-        let tracking_written = written.clone();
+
         let write_written = written.clone();
         let router = Router::new()
             .route(
@@ -436,41 +435,31 @@ fn task_write_recovery_reconciles_raced_views_or_preserves_the_last_coherent_pai
                 }),
             )
             .route(
-                "/v1/tasks",
+                "/v1/state/task-list",
                 get(move || {
                     let after = task_written.load(Ordering::SeqCst);
-                    let attempt = if after {
-                        task_attempts.fetch_add(1, Ordering::SeqCst)
-                    } else {
-                        0
-                    };
-                    let dto = TasksDto {
+                    if after {
+                        task_attempts.fetch_add(1, Ordering::SeqCst);
+                    }
+                    let dto = tracker_protocol::TaskListStateDto {
                         tasks: vec![if after {
                             latest.clone()
                         } else {
                             original_task.clone()
                         }],
-                        revision: if !after {
-                            "before"
-                        } else if settles && attempt > 0 {
-                            "after"
-                        } else {
-                            "raced"
-                        }
-                        .into(),
-                    };
-                    async move { Json(dto) }
-                }),
-            )
-            .route(
-                "/v1/tracking",
-                get(move || {
-                    let after = tracking_written.load(Ordering::SeqCst);
-                    let dto = TrackingDto {
                         active_worklog: after.then(|| active.clone()),
                         revision: if after { "after" } else { "before" }.into(),
                     };
-                    async move { Json(dto) }
+                    async move {
+                        (
+                            if after && !settles {
+                                axum::http::StatusCode::CONFLICT
+                            } else {
+                                axum::http::StatusCode::OK
+                            },
+                            Json(dto),
+                        )
+                    }
                 }),
             )
             .route(
@@ -506,7 +495,7 @@ fn task_write_recovery_reconciles_raced_views_or_preserves_the_last_coherent_pai
             TaskName::new("Requested name").unwrap(),
             at(400),
         );
-        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
         if settles {
             assert!(result.is_ok());
             assert_eq!(
@@ -720,6 +709,34 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
                         status: "ok".into(),
                         protocol_version: tracker_protocol::VERSION,
                     })
+                }),
+            )
+            .route(
+                "/v1/state/task-list",
+                get({
+                    let state = state.clone();
+                    let failures = failed_reads.clone();
+                    let reads = task_reads.clone();
+                    move || {
+                        reads.fetch_add(1, Ordering::SeqCst);
+                        let state = state.lock().unwrap();
+                        let dto = tracker_protocol::TaskListStateDto {
+                            tasks: state.0.tasks.clone(),
+                            active_worklog: state.1.active_worklog.clone(),
+                            revision: state.0.revision.clone(),
+                        };
+                        let fail = failures.load(Ordering::SeqCst);
+                        async move {
+                            (
+                                if fail {
+                                    StatusCode::INTERNAL_SERVER_ERROR
+                                } else {
+                                    StatusCode::OK
+                                },
+                                Json(dto),
+                            )
+                        }
+                    }
                 }),
             )
             .route(
