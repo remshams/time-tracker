@@ -52,7 +52,12 @@ struct TaskDetails: View {
                         WorklogHistoryHeading(correction: store.correction, move: store.move)
                         errorView
 
-                        if store.worklogs.isEmpty && store.error == nil {
+                        if store.worklogs.isEmpty && store.isHistoryLoading {
+                            Label("Loading worklogs...", systemImage: "clock")
+                                .accessibilityIdentifier("worklog-history.loading")
+                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 12)
+                        } else if store.worklogs.isEmpty && store.error == nil {
                             Label("No worklogs yet", systemImage: "clock")
                                 .accessibilityIdentifier("worklog-history.empty")
                                 .foregroundStyle(.secondary)
