@@ -35,9 +35,9 @@ struct ConnectionSummary: View {
                     .accessibilityIdentifier("connection-summary.status")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if store.isChangingConnection {
-                ProgressView().controlSize(.small)
-            } else if store.isStale {
+            DelayedProgressIndicator(
+                isBusy: store.isChangingConnection, identifier: "connection-summary.progress")
+            if !store.isChangingConnection, store.isStale {
                 Button("Retry") { store.refresh() }
                     .accessibilityIdentifier("connection-summary.retry")
                     .disabled(activity.isBlockingControls)
