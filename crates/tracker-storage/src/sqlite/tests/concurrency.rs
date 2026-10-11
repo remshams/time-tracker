@@ -567,12 +567,12 @@ fn a_stale_rename_cannot_overwrite_a_concurrent_archive_state() {
         .create_task(stamped_task(1, "alpha", 100, 100))
         .unwrap();
     // A second client archives the task after this client last read it.
-    let archived = TaskRepository::archive_task(&repository, task_id(1), at(150)).unwrap();
+    let archived = TrackerRepository::archive_task(&repository, task_id(1), at(150)).unwrap();
     assert!(archived.is_archived());
 
     // The stale client renames from its unarchived view: the rename lands,
     // and the concurrent archive state survives it.
-    let renamed = TaskRepository::rename_task(
+    let renamed = TrackerRepository::rename_task(
         &repository,
         task_id(1),
         TaskName::new("beta").unwrap(),
@@ -597,7 +597,7 @@ fn a_stale_archive_cannot_overwrite_a_concurrent_rename() {
         .create_task(stamped_task(1, "alpha", 100, 100))
         .unwrap();
     // A second client renames the task after this client last read it.
-    let renamed = TaskRepository::rename_task(
+    let renamed = TrackerRepository::rename_task(
         &repository,
         task_id(1),
         TaskName::new("beta").unwrap(),
@@ -607,7 +607,7 @@ fn a_stale_archive_cannot_overwrite_a_concurrent_rename() {
     assert_eq!(renamed.name().as_str(), "beta");
 
     // The stale client archives: the archive lands and keeps the rename.
-    let archived = TaskRepository::archive_task(&repository, task_id(1), at(200)).unwrap();
+    let archived = TrackerRepository::archive_task(&repository, task_id(1), at(200)).unwrap();
     assert!(archived.is_archived());
     assert_eq!(
         archived.name().as_str(),

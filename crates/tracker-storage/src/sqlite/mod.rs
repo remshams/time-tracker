@@ -13,9 +13,8 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags};
 use tracker_application::{
     GlobalWorklogCursor, GlobalWorklogPage, InactiveTaskArchive, InactiveTaskPreviewRead,
-    InactiveTaskRepository, ReportRead, ReportRepository, RepositoryError, TaskListItem,
-    TaskRepository, TrackingRepository, WorklogCorrection, WorklogCursor, WorklogDeletion,
-    WorklogMove, WorklogPage, WorklogRepository,
+    ReportRead, RepositoryError, TaskListItem, TrackerRepository, WorklogCorrection, WorklogCursor,
+    WorklogDeletion, WorklogMove, WorklogPage,
 };
 use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
 
@@ -73,7 +72,7 @@ impl SqliteRepository {
     }
 }
 
-impl TaskRepository for SqliteRepository {
+impl TrackerRepository for SqliteRepository {
     fn load_task_item(&self, id: TaskId) -> Result<Option<TaskListItem>, RepositoryError> {
         tasks::task_item_by_id_on(&self.conn, id).map_err(Into::into)
     }
@@ -131,9 +130,7 @@ impl TaskRepository for SqliteRepository {
     ) -> Result<InactiveTaskArchive, RepositoryError> {
         SqliteRepository::archive_inactive_tasks(self, expected_ids, as_of).map_err(Into::into)
     }
-}
 
-impl InactiveTaskRepository for SqliteRepository {
     fn preview_inactive_tasks_with_period(
         &self,
         as_of: DateTime<Utc>,
@@ -152,9 +149,7 @@ impl InactiveTaskRepository for SqliteRepository {
         SqliteRepository::archive_inactive_tasks_with_period(self, expected_ids, as_of, period)
             .map_err(Into::into)
     }
-}
 
-impl ReportRepository for SqliteRepository {
     fn task_list_report_read(
         &self,
         start: DateTime<Utc>,
@@ -172,9 +167,7 @@ impl ReportRepository for SqliteRepository {
     ) -> Result<ReportRead, RepositoryError> {
         SqliteRepository::report_read(self, start, end, now).map_err(Into::into)
     }
-}
 
-impl TrackingRepository for SqliteRepository {
     fn active_worklog(&self) -> Result<Option<Worklog>, RepositoryError> {
         SqliteRepository::active_worklog(self).map_err(Into::into)
     }
@@ -202,9 +195,7 @@ impl TrackingRepository for SqliteRepository {
         SqliteRepository::switch_worklog(self, id, expected_start, stop_at, next)
             .map_err(Into::into)
     }
-}
 
-impl WorklogRepository for SqliteRepository {
     fn global_worklog_page(
         &self,
         after: Option<&GlobalWorklogCursor>,

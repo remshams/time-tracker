@@ -548,7 +548,7 @@ fn inactive_bulk_archive_rechecks_candidates_and_rolls_back_failed_writes() {
 fn sqlite_application_ports_delegate_task_and_worklog_queries() {
     let repository = repo();
     let task = stamped_task(1, "alpha", 100, 100);
-    TaskRepository::create_task(&repository, task.clone()).unwrap();
+    TrackerRepository::create_task(&repository, task.clone()).unwrap();
     assert_eq!(repository.find_task(task.id()).unwrap(), Some(task.clone()));
     let items = repository.list_task_items().unwrap();
     assert_eq!(
@@ -560,12 +560,12 @@ fn sqlite_application_ports_delegate_task_and_worklog_queries() {
     );
 
     let worklog = Worklog::begin(worklog_id(1), task.id(), at(100));
-    TrackingRepository::insert_worklog(&repository, &worklog).unwrap();
+    TrackerRepository::insert_worklog(&repository, &worklog).unwrap();
     assert_eq!(
-        WorklogRepository::find_worklog(&repository, worklog.id()).unwrap(),
+        TrackerRepository::find_worklog(&repository, worklog.id()).unwrap(),
         Some(worklog.clone())
     );
-    let corrected = WorklogRepository::compare_and_set_worklog_times(
+    let corrected = TrackerRepository::compare_and_set_worklog_times(
         &repository,
         worklog.id(),
         worklog.times(),
@@ -574,13 +574,13 @@ fn sqlite_application_ports_delegate_task_and_worklog_queries() {
     .unwrap()
     .worklog;
     assert_eq!(
-        WorklogRepository::worklog_page(&repository, task.id(), None)
+        TrackerRepository::worklog_page(&repository, task.id(), None)
             .unwrap()
             .worklogs,
         vec![corrected]
     );
 
-    let saved = TaskRepository::rename_task(
+    let saved = TrackerRepository::rename_task(
         &repository,
         task.id(),
         TaskName::new("renamed").unwrap(),
@@ -646,7 +646,7 @@ fn task_create_find_list_rename_and_missing_errors() {
     assert!(repository.find_task(task_id(9)).unwrap().is_none());
 
     // A rename goes through the field-specific port.
-    let renamed = TaskRepository::rename_task(
+    let renamed = TrackerRepository::rename_task(
         &repository,
         task_id(2),
         TaskName::new("renamed").unwrap(),
@@ -667,7 +667,7 @@ fn task_create_find_list_rename_and_missing_errors() {
 
     // Renaming a missing task reports which one.
     assert!(matches!(
-        TaskRepository::rename_task(&repository, task_id(9), TaskName::new("missing").unwrap(), at(100)),
+        TrackerRepository::rename_task(&repository, task_id(9), TaskName::new("missing").unwrap(), at(100)),
         Err(RepositoryError::TaskNotFound { id }) if id == task_id(9)
     ));
 
@@ -685,7 +685,7 @@ fn rename_task_keeps_stored_updated_at_from_moving_backward() {
         .unwrap();
     // A caller with a late client clock, for example one that computed its
     // timestamp earlier, cannot rewind the stored value.
-    let saved = TaskRepository::rename_task(
+    let saved = TrackerRepository::rename_task(
         &repository,
         task_id(1),
         TaskName::new("older clock").unwrap(),
@@ -706,10 +706,10 @@ fn idempotent_metadata_operations_leave_updated_at_unchanged() {
     repository
         .create_task(stamped_task(2, "gone", 100, 100))
         .unwrap();
-    TaskRepository::archive_task(&repository, task_id(2), at(150)).unwrap();
+    TrackerRepository::archive_task(&repository, task_id(2), at(150)).unwrap();
 
     // A real rename advances updated_at ...
-    let renamed = TaskRepository::rename_task(
+    let renamed = TrackerRepository::rename_task(
         &repository,
         task_id(1),
         TaskName::new("beta").unwrap(),
@@ -718,7 +718,7 @@ fn idempotent_metadata_operations_leave_updated_at_unchanged() {
     .unwrap();
     assert_eq!(renamed.updated_at(), at(200));
     // ... and a late client clock cannot move it backward.
-    let renamed = TaskRepository::rename_task(
+    let renamed = TrackerRepository::rename_task(
         &repository,
         task_id(1),
         TaskName::new("gamma").unwrap(),
@@ -729,7 +729,7 @@ fn idempotent_metadata_operations_leave_updated_at_unchanged() {
 
     // Renaming to the stored name is a no-op for the timestamp, even at a
     // much later occurred_at.
-    let again = TaskRepository::rename_task(
+    let again = TrackerRepository::rename_task(
         &repository,
         task_id(1),
         TaskName::new("gamma").unwrap(),
@@ -738,13 +738,13 @@ fn idempotent_metadata_operations_leave_updated_at_unchanged() {
     .unwrap();
     assert_eq!(again.updated_at(), at(200));
     // So are archiving an archived task and restoring an active task.
-    let again = TaskRepository::archive_task(&repository, task_id(2), at(900)).unwrap();
+    let again = TrackerRepository::archive_task(&repository, task_id(2), at(900)).unwrap();
     assert_eq!(again.updated_at(), at(150));
-    let again = TaskRepository::unarchive_task(&repository, task_id(1), at(900)).unwrap();
+    let again = TrackerRepository::unarchive_task(&repository, task_id(1), at(900)).unwrap();
     assert_eq!(again.updated_at(), at(200));
 
     // A real restore still advances the timestamp.
-    let restored = TaskRepository::unarchive_task(&repository, task_id(2), at(900)).unwrap();
+    let restored = TrackerRepository::unarchive_task(&repository, task_id(2), at(900)).unwrap();
     assert!(!restored.is_archived());
     assert_eq!(restored.updated_at(), at(900));
 }
@@ -757,7 +757,7 @@ fn archiving_a_task_with_an_active_worklog_is_rejected_until_it_stops() {
     let started = Worklog::begin(worklog_id(1), task.id(), at(200));
     repository.insert_worklog(&started).unwrap();
 
-    let error = TaskRepository::archive_task(&repository, task.id(), at(300))
+    let error = TrackerRepository::archive_task(&repository, task.id(), at(300))
         .expect_err("the active task must not archive");
     assert!(matches!(
         error,
@@ -779,7 +779,7 @@ fn archiving_a_task_with_an_active_worklog_is_rejected_until_it_stops() {
     repository
         .stop_worklog(started.id(), started.start(), at(400))
         .unwrap();
-    let archived = TaskRepository::archive_task(&repository, task.id(), at(300)).unwrap();
+    let archived = TrackerRepository::archive_task(&repository, task.id(), at(300)).unwrap();
     assert!(archived.is_archived());
     assert_eq!(archived.updated_at(), at(300));
 }
@@ -835,7 +835,7 @@ fn unarchiving_restores_a_task_keeps_its_worklogs_and_persists() {
         );
 
         // A restore through the field-specific port.
-        let saved = TaskRepository::unarchive_task(&repository, task.id(), at(200)).unwrap();
+        let saved = TrackerRepository::unarchive_task(&repository, task.id(), at(200)).unwrap();
         assert!(!saved.is_archived());
         assert_eq!(saved.updated_at(), at(200));
         assert_eq!(saved.created_at(), at(100));
@@ -848,7 +848,7 @@ fn unarchiving_restores_a_task_keeps_its_worklogs_and_persists() {
         let resumed = Worklog::begin(worklog_id(11), task.id(), at(300));
         repository.insert_worklog(&resumed).unwrap();
         // Restoring again is a no-op for the timestamp.
-        let current = TaskRepository::unarchive_task(&repository, task.id(), at(400)).unwrap();
+        let current = TrackerRepository::unarchive_task(&repository, task.id(), at(400)).unwrap();
         assert_eq!(current.updated_at(), at(200));
 
         repository.create_task(named_task(2, "later")).unwrap();
@@ -1220,7 +1220,7 @@ fn single_task_resource_reads_ignore_unrelated_invalid_metadata_and_preserve_mis
         )
         .unwrap();
 
-    let read = tracker_application::TaskRepository::load_task_item(&repository, task_id(1))
+    let read = tracker_application::TrackerRepository::load_task_item(&repository, task_id(1))
         .unwrap()
         .unwrap();
 
@@ -1228,9 +1228,11 @@ fn single_task_resource_reads_ignore_unrelated_invalid_metadata_and_preserve_mis
     assert_eq!(read.task.name().as_str(), "requested");
     assert_eq!(read.latest_work_start, Some(at(200)));
     assert_eq!(
-        tracker_application::TaskRepository::load_task_item(&repository, task_id(3)).unwrap(),
+        tracker_application::TrackerRepository::load_task_item(&repository, task_id(3)).unwrap(),
         None
     );
-    assert!(tracker_application::TaskRepository::load_task_item(&repository, task_id(2)).is_err());
+    assert!(
+        tracker_application::TrackerRepository::load_task_item(&repository, task_id(2)).is_err()
+    );
     assert!(repository.load_task_tracking_resources().is_err());
 }
