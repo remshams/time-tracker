@@ -1,12 +1,14 @@
 //! Application use cases requested by the TUI, independent of the selected store.
 
 use chrono::{DateTime, Utc};
+#[cfg(test)]
+use tracker_application::TrackerApplicationService;
 use tracker_application::{
     ApplicationError, ClearActiveTaskOutcome, GlobalWorklogCursor, GlobalWorklogPage, ReportTotals,
-    SetActiveTaskOutcome, TrackerApplicationService, WorklogCursor, WorklogPage,
+    SetActiveTaskOutcome, WorklogCursor, WorklogPage,
 };
+use tracker_client::TrackerBackend;
 use tracker_domain::{Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes};
-use tracker_remote::RemoteApplication;
 
 use crate::screens::reports::{ReportPresentation, ReportPresentationRow};
 use crate::screens::task_list::InactiveTaskPreview;
@@ -256,6 +258,7 @@ impl ApplicationRequest {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn execute_local<S: TrackerApplicationService>(
     application: &mut S,
     request: ApplicationRequest,
@@ -325,19 +328,16 @@ pub(crate) fn execute_local<S: TrackerApplicationService>(
     CompletedRequest { request, outcome }
 }
 
-pub(crate) async fn execute_remote(
-    application: &mut RemoteApplication,
+pub(crate) async fn execute_backend(
+    application: &mut TrackerBackend,
     request: ApplicationRequest,
 ) -> CompletedRequest {
     let outcome = match &request {
         ApplicationRequest::RefreshTaskList => ApplicationOutcome::TaskListRefresh(
-            application.refresh_task_list().await.map_err(|error| {
-                if error.is_unavailable() {
-                    ApplicationError::RemoteUnavailable(error.to_string())
-                } else {
-                    ApplicationError::RemoteProtocol(error.to_string())
-                }
-            }),
+            application
+                .refresh_task_list()
+                .await
+                .map_err(|error| error.into_application_error()),
         ),
         ApplicationRequest::CreateTask { .. }
         | ApplicationRequest::RenameTask { .. }
@@ -345,30 +345,36 @@ pub(crate) async fn execute_remote(
         | ApplicationRequest::PreviewInactiveTasks { .. }
         | ApplicationRequest::ArchiveInactiveTasks { .. }
         | ApplicationRequest::UnarchiveTask { .. } => {
-            execute_remote_task(application, &request).await
+            execute_backend_task(application, &request).await
         }
         ApplicationRequest::SetActiveTask { .. } | ApplicationRequest::ClearActiveTask { .. } => {
-            execute_remote_tracking(application, &request).await
+            execute_backend_tracking(application, &request).await
         }
         ApplicationRequest::WorklogsForTask { .. } | ApplicationRequest::AllWorklogs { .. } => {
-            execute_remote_history(application, &request).await
+            execute_backend_history(application, &request).await
         }
         ApplicationRequest::MoveWorklog { .. }
         | ApplicationRequest::CorrectWorklog { .. }
         | ApplicationRequest::DeleteCompletedWorklog { .. } => {
-            execute_remote_worklog(application, &request).await
+            execute_backend_worklog(application, &request).await
         }
         ApplicationRequest::ReportTotals { start, end, now } => {
-            ApplicationOutcome::RemoteReportTotals(
-                execute_remote_report(application, *start, *end, *now).await,
-            )
+            if application.is_remote() {
+                ApplicationOutcome::RemoteReportTotals(
+                    execute_backend_report(application, *start, *end, *now).await,
+                )
+            } else {
+                ApplicationOutcome::ReportTotals(
+                    application.report_totals(*start, *end, *now).await,
+                )
+            }
         }
     };
     CompletedRequest { request, outcome }
 }
 
-async fn execute_remote_tracking(
-    application: &mut RemoteApplication,
+async fn execute_backend_tracking(
+    application: &mut TrackerBackend,
     request: &ApplicationRequest,
 ) -> ApplicationOutcome {
     match request {
@@ -393,8 +399,8 @@ async fn execute_remote_tracking(
     }
 }
 
-async fn execute_remote_history(
-    application: &mut RemoteApplication,
+async fn execute_backend_history(
+    application: &mut TrackerBackend,
     request: &ApplicationRequest,
 ) -> ApplicationOutcome {
     match request {
@@ -418,8 +424,8 @@ async fn execute_remote_history(
     }
 }
 
-async fn execute_remote_worklog(
-    application: &mut RemoteApplication,
+async fn execute_backend_worklog(
+    application: &mut TrackerBackend,
     request: &ApplicationRequest,
 ) -> ApplicationOutcome {
     match request {
@@ -461,42 +467,41 @@ async fn execute_remote_worklog(
     }
 }
 
-async fn execute_remote_report(
-    application: &mut RemoteApplication,
+async fn execute_backend_report(
+    application: &mut TrackerBackend,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
     now: DateTime<Utc>,
 ) -> Result<ReportPresentation, ApplicationError> {
-    let dto = application.task_totals(start, end, now).await?;
+    let dto = application.report(start, end, now).await?;
     let mut rows = Vec::with_capacity(dto.rows.len());
     for row in dto.rows {
-        let id: TaskId = row.task_id.parse().map_err(|_| {
-            ApplicationError::RemoteProtocol("Invalid report task identifier".to_owned())
-        })?;
-        if application.task_item(id).is_none() {
+        let id = row.task_id;
+        if application.task(id).is_none() {
             let _ = application.read_task(id).await;
         }
         rows.push(ReportPresentationRow {
             task_id: id,
             task_name: application.task(id).map(|task| task.name().to_string()),
-            duration: chrono::TimeDelta::microseconds(row.duration_us),
+            duration: row.duration,
         });
     }
     Ok(ReportPresentation {
         rows,
-        total: chrono::TimeDelta::microseconds(dto.total_us),
+        total: dto.total,
     })
 }
 
-async fn resolve_history_tasks(application: &mut RemoteApplication, worklogs: &[Worklog]) {
+async fn resolve_history_tasks(application: &mut TrackerBackend, worklogs: &[Worklog]) {
     let ids: std::collections::BTreeSet<_> = worklogs.iter().map(Worklog::task_id).collect();
     for id in ids {
-        if application.task_item(id).is_none() {
+        if application.task(id).is_none() {
             let _ = application.read_task(id).await;
         }
     }
 }
 
+#[cfg(test)]
 fn execute_local_task<S: TrackerApplicationService>(
     application: &mut S,
     request: &ApplicationRequest,
@@ -552,8 +557,8 @@ fn execute_local_task<S: TrackerApplicationService>(
     }
 }
 
-async fn execute_remote_task(
-    application: &mut RemoteApplication,
+async fn execute_backend_task(
+    application: &mut TrackerBackend,
     request: &ApplicationRequest,
 ) -> ApplicationOutcome {
     match request {
@@ -580,25 +585,53 @@ async fn execute_remote_task(
                 .await,
         ),
         ApplicationRequest::PreviewInactiveTasks { as_of } => {
-            let result = async {
-                let preview = application.preview_inactive_tasks(*as_of).await?;
-                let tasks = application.resolve_preview_tasks(&preview).await?;
-                let sample_names = tasks.into_iter().take(5).map(|task| task.name).collect();
-                Ok(InactiveTaskPreview::Remote {
-                    preview,
-                    sample_names,
-                })
-            }
-            .await;
+            let result = application
+                .preview_inactive_tasks(
+                    *as_of,
+                    tracker_domain::InactivityPeriod::new(14)
+                        .expect("default inactivity period is valid"),
+                )
+                .await
+                .map(|preview| match preview {
+                    tracker_client::InactivePreview::Local { as_of, tasks, .. } => {
+                        InactiveTaskPreview::Local {
+                            as_of,
+                            candidate_ids: tasks.iter().map(Task::id).collect(),
+                            sample_names: tasks
+                                .iter()
+                                .take(3)
+                                .map(|task| task.name().to_string())
+                                .collect(),
+                        }
+                    }
+                    tracker_client::InactivePreview::Remote { preview, tasks } => {
+                        InactiveTaskPreview::Remote {
+                            preview,
+                            sample_names: tasks.into_iter().take(5).map(|task| task.name).collect(),
+                        }
+                    }
+                });
             ApplicationOutcome::InactiveTaskPreview(result)
         }
         ApplicationRequest::ArchiveInactiveTasks { preview } => {
-            let InactiveTaskPreview::Remote { preview, .. } = preview else {
-                unreachable!("remote bulk archive uses a remote preview")
+            let result = match (application, preview) {
+                (
+                    TrackerBackend::Local(application),
+                    InactiveTaskPreview::Local {
+                        as_of,
+                        candidate_ids,
+                        ..
+                    },
+                ) => application
+                    .archive_inactive_tasks(candidate_ids, *as_of)
+                    .map(|tasks| tasks.len()),
+                (
+                    TrackerBackend::Remote(application),
+                    InactiveTaskPreview::Remote { preview, .. },
+                ) => application.archive_inactive_tasks(preview).await,
+                _ => unreachable!("bulk archive preview belongs to the selected backend"),
             };
-            ApplicationOutcome::ArchivedInactiveTasks(
-                application.archive_inactive_tasks(preview).await,
-            )
+            ApplicationOutcome::ArchivedInactiveTasks(result)
         }
         ApplicationRequest::UnarchiveTask { id, occurred_at } => {
             ApplicationOutcome::Task(application.unarchive_task(*id, *occurred_at).await)
@@ -1057,10 +1090,11 @@ pub(crate) mod remote_resource_tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    use super::{ApplicationOutcome, ApplicationRequest, execute_remote};
+    use super::{ApplicationOutcome, ApplicationRequest, execute_backend};
     use crate::app::AppState;
     use crate::test_support::{at, task, worklog_id};
     use tracker_application::TaskListItem;
+    use tracker_client::TrackerBackend;
     use tracker_domain::{ActiveWorklog, TrackingState};
     use tracker_remote::RemoteApplication;
 
@@ -1149,8 +1183,10 @@ pub(crate) mod remote_resource_tests {
     async fn read_report(metadata_available: bool) {
         let task_id = task(1, "Report task").id();
         let (endpoint, worker) = report_server(task_id, metadata_available);
-        let mut application = RemoteApplication::disconnected(&endpoint).unwrap();
-        let completed = execute_remote(
+        let mut application = TrackerBackend::Remote(Box::new(
+            RemoteApplication::disconnected(&endpoint).unwrap(),
+        ));
+        let completed = execute_backend(
             &mut application,
             ApplicationRequest::ReportTotals {
                 start: at(100),
@@ -1160,7 +1196,7 @@ pub(crate) mod remote_resource_tests {
         )
         .await;
         if metadata_available {
-            let repeated = execute_remote(
+            let repeated = execute_backend(
                 &mut application,
                 ApplicationRequest::ReportTotals {
                     start: at(100),
@@ -1181,7 +1217,13 @@ pub(crate) mod remote_resource_tests {
             )
             .to_worklog();
             super::resolve_history_tasks(&mut application, &[worklog]).await;
-            assert!(application.last_failure().is_none());
+            assert!(
+                application
+                    .remote_application()
+                    .unwrap()
+                    .last_failure()
+                    .is_none()
+            );
         }
         let paths = worker.join().unwrap();
         assert_eq!(paths.len(), if metadata_available { 4 } else { 3 });
@@ -1199,8 +1241,20 @@ pub(crate) mod remote_resource_tests {
             totals.rows[0].task_name.as_deref(),
             metadata_available.then_some("Report task")
         );
-        assert!(application.task_observation().is_none());
-        assert!(application.tracking_observation().is_none());
+        assert!(
+            application
+                .remote_application()
+                .unwrap()
+                .task_observation()
+                .is_none()
+        );
+        assert!(
+            application
+                .remote_application()
+                .unwrap()
+                .tracking_observation()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -1244,7 +1298,9 @@ pub(crate) mod remote_resource_tests {
             (200, metadata),
             (200, second_page),
         ]);
-        let mut application = RemoteApplication::disconnected(&endpoint).unwrap();
+        let mut application = TrackerBackend::Remote(Box::new(
+            RemoteApplication::disconnected(&endpoint).unwrap(),
+        ));
         let cached = task(2, "Previously confirmed task");
         let mut state = AppState::load_task_list(
             vec![TaskListItem {
@@ -1254,7 +1310,7 @@ pub(crate) mod remote_resource_tests {
             TrackingState::Idle,
         );
 
-        let completed = execute_remote(
+        let completed = execute_backend(
             &mut application,
             ApplicationRequest::AllWorklogs { after: None },
         )
@@ -1271,11 +1327,27 @@ pub(crate) mod remote_resource_tests {
         );
         assert!(page.task_items.is_empty());
         assert!(page.tracking.is_none());
-        let label = application.task_item(task_id).unwrap();
+        let label = application
+            .remote_application()
+            .unwrap()
+            .task_item(task_id)
+            .unwrap();
         assert_eq!(label.task.name().as_str(), "History task");
         assert_eq!(label.latest_work_start, Some(at(200)));
-        assert!(application.task_observation().is_none());
-        assert!(application.tracking_observation().is_none());
+        assert!(
+            application
+                .remote_application()
+                .unwrap()
+                .task_observation()
+                .is_none()
+        );
+        assert!(
+            application
+                .remote_application()
+                .unwrap()
+                .tracking_observation()
+                .is_none()
+        );
         state.publish_request_resources(&completed, vec![label.clone()], None);
         assert_eq!(
             state.catalog().task(task_id).unwrap().name().as_str(),
@@ -1284,7 +1356,7 @@ pub(crate) mod remote_resource_tests {
         assert_eq!(state.catalog().task(cached.id()), Some(&cached));
         assert!(state.tracking().active_worklog().is_none());
 
-        let completed = execute_remote(
+        let completed = execute_backend(
             &mut application,
             ApplicationRequest::AllWorklogs {
                 after: Some(page.next_cursor.expect("the first page has older rows")),
@@ -1303,9 +1375,27 @@ pub(crate) mod remote_resource_tests {
             application.task(task_id).unwrap().name().as_str(),
             "History task"
         );
-        assert!(application.task_observation().is_none());
-        assert!(application.tracking_observation().is_none());
-        assert!(application.last_failure().is_none());
+        assert!(
+            application
+                .remote_application()
+                .unwrap()
+                .task_observation()
+                .is_none()
+        );
+        assert!(
+            application
+                .remote_application()
+                .unwrap()
+                .tracking_observation()
+                .is_none()
+        );
+        assert!(
+            application
+                .remote_application()
+                .unwrap()
+                .last_failure()
+                .is_none()
+        );
 
         let paths = worker.join().unwrap();
         assert_eq!(paths.len(), 4);
@@ -1351,8 +1441,10 @@ pub(crate) mod remote_resource_tests {
             ),
             (200, metadata),
         ]);
-        let mut application = RemoteApplication::disconnected(&endpoint).unwrap();
-        let completed = execute_remote(
+        let mut application = TrackerBackend::Remote(Box::new(
+            RemoteApplication::disconnected(&endpoint).unwrap(),
+        ));
+        let completed = execute_backend(
             &mut application,
             ApplicationRequest::WorklogsForTask {
                 task_id,
@@ -1365,7 +1457,12 @@ pub(crate) mod remote_resource_tests {
         };
         assert!(page.worklogs.is_empty());
         assert!(page.adoption.is_none());
-        let resolved = application.task_item(task_id).unwrap().clone();
+        let resolved = application
+            .remote_application()
+            .unwrap()
+            .task_item(task_id)
+            .unwrap()
+            .clone();
 
         state.publish_request_resources(&completed, vec![resolved], None);
 
@@ -1375,8 +1472,20 @@ pub(crate) mod remote_resource_tests {
         );
         assert_eq!(state.catalog().task(cached.id()), Some(&cached));
         assert_eq!(state.tracking().active_worklog(), Some(&running));
-        assert!(application.task_observation().is_none());
-        assert!(application.tracking_observation().is_none());
+        assert!(
+            application
+                .remote_application()
+                .unwrap()
+                .task_observation()
+                .is_none()
+        );
+        assert!(
+            application
+                .remote_application()
+                .unwrap()
+                .tracking_observation()
+                .is_none()
+        );
         assert_eq!(
             worker.join().unwrap(),
             vec![

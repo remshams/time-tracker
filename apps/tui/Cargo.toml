@@ -16,6 +16,7 @@ crossterm = { workspace = true, features = ["event-stream"] }
 futures-util = { workspace = true }
 iana-time-zone = { workspace = true }
 ratatui = { workspace = true }
+tracker-client = { path = "../../crates/tracker-client" }
 tracker-application = { path = "../../crates/tracker-application" }
 tracker-domain = { path = "../../crates/tracker-domain" }
 tracker-remote = { path = "../../crates/tracker-remote" }
