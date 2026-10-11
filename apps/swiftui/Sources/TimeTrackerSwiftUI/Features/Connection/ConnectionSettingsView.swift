@@ -73,14 +73,24 @@ struct ConnectionSettingsView: View {
                 }
 
                 Section("Menu bar") {
-                    Toggle(
-                        "Show today's total next to the icon",
-                        isOn: Binding(
-                            get: { store.showDailyTotalInMenuBar },
-                            set: { store.setShowDailyTotalInMenuBar($0) }
+                    Picker(
+                        "Text next to the icon",
+                        selection: Binding(
+                            get: { store.menuBarDisplay },
+                            set: { store.setMenuBarDisplay($0) }
                         )
+                    ) {
+                        Text("Time").tag(MenuBarDisplay.time)
+                        Text("Task name").tag(MenuBarDisplay.taskName)
+                        Text("None").tag(MenuBarDisplay.none)
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityIdentifier("menu.display")
+                    Text(
+                        "Time shows today's total. Task name shows the running task. Hover over the icon to read the full task name."
                     )
-                    .accessibilityIdentifier("menu.show-daily-total")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Section("Menu shortcut") {
@@ -96,6 +106,11 @@ struct ConnectionSettingsView: View {
                             .accessibilityIdentifier("menu.shortcut.open")
                         }
                     }
+                    if let error = store.menuShortcutError {
+                        Text(error).foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("menu.shortcut.error")
+                    }
                     Text(
                         "Click the shortcut and press its new keys. Escape cancels. Open menu opens the native menu across apps. Use arrow keys to navigate and open task submenus for tracking and copying."
                     )
@@ -106,11 +121,6 @@ struct ConnectionSettingsView: View {
                     )
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    if let error = store.menuShortcutError {
-                        Text(error).foregroundStyle(.red)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("menu.shortcut.error")
-                    }
                     Button("Restore default shortcut") { store.resetMenuShortcuts() }
                         .accessibilityIdentifier("menu.shortcut.restore")
                 }

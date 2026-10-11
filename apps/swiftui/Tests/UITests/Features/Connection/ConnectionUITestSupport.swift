@@ -62,6 +62,6 @@ extension TrackerUITestCase {
     func openSettings() {
         app.activate()
         app.typeKey(",", modifierFlags: .command)
-        XCTAssertTrue(element("menu.show-daily-total").waitForExistence(timeout: timeout))
+        XCTAssertTrue(element("menu.display").waitForExistence(timeout: timeout))
     }
 }

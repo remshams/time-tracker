@@ -1,9 +1,17 @@
 import AppKit
+import CoreGraphics
 import XCTest
 
 @MainActor
 extension TrackerUITestCase {
     var statusButton: XCUIElement { element("menu.status") }
+
+    func chooseMenuBarDisplay(_ label: String) {
+        element("menu.display").click()
+        let item = app.menuItems[label].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: timeout))
+        item.click()
+    }
 
     func openStatusMenu() {
         app.typeKey("t", modifierFlags: [.control, .option])
@@ -21,10 +29,28 @@ extension TrackerUITestCase {
         let row = menuTask(task)
         XCTAssertTrue(row.waitForExistence(timeout: timeout))
         row.hover()
-        let item = app.menuItems[action].firstMatch
+        let item = row.menuItems[action].firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: timeout))
         XCTAssertTrue(item.isEnabled)
-        item.click()
+        clickTaskSubmenuItem(item, task: task)
+    }
+
+    func clickTaskSubmenuItem(_ item: XCUIElement, task: FixtureTask) {
+        waitUntil("The task submenu action is reachable") { item.exists && item.isHittable }
+        let row = menuTask(task)
+        let actionFrame = item.frame
+        let rowFrame = row.frame
+        // Enter the submenu at the parent row's height before moving to the action.
+        // A diagonal move can cross another parent row when the submenu opens to the left.
+        screenCoordinate(at: CGPoint(x: actionFrame.midX, y: rowFrame.midY)).hover()
+        screenCoordinate(at: CGPoint(x: actionFrame.midX, y: actionFrame.midY)).click()
+    }
+
+    private func screenCoordinate(at point: CGPoint) -> XCUICoordinate {
+        let window = trackerWindow
+        let frame = window.frame
+        return window.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: point.x - frame.minX, dy: point.y - frame.minY))
     }
 
     func withRestoredClipboard(_ body: () throws -> Void) rethrows {
