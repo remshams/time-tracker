@@ -176,6 +176,7 @@ public final class TrackerPresentationObserver {
         let error: String?
         let trackingError: String?
         let historyUnavailable: Bool
+        let historyLoading: Bool
         let selectedTaskID: String?
         let tab: TaskTab
         let connectionSettings: ConnectionSettings
@@ -198,6 +199,7 @@ public final class TrackerPresentationObserver {
             error = session.error
             trackingError = session.trackingError
             historyUnavailable = session.historyUnavailable
+            historyLoading = session.isHistoryLoading
             selectedTaskID = session.selectedTaskID
             tab = session.tab
             connectionSettings = session.connectionSettings
