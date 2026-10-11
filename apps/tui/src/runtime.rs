@@ -10,13 +10,11 @@ use crossterm::event::{DisableFocusChange, EnableFocusChange, Event, EventStream
 use crossterm::execute;
 use futures_util::StreamExt;
 use ratatui::Frame;
-use tracker_application::TrackerApplication;
 use tracker_remote::{RemoteApplication, RemoteError, RemoteFailureKind};
-use tracker_storage::SqliteRepository;
 
 use crate::app::{AppEffect, AppState, Status};
 use crate::application_request::{
-    ApplicationOutcome, ApplicationRequest, CompletedRequest, execute_local, execute_remote,
+    ApplicationOutcome, ApplicationRequest, CompletedRequest, execute_backend,
 };
 use crate::terminal::TerminalGuard;
 
@@ -27,10 +25,7 @@ const TRACKING_STALE_STATUS: &str = "Tracking saved; refresh failed. Timer may b
 const TRACKING_UNAVAILABLE_STATUS: &str =
     "Tracking saved; refresh failed. Server unavailable. Timer may be stale.";
 
-pub(crate) enum Backend {
-    Local(TrackerApplication<SqliteRepository>),
-    Remote(Box<RemoteApplication>),
-}
+pub(crate) type Backend = tracker_client::TrackerBackend;
 
 enum ResultKind {
     Request(Box<CompletedRequest>),
@@ -200,21 +195,11 @@ fn complete_request(
 fn start_request(backend: Backend, request: ApplicationRequest) -> Pending {
     Box::pin(async move {
         let mut backend = backend;
-        let completed = match &mut backend {
-            Backend::Local(application) => execute_local(application, request),
-            Backend::Remote(application) => execute_remote(application, request).await,
-        };
+        let completed = execute_backend(&mut backend, request).await;
         if completed.request.needs_task_list()
             && completed.request != ApplicationRequest::RefreshTaskList
         {
-            match &mut backend {
-                Backend::Local(application) => {
-                    let _ = application.refresh_task_list();
-                }
-                Backend::Remote(application) => {
-                    let _ = application.refresh_task_list().await;
-                }
-            }
+            let _ = backend.refresh_task_list().await;
         }
         (backend, ResultKind::Request(Box::new(completed)))
     })
