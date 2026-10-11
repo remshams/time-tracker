@@ -9,8 +9,7 @@ pub use worklogs::move_candidates_for_tasks;
 
 use chrono::{DateTime, Utc};
 use tracker_domain::{
-    InactivityPeriod, Task, TaskId, TaskName, Tracker, TrackingState, Worklog, WorklogId,
-    WorklogTimes,
+    Task, TaskId, TaskName, Tracker, TrackingState, Worklog, WorklogId, WorklogTimes,
 };
 
 use crate::{
@@ -32,11 +31,10 @@ fn canonical_worklog_times(times: WorklogTimes) -> WorklogTimes {
     )
 }
 
-/// Task queries available to presentation and transport layers.
+/// Synchronous application use cases consumed by the TUI and its test service.
 ///
-/// The service keeps its task catalog current on every committed write, so
-/// querying never reads the backend again and cannot fail.
-pub trait TaskQueries {
+/// Concrete clients call inherent methods on [`TrackerApplication`].
+pub trait TrackerApplicationService {
     /// The tasks of the selected backend, ordered by the given ordering.
     fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem>;
     fn task(&self, id: TaskId) -> Option<&Task>;
@@ -45,10 +43,7 @@ pub trait TaskQueries {
     fn refresh_task_list(&mut self) -> Result<(), ApplicationError> {
         Ok(())
     }
-}
 
-/// Reports time by task for a half-open UTC interval.
-pub trait ReportQueries {
     /// Clips completed work to the interval and ends open work at `now`.
     /// Adopts active tracking and metadata for reported tasks from the same
     /// backend read. Full task-list refreshes are explicit client operations.
@@ -58,13 +53,7 @@ pub trait ReportQueries {
         end: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<ReportTotals, ApplicationError>;
-}
 
-/// Commands that create or change tasks.
-///
-/// Every operation takes the client-created instant it occurred at; the
-/// domain decides how that instant moves `updated_at`.
-pub trait TaskOperations {
     fn create_task(
         &mut self,
         name: TaskName,
@@ -100,26 +89,7 @@ pub trait TaskOperations {
         expected_ids: &[TaskId],
         as_of: DateTime<Utc>,
     ) -> Result<Vec<Task>, ApplicationError>;
-}
 
-/// Bulk archive use cases with a configurable inactivity period.
-pub trait InactiveTaskOperations {
-    fn preview_inactive_tasks_with_period(
-        &mut self,
-        as_of: DateTime<Utc>,
-        period: InactivityPeriod,
-    ) -> Result<Vec<Task>, ApplicationError>;
-
-    fn archive_inactive_tasks_with_period(
-        &mut self,
-        expected_ids: &[TaskId],
-        as_of: DateTime<Utc>,
-        period: InactivityPeriod,
-    ) -> Result<Vec<Task>, ApplicationError>;
-}
-
-/// Current tracking state and desired-state tracking commands.
-pub trait TrackingOperations {
     fn current_tracking(&self) -> &TrackingState;
     fn set_active_task(
         &mut self,
@@ -131,11 +101,7 @@ pub trait TrackingOperations {
         expected_active: WorklogId,
         occurred_at: DateTime<Utc>,
     ) -> Result<ClearActiveTaskOutcome, ApplicationError>;
-}
 
-/// Queries for worklog history and move destinations. History page reads
-/// adopt page task metadata and active tracking from the same read.
-pub trait WorklogQueries: TaskQueries {
     /// Eligible destinations from the current task catalog, fuzzy matched and
     /// ordered by recent activity, creation time, then task identity.
     fn move_candidates(&self, source_task_id: TaskId, query: &str) -> Vec<crate::MoveCandidate> {
@@ -160,10 +126,7 @@ pub trait WorklogQueries: TaskQueries {
         &mut self,
         after: Option<&GlobalWorklogCursor>,
     ) -> Result<GlobalWorklogPage, ApplicationError>;
-}
 
-/// Commands that change existing worklog history.
-pub trait WorklogOperations {
     /// Moves a worklog to a different task if its selected task and timestamps
     /// still match the stored row.
     ///
@@ -206,27 +169,149 @@ pub trait WorklogOperations {
     ) -> Result<Worklog, ApplicationError>;
 }
 
-/// The application service required by presentation and transport clients.
-///
-/// This keeps repository ports behind the application boundary.
-pub trait TrackerApplicationService:
-    TaskQueries
-    + TaskOperations
-    + TrackingOperations
-    + WorklogQueries
-    + WorklogOperations
-    + ReportQueries
-{
-}
+impl<R: TrackerRepository> TrackerApplicationService for TrackerApplication<R> {
+    fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
+        TrackerApplication::tasks(self, ordering)
+    }
 
-impl<T> TrackerApplicationService for T where
-    T: TaskQueries
-        + TaskOperations
-        + TrackingOperations
-        + WorklogQueries
-        + WorklogOperations
-        + ReportQueries
-{
+    fn task(&self, id: TaskId) -> Option<&Task> {
+        TrackerApplication::task(self, id)
+    }
+
+    fn refresh_task_list(&mut self) -> Result<(), ApplicationError> {
+        TrackerApplication::refresh_task_list(self)
+    }
+
+    fn report_totals(
+        &mut self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ReportTotals, ApplicationError> {
+        TrackerApplication::report_totals(self, start, end, now)
+    }
+
+    fn create_task(
+        &mut self,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        TrackerApplication::create_task(self, name, occurred_at)
+    }
+
+    fn rename_task(
+        &mut self,
+        id: TaskId,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        TrackerApplication::rename_task(self, id, name, occurred_at)
+    }
+
+    fn archive_task(
+        &mut self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        TrackerApplication::archive_task(self, id, occurred_at)
+    }
+
+    fn unarchive_task(
+        &mut self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        TrackerApplication::unarchive_task(self, id, occurred_at)
+    }
+
+    fn preview_inactive_tasks(
+        &mut self,
+        as_of: DateTime<Utc>,
+    ) -> Result<Vec<Task>, ApplicationError> {
+        TrackerApplication::preview_inactive_tasks(self, as_of)
+    }
+
+    fn archive_inactive_tasks(
+        &mut self,
+        expected_ids: &[TaskId],
+        as_of: DateTime<Utc>,
+    ) -> Result<Vec<Task>, ApplicationError> {
+        TrackerApplication::archive_inactive_tasks(self, expected_ids, as_of)
+    }
+
+    fn current_tracking(&self) -> &TrackingState {
+        TrackerApplication::current_tracking(self)
+    }
+
+    fn set_active_task(
+        &mut self,
+        task_id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+        TrackerApplication::set_active_task(self, task_id, occurred_at)
+    }
+
+    fn clear_active_task(
+        &mut self,
+        expected_active: WorklogId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
+        TrackerApplication::clear_active_task(self, expected_active, occurred_at)
+    }
+
+    fn move_candidates(&self, source_task_id: TaskId, query: &str) -> Vec<crate::MoveCandidate> {
+        TrackerApplication::move_candidates(self, source_task_id, query)
+    }
+
+    fn worklogs_for_task(
+        &mut self,
+        task_id: TaskId,
+        after: Option<&WorklogCursor>,
+    ) -> Result<WorklogPage, ApplicationError> {
+        TrackerApplication::worklogs_for_task(self, task_id, after)
+    }
+
+    fn all_worklogs(
+        &mut self,
+        after: Option<&GlobalWorklogCursor>,
+    ) -> Result<GlobalWorklogPage, ApplicationError> {
+        TrackerApplication::all_worklogs(self, after)
+    }
+
+    fn move_worklog(
+        &mut self,
+        id: WorklogId,
+        expected_source_task_id: TaskId,
+        expected: WorklogTimes,
+        destination_task_id: TaskId,
+    ) -> Result<Worklog, ApplicationError> {
+        TrackerApplication::move_worklog(
+            self,
+            id,
+            expected_source_task_id,
+            expected,
+            destination_task_id,
+        )
+    }
+
+    fn correct_worklog(
+        &mut self,
+        id: WorklogId,
+        expected: WorklogTimes,
+        replacement: WorklogTimes,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Worklog, ApplicationError> {
+        TrackerApplication::correct_worklog(self, id, expected, replacement, occurred_at)
+    }
+
+    fn delete_completed_worklog(
+        &mut self,
+        id: WorklogId,
+        expected_task_id: TaskId,
+        expected: WorklogTimes,
+    ) -> Result<Worklog, ApplicationError> {
+        TrackerApplication::delete_completed_worklog(self, id, expected_task_id, expected)
+    }
 }
 
 /// Stateful application service backed by one repository.

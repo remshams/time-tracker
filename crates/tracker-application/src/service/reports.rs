@@ -2,11 +2,11 @@
 
 use chrono::{DateTime, TimeDelta, Utc};
 
-use super::{ReportQueries, TrackerApplication};
+use super::TrackerApplication;
 use crate::{ApplicationError, ReportRow, ReportTotals, RepositoryError, TrackerRepository};
 
-impl<R: TrackerRepository> ReportQueries for TrackerApplication<R> {
-    fn report_totals(
+impl<R: TrackerRepository> TrackerApplication<R> {
+    pub fn report_totals(
         &mut self,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
@@ -24,9 +24,7 @@ impl<R: TrackerRepository> ReportQueries for TrackerApplication<R> {
         }
         Ok(totals)
     }
-}
 
-impl<R: TrackerRepository> TrackerApplication<R> {
     /// Refreshes task-list totals and the list's tracking indication together.
     /// Clients capture their selected presentation values after this read.
     pub fn task_list_report_totals(

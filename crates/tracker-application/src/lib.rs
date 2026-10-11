@@ -17,15 +17,11 @@ pub use model::{
     WorklogCursor, WorklogPage, WorklogPageAdoption,
 };
 pub use repository::{
-    ActiveTrackingRead, InactiveTaskArchive, InactiveTaskPreviewRead, InactiveTaskRepository,
-    ReportRead, ReportRepository, RepositoryError, TaskRepository, TrackerRepository,
-    TrackingRepository, WorklogCorrection, WorklogDeletion, WorklogMove, WorklogRepository,
+    ActiveTrackingRead, InactiveTaskArchive, InactiveTaskPreviewRead, ReportRead, RepositoryError,
+    TrackerRepository, WorklogCorrection, WorklogDeletion, WorklogMove,
 };
 pub use service::move_candidates_for_tasks;
-pub use service::{
-    InactiveTaskOperations, ReportQueries, TaskOperations, TaskQueries, TrackerApplication,
-    TrackerApplicationService, TrackingOperations, WorklogOperations, WorklogQueries,
-};
+pub use service::{TrackerApplication, TrackerApplicationService};
 
 #[cfg(test)]
 mod tests;
