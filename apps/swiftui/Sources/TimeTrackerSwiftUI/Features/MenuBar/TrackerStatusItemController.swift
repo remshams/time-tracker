@@ -264,7 +264,8 @@ final class TrackerStatusItemController: NSObject {
                 store.menuCopyValue(
                     action, taskID: entry.id,
                     connection: store.connectionSettings) != nil
-            addAction(action.title, action: .copy(action, entry.id), enabled: available, to: submenu)
+            let item = addAction(action.title, action: .copy(action, entry.id), enabled: available, to: submenu)
+            item.setAccessibilityIdentifier("menu.copy.\(entry.id).\(action.rawValue)")
         }
         let item = addAction(title, action: trackingAction, to: menu)
         item.setAccessibilityIdentifier("menu.task.\(entry.id)")
