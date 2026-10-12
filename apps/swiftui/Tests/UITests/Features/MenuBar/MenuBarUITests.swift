@@ -148,10 +148,14 @@ class MenuBarUITests: TrackerUITestCase {
         assertStopped()
     }
     fileprivate func assertClipboard(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
-        waitUntil("Copied value reaches the clipboard", file: file, line: line) {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             NSPasteboard.general.string(forType: .string) == expected
-        }
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), expected, file: file, line: line)
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        let actual = NSPasteboard.general.string(forType: .string)
+        XCTAssertEqual(result, .completed,
+                       "Expected clipboard: \(expected); actual: \(actual ?? "<empty>")", file: file, line: line)
+        XCTAssertEqual(actual, expected, file: file, line: line)
     }
 }
 
@@ -204,7 +208,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             menuTask(task).hover()
             XCTAssertFalse(app.menuItems["Start tracking"].firstMatch.isEnabled)
             XCTAssertTrue(self.app.staticTexts["Today, cached"].exists)
-            app.menuItems["Copy exact duration"].click()
+            activateMenuCopy(app.menuItems["Copy exact duration"])
             assertClipboard(exact)
         }
         try fixture.restartServer()
@@ -236,10 +240,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             menuTask(first).hover()
             let copyName = menuTask(first).menuItems["Copy task name"]
             waitUntil("The captured Copy action is reachable") { copyName.exists && copyName.isHittable }
-            copyName.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
-            waitUntil("Copying the captured task name closes the menu") {
-                !self.app.menuItems["Open Time Tracker"].exists
-            }
+            activateMenuCopy(copyName)
             assertClipboard(first.name)
             let expected: String
             do {
@@ -260,10 +261,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             waitUntil("The captured duration Copy action is reachable") {
                 copyDuration.exists && copyDuration.isHittable
             }
-            copyDuration.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
-            waitUntil("Copying the captured duration closes the menu") {
-                !self.app.menuItems["Open Time Tracker"].exists
-            }
+            activateMenuCopy(copyDuration)
             assertClipboard(expected)
         }
     }

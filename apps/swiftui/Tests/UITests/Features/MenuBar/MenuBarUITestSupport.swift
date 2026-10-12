@@ -22,9 +22,17 @@ extension TrackerUITestCase {
         XCTAssertTrue(row.waitForExistence(timeout: timeout))
         row.hover()
         let item = app.menuItems[action].firstMatch
+        activateMenuCopy(item)
+    }
+
+    func activateMenuCopy(_ item: XCUIElement) {
         XCTAssertTrue(item.waitForExistence(timeout: timeout))
         XCTAssertTrue(item.isEnabled)
-        item.click()
+        item.hover()
+        app.typeKey(.return, modifierFlags: [])
+        waitUntil("The native copy action closes the menu") {
+            !self.app.menuItems["Open Time Tracker"].exists
+        }
     }
 
     func withRestoredClipboard(_ body: () throws -> Void) rethrows {
@@ -44,6 +52,8 @@ extension TrackerUITestCase {
         }
         addTeardownBlock { await restore() }
         defer { restore() }
+        pasteboard.clearContents()
+        pasteboard.setString("Clipboard before copying", forType: .string)
         try body()
     }
 }
