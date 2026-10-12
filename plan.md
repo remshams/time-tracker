@@ -15,7 +15,7 @@ The required Rust, Python, mutation, coverage, CRAP, and Linux PTY checks pass. 
 | Initial platforms | Linux and macOS |
 | Navigation | Keyboard-first. Vim-style keys are primary, with arrow-key aliases where they make sense. |
 | MVP data | Any small hard-coded task list is acceptable. |
-| Repository host | Forgejo at `ssh://git@forgejo/remshams/time-tracker`, using push-to-create. Use repository hooks and local validation; do not add hosted CI yet. |
+| Repository host | Forgejo at `ssh://git@<forgejo-host>/<owner>/time-tracker`, using push-to-create. Use repository hooks and local validation; do not add hosted CI yet. |
 | Quality setup | Use the Jira adapter's `AGENTS.md` validation rules and pinned tool versions, adapted only to describe Time Tracker. Configure the rest of this project's tooling independently. |
 | Tenancy | One tracker and one timeline. There is no account or user-management system. |
 | Storage selection | With no endpoint configured, `tt` uses local SQLite. With an endpoint configured, it uses that remote store exclusively and never falls back to local writes. |
