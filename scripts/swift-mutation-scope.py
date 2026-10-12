@@ -86,6 +86,9 @@ TEST_PRODUCTION = {
         SESSION, LAST_TASK, "Features/TaskIndicators/TaskIndicator.swift", MENU_OBSERVER, MENU, MENU_VALUES,
         TRACKING, CATALOG, CONNECTION, AUTOMATION,
     ],
+    "Features/ProgressPresentation/DelayedProgressPresentationTests.swift": [
+        "Features/ProgressPresentation/DelayedProgressPresentation.swift",
+    ],
     "Features/TaskArchiving/TaskArchivingTests.swift": [
         SESSION, OBSERVER, ARCHIVING, CATALOG, TRACKING, HISTORY, CREATION, RENAME, CORRECTION, MOVE, CONNECTION,
     ],
