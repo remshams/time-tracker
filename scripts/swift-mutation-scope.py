@@ -45,6 +45,7 @@ TEST_PRODUCTION = {
         SESSION, "Features/Connection/ConnectionState.swift", TRACKING, CATALOG, HISTORY, TOTALS,
         "Features/TrackingAutomation/TrackingAutomationState.swift",
     ],
+    "App/HistoryPresentationTests.swift": [SESSION, OBSERVER, HISTORY, CATALOG],
     "App/LifecycleTests.swift": [
         SESSION, "Features/Connection/ConnectionState.swift", TRACKING, CATALOG, HISTORY, TOTALS,
         "Features/TrackingAutomation/TrackingAutomationState.swift", LAST_TASK,
@@ -114,8 +115,9 @@ TEST_PRODUCTION = {
         SESSION, OBSERVER, CORRECTION, TIMESTAMP, TRACKING, HISTORY, CATALOG, CONNECTION, CREATION, RENAME,
     ],
     "Features/WorklogHistory/HistoryTests.swift": [SESSION, HISTORY, TRACKING, CATALOG, CONNECTION],
+    "Features/WorklogHistory/WorklogHistoryStateTests.swift": [HISTORY],
     "Features/WorklogMove/WorklogMoveTests.swift": [
-        SESSION, OBSERVER, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION,
+        SESSION, OBSERVER, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, CORRECTION,
     ],
 }
 
