@@ -241,6 +241,19 @@ final class ServerMenuBarUITests: MenuBarUITests {
                 !self.app.menuItems["Open Time Tracker"].exists
             }
             assertClipboard(first.name)
+            let expected: String
+            do {
+                let now = Date()
+                let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
+                let report = try fixture.reports(start: day.start, end: day.end, at: now)
+                let row = try XCTUnwrap(report.rows.first { $0.task.id == first.id })
+                let seconds = row.durationMicroseconds / 1_000_000
+                expected = seconds >= 60 ? "\(seconds / 60)m \(seconds % 60)s" : "\(seconds)s"
+                let displayed = String(format: "%02lld:%02lld:%02lld", seconds / 3600, seconds / 60 % 60, seconds % 60)
+                waitUntil("The completed source total reaches the sidebar") {
+                    self.element("task-sidebar.total.\(first.id)").label == "Today's total: \(displayed)"
+                }
+            } catch { XCTFail("Could not verify the completed timer: \(error)"); return }
             openStatusMenu()
             menuTask(first).hover()
             let copyDuration = menuTask(first).menuItems["Copy exact duration"]
@@ -251,15 +264,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             waitUntil("Copying the captured duration closes the menu") {
                 !self.app.menuItems["Open Time Tracker"].exists
             }
-            do {
-                let now = Date()
-                let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
-                let report = try fixture.reports(start: day.start, end: day.end, at: now)
-                let row = try XCTUnwrap(report.rows.first { $0.task.id == first.id })
-                let seconds = row.durationMicroseconds / 1_000_000
-                let expected = seconds >= 60 ? "\(seconds / 60)m \(seconds % 60)s" : "\(seconds)s"
-                assertClipboard(expected)
-            } catch { XCTFail("Could not verify the completed timer: \(error)") }
+            assertClipboard(expected)
         }
     }
 }
