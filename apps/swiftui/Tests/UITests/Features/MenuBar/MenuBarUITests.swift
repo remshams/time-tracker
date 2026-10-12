@@ -251,7 +251,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
                 expected = seconds >= 60 ? "\(seconds / 60)m \(seconds % 60)s" : "\(seconds)s"
                 let displayed = String(format: "%02lld:%02lld:%02lld", seconds / 3600, seconds / 60 % 60, seconds % 60)
                 waitUntil("The completed source total reaches the sidebar") {
-                    self.element("task-sidebar.total.\(first.id)").label == "Today's total: \(displayed)"
+                    self.element("task-sidebar.total.\(first.id)").value as? String == "Today's total: \(displayed)"
                 }
             } catch { XCTFail("Could not verify the completed timer: \(error)"); return }
             openStatusMenu()
