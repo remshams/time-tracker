@@ -3,6 +3,14 @@ import XCTest
 
 enum MenuCopyAction: String {
     case copyName, copyExact, copyRounded
+
+    var stepsAfterTracking: Int {
+        switch self {
+        case .copyName: return 1
+        case .copyExact: return 2
+        case .copyRounded: return 3
+        }
+    }
 }
 
 @MainActor
@@ -29,18 +37,28 @@ extension TrackerUITestCase {
         let row = menuTask(task)
         XCTAssertTrue(row.waitForExistence(timeout: timeout))
         row.hover()
-        let item = copyMenuItem(action, task: task)
-        activateMenuCopy(item)
+        activateMenuCopy(action, task: task)
     }
 
-    func activateMenuCopy(_ item: XCUIElement) {
+    func activateMenuCopy(_ action: MenuCopyAction, task: FixtureTask) {
+        let item = copyMenuItem(action, task: task)
         XCTAssertTrue(item.waitForExistence(timeout: timeout))
         XCTAssertTrue(item.isEnabled)
-        item.hover()
+        let trackingEnabled = ["Start tracking", "Stop tracking"].contains { title in
+            let tracking = menuTask(task).menuItems[title]
+            return tracking.exists && tracking.isEnabled
+        }
+        let clipboardBefore = NSPasteboard.general.changeCount
+        app.typeKey(.rightArrow, modifierFlags: [])
+        for _ in 0..<(action.stepsAfterTracking - (trackingEnabled ? 0 : 1)) {
+            app.typeKey(.downArrow, modifierFlags: [])
+        }
         app.typeKey(.return, modifierFlags: [])
         waitUntil("The native copy action closes the menu") {
             !self.app.menuItems["Open Time Tracker"].exists
         }
+        XCTAssertGreaterThan(NSPasteboard.general.changeCount, clipboardBefore,
+                             "The \(action.rawValue) command must write to the clipboard")
     }
 
     func withRestoredClipboard(_ body: () throws -> Void) rethrows {
