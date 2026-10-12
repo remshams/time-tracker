@@ -1,6 +1,10 @@
 import AppKit
 import XCTest
 
+enum MenuCopyAction: String {
+    case copyName, copyExact, copyRounded
+}
+
 @MainActor
 extension TrackerUITestCase {
     var statusButton: XCUIElement { element("menu.status") }
@@ -17,11 +21,15 @@ extension TrackerUITestCase {
 
     func menuTask(_ task: FixtureTask) -> XCUIElement { element("menu.task.\(task.id)") }
 
-    func copyFromMenu(_ action: String, task: FixtureTask) {
+    func copyMenuItem(_ action: MenuCopyAction, task: FixtureTask) -> XCUIElement {
+        menuTask(task).menuItems["menu.copy.\(task.id).\(action.rawValue)"]
+    }
+
+    func copyFromMenu(_ action: MenuCopyAction, task: FixtureTask) {
         let row = menuTask(task)
         XCTAssertTrue(row.waitForExistence(timeout: timeout))
         row.hover()
-        let item = app.menuItems[action].firstMatch
+        let item = copyMenuItem(action, task: task)
         activateMenuCopy(item)
     }
 
