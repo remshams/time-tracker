@@ -236,7 +236,10 @@ final class ServerMenuBarUITests: MenuBarUITests {
             menuTask(first).hover()
             let copyName = menuTask(first).menuItems["Copy task name"]
             waitUntil("The captured Copy action is reachable") { copyName.exists && copyName.isHittable }
-            copyName.click()
+            copyName.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+            waitUntil("Copying the captured task name closes the menu") {
+                !self.app.menuItems["Open Time Tracker"].exists
+            }
             assertClipboard(first.name)
             openStatusMenu()
             menuTask(first).hover()
@@ -244,7 +247,10 @@ final class ServerMenuBarUITests: MenuBarUITests {
             waitUntil("The captured duration Copy action is reachable") {
                 copyDuration.exists && copyDuration.isHittable
             }
-            copyDuration.click()
+            copyDuration.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+            waitUntil("Copying the captured duration closes the menu") {
+                !self.app.menuItems["Open Time Tracker"].exists
+            }
             do {
                 let now = Date()
                 let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
