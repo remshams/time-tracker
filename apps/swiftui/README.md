@@ -18,7 +18,7 @@ Xcode keeps build output in DerivedData. The project signs local builds ad hoc a
 
 Open Time Tracker > Settings, or click the gear in the sidebar header. Choose Server and enter the full HTTP or HTTPS origin, including the server's port. Click Test connection to check it, then Connect to use it. The app saves the successful selection for the next launch. A failed connection change keeps the previous data source and saved settings.
 
-For tabit, use its Tailscale IP and the actual port configured for the tracker server, for example `http://<tabit-tailscale-ip>:<tracker-port>`. The existing server validates the HTTP Host header against its listening address. It rejects a DNS name such as `tabit` unless a reverse proxy rewrites Host to an accepted address. This integration does not change that server policy.
+For a server on your Tailscale network, use its Tailscale IP and the actual port configured for the tracker server, for example `http://<server-tailscale-ip>:<tracker-port>`. The existing server validates the HTTP Host header against its listening address. It rejects a custom DNS name unless a reverse proxy rewrites Host to an accepted address. This integration does not change that server policy.
 
 The Mac must be able to reach the server. If the server only listens on loopback, expose it through the project's server deployment setup first. The app checks the server protocol version before loading its tasks.
 
@@ -108,7 +108,7 @@ Disabling the preference, changing the connection, manually changing tracking, o
 
 The app must remain running to receive lock and unlock events. A locked Mac waking from sleep does not resume until it unlocks. macOS can suspend or lose its network connection before a server write completes; automatic tracking cannot guarantee a successful stop during an outage. The feature uses distributed lock notifications with undocumented names, so notification delivery requires validation on a Mac. It adds requests on transitions and no repeating timer or polling interval.
 
-The server's conditional idle-start guard was also strengthened. Deploy the server update on tabit to use that guard. The HTTP protocol is unchanged.
+The server's conditional idle-start guard was also strengthened. Deploy the server update to your tracker host to use that guard. The HTTP protocol is unchanged.
 
 ## Today's totals
 
@@ -335,7 +335,7 @@ The Active and Archived tabs remember their selections. Worklogs load 50 at a ti
 Native UI tests are grouped under `Tests/UITests/App`, `Features`, and `Infrastructure`, matching application ownership. Feature helpers live beside their suites; `Support` contains shared fixtures, processes, proxy controls, and assertions. Portable tests use the same convention inside `TrackerClient/Tests/TrackerClientTests`. The [native coverage map](e2e-coverage.md) links each workflow to its suite and records the remaining dedicated-Mac checks.
 
 1. Build and run in Xcode. Check readable text in Light and Dark appearance and at the minimum window size.
-2. Test and connect to the tracker server on tabit. Confirm its tasks and timer appear. Quit and reopen to confirm the connection setting persists.
+2. Test and connect to your tracker server. Confirm its tasks and timer appear. Quit and reopen to confirm the connection setting persists.
 3. Start a task, switch to another, then stop it. Confirm history and running state from another client. Change tracking in that client before clicking Stop in the Mac app and confirm the new timer is preserved.
 4. Try an invalid or unreachable address in Settings. Confirm Connect keeps the existing connection. Stop the configured server, then confirm stale state is labeled and tracking is disabled. Restart it and confirm recovery.
 5. Use a slow connection and change the selected task while history loads. Confirm the window stays responsive and old history cannot replace the new selection.
