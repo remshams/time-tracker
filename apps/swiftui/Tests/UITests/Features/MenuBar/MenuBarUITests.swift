@@ -208,7 +208,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             menuTask(task).hover()
             XCTAssertFalse(app.menuItems["Start tracking"].firstMatch.isEnabled)
             XCTAssertTrue(self.app.staticTexts["Today, cached"].exists)
-            activateMenuCopy(copyMenuItem(.copyExact, task: task))
+            activateMenuCopy(.copyExact, task: task)
             assertClipboard(exact)
         }
         try fixture.restartServer()
@@ -240,7 +240,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             menuTask(first).hover()
             let copyName = copyMenuItem(.copyName, task: first)
             waitUntil("The captured Copy action is reachable") { copyName.exists && copyName.isHittable }
-            activateMenuCopy(copyName)
+            activateMenuCopy(.copyName, task: first)
             assertClipboard(first.name)
             let expected: String
             do {
@@ -261,7 +261,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             waitUntil("The captured duration Copy action is reachable") {
                 copyDuration.exists && copyDuration.isHittable
             }
-            activateMenuCopy(copyDuration)
+            activateMenuCopy(.copyExact, task: first)
             assertClipboard(expected)
         }
     }
