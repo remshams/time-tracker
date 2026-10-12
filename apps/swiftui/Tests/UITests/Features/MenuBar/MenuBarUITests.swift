@@ -102,8 +102,8 @@ class MenuBarUITests: TrackerUITestCase {
         let exact = try exactTodayDuration(task)
         launch()
         withRestoredClipboard {
-            for (action, expected) in [("Copy task name", task.name), ("Copy exact duration", exact),
-                                       ("Copy rounded duration", "0m")] {
+            for (action, expected) in [(MenuCopyAction.copyName, task.name), (.copyExact, exact),
+                                       (.copyRounded, "0m")] {
                 openStatusMenu()
                 copyFromMenu(action, task: task)
                 assertClipboard(expected)
@@ -117,11 +117,11 @@ class MenuBarUITests: TrackerUITestCase {
         withRestoredClipboard {
             openStatusMenu()
             app.menuItems["Start tracking"].firstMatch.hover()
-            copyFromMenu("Copy exact duration", task: task)
+            copyFromMenu(.copyExact, task: task)
             assertClipboard("0s")
             openStatusMenu()
             app.menuItems["Start tracking"].firstMatch.hover()
-            copyFromMenu("Copy rounded duration", task: task)
+            copyFromMenu(.copyRounded, task: task)
             assertClipboard("0m")
         }
     }
@@ -208,7 +208,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             menuTask(task).hover()
             XCTAssertFalse(app.menuItems["Start tracking"].firstMatch.isEnabled)
             XCTAssertTrue(self.app.staticTexts["Today, cached"].exists)
-            activateMenuCopy(app.menuItems["Copy exact duration"])
+            activateMenuCopy(copyMenuItem(.copyExact, task: task))
             assertClipboard(exact)
         }
         try fixture.restartServer()
@@ -238,7 +238,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             }
             XCTAssertEqual(self.statusButton.label, "Tracking: \(first.name)")
             menuTask(first).hover()
-            let copyName = menuTask(first).menuItems["Copy task name"]
+            let copyName = copyMenuItem(.copyName, task: first)
             waitUntil("The captured Copy action is reachable") { copyName.exists && copyName.isHittable }
             activateMenuCopy(copyName)
             assertClipboard(first.name)
@@ -257,7 +257,7 @@ final class ServerMenuBarUITests: MenuBarUITests {
             } catch { XCTFail("Could not verify the completed timer: \(error)"); return }
             openStatusMenu()
             menuTask(first).hover()
-            let copyDuration = menuTask(first).menuItems["Copy exact duration"]
+            let copyDuration = copyMenuItem(.copyExact, task: first)
             waitUntil("The captured duration Copy action is reachable") {
                 copyDuration.exists && copyDuration.isHittable
             }
