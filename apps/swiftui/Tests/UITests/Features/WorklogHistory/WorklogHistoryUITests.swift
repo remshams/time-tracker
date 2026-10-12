@@ -90,11 +90,12 @@ final class ServerWorklogHistoryUITests: WorklogHistoryUITests {
         try proxy.arm(method: "GET", path: "/v1/worklogs?task_id=\(empty.id)", mode: .holdAfter)
         select(empty)
         _ = try proxy.waitForHeldRequest()
-        XCTAssertTrue(element("worklog-history.loading").exists)
+        let progress = app.activityIndicators["worklog-history.loading"]
+        XCTAssertTrue(progress.waitForExistence(timeout: timeout))
         XCTAssertFalse(element("worklog-history.empty").exists)
         XCTAssertFalse(element("worklog-history.row.\(log.id)").exists)
         try proxy.release()
         XCTAssertTrue(element("worklog-history.empty").waitForExistence(timeout: timeout))
-        XCTAssertFalse(element("worklog-history.loading").exists)
+        XCTAssertFalse(progress.exists)
     }
 }
