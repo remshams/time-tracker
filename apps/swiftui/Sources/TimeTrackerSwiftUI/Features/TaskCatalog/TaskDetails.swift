@@ -53,10 +53,11 @@ struct TaskDetails: View {
                         errorView
 
                         if store.worklogs.isEmpty && store.isHistoryLoading {
-                            Label("Loading worklogs...", systemImage: "clock")
-                                .accessibilityIdentifier("worklog-history.loading")
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 12)
+                            DelayedProgressIndicator(
+                                isBusy: store.isHistoryLoading, title: "Loading worklogs...",
+                                identifier: "worklog-history.loading"
+                            )
+                            .padding(.vertical, 12)
                         } else if store.worklogs.isEmpty && store.error == nil {
                             Label("No worklogs yet", systemImage: "clock")
                                 .accessibilityIdentifier("worklog-history.empty")
