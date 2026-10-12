@@ -22,25 +22,58 @@ class MuterToolProcessTests(unittest.TestCase):
                 self.assertIn("error", result.stdout)
 
     def test_timeout_stops_descendant_that_ignores_termination(self):
-        child = ("import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
-                 "time.sleep(30)")
-        parent = ("import signal, subprocess, sys, time; "
-                  "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
-                  f"child = subprocess.Popen([sys.executable, '-c', {child!r}]); "
-                  "print(child.pid, flush=True); time.sleep(30)")
-        started = time.monotonic()
-        with self.assertRaises(subprocess.TimeoutExpired) as failure:
-            TOOLS.run_tool([sys.executable, "-c", parent], timeout=0.2)
-        self.assertLess(time.monotonic() - started, 4)
-        descendant = int(failure.exception.output.strip())
-        state = subprocess.run(["ps", "-p", str(descendant), "-o", "stat="],
-                               capture_output=True, text=True, timeout=5).stdout.strip()
-        try:
-            self.assertTrue(not state or state.startswith("Z"),
-                            "A timed-out compiler/test descendant kept running")
-        finally:
-            if state and not state.startswith("Z"):
-                os.kill(descendant, signal.SIGKILL)
+        with tempfile.TemporaryDirectory() as directory:
+            child_ready = Path(directory) / "child-ready"
+            parent_ready = Path(directory) / "parent-ready"
+            child = ("import pathlib, signal, time; "
+                     "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                     f"pathlib.Path({str(child_ready)!r}).write_text('ready'); time.sleep(30)")
+            parent = ("import pathlib, signal, subprocess, sys, time; "
+                      "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                      f"child = subprocess.Popen([sys.executable, '-c', {child!r}]); "
+                      "print(child.pid, flush=True); "
+                      f"pathlib.Path({str(parent_ready)!r}).write_text('ready'); time.sleep(30)")
+            real_popen = subprocess.Popen
+            processes = []
+            started = None
+
+            def stop_fixture(process):
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=5)
+
+            def start_ready_process(*arguments, **keywords):
+                nonlocal started
+                process = real_popen(*arguments, **keywords)
+                processes.append(process)
+                try:
+                    deadline = time.monotonic() + 5
+                    while not (child_ready.exists() and parent_ready.exists()):
+                        self.assertIsNone(process.poll(), "Timeout fixture exited before readiness")
+                        self.assertLess(time.monotonic(), deadline, "Timeout fixture never became ready")
+                        time.sleep(0.01)
+                    started = time.monotonic()
+                    return process
+                except BaseException:
+                    stop_fixture(process)
+                    raise
+
+            try:
+                with mock.patch.object(TOOLS.subprocess, "Popen", side_effect=start_ready_process):
+                    with self.assertRaises(subprocess.TimeoutExpired) as failure:
+                        TOOLS.run_tool([sys.executable, "-c", parent], timeout=0.2)
+                self.assertIsNotNone(started)
+                self.assertLess(time.monotonic() - started, 4)
+                descendant = int(failure.exception.output.strip())
+                state = subprocess.run(["ps", "-p", str(descendant), "-o", "stat="],
+                                       capture_output=True, text=True, timeout=5).stdout.strip()
+                self.assertTrue(not state or state.startswith("Z"),
+                                "A timed-out compiler/test descendant kept running")
+            finally:
+                for process in processes:
+                    stop_fixture(process)
 
     def test_completed_parent_still_stops_its_descendants(self):
         with tempfile.TemporaryDirectory() as directory:
