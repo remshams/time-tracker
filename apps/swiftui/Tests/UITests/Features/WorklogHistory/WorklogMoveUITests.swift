@@ -130,7 +130,7 @@ final class ServerWorklogMoveUITests: WorklogMoveUITests {
         let candidate = element("worklog-move.candidate.\(destination.id)")
         XCTAssertTrue(candidate.waitForExistence(timeout: timeout))
         let frame = app.sheets.firstMatch.frame
-        try proxy.arm(method: "GET", path: "/v1/reports/task-totals", mode: .holdAfter)
+        try proxy.arm(method: "GET", path: "/v1/state/daily-overview", mode: .holdAfter)
         _ = try proxy.waitForHeldRequest()
         replaceText(app.textFields["worklog-move.search"], "No matching destination")
         XCTAssertTrue(element("worklog-move.search-progress").waitForExistence(timeout: timeout))
