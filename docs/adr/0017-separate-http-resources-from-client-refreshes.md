@@ -18,7 +18,7 @@ These bundles let the existing clients refresh several views from one response. 
 
 A report remains a distinct domain query. It calculates time within a requested interval across tasks, including clipped overnight work and running worklogs. Individual history pages cannot replace that query without transferring and aggregating the worklogs. The current storage layer reads totals and tracker state in [one transaction](../../crates/tracker-storage/src/sqlite/reports.rs).
 
-The server also has useful guarantees that must survive the split. It serializes operations, rejects stale global revisions, checks expected active or worklog values, deduplicates successful commands, and enforces transactional domain rules. [Server guards](../../crates/tracker-server/src/lib.rs), [repository contracts](../../crates/tracker-application/src/repository.rs).
+The server also has useful guarantees that must survive the split. It serializes operations, rejects stale global revisions, checks expected active or worklog values, deduplicates successful commands, and enforces transactional domain rules. [Server guards](../../crates/tracker-server/src/core.rs), [repository contracts](../../crates/tracker-application/src/repository.rs).
 
 ## Decision
 
