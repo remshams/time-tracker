@@ -36,6 +36,7 @@ pub(super) fn worklog_json(worklog: &tracker_domain::Worklog) -> WorklogJson {
     }
 }
 
+/// Corrects timestamps only when the stored worklog still matches the editor.
 /// Null end timestamps describe a running worklog.
 ///
 /// # Safety
