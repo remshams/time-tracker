@@ -160,14 +160,14 @@ final class ServerWorklogMoveUITests: WorklogMoveUITests {
         element("worklog-move.candidate.\(destination.id)").click()
         try proxy.arm([
             .init(method: "PATCH", path: "/v1/worklogs/\(moved.id)", mode: .holdAfter),
-            .init(method: "GET", path: "/v1/tasks", mode: .holdAfter),
+            .init(method: "GET", path: "/v1/state/task-list", mode: .holdAfter),
             .init(method: "GET", path: "/v1/worklogs?task_id=\(source.id)", mode: .holdAfter),
         ])
         app.buttons["worklog-move.confirm"].click()
         XCTAssertEqual(try proxy.waitForHeldRequest().method, "PATCH")
         try proxy.release()
         waitUntil("Post-commit task refresh reaches its response gate") {
-            (try? proxy.waitForHeldRequest(timeout: 0.1))?.path.contains("/v1/tasks") == true
+            (try? proxy.waitForHeldRequest(timeout: 0.1))?.path.contains("/v1/state/task-list") == true
         }
         waitUntil("Committed move sheet closes") { !self.element("worklog-move.search").exists }
         XCTAssertTrue(element("worklog-history.row.\(retained.id)").exists)
