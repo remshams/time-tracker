@@ -20,7 +20,7 @@ Time Tracker is a Rust time-tracking application. It starts with a TUI and may l
 ## End-to-end tests
 
 - Keep E2E tests unchanged when a task does not change requirements or externally observable behavior.
-- If changed requirements or behavior warrant E2E updates, obtain explicit user consent before modifying those tests.
+- If changed requirements or behavior warrant E2E updates, update or add those tests without asking for permission. At handoff, summarize which E2E tests were updated or added and why.
 
 ## Validation
 
