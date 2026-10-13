@@ -1,4 +1,13 @@
-use super::*;
+use std::ffi::{CString, c_char};
+use std::path::Path;
+use std::ptr;
+
+use crate::Bridge;
+use crate::ffi::read_identifier;
+use crate::lifecycle::open_at;
+
+#[cfg(test)]
+use crate::*;
 
 /// Opens an explicit local database with the same filesystem guards as the default database.
 /// The parent directory must already exist.

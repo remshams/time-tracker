@@ -1,5 +1,16 @@
-use super::*;
+use std::ffi::c_char;
+
+use chrono::{DateTime, Utc};
+use serde_json::json;
 use tracker_domain::InactivityPeriod;
+
+use crate::Bridge;
+use crate::backend::{BridgeError, InactivePreview};
+use crate::ffi::{encode, read_identifier, timestamp};
+use crate::tasks::TaskJson;
+
+#[cfg(test)]
+use crate::*;
 
 fn canonical(as_of: DateTime<Utc>) -> DateTime<Utc> {
     DateTime::from_timestamp_micros(as_of.timestamp_micros())
