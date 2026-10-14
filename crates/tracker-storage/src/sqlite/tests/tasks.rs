@@ -866,13 +866,16 @@ fn unarchiving_restores_a_task_keeps_its_worklogs_and_persists() {
     assert_eq!(names, ["done", "later"]);
 }
 
+/// Confirms database protection keeps the timer intact until it stops, then permits the same archive.
 #[test]
 fn a_task_with_an_active_worklog_cannot_be_archived() {
     let repository = repo();
     let task = named_task(1, "running");
     repository.create_task(task.clone()).unwrap();
     let mut tracker = Tracker::idle();
-    let started = tracker.start(&task, at(100)).unwrap();
+    let started = tracker
+        .start(&task, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&started).unwrap();
 
     let error = repository
@@ -1235,4 +1238,82 @@ fn single_task_resource_reads_ignore_unrelated_invalid_metadata_and_preserve_mis
         tracker_application::TrackerRepository::load_task_item(&repository, task_id(2)).is_err()
     );
     assert!(repository.load_task_tracking_resources().is_err());
+}
+
+/// Rejects stale names even when the desired mutation is a no-op, while preserving unrelated metadata.
+#[test]
+fn guarded_task_writes_check_names_even_for_noop_changes_and_preserve_metadata() {
+    let repository = SqliteRepository::open_in_memory().unwrap();
+    let task = named_task(1, "Reviewed name");
+    repository.create_task(task.clone()).unwrap();
+    let renamed = repository
+        .compare_and_rename_task(
+            task.id(),
+            task.name(),
+            TaskName::new("Replacement name").unwrap(),
+            at(200),
+        )
+        .unwrap();
+    assert_eq!(renamed.name().as_str(), "Replacement name");
+    let stale = TaskName::new("Reviewed name").unwrap();
+    assert!(matches!(
+        repository.compare_and_rename_task(task.id(), &stale, renamed.name().clone(), at(300)),
+        Err(StorageError::TaskChanged { id }) if id == task.id()
+    ));
+    assert!(matches!(
+        repository.compare_and_archive_task(task.id(), &stale, at(300)),
+        Err(StorageError::TaskChanged { id }) if id == task.id()
+    ));
+    let archived = repository
+        .compare_and_archive_task(task.id(), renamed.name(), at(400))
+        .unwrap();
+    assert!(archived.is_archived());
+    assert_eq!(archived.name(), renamed.name());
+    assert_eq!(archived.updated_at(), at(400));
+    let same = repository
+        .compare_and_archive_task(task.id(), archived.name(), at(500))
+        .unwrap();
+    assert_eq!(same, archived);
+    assert!(matches!(
+        repository.compare_and_archive_task(task.id(), &stale, at(600)),
+        Err(StorageError::TaskChanged { id }) if id == task.id()
+    ));
+    let renamed_archived = repository
+        .compare_and_rename_task(
+            task.id(),
+            archived.name(),
+            TaskName::new("Archived draft").unwrap(),
+            at(700),
+        )
+        .unwrap();
+    assert!(renamed_archived.is_archived());
+    assert_eq!(renamed_archived.created_at(), task.created_at());
+    assert_eq!(
+        repository.find_task(task.id()).unwrap(),
+        Some(renamed_archived)
+    );
+}
+
+/// Checks missing-row errors and running-task protection through the guarded persistence operations.
+#[test]
+fn guarded_task_writes_report_missing_tasks_and_active_task_protection() {
+    let repository = SqliteRepository::open_in_memory().unwrap();
+    let task = named_task(1, "Reviewed name");
+    assert!(matches!(
+        repository.compare_and_rename_task(task.id(), task.name(), task.name().clone(), at(200)),
+        Err(StorageError::TaskNotFound { id }) if id == task.id()
+    ));
+    assert!(matches!(
+        repository.compare_and_archive_task(task.id(), task.name(), at(200)),
+        Err(StorageError::TaskNotFound { id }) if id == task.id()
+    ));
+    repository.create_task(task.clone()).unwrap();
+    repository
+        .insert_worklog(&Worklog::begin(WorklogId::generate(), task.id(), at(100)))
+        .unwrap();
+    assert!(matches!(
+        repository.compare_and_archive_task(task.id(), task.name(), at(200)),
+        Err(StorageError::TaskIsActive { id }) if id == task.id()
+    ));
+    assert_eq!(repository.find_task(task.id()).unwrap(), Some(task));
 }

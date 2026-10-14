@@ -336,6 +336,39 @@ impl TrackerRepository for SynchronizingRepository {
         TrackerRepository::archive_task(&self.repository, id, occurred_at)
     }
 
+    /// Keeps the real SQLite name guard when concurrency fixtures wrap the repository.
+    fn compare_and_rename_task(
+        &self,
+        id: TaskId,
+        expected_name: &TaskName,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError> {
+        TrackerRepository::compare_and_rename_task(
+            &self.repository,
+            id,
+            expected_name,
+            name,
+            occurred_at,
+        )
+    }
+
+    /// Keeps the real SQLite archive guard when concurrency fixtures intercept authoritative reads.
+    fn compare_and_archive_task(
+        &self,
+        id: TaskId,
+        expected_name: &TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError> {
+        TrackerRepository::compare_and_archive_task(
+            &self.repository,
+            id,
+            expected_name,
+            occurred_at,
+        )
+    }
+
+    /// Delegates restoration without changing the concurrent-read synchronization behavior.
     fn unarchive_task(
         &self,
         id: TaskId,

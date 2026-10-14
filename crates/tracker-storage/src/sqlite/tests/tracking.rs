@@ -47,6 +47,7 @@ fn application_tracking_operations_use_the_sqlite_ports() {
     assert_eq!(stored.list_worklogs(beta.id()).unwrap().len(), 1);
 }
 
+/// Checks persisted tracking transitions and verifies rejected stops leave the active worklog unchanged.
 #[test]
 fn start_and_stop_persist_and_report_failures() {
     let repository = repo();
@@ -54,7 +55,9 @@ fn start_and_stop_persist_and_report_failures() {
     let task = named_task(1, "work");
     repository.create_task(task.clone()).unwrap();
 
-    let started = tracker.start(&task, at(100)).unwrap();
+    let started = tracker
+        .start(&task, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&started).unwrap();
     assert_eq!(repository.active_worklog().unwrap(), Some(started.clone()));
 
@@ -81,7 +84,9 @@ fn start_and_stop_persist_and_report_failures() {
     ));
     // A backwards end time is rejected by the database.
     let mut tracker = Tracker::idle();
-    let worklog = tracker.start(&task, at(300)).unwrap();
+    let worklog = tracker
+        .start(&task, WorklogId::generate(), at(300))
+        .unwrap();
     repository.insert_worklog(&worklog).unwrap();
     let error = repository
         .stop_worklog(worklog.id(), worklog.start(), at(299))
@@ -93,13 +98,16 @@ fn start_and_stop_persist_and_report_failures() {
     );
 }
 
+/// Protects the existing timer against overlapping inserts and checks missing-task errors separately.
 #[test]
 fn inserting_a_second_active_worklog_is_rejected_by_the_database() {
     let repository = repo();
     let task = named_task(1, "work");
     repository.create_task(task.clone()).unwrap();
     let mut tracker = Tracker::idle();
-    let first = tracker.start(&task, at(100)).unwrap();
+    let first = tracker
+        .start(&task, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&first).unwrap();
 
     let second = Worklog::begin(worklog_id(42), task.id(), at(200));
@@ -127,13 +135,16 @@ fn inserting_a_second_active_worklog_is_rejected_by_the_database() {
     ));
 }
 
+/// Distinguishes duplicate identity from interval overlap without replacing the active worklog.
 #[test]
 fn a_duplicate_worklog_id_is_distinct_from_the_active_worklog_conflict() {
     let repository = repo();
     let task = named_task(1, "work");
     repository.create_task(task.clone()).unwrap();
     let mut tracker = Tracker::idle();
-    let first = tracker.start(&task, at(100)).unwrap();
+    let first = tracker
+        .start(&task, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&first).unwrap();
 
     // A stopped worklog reusing a stored id hits the primary key, not the
@@ -207,6 +218,7 @@ fn an_active_interval_overlaps_every_later_interval_on_the_same_task() {
     assert_eq!(repository.active_worklog().unwrap(), Some(active));
 }
 
+/// Checks that toggling after a stop creates a separate interval instead of resuming the old worklog.
 #[test]
 fn same_task_toggle_stops_and_later_restarts() {
     let repository = repo();
@@ -214,7 +226,9 @@ fn same_task_toggle_stops_and_later_restarts() {
     repository.create_task(task.clone()).unwrap();
     let mut tracker = Tracker::idle();
 
-    let outcome = tracker.toggle(&task, at(100)).unwrap();
+    let outcome = tracker
+        .toggle(&task, WorklogId::generate(), at(100))
+        .unwrap();
     let worklog = match outcome {
         TrackingOutcome::Started { worklog } => worklog,
         other => panic!("expected Started, got {other:?}"),
@@ -225,7 +239,9 @@ fn same_task_toggle_stops_and_later_restarts() {
         worklog.id()
     );
 
-    let outcome = tracker.toggle(&task, at(150)).unwrap();
+    let outcome = tracker
+        .toggle(&task, WorklogId::generate(), at(150))
+        .unwrap();
     let stopped = match outcome {
         TrackingOutcome::Stopped { worklog } => worklog,
         other => panic!("expected Stopped, got {other:?}"),
@@ -236,7 +252,9 @@ fn same_task_toggle_stops_and_later_restarts() {
     assert_eq!(repository.active_worklog().unwrap(), None);
 
     // Toggling again starts a fresh worklog, not a resume.
-    let outcome = tracker.toggle(&task, at(200)).unwrap();
+    let outcome = tracker
+        .toggle(&task, WorklogId::generate(), at(200))
+        .unwrap();
     let restarted = match outcome {
         TrackingOutcome::Started { worklog } => worklog,
         other => panic!("expected Started, got {other:?}"),
@@ -254,6 +272,7 @@ fn same_task_toggle_stops_and_later_restarts() {
     assert_eq!(worklogs[1].end(), None);
 }
 
+/// Preserves the completed interval and its identity when later work starts on the same task.
 #[test]
 fn restarts_record_separate_worklogs() {
     let repository = repo();
@@ -261,7 +280,9 @@ fn restarts_record_separate_worklogs() {
     repository.create_task(task.clone()).unwrap();
     let mut tracker = Tracker::idle();
 
-    let first = tracker.start(&task, at(100)).unwrap();
+    let first = tracker
+        .start(&task, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&first).unwrap();
     let first_stopped = tracker.stop(at(150)).unwrap();
     repository
@@ -269,7 +290,9 @@ fn restarts_record_separate_worklogs() {
         .unwrap();
     assert_eq!(first_stopped.id(), first.id());
 
-    let second = tracker.start(&task, at(300)).unwrap();
+    let second = tracker
+        .start(&task, WorklogId::generate(), at(300))
+        .unwrap();
     repository.insert_worklog(&second).unwrap();
     tracker.stop(at(400)).unwrap();
     repository
@@ -285,6 +308,7 @@ fn restarts_record_separate_worklogs() {
     assert_eq!(worklogs[1].end(), Some(at(400)));
 }
 
+/// Checks both halves of a persisted switch and verifies that only its new worklog remains active.
 #[test]
 fn switch_stops_the_old_worklog_and_starts_the_new_one_atomically() {
     let repository = repo();
@@ -294,10 +318,14 @@ fn switch_stops_the_old_worklog_and_starts_the_new_one_atomically() {
     repository.create_task(rest.clone()).unwrap();
     let mut tracker = Tracker::idle();
 
-    let started = tracker.start(&work, at(100)).unwrap();
+    let started = tracker
+        .start(&work, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&started).unwrap();
 
-    let switched = tracker.switch(&rest, at(150), at(160)).unwrap();
+    let switched = tracker
+        .switch(&rest, WorklogId::generate(), at(150), at(160))
+        .unwrap();
     repository
         .switch_worklog(
             switched.stopped.id(),
@@ -324,6 +352,7 @@ fn switch_stops_the_old_worklog_and_starts_the_new_one_atomically() {
     assert_eq!(new_worklogs[0].id(), switched.started.id());
 }
 
+/// Ensures a rejected stop rolls back the whole switch rather than inserting its replacement worklog.
 #[test]
 fn switch_rolls_back_on_a_backwards_stop_timestamp() {
     let repository = repo();
@@ -333,7 +362,9 @@ fn switch_rolls_back_on_a_backwards_stop_timestamp() {
     repository.create_task(rest.clone()).unwrap();
     let mut tracker = Tracker::idle();
 
-    let started = tracker.start(&work, at(100)).unwrap();
+    let started = tracker
+        .start(&work, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&started).unwrap();
 
     // Stop before the active worklog's start violates the CHECK constraint.
@@ -351,6 +382,7 @@ fn switch_rolls_back_on_a_backwards_stop_timestamp() {
     assert_eq!(repository.list_worklogs(task_id(2)).unwrap(), Vec::new());
 }
 
+/// Ensures a missing destination leaves the original timer active and inserts no orphan worklog.
 #[test]
 fn switch_rolls_back_when_the_target_task_is_missing() {
     let repository = repo();
@@ -358,7 +390,9 @@ fn switch_rolls_back_when_the_target_task_is_missing() {
     repository.create_task(work.clone()).unwrap();
     let mut tracker = Tracker::idle();
 
-    let started = tracker.start(&work, at(100)).unwrap();
+    let started = tracker
+        .start(&work, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&started).unwrap();
 
     let next = Worklog::begin(worklog_id(42), task_id(99), at(160));
@@ -375,6 +409,7 @@ fn switch_rolls_back_when_the_target_task_is_missing() {
     assert_eq!(repository.list_worklogs(task_id(99)).unwrap(), Vec::new());
 }
 
+/// Checks that a missing source worklog cannot stop the real timer or create a replacement.
 #[test]
 fn switch_reports_a_missing_worklog_and_changes_nothing() {
     let repository = repo();
@@ -384,7 +419,9 @@ fn switch_reports_a_missing_worklog_and_changes_nothing() {
     repository.create_task(rest.clone()).unwrap();
     let mut tracker = Tracker::idle();
 
-    let started = tracker.start(&work, at(100)).unwrap();
+    let started = tracker
+        .start(&work, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&started).unwrap();
 
     let missing = worklog_id(77);
@@ -398,6 +435,7 @@ fn switch_reports_a_missing_worklog_and_changes_nothing() {
     assert_eq!(repository.list_worklogs(task_id(2)).unwrap(), Vec::new());
 }
 
+/// Prevents a stale switch from creating new work after its reviewed timer has already stopped.
 #[test]
 fn switch_rejects_an_already_stopped_worklog() {
     let repository = repo();
@@ -407,7 +445,9 @@ fn switch_rejects_an_already_stopped_worklog() {
     repository.create_task(rest.clone()).unwrap();
     let mut tracker = Tracker::idle();
 
-    let started = tracker.start(&work, at(100)).unwrap();
+    let started = tracker
+        .start(&work, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&started).unwrap();
     repository
         .stop_worklog(started.id(), started.start(), at(150))
@@ -422,6 +462,7 @@ fn switch_rejects_an_already_stopped_worklog() {
     assert_eq!(repository.list_worklogs(task_id(2)).unwrap(), Vec::new());
 }
 
+/// Protects against a destination archived after the caller's read, keeping the original timer active.
 #[test]
 fn switch_into_an_archived_task_is_rejected_and_rolls_back() {
     let repository = repo();
@@ -431,7 +472,9 @@ fn switch_into_an_archived_task_is_rejected_and_rolls_back() {
     repository.create_task(rest.clone()).unwrap();
     let mut tracker = Tracker::idle();
 
-    let started = tracker.start(&work, at(100)).unwrap();
+    let started = tracker
+        .start(&work, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&started).unwrap();
     // The target is archived after the caller looked at it, which the
     // tracker's in-memory copy cannot see.
@@ -458,6 +501,7 @@ fn switch_into_an_archived_task_is_rejected_and_rolls_back() {
     assert_eq!(old[0].end(), None);
 }
 
+/// Ensures a duplicate replacement ID undoes the stop half of the switch and preserves existing history.
 #[test]
 fn a_switch_with_an_existing_new_worklog_id_rolls_back_and_reports_it() {
     let repository = repo();
@@ -467,7 +511,9 @@ fn a_switch_with_an_existing_new_worklog_id_rolls_back_and_reports_it() {
     repository.create_task(rest.clone()).unwrap();
     let mut tracker = Tracker::idle();
 
-    let started = tracker.start(&work, at(100)).unwrap();
+    let started = tracker
+        .start(&work, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&started).unwrap();
     let old_rest = Worklog::new(worklog_id(42), rest.id(), at(10), Some(at(20))).unwrap();
     repository.insert_worklog(&old_rest).unwrap();
@@ -492,6 +538,7 @@ fn a_switch_with_an_existing_new_worklog_id_rolls_back_and_reports_it() {
     assert_eq!(rest_worklogs[0].end(), Some(at(20)));
 }
 
+/// Checks domain active-task protection, while permitting unrelated archives and archives after a stop.
 #[test]
 fn archiving_the_active_task_is_rejected() {
     let repository = repo();
@@ -501,7 +548,9 @@ fn archiving_the_active_task_is_rejected() {
     repository.create_task(other.clone()).unwrap();
     let mut tracker = Tracker::idle();
 
-    let started = tracker.start(&work, at(100)).unwrap();
+    let started = tracker
+        .start(&work, WorklogId::generate(), at(100))
+        .unwrap();
     repository.insert_worklog(&started).unwrap();
 
     assert_eq!(
@@ -545,6 +594,7 @@ fn archiving_the_active_task_is_rejected() {
     );
 }
 
+/// Checks that the domain refuses to start an archived task without changing idle state or persisted tracking.
 #[test]
 fn archived_tasks_cannot_start_or_become_active() {
     let repository = repo();
@@ -554,13 +604,14 @@ fn archived_tasks_cannot_start_or_become_active() {
     repository.create_task(archived.clone()).unwrap();
 
     assert_eq!(
-        tracker.start(&archived, at(100)),
+        tracker.start(&archived, WorklogId::generate(), at(100)),
         Err(TrackingError::TaskArchived { id: archived.id() })
     );
     assert_eq!(tracker.state(), &TrackingState::Idle);
     assert_eq!(repository.active_worklog().unwrap(), None);
 }
 
+/// Verifies that closing storage does not stop work and a recovered timer can later persist its stop.
 #[test]
 fn active_worklog_survives_closing_and_reopening_the_database() {
     let temp = tempfile::tempdir().unwrap();
@@ -571,7 +622,9 @@ fn active_worklog_survives_closing_and_reopening_the_database() {
         let repository = file_repo(&temp);
         repository.create_task(task.clone()).unwrap();
         let mut tracker = Tracker::idle();
-        let started = tracker.start(&task, at(100)).unwrap();
+        let started = tracker
+            .start(&task, WorklogId::generate(), at(100))
+            .unwrap();
         worklog_id = started.id();
         // Deliberately no stop: exiting must not implicitly stop tracking.
         repository.insert_worklog(&started).unwrap();

@@ -9,6 +9,9 @@ pub enum StorageError {
     /// No task exists with this identifier.
     #[error("task {id} not found")]
     TaskNotFound { id: TaskId },
+    /// The stored name no longer matches the reviewed name.
+    #[error("task {id} changed since it was read")]
+    TaskChanged { id: TaskId },
     /// No worklog exists with this identifier.
     #[error("worklog {id} not found")]
     WorklogNotFound { id: WorklogId },
@@ -115,9 +118,11 @@ impl From<StorageError> for RepositoryError {
     }
 }
 
+/// Preserves task failure semantics and converts remaining SQLite failures to repository diagnostics.
 fn task_or_backend_error(error: StorageError) -> RepositoryError {
     match error {
         StorageError::TaskNotFound { id } => RepositoryError::TaskNotFound { id },
+        StorageError::TaskChanged { id } => RepositoryError::TaskChanged { id },
         StorageError::TaskAlreadyExists { id } => RepositoryError::TaskAlreadyExists { id },
         StorageError::TaskArchived { id } => RepositoryError::TaskArchived { id },
         StorageError::TaskIsActive { id } => RepositoryError::TaskIsActive { id },
@@ -567,6 +572,7 @@ mod tests {
         ));
     }
 
+    /// Checks that SQLite-specific failures retain their intended repository meaning and diagnostic text.
     #[test]
     fn storage_errors_map_to_backend_neutral_repository_errors() {
         let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
@@ -574,6 +580,10 @@ mod tests {
         assert_eq!(
             RepositoryError::from(StorageError::TaskNotFound { id: task_id }),
             RepositoryError::TaskNotFound { id: task_id }
+        );
+        assert_eq!(
+            RepositoryError::from(StorageError::TaskChanged { id: task_id }),
+            RepositoryError::TaskChanged { id: task_id }
         );
         assert_eq!(
             RepositoryError::from(StorageError::WorklogNotFound { id: worklog_id }),
