@@ -1,8 +1,106 @@
-# Application primitives
+# Architecture and application primitives
 
-This catalog names the application's main concepts and the components that implement them. Use it to find the owner of a rule before changing code. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership.
+Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
 
 Source scope: the Rust core, TUI, CLI, and native macOS client at `e0f570ade9dd633046cb784d9c546a2d34516f35`, inspected on 14 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
+
+## Architecture primitives
+
+### tracker-domain
+
+Owns task and worklog identities, validated names, interval rules, tracking transitions, and inactivity periods. Its models validate changes without performing database, network, or UI work. Operation instants are explicit inputs.
+
+Depends on: no other repository component.
+
+Source: [crate](../../crates/tracker-domain/Cargo.toml), [models](../../crates/tracker-domain/src/lib.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0016](../adr/0016-configurable-inactive-task-archiving.md).
+
+### tracker-application
+
+Owns synchronous use cases, calendar and search policies, and semantic failures. `TrackerApplication<R>` coordinates domain rules through one `TrackerRepository` contract. `TrackerApplicationService` remains the TUI's synchronous test boundary. Storage adapters implement persistence; clients own presentation and scheduling.
+
+Depends on: [tracker-domain](#tracker-domain).
+
+Source: [crate](../../crates/tracker-application/Cargo.toml), [use cases](../../crates/tracker-application/src/service/mod.rs), [repository contract](../../crates/tracker-application/src/repository.rs). Decisions: [ADR 0012](../adr/0012-share-client-query-and-failure-policies.md), [ADR 0022](../adr/0022-consolidate-application-and-repository-contracts.md).
+
+### tracker-storage
+
+Owns SQLite connections, database paths, migrations, coherent reads, and transactional writes. `SqliteRepository` implements the application repository contract. Database constraints also enforce single active tracking, same-task overlap rules, and active-worklog deletion protection for direct SQL writes.
+
+Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain).
+
+Source: [crate](../../crates/tracker-storage/Cargo.toml), [SQLite adapter](../../crates/tracker-storage/src/sqlite/mod.rs), [migrations](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0007](../adr/0007-completed-worklog-deletion.md).
+
+### tracker-protocol
+
+Defines protocol-3 JSON requests, resource observations, command receipts, and conversions at the HTTP boundary. Observations pair read values with revisions. Receipts describe committed writes and do not replace current read state. This crate contains no HTTP client, server, or database connection.
+
+Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain).
+
+Source: [crate](../../crates/tracker-protocol/Cargo.toml), [wire contracts](../../crates/tracker-protocol/src/lib.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
+
+### tracker-server
+
+Owns HTTP routes, server-side operation serialization, revision guards, command receipts, and its application and SQLite database. Task-list and daily-overview reads capture related resources in one transaction. `tt serve` launches this library against an explicit local or Tailscale bind address.
+
+Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-storage](#tracker-storage).
+
+Source: [crate](../../crates/tracker-server/Cargo.toml), [entry points](../../crates/tracker-server/src/lib.rs), [resource routes](../../crates/tracker-server/src/resources.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
+
+### tracker-remote
+
+Owns asynchronous HTTP transport, response validation, confirmed resource caches, and guarded command recovery. `RemoteApplication` publishes only validated observations. Failed refreshes retain confirmed values; a saved command remains saved after a display refresh fails. Unloaded tracking differs from observed idle tracking. It never opens the server's database.
+
+Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol).
+
+Source: [crate](../../crates/tracker-remote/Cargo.toml), [remote application](../../crates/tracker-remote/src/application/mod.rs), [transport](../../crates/tracker-remote/src/transport.rs). Decisions: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
+
+### tracker-client
+
+Owns shared client dispatch through the concrete `TrackerBackend` enum. It selects a local application or `RemoteApplication` and shares task, tracking, history, report, and archive operations. Remote failure never selects local storage. Callers retain runtime, lifecycle, input, and output ownership.
+
+Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-remote](#tracker-remote), [tracker-storage](#tracker-storage).
+
+Source: [crate](../../crates/tracker-client/Cargo.toml), [backend](../../crates/tracker-client/src/lib.rs). Decision: [ADR 0021](../adr/0021-share-concrete-client-backend.md).
+
+### tracker-tui
+
+The `tt` terminal client owns keyboard commands, screen state, rendering, terminal restoration, and a monotonic timer. One event loop handles input, redraw ticks, and request completions. Production requests use `TrackerBackend`; presentation tests can inject `TrackerApplicationService`. The same binary launches `tracker-server` through `tt serve`.
+
+Depends on: [tracker-client](#tracker-client), [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-remote](#tracker-remote), [tracker-server](#tracker-server), [tracker-storage](#tracker-storage).
+
+Source: [crate](../../apps/tui/Cargo.toml), [startup](../../apps/tui/src/main.rs), [controller](../../apps/tui/src/app.rs), [runtime](../../apps/tui/src/runtime.rs). Decisions: [ADR 0011](../adr/0011-use-one-tui-event-loop-with-a-fixed-redraw-tick.md), [ADR 0021](../adr/0021-share-concrete-client-backend.md).
+
+### tracker-cli
+
+The `tt-cli` automation client owns argument validation, command handlers, JSON output, exit codes, and local/remote selection. It dispatches through `TrackerBackend` and reuses application search and calendar policies. Invalid input fails before opening a backend. It performs no terminal rendering or raw SQL queries.
+
+Depends on: [tracker-client](#tracker-client), [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-remote](#tracker-remote), [tracker-storage](#tracker-storage).
+
+Source: [crate](../../apps/cli/Cargo.toml), [entry point](../../apps/cli/src/main.rs), [command reference](../cli.md). Decisions: [ADR 0012](../adr/0012-share-client-query-and-failure-policies.md), [ADR 0021](../adr/0021-share-concrete-client-backend.md).
+
+### tracker-swift-bridge
+
+Owns the Rust static library's C ABI, connection handles, JSON results, and persistent current-thread Tokio runtime. It dispatches through `TrackerBackend` and maps failures for Swift. The native app's serial `TrackerWorker` owns call ordering and handle disposal; the bridge owns neither windows nor feature state.
+
+Depends on: [tracker-client](#tracker-client), [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-remote](#tracker-remote), [tracker-storage](#tracker-storage).
+
+Source: [crate](../../apps/swiftui/bridge/Cargo.toml), [backend](../../apps/swiftui/bridge/src/backend.rs), [C interface](../../apps/swiftui/Sources/CTrackerBridge/include/TrackerBridge.h). Decisions: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0021](../adr/0021-share-concrete-client-backend.md).
+
+### TrackerClient Swift package
+
+Owns portable feature state and `TrackerSession` coordination through injected client, clock, scheduler, and settings interfaces. Connection and selection generations reject obsolete results. It composes resource observations for features and separates command success from later refresh failures. Rust continues to own domain rules and persistence.
+
+Depends on: Foundation and injected interfaces. No direct Rust, SwiftUI, AppKit, network, or database dependency.
+
+Source: [package](../../apps/swiftui/TrackerClient/Package.swift), [session](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift), [contracts](../../apps/swiftui/TrackerClient/Sources/TrackerClient/Contracts/Dependencies.swift). Decision: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md).
+
+### TimeTrackerSwiftUI macOS app
+
+Owns SwiftUI scenes, views and observable adapters, plus AppKit menu-bar and lifecycle integration. Windows share the portable session. Its infrastructure supplies preferences, timers, and the serial `TrackerWorker`, which keeps bridge calls and decoding off the UI thread. Window interaction and error presentation stay in the app.
+
+Depends on: [TrackerClient](#trackerclient-swift-package), [tracker-swift-bridge](#tracker-swift-bridge) through the C ABI, SwiftUI, and AppKit.
+
+Source: [app](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift), [worker](../../apps/swiftui/Sources/TimeTrackerSwiftUI/Infrastructure/RustBridge/TrackerWorker.swift), [native architecture](../../apps/swiftui/README.md#architecture). Decisions: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0021](../adr/0021-share-concrete-client-backend.md).
 
 ## Application concepts
 
@@ -47,35 +145,3 @@ Owner: [report use cases](../../crates/tracker-application/src/service/reports.r
 A reviewed candidate set captured at a fixed time and positive inactivity period, defaulting to 14 days. Eligibility checks task creation, metadata changes, and work in that window. Confirmation rechecks eligibility in one transaction. Local confirmation guards the candidate IDs; remote confirmation guards the revision and preview expiry. Running tasks remain protected and archiving keeps history.
 
 Owner: [inactivity period](../../crates/tracker-domain/src/inactivity.rs) and [task use cases](../../crates/tracker-application/src/service/tasks.rs). Decisions: [ADR 0012](../adr/0012-share-client-query-and-failure-policies.md), [ADR 0016](../adr/0016-configurable-inactive-task-archiving.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md).
-
-## Implementation components
-
-### Application and repository contracts
-
-`TrackerApplication<R>` owns synchronous use cases and calls one `TrackerRepository` persistence contract. Domain models hold reusable validation rules. The TUI retains `TrackerApplicationService` for its synchronous presentation tests; production clients use concrete backend dispatch. Neither domain nor synchronous application contracts depend on Tokio or UI code.
-
-Owner: [application service](../../crates/tracker-application/src/service/mod.rs) and [repository contract](../../crates/tracker-application/src/repository.rs). Decision: [ADR 0022](../adr/0022-consolidate-application-and-repository-contracts.md).
-
-### SQLite storage
-
-`SqliteRepository` owns the connection and implements transactional reads and guarded writes. Database constraints enforce single active tracking, same-task overlap rules, and protection against deleting active worklogs, including direct SQL writes. Schema migrations preserve existing records. Local clients and the server select their own database paths.
-
-Owner: [SQLite adapter](../../crates/tracker-storage/src/sqlite/mod.rs) and [migrations](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0007](../adr/0007-completed-worklog-deletion.md).
-
-### Shared client backend
-
-`TrackerBackend` selects a local application or `RemoteApplication` and shares task, tracking, history, report, and archive dispatch across the TUI, CLI, and Swift bridge. Remote failure never selects local storage. Each client keeps input, presentation, runtime, and lifecycle ownership.
-
-Owner: [tracker-client](../../crates/tracker-client/src/lib.rs). Decision: [ADR 0021](../adr/0021-share-concrete-client-backend.md).
-
-### HTTP resources, observations, and receipts
-
-The server owns its application and database. Protocol-3 resource reads return values with observed revisions; command receipts describe a write, not current display state. The remote adapter owns confirmed caches. Task-list and daily-overview aggregates capture related resources in one server transaction. A failed refresh retains confirmed values; a saved command remains saved when its later refresh fails. Unloaded tracking is distinct from observed idle tracking.
-
-Owner: [protocol](../../crates/tracker-protocol/src/lib.rs), [server resources](../../crates/tracker-server/src/resources.rs), and [remote application](../../crates/tracker-remote/src/application/mod.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
-
-### Clients and Swift bridge
-
-The TUI controller owns screen state and request publication; one event loop handles input, redraws, and completions. The CLI validates arguments and emits JSON and exit codes. The native macOS session composes feature state, while its serial worker owns C bridge access and disposal. All clients use the same Rust rules through the shared backend. Views format values and own interaction state.
-
-Owner: [TUI controller](../../apps/tui/src/app.rs), [CLI](../../apps/cli/src/main.rs), [Swift session](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift), and [Rust bridge](../../apps/swiftui/bridge/src/backend.rs). Decisions: [ADR 0011](../adr/0011-use-one-tui-event-loop-with-a-fixed-redraw-tick.md), [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0021](../adr/0021-share-concrete-client-backend.md).

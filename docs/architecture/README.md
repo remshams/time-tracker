@@ -1,6 +1,6 @@
 # Architecture
 
-Start with the [application primitives](primitives.md) for the concepts, rules, and code owners. The [visual guide](primitives.html) presents the same catalog with diagrams and short explanations. Both describe the implemented application.
+Start with the [architecture and application primitives](primitives.md) for each crate and client, their dependencies, and the shared application rules. The [visual guide](primitives.html) presents the same catalog with diagrams and short explanations. Both describe the implemented application.
 
 Open the [detailed architecture diagrams](architecture.html) in a browser for crate dependencies, client state ownership, method tables, and Swift/Rust call paths. Both HTML pages work offline.
 

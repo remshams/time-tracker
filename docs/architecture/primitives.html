@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Time Tracker application primitives</title>
+<title>Time Tracker architecture and application primitives</title>
 <style>
 :root{color-scheme:light dark;--bg:#f5f6f8;--fg:#202939;--muted:#536176;--card:#fff;--line:#ccd3de;--accent:#2958a5;--domain:#edf5ed;--client:#edf2fc}
 @media(prefers-color-scheme:dark){:root{--bg:#131922;--fg:#e2e8f0;--muted:#a9b6c8;--card:#1c2532;--line:#445167;--accent:#98bdff;--domain:#22372c;--client:#263650}}
@@ -13,12 +13,108 @@
 <body>
 <main>
 <header><div class="eyebrow">Time Tracker / Architecture</div>
-<h1>Application primitives</h1>
-<p>This catalog names the application&#x27;s main concepts and the components that implement them. Use it to find the owner of a rule before changing code. The <a href="primitives.md">Markdown catalog</a> provides a concise reference; the <a href="architecture.html">detailed architecture</a> covers method-level ownership.</p>
+<h1>Architecture and application primitives</h1>
+<p>Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. The <a href="primitives.md">Markdown catalog</a> provides a concise reference; the <a href="architecture.html">detailed architecture</a> covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.</p>
 <p>Source scope: the Rust core, TUI, CLI, and native macOS client at <code>e0f570ade9dd633046cb784d9c546a2d34516f35</code>, inspected on 14 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.</p>
 </header>
-<nav aria-label="Architecture navigation"><a href="README.md">Architecture index</a><a href="primitives.md">Markdown catalog</a><a href="architecture.html">Detailed diagrams</a><a href="../adr/README.md">Decision records</a><a href="#application-concepts">Application concepts</a><a href="#implementation-components">Implementation components</a></nav>
-<section aria-labelledby="relationships"><h2 id="relationships">How the concepts fit together</h2>
+<nav aria-label="Architecture navigation"><a href="README.md">Architecture index</a><a href="primitives.md">Markdown catalog</a><a href="architecture.html">Detailed diagrams</a><a href="../adr/README.md">Decision records</a><a href="#architecture-primitives">Architecture primitives</a><a href="#application-concepts">Application concepts</a></nav>
+<section aria-labelledby="architecture-primitives"><h2 id="architecture-primitives">Architecture primitives</h2>
+<figure><div class="diagram"><svg viewBox="0 0 900 695" role="img" aria-labelledby="rust-crate-dependencies-title rust-crate-dependencies-desc"><title id="rust-crate-dependencies-title">Rust crate dependencies</title><desc id="rust-crate-dependencies-desc">All ten Rust workspace packages. Client front ends depend on tracker-client, which uses application, storage, and remote crates. Storage implements the application repository contract. Remote and server code share protocol types. The application and protocol use domain models.</desc><defs><marker id="rust-crate-dependencies-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+<g class="drawing" style="--arrow:url(#rust-crate-dependencies-arrow)"><path class="arrow" d="M 135 88 V 120 H 390 V 150"/><path class="arrow" d="M 450 88 V 150"/><path class="arrow" d="M 765 88 V 120 H 510 V 150"/><path class="arrow" d="M 385 218 V 255 H 135 V 300"/><path class="arrow" d="M 450 218 V 300"/><path class="arrow" d="M 515 218 V 255 H 765 V 300"/><path class="arrow" d="M 335 334 H 250"/><path class="arrow" d="M 135 368 V 600"/><path class="arrow" d="M 405 368 V 420 H 175 V 600"/><path class="arrow" d="M 765 368 V 600"/><path class="arrow" d="M 335 494 H 285 V 400 H 210 V 368"/><path class="arrow" d="M 520 460 V 368"/><path class="arrow" d="M 565 494 H 600 V 550 H 720 V 600"/><path class="arrow" d="M 650 634 H 250"/><g class="node client"><rect x="20" y="20" width="230" height="68" rx="10"/><text x="135.0" y="47" text-anchor="middle">tracker-tui</text><text class="detail" x="135.0" y="69" text-anchor="middle">tt terminal client</text></g>
+<g class="node client"><rect x="335" y="20" width="230" height="68" rx="10"/><text x="450.0" y="47" text-anchor="middle">tracker-cli</text><text class="detail" x="450.0" y="69" text-anchor="middle">tt-cli automation</text></g>
+<g class="node client"><rect x="650" y="20" width="230" height="68" rx="10"/><text x="765.0" y="47" text-anchor="middle">tracker-swift-bridge</text><text class="detail" x="765.0" y="69" text-anchor="middle">Rust C ABI</text></g>
+<g class="node "><rect x="335" y="150" width="230" height="68" rx="10"/><text x="450.0" y="177" text-anchor="middle">tracker-client</text><text class="detail" x="450.0" y="199" text-anchor="middle">shared backend dispatch</text></g>
+<g class="node domain"><rect x="20" y="300" width="230" height="68" rx="10"/><text x="135.0" y="327" text-anchor="middle">tracker-application</text><text class="detail" x="135.0" y="349" text-anchor="middle">use cases + repository port</text></g>
+<g class="node "><rect x="335" y="300" width="230" height="68" rx="10"/><text x="450.0" y="327" text-anchor="middle">tracker-storage</text><text class="detail" x="450.0" y="349" text-anchor="middle">SQLite adapter</text></g>
+<g class="node "><rect x="650" y="300" width="230" height="68" rx="10"/><text x="765.0" y="327" text-anchor="middle">tracker-remote</text><text class="detail" x="765.0" y="349" text-anchor="middle">HTTP + caches</text></g>
+<g class="node "><rect x="335" y="460" width="230" height="68" rx="10"/><text x="450.0" y="487" text-anchor="middle">tracker-server</text><text class="detail" x="450.0" y="509" text-anchor="middle">routes + database owner</text></g>
+<g class="node domain"><rect x="20" y="600" width="230" height="68" rx="10"/><text x="135.0" y="627" text-anchor="middle">tracker-domain</text><text class="detail" x="135.0" y="649" text-anchor="middle">models + rules</text></g>
+<g class="node "><rect x="650" y="600" width="230" height="68" rx="10"/><text x="765.0" y="627" text-anchor="middle">tracker-protocol</text><text class="detail" x="765.0" y="649" text-anchor="middle">versioned JSON contracts</text></g>
+</g>
+</svg>
+</div>
+<figcaption>Arrows point from a dependent crate to its dependency. This shows selected production dependencies; each catalog entry lists all direct repository dependencies. The storage crate implements <code>TrackerRepository</code>, defined by the application crate. The application crate does not depend on SQLite. Tests and external libraries are omitted.</figcaption>
+</figure>
+<figure><div class="diagram"><svg viewBox="0 0 900 850" role="img" aria-labelledby="native-client-and-backend-calls-title native-client-and-backend-calls-desc"><title id="native-client-and-backend-calls-title">Native client and backend calls</title><desc id="native-client-and-backend-calls-desc">The native app uses portable session state and supplies a serial worker implementing its injected interfaces. The worker calls the Rust C bridge. The bridge uses tracker-client to select local application and storage or the remote HTTP adapter and server-owned storage.</desc><defs><marker id="native-client-and-backend-calls-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+<g class="drawing" style="--arrow:url(#native-client-and-backend-calls-arrow)"><path class="arrow" d="M 370 54 H 530"/><text class="edge" x="450" y="38" text-anchor="middle">events</text><path class="arrow" d="M 695 88 V 160"/><text class="edge" x="778" y="132" text-anchor="middle">injected interfaces</text><path class="arrow" d="M 695 228 V 300"/><text class="edge" x="733" y="274" text-anchor="middle">C ABI</text><path class="arrow" d="M 530 334 H 370"/><text class="edge" x="450" y="318" text-anchor="middle">dispatch</text><path class="arrow" d="M 205 368 V 465"/><text class="edge" x="235" y="420" text-anchor="middle">local</text><path class="arrow" d="M 325 368 V 405 H 695 V 465"/><text class="edge" x="735" y="442" text-anchor="middle">remote</text><path class="arrow" d="M 205 533 V 610"/><text class="edge" x="260" y="578" text-anchor="middle">repository</text><path class="arrow" d="M 695 533 V 610"/><text class="edge" x="749" y="578" text-anchor="middle">HTTP /v1</text><path class="arrow" d="M 695 678 V 755"/><text class="edge" x="750" y="722" text-anchor="middle">repository</text><g class="node client"><rect x="40" y="20" width="330" height="68" rx="10"/><text x="205.0" y="47" text-anchor="middle">TimeTrackerSwiftUI</text><text class="detail" x="205.0" y="69" text-anchor="middle">SwiftUI windows + AppKit menu</text></g>
+<g class="node client"><rect x="530" y="20" width="330" height="68" rx="10"/><text x="695.0" y="47" text-anchor="middle">TrackerClient Swift package</text><text class="detail" x="695.0" y="69" text-anchor="middle">portable session + feature state</text></g>
+<g class="node client"><rect x="530" y="160" width="330" height="68" rx="10"/><text x="695.0" y="187" text-anchor="middle">TrackerWorker</text><text class="detail" x="695.0" y="209" text-anchor="middle">native app infrastructure</text></g>
+<g class="node "><rect x="530" y="300" width="330" height="68" rx="10"/><text x="695.0" y="327" text-anchor="middle">tracker-swift-bridge</text><text class="detail" x="695.0" y="349" text-anchor="middle">C handles + JSON + runtime</text></g>
+<g class="node "><rect x="40" y="300" width="330" height="68" rx="10"/><text x="205.0" y="327" text-anchor="middle">tracker-client</text><text class="detail" x="205.0" y="349" text-anchor="middle">TrackerBackend dispatch</text></g>
+<g class="node domain"><rect x="40" y="465" width="330" height="68" rx="10"/><text x="205.0" y="492" text-anchor="middle">tracker-application</text><text class="detail" x="205.0" y="514" text-anchor="middle">local use cases</text></g>
+<g class="node "><rect x="530" y="465" width="330" height="68" rx="10"/><text x="695.0" y="492" text-anchor="middle">tracker-remote</text><text class="detail" x="695.0" y="514" text-anchor="middle">remote operations</text></g>
+<g class="node "><rect x="40" y="610" width="330" height="68" rx="10"/><text x="205.0" y="637" text-anchor="middle">tracker-storage</text><text class="detail" x="205.0" y="659" text-anchor="middle">local SQLite database</text></g>
+<g class="node "><rect x="530" y="610" width="330" height="68" rx="10"/><text x="695.0" y="637" text-anchor="middle">tracker-server</text><text class="detail" x="695.0" y="659" text-anchor="middle">server application use cases</text></g>
+<g class="node "><rect x="530" y="755" width="330" height="68" rx="10"/><text x="695.0" y="782" text-anchor="middle">tracker-storage</text><text class="detail" x="695.0" y="804" text-anchor="middle">server SQLite database</text></g>
+</g>
+</svg>
+</div>
+<figcaption>Arrows mean runtime calls through the selected backend. The portable Swift package calls injected interfaces and has no compile dependency on the Rust bridge. The app supplies <code>TrackerWorker</code>, which owns serialized bridge access and disposal. The server owns a separate application and database; remote failures never select local storage. TUI and CLI operations enter the same <code>tracker-client</code> dispatch directly.</figcaption>
+</figure>
+<div class="grid"><article class="card" id="tracker-domain"><h3>tracker-domain</h3>
+<p>Owns task and worklog identities, validated names, interval rules, tracking transitions, and inactivity periods. Its models validate changes without performing database, network, or UI work. Operation instants are explicit inputs.</p>
+<p class="sources">Depends on: no other repository component.</p>
+<p class="sources">Source: <a href="../../crates/tracker-domain/Cargo.toml">crate</a>, <a href="../../crates/tracker-domain/src/lib.rs">models</a>. Decisions: <a href="../adr/0005-worklog-correction.md">ADR 0005</a>, <a href="../adr/0016-configurable-inactive-task-archiving.md">ADR 0016</a>.</p>
+</article>
+<article class="card" id="tracker-application"><h3>tracker-application</h3>
+<p>Owns synchronous use cases, calendar and search policies, and semantic failures. <code>TrackerApplication&lt;R&gt;</code> coordinates domain rules through one <code>TrackerRepository</code> contract. <code>TrackerApplicationService</code> remains the TUI&#x27;s synchronous test boundary. Storage adapters implement persistence; clients own presentation and scheduling.</p>
+<p class="sources">Depends on: <a href="#tracker-domain">tracker-domain</a>.</p>
+<p class="sources">Source: <a href="../../crates/tracker-application/Cargo.toml">crate</a>, <a href="../../crates/tracker-application/src/service/mod.rs">use cases</a>, <a href="../../crates/tracker-application/src/repository.rs">repository contract</a>. Decisions: <a href="../adr/0012-share-client-query-and-failure-policies.md">ADR 0012</a>, <a href="../adr/0022-consolidate-application-and-repository-contracts.md">ADR 0022</a>.</p>
+</article>
+<article class="card" id="tracker-storage"><h3>tracker-storage</h3>
+<p>Owns SQLite connections, database paths, migrations, coherent reads, and transactional writes. <code>SqliteRepository</code> implements the application repository contract. Database constraints also enforce single active tracking, same-task overlap rules, and active-worklog deletion protection for direct SQL writes.</p>
+<p class="sources">Depends on: <a href="#tracker-application">tracker-application</a>, <a href="#tracker-domain">tracker-domain</a>.</p>
+<p class="sources">Source: <a href="../../crates/tracker-storage/Cargo.toml">crate</a>, <a href="../../crates/tracker-storage/src/sqlite/mod.rs">SQLite adapter</a>, <a href="../../crates/tracker-storage/src/migrate.rs">migrations</a>. Decisions: <a href="../adr/0005-worklog-correction.md">ADR 0005</a>, <a href="../adr/0007-completed-worklog-deletion.md">ADR 0007</a>.</p>
+</article>
+<article class="card" id="tracker-protocol"><h3>tracker-protocol</h3>
+<p>Defines protocol-3 JSON requests, resource observations, command receipts, and conversions at the HTTP boundary. Observations pair read values with revisions. Receipts describe committed writes and do not replace current read state. This crate contains no HTTP client, server, or database connection.</p>
+<p class="sources">Depends on: <a href="#tracker-application">tracker-application</a>, <a href="#tracker-domain">tracker-domain</a>.</p>
+<p class="sources">Source: <a href="../../crates/tracker-protocol/Cargo.toml">crate</a>, <a href="../../crates/tracker-protocol/src/lib.rs">wire contracts</a>. Decisions: <a href="../adr/0017-separate-http-resources-from-client-refreshes.md">ADR 0017</a>, <a href="../adr/0019-read-coherent-workflow-state.md">ADR 0019</a>.</p>
+</article>
+<article class="card" id="tracker-server"><h3>tracker-server</h3>
+<p>Owns HTTP routes, server-side operation serialization, revision guards, command receipts, and its application and SQLite database. Task-list and daily-overview reads capture related resources in one transaction. <code>tt serve</code> launches this library against an explicit local or Tailscale bind address.</p>
+<p class="sources">Depends on: <a href="#tracker-application">tracker-application</a>, <a href="#tracker-domain">tracker-domain</a>, <a href="#tracker-protocol">tracker-protocol</a>, <a href="#tracker-storage">tracker-storage</a>.</p>
+<p class="sources">Source: <a href="../../crates/tracker-server/Cargo.toml">crate</a>, <a href="../../crates/tracker-server/src/lib.rs">entry points</a>, <a href="../../crates/tracker-server/src/resources.rs">resource routes</a>. Decisions: <a href="../adr/0017-separate-http-resources-from-client-refreshes.md">ADR 0017</a>, <a href="../adr/0019-read-coherent-workflow-state.md">ADR 0019</a>.</p>
+</article>
+<article class="card" id="tracker-remote"><h3>tracker-remote</h3>
+<p>Owns asynchronous HTTP transport, response validation, confirmed resource caches, and guarded command recovery. <code>RemoteApplication</code> publishes only validated observations. Failed refreshes retain confirmed values; a saved command remains saved after a display refresh fails. Unloaded tracking differs from observed idle tracking. It never opens the server&#x27;s database.</p>
+<p class="sources">Depends on: <a href="#tracker-application">tracker-application</a>, <a href="#tracker-domain">tracker-domain</a>, <a href="#tracker-protocol">tracker-protocol</a>.</p>
+<p class="sources">Source: <a href="../../crates/tracker-remote/Cargo.toml">crate</a>, <a href="../../crates/tracker-remote/src/application/mod.rs">remote application</a>, <a href="../../crates/tracker-remote/src/transport.rs">transport</a>. Decisions: <a href="../adr/0018-compose-resource-state-in-client-workflows.md">ADR 0018</a>, <a href="../adr/0019-read-coherent-workflow-state.md">ADR 0019</a>.</p>
+</article>
+<article class="card" id="tracker-client"><h3>tracker-client</h3>
+<p>Owns shared client dispatch through the concrete <code>TrackerBackend</code> enum. It selects a local application or <code>RemoteApplication</code> and shares task, tracking, history, report, and archive operations. Remote failure never selects local storage. Callers retain runtime, lifecycle, input, and output ownership.</p>
+<p class="sources">Depends on: <a href="#tracker-application">tracker-application</a>, <a href="#tracker-domain">tracker-domain</a>, <a href="#tracker-protocol">tracker-protocol</a>, <a href="#tracker-remote">tracker-remote</a>, <a href="#tracker-storage">tracker-storage</a>.</p>
+<p class="sources">Source: <a href="../../crates/tracker-client/Cargo.toml">crate</a>, <a href="../../crates/tracker-client/src/lib.rs">backend</a>. Decision: <a href="../adr/0021-share-concrete-client-backend.md">ADR 0021</a>.</p>
+</article>
+<article class="card" id="tracker-tui"><h3>tracker-tui</h3>
+<p>The <code>tt</code> terminal client owns keyboard commands, screen state, rendering, terminal restoration, and a monotonic timer. One event loop handles input, redraw ticks, and request completions. Production requests use <code>TrackerBackend</code>; presentation tests can inject <code>TrackerApplicationService</code>. The same binary launches <code>tracker-server</code> through <code>tt serve</code>.</p>
+<p class="sources">Depends on: <a href="#tracker-client">tracker-client</a>, <a href="#tracker-application">tracker-application</a>, <a href="#tracker-domain">tracker-domain</a>, <a href="#tracker-remote">tracker-remote</a>, <a href="#tracker-server">tracker-server</a>, <a href="#tracker-storage">tracker-storage</a>.</p>
+<p class="sources">Source: <a href="../../apps/tui/Cargo.toml">crate</a>, <a href="../../apps/tui/src/main.rs">startup</a>, <a href="../../apps/tui/src/app.rs">controller</a>, <a href="../../apps/tui/src/runtime.rs">runtime</a>. Decisions: <a href="../adr/0011-use-one-tui-event-loop-with-a-fixed-redraw-tick.md">ADR 0011</a>, <a href="../adr/0021-share-concrete-client-backend.md">ADR 0021</a>.</p>
+</article>
+<article class="card" id="tracker-cli"><h3>tracker-cli</h3>
+<p>The <code>tt-cli</code> automation client owns argument validation, command handlers, JSON output, exit codes, and local/remote selection. It dispatches through <code>TrackerBackend</code> and reuses application search and calendar policies. Invalid input fails before opening a backend. It performs no terminal rendering or raw SQL queries.</p>
+<p class="sources">Depends on: <a href="#tracker-client">tracker-client</a>, <a href="#tracker-application">tracker-application</a>, <a href="#tracker-domain">tracker-domain</a>, <a href="#tracker-protocol">tracker-protocol</a>, <a href="#tracker-remote">tracker-remote</a>, <a href="#tracker-storage">tracker-storage</a>.</p>
+<p class="sources">Source: <a href="../../apps/cli/Cargo.toml">crate</a>, <a href="../../apps/cli/src/main.rs">entry point</a>, <a href="../cli.md">command reference</a>. Decisions: <a href="../adr/0012-share-client-query-and-failure-policies.md">ADR 0012</a>, <a href="../adr/0021-share-concrete-client-backend.md">ADR 0021</a>.</p>
+</article>
+<article class="card" id="tracker-swift-bridge"><h3>tracker-swift-bridge</h3>
+<p>Owns the Rust static library&#x27;s C ABI, connection handles, JSON results, and persistent current-thread Tokio runtime. It dispatches through <code>TrackerBackend</code> and maps failures for Swift. The native app&#x27;s serial <code>TrackerWorker</code> owns call ordering and handle disposal; the bridge owns neither windows nor feature state.</p>
+<p class="sources">Depends on: <a href="#tracker-client">tracker-client</a>, <a href="#tracker-application">tracker-application</a>, <a href="#tracker-domain">tracker-domain</a>, <a href="#tracker-protocol">tracker-protocol</a>, <a href="#tracker-remote">tracker-remote</a>, <a href="#tracker-storage">tracker-storage</a>.</p>
+<p class="sources">Source: <a href="../../apps/swiftui/bridge/Cargo.toml">crate</a>, <a href="../../apps/swiftui/bridge/src/backend.rs">backend</a>, <a href="../../apps/swiftui/Sources/CTrackerBridge/include/TrackerBridge.h">C interface</a>. Decisions: <a href="../adr/0018-compose-resource-state-in-client-workflows.md">ADR 0018</a>, <a href="../adr/0021-share-concrete-client-backend.md">ADR 0021</a>.</p>
+</article>
+<article class="card" id="trackerclient-swift-package"><h3>TrackerClient Swift package</h3>
+<p>Owns portable feature state and <code>TrackerSession</code> coordination through injected client, clock, scheduler, and settings interfaces. Connection and selection generations reject obsolete results. It composes resource observations for features and separates command success from later refresh failures. Rust continues to own domain rules and persistence.</p>
+<p class="sources">Depends on: Foundation and injected interfaces. No direct Rust, SwiftUI, AppKit, network, or database dependency.</p>
+<p class="sources">Source: <a href="../../apps/swiftui/TrackerClient/Package.swift">package</a>, <a href="../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift">session</a>, <a href="../../apps/swiftui/TrackerClient/Sources/TrackerClient/Contracts/Dependencies.swift">contracts</a>. Decision: <a href="../adr/0018-compose-resource-state-in-client-workflows.md">ADR 0018</a>.</p>
+</article>
+<article class="card" id="timetrackerswiftui-macos-app"><h3>TimeTrackerSwiftUI macOS app</h3>
+<p>Owns SwiftUI scenes, views and observable adapters, plus AppKit menu-bar and lifecycle integration. Windows share the portable session. Its infrastructure supplies preferences, timers, and the serial <code>TrackerWorker</code>, which keeps bridge calls and decoding off the UI thread. Window interaction and error presentation stay in the app.</p>
+<p class="sources">Depends on: <a href="#trackerclient-swift-package">TrackerClient</a>, <a href="#tracker-swift-bridge">tracker-swift-bridge</a> through the C ABI, SwiftUI, and AppKit.</p>
+<p class="sources">Source: <a href="../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift">app</a>, <a href="../../apps/swiftui/Sources/TimeTrackerSwiftUI/Infrastructure/RustBridge/TrackerWorker.swift">worker</a>, <a href="../../apps/swiftui/README.md#architecture">native architecture</a>. Decisions: <a href="../adr/0018-compose-resource-state-in-client-workflows.md">ADR 0018</a>, <a href="../adr/0021-share-concrete-client-backend.md">ADR 0021</a>.</p>
+</article>
+</div>
+</section>
+<section aria-labelledby="application-concepts"><h2 id="application-concepts">Application concepts</h2>
+<h2 id="relationships">How the concepts fit together</h2>
 <figure><div class="diagram"><svg viewBox="0 0 760 330" role="img" aria-labelledby="task-worklog-and-tracking-ownership-title task-worklog-and-tracking-ownership-desc"><title id="task-worklog-and-tracking-ownership-title">Task, worklog, and tracking ownership</title><desc id="task-worklog-and-tracking-ownership-desc">A task owns zero or more worklogs. Tracking points to at most one active worklog. History lists worklogs and reports sum their clipped durations.</desc><defs><marker id="task-worklog-and-tracking-ownership-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
 <g class="drawing" style="--arrow:url(#task-worklog-and-tracking-ownership-arrow)"><g class="node domain"><rect x="20" y="25" width="190" height="68" rx="10"/><text x="115.0" y="52" text-anchor="middle">Task</text><text class="detail" x="115.0" y="74" text-anchor="middle">reusable activity</text></g>
 <g class="node domain"><rect x="300" y="25" width="195" height="68" rx="10"/><text x="397.5" y="52" text-anchor="middle">Worklog</text><text class="detail" x="397.5" y="74" text-anchor="middle">one task + interval</text></g>
@@ -30,8 +126,6 @@
 </div>
 <figcaption>Arrows describe data relationships. A task can own many completed worklogs, while the selected database permits only one active worklog.</figcaption>
 </figure>
-</section>
-<section aria-labelledby="application-concepts"><h2 id="application-concepts">Application concepts</h2>
 <div class="grid"><article class="card" id="task"><h3>Task</h3>
 <p>A reusable activity identified by <code>TaskId</code>, with a validated name, archive flag, and creation/update timestamps. Archiving preserves its worklogs. Rename, archive, and restore advance metadata time without moving it backward; tracking leaves it unchanged. Latest work is derived from worklog starts and drives the default task order. Fuzzy search ranks matches by the newer of metadata update and latest work.</p>
 <p class="sources">Owner: <a href="../../crates/tracker-domain/src/task.rs">task model</a>, <a href="../../crates/tracker-application/src/model.rs">task list model</a>, and <a href="../../crates/tracker-application/src/task_search.rs">search policy</a>. Decisions: <a href="../adr/0002-task-timestamps-and-ordering.md">ADR 0002</a>, <a href="../adr/0009-task-search.md">ADR 0009</a>.</p>
@@ -62,44 +156,6 @@
 </article>
 </div>
 </section>
-<section aria-labelledby="implementation-components"><h2 id="implementation-components">Implementation components</h2>
-<figure><div class="diagram"><svg viewBox="0 0 760 555" role="img" aria-labelledby="local-and-remote-call-paths-title local-and-remote-call-paths-desc"><title id="local-and-remote-call-paths-title">Local and remote call paths</title><desc id="local-and-remote-call-paths-desc">TUI, CLI, and the macOS app call the shared backend. The macOS app uses the Swift worker and C bridge. Local calls reach application use cases and local SQLite. Remote calls reach the HTTP server, which owns application use cases and server SQLite.</desc><defs><marker id="local-and-remote-call-paths-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
-<g class="drawing" style="--arrow:url(#local-and-remote-call-paths-arrow)"><g class="node client"><rect x="20" y="15" width="205" height="68" rx="10"/><text x="122.5" y="42" text-anchor="middle">TUI</text><text class="detail" x="122.5" y="64" text-anchor="middle">event loop</text></g>
-<g class="node client"><rect x="275" y="15" width="210" height="68" rx="10"/><text x="380.0" y="42" text-anchor="middle">CLI</text><text class="detail" x="380.0" y="64" text-anchor="middle">JSON + exit codes</text></g>
-<g class="node client"><rect x="535" y="15" width="205" height="68" rx="10"/><text x="637.5" y="42" text-anchor="middle">macOS app</text><text class="detail" x="637.5" y="64" text-anchor="middle">Swift worker + C bridge</text></g>
-<g class="node "><rect x="240" y="145" width="280" height="68" rx="10"/><text x="380.0" y="172" text-anchor="middle">TrackerBackend</text><text class="detail" x="380.0" y="194" text-anchor="middle">one selected backend</text></g>
-<g class="node domain"><rect x="40" y="295" width="270" height="68" rx="10"/><text x="175.0" y="322" text-anchor="middle">TrackerApplication</text><text class="detail" x="175.0" y="344" text-anchor="middle">local synchronous use cases</text></g>
-<g class="node "><rect x="450" y="295" width="270" height="68" rx="10"/><text x="585.0" y="322" text-anchor="middle">RemoteApplication</text><text class="detail" x="585.0" y="344" text-anchor="middle">HTTP + confirmed caches</text></g>
-<g class="node "><rect x="40" y="460" width="270" height="68" rx="10"/><text x="175.0" y="487" text-anchor="middle">Local SQLite</text><text class="detail" x="175.0" y="509" text-anchor="middle">client-selected database</text></g>
-<g class="node "><rect x="450" y="460" width="270" height="68" rx="10"/><text x="585.0" y="487" text-anchor="middle">Server + SQLite</text><text class="detail" x="585.0" y="509" text-anchor="middle">server application + database</text></g>
-<path class="arrow" d="M 122 83 V 110 H 280 V 145"/><text class="edge" x="142" y="128" text-anchor="middle">calls</text><path class="arrow" d="M 380 83 V 145"/><text class="edge" x="404" y="122" text-anchor="middle">calls</text><path class="arrow" d="M 637 83 V 110 H 480 V 145"/><text class="edge" x="621" y="128" text-anchor="middle">calls</text><path class="arrow" d="M 300 213 V 250 H 175 V 295"/><text class="edge" x="207" y="278" text-anchor="middle">local</text><path class="arrow" d="M 460 213 V 250 H 585 V 295"/><text class="edge" x="625" y="278" text-anchor="middle">remote</text><path class="arrow" d="M 175 363 V 460"/><text class="edge" x="285" y="414" text-anchor="middle">repository transactions</text><path class="arrow" d="M 585 363 V 460"/><text class="edge" x="650" y="414" text-anchor="middle">protocol 3 /v1</text></g>
-</svg>
-</div>
-<figcaption>Arrows mean calls or persistence access. Both paths execute the same Rust use cases; the selected server owns the remote database. Client presentation and lifecycle remain client-owned.</figcaption>
-</figure>
-<div class="grid"><article class="card" id="application-and-repository-contracts"><h3>Application and repository contracts</h3>
-<p><code>TrackerApplication&lt;R&gt;</code> owns synchronous use cases and calls one <code>TrackerRepository</code> persistence contract. Domain models hold reusable validation rules. The TUI retains <code>TrackerApplicationService</code> for its synchronous presentation tests; production clients use concrete backend dispatch. Neither domain nor synchronous application contracts depend on Tokio or UI code.</p>
-<p class="sources">Owner: <a href="../../crates/tracker-application/src/service/mod.rs">application service</a> and <a href="../../crates/tracker-application/src/repository.rs">repository contract</a>. Decision: <a href="../adr/0022-consolidate-application-and-repository-contracts.md">ADR 0022</a>.</p>
-</article>
-<article class="card" id="sqlite-storage"><h3>SQLite storage</h3>
-<p><code>SqliteRepository</code> owns the connection and implements transactional reads and guarded writes. Database constraints enforce single active tracking, same-task overlap rules, and protection against deleting active worklogs, including direct SQL writes. Schema migrations preserve existing records. Local clients and the server select their own database paths.</p>
-<p class="sources">Owner: <a href="../../crates/tracker-storage/src/sqlite/mod.rs">SQLite adapter</a> and <a href="../../crates/tracker-storage/src/migrate.rs">migrations</a>. Decisions: <a href="../adr/0005-worklog-correction.md">ADR 0005</a>, <a href="../adr/0007-completed-worklog-deletion.md">ADR 0007</a>.</p>
-</article>
-<article class="card" id="shared-client-backend"><h3>Shared client backend</h3>
-<p><code>TrackerBackend</code> selects a local application or <code>RemoteApplication</code> and shares task, tracking, history, report, and archive dispatch across the TUI, CLI, and Swift bridge. Remote failure never selects local storage. Each client keeps input, presentation, runtime, and lifecycle ownership.</p>
-<p class="sources">Owner: <a href="../../crates/tracker-client/src/lib.rs">tracker-client</a>. Decision: <a href="../adr/0021-share-concrete-client-backend.md">ADR 0021</a>.</p>
-</article>
-<article class="card" id="http-resources-observations-and-receipts"><h3>HTTP resources, observations, and receipts</h3>
-<p>The server owns its application and database. Protocol-3 resource reads return values with observed revisions; command receipts describe a write, not current display state. The remote adapter owns confirmed caches. Task-list and daily-overview aggregates capture related resources in one server transaction. A failed refresh retains confirmed values; a saved command remains saved when its later refresh fails. Unloaded tracking is distinct from observed idle tracking.</p>
-<p class="sources">Owner: <a href="../../crates/tracker-protocol/src/lib.rs">protocol</a>, <a href="../../crates/tracker-server/src/resources.rs">server resources</a>, and <a href="../../crates/tracker-remote/src/application/mod.rs">remote application</a>. Decisions: <a href="../adr/0017-separate-http-resources-from-client-refreshes.md">ADR 0017</a>, <a href="../adr/0018-compose-resource-state-in-client-workflows.md">ADR 0018</a>, <a href="../adr/0019-read-coherent-workflow-state.md">ADR 0019</a>.</p>
-</article>
-<article class="card" id="clients-and-swift-bridge"><h3>Clients and Swift bridge</h3>
-<p>The TUI controller owns screen state and request publication; one event loop handles input, redraws, and completions. The CLI validates arguments and emits JSON and exit codes. The native macOS session composes feature state, while its serial worker owns C bridge access and disposal. All clients use the same Rust rules through the shared backend. Views format values and own interaction state.</p>
-<p class="sources">Owner: <a href="../../apps/tui/src/app.rs">TUI controller</a>, <a href="../../apps/cli/src/main.rs">CLI</a>, <a href="../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift">Swift session</a>, and <a href="../../apps/swiftui/bridge/src/backend.rs">Rust bridge</a>. Decisions: <a href="../adr/0011-use-one-tui-event-loop-with-a-fixed-redraw-tick.md">ADR 0011</a>, <a href="../adr/0018-compose-resource-state-in-client-workflows.md">ADR 0018</a>, <a href="../adr/0021-share-concrete-client-backend.md">ADR 0021</a>.
-</p>
-</article>
-</div>
-</section>
 <section aria-labelledby="writes"><h2 id="writes">A saved write and a fresh display are separate results</h2>
 <figure><div class="diagram"><svg viewBox="0 0 760 260" role="img" aria-labelledby="guarded-writes-and-display-refresh-title guarded-writes-and-display-refresh-desc"><title id="guarded-writes-and-display-refresh-title">Guarded writes and display refresh</title><desc id="guarded-writes-and-display-refresh-desc">A client reviews the original values. The application and storage check write guards and commit the write. Display refresh follows separately. A rejected guard requires a fresh review. A failed refresh preserves the successful write and reports a stale display.</desc><defs><marker id="guarded-writes-and-display-refresh-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
 <g class="drawing" style="--arrow:url(#guarded-writes-and-display-refresh-arrow)"><g class="node client"><rect x="10" y="30" width="215" height="68" rx="10"/><text x="117.5" y="57" text-anchor="middle">Review original values</text><text class="detail" x="117.5" y="79" text-anchor="middle">row, active state, preview</text></g>
@@ -115,6 +171,7 @@
 </section>
 <footer><p>This is the visual companion to <a href="primitives.md">the Markdown catalog</a>. Keep both aligned when rules or ownership change. The <a href="architecture.html">detailed diagrams</a> retain their own source revisions and historical quality measurements.</p>
 </footer>
+
 </main>
 </body>
 </html>
