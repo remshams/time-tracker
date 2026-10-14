@@ -535,6 +535,10 @@ async fn remote_client_round_trips_every_application_operation() {
         "Renamed project"
     );
 
+    let candidates = client.move_candidates(first.id(), "Second");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].id, second.id());
+
     let started = match client
         .set_active_task(first.id(), at + Duration::seconds(3))
         .await
