@@ -195,6 +195,15 @@ On a Mac with Xcode selected and an active desktop session, run:
 apps/swiftui/check-native-ui.sh
 ```
 
+The runner reuses `.build/native-debug`, enables a six-minute XCTest execution
+limit per case, and streams output through `scripts/run-native-ui.py`. That
+process stops a silent command after three minutes. A CI group or smoke run has
+a 24-minute total limit; the complete manual suite has a two-hour limit. A
+timeout fails the check and stops its process group. Stalled macOS
+runs also capture process names and stack samples in `.build/native-ui-hang`.
+The test log remains in `.build/native-ui.log`; `.build/native-ui-timings.json`
+records completed cases, their durations, and any unfinished case.
+
 The helper builds `tt-cli` and `tt`, then runs the `TimeTrackerUITests` target in the Debug app. Each test uses a fresh SQLite database and an isolated preferences suite. Server cases start a real `tt` server; an ordered fault proxy exercises delays, outages, and uncertain writes. The CLI creates fixtures and verifies stored results while UI actions call the production Swift-to-Rust bridge.
 
 The suite covers task creation, selection, tracking, history, rename, archive, correction, move, connection recovery, native menus, clipboard actions, settings, windows, totals, lifecycle delivery, and appearance. The seven original bulk archive scenarios are retained. See the [coverage map and dedicated-Mac acceptance checklist](e2e-coverage.md) for the cases and remaining platform evidence.
