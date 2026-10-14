@@ -1,8 +1,8 @@
 //! Tracking state and commands.
 //!
-//! The tracker is either idle or running one active worklog. Every command
-//! takes its timestamps as parameters, so callers control the clock and
-//! tests never depend on the wall clock. Commands either fully apply or
+//! The tracker is either idle or running one active worklog. Callers supply
+//! identifiers for new worklogs and timestamps for commands, so tests never
+//! depend on the wall clock. Commands either fully apply or
 //! leave the state unchanged; timestamps are validated before the state
 //! moves.
 
@@ -122,11 +122,16 @@ impl Tracker {
         }
     }
 
-    /// Starts a new worklog for the given task at the given instant.
+    /// Starts a new worklog with the supplied identifier at the given instant.
     ///
     /// Fails when another worklog is active or the task is archived. Restarting
     /// a task that has stopped worklogs still creates a new worklog.
-    pub fn start(&mut self, task: &Task, at: DateTime<Utc>) -> Result<Worklog, TrackingError> {
+    pub fn start(
+        &mut self,
+        task: &Task,
+        worklog_id: WorklogId,
+        at: DateTime<Utc>,
+    ) -> Result<Worklog, TrackingError> {
         if let TrackingState::Running { worklog } = &self.state {
             return Err(TrackingError::AlreadyRunning {
                 active: worklog.clone(),
@@ -135,7 +140,7 @@ impl Tracker {
         if task.is_archived() {
             return Err(TrackingError::TaskArchived { id: task.id() });
         }
-        let active = ActiveWorklog::begin(WorklogId::generate(), task.id(), at);
+        let active = ActiveWorklog::begin(worklog_id, task.id(), at);
         let worklog = active.to_worklog();
         self.state = TrackingState::Running { worklog: active };
         Ok(worklog)
@@ -156,7 +161,7 @@ impl Tracker {
     }
 
     /// Stops the active worklog at `stop_at` and starts a new worklog for the
-    /// given task at `start_at`.
+    /// given task at `start_at`, using the supplied worklog identifier.
     ///
     /// Fails, leaving the current worklog active, when nothing is running, when
     /// the target is the active task, when the target is archived, when
@@ -166,6 +171,7 @@ impl Tracker {
     pub fn switch(
         &mut self,
         task: &Task,
+        worklog_id: WorklogId,
         stop_at: DateTime<Utc>,
         start_at: DateTime<Utc>,
     ) -> Result<SwitchedWorklogs, TrackingError> {
@@ -183,7 +189,7 @@ impl Tracker {
         if start_at < stop_at {
             return Err(TrackingError::StartBeforeStop { stop_at, start_at });
         }
-        let started = ActiveWorklog::begin(WorklogId::generate(), task.id(), start_at);
+        let started = ActiveWorklog::begin(worklog_id, task.id(), start_at);
         self.state = TrackingState::Running {
             worklog: started.clone(),
         };
@@ -195,18 +201,20 @@ impl Tracker {
 
     /// Starts or stops tracking for the given task.
     ///
-    /// Toggling the active task stops it. Toggling another task while an
+    /// Toggling the active task stops it. Toggling another task while a
     /// worklog runs switches to it, stopping the old worklog and starting the new
-    /// one at the same instant. Toggling while idle starts the task.
+    /// one at the same instant. Toggling while idle starts the task. The supplied
+    /// identifier is used only when a worklog starts.
     pub fn toggle(
         &mut self,
         task: &Task,
+        worklog_id: WorklogId,
         at: DateTime<Utc>,
     ) -> Result<TrackingOutcome, TrackingError> {
         let active = match &self.state {
             TrackingState::Idle => {
                 return self
-                    .start(task, at)
+                    .start(task, worklog_id, at)
                     .map(|worklog| TrackingOutcome::Started { worklog });
             }
             TrackingState::Running { worklog } => worklog.clone(),
@@ -216,7 +224,7 @@ impl Tracker {
                 .stop(at)
                 .map(|worklog| TrackingOutcome::Stopped { worklog });
         }
-        self.switch(task, at, at)
+        self.switch(task, worklog_id, at, at)
             .map(|switched| TrackingOutcome::Switched {
                 stopped: switched.stopped,
                 started: switched.started,
@@ -272,10 +280,12 @@ mod tests {
         assert!(tracker.active().is_none());
     }
 
+    /// The supplied identity must survive in both the returned worklog and active state.
     #[test]
     fn start_creates_one_active_worklog_for_the_task() {
         let mut tracker = Tracker::idle();
-        let worklog = tracker.start(&task(1), at(100)).unwrap();
+        let worklog = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
+        assert_eq!(worklog.id(), worklog_id(1));
         assert_eq!(worklog.task_id(), task_id(1));
         assert_eq!(worklog.start(), at(100));
         assert_eq!(worklog.end(), None);
@@ -288,12 +298,13 @@ mod tests {
         );
     }
 
+    /// Rejected starts retain the identity and state of the worklog already running.
     #[test]
     fn start_while_running_is_rejected_with_the_active_worklog() {
         let mut tracker = Tracker::idle();
-        let first = tracker.start(&task(1), at(100)).unwrap();
+        let first = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
         let error = tracker
-            .start(&task(2), at(110))
+            .start(&task(2), worklog_id(1), at(110))
             .expect_err("already running");
         assert_eq!(
             error,
@@ -304,11 +315,12 @@ mod tests {
         assert_eq!(tracker.active().map(|e| e.id()), Some(first.id()));
     }
 
+    /// An archived task cannot create active tracking state.
     #[test]
     fn start_on_archived_task_is_rejected() {
         let mut tracker = Tracker::idle();
         let error = tracker
-            .start(&archived_task(1), at(100))
+            .start(&archived_task(1), worklog_id(1), at(100))
             .expect_err("archived task must not start");
         assert_eq!(error, TrackingError::TaskArchived { id: task_id(1) });
         assert_eq!(tracker.state(), &TrackingState::Idle);
@@ -320,10 +332,11 @@ mod tests {
         assert_eq!(tracker.stop(at(100)), Err(TrackingError::NotRunning));
     }
 
+    /// Stopping completes the same worklog rather than assigning another identity.
     #[test]
     fn stop_sets_the_end_time_and_goes_idle() {
         let mut tracker = Tracker::idle();
-        let started = tracker.start(&task(1), at(100)).unwrap();
+        let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
         let stopped = tracker.stop(at(150)).unwrap();
         assert_eq!(stopped.id(), started.id());
         assert_eq!(stopped.start(), at(100));
@@ -331,18 +344,20 @@ mod tests {
         assert_eq!(tracker.state(), &TrackingState::Idle);
     }
 
+    /// A zero-duration completed interval remains valid.
     #[test]
     fn stop_at_exactly_the_start_time_is_accepted() {
         let mut tracker = Tracker::idle();
-        tracker.start(&task(1), at(100)).unwrap();
+        tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
         let stopped = tracker.stop(at(100)).unwrap();
         assert_eq!(stopped.end(), Some(at(100)));
     }
 
+    /// A backwards stop must leave the original worklog active.
     #[test]
     fn stop_before_start_is_rejected_and_the_worklog_stays_active() {
         let mut tracker = Tracker::idle();
-        let started = tracker.start(&task(1), at(100)).unwrap();
+        let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
         let error = tracker.stop(at(99)).expect_err("backwards stop must fail");
         assert_eq!(
             error,
@@ -355,12 +370,13 @@ mod tests {
         assert_eq!(tracker.active().map(|e| e.id()), Some(started.id()));
     }
 
+    /// Restarting uses a separate identity so completed history is never resumed.
     #[test]
     fn restarting_a_stopped_task_creates_a_new_worklog() {
         let mut tracker = Tracker::idle();
-        let first = tracker.start(&task(1), at(100)).unwrap();
+        let first = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
         let first_stopped = tracker.stop(at(150)).unwrap();
-        let second = tracker.start(&task(1), at(200)).unwrap();
+        let second = tracker.start(&task(1), worklog_id(2), at(200)).unwrap();
         assert_ne!(first.id(), second.id());
         assert_eq!(first_stopped.id(), first.id());
         assert_eq!(first_stopped.end(), Some(at(150)));
@@ -369,45 +385,52 @@ mod tests {
         assert_eq!(tracker.active().map(|e| e.id()), Some(second.id()));
     }
 
+    /// A switch requires an existing worklog to complete and cannot act as an idle start.
     #[test]
     fn switch_when_idle_is_rejected() {
         let mut tracker = Tracker::idle();
         let error = tracker
-            .switch(&task(1), at(100), at(100))
+            .switch(&task(1), worklog_id(2), at(100), at(100))
             .expect_err("nothing runs");
         assert_eq!(error, TrackingError::NotRunning);
     }
 
+    /// Same-task switches fail instead of splitting the current worklog.
     #[test]
     fn switch_to_the_active_task_is_rejected() {
         let mut tracker = Tracker::idle();
-        let started = tracker.start(&task(1), at(100)).unwrap();
+        let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
         let error = tracker
-            .switch(&task(1), at(110), at(110))
+            .switch(&task(1), worklog_id(2), at(110), at(110))
             .expect_err("same task switch must fail");
         assert_eq!(error, TrackingError::TaskAlreadyActive { id: task_id(1) });
         assert_eq!(tracker.active().map(|e| e.id()), Some(started.id()));
     }
 
+    /// An archived destination must leave the original worklog running.
     #[test]
     fn switch_to_an_archived_task_is_rejected() {
         let mut tracker = Tracker::idle();
-        let started = tracker.start(&task(1), at(100)).unwrap();
+        let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
         let error = tracker
-            .switch(&archived_task(2), at(110), at(110))
+            .switch(&archived_task(2), worklog_id(2), at(110), at(110))
             .expect_err("archived target must fail");
         assert_eq!(error, TrackingError::TaskArchived { id: task_id(2) });
         assert_eq!(tracker.active().map(|e| e.id()), Some(started.id()));
     }
 
+    /// A switch preserves the completed identity and uses the caller identity for new work.
     #[test]
     fn switch_stops_the_old_worklog_and_starts_the_new_one() {
         let mut tracker = Tracker::idle();
-        let first = tracker.start(&task(1), at(100)).unwrap();
-        let switched = tracker.switch(&task(2), at(150), at(160)).unwrap();
+        let first = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
+        let switched = tracker
+            .switch(&task(2), worklog_id(2), at(150), at(160))
+            .unwrap();
         assert_eq!(switched.stopped.id(), first.id());
         assert_eq!(switched.stopped.task_id(), task_id(1));
         assert_eq!(switched.stopped.end(), Some(at(150)));
+        assert_eq!(switched.started.id(), worklog_id(2));
         assert_eq!(switched.started.task_id(), task_id(2));
         assert_eq!(switched.started.start(), at(160));
         assert_eq!(switched.started.end(), None);
@@ -419,21 +442,25 @@ mod tests {
         assert_eq!(tracker.active().map(|e| e.task_id()), Some(task_id(2)));
     }
 
+    /// A switch permits zero-duration old work and adjacent half-open intervals.
     #[test]
     fn switch_accepts_matching_boundaries() {
         let mut tracker = Tracker::idle();
-        tracker.start(&task(1), at(100)).unwrap();
-        let switched = tracker.switch(&task(2), at(100), at(100)).unwrap();
+        tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
+        let switched = tracker
+            .switch(&task(2), worklog_id(2), at(100), at(100))
+            .unwrap();
         assert_eq!(switched.stopped.end(), Some(at(100)));
         assert_eq!(switched.started.start(), at(100));
     }
 
+    /// Invalid completion times must not replace the active worklog during a switch.
     #[test]
     fn switch_with_stop_before_the_active_start_is_rejected_and_rolls_back() {
         let mut tracker = Tracker::idle();
-        let started = tracker.start(&task(1), at(100)).unwrap();
+        let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
         let error = tracker
-            .switch(&task(2), at(99), at(150))
+            .switch(&task(2), worklog_id(2), at(99), at(150))
             .expect_err("stop precedes start");
         assert_eq!(
             error,
@@ -446,12 +473,13 @@ mod tests {
         assert_eq!(tracker.active().map(|e| e.id()), Some(started.id()));
     }
 
+    /// A switch cannot overlap its own old and new worklogs or partially change state.
     #[test]
     fn switch_with_start_before_stop_is_rejected_and_rolls_back() {
         let mut tracker = Tracker::idle();
-        let started = tracker.start(&task(1), at(100)).unwrap();
+        let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
         let error = tracker
-            .switch(&task(2), at(150), at(149))
+            .switch(&task(2), worklog_id(2), at(150), at(149))
             .expect_err("start precedes stop");
         assert_eq!(
             error,
@@ -464,12 +492,14 @@ mod tests {
         assert_eq!(tracker.active().map(|e| e.task_id()), Some(task_id(1)));
     }
 
+    /// An idle toggle uses the caller identity for its newly active worklog.
     #[test]
     fn toggle_while_idle_starts_the_task() {
         let mut tracker = Tracker::idle();
-        let outcome = tracker.toggle(&task(1), at(100)).unwrap();
+        let outcome = tracker.toggle(&task(1), worklog_id(2), at(100)).unwrap();
         match outcome {
             TrackingOutcome::Started { worklog } => {
+                assert_eq!(worklog.id(), worklog_id(2));
                 assert_eq!(worklog.task_id(), task_id(1));
                 assert_eq!(worklog.start(), at(100));
                 assert_eq!(worklog.end(), None);
@@ -479,11 +509,12 @@ mod tests {
         assert!(tracker.active().is_some());
     }
 
+    /// Stopping through toggle ignores the prospective new identity and completes existing work.
     #[test]
     fn toggling_the_active_task_stops_it() {
         let mut tracker = Tracker::idle();
-        let started = tracker.start(&task(1), at(100)).unwrap();
-        let outcome = tracker.toggle(&task(1), at(150)).unwrap();
+        let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
+        let outcome = tracker.toggle(&task(1), worklog_id(2), at(150)).unwrap();
         match outcome {
             TrackingOutcome::Stopped { worklog } => {
                 assert_eq!(worklog.id(), started.id());
@@ -494,13 +525,15 @@ mod tests {
         assert_eq!(tracker.state(), &TrackingState::Idle);
     }
 
+    /// A toggle shares one stop/start boundary and applies the caller identity to new work.
     #[test]
     fn toggling_another_task_switches_at_one_instant() {
         let mut tracker = Tracker::idle();
-        let started = tracker.start(&task(1), at(100)).unwrap();
-        let outcome = tracker.toggle(&task(2), at(150)).unwrap();
+        let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
+        let outcome = tracker.toggle(&task(2), worklog_id(2), at(150)).unwrap();
         match outcome {
             TrackingOutcome::Switched { stopped, started } => {
+                assert_eq!(started.id(), worklog_id(2));
                 assert_eq!(stopped.end(), Some(at(150)));
                 assert_eq!(started.start(), at(150));
                 assert_eq!(started.end(), None);
@@ -511,20 +544,22 @@ mod tests {
         assert_ne!(tracker.active().map(|e| e.id()), Some(started.id()));
     }
 
+    /// Toggle must respect the archived-task guard used by explicit starts.
     #[test]
     fn toggling_an_archived_task_while_idle_is_rejected() {
         let mut tracker = Tracker::idle();
         let error = tracker
-            .toggle(&archived_task(1), at(100))
+            .toggle(&archived_task(1), worklog_id(2), at(100))
             .expect_err("archived task must not start");
         assert_eq!(error, TrackingError::TaskArchived { id: task_id(1) });
     }
 
+    /// Only the task that owns the active timer receives tracking-based archive protection.
     #[test]
     fn ensure_archivable_only_rejects_the_active_task() {
         let mut tracker = Tracker::idle();
         assert_eq!(tracker.ensure_archivable(task_id(1)), Ok(()));
-        tracker.start(&task(1), at(100)).unwrap();
+        tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
         assert_eq!(
             tracker.ensure_archivable(task_id(1)),
             Err(TrackingError::TaskIsActive { id: task_id(1) })
