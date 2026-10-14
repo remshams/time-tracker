@@ -23,6 +23,11 @@ class WorklogHistoryUITests: TrackerUITestCase {
     }
 
     func testHistoryPaginationLoadsMoreThanFiftyWithoutMissingOrDuplicateIDs() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let bindingName = environment["TT_UI_HISTORY_BINDING"] ?? environment["TEST_RUNNER_TT_UI_HISTORY_BINDING"] ?? "index"
+        let binding = try XCTUnwrap(
+            HistoryRowBinding(rawValue: bindingName),
+            "Unsupported history binding '\(bindingName)'. Use 'index' or 'accessibility'.")
         let task = try fixture.create("History pagination")
         let now = Date()
         var logs: [FixtureWorklog] = []
@@ -33,7 +38,7 @@ class WorklogHistoryUITests: TrackerUITestCase {
         launch()
         select(task)
         let expected = logs.reversed().map(\.id)
-        let observed = measureUIPhase("traversal") {
+        let observed = try measureUIPhase("traversal") {
             let pagination = app.buttons["worklog-history.load-older"]
             scrollHistoryUntilVisible(pagination)
             pagination.click()
@@ -42,11 +47,11 @@ class WorklogHistoryUITests: TrackerUITestCase {
             let scroll = element("worklog-history.scroll")
             var observed: [String] = []
             for _ in 0..<50 {
-                let visible = historyRows.allElementsBoundByIndex.filter(\.isHittable).sorted { $0.frame.minY < $1.frame.minY }
+                let visible = try visibleHistoryRows(in: scroll, binding: binding)
                 let identifiers = visible.map { String($0.identifier.dropFirst("worklog-history.row.".count)) }
                 XCTAssertEqual(identifiers.count, Set(identifiers).count, "Duplicate history rows in the visible page.")
                 for identifier in identifiers where !observed.contains(identifier) { observed.append(identifier) }
-                if element("worklog-history.row.\(expected.last!)").isHittable { break }
+                if identifiers.contains(expected.last!) { break }
                 scroll.scroll(byDeltaX: 0, deltaY: -350)
             }
             return observed
@@ -58,6 +63,7 @@ class WorklogHistoryUITests: TrackerUITestCase {
         }
         measureUIPhase("query-diagnostics") {
             print("TT_UI_HISTORY_TYPES row=\(historyRows.firstMatch.elementType.rawValue) pane=\(element("worklog-history.scroll").elementType.rawValue)")
+            print("TT_UI_HISTORY_BINDING binding=\(binding.rawValue)")
         }
     }
 
@@ -72,6 +78,57 @@ class WorklogHistoryUITests: TrackerUITestCase {
         XCTAssertTrue(element("worklog-history.row.\(log.id)").waitForExistence(timeout: timeout))
         XCTAssertFalse(element("worklog-history.empty").exists)
         XCTAssertTrue(element("worklog-history.row.\(log.id)").staticTexts.matching(NSPredicate(format: "value CONTAINS 'Running' OR label CONTAINS 'Running'")).firstMatch.exists)
+    }
+
+    private enum HistoryRowBinding: String {
+        case index
+        case accessibility
+
+        func elements(in query: XCUIElementQuery) -> [XCUIElement] {
+            switch self {
+            case .index:
+                return query.allElementsBoundByIndex
+            case .accessibility:
+                return query.allElementsBoundByAccessibilityElement
+            }
+        }
+    }
+
+    private struct HistoryRowSnapshot {
+        let identifier: String
+        let frame: CGRect
+        let elementType: XCUIElement.ElementType
+
+        init(_ snapshot: any XCUIElementSnapshot) {
+            identifier = snapshot.identifier
+            frame = snapshot.frame
+            elementType = snapshot.elementType
+        }
+    }
+
+    private func historyRowSnapshots(in snapshot: any XCUIElementSnapshot) -> [HistoryRowSnapshot] {
+        var rows: [HistoryRowSnapshot] = []
+        if snapshot.identifier.hasPrefix("worklog-history.row.") {
+            rows.append(HistoryRowSnapshot(snapshot))
+        }
+        for child in snapshot.children {
+            rows.append(contentsOf: historyRowSnapshots(in: child))
+        }
+        return rows
+    }
+
+    private func visibleHistoryRows(in scroll: XCUIElement, binding: HistoryRowBinding) throws -> [HistoryRowSnapshot] {
+        let pane = try scroll.snapshot()
+        let candidates = historyRowSnapshots(in: pane).filter { $0.frame.intersects(pane.frame) }
+        var visible: [HistoryRowSnapshot] = []
+        for elementType in Set(candidates.map(\.elementType)) {
+            let identifiers = candidates.filter { $0.elementType == elementType }.map(\.identifier)
+            let query = scroll.descendants(matching: elementType).matching(NSPredicate(format: "identifier IN %@", identifiers))
+            for row in binding.elements(in: query) where row.isHittable {
+                visible.append(HistoryRowSnapshot(try row.snapshot()))
+            }
+        }
+        return visible.sorted { $0.frame.minY < $1.frame.minY }
     }
 
     private func scrollHistoryUntilVisible(_ target: XCUIElement, upward: Bool = false) {
