@@ -119,9 +119,42 @@ def summarize(log):
     completed_names = {name for name, _, _ in completions}
     tests = [{"name": name, "result": result, "seconds": float(seconds)}
              for name, result, seconds in completions]
+    phase_events = []
+    malformed_phase_events = 0
+    for line in text.splitlines():
+        if not line.startswith("TT_UI_PHASE "):
+            continue
+        try:
+            event = json.loads(line.removeprefix("TT_UI_PHASE "))
+            if not isinstance(event, dict):
+                raise ValueError("phase event must be an object")
+            seconds = event.get("seconds")
+            if (not isinstance(event.get("test"), str)
+                    or not isinstance(event.get("phase"), str)
+                    or isinstance(seconds, bool) or not isinstance(seconds, (int, float))
+                    or not math.isfinite(seconds) or seconds < 0):
+                raise ValueError("invalid phase event")
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError, OverflowError):
+            malformed_phase_events += 1
+            continue
+        phase_events.append({"test": event["test"], "phase": event["phase"], "seconds": seconds})
+
+    phase_aggregates = {}
+    for event in phase_events:
+        key = (event["test"], event["phase"])
+        aggregate = phase_aggregates.setdefault(key, {"test": key[0], "phase": key[1], "count": 0,
+                                                       "total_seconds": 0.0, "max_seconds": 0.0})
+        aggregate["count"] += 1
+        aggregate["total_seconds"] += event["seconds"]
+        aggregate["max_seconds"] = max(aggregate["max_seconds"], event["seconds"])
+    for aggregate in phase_aggregates.values():
+        aggregate["mean_seconds"] = aggregate["total_seconds"] / aggregate["count"]
     return {"completed_tests": len(tests), "test_seconds": sum(test["seconds"] for test in tests),
+            "tests": tests,
             "unfinished_tests": [name for name in starts if name not in completed_names],
-            "slowest_tests": sorted(tests, key=lambda test: test["seconds"], reverse=True)[:10]}
+            "slowest_tests": sorted(tests, key=lambda test: test["seconds"], reverse=True)[:10],
+            "phase_events": phase_events, "phase_aggregates": list(phase_aggregates.values()),
+            "malformed_phase_events": malformed_phase_events}
 
 
 def main():

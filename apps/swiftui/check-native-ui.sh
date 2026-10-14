@@ -22,6 +22,9 @@ export TT_UI_TEST_PROXY="$app_dir/Tests/UITests/Support/controlled_proxy.py"
 export TEST_RUNNER_TT_UI_TEST_PROXY="$TT_UI_TEST_PROXY"
 export TT_UI_TEST_PYTHON="$(command -v python3)"
 export TEST_RUNNER_TT_UI_TEST_PYTHON="$TT_UI_TEST_PYTHON"
+if [[ ${TT_UI_HISTORY_BINDING+x} ]]; then
+    export TEST_RUNNER_TT_UI_HISTORY_BINDING="$TT_UI_HISTORY_BINDING"
+fi
 if [[ ! -x "$TT_UI_TEST_CLI" ]]; then
     echo "The UI test fixture CLI is not executable: $TT_UI_TEST_CLI" >&2
     exit 1
@@ -31,8 +34,9 @@ if [[ ! -x "$TT_UI_TEST_SERVER" || ! -f "$TT_UI_TEST_PROXY" ]]; then
     exit 1
 fi
 
-mkdir -p .build
-rm -rf .build/native-ui.xcresult
+output_dir=${TT_UI_TEST_OUTPUT_DIR:-.build}
+mkdir -p "$output_dir"
+rm -rf "$output_dir/native-ui.xcresult"
 test_selection=(-only-testing:TimeTrackerUITests)
 execution_timeout=7200
 if [[ "${1:-}" == --smoke ]]; then
@@ -53,14 +57,20 @@ elif [[ "${1:-}" == --group && $# == 2 ]]; then
     for suite in "${suites[@]}"; do
         test_selection+=("-only-testing:TimeTrackerUITests/$suite")
     done
+elif [[ "${1:-}" == --pagination && $# == 1 ]]; then
+    execution_timeout=1440
+    test_selection=(
+        -only-testing:TimeTrackerUITests/WorklogHistoryUITests/testHistoryPaginationLoadsMoreThanFiftyWithoutMissingOrDuplicateIDs
+        -only-testing:TimeTrackerUITests/ServerWorklogHistoryUITests/testHistoryPaginationLoadsMoreThanFiftyWithoutMissingOrDuplicateIDs
+    )
 elif (( $# != 0 )); then
-    echo 'Usage: check-native-ui.sh [--smoke | --group core|tasks|worklogs|server|menu|mac]' >&2
+    echo 'Usage: check-native-ui.sh [--smoke | --pagination | --group core|tasks|worklogs|server|menu|mac]' >&2
     exit 2
 fi
-python3 scripts/run-native-ui.py --log .build/native-ui.log --timeout "$execution_timeout" -- \
+python3 scripts/run-native-ui.py --log "$output_dir/native-ui.log" --timeout "$execution_timeout" -- \
     xcodebuild -project apps/swiftui/TimeTracker.xcodeproj -scheme TimeTracker \
     -configuration Debug -destination "platform=macOS,arch=$(uname -m)" \
-    -derivedDataPath .build/native-debug -resultBundlePath .build/native-ui.xcresult \
+    -derivedDataPath .build/native-debug -resultBundlePath "$output_dir/native-ui.xcresult" \
     -parallel-testing-enabled NO "${test_selection[@]}" \
     -test-timeouts-enabled YES -default-test-execution-time-allowance 360 \
     -maximum-test-execution-time-allowance 360 \
