@@ -34,9 +34,12 @@ fi
 mkdir -p .build
 rm -rf .build/native-ui.xcresult
 test_selection=(-only-testing:TimeTrackerUITests)
+execution_timeout=7200
 if [[ "${1:-}" == --smoke ]]; then
+    execution_timeout=1440
     test_selection=(-only-testing:TimeTrackerUITests/SmokeUITests)
 elif [[ "${1:-}" == --group && $# == 2 ]]; then
+    execution_timeout=1440
     case "$2" in
         core) suites=(SmokeUITests TaskCatalogUITests ServerTaskCatalogUITests TaskCreationUITests ServerTaskCreationUITests TrackingUITests ServerTrackingUITests WorklogHistoryUITests ServerWorklogHistoryUITests) ;;
         tasks) suites=(TaskRenameUITests ServerTaskRenameUITests TaskArchivingUITests ServerTaskArchivingUITests BulkTaskArchivingUITests BulkTaskArchivingExtendedUITests ServerBulkTaskArchivingUITests) ;;
@@ -54,8 +57,11 @@ elif (( $# != 0 )); then
     echo 'Usage: check-native-ui.sh [--smoke | --group core|tasks|worklogs|server|menu|mac]' >&2
     exit 2
 fi
-xcodebuild -project apps/swiftui/TimeTracker.xcodeproj -scheme TimeTracker \
+python3 scripts/run-native-ui.py --log .build/native-ui.log --timeout "$execution_timeout" -- \
+    xcodebuild -project apps/swiftui/TimeTracker.xcodeproj -scheme TimeTracker \
     -configuration Debug -destination "platform=macOS,arch=$(uname -m)" \
-    -derivedDataPath .build/native-ui -resultBundlePath .build/native-ui.xcresult \
+    -derivedDataPath .build/native-debug -resultBundlePath .build/native-ui.xcresult \
     -parallel-testing-enabled NO "${test_selection[@]}" \
-    CODE_SIGNING_ALLOWED=NO test | tee .build/native-ui.log
+    -test-timeouts-enabled YES -default-test-execution-time-allowance 360 \
+    -maximum-test-execution-time-allowance 360 \
+    CODE_SIGNING_ALLOWED=NO test
