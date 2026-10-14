@@ -48,8 +48,7 @@ class TrackerUITestCase: XCTestCase {
         app.launchEnvironment["TT_UI_TEST_DATABASE_PATH"] = fixture.database.path
         app.launchEnvironment["TT_UI_TEST_DEFAULTS_SUITE"] = fixture.defaultsSuite
         app.launch()
-        XCTAssertTrue(app.buttons["bulk-archive.open"].waitForExistence(timeout: timeout),
-                      "Launching the app must open the tracker window.")
+        showTrackerViaShortcut()
         waitUntil("Initial connection finishes") {
             let status = self.element("connection-summary.status")
             guard status.exists else { return false }

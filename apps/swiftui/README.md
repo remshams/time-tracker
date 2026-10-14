@@ -208,6 +208,11 @@ records completed cases, their durations, and any unfinished case.
 
 The helper builds `tt-cli` and `tt`, then runs the `TimeTrackerUITests` target in the Debug app. Each test uses a fresh SQLite database and an isolated preferences suite. Server cases start a real `tt` server; an ordered fault proxy exercises delays, outages, and uncertain writes. The CLI creates fixtures and verifies stored results while UI actions call the production Swift-to-Rust bridge.
 
+Shared launch setup explicitly opens the tracker with its Command-0 shortcut
+and waits for the window and connection. Launching the app alone does not
+guarantee a tracker window. Window-routing scenarios still exercise menu and
+shortcut reopening separately.
+
 The suite covers task creation, selection, tracking, history, rename, archive, correction, move, connection recovery, native menus, clipboard actions, settings, windows, totals, lifecycle delivery, and appearance. The seven original bulk archive scenarios are retained. See the [coverage map and dedicated-Mac acceptance checklist](e2e-coverage.md) for the cases and remaining platform evidence.
 
 Use `--smoke` for launch checks or `--group core`, `tasks`, `worklogs`, `server`, `menu`, or `mac` for a focused run. CI requires all six groups, each running serially on its own desktop. It retains logs and result bundles in `native-macos-diagnostics-<group>` artifacts, including after failure. Open the result bundle in Xcode to inspect screenshots and accessibility diagnostics.
