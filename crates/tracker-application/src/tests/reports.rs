@@ -1,6 +1,60 @@
 use super::*;
 use chrono::TimeDelta;
 
+/// Collapsed ranges must fail as invalid input even when the backend cannot be read.
+#[test]
+fn report_ranges_collapsing_to_one_microsecond_fail_before_reading() {
+    let repository = MemoryRepository::default();
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    repository.0.borrow_mut().fail_reads = true;
+    let start = DateTime::from_timestamp(100, 100).unwrap();
+    let end = DateTime::from_timestamp(100, 900).unwrap();
+
+    assert_eq!(
+        application.report_totals(start, end, at(200)),
+        Err(ApplicationError::InvalidReportRange)
+    );
+    assert_eq!(
+        application.task_list_report_totals(start, end, at(200)),
+        Err(ApplicationError::InvalidReportRange)
+    );
+}
+
+/// Fractional inputs must not change clipping relative to stored microsecond boundaries.
+#[test]
+fn report_clipping_uses_canonical_start_end_and_now() {
+    let active_task = task(1, "Active project");
+    let repository = MemoryRepository::with_tasks(vec![active_task.clone()]);
+    repository
+        .insert_worklog(&worklog(1, active_task.id(), 100))
+        .unwrap();
+    let mut application = TrackerApplication::load(repository).unwrap();
+    let start = DateTime::from_timestamp(100, 900).unwrap();
+    let end = DateTime::from_timestamp(100, 2_100).unwrap();
+    let now = DateTime::from_timestamp(100, 1_900).unwrap();
+
+    for totals in [
+        application.report_totals(start, end, now).unwrap(),
+        application
+            .task_list_report_totals(start, end, now)
+            .unwrap(),
+    ] {
+        assert_eq!(totals.total, TimeDelta::microseconds(1));
+        assert_eq!(totals.rows[0].duration, TimeDelta::microseconds(1));
+    }
+
+    for totals in [
+        application.report_totals(start, end, at(101)).unwrap(),
+        application
+            .task_list_report_totals(start, end, at(101))
+            .unwrap(),
+    ] {
+        assert_eq!(totals.total, TimeDelta::microseconds(2));
+        assert_eq!(totals.rows[0].duration, TimeDelta::microseconds(2));
+    }
+}
+
+/// Half-open clipping and tie ordering remain stable for completed and running work.
 #[test]
 fn report_clips_completed_and_active_work_and_orders_ties_by_id() {
     let alpha = task(1, "alpha");

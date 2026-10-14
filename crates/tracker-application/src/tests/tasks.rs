@@ -595,3 +595,140 @@ fn failed_task_writes_preserve_primary_categories_when_authoritative_recovery_fa
         assert!(!repository.0.borrow().tasks[0].task.is_archived());
     }
 }
+
+/// Prevents a captured draft or archive confirmation from acting on another client's renamed task.
+#[test]
+fn guarded_task_commands_reject_reviewed_names_after_a_concurrent_rename() {
+    let alpha = task(1, "Reviewed name");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let changed = repository
+        .rename_task(
+            alpha.id(),
+            TaskName::new("Replacement name").unwrap(),
+            at(100),
+        )
+        .unwrap();
+
+    assert_eq!(
+        application.rename_task_with_expected_name(
+            alpha.id(),
+            alpha.name(),
+            TaskName::new("Draft name").unwrap(),
+            at(200),
+        ),
+        Err(ApplicationError::Repository(RepositoryError::TaskChanged {
+            id: alpha.id()
+        }))
+    );
+    assert_eq!(application.task(alpha.id()), Some(&changed));
+    assert_eq!(
+        application.archive_task_with_expected_name(alpha.id(), alpha.name(), at(300)),
+        Err(ApplicationError::Repository(RepositoryError::TaskChanged {
+            id: alpha.id()
+        }))
+    );
+    assert_eq!(repository.0.borrow().tasks[0].task, changed);
+}
+
+/// Checks that reviewed-name writes preserve unrelated archive state and normalize metadata timestamps.
+#[test]
+fn guarded_task_commands_keep_concurrent_archive_state_and_canonical_timestamps() {
+    let alpha = task(1, "Reviewed name");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    repository.archive_task(alpha.id(), at(100)).unwrap();
+    let renamed = application
+        .rename_task_with_expected_name(
+            alpha.id(),
+            alpha.name(),
+            TaskName::new("Draft name").unwrap(),
+            at_nanos(200, 123_456_789),
+        )
+        .unwrap();
+    assert!(renamed.is_archived());
+    assert_eq!(renamed.updated_at(), at_nanos(200, 123_456_000));
+    repository.unarchive_task(alpha.id(), at(250)).unwrap();
+    let archived = application
+        .archive_task_with_expected_name(alpha.id(), renamed.name(), at_nanos(300, 987_654_321))
+        .unwrap();
+    assert!(archived.is_archived());
+    assert_eq!(archived.name(), renamed.name());
+    assert_eq!(archived.updated_at(), at_nanos(300, 987_654_000));
+    assert_eq!(application.task(alpha.id()), Some(&archived));
+}
+
+/// Keeps active-task protection and read-failure prevention intact for guarded archive commands.
+#[test]
+fn guarded_archive_protects_running_tasks_and_does_not_write_after_a_failed_preflight() {
+    let alpha = task(1, "Reviewed name");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    application.set_active_task(alpha.id(), at(100)).unwrap();
+    assert_eq!(
+        application.archive_task_with_expected_name(alpha.id(), alpha.name(), at(200)),
+        Err(ApplicationError::Domain(TrackingError::TaskIsActive {
+            id: alpha.id()
+        }))
+    );
+    repository.0.borrow_mut().fail_reads = true;
+    assert!(
+        application
+            .archive_task_with_expected_name(alpha.id(), alpha.name(), at(300))
+            .is_err()
+    );
+    assert!(!repository.0.borrow().tasks[0].task.is_archived());
+}
+
+/// Distinguishes a committed archive from a later recovery failure by retaining its stored metadata.
+#[test]
+fn guarded_archive_keeps_the_committed_task_when_its_tracking_refresh_fails() {
+    let alpha = stamped_task(1, "Reviewed name", 100, 100);
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    repository.fail_refresh_after_next_task_write();
+    assert_eq!(
+        application.archive_task_with_expected_name(alpha.id(), alpha.name(), at(200)),
+        Err(ApplicationError::TaskRecovery(RepositoryError::Backend {
+            message: "read failed".to_owned(),
+        }))
+    );
+    let committed = application.task(alpha.id()).unwrap();
+    assert!(committed.is_archived());
+    assert_eq!(committed.updated_at(), at(200));
+    assert_eq!(repository.0.borrow().tasks[0].task, *committed);
+}
+
+/// Ensures failed recovery does not replace the original guarded-command failure category.
+#[test]
+fn guarded_task_write_failures_keep_primary_categories_when_recovery_also_fails() {
+    for archive in [false, true] {
+        let alpha = task(1, "Reviewed name");
+        let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
+        let mut application = TrackerApplication::load(repository.clone()).unwrap();
+        repository.fail_next_write(RepositoryError::TaskNotFound { id: alpha.id() }, None);
+        repository.fail_recovery_after_next_write();
+        let error = if archive {
+            application
+                .archive_task_with_expected_name(alpha.id(), alpha.name(), at(200))
+                .unwrap_err()
+        } else {
+            application
+                .rename_task_with_expected_name(
+                    alpha.id(),
+                    alpha.name(),
+                    TaskName::new("Draft name").unwrap(),
+                    at(200),
+                )
+                .unwrap_err()
+        };
+        let failure = error.failure();
+        assert_eq!(failure.category(), ApplicationFailureCategory::TaskNotFound);
+        assert_eq!(
+            failure.recovery_category(),
+            Some(ApplicationFailureCategory::General)
+        );
+        assert!(failure.recovery_failed());
+        assert_eq!(repository.0.borrow().tasks[0].task, alpha);
+    }
+}

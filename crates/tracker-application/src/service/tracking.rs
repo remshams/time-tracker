@@ -22,6 +22,23 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         self.set_active_task_with_id(task_id, WorklogId::generate(), occurred_at)
     }
 
+    /// Generates an identifier for a new worklog while preserving the reviewed active state.
+    pub fn set_active_task_with_expected_active(
+        &mut self,
+        task_id: TaskId,
+        expected_active: Option<WorklogId>,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+        self.set_active_task_guarded(
+            task_id,
+            WorklogId::generate(),
+            Some(expected_active),
+            occurred_at,
+        )
+    }
+
+    /// Stops only the reviewed active worklog after refreshing its persisted start time.
+    /// An already idle tracker succeeds without writing; a changed worklog requires a retry.
     pub fn clear_active_task(
         &mut self,
         expected_active: WorklogId,
@@ -87,9 +104,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             .map(|item| &item.task)
             .ok_or_else(|| ApplicationError::from(RepositoryError::TaskNotFound { id: task_id }))?;
         let mut candidate = self.tracker.clone();
-        let _ = candidate.start(task, occurred_at)?;
-        let worklog = tracker_domain::Worklog::begin(worklog_id, task_id, occurred_at);
-        candidate = tracker_domain::Tracker::resume(worklog.clone())?;
+        let worklog = candidate.start(task, worklog_id, occurred_at)?;
         if let Err(error) = self.repository.insert_worklog(&worklog) {
             return Err(self.recover_after_tracking_write(error));
         }
@@ -105,9 +120,37 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         worklog_id: WorklogId,
         occurred_at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+        self.set_active_task_guarded(task_id, worklog_id, None, occurred_at)
+    }
+
+    /// Preserves both the caller's worklog identifier and reviewed active state.
+    pub fn set_active_task_with_id_and_expected_active(
+        &mut self,
+        task_id: TaskId,
+        worklog_id: WorklogId,
+        expected_active: Option<WorklogId>,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+        self.set_active_task_guarded(task_id, worklog_id, Some(expected_active), occurred_at)
+    }
+
+    /// Refreshes tracking before checking the optional reviewed state and applying the transition.
+    /// The outer option distinguishes an unguarded request from a request that reviewed idle tracking.
+    fn set_active_task_guarded(
+        &mut self,
+        task_id: TaskId,
+        worklog_id: WorklogId,
+        expected_active: Option<Option<WorklogId>>,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
         let occurred_at = canonical_timestamp(occurred_at);
         let cached_active = self.tracker.active().cloned();
         self.refresh_tracking()?;
+        if expected_active
+            .is_some_and(|expected| self.tracker.active().map(|active| active.id()) != expected)
+        {
+            return Err(ApplicationError::TrackingStateChanged);
+        }
         if cached_active.as_ref().is_some_and(|cached| {
             self.tracker.active().is_some_and(|active| {
                 active.id() == cached.id() && active.start() != cached.start()
@@ -139,29 +182,26 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         Ok(outcome)
     }
 
+    /// Persists the domain transition before the caller adopts its candidate tracker.
+    /// A failed insert or atomic switch recovers authoritative state instead of adopting the candidate.
     fn persist_tracking_change(
         &mut self,
         task: &tracker_domain::Task,
         worklog_id: WorklogId,
         occurred_at: DateTime<Utc>,
     ) -> Result<(tracker_domain::Tracker, SetActiveTaskOutcome), ApplicationError> {
-        let task_id = task.id();
         let mut candidate = self.tracker.clone();
         let outcome = match candidate.active() {
             None => {
-                let _ = candidate.start(task, occurred_at)?;
-                let worklog = tracker_domain::Worklog::begin(worklog_id, task_id, occurred_at);
-                candidate = tracker_domain::Tracker::resume(worklog.clone())?;
+                let worklog = candidate.start(task, worklog_id, occurred_at)?;
                 match self.repository.insert_worklog(&worklog) {
                     Ok(()) => SetActiveTaskOutcome::Started { worklog },
                     Err(error) => return Err(self.recover_after_tracking_write(error)),
                 }
             }
             Some(_) => {
-                let SwitchedWorklogs { stopped, .. } =
-                    candidate.switch(task, occurred_at, occurred_at)?;
-                let started = tracker_domain::Worklog::begin(worklog_id, task_id, occurred_at);
-                candidate = tracker_domain::Tracker::resume(started.clone())?;
+                let SwitchedWorklogs { stopped, started } =
+                    candidate.switch(task, worklog_id, occurred_at, occurred_at)?;
                 match self.repository.switch_worklog(
                     stopped.id(),
                     stopped.start(),

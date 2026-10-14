@@ -29,6 +29,8 @@ use crate::{
 pub enum RepositoryError {
     #[error("task {id} not found")]
     TaskNotFound { id: TaskId },
+    #[error("task {id} changed since it was read")]
+    TaskChanged { id: TaskId },
     #[error("worklog {id} not found")]
     WorklogNotFound { id: WorklogId },
     #[error("worklog {id} is already stopped")]
@@ -154,6 +156,24 @@ pub trait TrackerRepository {
     ) -> Result<Task, RepositoryError>;
     fn archive_task(&self, id: TaskId, occurred_at: DateTime<Utc>)
     -> Result<Task, RepositoryError>;
+    /// Renames only while the stored name matches the reviewed name.
+    fn compare_and_rename_task(
+        &self,
+        id: TaskId,
+        expected_name: &TaskName,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError>;
+
+    /// Checks the reviewed name and archives under the same write lock.
+    fn compare_and_archive_task(
+        &self,
+        id: TaskId,
+        expected_name: &TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError>;
+
+    /// Restores a task while preserving its name and worklogs, returning the persisted task.
     fn unarchive_task(
         &self,
         id: TaskId,

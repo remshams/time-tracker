@@ -46,6 +46,8 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         Ok(task)
     }
 
+    /// Protects the active task, adopts the stored archive result, and refreshes tracking.
+    /// Write failures retain their primary cause if state recovery also fails.
     pub fn archive_task(
         &mut self,
         id: TaskId,
@@ -57,6 +59,60 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         // The operation preserves unrelated metadata, so a concurrent rename
         // survives the archive.
         match self.repository.archive_task(id, occurred_at) {
+            Ok(task) => {
+                self.replace_task(task.clone());
+                self.refresh_after_task_operation()?;
+                Ok(task)
+            }
+            Err(error) => {
+                let primary = match error {
+                    RepositoryError::TaskIsActive { id } => {
+                        TrackingError::TaskIsActive { id }.into()
+                    }
+                    error => error.into(),
+                };
+                Err(self.task_failure_with_recovery(primary))
+            }
+        }
+    }
+
+    /// Passes the reviewed name to the atomic repository guard and adopts the stored task.
+    /// On failure, refreshes authoritative state without discarding the original error.
+    pub fn rename_task_with_expected_name(
+        &mut self,
+        id: TaskId,
+        expected_name: &TaskName,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        match self.repository.compare_and_rename_task(
+            id,
+            expected_name,
+            name,
+            canonical_timestamp(occurred_at),
+        ) {
+            Ok(task) => {
+                self.replace_task(task.clone());
+                Ok(task)
+            }
+            Err(error) => Err(self.task_failure_with_recovery(error.into())),
+        }
+    }
+
+    /// Archives under the repository name guard after a tracking preflight.
+    /// A failed refresh after commit retains the archived task and reports recovery failure.
+    pub fn archive_task_with_expected_name(
+        &mut self,
+        id: TaskId,
+        expected_name: &TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        self.refresh_tracking()?;
+        match self.repository.compare_and_archive_task(
+            id,
+            expected_name,
+            canonical_timestamp(occurred_at),
+        ) {
             Ok(task) => {
                 self.replace_task(task.clone());
                 self.refresh_after_task_operation()?;
