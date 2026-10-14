@@ -9,7 +9,8 @@ Time Tracker is a Rust time-tracking application. It starts with a TUI and may l
 
 ## Architecture documentation
 
-- The architecture diagrams are in `docs/architecture.html`. Open the file in a browser; its diagrams and controls work offline.
+- Start with `docs/architecture/README.md`. The concise application catalog is `docs/architecture/primitives.md`; its human-readable companion is `docs/architecture/primitives.html`. Keep their concepts, rules, ownership, and source snapshot aligned.
+- The architecture diagrams are in `docs/architecture/architecture.html`. Open the file in a browser; its diagrams and controls work offline.
 - When implementing a feature that changes application components, dependencies, ownership, or communication paths, update the affected diagrams and method tables in the same change. Keep the source snapshot date and revision accurate, and state the scope and revision of any retained quality measurements.
 - Keep the HTML self-contained. Use portable source links and avoid machine-specific paths or links to temporary reports.
 

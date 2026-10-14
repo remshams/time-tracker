@@ -133,7 +133,9 @@ Ctrl+C quits from every mode.
 
 ## Architecture
 
-Open [the architecture diagrams](docs/architecture.html) in a browser for the system overview, Rust crate dependencies, Swift and AppKit structure, and Swift-to-Rust bridge call paths. The HTML works offline and includes the recorded CRAP and mutation annotations. Its date and source revision identify the snapshot it describes.
+Start with the [architecture index](docs/architecture/README.md) for the [application primitives](docs/architecture/primitives.md) and their [visual guide](docs/architecture/primitives.html).
+
+Open [the architecture diagrams](docs/architecture/architecture.html) in a browser for the system overview, Rust crate dependencies, Swift and AppKit structure, and Swift-to-Rust bridge call paths. The HTML works offline and includes the recorded CRAP and mutation annotations. Its date and source revision identify the snapshot it describes.
 
 The workspace has eight packages:
 
