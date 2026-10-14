@@ -532,3 +532,109 @@ fn active_start_changed_before_refresh_requires_a_set_active_retry() {
         Err(ApplicationError::TrackingStateChanged)
     );
 }
+
+/// Rejects a command captured while idle even if its target already matches a competing timer.
+#[test]
+fn guarded_tracking_rejects_a_competing_start_and_adopts_the_authoritative_timer() {
+    let alpha = task(1, "Planning");
+    let beta = task(2, "Implementation");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let replacement = worklog(99, beta.id(), 100);
+    repository.insert_worklog(&replacement).unwrap();
+    for task_id in [alpha.id(), beta.id()] {
+        assert_eq!(
+            application.set_active_task_with_expected_active(task_id, None, at(200)),
+            Err(ApplicationError::TrackingStateChanged)
+        );
+    }
+    assert_eq!(repository.0.borrow().worklogs, vec![replacement.clone()]);
+    assert!(
+        matches!(application.current_tracking(), TrackingState::Running { worklog }
+        if worklog.id() == replacement.id())
+    );
+}
+
+/// Uses worklog identity to protect a replacement timer that still belongs to the reviewed task.
+#[test]
+fn guarded_tracking_rejects_a_replacement_timer_even_on_the_same_task() {
+    let alpha = task(1, "Planning");
+    let beta = task(2, "Implementation");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let original = match application.set_active_task(alpha.id(), at(100)).unwrap() {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        other => panic!("expected start, got {other:?}"),
+    };
+    repository
+        .stop_worklog(original.id(), original.start(), at(150))
+        .unwrap();
+    let replacement = worklog(99, alpha.id(), 160);
+    repository.insert_worklog(&replacement).unwrap();
+    for task_id in [alpha.id(), beta.id()] {
+        assert_eq!(
+            application.set_active_task_with_expected_active(task_id, Some(original.id()), at(200)),
+            Err(ApplicationError::TrackingStateChanged)
+        );
+    }
+    assert_eq!(repository.active_worklog().unwrap(), Some(replacement));
+}
+
+/// Checks valid guarded transitions and the harmless repeat against the same running worklog.
+#[test]
+fn guarded_tracking_starts_switches_and_accepts_the_same_reviewed_timer() {
+    let alpha = task(1, "Planning");
+    let beta = task(2, "Implementation");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let original = match application
+        .set_active_task_with_expected_active(alpha.id(), None, at(100))
+        .unwrap()
+    {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        other => panic!("expected start, got {other:?}"),
+    };
+    assert!(matches!(
+        application.set_active_task_with_expected_active(alpha.id(), Some(original.id()), at(110)),
+        Ok(SetActiveTaskOutcome::AlreadyActive { worklog }) if worklog.id() == original.id()
+    ));
+    assert!(matches!(
+        application.set_active_task_with_expected_active(beta.id(), Some(original.id()), at(200)),
+        Ok(SetActiveTaskOutcome::Switched { stopped, started })
+            if stopped.id() == original.id() && stopped.end() == Some(at(200))
+                && started.task_id() == beta.id() && started.start() == at(200)
+    ));
+}
+
+/// Covers the server command contract that must preserve both caller-selected IDs and reviewed state.
+#[test]
+fn guarded_tracking_with_a_caller_id_preserves_identity_and_rejects_stale_active_state() {
+    let alpha = task(1, "Planning");
+    let beta = task(2, "Implementation");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let requested_id = WorklogId::generate();
+    let original = match application
+        .set_active_task_with_id_and_expected_active(alpha.id(), requested_id, None, at(100))
+        .unwrap()
+    {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        other => panic!("expected start, got {other:?}"),
+    };
+    assert_eq!(original.id(), requested_id);
+    let next_id = WorklogId::generate();
+    assert!(matches!(
+        application.set_active_task_with_id_and_expected_active(beta.id(), next_id, Some(original.id()), at(200)),
+        Ok(SetActiveTaskOutcome::Switched { started, .. }) if started.id() == next_id
+    ));
+    assert_eq!(
+        application.set_active_task_with_id_and_expected_active(
+            alpha.id(),
+            WorklogId::generate(),
+            Some(original.id()),
+            at(300)
+        ),
+        Err(ApplicationError::TrackingStateChanged)
+    );
+    assert_eq!(repository.active_worklog().unwrap().unwrap().id(), next_id);
+}

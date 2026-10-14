@@ -19,17 +19,7 @@ use crate::{
     WorklogMove, WorklogPage, WorklogPageAdoption,
 };
 
-fn canonical_timestamp(timestamp: DateTime<Utc>) -> DateTime<Utc> {
-    DateTime::from_timestamp_micros(timestamp.timestamp_micros())
-        .expect("every UTC timestamp fits the canonical microsecond range")
-}
-
-fn canonical_worklog_times(times: WorklogTimes) -> WorklogTimes {
-    WorklogTimes::new(
-        canonical_timestamp(times.start()),
-        times.end().map(canonical_timestamp),
-    )
-}
+use crate::timestamps::{canonical_timestamp, canonical_worklog_times};
 
 /// Synchronous application use cases consumed by the TUI and its test service.
 ///
@@ -69,6 +59,21 @@ pub trait TrackerApplicationService {
         id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError>;
+    /// Renames only if the persisted name still matches the reviewed name.
+    fn rename_task_with_expected_name(
+        &mut self,
+        id: TaskId,
+        expected_name: &TaskName,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError>;
+    /// Archives only if the persisted name still matches the reviewed name.
+    fn archive_task_with_expected_name(
+        &mut self,
+        id: TaskId,
+        expected_name: &TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError>;
     fn unarchive_task(
         &mut self,
         id: TaskId,
@@ -93,6 +98,14 @@ pub trait TrackerApplicationService {
     fn set_active_task(
         &mut self,
         task_id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<SetActiveTaskOutcome, ApplicationError>;
+    /// Starts or switches only while the reviewed worklog remains active.
+    /// `None` requires idle tracking.
+    fn set_active_task_with_expected_active(
+        &mut self,
+        task_id: TaskId,
+        expected_active: Option<WorklogId>,
         occurred_at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, ApplicationError>;
     fn clear_active_task(
@@ -159,6 +172,45 @@ pub trait TrackerApplicationService {
 }
 
 impl<R: TrackerRepository> TrackerApplicationService for TrackerApplication<R> {
+    fn rename_task_with_expected_name(
+        &mut self,
+        id: TaskId,
+        expected_name: &TaskName,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        TrackerApplication::rename_task_with_expected_name(
+            self,
+            id,
+            expected_name,
+            name,
+            occurred_at,
+        )
+    }
+
+    fn archive_task_with_expected_name(
+        &mut self,
+        id: TaskId,
+        expected_name: &TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        TrackerApplication::archive_task_with_expected_name(self, id, expected_name, occurred_at)
+    }
+
+    fn set_active_task_with_expected_active(
+        &mut self,
+        task_id: TaskId,
+        expected_active: Option<WorklogId>,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+        TrackerApplication::set_active_task_with_expected_active(
+            self,
+            task_id,
+            expected_active,
+            occurred_at,
+        )
+    }
+
     fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
         TrackerApplication::tasks(self, ordering)
     }
@@ -555,23 +607,6 @@ impl<R: TrackerRepository> TrackerApplication<R> {
     fn note_work_start(&mut self, task_id: TaskId, at: DateTime<Utc>) {
         if let Some(item) = self.tasks.iter_mut().find(|item| item.task.id() == task_id) {
             item.latest_work_start = Some(item.latest_work_start.map_or(at, |old| old.max(at)));
-        }
-    }
-}
-
-#[cfg(test)]
-mod timestamp_range_tests {
-    use chrono::{DateTime, Utc};
-
-    use super::canonical_timestamp;
-
-    #[test]
-    fn chrono_utc_extremes_fit_the_canonical_microsecond_range() {
-        for instant in [DateTime::<Utc>::MIN_UTC, DateTime::<Utc>::MAX_UTC] {
-            assert_eq!(
-                canonical_timestamp(instant).timestamp_micros(),
-                instant.timestamp_micros()
-            );
         }
     }
 }

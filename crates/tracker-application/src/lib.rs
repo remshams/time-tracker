@@ -2,6 +2,7 @@
 
 pub mod calendar_reports;
 pub mod task_search;
+pub mod timestamps;
 
 mod error;
 mod model;

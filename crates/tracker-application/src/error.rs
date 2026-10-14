@@ -13,6 +13,7 @@ use crate::RepositoryError;
 pub enum ApplicationFailureCategory {
     General,
     TaskNotFound,
+    TaskChanged,
     WorklogNotFound,
     WorklogChanged,
     ActiveWorklog,
@@ -421,9 +422,11 @@ fn repository_failure(error: &RepositoryError) -> ApplicationFailure {
     }
 }
 
+/// Maps repository failures to semantic categories that clients use for recovery.
 fn repository_error_category(error: &RepositoryError) -> ApplicationFailureCategory {
     match error {
         RepositoryError::TaskNotFound { .. } => ApplicationFailureCategory::TaskNotFound,
+        RepositoryError::TaskChanged { .. } => ApplicationFailureCategory::TaskChanged,
         RepositoryError::WorklogNotFound { .. } => ApplicationFailureCategory::WorklogNotFound,
         RepositoryError::WorklogChanged { .. } => ApplicationFailureCategory::WorklogChanged,
         RepositoryError::WorklogIsActive { .. } => ApplicationFailureCategory::ActiveWorklog,
@@ -442,6 +445,7 @@ fn repository_error_category(error: &RepositoryError) -> ApplicationFailureCateg
     }
 }
 
+/// Selects a client-safe message without exposing repository diagnostics or identifiers.
 fn repository_error_message(error: &RepositoryError) -> &'static str {
     match error {
         RepositoryError::WorklogNotFound { .. }
@@ -454,6 +458,7 @@ fn repository_error_message(error: &RepositoryError) -> &'static str {
         | RepositoryError::WorklogAlreadyExists { .. }
         | RepositoryError::ActiveWorklogExists => worklog_error_message(error),
         RepositoryError::TaskNotFound { .. }
+        | RepositoryError::TaskChanged { .. }
         | RepositoryError::TaskAlreadyExists { .. }
         | RepositoryError::TaskArchived { .. }
         | RepositoryError::TaskIsActive { .. }
@@ -465,6 +470,7 @@ fn repository_error_message(error: &RepositoryError) -> &'static str {
     }
 }
 
+/// Describes worklog failures after the outer classifier has excluded task and storage errors.
 fn worklog_error_message(error: &RepositoryError) -> &'static str {
     match error {
         RepositoryError::WorklogNotFound { .. } => "Worklog not found",
@@ -472,9 +478,7 @@ fn worklog_error_message(error: &RepositoryError) -> &'static str {
         RepositoryError::WorklogChanged { .. } => "Worklog changed in another client",
         RepositoryError::WorklogIsActive { .. } => "Running worklogs cannot be deleted",
         RepositoryError::WorklogHistoryChanged { .. }
-        | RepositoryError::GlobalWorklogHistoryChanged => {
-            "Worklog history changed. Press r to refresh"
-        }
+        | RepositoryError::GlobalWorklogHistoryChanged => "Worklog history changed",
         RepositoryError::SameTaskWorklogOverlap { .. } => "The worklog overlaps another worklog",
         RepositoryError::WorklogAlreadyExists { .. } => "Worklog already exists",
         RepositoryError::ActiveWorklogExists => "Another worklog is active",
@@ -482,19 +486,28 @@ fn worklog_error_message(error: &RepositoryError) -> &'static str {
     }
 }
 
+/// Describes task failures and delegates backend failures to sanitized storage messages.
 fn task_or_storage_error_message(error: &RepositoryError) -> &'static str {
     match error {
         RepositoryError::TaskNotFound { .. } => "Task not found",
+        RepositoryError::TaskChanged { .. } => "Task changed in another client",
         RepositoryError::TaskAlreadyExists { .. } => "Task already exists",
         RepositoryError::TaskArchived { .. } => "Task is archived",
         RepositoryError::TaskIsActive { .. } => "Task has active work",
         RepositoryError::InactiveTaskCandidatesChanged => {
             "Inactive task list changed. Preview again"
         }
+        _ => storage_error_message(error),
+    }
+}
+
+/// Replaces backend messages and corrupt field details with fixed client-safe text.
+fn storage_error_message(error: &RepositoryError) -> &'static str {
+    match error {
         RepositoryError::Constraint { .. } => "Storage rejected the change",
         RepositoryError::CorruptData { .. } => "Stored data is invalid",
         RepositoryError::ReportDurationOverflow => "Report duration is too large",
         RepositoryError::Backend { .. } => "Storage error",
-        _ => unreachable!("worklog messages were classified above"),
+        _ => unreachable!("task and worklog messages were classified above"),
     }
 }

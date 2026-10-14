@@ -3,15 +3,22 @@
 use chrono::{DateTime, TimeDelta, Utc};
 
 use super::TrackerApplication;
+use crate::timestamps::canonical_timestamp;
 use crate::{ApplicationError, ReportRow, ReportTotals, RepositoryError, TrackerRepository};
 
 impl<R: TrackerRepository> TrackerApplication<R> {
+    /// Validates microsecond bounds before reading totals and adopting their scoped state.
     pub fn report_totals(
         &mut self,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<ReportTotals, ApplicationError> {
+        let (start, end, now) = (
+            canonical_timestamp(start),
+            canonical_timestamp(end),
+            canonical_timestamp(now),
+        );
         validate_range(start, end)?;
         let read = self
             .repository
@@ -33,6 +40,11 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         end: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<ReportTotals, ApplicationError> {
+        let (start, end, now) = (
+            canonical_timestamp(start),
+            canonical_timestamp(end),
+            canonical_timestamp(now),
+        );
         validate_range(start, end)?;
         let (items, read) = self
             .repository

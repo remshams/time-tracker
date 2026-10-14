@@ -291,6 +291,48 @@ impl TrackerRepository for MemoryRepository {
         Ok(task)
     }
 
+    /// Models the repository name guard in the single-threaded fixture before applying a rename.
+    fn compare_and_rename_task(
+        &self,
+        id: TaskId,
+        expected_name: &TaskName,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError> {
+        let data = self.0.borrow();
+        let task = data
+            .tasks
+            .iter()
+            .find(|item| item.task.id() == id)
+            .ok_or(RepositoryError::TaskNotFound { id })?;
+        if task.task.name() != expected_name {
+            return Err(RepositoryError::TaskChanged { id });
+        }
+        drop(data);
+        self.rename_task(id, name, occurred_at)
+    }
+
+    /// Models the reviewed-name check before applying active-task protection and archive failure injection.
+    fn compare_and_archive_task(
+        &self,
+        id: TaskId,
+        expected_name: &TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError> {
+        let data = self.0.borrow();
+        let task = data
+            .tasks
+            .iter()
+            .find(|item| item.task.id() == id)
+            .ok_or(RepositoryError::TaskNotFound { id })?;
+        if task.task.name() != expected_name {
+            return Err(RepositoryError::TaskChanged { id });
+        }
+        drop(data);
+        self.archive_task(id, occurred_at)
+    }
+
+    /// Restores fixture metadata and can inject a post-commit read failure to exercise recovery.
     fn unarchive_task(
         &self,
         id: TaskId,

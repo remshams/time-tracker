@@ -1,6 +1,7 @@
 use super::*;
 use tracker_domain::WorklogMoveError;
 
+/// Checks every repository failure so client recovery categories cannot leak private diagnostics.
 #[test]
 fn repository_failures_have_stable_semantic_classifications_and_sanitized_messages() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
@@ -10,6 +11,11 @@ fn repository_failures_have_stable_semantic_classifications_and_sanitized_messag
             RepositoryError::TaskNotFound { id: task_id },
             ApplicationFailureCategory::TaskNotFound,
             "Task not found",
+        ),
+        (
+            RepositoryError::TaskChanged { id: task_id },
+            ApplicationFailureCategory::TaskChanged,
+            "Task changed in another client",
         ),
         (
             RepositoryError::WorklogNotFound { id: worklog_id },
@@ -34,12 +40,12 @@ fn repository_failures_have_stable_semantic_classifications_and_sanitized_messag
         (
             RepositoryError::WorklogHistoryChanged { task_id },
             ApplicationFailureCategory::WorklogHistoryChanged,
-            "Worklog history changed. Press r to refresh",
+            "Worklog history changed",
         ),
         (
             RepositoryError::GlobalWorklogHistoryChanged,
             ApplicationFailureCategory::WorklogHistoryChanged,
-            "Worklog history changed. Press r to refresh",
+            "Worklog history changed",
         ),
         (
             RepositoryError::SameTaskWorklogOverlap { id: worklog_id },
