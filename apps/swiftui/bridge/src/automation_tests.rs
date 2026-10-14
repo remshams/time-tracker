@@ -1,5 +1,33 @@
 use super::*;
 
+/// Exercises shared SQLite handles so a stale idle command cannot replace another timer.
+#[test]
+fn local_guarded_tracking_rejects_a_timer_started_by_another_bridge() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("guarded-tracking.db");
+    let mut first = open_fixture(&path).unwrap();
+    let mut second = open_fixture(&path).unwrap();
+    let task_id = second.application.tasks(TaskOrdering::default())[0]
+        .task
+        .id();
+    let at = DateTime::from_timestamp(1010, 0).unwrap();
+    second.application.set_active_task(task_id, at).unwrap();
+
+    let error = first
+        .application
+        .set_active_task_if_active(task_id, None, at)
+        .unwrap_err();
+    assert_eq!(error.message, "Tracking state changed. Refresh and retry.");
+    assert_eq!(error.kind, "conflict");
+    assert!(error.requires_refresh);
+    assert!(!error.uncertain);
+    assert_eq!(
+        first.application.current_tracking(),
+        second.application.current_tracking()
+    );
+}
+
+/// Decodes the bridge response and releases its C string allocation.
 fn response(pointer: *mut c_char) -> Value {
     assert!(!pointer.is_null());
     // SAFETY: The pointer comes from the bridge and is released once.
