@@ -5,8 +5,8 @@ use tracker_application::{
     ApplicationError, MoveCandidate, TaskListItem, TaskOrdering, TrackerApplication,
 };
 use tracker_domain::{Task, TaskId, TrackingState};
-use tracker_protocol::{InactiveTaskPreviewDto, MutationDto, TaskDto};
-use tracker_remote::{RemoteApplication, RemoteError, ResourceSelection};
+use tracker_protocol::MutationDto;
+use tracker_remote::{InactiveTaskPreview, RemoteApplication, RemoteError, ResourceSelection};
 use tracker_storage::SqliteRepository;
 
 /// The backend selected by a client. Remote failures never select local storage.
@@ -59,8 +59,8 @@ pub enum InactivePreview {
         tasks: Vec<Task>,
     },
     Remote {
-        preview: InactiveTaskPreviewDto,
-        tasks: Vec<TaskDto>,
+        preview: InactiveTaskPreview,
+        tasks: Vec<Task>,
     },
 }
 
@@ -68,14 +68,14 @@ impl InactivePreview {
     pub fn as_of(&self) -> DateTime<Utc> {
         match self {
             Self::Local { as_of, .. } => *as_of,
-            Self::Remote { preview, .. } => preview.as_of,
+            Self::Remote { preview, .. } => preview.as_of(),
         }
     }
 
     pub fn days(&self) -> u32 {
         match self {
             Self::Local { period, .. } => period.days(),
-            Self::Remote { preview, .. } => preview.inactive_days,
+            Self::Remote { preview, .. } => preview.inactive_days(),
         }
     }
 }

@@ -37,7 +37,9 @@ impl TrackerBackend {
         at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
         match self {
-            Self::Local(application) => application.set_active_task(id, at),
+            Self::Local(application) => {
+                application.set_active_task_with_expected_active(id, expected, at)
+            }
             Self::Remote(application) => {
                 application
                     .set_active_task_with_expected_active(id, expected, at)

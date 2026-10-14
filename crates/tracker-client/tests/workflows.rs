@@ -334,3 +334,101 @@ async fn remote_disconnect_keeps_the_selected_backend_and_last_confirmed_state()
     assert_eq!(backend.task(task.id()).unwrap(), &task);
     assert_eq!(backend.tasks(TaskOrdering::default()).len(), 1);
 }
+
+#[tokio::test]
+async fn local_guarded_task_commands_preserve_names_changed_by_another_writer() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("tracker.sqlite3");
+    let mut backend = TrackerBackend::Local(
+        TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap(),
+    );
+    let reviewed = backend
+        .create_task(name("Reviewed name"), at(0))
+        .await
+        .unwrap();
+    let writer = SqliteRepository::open(&path).unwrap();
+    let changed = writer
+        .rename_task(reviewed.id(), name("Updated name"), at(1))
+        .unwrap();
+    backend.refresh_task_list().await.unwrap();
+    for result in [
+        backend
+            .rename_task_with_expected_name(
+                reviewed.id(),
+                reviewed.name(),
+                name("Draft name"),
+                at(2),
+            )
+            .await,
+        backend
+            .archive_task_with_expected_name(reviewed.id(), reviewed.name(), at(2))
+            .await,
+    ] {
+        assert!(
+            matches!(result, Err(tracker_application::ApplicationError::Repository(
+            tracker_application::RepositoryError::TaskChanged { id }
+        )) if id == reviewed.id())
+        );
+        assert_eq!(
+            writer.find_task(reviewed.id()).unwrap(),
+            Some(changed.clone())
+        );
+        assert_eq!(backend.task(reviewed.id()), Some(&changed));
+    }
+}
+
+#[tokio::test]
+async fn local_guarded_tracking_preserves_a_timer_replaced_by_another_writer() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("tracker.sqlite3");
+    let mut backend = TrackerBackend::Local(
+        TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap(),
+    );
+    let first = backend.create_task(name("Planning"), at(0)).await.unwrap();
+    let second = backend
+        .create_task(name("Implementation"), at(1))
+        .await
+        .unwrap();
+    let SetActiveTaskOutcome::Started { worklog } =
+        backend.set_active_task(first.id(), at(2)).await.unwrap()
+    else {
+        panic!("tracking must start");
+    };
+    let mut writer = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
+    writer.clear_active_task(worklog.id(), at(3)).unwrap();
+    writer.set_active_task(first.id(), at(4)).unwrap();
+    let replacement = writer.current_tracking().clone();
+    backend.refresh_task_list().await.unwrap();
+    for expected in [None, Some(worklog.id())] {
+        assert!(matches!(
+            backend
+                .set_active_task_with_expected_active(second.id(), expected, at(5))
+                .await,
+            Err(tracker_application::ApplicationError::TrackingStateChanged)
+        ));
+        assert_eq!(backend.current_tracking(), &replacement);
+        writer.refresh_tracking_resource().unwrap();
+        assert_eq!(writer.current_tracking(), &replacement);
+    }
+}
+
+#[tokio::test]
+async fn local_report_results_echo_the_canonical_cutoff() {
+    let mut backend = local();
+    let now = at(1) + TimeDelta::nanoseconds(987);
+    let expected = at(1);
+    assert_eq!(
+        backend.report(at(0), at(2), now).await.unwrap().now,
+        expected
+    );
+    for include_tasks in [false, true] {
+        assert_eq!(
+            backend
+                .refresh_totals(include_tasks, at(0), at(2), now)
+                .await
+                .unwrap()
+                .now,
+            expected
+        );
+    }
+}

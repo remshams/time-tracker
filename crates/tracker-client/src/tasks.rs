@@ -110,7 +110,9 @@ impl TrackerBackend {
         at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         match self {
-            Self::Local(application) => application.rename_task(id, name, at),
+            Self::Local(application) => {
+                application.rename_task_with_expected_name(id, expected, name, at)
+            }
             Self::Remote(application) => {
                 application
                     .rename_task_with_expected_name(id, expected, name, at)
@@ -126,7 +128,9 @@ impl TrackerBackend {
         at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         match self {
-            Self::Local(application) => application.archive_task(id, at),
+            Self::Local(application) => {
+                application.archive_task_with_expected_name(id, expected, at)
+            }
             Self::Remote(application) => {
                 application
                     .archive_task_with_expected_name(id, expected, at)
