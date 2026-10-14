@@ -21,11 +21,7 @@ impl TasksClient {
     ) -> Result<(), RemoteError> {
         session.ensure_version().await?;
         let (items, revision) = self.fetch_task_catalog(session).await?;
-        self.task_cache.clear();
-        self.task_observation = Some(ResourceObservation {
-            value: items,
-            revision,
-        });
+        self.adopt_catalog(items, revision);
         session.confirmed();
         Ok(())
     }

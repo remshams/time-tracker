@@ -239,6 +239,78 @@ async fn remote_client_rejects_each_invalid_health_field_before_adopting_resourc
 }
 
 #[tokio::test]
+async fn prewrite_compatibility_failure_does_not_retry_or_recover_resources() {
+    use axum::{http::StatusCode, response::IntoResponse};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tracker_protocol::{InactiveTaskPreviewDto, TasksDto};
+
+    for unavailable in [false, true] {
+        let health_reads = Arc::new(AtomicUsize::new(0));
+        let resource_reads = Arc::new(AtomicUsize::new(0));
+        let health_counter = health_reads.clone();
+        let resource_counter = resource_reads.clone();
+        let server = StubServer::from_router(
+            Router::new()
+                .route(
+                    "/v1/health",
+                    get(move || {
+                        let first = health_counter.fetch_add(1, Ordering::SeqCst) == 0;
+                        async move {
+                            if first && unavailable {
+                                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                            }
+                            Json(HealthDto {
+                                status: "ok".into(),
+                                protocol_version: if first { VERSION + 1 } else { VERSION },
+                            })
+                            .into_response()
+                        }
+                    }),
+                )
+                .route(
+                    "/v1/tasks",
+                    get(move || {
+                        resource_counter.fetch_add(1, Ordering::SeqCst);
+                        async {
+                            Json(TasksDto {
+                                tasks: vec![],
+                                revision: "later-state".into(),
+                            })
+                        }
+                    }),
+                ),
+        );
+        let mut client = RemoteApplication::disconnected(&server.endpoint()).unwrap();
+        let preview = InactiveTaskPreviewDto {
+            as_of: DateTime::UNIX_EPOCH,
+            inactive_days: 7,
+            count: 0,
+            candidate_task_ids: vec![],
+            revision: "reviewed-state".into(),
+        };
+        let error = client.archive_inactive_tasks(&preview).await.unwrap_err();
+        assert_eq!(health_reads.load(Ordering::SeqCst), 1);
+        assert_eq!(resource_reads.load(Ordering::SeqCst), 0);
+        assert!(!client.last_write_attempted());
+        assert!(client.last_command_receipt().is_none());
+        assert!(client.task_observation().is_none());
+        assert!(client.tracking_observation().is_none());
+        assert!(!error.failure().recovery_failed());
+        assert_eq!(
+            client.last_failure(),
+            Some(if unavailable {
+                RemoteFailureKind::Unavailable
+            } else {
+                RemoteFailureKind::Protocol
+            })
+        );
+    }
+}
+
+#[tokio::test]
 async fn uncommitted_task_create_retries_after_server_restart() {
     let mut server = TestServer::start();
     let mut client = connected(&server.endpoint()).await.unwrap();

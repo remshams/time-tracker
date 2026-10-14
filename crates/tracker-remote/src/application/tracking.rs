@@ -29,10 +29,7 @@ impl TrackingClient {
             .read_tracking(session)
             .await
             .map_err(|error| session.record_error(error))?;
-        self.tracking_observation = Some(ResourceObservation {
-            value: tracking,
-            revision,
-        });
+        self.adopt(tracking, revision);
         session.confirmed();
         Ok(())
     }
