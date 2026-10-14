@@ -81,6 +81,45 @@ fn report_args(arguments: &[&str]) -> crate::args::ReportArgs {
     args
 }
 
+/// CLI bounds must use stored precision and reject intervals that collapse after truncation.
+#[test]
+fn explicit_report_ranges_normalize_before_validation_and_output() {
+    let now = Utc.with_ymd_and_hms(2026, 10, 4, 12, 0, 0).unwrap();
+    let normalized = range(
+        &report_args(&[
+            "--start",
+            "2026-01-01T00:00:00.123456789Z",
+            "--end",
+            "2026-01-01T00:00:00.123458999Z",
+        ]),
+        now,
+    )
+    .unwrap();
+    assert_eq!(
+        normalized.start.to_rfc3339(),
+        "2026-01-01T00:00:00.123456+00:00"
+    );
+    assert_eq!(
+        normalized.end.to_rfc3339(),
+        "2026-01-01T00:00:00.123458+00:00"
+    );
+
+    let error = range(
+        &report_args(&[
+            "--start",
+            "2026-01-01T00:00:00.000000100Z",
+            "--end",
+            "2026-01-01T00:00:00.000000900Z",
+        ]),
+        now,
+    )
+    .err()
+    .unwrap();
+    assert_eq!(error.message, "report end must be later than start");
+    assert_eq!(error.exit_code, 2);
+}
+
+/// Calendar selections preserve local day boundaries and explicit UTC offsets.
 #[test]
 fn reports_default_to_today_in_selected_timezone_and_accept_inclusive_dates() {
     let now = Utc.with_ymd_and_hms(2026, 10, 4, 23, 30, 0).unwrap();
