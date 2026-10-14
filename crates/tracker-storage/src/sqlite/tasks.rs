@@ -176,8 +176,34 @@ impl SqliteRepository {
         name: TaskName,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, StorageError> {
+        self.rename_task_guarded(id, None, name, occurred_at)
+    }
+
+    /// Changes the task only if its name still matches the reviewed name.
+    pub fn compare_and_rename_task(
+        &self,
+        id: TaskId,
+        expected_name: &TaskName,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, StorageError> {
+        self.rename_task_guarded(id, Some(expected_name), name, occurred_at)
+    }
+
+    /// Holds the write lock while checking an optional reviewed name and updating only name metadata.
+    /// Equal names leave metadata unchanged, and concurrent archive state survives the write.
+    fn rename_task_guarded(
+        &self,
+        id: TaskId,
+        expected_name: Option<&TaskName>,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, StorageError> {
         let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let mut task = task_by_id_on(&transaction, id)?.ok_or(StorageError::TaskNotFound { id })?;
+        if expected_name.is_some_and(|expected| task.name() != expected) {
+            return Err(StorageError::TaskChanged { id });
+        }
         let occurred_at = us_to_timestamp(timestamp_to_us(occurred_at))?;
         if task.rename(name, occurred_at) {
             transaction
@@ -201,8 +227,32 @@ impl SqliteRepository {
         id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, StorageError> {
+        self.archive_task_guarded(id, None, occurred_at)
+    }
+
+    /// Changes the task only if its name still matches the reviewed name.
+    pub fn compare_and_archive_task(
+        &self,
+        id: TaskId,
+        expected_name: &TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, StorageError> {
+        self.archive_task_guarded(id, Some(expected_name), occurred_at)
+    }
+
+    /// Checks the optional reviewed name and archives under one write lock.
+    /// Database triggers protect running tasks; unrelated name metadata remains intact.
+    fn archive_task_guarded(
+        &self,
+        id: TaskId,
+        expected_name: Option<&TaskName>,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, StorageError> {
         let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let mut task = task_by_id_on(&transaction, id)?.ok_or(StorageError::TaskNotFound { id })?;
+        if expected_name.is_some_and(|expected| task.name() != expected) {
+            return Err(StorageError::TaskChanged { id });
+        }
         let occurred_at = us_to_timestamp(timestamp_to_us(occurred_at))?;
         if task.archive(occurred_at)
             && let Err(error) = transaction.execute(

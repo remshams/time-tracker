@@ -1115,3 +1115,107 @@ fn concurrent_moves_commit_once_and_leave_one_destination_with_revisions() {
         assert_eq!(history_revision(&repository, task_id), expected_revision);
     }
 }
+
+/// Demonstrates that competing connections cannot both overwrite a name they reviewed before either write.
+#[test]
+fn concurrent_guarded_renames_cannot_both_replace_the_same_reviewed_name() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let task = named_task(1, "Reviewed name");
+    SqliteRepository::open(&path)
+        .unwrap()
+        .create_task(task.clone())
+        .unwrap();
+    let barrier = Arc::new(Barrier::new(2));
+    let handles: Vec<_> = ["First draft", "Second draft"]
+        .into_iter()
+        .map(|name| {
+            let path = path.clone();
+            let task = task.clone();
+            let barrier = barrier.clone();
+            thread::spawn(move || {
+                let repository = SqliteRepository::open(path).unwrap();
+                barrier.wait();
+                repository.compare_and_rename_task(
+                    task.id(),
+                    task.name(),
+                    TaskName::new(name).unwrap(),
+                    at(200),
+                )
+            })
+        })
+        .collect();
+    let outcomes: Vec<_> = handles
+        .into_iter()
+        .map(|handle| handle.join().unwrap())
+        .collect();
+    assert_eq!(outcomes.iter().filter(|outcome| outcome.is_ok()).count(), 1);
+    assert_eq!(outcomes.iter().filter(|outcome| matches!(outcome, Err(StorageError::TaskChanged { id }) if *id == task.id())).count(), 1);
+    let successful = outcomes.into_iter().find_map(Result::ok).unwrap();
+    assert_eq!(
+        SqliteRepository::open(path)
+            .unwrap()
+            .find_task(task.id())
+            .unwrap(),
+        Some(successful)
+    );
+}
+
+/// Exercises the race after preflight, where persistence CAS must protect the replacement timer.
+#[test]
+fn guarded_tracking_preserves_a_timer_replaced_between_authoritative_read_and_write() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    let alpha = named_task(1, "Planning");
+    let beta = named_task(2, "Implementation");
+    let setup = SqliteRepository::open(&path).unwrap();
+    setup.create_task(alpha.clone()).unwrap();
+    setup.create_task(beta.clone()).unwrap();
+    let original = Worklog::begin(WorklogId::generate(), alpha.id(), at(100));
+    setup.insert_worklog(&original).unwrap();
+    drop(setup);
+    let (ready_send, ready) = sync_channel(1);
+    let (started, started_receive) = sync_channel(1);
+    let synchronize_active_read = Arc::new(AtomicBool::new(false));
+    let mut application = TrackerApplication::load(SynchronizingRepository {
+        repository: SqliteRepository::open(&path).unwrap(),
+        ready: ready_send,
+        started: started_receive,
+        synchronize_active_read: synchronize_active_read.clone(),
+        fail_next_active_read: Arc::new(AtomicBool::new(false)),
+    })
+    .unwrap();
+    synchronize_active_read.store(true, Ordering::SeqCst);
+    let replacement = Worklog::begin(WorklogId::generate(), alpha.id(), at(160));
+    let competing = thread::spawn({
+        let path = path.clone();
+        let original = original.clone();
+        let replacement = replacement.clone();
+        move || {
+            ready.recv_timeout(Duration::from_secs(5)).unwrap();
+            let repository = SqliteRepository::open(path).unwrap();
+            repository
+                .switch_worklog(original.id(), original.start(), at(150), &replacement)
+                .unwrap();
+            started.send(()).unwrap();
+        }
+    });
+    assert_eq!(
+        application.set_active_task_with_expected_active(beta.id(), Some(original.id()), at(200)),
+        Err(ApplicationError::TrackingWrite(
+            RepositoryError::WorklogAlreadyStopped { id: original.id() }
+        ))
+    );
+    competing.join().unwrap();
+    assert_eq!(
+        SqliteRepository::open(path)
+            .unwrap()
+            .active_worklog()
+            .unwrap(),
+        Some(replacement.clone())
+    );
+    assert!(
+        matches!(application.current_tracking(), TrackingState::Running { worklog }
+        if worklog.id() == replacement.id())
+    );
+}

@@ -108,6 +108,30 @@ impl TrackerRepository for SqliteRepository {
         SqliteRepository::archive_task(self, id, occurred_at).map_err(Into::into)
     }
 
+    /// Exposes SQLite's atomic reviewed-name rename through the backend-neutral repository port.
+    fn compare_and_rename_task(
+        &self,
+        id: TaskId,
+        expected_name: &TaskName,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError> {
+        SqliteRepository::compare_and_rename_task(self, id, expected_name, name, occurred_at)
+            .map_err(Into::into)
+    }
+
+    /// Exposes SQLite's atomic reviewed-name archive through the backend-neutral repository port.
+    fn compare_and_archive_task(
+        &self,
+        id: TaskId,
+        expected_name: &TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, RepositoryError> {
+        SqliteRepository::compare_and_archive_task(self, id, expected_name, occurred_at)
+            .map_err(Into::into)
+    }
+
+    /// Returns the persisted restored task through the port, converting storage failures to repository errors.
     fn unarchive_task(
         &self,
         id: TaskId,
