@@ -8,7 +8,8 @@ use tracker_protocol::{DailyOverviewDto, ReportDto, TaskDto, TaskListStateDto};
 
 use crate::core::{Shared, lock};
 use crate::error::{ApiResult, query_payload};
-use crate::reports::{ReportQuery, canonical_timestamp};
+use crate::reports::ReportQuery;
+use tracker_application::timestamps::canonical_timestamp;
 
 /// Captures the full catalog and active tracking from one SQLite read version.
 pub(super) async fn task_list_state(State(shared): State<Shared>) -> ApiResult<TaskListStateDto> {

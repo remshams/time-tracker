@@ -85,6 +85,7 @@ impl From<ApplicationError> for ApiError {
     }
 }
 
+/// Preserves public HTTP status and protocol codes for each semantic failure category.
 fn failure_status(category: ApplicationFailureCategory) -> (StatusCode, ErrorCode) {
     match category {
         ApplicationFailureCategory::WorklogNotFound | ApplicationFailureCategory::TaskNotFound => {
@@ -93,6 +94,7 @@ fn failure_status(category: ApplicationFailureCategory) -> (StatusCode, ErrorCod
         ApplicationFailureCategory::WorklogChanged => {
             (StatusCode::CONFLICT, ErrorCode::WorklogChanged)
         }
+        ApplicationFailureCategory::TaskChanged => (StatusCode::CONFLICT, ErrorCode::Conflict),
         ApplicationFailureCategory::WorklogHistoryChanged => {
             (StatusCode::CONFLICT, ErrorCode::WorklogHistoryChanged)
         }

@@ -5,6 +5,7 @@ use axum::extract::rejection::QueryRejection;
 use axum::extract::{Query, State};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use tracker_application::timestamps::canonical_timestamp;
 use tracker_protocol::ReportDto;
 
 use crate::core::{Shared, lock};
@@ -18,6 +19,7 @@ pub(super) struct ReportQuery {
     pub(super) now: DateTime<Utc>,
 }
 
+/// Echoes the same microsecond bounds and cutoff used to compute report totals.
 pub(super) async fn report(
     State(shared): State<Shared>,
     input: Result<Query<ReportQuery>, QueryRejection>,
@@ -35,9 +37,4 @@ pub(super) async fn report(
         now,
         core.revision(),
     )))
-}
-
-pub(super) fn canonical_timestamp(value: DateTime<Utc>) -> DateTime<Utc> {
-    DateTime::from_timestamp_micros(value.timestamp_micros())
-        .expect("UTC timestamps fit the microsecond range")
 }

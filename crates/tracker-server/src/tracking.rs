@@ -20,6 +20,7 @@ pub(super) async fn tracking(State(shared): State<Shared>) -> ApiResult<Tracking
         revision: core.revision(),
     }))
 }
+/// Guards authoritative tracking state and preserves request worklog identity and retry receipts.
 pub(super) async fn set_tracking(
     State(shared): State<Shared>,
     input: Result<Json<SetTrackingRequest>, JsonRejection>,
@@ -40,23 +41,14 @@ pub(super) async fn set_tracking(
     let key = fingerprint("PUT /v1/tracking", &request)?;
     let mut core = lock(&shared)?;
     let response = core.execute(&request.guard, key, |app| {
-        let current = match app.current_tracking() {
-            TrackingState::Idle => None,
-            TrackingState::Running { worklog } => Some(worklog.id()),
-        };
-        if current != expected {
-            return Err(ApiError::conflict(
-                "Active worklog changed. Refresh and retry.",
-            ));
-        }
-        match (desired, new_id, current) {
+        match (desired, new_id, expected) {
             (Some(task_id), Some(new_id), _) => {
-                let outcome = match current {
-                    None => {
-                        app.start_tracking_if_idle_with_id(task_id, new_id, request.occurred_at)
-                    }
-                    Some(_) => app.set_active_task_with_id(task_id, new_id, request.occurred_at),
-                }?;
+                let outcome = app.set_active_task_with_id_and_expected_active(
+                    task_id,
+                    new_id,
+                    expected,
+                    request.occurred_at,
+                )?;
                 match outcome {
                     SetActiveTaskOutcome::Started { worklog } => {
                         Ok(MutationResultDto::Worklog(WorklogDto::from(&worklog)))
@@ -82,7 +74,15 @@ pub(super) async fn set_tracking(
                 }
                 ClearActiveTaskOutcome::AlreadyIdle => Ok(MutationResultDto::TrackingAlreadyIdle),
             },
-            (None, None, None) => Ok(MutationResultDto::TrackingAlreadyIdle),
+            (None, None, None) => {
+                app.refresh_tracking_resource()?;
+                if app.current_tracking() != &TrackingState::Idle {
+                    return Err(ApiError::conflict(
+                        "Active worklog changed. Refresh and retry.",
+                    ));
+                }
+                Ok(MutationResultDto::TrackingAlreadyIdle)
+            }
             _ => Err(ApiError::invalid("Invalid tracking request")),
         }
     })?;
@@ -209,6 +209,91 @@ mod tracking_tests {
             matches!(switched.result, MutationResultDto::TrackingSwitched { stopped, started }
             if stopped.id == first_id.to_string() && stopped.end == Some(at(200))
                 && started.start == at(200))
+        );
+    }
+    /// A cached timer cannot authorize a switch after another writer replaces that timer.
+    #[tokio::test]
+    async fn switch_preserves_a_timer_replaced_directly_in_the_database() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("tracker.db");
+        let shared = core(&path);
+        let tasks = shared.lock().unwrap().app.tasks(TaskOrdering::default());
+        let original_id = WorklogId::generate();
+        let initial = request(&shared, tasks[0].task.id(), original_id, None, 100);
+        let initial = set_tracking(State(shared.clone()), Ok(Json(initial)))
+            .await
+            .unwrap()
+            .0;
+        assert!(
+            matches!(initial.result, MutationResultDto::Worklog(worklog) if worklog.id == original_id.to_string())
+        );
+
+        let mut other = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
+        other.clear_active_task(original_id, at(150)).unwrap();
+        other.set_active_task(tasks[0].task.id(), at(160)).unwrap();
+        let replacement = other.current_tracking().clone();
+        let new_id = WorklogId::generate();
+        let stale = request(&shared, tasks[1].task.id(), new_id, Some(original_id), 200);
+
+        let rejected = set_tracking(State(shared.clone()), Ok(Json(stale)))
+            .await
+            .unwrap_err();
+
+        assert_eq!(rejected.status, StatusCode::CONFLICT);
+        assert_eq!(shared.lock().unwrap().app.current_tracking(), &replacement);
+        let repository = SqliteRepository::open(&path).unwrap();
+        assert!(repository.find_worklog(new_id).unwrap().is_none());
+        let TrackingState::Running { worklog } = replacement else {
+            panic!("the replacement timer must remain active");
+        };
+        assert_eq!(
+            repository.active_worklog().unwrap().unwrap().id(),
+            worklog.id()
+        );
+        assert_eq!(
+            repository.find_worklog(original_id).unwrap().unwrap().end(),
+            Some(at(150))
+        );
+    }
+
+    /// Cached idle state cannot confirm idle after another writer starts tracking.
+    #[tokio::test]
+    async fn idle_confirmation_rechecks_a_timer_started_directly_in_the_database() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("tracker.db");
+        let shared = core(&path);
+        let tasks = shared.lock().unwrap().app.tasks(TaskOrdering::default());
+        let mut other = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
+        other.set_active_task(tasks[0].task.id(), at(100)).unwrap();
+        let active = other.current_tracking().clone();
+        let request = SetTrackingRequest {
+            task_id: None,
+            worklog_id: None,
+            expected_active: None,
+            occurred_at: at(200),
+            guard: WriteGuard {
+                expected_revision: shared.lock().unwrap().revision(),
+                request_id: Uuid::now_v7().to_string(),
+            },
+        };
+
+        let rejected = set_tracking(State(shared.clone()), Ok(Json(request)))
+            .await
+            .unwrap_err();
+
+        assert_eq!(rejected.status, StatusCode::CONFLICT);
+        assert_eq!(shared.lock().unwrap().app.current_tracking(), &active);
+        let TrackingState::Running { worklog } = active else {
+            panic!("the competing timer must remain active");
+        };
+        assert_eq!(
+            SqliteRepository::open(path)
+                .unwrap()
+                .active_worklog()
+                .unwrap()
+                .unwrap()
+                .id(),
+            worklog.id()
         );
     }
 }
