@@ -95,6 +95,7 @@ impl Backend {
         result.map_err(refresh_error)
     }
 
+    /// Refreshes the selected report resources and returns their canonical cutoff.
     pub fn refresh_totals(
         &mut self,
         include_tasks: bool,
@@ -139,6 +140,7 @@ impl Backend {
         }
     }
 
+    /// Returns report rows, their optional remote revision, and the canonical cutoff.
     pub fn report_rows(
         &mut self,
         start: DateTime<Utc>,
@@ -156,6 +158,7 @@ impl Backend {
     pub fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
         self.application.tasks(ordering)
     }
+    #[cfg(test)]
     pub fn current_tracking(&self) -> &TrackingState {
         self.application.current_tracking()
     }
@@ -388,28 +391,36 @@ impl Backend {
         result.map_err(local_error)
     }
 
+    /// Rejects a tracking command when the reviewed active worklog no longer matches.
     pub fn set_active_task_if_active(
         &mut self,
         task_id: TaskId,
         expected: Option<WorklogId>,
         occurred_at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, BridgeError> {
-        let current = match self.current_tracking() {
-            TrackingState::Idle => None,
-            TrackingState::Running { worklog } => Some(worklog.id()),
-        };
-        if current != expected {
-            if self.application.is_remote() {
-                self.requires_refresh = true;
+        self.check_write()?;
+        let result = self
+            .runtime
+            .block_on(self.application.set_active_task_with_expected_active(
+                task_id,
+                expected,
+                occurred_at,
+            ));
+        self.record_write_completion();
+        result.map_err(|error| {
+            if !self.application.is_remote()
+                && matches!(error, ApplicationError::TrackingStateChanged)
+            {
+                BridgeError {
+                    message: "Tracking state changed. Refresh and retry.".into(),
+                    kind: "conflict",
+                    uncertain: false,
+                    requires_refresh: true,
+                }
+            } else {
+                self.operation_error(error, true)
             }
-            return Err(BridgeError {
-                message: "Tracking state changed. Refresh and retry.".into(),
-                kind: "conflict",
-                uncertain: false,
-                requires_refresh: true,
-            });
-        }
-        self.set_active_task(task_id, occurred_at)
+        })
     }
 
     pub fn worklogs_for_task(

@@ -284,6 +284,40 @@ fn report_aggregates_all_history_and_clips_completed_and_active_work() {
     })));
 }
 
+/// Checks that returned report cutoffs describe the precision used to calculate running time.
+#[test]
+fn local_reports_echo_the_microsecond_cutoff_used_for_totals() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut bridge = open_fixture(&directory.path().join("precision.db")).unwrap();
+    let task_id = bridge.application.tasks(TaskOrdering::default())[0]
+        .task
+        .id();
+    bridge
+        .application
+        .set_active_task(task_id, at(1005))
+        .unwrap();
+    let now = DateTime::from_timestamp(1010, 123_456_789).unwrap();
+    let expected_now = DateTime::from_timestamp(1010, 123_456_000).unwrap();
+
+    let (rows, revision, cutoff) = bridge
+        .application
+        .report_rows(at(1000), at(1100), now)
+        .unwrap();
+    assert_eq!(cutoff, expected_now);
+    assert!(revision.is_none());
+    assert_eq!(rows[0].duration_microseconds, 5_123_456);
+
+    for include_tasks in [false, true] {
+        let totals = bridge
+            .application
+            .refresh_totals(include_tasks, at(1000), at(1100), now)
+            .unwrap();
+        assert_eq!(totals.now, timestamp(expected_now));
+        assert_eq!(totals.rows[0].duration_microseconds, 5_123_456);
+    }
+}
+
+/// Exercises a report read after another handle starts tracking without attaching task-list data.
 #[test]
 fn report_adopts_local_tracking_and_returns_only_totals() {
     let directory = tempfile::tempdir().unwrap();
