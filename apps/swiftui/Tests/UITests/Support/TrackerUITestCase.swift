@@ -57,15 +57,17 @@ class TrackerUITestCase: XCTestCase {
         app.launchEnvironment["TT_UI_TEST_DEFAULTS_SUITE"] = fixture.defaultsSuite
         app.launch()
         showTrackerViaShortcut()
+        let status = element("connection-summary.status")
+        var connectionText = ""
         waitUntil("Initial connection finishes") {
-            let status = self.element("connection-summary.status")
             guard status.exists else { return false }
-            let text = status.value as? String ?? status.label
-            return ["Local database", "Connected", "Unavailable", "Incompatible server"].contains(text)
+            connectionText = status.value as? String ?? status.label
+            return ["Local database", "Connected", "Unavailable", "Incompatible server"].contains(connectionText)
         }
-        if ["Local database", "Connected"].contains(elementText("connection-summary.status")) {
+        if ["Local database", "Connected"].contains(connectionText) {
+            let newTask = app.buttons["New task"]
             waitUntil("Initial application controls become available") {
-                self.app.buttons["New task"].exists && self.app.buttons["New task"].isEnabled
+                newTask.exists && newTask.isEnabled
             }
         }
     }
