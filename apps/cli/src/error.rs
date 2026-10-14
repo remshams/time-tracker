@@ -68,6 +68,7 @@ impl CliError {
     }
 }
 
+/// Keeps conflict-specific JSON codes independent of local or remote failure sources.
 fn category_code(category: ApplicationFailureCategory) -> &'static str {
     match category {
         ApplicationFailureCategory::General | ApplicationFailureCategory::TaskNotFound => {
@@ -75,6 +76,7 @@ fn category_code(category: ApplicationFailureCategory) -> &'static str {
         }
         ApplicationFailureCategory::WorklogNotFound => "worklog_not_found",
         ApplicationFailureCategory::WorklogChanged => "worklog_changed",
+        ApplicationFailureCategory::TaskChanged => "task_changed",
         ApplicationFailureCategory::ActiveWorklog => "active_worklog",
         ApplicationFailureCategory::WorklogHistoryChanged => "worklog_history_changed",
         ApplicationFailureCategory::WorklogOverlap => "worklog_overlap",

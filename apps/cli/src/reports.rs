@@ -2,6 +2,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
 use serde_json::{Value, json};
 use tracker_application::calendar_reports::{self, CalendarPreset, CalendarRangeError};
+use tracker_application::timestamps::canonical_timestamp;
 use tracker_protocol::TaskDto;
 
 use crate::CliError;
@@ -14,11 +15,13 @@ pub(crate) struct Range {
     pub timezone: Tz,
 }
 
+/// Emits report bounds and cutoff at the same microsecond precision used for totals.
 pub(crate) async fn execute(
     backend: &mut Backend,
     args: ReportArgs,
     now: DateTime<Utc>,
 ) -> Result<Value, CliError> {
+    let now = canonical_timestamp(now);
     let range = range(&args, now)?;
     let totals = backend.report_totals(range.start, range.end, now).await?;
     let rows: Vec<_> = totals
@@ -35,6 +38,7 @@ pub(crate) async fn execute(
     }))
 }
 
+/// Resolves calendar or UTC inputs into a positive half-open microsecond interval.
 pub(crate) fn range(args: &ReportArgs, now: DateTime<Utc>) -> Result<Range, CliError> {
     let timezone = args.timezone.unwrap_or_else(default_timezone);
     let (start, end) = if let (Some(start), Some(end)) = (args.start, args.end) {
@@ -51,6 +55,7 @@ pub(crate) fn range(args: &ReportArgs, now: DateTime<Utc>) -> Result<Range, CliE
         };
         calendar_reports::inclusive_range(timezone, from, to).map_err(calendar_error)?
     };
+    let (start, end) = (canonical_timestamp(start), canonical_timestamp(end));
     if end <= start {
         return Err(CliError::input("report end must be later than start"));
     }

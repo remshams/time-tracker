@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tracker_application::timestamps::{canonical_timestamp as canonical, canonical_worklog_times};
 use tracker_application::{GlobalWorklogCursor, WorklogCursor};
 use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
 use tracker_protocol::{GlobalWorklogCursorDto, WorklogCursorDto, WorklogDto};
@@ -55,10 +56,7 @@ pub(crate) fn validate(
     Ok(())
 }
 
-fn canonical(at: DateTime<Utc>) -> DateTime<Utc> {
-    DateTime::from_timestamp_micros(at.timestamp_micros()).expect("UTC timestamp fits microseconds")
-}
-
+/// Rebuilds the reviewed worklog at stored precision so validation matches backend writes.
 fn selected(id: WorklogId, task: TaskId, expected: &ExpectedTimes) -> Result<Worklog, CliError> {
     Worklog::new(
         id,
@@ -69,6 +67,7 @@ fn selected(id: WorklogId, task: TaskId, expected: &ExpectedTimes) -> Result<Wor
     .map_err(CliError::input)
 }
 
+/// Checks reviewed intervals and correction rules at microsecond precision before execution.
 fn validate_mutation(command: &Worklogs, now: DateTime<Utc>) -> Result<(), CliError> {
     match command {
         Worklogs::Correct {
@@ -77,16 +76,9 @@ fn validate_mutation(command: &Worklogs, now: DateTime<Utc>) -> Result<(), CliEr
             end,
             ..
         } => {
-            let original = WorklogTimes::new(
-                canonical(expected.expected_start),
-                expected.expected_end.0.map(canonical),
-            );
+            let original = canonical_worklog_times(times(expected));
             original.validate().map_err(CliError::input)?;
-            let replacement = replacement(expected, *start, *end);
-            let replacement = WorklogTimes::new(
-                canonical(replacement.start()),
-                replacement.end().map(canonical),
-            );
+            let replacement = canonical_worklog_times(replacement(expected, *start, *end));
             original
                 .validate_correction(replacement, canonical(now))
                 .map_err(CliError::input)?;

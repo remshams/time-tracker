@@ -7,7 +7,8 @@ use tracker_application::TaskOrdering;
 use tracker_application::task_search::SearchRank;
 pub(crate) use tracker_application::task_search::fuzzy_match;
 use tracker_domain::{TaskId, TaskName};
-use tracker_protocol::{InactiveTaskPreviewDto, TaskDto, TaskItemDto};
+use tracker_protocol::{TaskDto, TaskItemDto};
+use tracker_remote::InactiveTaskPreview;
 
 use crate::args::{TaskSort, TaskState, Tasks};
 use crate::backend::{Backend, BackendKind};
@@ -23,7 +24,7 @@ pub(crate) enum PreviewToken {
     },
     Remote {
         backend: String,
-        preview: InactiveTaskPreviewDto,
+        preview: InactiveTaskPreview,
     },
 }
 
@@ -92,14 +93,15 @@ fn validate_local_candidates(task_ids: &[String]) -> Result<(), CliError> {
     Ok(())
 }
 
-fn validate_remote_candidates(preview: &InactiveTaskPreviewDto) -> Result<(), CliError> {
-    if preview.revision.is_empty() {
+/// Rejects malformed saved preview tokens before opening a remote connection.
+fn validate_remote_candidates(preview: &InactiveTaskPreview) -> Result<(), CliError> {
+    if !preview.has_confirmation_guard() {
         return Err(CliError::input("invalid remote preview guard"));
     }
-    if preview.inactive_days != 14 || preview.count != preview.candidate_task_ids.len() {
+    if preview.inactive_days() != 14 || preview.count() != preview.candidate_ids().len() {
         return Err(CliError::input("invalid remote preview candidates"));
     }
-    validate_local_candidates(&preview.candidate_task_ids)?;
+    validate_local_candidates(preview.candidate_ids())?;
     Ok(())
 }
 
@@ -202,6 +204,7 @@ fn list(
     Ok(json!({"tasks": items.iter().map(TaskItemDto::from).collect::<Vec<_>>()}))
 }
 
+/// Captures the eligible candidate set and backend identity for later confirmation.
 async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, CliError> {
     match backend
         .preview_inactive_tasks(
@@ -225,8 +228,12 @@ async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, C
                 backend: backend.identity.clone(),
                 preview: preview.clone(),
             };
-            let sample_names: Vec<_> = tasks.iter().take(5).map(|task| &task.name).collect();
-            Ok(json!({"count": preview.count, "sample_names": sample_names, "preview": token}))
+            let sample_names: Vec<_> = tasks
+                .iter()
+                .take(5)
+                .map(|task| task.name().as_str())
+                .collect();
+            Ok(json!({"count": preview.count(), "sample_names": sample_names, "preview": token}))
         }
     }
 }
