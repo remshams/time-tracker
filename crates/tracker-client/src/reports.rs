@@ -1,5 +1,6 @@
 use crate::{ClientReport, ClientReportRow, RefreshError, TrackerBackend};
 use chrono::{DateTime, Utc};
+use tracker_application::timestamps::canonical_timestamp;
 use tracker_application::{ApplicationError, ReportRow, ReportTotals};
 use tracker_remote::ResourceSelection;
 
@@ -10,6 +11,7 @@ impl TrackerBackend {
         end: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<ClientReport, ApplicationError> {
+        let now = canonical_timestamp(now);
         match self {
             Self::Local(application) => {
                 let totals = application.report_totals(start, end, now)?;
@@ -65,6 +67,7 @@ impl TrackerBackend {
         end: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<ClientReport, RefreshError> {
+        let now = canonical_timestamp(now);
         match self {
             Self::Local(application) => {
                 let totals = if include_tasks {
