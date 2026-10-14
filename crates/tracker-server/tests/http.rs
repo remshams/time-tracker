@@ -15,6 +15,39 @@ fn at(seconds: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(seconds, 0).unwrap()
 }
 
+/// SQLite and HTTP must reject the same range when truncation makes its bounds equal.
+#[tokio::test]
+async fn local_and_http_reports_reject_ranges_within_one_microsecond() {
+    use tracker_application::{ApplicationError, TrackerApplication};
+
+    let directory = TempDir::new().unwrap();
+    let database = directory.path().join("precision.db");
+    let mut application =
+        TrackerApplication::load(SqliteRepository::open(&database).unwrap()).unwrap();
+    let router = tracker_server::router_for_database(&database).unwrap();
+    let start = DateTime::from_timestamp(100, 100).unwrap();
+    let end = DateTime::from_timestamp(100, 900).unwrap();
+
+    assert_eq!(
+        application.report_totals(start, end, at(200)),
+        Err(ApplicationError::InvalidReportRange)
+    );
+    assert_eq!(
+        application.task_list_report_totals(start, end, at(200)),
+        Err(ApplicationError::InvalidReportRange)
+    );
+    let (status, body) = call(
+        &router,
+        Method::GET,
+        "/v1/reports/task-totals?start=1970-01-01T00:01:40.000000100Z&end=1970-01-01T00:01:40.000000900Z&now=1970-01-01T00:03:20Z",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "invalid_request");
+}
+
+/// Exercises handlers in process and decodes JSON errors as well as resource responses.
 async fn call(
     router: &axum::Router,
     method: Method,
