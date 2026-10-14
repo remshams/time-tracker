@@ -29,6 +29,13 @@ def valid_seconds(value):
         return False
 
 
+def canonical_test_name(value):
+    if not isinstance(value, str):
+        return None
+    matches = [name for name in TESTS if name == value or name.endswith(f".{value}")]
+    return matches[0] if len(matches) == 1 else None
+
+
 def validate_timing_report(path):
     """Return measurement errors without hiding runner failures."""
     errors = []
@@ -81,10 +88,10 @@ def validate_timing_report(path):
         if not isinstance(event, dict):
             errors.append("A phase event must be an object.")
             continue
-        test_name = event.get("test")
+        test_name = canonical_test_name(event.get("test"))
         phase = event.get("phase")
         seconds = event.get("seconds")
-        if (not isinstance(test_name, str) or test_name not in phases_by_test
+        if (test_name is None
                 or not isinstance(phase, str) or not valid_seconds(seconds)):
             errors.append("A phase event has invalid test, phase, or seconds fields.")
             continue

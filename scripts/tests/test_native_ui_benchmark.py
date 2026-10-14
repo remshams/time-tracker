@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "benchmark-native-ui.py"
@@ -89,6 +90,26 @@ class NativeUIBenchmarkTests(unittest.TestCase):
             with self.subTest(report=report):
                 report_path.write_text(json.dumps(report))
                 self.assertTrue(self.benchmark.validate_timing_report(report_path))
+
+    def test_xctest_phase_names_match_exact_case_and_method_with_optional_module(self):
+        path = self.directory / "timings.json"
+        report = self.valid_report()
+        for event in report["phase_events"]:
+            event["test"] = event["test"].removeprefix("TimeTrackerUITests.")
+        path.write_text(json.dumps(report))
+        self.assertEqual(self.benchmark.validate_timing_report(path), [])
+
+        report["phase_events"].append(self.valid_report()["phase_events"][0])
+        path.write_text(json.dumps(report))
+        self.assertTrue(self.benchmark.validate_timing_report(path))
+
+        for invalid in [METHOD, f"WorklogHistoryUITests {METHOD}Extra", None, 3]:
+            with self.subTest(name=invalid):
+                self.assertIsNone(self.benchmark.canonical_test_name(invalid))
+
+        ambiguous = {f"First.WorklogHistoryUITests {METHOD}", f"Second.WorklogHistoryUITests {METHOD}"}
+        with mock.patch.object(self.benchmark, "TESTS", ambiguous):
+            self.assertIsNone(self.benchmark.canonical_test_name(f"WorklogHistoryUITests {METHOD}"))
 
     def setup_benchmark_workspace(self):
         workspace = self.directory / "workspace"
