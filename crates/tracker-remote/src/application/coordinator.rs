@@ -209,6 +209,9 @@ impl RemoteTrackerCoordinator {
         result: Result<T, ApplicationError>,
         scope: MutationScope,
     ) -> Result<T, ApplicationError> {
+        if !self.session.last_write_attempted() {
+            return result;
+        }
         let recovered = self.recover_mutation(scope).await;
         match (result, recovered) {
             (Ok(value), Ok(())) => {
