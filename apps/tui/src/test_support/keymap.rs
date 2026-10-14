@@ -45,13 +45,14 @@ pub(crate) fn confirm() -> TaskListMode {
     }
 }
 
+/// Builds a pending archive fixture for keymap and footer assertions.
 pub(crate) fn archiving_mode() -> TaskListMode {
     TaskListMode::ArchivingInactiveTasks {
-        preview: crate::screens::task_list::InactiveTaskPreview::Local {
-            as_of: DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
-            candidate_ids: vec![TaskId::generate()],
-            sample_names: vec!["old task".to_owned()],
-        },
+        preview: crate::screens::task_list::InactiveTaskPreview::local(
+            DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
+            vec![TaskId::generate()],
+            vec!["old task".to_owned()],
+        ),
     }
 }
 

@@ -1,36 +1,6 @@
+pub use crate::application_request::InactiveTaskPreview;
 use chrono::{DateTime, Utc};
 use tracker_domain::{TaskId, TaskName};
-use tracker_remote::InactiveTaskPreviewDto;
-
-/// A preview captured before the user confirms a bulk archive.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum InactiveTaskPreview {
-    Local {
-        as_of: DateTime<Utc>,
-        candidate_ids: Vec<TaskId>,
-        sample_names: Vec<String>,
-    },
-    Remote {
-        preview: InactiveTaskPreviewDto,
-        sample_names: Vec<String>,
-    },
-}
-
-impl InactiveTaskPreview {
-    pub(crate) fn count(&self) -> usize {
-        match self {
-            Self::Local { candidate_ids, .. } => candidate_ids.len(),
-            Self::Remote { preview, .. } => preview.count,
-        }
-    }
-
-    pub(crate) fn sample_names(&self) -> &[String] {
-        match self {
-            Self::Local { sample_names, .. } => sample_names,
-            Self::Remote { sample_names, .. } => sample_names,
-        }
-    }
-}
 
 /// What a confirmed task-name input does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

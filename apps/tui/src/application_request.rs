@@ -9,9 +9,62 @@ use tracker_application::{
 };
 use tracker_client::TrackerBackend;
 use tracker_domain::{Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes};
+use tracker_remote::InactiveTaskPreview as RemoteInactiveTaskPreview;
 
 use crate::screens::reports::{ReportPresentation, ReportPresentationRow};
-use crate::screens::task_list::InactiveTaskPreview;
+/// The values displayed while confirming a bulk archive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InactiveTaskPreview {
+    confirmation: InactiveArchiveConfirmation,
+    sample_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum InactiveArchiveConfirmation {
+    Local {
+        as_of: DateTime<Utc>,
+        candidate_ids: Vec<TaskId>,
+    },
+    Remote(RemoteInactiveTaskPreview),
+}
+
+impl InactiveTaskPreview {
+    /// Retains the exact candidate identities and cutoff reviewed before a local archive.
+    pub(crate) fn local(
+        as_of: DateTime<Utc>,
+        candidate_ids: Vec<TaskId>,
+        sample_names: Vec<String>,
+    ) -> Self {
+        Self {
+            confirmation: InactiveArchiveConfirmation::Local {
+                as_of,
+                candidate_ids,
+            },
+            sample_names,
+        }
+    }
+
+    /// Retains the remote confirmation context while exposing only display samples to screens.
+    fn remote(preview: RemoteInactiveTaskPreview, sample_names: Vec<String>) -> Self {
+        Self {
+            confirmation: InactiveArchiveConfirmation::Remote(preview),
+            sample_names,
+        }
+    }
+
+    /// Returns the number of candidates captured by the original preview.
+    pub(crate) fn count(&self) -> usize {
+        match &self.confirmation {
+            InactiveArchiveConfirmation::Local { candidate_ids, .. } => candidate_ids.len(),
+            InactiveArchiveConfirmation::Remote(preview) => preview.count(),
+        }
+    }
+
+    /// Returns the task names captured for the confirmation dialog.
+    pub(crate) fn sample_names(&self) -> &[String] {
+        &self.sample_names
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ApplicationRequest {
@@ -258,6 +311,7 @@ impl ApplicationRequest {
     }
 }
 
+/// Executes one local request while preserving its captured command expectations.
 #[cfg(test)]
 pub(crate) fn execute_local<S: TrackerApplicationService>(
     application: &mut S,
@@ -275,9 +329,13 @@ pub(crate) fn execute_local<S: TrackerApplicationService>(
         | ApplicationRequest::UnarchiveTask { .. } => execute_local_task(application, &request),
         ApplicationRequest::SetActiveTask {
             task_id,
+            expected_active,
             occurred_at,
-            ..
-        } => ApplicationOutcome::SetActiveTask(application.set_active_task(*task_id, *occurred_at)),
+        } => ApplicationOutcome::SetActiveTask(application.set_active_task_with_expected_active(
+            *task_id,
+            *expected_active,
+            *occurred_at,
+        )),
         ApplicationRequest::ClearActiveTask {
             expected_active,
             occurred_at,
@@ -501,6 +559,7 @@ async fn resolve_history_tasks(application: &mut TrackerBackend, worklogs: &[Wor
     }
 }
 
+/// Dispatches local task operations with reviewed names and retained archive candidates.
 #[cfg(test)]
 fn execute_local_task<S: TrackerApplicationService>(
     application: &mut S,
@@ -512,13 +571,24 @@ fn execute_local_task<S: TrackerApplicationService>(
         }
         ApplicationRequest::RenameTask {
             id,
+            expected_name,
             name,
             occurred_at,
-            ..
-        } => ApplicationOutcome::Task(application.rename_task(*id, name.clone(), *occurred_at)),
+        } => ApplicationOutcome::Task(application.rename_task_with_expected_name(
+            *id,
+            expected_name,
+            name.clone(),
+            *occurred_at,
+        )),
         ApplicationRequest::ArchiveTask {
-            id, occurred_at, ..
-        } => ApplicationOutcome::Task(application.archive_task(*id, *occurred_at)),
+            id,
+            expected_name,
+            occurred_at,
+        } => ApplicationOutcome::Task(application.archive_task_with_expected_name(
+            *id,
+            expected_name,
+            *occurred_at,
+        )),
         ApplicationRequest::PreviewInactiveTasks { as_of } => {
             ApplicationOutcome::InactiveTaskPreview(application.preview_inactive_tasks(*as_of).map(
                 |tasks| {
@@ -527,20 +597,19 @@ fn execute_local_task<S: TrackerApplicationService>(
                         .take(3)
                         .map(|task| task.name().to_string())
                         .collect();
-                    InactiveTaskPreview::Local {
-                        as_of: *as_of,
-                        candidate_ids: tasks.iter().map(Task::id).collect(),
+                    InactiveTaskPreview::local(
+                        *as_of,
+                        tasks.iter().map(Task::id).collect(),
                         sample_names,
-                    }
+                    )
                 },
             ))
         }
         ApplicationRequest::ArchiveInactiveTasks { preview } => {
-            let InactiveTaskPreview::Local {
+            let InactiveArchiveConfirmation::Local {
                 as_of,
                 candidate_ids,
-                ..
-            } = preview
+            } = &preview.confirmation
             else {
                 unreachable!("local bulk archive uses a local preview")
             };
@@ -557,6 +626,7 @@ fn execute_local_task<S: TrackerApplicationService>(
     }
 }
 
+/// Dispatches task operations through the selected backend without exposing its guards to screens.
 async fn execute_backend_task(
     application: &mut TrackerBackend,
     request: &ApplicationRequest,
@@ -594,40 +664,43 @@ async fn execute_backend_task(
                 .await
                 .map(|preview| match preview {
                     tracker_client::InactivePreview::Local { as_of, tasks, .. } => {
-                        InactiveTaskPreview::Local {
+                        InactiveTaskPreview::local(
                             as_of,
-                            candidate_ids: tasks.iter().map(Task::id).collect(),
-                            sample_names: tasks
+                            tasks.iter().map(Task::id).collect(),
+                            tasks
                                 .iter()
                                 .take(3)
                                 .map(|task| task.name().to_string())
                                 .collect(),
-                        }
+                        )
                     }
                     tracker_client::InactivePreview::Remote { preview, tasks } => {
-                        InactiveTaskPreview::Remote {
+                        InactiveTaskPreview::remote(
                             preview,
-                            sample_names: tasks.into_iter().take(5).map(|task| task.name).collect(),
-                        }
+                            tasks
+                                .into_iter()
+                                .take(5)
+                                .map(|task| task.name().to_string())
+                                .collect(),
+                        )
                     }
                 });
             ApplicationOutcome::InactiveTaskPreview(result)
         }
         ApplicationRequest::ArchiveInactiveTasks { preview } => {
-            let result = match (application, preview) {
+            let result = match (application, &preview.confirmation) {
                 (
                     TrackerBackend::Local(application),
-                    InactiveTaskPreview::Local {
+                    InactiveArchiveConfirmation::Local {
                         as_of,
                         candidate_ids,
-                        ..
                     },
                 ) => application
                     .archive_inactive_tasks(candidate_ids, *as_of)
                     .map(|tasks| tasks.len()),
                 (
                     TrackerBackend::Remote(application),
-                    InactiveTaskPreview::Remote { preview, .. },
+                    InactiveArchiveConfirmation::Remote(preview),
                 ) => application.archive_inactive_tasks(preview).await,
                 _ => unreachable!("bulk archive preview belongs to the selected backend"),
             };
@@ -1024,25 +1097,22 @@ mod intent_tests {
         );
     }
 
+    /// Checks that duplicate writes retain the original preview rather than accepting new candidates.
     #[test]
     fn bulk_archive_write_intent_matches_only_the_same_captured_preview() {
         let as_of = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
         let task = TaskId::generate();
-        let preview = InactiveTaskPreview::Local {
-            as_of,
-            candidate_ids: vec![task],
-            sample_names: vec!["old task".to_owned()],
-        };
+        let preview = InactiveTaskPreview::local(as_of, vec![task], vec!["old task".to_owned()]);
         let same = Request::ArchiveInactiveTasks {
             preview: preview.clone(),
         };
         let repeated = Request::ArchiveInactiveTasks { preview };
         let distinct = Request::ArchiveInactiveTasks {
-            preview: InactiveTaskPreview::Local {
+            preview: InactiveTaskPreview::local(
                 as_of,
-                candidate_ids: vec![TaskId::generate()],
-                sample_names: vec!["other task".to_owned()],
-            },
+                vec![TaskId::generate()],
+                vec!["other task".to_owned()],
+            ),
         };
 
         assert!(same.same_write_intent(&repeated));
@@ -1494,5 +1564,99 @@ pub(crate) mod remote_resource_tests {
                 format!("/v1/tasks/{task_id}"),
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod local_guard_tests {
+    use super::{ApplicationOutcome, ApplicationRequest, execute_local};
+    use crate::test_support::{at, task};
+    use tracker_application::{
+        ApplicationError, RepositoryError, SetActiveTaskOutcome, TrackerApplication,
+    };
+    use tracker_domain::{TaskName, Worklog, WorklogId};
+    use tracker_storage::SqliteRepository;
+
+    /// Exercises queued edits whose reviewed name remains stale after a catalog refresh.
+    #[test]
+    fn local_executor_preserves_captured_names_after_the_catalog_refreshes() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("tracker.db");
+        let reviewed = task(1, "Reviewed name");
+        let repository = SqliteRepository::open(&path).unwrap();
+        repository.create_task(reviewed.clone()).unwrap();
+        let mut application = TrackerApplication::load(repository).unwrap();
+        let requests = [
+            ApplicationRequest::RenameTask {
+                id: reviewed.id(),
+                expected_name: reviewed.name().clone(),
+                name: TaskName::new("Draft name").unwrap(),
+                occurred_at: at(300),
+            },
+            ApplicationRequest::ArchiveTask {
+                id: reviewed.id(),
+                expected_name: reviewed.name().clone(),
+                occurred_at: at(300),
+            },
+        ];
+        let writer = SqliteRepository::open(path).unwrap();
+        let changed = writer
+            .rename_task(
+                reviewed.id(),
+                TaskName::new("Replacement name").unwrap(),
+                at(200),
+            )
+            .unwrap();
+        application.refresh_task_list().unwrap();
+        for request in requests {
+            assert!(matches!(
+                execute_local(&mut application, request).outcome,
+                ApplicationOutcome::Task(Err(ApplicationError::Repository(
+                    RepositoryError::TaskChanged { id }
+                ))) if id == reviewed.id()
+            ));
+            assert_eq!(application.task(reviewed.id()), Some(&changed));
+        }
+        assert_eq!(writer.find_task(reviewed.id()).unwrap(), Some(changed));
+    }
+
+    /// Checks that queued starts and switches cannot replace a timer created by another writer.
+    #[test]
+    fn local_executor_preserves_captured_idle_and_running_state_after_competing_writes() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("tracker.db");
+        let alpha = task(1, "Planning");
+        let beta = task(2, "Implementation");
+        let repository = SqliteRepository::open(&path).unwrap();
+        repository.create_task(alpha.clone()).unwrap();
+        repository.create_task(beta.clone()).unwrap();
+        let mut application = TrackerApplication::load(repository).unwrap();
+        let idle_request = ApplicationRequest::SetActiveTask {
+            task_id: beta.id(),
+            expected_active: None,
+            occurred_at: at(300),
+        };
+        let original = match application.set_active_task(alpha.id(), at(100)).unwrap() {
+            SetActiveTaskOutcome::Started { worklog } => worklog,
+            other => panic!("expected start, got {other:?}"),
+        };
+        let running_request = ApplicationRequest::SetActiveTask {
+            task_id: beta.id(),
+            expected_active: Some(original.id()),
+            occurred_at: at(300),
+        };
+        let writer = SqliteRepository::open(path).unwrap();
+        let replacement = Worklog::begin(WorklogId::generate(), alpha.id(), at(200));
+        writer
+            .switch_worklog(original.id(), original.start(), at(150), &replacement)
+            .unwrap();
+        application.refresh_task_list().unwrap();
+        for request in [idle_request, running_request] {
+            assert!(matches!(
+                execute_local(&mut application, request).outcome,
+                ApplicationOutcome::SetActiveTask(Err(ApplicationError::TrackingStateChanged))
+            ));
+            assert_eq!(writer.active_worklog().unwrap(), Some(replacement.clone()));
+        }
     }
 }
