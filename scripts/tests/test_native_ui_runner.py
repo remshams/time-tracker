@@ -1,6 +1,7 @@
 """Exercise native UI runner deadlines and process cleanup with real children."""
 
 import importlib.util
+from contextlib import redirect_stdout
 import io
 import json
 import os
@@ -12,6 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "run-native-ui.py"
@@ -122,6 +124,44 @@ class NativeUIRunnerTests(unittest.TestCase):
             if wrapper.poll() is None:
                 wrapper.send_signal(signal.SIGTERM)
                 wrapper.wait(timeout=5)
+
+    def delayed_diagnostic(self, command, **keywords):
+        source = 'import time; time.sleep(0.04)'
+        if command[0] == "pgrep":
+            source += '; print("101\\n102\\n103")'
+        if command[0] == "sample":
+            source = 'import time; time.sleep(0.15)'
+        return self.real_run([sys.executable, "-c", source], **keywords)
+
+    def diagnostic_budget(self):
+        self.real_run = subprocess.run
+        self.enterContext(mock.patch.object(self.runner, "DIAGNOSTICS_TIMEOUT", 0.35, create=True))
+        self.enterContext(mock.patch.object(self.runner.sys, "platform", "darwin"))
+        return self.enterContext(mock.patch.object(self.runner.subprocess, "run", side_effect=self.delayed_diagnostic))
+
+    def test_diagnostics_share_one_deadline_across_process_listing_and_samples(self):
+        commands = self.diagnostic_budget()
+        started = time.monotonic()
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.runner.collect_diagnostics(self.directory / "hang", 100)
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertTrue(commands.call_args_list)
+        for call in commands.call_args_list:
+            self.assertGreater(call.kwargs["timeout"], 0)
+            self.assertLessEqual(call.kwargs["timeout"], 0.35)
+
+    def test_diagnostic_deadline_still_returns_timeout_and_writes_timing_report(self):
+        self.diagnostic_budget()
+        log = self.directory / "native-ui.log"
+        output = io.StringIO()
+        arguments = [str(SCRIPT), "--log", str(log), "--idle-timeout", "0.1", "--",
+                     sys.executable, "-u", "-c", 'import time; print("Window lookup stalled"); time.sleep(30)']
+        with mock.patch.object(self.runner.sys, "argv", arguments), \
+                mock.patch.object(self.runner.signal, "signal"), redirect_stdout(output):
+            self.assertEqual(self.runner.main(), 124)
+        self.assertIn("Could not finish native UI diagnostics", output.getvalue())
+        report = json.loads((self.directory / "native-ui-timings.json").read_text())
+        self.assertEqual(report["exit_status"], 124)
 
     def test_shell_runner_preserves_group_selection_and_xcode_failure_with_execution_limits(self):
         repository = self.directory / "repository"

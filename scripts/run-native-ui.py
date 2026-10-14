@@ -13,6 +13,9 @@ import sys
 import time
 
 
+DIAGNOSTICS_TIMEOUT = 20
+
+
 def positive_seconds(value):
     seconds = float(value)
     if not math.isfinite(seconds) or seconds <= 0:
@@ -38,18 +41,26 @@ def terminate_group(process):
 
 
 def collect_diagnostics(directory, process_id):
+    deadline = time.monotonic() + DIAGNOSTICS_TIMEOUT
+
+    def collect(command, **keywords):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(command, DIAGNOSTICS_TIMEOUT)
+        return subprocess.run(command, timeout=min(10, remaining), check=False, **keywords)
+
     directory.mkdir(parents=True, exist_ok=True)
     with (directory / "processes.txt").open("w") as output:
-        subprocess.run(["ps", "-axo", "pid,ppid,stat,etime,comm"],
-                       stdout=output, stderr=subprocess.STDOUT, timeout=10, check=False)
+        collect(["ps", "-axo", "pid,ppid,stat,etime,comm"],
+                stdout=output, stderr=subprocess.STDOUT)
     if sys.platform != "darwin":
         return
-    result = subprocess.run(["pgrep", "-x", "TimeTracker|TimeTrackerUITests-Runner"],
-                            capture_output=True, text=True, timeout=10, check=False)
+    result = collect(["pgrep", "-x", "TimeTracker|TimeTrackerUITests-Runner"],
+                     capture_output=True, text=True)
     process_ids = {process_id, *(int(pid) for pid in result.stdout.split())}
     for pid in sorted(process_ids):
-        subprocess.run(["sample", str(pid), "3", "-file", str(directory / f"sample-{pid}.txt")],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False)
+        collect(["sample", str(pid), "3", "-file", str(directory / f"sample-{pid}.txt")],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def run(command, log, *, idle_timeout=180, timeout=1440, output=None,
