@@ -27,6 +27,34 @@ fn local_guarded_tracking_rejects_a_timer_started_by_another_bridge() {
     );
 }
 
+#[test]
+fn local_guarded_switch_keeps_invalid_timestamps_distinct_from_stale_intent() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut bridge = open_fixture(&directory.path().join("guarded-switch.db")).unwrap();
+    let tasks = bridge.application.tasks(TaskOrdering::default());
+    let at = DateTime::from_timestamp(1010, 0).unwrap();
+    let tracker_application::SetActiveTaskOutcome::Started { worklog } = bridge
+        .application
+        .set_active_task(tasks[0].task.id(), at)
+        .unwrap()
+    else {
+        panic!("tracking must start");
+    };
+    let confirmed = bridge.application.current_tracking().clone();
+    let error = bridge
+        .application
+        .set_active_task_if_active(
+            tasks[1].task.id(),
+            Some(worklog.id()),
+            at - chrono::TimeDelta::seconds(1),
+        )
+        .unwrap_err();
+    assert_eq!(error.kind, "general");
+    assert!(!error.requires_refresh);
+    assert!(!error.uncertain);
+    assert_eq!(bridge.application.current_tracking(), &confirmed);
+}
+
 /// Decodes the bridge response and releases its C string allocation.
 fn response(pointer: *mut c_char) -> Value {
     assert!(!pointer.is_null());
