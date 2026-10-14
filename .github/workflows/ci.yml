@@ -5,6 +5,23 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      native_benchmark:
+        description: Run only sequential pagination measurements on one desktop
+        type: boolean
+        default: false
+      baseline_ref:
+        description: Immutable instrumentation checkpoint to compare against this ref
+        type: string
+      baseline_last:
+        description: Run the baseline after the candidate
+        type: boolean
+        default: false
+      history_binding:
+        description: Candidate query binding mode to compare
+        type: choice
+        options: [index, accessibility]
+        default: index
 
 permissions:
   contents: read
@@ -22,6 +39,7 @@ env:
 
 jobs:
   lint:
+    if: ${{ !inputs.native_benchmark }}
     name: Formatting, lint, and Python tests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -52,6 +70,7 @@ jobs:
           "$RUNNER_TEMP/actionlint" -color
 
   rust-tests:
+    if: ${{ !inputs.native_benchmark }}
     name: Rust tests on ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -74,6 +93,7 @@ jobs:
         run: cargo test --workspace --all-features --locked
 
   rust-quality:
+    if: ${{ !inputs.native_benchmark }}
     name: Rust coverage and CRAP
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -116,6 +136,7 @@ jobs:
           retention-days: 7
 
   swift-quality:
+    if: ${{ !inputs.native_benchmark }}
     name: Swift style, tests, and coverage on Linux
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -235,6 +256,7 @@ jobs:
           retention-days: 7
 
   native-macos:
+    if: ${{ !inputs.native_benchmark }}
     name: Native macOS UI tests, ${{ matrix.group }}
     strategy:
       fail-fast: false
@@ -316,10 +338,129 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
+  native-benchmark:
+    name: Sequential native pagination benchmark
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.native_benchmark }}
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      BASELINE_REF: ${{ inputs.baseline_ref }}
+      BASELINE_LAST: ${{ inputs.baseline_last }}
+      HISTORY_BINDING: ${{ inputs.history_binding }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Require an immutable baseline revision
+        run: |
+          if [[ ! "$BASELINE_REF" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo 'baseline_ref must be the full instrumentation checkpoint SHA.' >&2
+            exit 2
+          fi
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.baseline_ref }}
+          path: .build/native-ui-baseline
+          persist-credentials: false
+      - name: Verify Xcode and the macOS SDK
+        run: |
+          xcodebuild -version
+          swift --version
+          sdk_major=$(xcrun --sdk macosx --show-sdk-version | cut -d. -f1)
+          if (( sdk_major < 27 )); then
+            echo 'The native app requires the macOS 27 SDK or newer.' >&2
+            exit 1
+          fi
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: native
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Compare baseline and candidate sequentially
+        timeout-minutes: 25
+        run: |
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          from pathlib import Path
+          import platform
+          import subprocess
+          import time
+
+          workspace = Path.cwd()
+          output = workspace / '.build/native-ui-benchmark'
+          output.mkdir(parents=True, exist_ok=True)
+          metadata = {
+              'runner_class': 'xcode-27',
+              'runner_name': os.environ['RUNNER_NAME'],
+              'runner_arch': os.environ['RUNNER_ARCH'],
+              'macos': platform.mac_ver()[0],
+              'xcode': subprocess.check_output(['xcodebuild', '-version'], text=True).strip(),
+              'swift': subprocess.check_output(['swift', '--version'], text=True).strip(),
+              'run_id': os.environ['GITHUB_RUN_ID'],
+              'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'samples': [],
+          }
+          baseline = ('baseline', workspace / '.build/native-ui-baseline', 'index')
+          binding = os.environ['HISTORY_BINDING']
+          candidate = (binding, workspace, binding)
+          samples = [candidate, baseline] if os.environ['BASELINE_LAST'] == 'true' else [baseline, candidate]
+          statuses = []
+          for label, checkout, binding in samples:
+              revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=checkout, text=True).strip()
+              sample = {'label': label, 'revision': revision, 'binding': binding,
+                        'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+              metadata['samples'].append(sample)
+              (output / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
+              environment = {**os.environ, 'CARGO_TARGET_DIR': str(workspace / 'target'),
+                             'TT_UI_TEST_OUTPUT_DIR': str(output / label), 'TT_UI_HISTORY_BINDING': binding}
+              started = time.monotonic()
+              result = subprocess.run(['bash', 'apps/swiftui/check-native-ui.sh', '--pagination'],
+                                      cwd=checkout, env=environment, check=False)
+              sample.update(exit_status=result.returncode, wall_seconds=time.monotonic() - started)
+              errors = []
+              timing_path = output / label / 'native-ui-timings.json'
+              if not timing_path.is_file():
+                  errors.append('No timing report was produced.')
+              else:
+                  report = json.loads(timing_path.read_text())
+                  tests = report.get('tests', [])
+                  method = 'testHistoryPaginationLoadsMoreThanFiftyWithoutMissingOrDuplicateIDs'
+                  expected = {f'TimeTrackerUITests.{suite} {method}' for suite in
+                              ['WorklogHistoryUITests', 'ServerWorklogHistoryUITests']}
+                  if len(tests) != 2 or {test['name'] for test in tests} != expected:
+                      errors.append('Both pagination cases must execute exactly once.')
+                  if report.get('unfinished_tests') or any(test['result'] != 'passed' for test in tests):
+                      errors.append('A pagination case failed or did not finish.')
+                  required = {'fixture-setup', 'launch-readiness', 'traversal', 'assertions', 'teardown'}
+                  for test in tests:
+                      phases = {event['phase'] for event in report.get('phase_events', [])
+                                if event['test'] == test['name']}
+                      if required - phases:
+                          errors.append(f"Missing phases for {test['name']}: {sorted(required - phases)}")
+                  if report.get('malformed_phase_events'):
+                      errors.append('Malformed phase events were reported.')
+              sample['measurement_errors'] = errors
+              for error in errors:
+                  print(f'{label}: {error}', flush=True)
+              statuses.append(result.returncode or bool(errors))
+              (output / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
+          raise SystemExit(1 if any(statuses) else 0)
+          PY
+      - name: Upload every benchmark sample and failure artifact
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-pagination-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .build/native-ui-benchmark
+          include-hidden-files: true
+          retention-days: 7
+
   ci-passed:
     name: CI passed
     needs: [lint, rust-tests, rust-quality, swift-quality, swift-mutations, native-macos]
-    if: always()
+    if: ${{ always() && !inputs.native_benchmark }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
