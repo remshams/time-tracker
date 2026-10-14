@@ -19,6 +19,7 @@ use crate::{RemoteError, transport::Transport};
 use chrono::TimeDelta;
 use chrono::{DateTime, Utc};
 use reqwest::{Method, StatusCode};
+use tracker_application::timestamps::canonical_timestamp as canonical;
 use tracker_application::{
     ApplicationError, ApplicationFailureCategory, ApplicationFailureSource, ClearActiveTaskOutcome,
     GlobalWorklogCursor, GlobalWorklogPage, MoveCandidate, SetActiveTaskOutcome, TaskListItem,
@@ -41,6 +42,40 @@ pub enum RemoteFailureKind {
     Unavailable,
     Conflict,
     Protocol,
+}
+
+/// An inactive-task preview with its confirmation guard retained by the adapter.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct InactiveTaskPreview {
+    dto: InactiveTaskPreviewDto,
+}
+
+impl InactiveTaskPreview {
+    /// Returns the preview cutoff retained for later confirmation.
+    pub fn as_of(&self) -> DateTime<Utc> {
+        self.dto.as_of
+    }
+
+    /// Returns the inactivity threshold retained by the preview.
+    pub fn inactive_days(&self) -> u32 {
+        self.dto.inactive_days
+    }
+
+    /// Returns the candidate count reported with the captured preview.
+    pub fn count(&self) -> usize {
+        self.dto.count
+    }
+
+    /// Returns captured candidate identities for serialized-token validation.
+    pub fn candidate_ids(&self) -> &[String] {
+        &self.dto.candidate_task_ids
+    }
+
+    /// Reports whether a restored token contains a server revision for confirmation.
+    pub fn has_confirmation_guard(&self) -> bool {
+        !self.dto.revision.is_empty()
+    }
 }
 
 /// A confirmed resource value and the opaque revision observed with it.
@@ -102,7 +137,7 @@ struct HistoryRead {
 }
 
 use decoding::{
-    app_decode_worklog, clear_tracking_result, decode_history, decode_task_item,
+    app_decode_worklog, clear_tracking_result, decode_history, decode_task, decode_task_item,
     decode_task_list_state, decode_tasks, decode_tracking, decode_worklog, set_tracking_result,
     task_result, validate_inactive_preview, validate_report, worklog_result,
 };
@@ -136,12 +171,9 @@ fn original_worklog_matches(
         && worklog.end() == expected.end().map(canonical)
 }
 
+/// Bounds repeated report attempts for five seconds after a server availability failure.
 fn report_cooldown_active(last: Option<Instant>, now: Instant) -> bool {
     last.is_some_and(|at| now.saturating_duration_since(at) < Duration::from_secs(5))
-}
-
-fn canonical(at: DateTime<Utc>) -> DateTime<Utc> {
-    DateTime::from_timestamp_micros(at.timestamp_micros()).expect("UTC timestamp fits microseconds")
 }
 
 fn active_id(state: &TrackingState) -> Option<WorklogId> {

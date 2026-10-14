@@ -1,10 +1,10 @@
 use super::{
     ApplicationError, ApplicationFailureCategory, ArchiveInactiveTasksRequest,
     ClearActiveTaskOutcome, CreateTaskRequest, DailyOverviewDto, DateTime, DeleteWorklogRequest,
-    GlobalWorklogCursor, GlobalWorklogPage, InactiveTaskPreviewDto, InactivityPeriod, Instant,
-    Method, MoveCandidate, MutationDto, MutationScope, Recovery, RemoteError, RemoteFailureKind,
+    GlobalWorklogCursor, GlobalWorklogPage, InactiveTaskPreview, InactivityPeriod, Instant, Method,
+    MoveCandidate, MutationDto, MutationScope, Recovery, RemoteError, RemoteFailureKind,
     RemoteSession, ReportDto, ReportsClient, ResourceObservation, ResourceSelection,
-    SetActiveTaskOutcome, SetTrackingRequest, StatusCode, Task, TaskChangeRequest, TaskDto, TaskId,
+    SetActiveTaskOutcome, SetTrackingRequest, StatusCode, Task, TaskChangeRequest, TaskId,
     TaskListItem, TaskListStateDto, TaskName, TaskOrdering, TaskResourceDto, TasksClient,
     TrackingClient, TrackingState, Utc, Worklog, WorklogChangeRequest, WorklogCursor, WorklogId,
     WorklogPage, WorklogPageDto, WorklogResourceDto, WorklogTimes, WorklogsClient, WriteGuard,
@@ -267,10 +267,11 @@ impl RemoteTrackerCoordinator {
         self.tasks.read_task(&mut self.session, id).await
     }
 
+    /// Loads domain tasks only while every candidate matches the preview revision and remains unarchived.
     pub async fn resolve_preview_tasks(
         &mut self,
-        preview: &InactiveTaskPreviewDto,
-    ) -> Result<Vec<TaskDto>, ApplicationError> {
+        preview: &InactiveTaskPreview,
+    ) -> Result<Vec<Task>, ApplicationError> {
         self.tasks
             .resolve_preview_tasks(&mut self.session, preview)
             .await
@@ -284,20 +285,22 @@ impl RemoteTrackerCoordinator {
         self.tasks.cached_task_revision(id)
     }
 
+    /// Captures candidates in the default inactivity window with their confirmation guard.
     pub async fn preview_inactive_tasks(
         &mut self,
         as_of: DateTime<Utc>,
-    ) -> Result<InactiveTaskPreviewDto, ApplicationError> {
+    ) -> Result<InactiveTaskPreview, ApplicationError> {
         self.tasks
             .preview_inactive_tasks(&mut self.session, as_of)
             .await
     }
 
+    /// Captures candidate identities for the chosen cutoff and threshold with the server revision.
     pub async fn preview_inactive_tasks_with_period(
         &mut self,
         as_of: DateTime<Utc>,
         period: InactivityPeriod,
-    ) -> Result<InactiveTaskPreviewDto, ApplicationError> {
+    ) -> Result<InactiveTaskPreview, ApplicationError> {
         self.tasks
             .preview_inactive_tasks_with_period(&mut self.session, as_of, period)
             .await
@@ -364,6 +367,7 @@ impl RemoteTrackerCoordinator {
         self.worklogs.cached_worklog(id)
     }
 
+    /// Publishes validated totals only after the echoed microsecond context matches the request.
     pub async fn task_totals(
         &mut self,
         start: DateTime<Utc>,
@@ -531,11 +535,13 @@ impl RemoteTrackerCoordinator {
         .await
     }
 
+    /// Confirms the captured preview under its original revision guard.
     pub async fn archive_inactive_tasks(
         &mut self,
-        preview: &InactiveTaskPreviewDto,
+        preview: &InactiveTaskPreview,
     ) -> Result<usize, ApplicationError> {
         self.session.begin_command();
+        let preview = &preview.dto;
         validate_inactive_preview(preview)?;
         let body = ArchiveInactiveTasksRequest {
             as_of: preview.as_of,
@@ -556,9 +562,10 @@ impl RemoteTrackerCoordinator {
         .await
     }
 
+    /// Confirms the period already retained by the preview and returns the archived count.
     pub async fn archive_inactive_tasks_with_period(
         &mut self,
-        preview: &InactiveTaskPreviewDto,
+        preview: &InactiveTaskPreview,
     ) -> Result<usize, ApplicationError> {
         self.session.begin_command();
         self.archive_inactive_tasks(preview).await

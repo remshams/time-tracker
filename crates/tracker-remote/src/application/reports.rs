@@ -10,6 +10,7 @@ pub(super) struct ReportsClient {
 }
 
 impl ReportsClient {
+    /// Fetches validated canonical report data without adopting a new report observation.
     pub(super) async fn fetch_task_totals(
         &mut self,
         session: &mut RemoteSession,
@@ -17,6 +18,7 @@ impl ReportsClient {
         end: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<ReportDto, RemoteError> {
+        let (start, end, now) = (canonical(start), canonical(end), canonical(now));
         if end <= start {
             return Err(session.record_error(RemoteError::Protocol("invalid report range".into())));
         }
@@ -26,7 +28,6 @@ impl ReportsClient {
             ));
         }
         session.ensure_version().await?;
-        let (start, end, now) = (canonical(start), canonical(end), canonical(now));
         let mut url = session.url("v1/reports/task-totals");
         url.query_pairs_mut()
             .append_pair("start", &start.to_rfc3339())
@@ -38,7 +39,7 @@ impl ReportsClient {
             .map_err(|error| session.record_error(error))?;
         validate_report(&dto)
             .map_err(|error| session.record_error(RemoteError::Protocol(error.to_string())))?;
-        if dto.start != canonical(start) || dto.end != canonical(end) || dto.now != canonical(now) {
+        if dto.start != start || dto.end != end || dto.now != now {
             return Err(session.record_error(RemoteError::Protocol(
                 "report context does not match request".into(),
             )));
@@ -46,6 +47,7 @@ impl ReportsClient {
         Ok(dto)
     }
 
+    /// Publishes validated totals only after the echoed microsecond context matches the request.
     pub(super) async fn task_totals(
         &mut self,
         session: &mut RemoteSession,
@@ -53,6 +55,7 @@ impl ReportsClient {
         end: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<ReportDto, ApplicationError> {
+        let (start, end, now) = (canonical(start), canonical(end), canonical(now));
         if end <= start {
             return Err(ApplicationError::InvalidReportRange);
         }
