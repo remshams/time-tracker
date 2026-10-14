@@ -225,6 +225,13 @@ versions follow `AGENTS.md`. The macOS job uses
 GitHub's `xcode-27` public preview image, which includes macOS 27, Xcode 27.0,
 and the macOS 27 SDK. Rust platform tests use the stable `macos-26` image.
 Native UI E2E and layout checks require a desktop session. The [native coverage map](apps/swiftui/e2e-coverage.md) records automated cases and dedicated-Mac acceptance checks.
+
+Native jobs have a 30-minute limit. Their UI step has a 25-minute limit, with
+per-test XCTest limits and a process watchdog that fails on prolonged silence.
+Native diagnostics include per-test timings and stack samples from stalled
+processes. These limits keep an unresponsive accessibility query from consuming
+an hour of CI.
+
 The universal build validates Apple Silicon and Intel slices without publishing
 or requiring an Apple Developer account.
 
