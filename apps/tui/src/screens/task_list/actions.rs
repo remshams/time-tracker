@@ -694,6 +694,7 @@ mod navigation_tests {
         (state, effect, selected)
     }
 
+    /// Checks that a canceled dialog stays closed when its preview request later completes.
     #[test]
     fn a_late_inactive_preview_does_not_reopen_after_cancel() {
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
@@ -703,11 +704,11 @@ mod navigation_tests {
         else {
             panic!("preview request should show its loading mode");
         };
-        let preview = InactiveTaskPreview::Local {
-            as_of: *as_of,
-            candidate_ids: vec![task(1, "old task").id()],
-            sample_names: vec!["old task".to_owned()],
-        };
+        let preview = InactiveTaskPreview::local(
+            *as_of,
+            vec![task(1, "old task").id()],
+            vec!["old task".to_owned()],
+        );
 
         state.handle_task_list_command(TaskListCommand::Cancel);
         let request = effect.request.clone();
@@ -724,17 +725,18 @@ mod navigation_tests {
         assert_eq!(state.shell().task_list().mode(), &TaskListMode::Normal);
     }
 
+    /// Checks that invalidated candidates close confirmation and explain how to recover.
     #[test]
     fn changed_candidates_close_the_in_flight_dialog_and_require_a_new_preview() {
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state
             .shell_mut()
             .task_list_mut()
-            .confirm_inactive_archive(InactiveTaskPreview::Local {
-                as_of: chrono::Utc::now(),
-                candidate_ids: vec![task(1, "old task").id()],
-                sample_names: vec!["old task".to_owned()],
-            });
+            .confirm_inactive_archive(InactiveTaskPreview::local(
+                chrono::Utc::now(),
+                vec![task(1, "old task").id()],
+                vec!["old task".to_owned()],
+            ));
         state.handle_task_list_command(TaskListCommand::Confirm);
         let effect = state.take_effect().expect("bulk archive request");
         let request = effect.request.clone();
@@ -757,17 +759,18 @@ mod navigation_tests {
         );
     }
 
+    /// Checks that an older archive completion cannot dismiss a newer task-list interaction.
     #[test]
     fn a_bulk_archive_completion_keeps_a_newer_task_list_mode_open() {
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state
             .shell_mut()
             .task_list_mut()
-            .confirm_inactive_archive(InactiveTaskPreview::Local {
-                as_of: chrono::Utc::now(),
-                candidate_ids: vec![task(1, "old task").id()],
-                sample_names: vec!["old task".to_owned()],
-            });
+            .confirm_inactive_archive(InactiveTaskPreview::local(
+                chrono::Utc::now(),
+                vec![task(1, "old task").id()],
+                vec!["old task".to_owned()],
+            ));
         state.handle_task_list_command(TaskListCommand::Confirm);
         let effect = state.take_effect().expect("bulk archive request");
         let request = effect.request.clone();

@@ -841,16 +841,13 @@ mod tests {
         assert!(footer.contains("D archive inactive"), "{footer:?}");
     }
 
+    /// Checks that footer hints follow each interaction stage, including pending archive work.
     #[test]
     fn wide_footers_describe_search_editing_and_each_bulk_archive_stage() {
         use crate::screens::task_list::InactiveTaskPreview;
 
         let as_of = chrono::DateTime::<chrono::Utc>::from_timestamp(0, 0).unwrap();
-        let preview = InactiveTaskPreview::Local {
-            as_of,
-            candidate_ids: Vec::new(),
-            sample_names: Vec::new(),
-        };
+        let preview = InactiveTaskPreview::local(as_of, Vec::new(), Vec::new());
         for (mode, expected) in [
             (
                 TaskListMode::Search,

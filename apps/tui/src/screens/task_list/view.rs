@@ -662,39 +662,23 @@ mod tests {
         assert!(row.contains("Archive \"alpha\"?"), "got {row:?}");
     }
 
+    /// Checks that archive confirmation renders a captured sample name from the opaque preview.
     #[test]
-    fn inactive_archive_preview_samples_render_for_local_and_remote_backends() {
+    fn inactive_archive_preview_samples_render_without_backend_details() {
         let as_of = DateTime::<Utc>::from_timestamp(2_000_000_000, 0).unwrap();
-        let previews = [
-            InactiveTaskPreview::Local {
-                as_of,
-                candidate_ids: vec![TaskId::generate()],
-                sample_names: vec!["local legacy task".to_owned()],
-            },
-            InactiveTaskPreview::Remote {
-                preview: tracker_remote::InactiveTaskPreviewDto {
-                    as_of,
-                    inactive_days: 14,
-                    count: 1,
-                    candidate_task_ids: vec![TaskId::generate().to_string()],
-                    revision: "revision".to_owned(),
-                },
-                sample_names: vec!["remote legacy task".to_owned()],
-            },
-        ];
+        let preview = InactiveTaskPreview::local(
+            as_of,
+            vec![TaskId::generate()],
+            vec!["Legacy task".to_owned()],
+        );
+        let mut app = app_with(&["alpha"]);
+        app.shell_mut()
+            .task_list_mut()
+            .confirm_inactive_archive(preview);
 
-        for (preview, sample) in previews
-            .into_iter()
-            .zip(["Sample: local legacy task", "Sample: remote legacy task"])
-        {
-            let mut app = app_with(&["alpha"]);
-            app.shell_mut()
-                .task_list_mut()
-                .confirm_inactive_archive(preview);
-
-            let terminal = draw(&app);
-            let screen = rows(&terminal).join("\n");
-            assert!(screen.contains(sample), "missing {sample:?} in {screen:?}");
-        }
+        let terminal = draw(&app);
+        let screen = rows(&terminal).join("\n");
+        let sample = "Sample: Legacy task";
+        assert!(screen.contains(sample), "missing {sample:?} in {screen:?}");
     }
 }

@@ -446,6 +446,46 @@ impl TrackerApplicationService for TestService {
         Ok(archived)
     }
 
+    /// Applies queued external state before checking the name captured by a rename request.
+    fn rename_task_with_expected_name(
+        &mut self,
+        id: TaskId,
+        expected_name: &TaskName,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        self.apply_external_state();
+        if self
+            .tasks
+            .iter()
+            .find(|task| task.id() == id)
+            .is_none_or(|task| task.name() != expected_name)
+        {
+            return Err(RepositoryError::TaskChanged { id }.into());
+        }
+        self.rename_task(id, name, occurred_at)
+    }
+
+    /// Applies queued external state before checking the name captured by archive confirmation.
+    fn archive_task_with_expected_name(
+        &mut self,
+        id: TaskId,
+        expected_name: &TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        self.apply_external_state();
+        if self
+            .tasks
+            .iter()
+            .find(|task| task.id() == id)
+            .is_none_or(|task| task.name() != expected_name)
+        {
+            return Err(RepositoryError::TaskChanged { id }.into());
+        }
+        self.archive_task(id, occurred_at)
+    }
+
+    /// Simulates restore failures and a timer started by a competing client.
     fn unarchive_task(
         &mut self,
         id: TaskId,
@@ -562,6 +602,25 @@ impl TrackerApplicationService for TestService {
         }
     }
 
+    /// Applies queued external tracking before checking the request's expected worklog.
+    fn set_active_task_with_expected_active(
+        &mut self,
+        task_id: TaskId,
+        expected_active: Option<WorklogId>,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+        self.apply_external_state();
+        let active = match &self.tracking {
+            TrackingState::Idle => None,
+            TrackingState::Running { worklog } => Some(worklog.id()),
+        };
+        if active != expected_active {
+            return Err(ApplicationError::TrackingStateChanged);
+        }
+        self.set_active_task(task_id, occurred_at)
+    }
+
+    /// Records the reviewed stop request and returns the fixture's idle outcome.
     fn clear_active_task(
         &mut self,
         expected_active: WorklogId,
