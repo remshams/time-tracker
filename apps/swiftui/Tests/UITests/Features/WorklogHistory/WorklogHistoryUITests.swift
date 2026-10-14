@@ -32,24 +32,33 @@ class WorklogHistoryUITests: TrackerUITestCase {
         }
         launch()
         select(task)
-        let pagination = app.buttons["worklog-history.load-older"]
-        scrollHistoryUntilVisible(pagination)
-        pagination.click()
-        waitUntil("Older page finishes") { !pagination.exists }
         let expected = logs.reversed().map(\.id)
-        scrollHistoryUntilVisible(element("worklog-history.row.\(expected[0])"), upward: true)
-        let scroll = element("worklog-history.scroll")
-        var observed: [String] = []
-        for _ in 0..<50 {
-            let visible = historyRows.allElementsBoundByIndex.filter(\.isHittable).sorted { $0.frame.minY < $1.frame.minY }
-            let identifiers = visible.map { String($0.identifier.dropFirst("worklog-history.row.".count)) }
-            XCTAssertEqual(identifiers.count, Set(identifiers).count, "Duplicate history rows in the visible page.")
-            for identifier in identifiers where !observed.contains(identifier) { observed.append(identifier) }
-            if element("worklog-history.row.\(expected.last!)").isHittable { break }
-            scroll.scroll(byDeltaX: 0, deltaY: -350)
+        let observed = measureUIPhase("traversal") {
+            let pagination = app.buttons["worklog-history.load-older"]
+            scrollHistoryUntilVisible(pagination)
+            pagination.click()
+            waitUntil("Older page finishes") { !pagination.exists }
+            scrollHistoryUntilVisible(element("worklog-history.row.\(expected[0])"), upward: true)
+            let scroll = element("worklog-history.scroll")
+            var observed: [String] = []
+            for _ in 0..<50 {
+                let visible = historyRows.allElementsBoundByIndex.filter(\.isHittable).sorted { $0.frame.minY < $1.frame.minY }
+                let identifiers = visible.map { String($0.identifier.dropFirst("worklog-history.row.".count)) }
+                XCTAssertEqual(identifiers.count, Set(identifiers).count, "Duplicate history rows in the visible page.")
+                for identifier in identifiers where !observed.contains(identifier) { observed.append(identifier) }
+                if element("worklog-history.row.\(expected.last!)").isHittable { break }
+                scroll.scroll(byDeltaX: 0, deltaY: -350)
+            }
+            return observed
         }
-        XCTAssertEqual(observed, expected, "History must contain every expected ID exactly once, newest first.")
-        XCTAssertEqual(Set(try fixture.worklogs(task).map(\.id)), Set(logs.map(\.id)))
+        try measureUIPhase("assertions") {
+            XCTAssertEqual(observed, expected, "History must contain every expected ID exactly once, newest first.")
+            let persisted = try fixture.worklogs(task)
+            XCTAssertEqual(Set(persisted.map(\.id)), Set(logs.map(\.id)))
+        }
+        measureUIPhase("query-diagnostics") {
+            print("TT_UI_HISTORY_TYPES row=\(historyRows.firstMatch.elementType.rawValue) pane=\(element("worklog-history.scroll").elementType.rawValue)")
+        }
     }
 
     func testEmptyHistoryAndRunningWorklogHaveExplicitStates() throws {
