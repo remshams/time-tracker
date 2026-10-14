@@ -8,14 +8,19 @@ class TrackerUITestCase: XCTestCase {
     var fixtureSource: TrackerFixture.Source { .local }
     let timeout: TimeInterval = 15
     var additionalLaunchArguments: [String] = []
+    private var fixturePreparationStarted: TimeInterval?
 
     override func setUpWithError() throws {
+        fixturePreparationStarted = ProcessInfo.processInfo.systemUptime
         continueAfterFailure = false
         fixture = try TrackerFixture(source: fixtureSource)
         app = XCUIApplication()
     }
 
     override func tearDownWithError() throws {
+        finishFixturePreparation()
+        let started = ProcessInfo.processInfo.systemUptime
+        defer { recordUIPhase("teardown", since: started) }
         if (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0) > 0 {
             if let app, app.state != .notRunning {
                 for window in app.windows.allElementsBoundByIndex where window.exists {
@@ -43,6 +48,9 @@ class TrackerUITestCase: XCTestCase {
     }
 
     func launch() {
+        finishFixturePreparation()
+        let started = ProcessInfo.processInfo.systemUptime
+        defer { recordUIPhase("launch-readiness", since: started) }
         app.launchArguments = ["-tt-ui-testing", "-ApplePersistenceIgnoreState", "YES",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US"] + additionalLaunchArguments
         app.launchEnvironment["TT_UI_TEST_DATABASE_PATH"] = fixture.database.path
@@ -81,6 +89,8 @@ class TrackerUITestCase: XCTestCase {
     }
     func taskRow(_ task: FixtureTask) -> XCUIElement { element("task-sidebar.task.\(task.id)") }
     func select(_ task: FixtureTask) {
+        let started = ProcessInfo.processInfo.systemUptime
+        defer { recordUIPhase("selection", since: started) }
         let row = taskRow(task)
         XCTAssertTrue(row.waitForExistence(timeout: timeout))
         row.click()
@@ -109,6 +119,23 @@ class TrackerUITestCase: XCTestCase {
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: timeout), .completed,
                        description, file: file, line: line)
+    }
+    func measureUIPhase<Result>(_ phase: String, operation: () throws -> Result) rethrows -> Result {
+        let started = ProcessInfo.processInfo.systemUptime
+        defer { recordUIPhase(phase, since: started) }
+        return try operation()
+    }
+    private func finishFixturePreparation() {
+        guard let started = fixturePreparationStarted else { return }
+        fixturePreparationStarted = nil
+        recordUIPhase("fixture-setup", since: started)
+    }
+    private func recordUIPhase(_ phase: String, since started: TimeInterval) {
+        let testName = name.hasPrefix("-[") && name.hasSuffix("]") ? String(name.dropFirst(2).dropLast()) : name
+        let event: [String: Any] = ["test": testName, "phase": phase,
+                                   "seconds": ProcessInfo.processInfo.systemUptime - started]
+        guard let data = try? JSONSerialization.data(withJSONObject: event, options: .sortedKeys) else { return }
+        print("TT_UI_PHASE \(String(decoding: data, as: UTF8.self))")
     }
     private func attach(_ text: String, named name: String) {
         let attachment = XCTAttachment(string: text)
