@@ -1,10 +1,10 @@
 use super::{
     ApplicationError, ArchiveInactiveTasksRequest, CreateTaskRequest, DateTime, HashMap,
-    InactiveTaskPreviewDto, InactivityPeriod, Method, MoveCandidate, MutationContext,
-    MutationResultDto, RemoteError, RemoteFailureKind, RemoteSession, ResourceObservation, Task,
-    TaskChangeRequest, TaskDto, TaskId, TaskListItem, TaskOrdering, TaskResourceDto, TasksDto, Utc,
-    canonical, decode_task_item, decode_tasks, map_application_error, protocol_failure,
-    task_result, validate_inactive_preview,
+    InactiveTaskPreview, InactiveTaskPreviewDto, InactivityPeriod, Method, MoveCandidate,
+    MutationContext, MutationResultDto, RemoteError, RemoteFailureKind, RemoteSession,
+    ResourceObservation, Task, TaskChangeRequest, TaskId, TaskListItem, TaskOrdering,
+    TaskResourceDto, TasksDto, Utc, canonical, decode_task, decode_task_item, decode_tasks,
+    map_application_error, protocol_failure, task_result, validate_inactive_preview,
 };
 
 /// Task protocol operations and confirmed task observations.
@@ -109,11 +109,13 @@ impl TasksClient {
         Ok(dto)
     }
 
+    /// Loads domain tasks only while every candidate matches the preview revision and remains unarchived.
     pub(super) async fn resolve_preview_tasks(
         &mut self,
         session: &mut RemoteSession,
-        preview: &InactiveTaskPreviewDto,
-    ) -> Result<Vec<TaskDto>, ApplicationError> {
+        preview: &InactiveTaskPreview,
+    ) -> Result<Vec<Task>, ApplicationError> {
+        let preview = &preview.dto;
         validate_inactive_preview(preview)?;
         let mut tasks = Vec::with_capacity(preview.count);
         for raw_id in &preview.candidate_task_ids {
@@ -127,7 +129,10 @@ impl TasksClient {
             if dto.revision != preview.revision || dto.task.archived {
                 return Err(session.intent_changed());
             }
-            tasks.push(dto.task);
+            tasks.push(
+                decode_task(dto.task)
+                    .map_err(|error| map_application_error(&error, None, Some(id)))?,
+            );
         }
         Ok(tasks)
     }
@@ -142,21 +147,23 @@ impl TasksClient {
             .map(|(_, revision)| revision.as_str())
     }
 
+    /// Captures candidates in the default inactivity window with their confirmation guard.
     pub(super) async fn preview_inactive_tasks(
         &mut self,
         session: &mut RemoteSession,
         as_of: DateTime<Utc>,
-    ) -> Result<InactiveTaskPreviewDto, ApplicationError> {
+    ) -> Result<InactiveTaskPreview, ApplicationError> {
         self.preview_inactive_tasks_with_period(session, as_of, InactivityPeriod::default())
             .await
     }
 
+    /// Captures candidate identities for the chosen cutoff and threshold with the server revision.
     pub(super) async fn preview_inactive_tasks_with_period(
         &mut self,
         session: &mut RemoteSession,
         as_of: DateTime<Utc>,
         period: InactivityPeriod,
-    ) -> Result<InactiveTaskPreviewDto, ApplicationError> {
+    ) -> Result<InactiveTaskPreview, ApplicationError> {
         session
             .ensure_version()
             .await
@@ -178,7 +185,7 @@ impl TasksClient {
             return Err(protocol_failure("invalid inactive task preview"));
         }
         session.confirmed();
-        Ok(preview)
+        Ok(InactiveTaskPreview { dto: preview })
     }
 
     pub(super) fn task_observation(&self) -> Option<&ResourceObservation<Vec<TaskListItem>>> {
@@ -268,6 +275,7 @@ impl TasksClient {
             .await
     }
 
+    /// Confirms the captured preview under its original revision guard.
     pub(super) async fn archive_inactive_tasks(
         &mut self,
         session: &mut RemoteSession,

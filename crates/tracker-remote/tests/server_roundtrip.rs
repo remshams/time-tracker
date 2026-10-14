@@ -13,6 +13,41 @@ use tracker_remote::RemoteApplication;
 use tracker_remote::RemoteFailureKind;
 use tracker_remote::ResourceSelection;
 
+/// Checks that a collapsed report interval fails before attempting a server connection.
+#[tokio::test]
+async fn report_range_validation_uses_microseconds_before_connecting() {
+    let mut client = RemoteApplication::disconnected("http://127.0.0.1:1/").unwrap();
+    let start = DateTime::from_timestamp(100, 100).unwrap();
+    let end = DateTime::from_timestamp(100, 900).unwrap();
+
+    assert_eq!(
+        client.task_totals(start, end, end).await,
+        Err(tracker_application::ApplicationError::InvalidReportRange)
+    );
+    assert!(client.cached_task_totals().is_none());
+}
+
+/// Checks that request bounds, returned cutoffs, and the retained report use identical precision.
+#[tokio::test]
+async fn report_request_and_echo_use_the_same_microsecond_context() {
+    let server = TestServer::start();
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
+    let start = DateTime::from_timestamp(100, 900).unwrap();
+    let end = DateTime::from_timestamp(100, 2_100).unwrap();
+    let now = DateTime::from_timestamp(100, 1_900).unwrap();
+
+    let report = client.task_totals(start, end, now).await.unwrap();
+
+    assert_eq!(report.start, DateTime::from_timestamp(100, 0).unwrap());
+    assert_eq!(report.end, DateTime::from_timestamp(100, 2_000).unwrap());
+    assert_eq!(report.now, DateTime::from_timestamp(100, 1_000).unwrap());
+    assert_eq!(client.cached_task_totals(), Some(&report));
+    assert!(client.task_revision().is_empty());
+    assert!(client.tracking_revision().is_empty());
+}
+
 struct TestServer {
     _directory: TempDir,
     address: SocketAddr,
@@ -159,6 +194,54 @@ fn name(raw: &str) -> TaskName {
     TaskName::new(raw).unwrap()
 }
 
+/// Exercises persisted preview confirmation and verifies the server archives exactly the eligible tasks.
+#[tokio::test]
+async fn serialized_preview_confirms_the_chosen_period_and_returns_the_persisted_count() {
+    let server = TestServer::start();
+    let mut client = connected(&server.endpoint()).await.unwrap();
+    let as_of = tracker_application::timestamps::canonical_timestamp(Utc::now());
+    let first = client
+        .create_task(name("Old planning task"), as_of - Duration::days(10))
+        .await
+        .unwrap();
+    let second = client
+        .create_task(name("Old review task"), as_of - Duration::days(8))
+        .await
+        .unwrap();
+    let recent = client
+        .create_task(name("Recent task"), as_of - Duration::days(2))
+        .await
+        .unwrap();
+    let preview = client
+        .preview_inactive_tasks_with_period(
+            as_of,
+            tracker_domain::InactivityPeriod::new(7).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(preview.as_of(), as_of);
+    assert_eq!(preview.inactive_days(), 7);
+    assert_eq!(preview.count(), 2);
+    let mut expected = vec![first.id().to_string(), second.id().to_string()];
+    expected.sort();
+    let mut candidate_ids = preview.candidate_ids().to_vec();
+    candidate_ids.sort();
+    assert_eq!(candidate_ids, expected);
+    assert!(preview.has_confirmation_guard());
+    let serialized = serde_json::to_string(&preview).unwrap();
+    let restored = serde_json::from_str(&serialized).unwrap();
+    let count = client
+        .archive_inactive_tasks_with_period(&restored)
+        .await
+        .unwrap();
+    assert_eq!(count, 2);
+    client.refresh_task_list().await.unwrap();
+    assert!(client.task(first.id()).unwrap().is_archived());
+    assert!(client.task(second.id()).unwrap().is_archived());
+    assert!(!client.task(recent.id()).unwrap().is_archived());
+}
+
+/// Checks that a later catalog refresh cannot replace the guard captured for archive confirmation.
 #[tokio::test]
 async fn remote_inactive_archive_uses_the_preview_revision() {
     let server = TestServer::start();
@@ -172,9 +255,11 @@ async fn remote_inactive_archive_uses_the_preview_revision() {
     other.refresh_task_list().await.unwrap();
 
     let preview = client.preview_inactive_tasks(as_of).await.unwrap();
-    assert_eq!(preview.count, 1);
+    assert_eq!(preview.count(), 1);
     assert_eq!(
-        client.resolve_preview_tasks(&preview).await.unwrap()[0].name,
+        client.resolve_preview_tasks(&preview).await.unwrap()[0]
+            .name()
+            .as_str(),
         "Old remote task"
     );
     other
@@ -291,6 +376,7 @@ async fn prewrite_compatibility_failure_does_not_retry_or_recover_resources() {
             candidate_task_ids: vec![],
             revision: "reviewed-state".into(),
         };
+        let preview = serde_json::from_value(serde_json::to_value(preview).unwrap()).unwrap();
         let error = client.archive_inactive_tasks(&preview).await.unwrap_err();
         assert_eq!(health_reads.load(Ordering::SeqCst), 1);
         assert_eq!(resource_reads.load(Ordering::SeqCst), 0);
@@ -2888,6 +2974,7 @@ async fn coherent_tracking_preflight_initializes_a_pair_before_rejecting_an_unre
     );
 }
 
+/// Exercises revision races and invalid reads so selected resources publish together or retain confirmed values.
 #[tokio::test]
 async fn selected_totals_refreshes_publish_together_and_keep_confirmed_resources_on_failure() {
     use std::sync::{
@@ -2985,6 +3072,13 @@ async fn selected_totals_refreshes_publish_together_and_keep_confirmed_resources
     assert_eq!(client.report_observation().unwrap().total_us, 0);
     let tracking = client.tracking_observation().cloned();
     let report = client.report_observation().cloned();
+    let confirmed = report
+        .as_ref()
+        .expect("daily totals publish a report observation");
+    assert_eq!(confirmed.start, at);
+    assert_eq!(confirmed.end, at + Duration::hours(1));
+    assert_eq!(confirmed.now, at);
+    assert_eq!(confirmed.revision, "confirmed");
     for invalid_mode in [1, 2, 3, 5, 6, 7] {
         mode.store(invalid_mode, Ordering::SeqCst);
         let before = reads.load(Ordering::SeqCst);
