@@ -16,11 +16,16 @@ Implementation checkpoint `72b2154`, 9 October 2026, builds on `360430c`. There 
 apps/swiftui/check-native-ui.sh
 apps/swiftui/check-native-ui.sh --smoke
 apps/swiftui/check-native-ui.sh --group server
+apps/swiftui/check-native-ui.sh --pagination
 ```
 
 The full suite requires macOS, Xcode 27, and a desktop session. The runner builds `tt-cli` and `tt`, supplies an absolute Python 3 path, and disables parallel XCTest execution. CI runs six required groups on separate macOS runners. Every group remains serial because status items, menus, shortcuts, and the clipboard share its desktop. The CI gate requires all groups to pass. The Return correction case temporarily enables system button navigation through the global Core Foundation preference domain and verifies AppKit's mode before launch. It then Tabs to the native Save button and presses Return. Teardown restores and verifies the exact prior key value or absence. Bounded fresh AppKit processes verify the original mode, enabled navigation and restored mode, independently of the long-lived runner's cached getter. Window layout cases resize the real AppKit window through an isolated DEBUG fixture event.
 
-The previous seven-test native UI step took 7 minutes 20 seconds in [CI run 37833088852](https://github.com/remshams/time-tracker/actions/runs/37833088852). The expanded suite is grouped to stay within the existing 60-minute job limit. Logs and result bundles are retained for every group.
+The previous seven-test native UI step took 7 minutes 20 seconds in [CI run 37833088852](https://github.com/remshams/time-tracker/actions/runs/37833088852). That historical measurement is not the baseline for issue #44. Current native jobs retain a 30-minute job limit and a 25-minute UI step limit. Each case has a 360-second execution allowance. Group runs fail after 1440 seconds overall or 180 seconds without output; the full manual suite retains its 7200-second total allowance. Diagnostic commands share one 20-second budget. Logs and result bundles are retained for every group.
+
+The pagination selector runs both inherited local and server cases with the same 53-row fixture and assertions as the full suite. Set `TT_UI_TEST_OUTPUT_DIR` to a separate directory for each manual run to preserve its log, timing JSON, process samples and result bundle. Phase records use a monotonic clock and include fixture preparation, launch/readiness, task selection, traversal, assertions and teardown. The timing JSON retains every completed test, failed and unfinished cases, raw phase records and phase aggregates.
+
+The CI workflow has an opt-in `native_benchmark` dispatch. Supply the full SHA of an instrumentation checkpoint as `baseline_ref`, choose `index` or `accessibility` as `history_binding`, and alternate `baseline_last` between repeated dispatches. Each benchmark runs the baseline and one candidate sequentially on one `xcode-27` desktop using Xcode 27.0. It uploads separate artifacts for both samples and records their revisions, runner details, order and failure status. Missing cases or phase records fail the comparison. Normal PR CI still runs all six groups. Compare XCTest and phase durations for automation gains; sample and runner wall times also contain build work. Report queue time separately using the workflow and job timestamps.
 
 | Index | Group | Suites |
 | --- | --- | --- |
