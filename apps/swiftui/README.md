@@ -201,6 +201,8 @@ process stops a silent command after three minutes. A CI group or smoke run has
 a 24-minute total limit; the complete manual suite has a two-hour limit. A
 timeout fails the check and stops its process group. Stalled macOS
 runs also capture process names and stack samples in `.build/native-ui-hang`.
+Those diagnostics share a 20-second budget, leaving time to stop the test
+process group and write the timing report before CI cancels the step.
 The test log remains in `.build/native-ui.log`; `.build/native-ui-timings.json`
 records completed cases, their durations, and any unfinished case.
 
