@@ -311,6 +311,88 @@ async fn prewrite_compatibility_failure_does_not_retry_or_recover_resources() {
 }
 
 #[tokio::test]
+async fn preflight_rejection_clears_the_previous_write_attempt_and_receipt() {
+    let server = TestServer::start();
+    let mut client = connected(&server.endpoint()).await.unwrap();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let task = client.create_task(name("Project work"), at).await.unwrap();
+    assert!(client.last_write_attempted());
+    assert!(client.last_command_receipt().is_some());
+
+    let error = client
+        .rename_task_with_expected_name(
+            task.id(),
+            &name("Previously reviewed name"),
+            name("Renamed work"),
+            at + Duration::seconds(1),
+        )
+        .await
+        .unwrap_err();
+    assert!(!error.failure().recovery_failed());
+    assert!(!client.last_write_attempted());
+    assert!(client.last_command_receipt().is_none());
+    assert_eq!(client.last_failure(), Some(RemoteFailureKind::Conflict));
+    assert_eq!(
+        client.task(task.id()).unwrap().name().as_str(),
+        "Project work"
+    );
+}
+
+#[tokio::test]
+async fn unavailable_totals_reads_keep_the_cooldown_without_another_request() {
+    use axum::http::StatusCode;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    let reads = Arc::new(AtomicUsize::new(0));
+    let counter = reads.clone();
+    let server = StubServer::from_router(
+        Router::new()
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(HealthDto {
+                        status: "ok".into(),
+                        protocol_version: VERSION,
+                    })
+                }),
+            )
+            .route(
+                "/v1/state/daily-overview",
+                get(move || {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    async { StatusCode::SERVICE_UNAVAILABLE }
+                }),
+            ),
+    );
+    let mut client = RemoteApplication::connect(&server.endpoint())
+        .await
+        .unwrap();
+    let start = DateTime::UNIX_EPOCH;
+    let selection = ResourceSelection::DailyTotals {
+        start,
+        end: start + Duration::hours(24),
+        now: start,
+    };
+    for _ in 0..2 {
+        assert!(matches!(
+            client.refresh_resources(selection).await,
+            Err(tracker_remote::RemoteError::Unavailable(_))
+                | Err(tracker_remote::RemoteError::Http {
+                    status: StatusCode::SERVICE_UNAVAILABLE,
+                    ..
+                })
+        ));
+        assert_eq!(client.last_failure(), Some(RemoteFailureKind::Unavailable));
+    }
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
+    assert!(client.report_observation().is_none());
+    assert!(client.tracking_observation().is_none());
+}
+
+#[tokio::test]
 async fn uncommitted_task_create_retries_after_server_restart() {
     let mut server = TestServer::start();
     let mut client = connected(&server.endpoint()).await.unwrap();
