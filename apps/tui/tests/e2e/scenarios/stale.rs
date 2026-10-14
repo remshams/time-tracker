@@ -29,8 +29,9 @@ fn launch_stale_and_current(context: &TestContext) -> (TuiDriver, TuiDriver) {
     (stale, current)
 }
 
+/// Exercises two processes so a stale same-task start adopts the timer without creating work.
 #[test]
-fn a_stale_process_adopts_the_worklog_another_client_started() {
+fn a_stale_same_task_start_rejects_the_command_and_adopts_the_running_worklog() {
     let context = TestContext::new_with_tasks();
     let (mut stale, mut current) = launch_stale_and_current(&context);
     let database = context.database();
@@ -57,16 +58,17 @@ fn a_stale_process_adopts_the_worklog_another_client_started() {
     assert_eq!(adopted.task_name, "Write release notes");
     assert!(adopted.end.is_none(), "the worklog is active: {adopted:?}");
 
-    // The stale process presses space on the same task it still believes
-    // untracked. Set-active is a desired-state command and idempotent for
-    // the task that already runs: the process adopts the stored worklog
-    // instead of opening a second one.
+    // The captured idle expectation is stale even when the selected task
+    // already runs. Reject the command and adopt the authoritative timer.
     let page = stale.press_and_wait(Key::Char(' '), "the adopted timer", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.header().active_task().is_some_and(|active| {
             active.name() == "Write release notes" && active.elapsed_is_hhmmss()
         }) && page.task_panel().active_marker_index() == Some(0)
-            && page.status_bar().text() == "Started \"Write release notes\""
+            && page.status_bar().text()
+                == "Error: Tracking state changed in another client. Refreshed state."
+            && page.status_bar().is_error()
+            && page.status_bar().label_is_accented()
     });
     assert!(
         page.header()
@@ -96,6 +98,7 @@ fn a_stale_process_adopts_the_worklog_another_client_started() {
     assert_eq!(worklogs, active);
 }
 
+/// Checks that stopping a replaced timer refreshes the display and preserves the newer worklog.
 #[test]
 fn a_stale_stop_refreshes_without_stopping_the_newer_worklog() {
     let context = TestContext::new_with_tasks();
@@ -121,7 +124,21 @@ fn a_stale_stop_refreshes_without_stopping_the_newer_worklog() {
     assert_eq!(first.task_id, first_task.id);
     assert!(first.end.is_none(), "the started worklog is active");
 
-    // The fresh process switches to the second task. The stale process's
+    // Reject the second process's stale idle command and await its completed
+    // state recovery before it intentionally switches tasks.
+    current.press_and_wait(Key::Char(' '), "the refreshed running timer", |screen| {
+        let page = TimeTrackerPage::new(screen.clone());
+        page.task_panel().shows_active_tasks()
+            && page
+                .header()
+                .active_task()
+                .is_some_and(|active| active.name() == "Write release notes")
+            && page.task_panel().active_marker_index() == Some(0)
+            && page.status_bar().text()
+                == "Error: Tracking state changed in another client. Refreshed state."
+    });
+
+    // The refreshed process switches to the second task. The stale process's
     // memory is now one worklog behind: it still believes its own worklog
     // is the active one.
     current.press_and_wait(Key::Char('j'), "the second task's selection", |screen| {
@@ -194,8 +211,9 @@ fn a_stale_stop_refreshes_without_stopping_the_newer_worklog() {
     assert_eq!(stopped[0].end, Some(newer.start));
 }
 
+/// Checks that a command captured while idle cannot switch an unseen running timer.
 #[test]
-fn a_stale_set_active_intentionally_switches_from_the_authoritative_state() {
+fn a_stale_set_active_rejects_the_command_and_preserves_the_authoritative_timer() {
     let context = TestContext::new_with_tasks();
     let (mut stale, mut current) = launch_stale_and_current(&context);
     let database = context.database();
@@ -236,11 +254,8 @@ fn a_stale_set_active_intentionally_switches_from_the_authoritative_state() {
         stale_view.screen()
     );
 
-    // The stale process selects the third task and presses space. Unlike
-    // a stop, set-active carries no expectation to violate: against the
-    // authoritative running worklog it means switch, and the stale process
-    // intends exactly that. Its own stale idle state must not turn the
-    // press into a plain start.
+    // The stale process selected another task while it still showed idle.
+    // Its captured idle expectation must prevent an unintended switch.
     stale.press_and_wait(Key::Char('j'), "the second task's selection", |screen| {
         TimeTrackerPage::new(screen.clone())
             .task_panel()
@@ -253,44 +268,33 @@ fn a_stale_set_active_intentionally_switches_from_the_authoritative_state() {
             .selected_index()
             == Some(2)
     });
-    let page = stale.press_and_wait(Key::Char(' '), "the switched header", |screen| {
+    let page = stale.press_and_wait(Key::Char(' '), "the rejected stale start", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.header().active_task().is_some_and(|active| {
-            active.name() == "Plan Friday's demo" && active.elapsed_is_hhmmss()
+            active.name() == "Write release notes" && active.elapsed_is_hhmmss()
         }) && page.task_panel().active_marker_index() == Some(0)
-            && page.task_panel().row(0).name() == "Plan Friday's demo"
+            && page.task_panel().row(0).name() == "Write release notes"
             && !page.task_panel().row(1).has_active_marker()
-            && page.status_bar().text() == "Switched to \"Plan Friday's demo\""
+            && !page.task_panel().row(2).has_active_marker()
+            && page.status_bar().text()
+                == "Error: Tracking state changed in another client. Refreshed state."
+            && page.status_bar().is_error()
+            && page.status_bar().label_is_accented()
     });
     assert_eq!(
         page.status_bar().text(),
-        "Switched to \"Plan Friday's demo\""
+        "Error: Tracking state changed in another client. Refreshed state."
     );
-    assert_eq!(page.task_panel().selected_index(), Some(0));
+    assert_eq!(page.task_panel().selected_index(), Some(2));
 
     stale.quit().assert_clean_exit();
     current.quit().assert_clean_exit();
 
-    // The switch stopped the authoritative worklog on the shared boundary
-    // timestamp and opened exactly one new active worklog on task C.
+    // The rejected command leaves the original timer unchanged and creates
+    // no worklog for the selected destination task.
     let active = database.active_worklogs();
-    assert_eq!(active.len(), 1, "the switch left one active worklog");
-    let switched = &active[0];
-    assert_ne!(switched.id, started.id, "the switch opened a fresh worklog");
-    assert_eq!(switched.task_id, task_c.id);
-    assert_eq!(switched.task_name, "Plan Friday's demo");
-
-    let stopped = database.worklogs_for_task("Write release notes");
-    assert_eq!(stopped.len(), 1, "the switch stopped the first worklog");
-    assert_eq!(stopped[0].id, started.id, "the first worklog kept its id");
-    assert_eq!(stopped[0].task_id, task_a.id);
-    assert_eq!(
-        stopped[0].start, started.start,
-        "the first worklog kept its start"
-    );
-    assert_eq!(
-        stopped[0].end,
-        Some(switched.start),
-        "the stop and the new start share one boundary timestamp"
-    );
+    assert_eq!(active.as_slice(), std::slice::from_ref(&started));
+    assert_eq!(active[0].task_id, task_a.id);
+    assert_eq!(database.worklogs_for_task("Write release notes"), active);
+    assert!(database.worklogs_for_task(&task_c.name).is_empty());
 }
