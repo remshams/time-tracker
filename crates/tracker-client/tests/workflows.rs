@@ -314,6 +314,13 @@ async fn remote_disconnect_keeps_the_selected_backend_and_last_confirmed_state()
         .unwrap();
     let confirmed = backend.task_observation().unwrap();
     server.stop();
+    assert!(
+        backend
+            .check_connection()
+            .await
+            .unwrap_err()
+            .is_unavailable()
+    );
     let error = backend
         .refresh_task_list()
         .await
