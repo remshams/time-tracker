@@ -540,6 +540,7 @@ async fn remote_client_round_trips_every_application_operation() {
         .await
         .unwrap();
     assert_eq!(deleted.id(), started.id());
+    assert!(client.cached_worklog(deleted.id()).is_none());
     assert!(
         client
             .worklogs_for_task(first.id(), None)
