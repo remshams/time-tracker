@@ -241,7 +241,7 @@ jobs:
       matrix:
         group: [core, tasks, worklogs, server, menu, mac]
     runs-on: xcode-27
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
     steps:
@@ -282,6 +282,7 @@ jobs:
             -derivedDataPath .build/native-debug -resultBundlePath .build/native-debug.xcresult \
             CODE_SIGNING_ALLOWED=NO build | tee .build/native-debug.log
       - name: Test SwiftUI workflows through the native macOS UI
+        timeout-minutes: 25
         run: apps/swiftui/check-native-ui.sh --group "${{ matrix.group }}"
       - name: Build the universal Release app and Rust bridge
         if: matrix.group == 'mac'
@@ -307,6 +308,8 @@ jobs:
             .build/native-debug.log
             .build/native-release.log
             .build/native-ui.log
+            .build/native-ui-timings.json
+            .build/native-ui-hang
             .build/native-debug.xcresult
             .build/native-release.xcresult
             .build/native-ui.xcresult
