@@ -35,3 +35,4 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0019](0019-read-coherent-workflow-state.md) | Read coherent workflow state | Accepted |
 | [0021](0021-share-concrete-client-backend.md) | Share the concrete client backend | Accepted |
 | [0022](0022-consolidate-application-and-repository-contracts.md) | Consolidate application and repository contracts | Accepted |
+| [0023](0023-enforce-reviewed-intent-at-application-boundaries.md) | Enforce reviewed intent at application boundaries | Accepted |
