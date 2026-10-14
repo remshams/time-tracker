@@ -181,10 +181,9 @@ fn move_candidates_use_only_the_confirmed_task_cache() {
     let source = TaskId::generate();
     let destination = TaskId::generate();
     let archived = TaskId::generate();
-    let mut client = RemoteApplication::disconnected("http://127.0.0.1:1").unwrap();
-    client.task_observation = Some(ResourceObservation {
-        revision: "confirmed".into(),
-        value: vec![
+    let mut client = TasksClient::default();
+    client.adopt_catalog(
+        vec![
             task(source),
             task(destination),
             TaskDto {
@@ -195,7 +194,8 @@ fn move_candidates_use_only_the_confirmed_task_cache() {
         .into_iter()
         .map(|dto| decode_task_item(dto).unwrap())
         .collect(),
-    });
+        "confirmed".into(),
+    );
     let candidates = client.move_candidates(source, "pW");
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].id, destination);
