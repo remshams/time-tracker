@@ -1,6 +1,6 @@
 # Architecture and application primitives
 
-Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
+Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. [Revisions and concurrency](#revisions-and-concurrency) explains stale-write and pagination guards. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
 
 Source scope: the Rust core, TUI, CLI, and native macOS client at `e0f570ade9dd633046cb784d9c546a2d34516f35`, inspected on 14 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
 
@@ -145,3 +145,35 @@ Owner: [report use cases](../../crates/tracker-application/src/service/reports.r
 A reviewed candidate set captured at a fixed time and positive inactivity period, defaulting to 14 days. Eligibility checks task creation, metadata changes, and work in that window. Confirmation rechecks eligibility in one transaction. Local confirmation guards the candidate IDs; remote confirmation guards the revision and preview expiry. Running tasks remain protected and archiving keeps history.
 
 Owner: [inactivity period](../../crates/tracker-domain/src/inactivity.rs) and [task use cases](../../crates/tracker-application/src/service/tasks.rs). Decisions: [ADR 0012](../adr/0012-share-client-query-and-failure-policies.md), [ADR 0016](../adr/0016-configurable-inactive-task-archiving.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md).
+
+## Revisions and concurrency
+
+The server token guards remote commands and coherent resource reads. Database counters guard history pagination in both local and remote mode. These are separate version spaces, not independent general-purpose versions on every task and worklog.
+
+| # | Revision | Stored in | Advances on |
+|---|---|---|---|
+| 1 | Server token, `epoch:sequence` | Server memory | New successful commands, including accepted no-ops; also server errors where a write may have committed. Replayed receipts retain their original revision. |
+| 2 | Per-task history order | Each task's SQLite `history_order_revision`, initially 0 | A changed worklog start; a move increments both source and destination tasks. |
+| 3 | Global worklog history | One SQLite `global_worklog_revision` row, initially 0 | Every worklog insert, update, or delete, across all tasks. |
+
+### Server command and resource revision
+
+The server creates a new epoch at startup and starts its sequence at 0. Reads return the token captured under the operation lock. Writes submit `expected_revision`; the server checks equality under that same lock before executing a new command. A mismatch returns HTTP 409. This prevents a stale rename from silently overwriting another client's edit and rejects stale archive previews. Matching read tokens also let clients check that related resource observations agree.
+
+The token covers server-mediated commands, not direct SQLite writes. It is not persisted. A restart changes the epoch, so old tokens remain invalid even though the sequence resets. Identical successful request replays are checked before the revision guard and return their original receipt.
+
+### History cursors and database revisions
+
+`GET /v1/worklogs?task_id=...` uses that task's history-order counter. Renames, archive/restore, worklog inserts/deletions, and end-only edits leave it unchanged because existing rows do not move in the history order. Unfiltered `GET /v1/worklogs` uses the global worklog counter, which conservatively invalidates on every worklog write. Task metadata changes leave that counter unchanged.
+
+On the first page, storage reads the relevant counter and rows in one SQLite transaction. If more rows exist, `next_cursor` contains the last returned start and ID plus the counter. A task cursor also carries its task ID. Continuations submit `after_start`, `after_id`, and `after_revision`; filtered requests also submit matching `after_task_id`. Storage compares the supplied integer with the current database counter in the page's read transaction. A mismatch returns HTTP 409, requiring a fresh first page. The task ID checks collection scope; the revision checks whether continuation is still valid.
+
+SQLite triggers update these counters inside the worklog write transaction, including writes from other local processes. For example, a cursor ending at 10:00 would miss an unseen 09:00 worklog corrected to 11:00. Incrementing the task counter rejects that stale continuation instead of silently skipping the moved entry.
+
+### Why the guards coexist
+
+Pagination counters do not cover stale task metadata writes. Conversely, using the server token for remote pagination would reject cursors after unrelated commands, such as renaming another task. It could work for server-mediated requests, and its new epoch would safely invalidate cursors after a restart. In-memory storage itself is not the correctness blocker.
+
+Local clients have no server token. The TUI, CLI, and native macOS app can open the same local SQLite database concurrently, even if each presents one view. Database counters give all clients the same transactional pagination checks. The current split keeps task-history invalidation narrow while retaining the server's broader write and read-consistency guard.
+
+Source scope: server, protocol, and storage revision mechanisms at `aecfda68df527f8247508e99c3b049059c3faabb`, inspected on 15 October 2026. Code: [server guards](../../crates/tracker-server/src/core.rs), [server initialization](../../crates/tracker-server/src/bootstrap.rs), [cursor contracts](../../crates/tracker-protocol/src/lib.rs), [history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs), and [database triggers](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
