@@ -1,4 +1,4 @@
-# 0023: use ID-only worklog cursors and positive durations
+# 0024: use ID-only worklog cursors and positive durations
 
 ## Status
 

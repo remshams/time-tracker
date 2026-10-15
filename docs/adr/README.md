@@ -17,8 +17,8 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
 | [0002](0002-task-timestamps-and-ordering.md) | Task timestamps and list ordering | Accepted |
 | [0003](0003-canonical-timestamp-precision.md) | Canonical timestamp precision | Accepted |
-| [0004](0004-paginated-worklog-history.md) | Paginate worklog history by cursor | Partially superseded by ADR 0006, ADR 0007, ADR 0017 and ADR 0023; all other decisions remain accepted. |
-| [0005](0005-worklog-correction.md) | Correct worklog timestamps without overlap | Partially superseded by ADR 0006, ADR 0007, ADR 0017 and ADR 0023; all other decisions remain accepted. |
+| [0004](0004-paginated-worklog-history.md) | Paginate worklog history by cursor | Partially superseded by ADR 0006, ADR 0007, ADR 0017 and ADR 0024; all other decisions remain accepted. |
+| [0005](0005-worklog-correction.md) | Correct worklog timestamps without overlap | Partially superseded by ADR 0006, ADR 0007, ADR 0017 and ADR 0024; all other decisions remain accepted. |
 | [0006](0006-local-minute-tui-timestamps.md) | Local-minute TUI timestamps | Accepted |
 | [0007](0007-completed-worklog-deletion.md) | Delete completed worklogs | Accepted |
 | [0008](0008-move-worklogs-between-tasks.md) | Move worklogs between tasks | Partially superseded by ADR 0017; all other decisions remain accepted. |
@@ -30,10 +30,10 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0014](0014-scope-mutation-checks-to-task-changes.md) | Scope mutation checks to task changes | Partially superseded by ADR 0015; all other decisions remain accepted. |
 | [0015](0015-use-github-hosted-runners-for-ci.md) | Use GitHub-hosted runners for CI | Accepted |
 | [0016](0016-configurable-inactive-task-archiving.md) | Configurable inactive task archiving | Partially superseded by ADR 0017; all other decisions remain accepted. |
-| [0017](0017-separate-http-resources-from-client-refreshes.md) | Separate HTTP resources from client refreshes | Partially superseded by ADR 0019 and ADR 0023; independent resources and guarded writes remain accepted. |
+| [0017](0017-separate-http-resources-from-client-refreshes.md) | Separate HTTP resources from client refreshes | Partially superseded by ADR 0019 and ADR 0024; independent resources and guarded writes remain accepted. |
 | [0018](0018-compose-resource-state-in-client-workflows.md) | Compose resource state in client workflows | Partially superseded by ADR 0019; observations, command recovery and lifecycle remain accepted. |
 | [0019](0019-read-coherent-workflow-state.md) | Read coherent workflow state | Accepted |
 | [0021](0021-share-concrete-client-backend.md) | Share the concrete client backend | Accepted |
 | [0022](0022-consolidate-application-and-repository-contracts.md) | Consolidate application and repository contracts | Accepted |
 | [0023](0023-enforce-reviewed-intent-at-application-boundaries.md) | Enforce reviewed intent at application boundaries | Accepted |
-| [0023](0023-id-only-worklog-cursors-and-positive-durations.md) | ID-only worklog cursors and positive durations | Accepted |
+| [0024](0024-id-only-worklog-cursors-and-positive-durations.md) | ID-only worklog cursors and positive durations | Accepted |

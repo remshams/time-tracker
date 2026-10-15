@@ -6,7 +6,7 @@ Partially superseded on 11 October 2026 by [ADR 0019](0019-read-coherent-workflo
 
 Accepted and implemented on 9 October 2026. The server, CLI, TUI and macOS clients use the new contract under `/v1`, with protocol compatibility number 3. Deploy the server and all supported clients together.
 
-[ADR 0023](0023-id-only-worklog-cursors-and-positive-durations.md) also partially supersedes the cursor representation. All other decisions remain accepted.
+[ADR 0024](0024-id-only-worklog-cursors-and-positive-durations.md) also partially supersedes the cursor representation. All other decisions remain accepted.
 
 ## Date
 
