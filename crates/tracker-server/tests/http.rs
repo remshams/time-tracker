@@ -376,7 +376,7 @@ async fn health_create_retry_and_stale_revision() {
     let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
     let (status, health) = call(&router, Method::GET, "/v1/health", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(health, json!({"status":"ok","protocol_version":3}));
+    assert_eq!(health, json!({"status":"ok","protocol_version":4}));
     let before = state(&router).await;
     assert!(before.0.tasks.is_empty());
     let task_id = Uuid::now_v7().to_string();
@@ -656,37 +656,28 @@ async fn worklog_page_routes_validate_complete_nonnegative_cursors() {
     let temp = TempDir::new().unwrap();
     let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
     let task_id = create_fixture_task(&router, "Worklog project").await;
-    let start = at(100).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let worklog_id = Uuid::now_v7().to_string();
-
+    for suffix in [
+        format!("after_id={worklog_id}"),
+        "after_revision=0".to_owned(),
+        format!("after_id={worklog_id}&after_revision=-1"),
+        "after_id=invalid&after_revision=0".to_owned(),
+        "after_start=2026-01-01T00:00:00Z".to_owned(),
+        format!("after_task_id={task_id}"),
+    ] {
+        for prefix in [format!("task_id={task_id}&"), String::new()] {
+            let route = format!("/v1/worklogs?{prefix}{suffix}");
+            let (status, body) = call(&router, Method::GET, &route, None).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{route}: {body}");
+            assert_eq!(body["code"], "invalid_request");
+        }
+    }
     for route in [
-        format!("/v1/worklogs?task_id={task_id}&after_start={start}"),
-        format!("/v1/worklogs?after_start={start}"),
+        format!("/v1/worklogs?task_id={task_id}&after_id={worklog_id}&after_revision=0"),
+        format!("/v1/worklogs?after_id={worklog_id}&after_revision=0"),
     ] {
         let (status, body) = call(&router, Method::GET, &route, None).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{route}");
-        assert_eq!(body["code"], "invalid_request", "{route}");
-    }
-
-    for route in [
-        format!(
-            "/v1/worklogs?task_id={task_id}&after_start={start}&after_id={worklog_id}&after_revision=-1"
-        ),
-        format!("/v1/worklogs?after_start={start}&after_id={worklog_id}&after_revision=-1"),
-    ] {
-        let (status, body) = call(&router, Method::GET, &route, None).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{route}");
-        assert_eq!(body["code"], "invalid_request", "{route}");
-    }
-
-    for route in [
-        format!(
-            "/v1/worklogs?task_id={task_id}&after_start={start}&after_id={worklog_id}&after_revision=0&after_task_id={task_id}"
-        ),
-        format!("/v1/worklogs?after_start={start}&after_id={worklog_id}&after_revision=0"),
-    ] {
-        let (status, _) = call(&router, Method::GET, &route, None).await;
-        assert_eq!(status, StatusCode::OK, "{route}");
+        assert_eq!(status, StatusCode::CONFLICT, "{route}: {body}");
     }
 }
 
@@ -1339,20 +1330,14 @@ async fn history_continuations_keep_collection_scope_and_reject_invalidated_curs
     assert_eq!(filtered["worklogs"].as_array().unwrap().len(), 50);
     assert_eq!(global["worklogs"].as_array().unwrap().len(), 50);
     let cursor = &filtered["next_cursor"];
-    assert_keys(cursor, &["task_id", "start", "id", "revision"]);
-    assert_eq!(cursor["task_id"], first.id().to_string());
-    assert!(global["next_cursor"]["task_id"].is_null());
+    assert_keys(cursor, &["id", "revision"]);
+    assert_keys(&global["next_cursor"], &["id", "revision"]);
     let continuation = format!(
-        "after_start={}&after_id={}&after_revision={}",
-        cursor["start"].as_str().unwrap(),
+        "after_id={}&after_revision={}",
         cursor["id"].as_str().unwrap(),
         cursor["revision"]
     );
-    let valid_filtered = format!(
-        "/v1/worklogs?task_id={}&after_task_id={}&{continuation}",
-        first.id(),
-        first.id()
-    );
+    let valid_filtered = format!("/v1/worklogs?task_id={}&{continuation}", first.id());
     let (_, next) = call(&router, Method::GET, &valid_filtered, None).await;
     assert_eq!(next["worklogs"].as_array().unwrap().len(), 2);
     assert!(next["next_cursor"].is_null());
@@ -1362,8 +1347,7 @@ async fn history_continuations_keep_collection_scope_and_reject_invalidated_curs
     );
     let global_cursor = &global["next_cursor"];
     let global_continuation = format!(
-        "after_start={}&after_id={}&after_revision={}",
-        global_cursor["start"].as_str().unwrap(),
+        "after_id={}&after_revision={}",
         global_cursor["id"].as_str().unwrap(),
         global_cursor["revision"]
     );
@@ -1376,7 +1360,6 @@ async fn history_continuations_keep_collection_scope_and_reject_invalidated_curs
     .await;
     assert_eq!(next_global["worklogs"].as_array().unwrap().len(), 2);
     for route in [
-        format!("/v1/worklogs?task_id={}&{continuation}", first.id()),
         format!(
             "/v1/worklogs?task_id={}&after_task_id={}&{continuation}",
             first.id(),
@@ -1510,5 +1493,69 @@ async fn aggregate_routes_refresh_both_resources_after_database_changes() {
         if uri.contains("daily-overview") {
             assert_eq!(body["total_us"], 3_000_000);
         }
+    }
+}
+
+#[tokio::test]
+async fn zero_duration_commands_reject_equal_canonical_instants_without_writes() {
+    let temp = TempDir::new().unwrap();
+    let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
+    let first = create_fixture_task(&router, "First task").await;
+    let second = create_fixture_task(&router, "Second task").await;
+    let worklog_id = Uuid::now_v7().to_string();
+    let start = merge(
+        json!({"task_id":first,"worklog_id":worklog_id,"expected_active":null,"occurred_at":at(100)}),
+        guard(&state(&router).await.0.revision),
+    );
+    let (status, body) = call(&router, Method::PUT, "/v1/tracking", Some(start)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let before = state(&router).await;
+    let (_, history) = call(&router, Method::GET, "/v1/worklogs", None).await;
+    for instant in [at(100), at(100) + TimeDelta::nanoseconds(999)] {
+        for task in [None, Some(second.clone())] {
+            let new_id = task.as_ref().map(|_| Uuid::now_v7().to_string());
+            let request = merge(
+                json!({"task_id":task,"worklog_id":new_id,"expected_active":worklog_id,"occurred_at":instant}),
+                guard(&before.0.revision),
+            );
+            let (status, body) = call(&router, Method::PUT, "/v1/tracking", Some(request)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+            assert!(body["message"].as_str().unwrap().contains("later than"));
+            assert_eq!(state(&router).await, before);
+            assert_eq!(
+                call(&router, Method::GET, "/v1/worklogs", None).await.1,
+                history
+            );
+        }
+    }
+    let stop = merge(
+        json!({"task_id":null,"worklog_id":null,"expected_active":worklog_id,"occurred_at":at(101)}),
+        guard(&before.0.revision),
+    );
+    let (status, body) = call(&router, Method::PUT, "/v1/tracking", Some(stop)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let before = state(&router).await;
+    for end in [at(100), at(100) + TimeDelta::nanoseconds(999)] {
+        let correction = merge(
+            json!({"action":"correct","expected_start":at(100),"expected_end":at(101),"replacement_start":at(100),"replacement_end":end,"occurred_at":at(102)}),
+            guard(&before.0.revision),
+        );
+        let (status, body) = call(
+            &router,
+            Method::PATCH,
+            &format!("/v1/worklogs/{worklog_id}"),
+            Some(correction),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(state(&router).await, before);
+        let (_, stored) = call(
+            &router,
+            Method::GET,
+            &format!("/v1/worklogs/{worklog_id}"),
+            None,
+        )
+        .await;
+        assert_eq!(stored["worklog"]["end"], json!(at(101)));
     }
 }
