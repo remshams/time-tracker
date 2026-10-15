@@ -56,7 +56,10 @@ mod tests {
         let completed = canonical_worklog_times(WorklogTimes::new(later, Some(earlier)));
         assert_eq!(completed.start(), expected);
         assert_eq!(completed.end(), Some(expected));
-        assert!(completed.validate().is_ok());
+        assert_eq!(
+            completed.validate(),
+            Err(tracker_domain::WorklogError::ZeroDuration)
+        );
 
         let active = canonical_worklog_times(WorklogTimes::new(later, None));
         assert_eq!(active.start(), expected);
