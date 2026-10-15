@@ -4,6 +4,8 @@
 
 Partially superseded by ADR 0006, ADR 0007 and [ADR 0017](0017-separate-http-resources-from-client-refreshes.md); all other decisions remain accepted. ADR 0017 replaces the remote HTTP expectations for implicit tracking refresh and bundled recovery metadata; local-mode behavior is unchanged.
 
+[ADR 0023](0023-id-only-worklog-cursors-and-positive-durations.md) also partially supersedes the cursor representation and zero-duration acceptance. All other decisions remain accepted.
+
 ## Date
 
 2026-09-05

@@ -2,7 +2,7 @@
 
 Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. [Revisions and concurrency](#revisions-and-concurrency) explains stale-write and pagination guards. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
 
-Source scope: the Rust core, TUI, CLI, and native macOS client at `e0f570ade9dd633046cb784d9c546a2d34516f35`, inspected on 14 October 2026. Native reviewed task-name contracts additionally describe `384069b` on 16 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
+Source scope: the Rust core, TUI, CLI, and native macOS client at `a7868df36673ee247e5dea5dbfd53c0dd9e8541d`, inspected on 15 October 2026. Native reviewed task-name contracts additionally describe `384069b` on 16 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
 
 ## Architecture primitives
 
@@ -32,7 +32,7 @@ Source: [crate](../../crates/tracker-storage/Cargo.toml), [SQLite adapter](../..
 
 ### tracker-protocol
 
-Defines protocol-3 JSON requests, resource observations, command receipts, and conversions at the HTTP boundary. Observations pair read values with revisions. Receipts describe committed writes and do not replace current read state. This crate contains no HTTP client, server, or database connection.
+Defines protocol-4 JSON requests, resource observations, command receipts, and conversions at the HTTP boundary. Observations pair read values with revisions. Receipts describe committed writes and do not replace current read state. This crate contains no HTTP client, server, or database connection.
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain).
 
@@ -114,13 +114,13 @@ Owner: [task model](../../crates/tracker-domain/src/task.rs), [task list model](
 
 ### Worklog
 
-A recorded interval identified by `WorklogId` and owned by one task. A missing end means it is active. Completed intervals include their start and exclude their end; touching intervals and zero duration are valid. Same-task intervals cannot overlap; different tasks may overlap. Correction preserves identity, ownership, and active/completed state. Moving changes only ownership. Deletion requires a completed row. These writes compare the original stored values to reject stale edits.
+A recorded interval identified by `WorklogId` and owned by one task. A missing end means it is active. Completed intervals include their start and exclude their end. The end must be strictly later than the start after microsecond canonicalization; touching intervals remain valid. Same-task intervals cannot overlap; different tasks may overlap. Correction preserves identity, ownership, and active/completed state. Moving changes only ownership. Deletion requires a completed row. These writes compare the original stored values to reject stale edits.
 
 Owner: [worklog model](../../crates/tracker-domain/src/worklog.rs) and [worklog use cases](../../crates/tracker-application/src/service/worklogs.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0007](../adr/0007-completed-worklog-deletion.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md).
 
 ### Active tracking
 
-The tracker is idle or running one worklog across the selected database. Starting a previously stopped task creates a new worklog. Switching stops the old worklog and starts the new one atomically. Archived tasks cannot start tracking, and a running task cannot be archived. Closing a client leaves tracking running for the next client or restart.
+The tracker is idle or running one worklog across the selected database. Starting a previously stopped task creates a new worklog. Switching stops the old worklog and starts the new one atomically. A stop or switch at the active start fails and leaves tracking unchanged. Archived tasks cannot start tracking, and a running task cannot be archived. Closing a client leaves tracking running for the next client or restart.
 
 Owner: [tracking model](../../crates/tracker-domain/src/tracking.rs), [tracking use cases](../../crates/tracker-application/src/service/tracking.rs), and [SQLite tracking](../../crates/tracker-storage/src/sqlite/tracking.rs).
 
@@ -132,7 +132,7 @@ Owner: [application service](../../crates/tracker-application/src/service/mod.rs
 
 ### History and cursors
 
-Worklogs load in pages of at most 50, newest start first with an identifier tie-break. A task cursor carries the task and history-order revision. Changing a start or moving a worklog invalidates affected task cursors; inserts, end-only edits, and deletions leave them valid. Global history has a separate cursor. History is a bounded read, not the source of report totals.
+Worklogs load in pages of at most 50, newest start first with ID ascending as the tie-break. Task and global cursors carry only the last row ID and their database revision. Storage resolves the anchor start and collection membership in the same transaction as revision checks and page reads. Changing a start or moving a worklog invalidates affected task cursors. Inserts and end-only edits preserve task cursors; deleting the anchor requires a fresh first page. Global revisions change on every worklog write. History is a bounded read, not the source of report totals.
 
 Owner: [page and cursor models](../../crates/tracker-application/src/model.rs) and [SQLite history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs). Decisions: [ADR 0004](../adr/0004-paginated-worklog-history.md), [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md).
 
@@ -168,7 +168,7 @@ The token covers server-mediated commands, not direct SQLite writes. It is not p
 
 `GET /v1/worklogs?task_id=...` uses that task's history-order counter. Renames, archive/restore, worklog inserts/deletions, and end-only edits leave it unchanged because existing rows do not move in the history order. Unfiltered `GET /v1/worklogs` uses the global worklog counter, which conservatively invalidates on every worklog write. Task metadata changes leave that counter unchanged.
 
-On the first page, storage reads the relevant counter and rows in one SQLite transaction. If more rows exist, `next_cursor` contains the last returned start and ID plus the counter. A task cursor also carries its task ID. Continuations submit `after_start`, `after_id`, and `after_revision`; filtered requests also submit matching `after_task_id`. Storage compares the supplied integer with the current database counter in the page's read transaction. A mismatch returns HTTP 409, requiring a fresh first page. The task ID checks collection scope; the revision checks whether continuation is still valid.
+On the first page, storage reads the relevant counter and rows in one SQLite transaction. If more rows exist, `next_cursor` contains only the last returned ID and counter. Continuations submit `after_id` and `after_revision`, with optional `task_id` as the collection filter. In one read transaction, storage checks the revision, resolves the anchor start by ID, verifies collection membership, and reads rows after the stored start and ID. An outdated revision or missing, deleted, or out-of-scope anchor returns HTTP 409 with `worklog_history_changed`, requiring a fresh first page. Corrected starts determine chronology even when UUID creation order differs; equal starts across different tasks retain the ID tie-break.
 
 SQLite triggers update these counters inside the worklog write transaction, including writes from other local processes. For example, a cursor ending at 10:00 would miss an unseen 09:00 worklog corrected to 11:00. Incrementing the task counter rejects that stale continuation instead of silently skipping the moved entry.
 
@@ -178,4 +178,8 @@ Pagination counters do not cover stale task metadata writes. Conversely, using t
 
 Local clients have no server token. The TUI, CLI, and native macOS app can open the same local SQLite database concurrently, even if each presents one view. Database counters give all clients the same transactional pagination checks. The current split keeps task-history invalidation narrow while retaining the server's broader write and read-consistency guard.
 
-Source scope: server, protocol, and storage revision mechanisms at `aecfda68df527f8247508e99c3b049059c3faabb`, inspected on 15 October 2026. Code: [server guards](../../crates/tracker-server/src/core.rs), [server initialization](../../crates/tracker-server/src/bootstrap.rs), [cursor contracts](../../crates/tracker-protocol/src/lib.rs), [history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs), and [database triggers](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
+Source scope: server, protocol, and storage revision mechanisms at `a7868df36673ee247e5dea5dbfd53c0dd9e8541d`, inspected on 15 October 2026. Code: [server guards](../../crates/tracker-server/src/core.rs), [server initialization](../../crates/tracker-server/src/bootstrap.rs), [cursor contracts](../../crates/tracker-protocol/src/lib.rs), [history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs), and [database triggers](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
+
+### Positive-duration migration and protocol upgrade
+
+Schema migration 7 refuses databases containing zero-duration completed worklogs and rolls back without changing any history. Back up the database, use the previous client to inspect and explicitly correct or delete affected entries, close old clients, then retry. Protocol 4 removes timestamp and task fields from cursors. Upgrade the server and every client together and regenerate saved history and preview tokens. Incompatible pairs fail the health check. See [ADR 0023](../adr/0023-id-only-worklog-cursors-and-positive-durations.md).
