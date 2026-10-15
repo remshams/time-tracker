@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Time Tracker is a Rust time-tracking application. It starts with a TUI and may later add synced storage, web clients, and external integrations.
+Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a native macOS app. Clients use local SQLite storage or connect to a separate HTTP server that owns its SQLite database. Web clients and external integrations remain future work.
 
 ## General
 
