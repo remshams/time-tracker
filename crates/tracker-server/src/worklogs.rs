@@ -3,10 +3,9 @@
 use axum::Json;
 use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::{Path as RoutePath, Query, State};
-use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use tracker_application::{ApplicationError, GlobalWorklogCursor, WorklogCursor};
-use tracker_domain::{TaskId, WorklogTimes};
+use tracker_domain::WorklogTimes;
 use tracker_protocol::{
     DeleteWorklogRequest, MutationDto, MutationResultDto, WorklogChangeRequest, WorklogDto,
     WorklogPageDto, WorklogResourceDto,
@@ -35,29 +34,18 @@ pub(super) async fn worklog(
 #[serde(deny_unknown_fields)]
 pub(super) struct PageQuery {
     task_id: Option<String>,
-    after_task_id: Option<String>,
-    after_start: Option<DateTime<Utc>>,
     after_id: Option<String>,
     after_revision: Option<i64>,
 }
 
-fn scoped_worklog_cursor(
-    query: PageQuery,
-    task: Option<TaskId>,
-) -> Result<Option<GlobalWorklogCursor>, ApiError> {
-    let continuation_scope = query.after_task_id.as_deref().map(task_id).transpose()?;
-    match (query.after_start, query.after_id, query.after_revision) {
-        (None, None, None) if continuation_scope.is_none() => Ok(None),
-        (Some(start), Some(id), Some(revision)) if revision >= 0 && task == continuation_scope => {
-            Ok(Some(GlobalWorklogCursor {
-                start,
-                id: worklog_id(&id)?,
-                revision,
-            }))
-        }
-        _ => Err(ApiError::invalid(
-            "Incomplete or mismatched worklog cursor scope",
-        )),
+fn worklog_cursor(query: PageQuery) -> Result<Option<GlobalWorklogCursor>, ApiError> {
+    match (query.after_id, query.after_revision) {
+        (None, None) => Ok(None),
+        (Some(id), Some(revision)) if revision >= 0 => Ok(Some(GlobalWorklogCursor {
+            id: worklog_id(&id)?,
+            revision,
+        })),
+        _ => Err(ApiError::invalid("Incomplete or invalid worklog cursor")),
     }
 }
 
@@ -67,14 +55,12 @@ pub(super) async fn all_worklogs(
 ) -> ApiResult<WorklogPageDto> {
     let query = query_payload(input)?;
     let task = query.task_id.as_deref().map(task_id).transpose()?;
-    let cursor = scoped_worklog_cursor(query, task)?;
+    let cursor = worklog_cursor(query)?;
     let mut core = lock(&shared)?;
     let page = match task {
         Some(id) => {
             task_resource(&mut core, id)?;
             let task_cursor = cursor.map(|cursor| WorklogCursor {
-                task_id: id,
-                start: cursor.start,
                 id: cursor.id,
                 revision: cursor.revision,
             });
