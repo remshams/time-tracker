@@ -97,7 +97,7 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         }
     }
 
-    func testReversedAndOverlappingTimesDisplayValidationWithoutWrites() throws {
+    func testNonPositiveAndOverlappingTimesDisplayValidationWithoutWrites() throws {
         let task = try fixture.create("Correction validation")
         let minute = floor(Date().timeIntervalSince1970 / 60) * 60
         let start = Date(timeIntervalSince1970: minute - 3600)
@@ -106,14 +106,15 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         launch()
         select(task)
         openCorrection(log)
-        stepMinute("worklog-correction.start")
-        stepMinute("worklog-correction.start")
-        app.buttons["worklog-correction.save"].click()
-        XCTAssertTrue(element("worklog-correction.error").waitForExistence(timeout: timeout))
-        XCTAssertEqual(displayedText("worklog-correction.error"), "End must not be before Start.")
-        XCTAssertTrue(element("worklog-correction.start").exists)
-        XCTAssertEqual(try fixture.worklogs(task).sorted { $0.id < $1.id },
-                       [log, following].sorted { $0.id < $1.id })
+        for _ in 0..<2 {
+            stepMinute("worklog-correction.start")
+            app.buttons["worklog-correction.save"].click()
+            XCTAssertTrue(element("worklog-correction.error").waitForExistence(timeout: timeout))
+            XCTAssertEqual(displayedText("worklog-correction.error"), "End must be after Start.")
+            XCTAssertTrue(element("worklog-correction.start").exists)
+            XCTAssertEqual(try fixture.worklogs(task).sorted { $0.id < $1.id },
+                           [log, following].sorted { $0.id < $1.id })
+        }
         app.buttons["worklog-correction.cancel"].click()
         openCorrection(log)
         stepMinute("worklog-correction.end")
