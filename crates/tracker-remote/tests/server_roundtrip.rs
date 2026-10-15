@@ -888,8 +888,6 @@ async fn task_history_rejects_other_scope_and_keeps_task_and_tracking_caches() {
         .unwrap();
     let mut second = connected(&server.endpoint()).await.unwrap();
     let cursor = WorklogCursor {
-        task_id: active.id(),
-        start: at,
         id: WorklogId::generate(),
         revision: 0,
     };
@@ -988,7 +986,7 @@ async fn task_history_returns_a_cursor_for_a_full_page() {
     let first = client.worklogs_for_task(task.id(), None).await.unwrap();
     assert_eq!(first.worklogs.len(), 50);
     let cursor = first.next_cursor.expect("more worklogs remain");
-    assert_eq!(cursor.task_id, task.id());
+    assert_eq!(cursor.id, first.worklogs.last().unwrap().id());
     let second = client
         .worklogs_for_task(task.id(), Some(&cursor))
         .await
@@ -2593,28 +2591,14 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
 }
 
 #[tokio::test]
-async fn history_rejects_empty_revision_and_cursor_scope_before_caching() {
+async fn history_rejects_empty_revision_and_unanchored_cursor_before_caching() {
     use tracker_protocol::{WorklogCursorDto, WorklogPageDto};
-    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
     let requested = tracker_domain::TaskId::generate();
-    for (revision, cursor_task) in [
-        ("", None),
-        (
-            "valid",
-            Some(tracker_domain::TaskId::generate().to_string()),
-        ),
-        ("valid", None),
-    ] {
-        let next_cursor = if revision.is_empty() {
-            None
-        } else {
-            Some(WorklogCursorDto {
-                task_id: cursor_task,
-                start: at,
-                id: WorklogId::generate().to_string(),
-                revision: 1,
-            })
-        };
+    for revision in ["", "valid"] {
+        let next_cursor = (!revision.is_empty()).then(|| WorklogCursorDto {
+            id: WorklogId::generate().to_string(),
+            revision: 1,
+        });
         let dto = WorklogPageDto {
             worklogs: vec![],
             next_cursor,
@@ -2660,21 +2644,36 @@ async fn malformed_history_retains_the_previous_confirmed_page() {
     invalid_task.worklogs[0].task_id = "invalid task id".into();
     let mut backwards = valid.clone();
     backwards.worklogs[0].end = Some(at - Duration::seconds(1));
+    let mut zero = valid.clone();
+    zero.worklogs[0].end = Some(at);
+    let mut collapsed = valid.clone();
+    collapsed.worklogs[0].end = Some(at + Duration::nanoseconds(999));
     let mut wrong_scope = valid.clone();
     wrong_scope.worklogs[0].task_id = tracker_domain::TaskId::generate().to_string();
     let mut invalid_cursor = valid.clone();
     invalid_cursor.next_cursor = Some(WorklogCursorDto {
-        task_id: Some(requested.to_string()),
-        start: at,
         id: "invalid cursor id".into(),
         revision: 1,
     });
-    let mut invalid_global_cursor = invalid_cursor.clone();
-    invalid_global_cursor.next_cursor.as_mut().unwrap().task_id = None;
+    let invalid_global_cursor = invalid_cursor.clone();
+    let mut negative_cursor = valid.clone();
+    negative_cursor.next_cursor = Some(WorklogCursorDto {
+        id: valid.worklogs[0].id.clone(),
+        revision: -1,
+    });
+    let mut wrong_anchor = valid.clone();
+    wrong_anchor.next_cursor = Some(WorklogCursorDto {
+        id: WorklogId::generate().to_string(),
+        revision: 0,
+    });
     for (global, invalid) in [
         (false, invalid_id),
         (false, invalid_task),
         (false, backwards),
+        (false, zero),
+        (false, collapsed),
+        (false, negative_cursor),
+        (false, wrong_anchor),
         (false, wrong_scope),
         (false, invalid_cursor),
         (true, invalid_global_cursor),
