@@ -2,20 +2,21 @@ use super::*;
 
 #[test]
 fn global_pages_include_archived_tasks_and_keep_tied_rows_in_id_order() {
-    let alpha = task(1, "alpha");
-    let mut archived = task(2, "archived");
-    assert!(archived.archive(at(100)));
-    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), archived.clone()]);
+    let mut tasks = (1..=55)
+        .map(|tag| task(tag, &format!("task {tag}")))
+        .collect::<Vec<_>>();
+    assert!(tasks[1].archive(at(100)));
+    let alpha = tasks[0].clone();
+    let repository = MemoryRepository::with_tasks(tasks.clone());
     {
         let mut data = repository.0.borrow_mut();
         for tag in (1..=55).rev() {
-            let task_id = if tag % 2 == 0 {
-                archived.id()
-            } else {
-                alpha.id()
-            };
-            data.worklogs
-                .push(completed_worklog(tag, task_id, 200, 200));
+            data.worklogs.push(completed_worklog(
+                tag,
+                tasks[tag as usize - 1].id(),
+                200,
+                201,
+            ));
         }
     }
     let mut application = TrackerApplication::load(repository).unwrap();
@@ -82,13 +83,13 @@ fn global_cursor_rejects_a_change_to_a_row_on_another_task() {
                 u128::from(tag),
                 task_id,
                 i64::from(tag) * 10,
-                i64::from(tag) * 10,
+                i64::from(tag) * 10 + 1,
             ));
         }
     }
     let mut application = TrackerApplication::load(repository.clone()).unwrap();
     let cursor = application.all_worklogs(None).unwrap().next_cursor.unwrap();
-    repository.0.borrow_mut().worklogs[0] = completed_worklog(1, beta.id(), 600, 600);
+    repository.0.borrow_mut().worklogs[0] = completed_worklog(1, beta.id(), 600, 601);
     assert!(matches!(
         application.all_worklogs(Some(&cursor)),
         Err(ApplicationError::Repository(
@@ -269,7 +270,6 @@ fn worklog_history_pages_are_bounded_ordered_and_continue_after_the_cursor() {
         "start descending"
     );
     let cursor = first.next_cursor.expect("more history follows");
-    assert_eq!(cursor.start, at(6));
     assert_eq!(cursor.id, WorklogId::from_uuid(uuid::Uuid::from_u128(6)));
 
     let second = application
@@ -300,49 +300,39 @@ fn worklog_history_pages_are_bounded_ordered_and_continue_after_the_cursor() {
 }
 
 #[test]
-fn a_page_boundary_inside_equal_starts_neither_dups_nor_skips_rows() {
+fn task_pages_follow_start_order_when_ids_have_a_different_order() {
     let alpha = task(1, "alpha");
     let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
-    // 55 worklogs share one start, so identifier ascending decides the
-    // whole order and the page boundary falls between two of them. A
-    // weaker boundary rule would repeat or drop rows 51 to 55.
     for tag in 1..=55u128 {
-        let worklog = if tag == 1 {
-            Worklog::begin(
-                WorklogId::from_uuid(uuid::Uuid::from_u128(tag)),
-                alpha.id(),
-                at(500),
-            )
-        } else {
-            Worklog::new(
-                WorklogId::from_uuid(uuid::Uuid::from_u128(tag)),
-                alpha.id(),
-                at(500),
-                Some(at(500)),
-            )
-            .unwrap()
-        };
-        repository.insert_worklog(&worklog).unwrap();
+        let start = i64::try_from(56 - tag).unwrap() * 10;
+        repository
+            .insert_worklog(&completed_worklog(tag, alpha.id(), start, start + 1))
+            .unwrap();
     }
     let mut application = TrackerApplication::load(repository).unwrap();
-
-    let page = application.worklogs_for_task(alpha.id(), None).unwrap();
-    let ids: Vec<u128> = page
-        .worklogs
-        .iter()
-        .map(|w| w.id().as_uuid().as_u128())
-        .collect();
-    assert_eq!(ids, (1..=50).collect::<Vec<_>>(), "id ascending");
-    let cursor = page.next_cursor.expect("equal starts continue");
-    assert_eq!(cursor.start, at(500));
+    let first = application.worklogs_for_task(alpha.id(), None).unwrap();
+    assert_eq!(
+        first
+            .worklogs
+            .iter()
+            .map(|row| row.id().as_uuid().as_u128())
+            .collect::<Vec<_>>(),
+        (1..=50).collect::<Vec<_>>()
+    );
+    let cursor = first.next_cursor.unwrap();
     assert_eq!(cursor.id.as_uuid().as_u128(), 50);
-
-    let rest = application
+    let second = application
         .worklogs_for_task(alpha.id(), Some(&cursor))
-        .unwrap()
-        .worklogs;
-    let rest_ids: Vec<u128> = rest.iter().map(|w| w.id().as_uuid().as_u128()).collect();
-    assert_eq!(rest_ids, (51..=55).collect::<Vec<_>>());
+        .unwrap();
+    assert_eq!(
+        second
+            .worklogs
+            .iter()
+            .map(|row| row.id().as_uuid().as_u128())
+            .collect::<Vec<_>>(),
+        (51..=55).collect::<Vec<_>>()
+    );
+    assert!(second.next_cursor.is_none());
 }
 
 #[test]
@@ -574,8 +564,8 @@ fn correction_canonicalizes_expected_and_replacement_before_validation() {
         .correct_worklog(
             original.id(),
             WorklogTimes::new(at_nanos(100, 123_456_999), Some(at_nanos(100, 123_457_999))),
-            WorklogTimes::new(at_nanos(200, 900), Some(at_nanos(200, 100))),
-            at_nanos(200, 999),
+            WorklogTimes::new(at_nanos(200, 900), Some(at_nanos(200, 1_100))),
+            at_nanos(200, 1_999),
         )
         .unwrap();
 
@@ -583,7 +573,7 @@ fn correction_canonicalizes_expected_and_replacement_before_validation() {
     assert_eq!(worklog.id(), original.id());
     assert_eq!(worklog.task_id(), alpha.id());
     assert_eq!(worklog.start(), at(200));
-    assert_eq!(worklog.end(), Some(at(200)));
+    assert_eq!(worklog.end(), Some(at_nanos(200, 1_000)));
     assert_eq!(
         repository.find_worklog(original.id()).unwrap(),
         Some(worklog)
@@ -888,17 +878,15 @@ fn compare_and_swap_distinguishes_stale_and_missing_worklogs() {
 }
 
 #[test]
-fn half_open_overlap_rules_allow_touching_zero_duration_and_other_tasks() {
+fn half_open_overlap_rules_allow_touching_and_other_tasks() {
     let alpha = task(1, "alpha");
     let beta = task(2, "beta");
     let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
     let first = completed_worklog(10, alpha.id(), 100, 150);
     let touching = completed_worklog(11, alpha.id(), 150, 200);
-    let zero = completed_worklog(12, alpha.id(), 125, 125);
     let other_task = completed_worklog(13, beta.id(), 120, 180);
     repository.insert_worklog(&first).unwrap();
     repository.insert_worklog(&touching).unwrap();
-    repository.insert_worklog(&zero).unwrap();
     repository.insert_worklog(&other_task).unwrap();
 
     let overlapping = completed_worklog(14, alpha.id(), 149, 151);
@@ -1209,4 +1197,51 @@ fn move_candidates_match_unicode_lowercase_expansion_and_never_read_storage() {
     assert_eq!(application.move_candidates(source.id(), "İs"), expected);
     assert!(application.move_candidates(source.id(), "İz").is_empty());
     assert_eq!(application.move_candidates(source.id(), ""), expected);
+}
+
+#[test]
+fn correction_rejects_zero_duration_after_microsecond_canonicalization_without_writes() {
+    let alpha = task(1, "alpha");
+    let original = completed_worklog(10, alpha.id(), 100, 200);
+    let repository = MemoryRepository::with_tasks(vec![alpha]);
+    repository.insert_worklog(&original).unwrap();
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let pending_write = RepositoryError::Backend {
+        message: "unexpected write".to_owned(),
+    };
+    repository.fail_next_write(pending_write.clone(), None);
+    let start = DateTime::from_timestamp(150, 123_456_000).unwrap();
+    for end in [start, DateTime::from_timestamp(150, 123_456_999).unwrap()] {
+        assert_eq!(
+            application.correct_worklog(
+                original.id(),
+                original.times(),
+                WorklogTimes::new(start, Some(end)),
+                at(300)
+            ),
+            Err(ApplicationError::InvalidWorklogCorrection(
+                WorklogCorrectionError::ZeroDuration
+            ))
+        );
+        assert_eq!(
+            repository.find_worklog(original.id()).unwrap(),
+            Some(original.clone())
+        );
+        assert_eq!(
+            repository.0.borrow().fail_next_write,
+            Some(pending_write.clone())
+        );
+    }
+    repository.0.borrow_mut().fail_next_write = None;
+    let end = DateTime::from_timestamp(150, 123_457_000).unwrap();
+    let corrected = application
+        .correct_worklog(
+            original.id(),
+            original.times(),
+            WorklogTimes::new(start, Some(end)),
+            at(300),
+        )
+        .unwrap();
+    assert_eq!(corrected.start(), start);
+    assert_eq!(corrected.end(), Some(end));
 }

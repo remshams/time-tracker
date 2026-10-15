@@ -88,19 +88,13 @@ pub struct ReportTotals {
 /// can request an unbounded page.
 pub const WORKLOG_PAGE_SIZE: usize = 50;
 
-/// The position of one worklog in the history order, used to fetch the next
-/// page after it.
+/// The last worklog and task history revision used to fetch the next page.
 ///
-/// History is ordered by start descending, then `WorklogId` ascending as the
-/// deterministic tie-break, so a cursor carries both values. Rows that share
-/// a start are ordered and bounded by identifier, which is what keeps page
-/// boundaries from repeating or dropping them.
+/// Storage resolves the worklog's start in the same read transaction as the
+/// revision check and page query. History uses start descending, then ID
+/// ascending, even when a corrected start differs from UUID creation order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorklogCursor {
-    /// The task whose history produced this cursor.
-    pub task_id: TaskId,
-    /// The start time of the page's last worklog, in UTC.
-    pub start: DateTime<Utc>,
     /// The identifier of the page's last worklog.
     pub id: WorklogId,
     /// The task history ordering revision that produced this cursor.
@@ -142,10 +136,13 @@ pub struct WorklogPage {
     pub next_cursor: Option<WorklogCursor>,
 }
 
-/// Position and ordering revision for the global worklog feed.
+/// Last worklog and ordering revision for the global worklog feed.
+///
+/// Storage resolves the anchor in the page read transaction. A missing
+/// anchor or changed revision requires a fresh first page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlobalWorklogCursor {
-    pub start: DateTime<Utc>,
+    /// The identifier of the page's last worklog.
     pub id: WorklogId,
     /// Any committed worklog write changes this revision.
     pub revision: i64,

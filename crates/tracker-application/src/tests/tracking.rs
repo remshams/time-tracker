@@ -638,3 +638,46 @@ fn guarded_tracking_with_a_caller_id_preserves_identity_and_rejects_stale_active
     );
     assert_eq!(repository.active_worklog().unwrap().unwrap().id(), next_id);
 }
+
+#[test]
+fn stop_and_switch_reject_zero_duration_after_microsecond_canonicalization_without_writes() {
+    let alpha = task(1, "alpha");
+    let beta = task(2, "beta");
+    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
+    let mut application = TrackerApplication::load(repository.clone()).unwrap();
+    let start = DateTime::from_timestamp(100, 123_456_000).unwrap();
+    let active = match application.set_active_task(alpha.id(), start).unwrap() {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        other => panic!("expected start, got {other:?}"),
+    };
+    let state = application.current_tracking().clone();
+    let pending_write = RepositoryError::Backend {
+        message: "unexpected write".to_owned(),
+    };
+    repository.fail_next_write(pending_write.clone(), None);
+    for stop in [start, DateTime::from_timestamp(100, 123_456_999).unwrap()] {
+        let expected = Err(ApplicationError::Domain(TrackingError::StopAtStart {
+            worklog_id: active.id(),
+            start,
+        }));
+        assert_eq!(application.clear_active_task(active.id(), stop), expected);
+        assert_eq!(
+            application.set_active_task(beta.id(), stop),
+            Err(ApplicationError::Domain(TrackingError::StopAtStart {
+                worklog_id: active.id(),
+                start,
+            }))
+        );
+        assert_eq!(application.current_tracking(), &state);
+        assert_eq!(repository.0.borrow().worklogs, vec![active.clone()]);
+        assert_eq!(
+            repository.0.borrow().fail_next_write,
+            Some(pending_write.clone())
+        );
+    }
+    repository.0.borrow_mut().fail_next_write = None;
+    let boundary = DateTime::from_timestamp(100, 123_457_000).unwrap();
+    assert!(
+        matches!(application.set_active_task(beta.id(), boundary), Ok(SetActiveTaskOutcome::Switched { stopped, started }) if stopped.end() == Some(boundary) && started.start() == boundary)
+    );
+}
