@@ -60,7 +60,7 @@ Listing defaults to active tasks ordered by most recently worked. Search uses th
 
 Archiving rechecks eligibility in one transaction at the token's original preview time, as the TUI does. Waiting to confirm does not move the eligibility window. Running timers and recorded positive-duration work starting at or after the preview time prevent affected tasks from qualifying. Local mode requires the candidate set to match the preview, and confirmation cannot precede the preview time. Server mode keeps the revision check and reports the actual archived count, which can differ from the preview if storage changed without advancing the server revision. If a guard fails, generate a new preview. Remote previews expire when their preview time is more than 15 minutes from the server clock. Restoring a task preserves its ID and worklogs.
 
-Remote clients and servers require `/v1` protocol version 3. Update every client and the server together, then regenerate saved remote preview tokens. Health checks reject incompatible versions before loading resources.
+Remote clients and servers require `/v1` protocol version 4. Update every client and the server together, then regenerate saved remote preview tokens. Health checks reject incompatible versions before loading resources.
 
 ## Tracking
 
@@ -83,7 +83,7 @@ tt-cli worklogs move WORKLOG_ID DESTINATION_TASK_ID --expected-task TASK_ID --ex
 tt-cli worklogs delete WORKLOG_ID --expected-task TASK_ID --expected-start TIME --expected-end TIME_OR_RUNNING --yes
 ```
 
-Without `--task`, history includes all active and archived tasks. Each page contains at most 50 worklogs, newest first. Pass the returned `next_cursor` JSON unchanged as `--cursor` to load older rows. A null cursor marks the end. Cursors retain their ordering revision and task or global scope. If another client invalidates a cursor, restart with the newest page.
+Without `--task`, history includes all active and archived tasks. Each page contains at most 50 worklogs, newest first. Pass the returned `next_cursor` JSON unchanged as `--cursor` to load older rows. A null cursor marks the end. Cursors retain the anchor ID and ordering revision in their task or global backend token. Storage resolves the anchor timestamp; equal starts use ID ascending as the tie-break. A deleted or moved-out anchor requires a fresh first page. If another client invalidates a cursor, restart with the newest page.
 
 For mutations, copy the expected start and end from the previously read worklog. Pass `running` when the old end is null. Moves and deletion also require the previously read task ID. The application compares these values with storage before writing. A stale selection fails instead of replacing the guard with fresh values.
 
@@ -108,3 +108,5 @@ On a concurrency conflict, read the current task, timer, or history before prepa
 A remote write may commit even if its response is lost. A failed state refresh after a local write can also leave the operation committed. Check current state after an unconfirmed outcome before repeating a mutation, especially task creation. The remote client can retry the same request internally with the same request ID. A new CLI invocation is a new request and does not provide cross-invocation deduplication.
 
 The CLI uses the server's existing trust model. See [remote mode](../README.md#remote-mode) for binding and network requirements.
+
+Completed worklogs require an end strictly later than their start after microsecond canonicalization. A stop or switch at the active start fails and keeps the timer running. Schema migration 7 refuses existing zero-duration rows without changing them. Back up the database, use the previous client to explicitly correct or delete those entries, close old clients, and retry the upgrade. See [ADR 0023](adr/0023-id-only-worklog-cursors-and-positive-durations.md) for cursor compatibility and migration recovery. Regenerate saved history cursors and remote preview tokens after upgrading all clients and the server.
