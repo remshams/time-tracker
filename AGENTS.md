@@ -18,6 +18,10 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 
 - When pushing a branch, push it to every configured remote unless the user explicitly requests otherwise.
 
+## Pull request descriptions
+
+- Follow the [pull request description guide](docs/pull-request-descriptions.md) when creating or updating a PR description. Apply the `unslop` skill to the description before publishing it.
+
 ## End-to-end tests
 
 - Keep E2E tests unchanged when a task does not change requirements or externally observable behavior.
