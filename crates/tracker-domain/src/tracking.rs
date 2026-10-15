@@ -460,7 +460,9 @@ mod tests {
     fn switch_accepts_matching_boundaries() {
         let mut tracker = Tracker::idle();
         tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
-        let switched = tracker.switch(&task(2), worklog_id(2), at(101), at(101)).unwrap();
+        let switched = tracker
+            .switch(&task(2), worklog_id(2), at(101), at(101))
+            .unwrap();
         assert_eq!(switched.stopped.end(), Some(at(101)));
         assert_eq!(switched.started.start(), at(101));
     }
@@ -482,7 +484,10 @@ mod tests {
             assert_eq!(tracker.state(), &state);
         }
         for target in [task(1), task(2)] {
-            assert_eq!(tracker.toggle(&target, worklog_id(2), at(100)), Err(expected.clone()));
+            assert_eq!(
+                tracker.toggle(&target, worklog_id(2), at(100)),
+                Err(expected.clone())
+            );
             assert_eq!(tracker.state(), &state);
         }
     }
