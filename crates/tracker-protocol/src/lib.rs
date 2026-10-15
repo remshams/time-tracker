@@ -7,7 +7,7 @@ use tracker_application::{
 };
 use tracker_domain::{Task, TaskId, Worklog, WorklogId};
 
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -284,8 +284,6 @@ pub struct MutationDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct WorklogCursorDto {
-    pub task_id: Option<String>,
-    pub start: DateTime<Utc>,
     pub id: String,
     pub revision: i64,
 }
@@ -293,8 +291,6 @@ pub struct WorklogCursorDto {
 impl From<WorklogCursor> for WorklogCursorDto {
     fn from(cursor: WorklogCursor) -> Self {
         Self {
-            task_id: Some(cursor.task_id.to_string()),
-            start: cursor.start,
             id: cursor.id.to_string(),
             revision: cursor.revision,
         }
@@ -304,7 +300,6 @@ impl From<WorklogCursor> for WorklogCursorDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct GlobalWorklogCursorDto {
-    pub start: DateTime<Utc>,
     pub id: String,
     pub revision: i64,
 }
@@ -312,7 +307,6 @@ pub struct GlobalWorklogCursorDto {
 impl From<GlobalWorklogCursor> for GlobalWorklogCursorDto {
     fn from(cursor: GlobalWorklogCursor) -> Self {
         Self {
-            start: cursor.start,
             id: cursor.id.to_string(),
             revision: cursor.revision,
         }
@@ -322,8 +316,6 @@ impl From<GlobalWorklogCursor> for GlobalWorklogCursorDto {
 impl From<GlobalWorklogCursor> for WorklogCursorDto {
     fn from(cursor: GlobalWorklogCursor) -> Self {
         Self {
-            task_id: None,
-            start: cursor.start,
             id: cursor.id.to_string(),
             revision: cursor.revision,
         }
