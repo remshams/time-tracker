@@ -771,17 +771,19 @@ impl TrackerApplicationService for TestService {
         let mut worklogs = self.authoritative_worklogs.clone();
         worklogs.sort_by_key(|worklog| (std::cmp::Reverse(worklog.start()), worklog.id()));
         if let Some(cursor) = after {
-            worklogs.retain(|worklog| {
-                (std::cmp::Reverse(worklog.start()), worklog.id())
-                    > (std::cmp::Reverse(cursor.start), cursor.id)
-            });
+            let position = worklogs
+                .iter()
+                .position(|worklog| worklog.id() == cursor.id)
+                .ok_or_else(|| {
+                    ApplicationError::from(RepositoryError::GlobalWorklogHistoryChanged)
+                })?;
+            worklogs.drain(..=position);
         }
         let has_next = worklogs.len() > 50;
         worklogs.truncate(50);
         let next_cursor = has_next.then(|| {
             let last = worklogs.last().expect("a full page has a last worklog");
             GlobalWorklogCursor {
-                start: last.start(),
                 id: last.id(),
                 revision: 0,
             }
@@ -925,10 +927,8 @@ pub(crate) fn history_worklog(tag: u128, task_id: TaskId, start: i64) -> Worklog
     Worklog::new(worklog_id(tag), task_id, at(start), Some(at(start + 60))).unwrap()
 }
 
-pub(crate) fn cursor(start: i64, tag: u128) -> WorklogCursor {
+pub(crate) fn cursor(tag: u128) -> WorklogCursor {
     WorklogCursor {
-        task_id: TaskId::from_uuid(uuid::Uuid::from_u128(1)),
-        start: at(start),
         id: worklog_id(tag),
         revision: 0,
     }
@@ -973,7 +973,7 @@ pub(crate) fn correction_history_app_with_spy_in(
     let task = task(1, "alpha");
     let mut service = TestService::with_tasks(vec![task]);
     service.worklog_pages = vec![
-        Ok(page(vec![initial], Some(cursor(50, 50)))),
+        Ok(page(vec![initial], Some(cursor(50)))),
         Ok(page(reload, None)),
     ];
     let spy = service.spy();

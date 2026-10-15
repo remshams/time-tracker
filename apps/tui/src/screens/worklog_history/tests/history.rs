@@ -10,7 +10,7 @@ fn enter_opens_the_selected_tasks_history_and_escape_returns_to_it() {
             history_worklog(11, alpha.id(), 200),
             history_worklog(10, alpha.id(), 100),
         ],
-        Some(cursor(100, 10)),
+        Some(cursor(10)),
     );
     let second = page(vec![history_worklog(12, alpha.id(), 300)], None);
     let mut service = TestService::with_tasks(vec![alpha.clone(), task(2, "beta")]);

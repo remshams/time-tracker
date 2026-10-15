@@ -632,8 +632,6 @@ mod navigation_tests {
         let first = worklog(task_id, 100);
         let older = worklog(task_id, 50);
         let cursor = WorklogCursor {
-            task_id,
-            start: first.start(),
             id: first.id(),
             revision: 1,
         };
@@ -666,8 +664,6 @@ mod navigation_tests {
         let first = worklog(task_id, 100);
         let older = worklog(task_id, 50);
         let cursor = WorklogCursor {
-            task_id,
-            start: first.start(),
             id: first.id(),
             revision: 1,
         };

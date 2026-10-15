@@ -481,7 +481,6 @@ mod tests {
         let task_id = tracker_domain::TaskId::generate();
         let first = worklog(task_id, 1);
         let cursor = GlobalWorklogCursor {
-            start: first.start(),
             id: first.id(),
             revision: 1,
         };
@@ -503,7 +502,6 @@ mod tests {
         let task_id = tracker_domain::TaskId::generate();
         let first = worklog(task_id, 1);
         let cursor = GlobalWorklogCursor {
-            start: first.start(),
             id: first.id(),
             revision: 1,
         };
@@ -528,7 +526,6 @@ mod tests {
         let task_id = tracker_domain::TaskId::generate();
         let first = worklog(task_id, 1);
         let cursor = GlobalWorklogCursor {
-            start: first.start(),
             id: first.id(),
             revision: 1,
         };
