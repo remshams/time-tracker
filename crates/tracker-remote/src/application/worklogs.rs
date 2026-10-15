@@ -1,7 +1,7 @@
 use super::{
-    ApplicationError, DateTime, DeleteWorklogRequest, GlobalWorklogCursor, GlobalWorklogPage,
-    HashMap, HistoryRead, Method, MutationContext, RemoteError, RemoteSession, TaskId, Utc,
-    Worklog, WorklogChangeRequest, WorklogCursor, WorklogId, WorklogPage, WorklogPageDto,
+    ApplicationError, DeleteWorklogRequest, GlobalWorklogCursor, GlobalWorklogPage, HashMap,
+    HistoryRead, Method, MutationContext, RemoteError, RemoteSession, TaskId, Worklog,
+    WorklogChangeRequest, WorklogCursor, WorklogId, WorklogPage, WorklogPageDto,
     WorklogResourceDto, WorklogTimes, canonical, decode_history, decode_worklog,
     map_application_error, protocol_failure, worklog_result,
 };
@@ -36,7 +36,7 @@ impl WorklogsClient {
         &mut self,
         session: &mut RemoteSession,
         task_id: Option<TaskId>,
-        after: Option<(DateTime<Utc>, WorklogId, i64)>,
+        after: Option<(WorklogId, i64)>,
     ) -> Result<HistoryRead, ApplicationError> {
         session
             .ensure_version()
@@ -47,15 +47,10 @@ impl WorklogsClient {
             url.query_pairs_mut()
                 .append_pair("task_id", &id.to_string());
         }
-        if let Some((start, id, revision)) = after {
+        if let Some((id, revision)) = after {
             url.query_pairs_mut()
-                .append_pair("after_start", &start.to_rfc3339())
                 .append_pair("after_id", &id.to_string())
                 .append_pair("after_revision", &revision.to_string());
-            if let Some(task_id) = task_id {
-                url.query_pairs_mut()
-                    .append_pair("after_task_id", &task_id.to_string());
-            }
         }
         let dto: WorklogPageDto =
             session
@@ -80,21 +75,16 @@ impl WorklogsClient {
         task_id: TaskId,
         after: Option<&WorklogCursor>,
     ) -> Result<WorklogPage, ApplicationError> {
-        if after.is_some_and(|cursor| cursor.task_id != task_id) {
-            return Err(ApplicationError::worklog_history_changed(task_id));
-        }
         let dto = self
             .history(
                 session,
                 Some(task_id),
-                after.map(|cursor| (cursor.start, cursor.id, cursor.revision)),
+                after.map(|cursor| (cursor.id, cursor.revision)),
             )
             .await?;
         Ok(WorklogPage {
             worklogs: dto.worklogs,
             next_cursor: dto.next_cursor.map(|cursor| WorklogCursor {
-                task_id,
-                start: cursor.start,
                 id: cursor.id,
                 revision: cursor.revision,
             }),
@@ -111,7 +101,7 @@ impl WorklogsClient {
             .history(
                 session,
                 None,
-                after.map(|cursor| (cursor.start, cursor.id, cursor.revision)),
+                after.map(|cursor| (cursor.id, cursor.revision)),
             )
             .await?;
         Ok(GlobalWorklogPage {

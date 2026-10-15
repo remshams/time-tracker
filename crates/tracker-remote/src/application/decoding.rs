@@ -125,7 +125,7 @@ pub(super) fn decode_worklog(dto: WorklogDto) -> Result<Worklog, RemoteError> {
         .task_id
         .parse()
         .map_err(|_| RemoteError::Protocol("invalid worklog task id".into()))?;
-    Worklog::new(id, task_id, dto.start, dto.end)
+    Worklog::new(id, task_id, canonical(dto.start), dto.end.map(canonical))
         .map_err(|error| RemoteError::Protocol(error.to_string()))
 }
 
@@ -147,13 +147,8 @@ pub(super) fn decode_history(
     dto: &WorklogPageDto,
     task_id: Option<TaskId>,
 ) -> Result<HistoryRead, RemoteError> {
-    if dto.revision.is_empty()
-        || dto
-            .next_cursor
-            .as_ref()
-            .is_some_and(|cursor| cursor.task_id != task_id.map(|id| id.to_string()))
-    {
-        return Err(RemoteError::Protocol("invalid history scope".into()));
+    if dto.revision.is_empty() {
+        return Err(RemoteError::Protocol("invalid history revision".into()));
     }
     let worklogs = dto
         .worklogs
@@ -171,7 +166,6 @@ pub(super) fn decode_history(
         .as_ref()
         .map(|cursor| {
             Ok::<_, RemoteError>(GlobalWorklogCursor {
-                start: cursor.start,
                 id: cursor
                     .id
                     .parse()
@@ -180,6 +174,13 @@ pub(super) fn decode_history(
             })
         })
         .transpose()?;
+    if next_cursor.is_some_and(|cursor| {
+        cursor.revision < 0 || worklogs.last().is_none_or(|last| last.id() != cursor.id)
+    }) {
+        return Err(RemoteError::Protocol(
+            "invalid history cursor anchor".into(),
+        ));
+    }
     Ok(HistoryRead {
         worklogs,
         next_cursor,
