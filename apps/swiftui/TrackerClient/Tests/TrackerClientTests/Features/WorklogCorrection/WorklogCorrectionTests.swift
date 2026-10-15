@@ -274,13 +274,66 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertEqual(fixture.session.worklogCorrection.error, "Start must not be in the future.")
         fixture.session.setWorklogCorrectionStart(timestamp("2024-12-30T11:00:00.000Z")!)
         fixture.session.submitWorklogCorrection()
-        XCTAssertEqual(fixture.session.worklogCorrection.error, "End must not be before Start.")
+        XCTAssertEqual(fixture.session.worklogCorrection.error, "End must be after Start.")
         fixture.session.setWorklogCorrectionEnd(fixture.clock.now.addingTimeInterval(60))
         fixture.session.submitWorklogCorrection()
         XCTAssertEqual(fixture.session.worklogCorrection.error, "End must not be in the future.")
         XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
         XCTAssertFalse(fixture.session.worklogCorrection.isSubmitting)
         XCTAssertEqual(fixture.client.operations.count, operations)
+    }
+
+    func testCompletedDurationUsesStoredMicrosecondsAcrossOffsets() {
+        let start = "2024-12-30T10:00:00.123456000Z"
+        XCTAssertTrue(hasPositiveWorklogDuration(start: start, end: "2024-12-30T11:00:00.123457000+01:00"))
+        XCTAssertFalse(hasPositiveWorklogDuration(start: start, end: "2024-12-30T11:00:00.123456999+01:00"))
+        XCTAssertFalse(hasPositiveWorklogDuration(start: start, end: "2024-12-30T10:00:00.123455999Z"))
+        XCTAssertTrue(hasPositiveWorklogDuration(start: start, end: "2024-12-30T10:00:01.000000Z"))
+        XCTAssertFalse(hasPositiveWorklogDuration(start: start, end: "2024-12-30T09:59:59.999999Z"))
+        XCTAssertFalse(hasPositiveWorklogDuration(start: "invalid", end: start))
+        XCTAssertFalse(hasPositiveWorklogDuration(start: start, end: "invalid"))
+    }
+
+    @MainActor
+    func testZeroDurationDraftsStayOpenWithoutSendingRequests() async throws {
+        for end in ["2024-12-30T10:00:00.000000000Z", "2024-12-30T10:00:00.000000999Z"] {
+            let fixture = Fixture()
+            defer { fixture.cleanup() }
+            let original = WorklogItem(
+                id: "precise-log", taskId: firstTask.id,
+                start: "2024-12-30T09:00:00.000000Z", end: end)
+            _ = try await openCompleted(fixture, worklog: original)
+            let operations = fixture.client.operations.count
+            let start = try XCTUnwrap(timestamp("2024-12-30T10:00:00.000000Z"))
+            fixture.session.setWorklogCorrectionStart(start)
+
+            fixture.session.submitWorklogCorrection()
+            try await fixture.settled()
+
+            XCTAssertEqual(fixture.session.worklogCorrection.error, "End must be after Start.")
+            XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
+            XCTAssertTrue(fixture.session.worklogCorrection.canEdit)
+            XCTAssertFalse(fixture.session.worklogCorrection.isSubmitting)
+            XCTAssertEqual(fixture.session.worklogCorrection.original, original)
+            XCTAssertEqual(fixture.session.worklogCorrection.start, start)
+            XCTAssertEqual(fixture.session.worklogCorrection.end, timestamp(end))
+            XCTAssertEqual(fixture.client.operations.count, operations)
+        }
+    }
+
+    @MainActor
+    func testCorrectionAllowsOneMicrosecondOfDuration() throws {
+        let state = WorklogCorrectionState()
+        let original = WorklogItem(
+            id: "precise-log", taskId: firstTask.id,
+            start: "2024-12-30T09:00:00.000000Z", end: "2024-12-30T10:00:00.000001Z")
+        state.open(original, taskName: firstTask.name, timezone: TimeZone(secondsFromGMT: 0)!)
+        state.updateStart(try XCTUnwrap(timestamp("2024-12-30T10:00:00.000000Z")))
+
+        XCTAssertTrue(state.submit(at: try XCTUnwrap(timestamp("2025-01-01T00:00:00.000000Z"))))
+        let intent = try XCTUnwrap(state.takePendingIntent())
+        XCTAssertEqual(intent.replacementEnd, original.end)
+        XCTAssertTrue(sameWorklogTimestamp(intent.replacementStart, "2024-12-30T10:00:00.000000Z"))
     }
 
     @MainActor

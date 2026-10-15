@@ -88,10 +88,6 @@ final class WorklogCorrectionState {
         value <= now
     }
 
-    private static func isOrderedInterval(start: Date, end: Date) -> Bool {
-        end >= start
-    }
-
     func open(_ worklog: WorklogItem, taskName: String, timezone: TimeZone = .current, historyPageLimit: Int = 2) {
         if isPresented || intent != nil { isPresented = true; return }
         guard let start = timestamp(worklog.start),
@@ -129,8 +125,8 @@ final class WorklogCorrectionState {
                 return false
             }
             if let replacementEnd, let endDate = timestamp(replacementEnd) {
-                guard Self.isOrderedInterval(start: replacementDate, end: endDate) else {
-                    error = "End must not be before Start."
+                guard hasPositiveWorklogDuration(start: replacementStart, end: replacementEnd) else {
+                    error = "End must be after Start."
                     return false
                 }
                 guard Self.isNotInFuture(endDate, now: date) else {
