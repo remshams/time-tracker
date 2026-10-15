@@ -42,7 +42,13 @@ Choose `small`, `medium`, or `high` and explain the rating in terms of what coul
 - `medium` fits a behavior change that can affect a client workflow or several components but has a practical recovery path.
 - `high` fits a change that could lose data, break deployed clients, or require a coordinated rollout or difficult rollback.
 
-Name the main failure case, the validation that reduces the risk, and any remaining uncertainty. Summarize relevant checks and their results; report checks that failed or could not run. Explain recovery steps when reverting the commit alone would not restore service or data.
+Name the main failure case, the validation that reduces the risk, and any remaining uncertainty. Explain recovery steps when reverting the commit alone would not restore service or data.
+
+## Validation and CI
+
+List the CI jobs or steps executed for the current PR revision and their results. Link the CI runs so reviewers can inspect failures or warnings. Report local checks separately, with the commands and results, so reviewers can tell which checks CI has confirmed.
+
+For each skipped step, name it and explain why it is unnecessary for this PR's scope. For example, mutation checks can be skipped for a documentation-only change because it cannot affect production behavior, tests, or build inputs. If a required check could not run because of a missing tool, platform, or another blocker, state that limitation and what remains unverified. Mark pending checks as pending and update the description when they finish.
 
 ## Review focus
 
