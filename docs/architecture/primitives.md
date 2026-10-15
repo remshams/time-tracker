@@ -24,7 +24,7 @@ Source: [crate](../../crates/tracker-application/Cargo.toml), [use cases](../../
 
 ### tracker-storage
 
-Owns SQLite connections, database paths, migrations, coherent reads, and transactional writes. `SqliteRepository` implements the application repository contract. Database constraints also enforce single active tracking, same-task overlap rules, and active-worklog deletion protection for direct SQL writes.
+Used by clients in local mode and by the HTTP server. Remote clients use HTTP instead of opening SQLite. Owns database connections, paths, migrations, coherent reads, and transactional writes. `SqliteRepository` implements the application repository contract. Database constraints also enforce single active tracking, same-task overlap rules, and active-worklog deletion protection for direct SQL writes.
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain).
 
@@ -48,7 +48,7 @@ Source: [crate](../../crates/tracker-server/Cargo.toml), [entry points](../../cr
 
 ### tracker-remote
 
-Owns asynchronous HTTP transport, response validation, confirmed resource caches, and guarded command recovery. `RemoteApplication` publishes only validated observations. Failed refreshes retain confirmed values; a saved command remains saved after a display refresh fails. Unloaded tracking differs from observed idle tracking. It never opens the server's database.
+Used by clients in remote mode; local clients and the HTTP server use the local application and storage path. Owns asynchronous HTTP transport, response validation, confirmed resource caches, and guarded command recovery. `RemoteApplication` publishes only validated observations. Failed refreshes retain confirmed values; a saved command remains saved after a display refresh fails. Unloaded tracking differs from observed idle tracking. It never opens the server's database.
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol).
 
