@@ -40,10 +40,13 @@ impl WorklogTimes {
         self.end.is_none()
     }
 
-    /// Rejects an end timestamp before the start timestamp.
+    /// Requires completed worklogs to end after their start timestamp.
     pub fn validate(&self) -> Result<(), WorklogError> {
         if self.end.is_some_and(|end| end < self.start) {
             return Err(WorklogError::EndBeforeStart);
+        }
+        if self.end == Some(self.start) {
+            return Err(WorklogError::ZeroDuration);
         }
         Ok(())
     }
@@ -62,6 +65,9 @@ impl WorklogTimes {
         if replacement.end.is_some_and(|end| end < replacement.start) {
             return Err(WorklogCorrectionError::EndBeforeStart);
         }
+        if replacement.end == Some(replacement.start) {
+            return Err(WorklogCorrectionError::ZeroDuration);
+        }
         if replacement.start > occurred_at {
             return Err(WorklogCorrectionError::StartAfterOccurredAt);
         }
@@ -75,7 +81,7 @@ impl WorklogTimes {
 /// A recorded interval spent on a task.
 ///
 /// `end` is `None` while the worklog is active. A completed worklog always
-/// has an end time that is not earlier than its start time.
+/// has an end time later than its start time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worklog {
     id: WorklogId,
@@ -87,6 +93,9 @@ pub struct Worklog {
 /// Why a worklog could not be built.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum WorklogError {
+    /// A completed worklog has no elapsed time.
+    #[error("worklog end must be later than its start")]
+    ZeroDuration,
     /// The end time precedes the start time.
     #[error("worklog end must not precede its start")]
     EndBeforeStart,
@@ -95,6 +104,9 @@ pub enum WorklogError {
 /// Why a worklog correction was rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum WorklogCorrectionError {
+    /// The corrected completed worklog has no elapsed time.
+    #[error("corrected worklog end must be later than its start")]
+    ZeroDuration,
     /// The corrected end time precedes the corrected start time.
     #[error("corrected worklog end must not precede its start")]
     EndBeforeStart,
@@ -119,7 +131,7 @@ pub enum WorklogMoveError {
 }
 
 impl Worklog {
-    /// Builds a worklog from stored values, rejecting an end before the start.
+    /// Builds a worklog from stored values, requiring positive completed duration.
     pub fn new(
         id: WorklogId,
         task_id: TaskId,
@@ -177,14 +189,10 @@ impl Worklog {
 
     /// Whether this worklog overlaps another worklog for the same task.
     ///
-    /// Intervals are half-open. Touching boundaries do not overlap, completed
-    /// zero-duration intervals overlap nothing, and active intervals extend
-    /// indefinitely. Worklogs for different tasks never overlap.
+    /// Intervals are half-open. Touching boundaries do not overlap, and active
+    /// intervals extend indefinitely. Worklogs for different tasks never overlap.
     pub fn overlaps(&self, other: &Self) -> bool {
-        if self.task_id != other.task_id
-            || self.end == Some(self.start)
-            || other.end == Some(other.start)
-        {
+        if self.task_id != other.task_id {
             return false;
         }
 
@@ -265,14 +273,19 @@ impl ActiveWorklog {
 
     /// Stops the worklog at the given instant.
     ///
-    /// Fails when `at` precedes the start time; the worklog stays untouched in
-    /// that case.
+    /// Fails when `at` is not later than the start time. The worklog stays untouched.
     pub fn stop(self, at: DateTime<Utc>) -> Result<Worklog, crate::tracking::TrackingError> {
         if at < self.start {
             return Err(crate::tracking::TrackingError::StopBeforeStart {
                 worklog_id: self.id,
                 start: self.start,
                 stop_at: at,
+            });
+        }
+        if at == self.start {
+            return Err(crate::tracking::TrackingError::StopAtStart {
+                worklog_id: self.id,
+                start: self.start,
             });
         }
         Ok(Worklog {
@@ -313,7 +326,10 @@ mod tests {
     #[test]
     fn timestamp_pairs_validate_without_worklog_identity() {
         assert_eq!(WorklogTimes::new(at(100), None).validate(), Ok(()));
-        assert_eq!(WorklogTimes::new(at(100), Some(at(100))).validate(), Ok(()));
+        assert_eq!(
+            WorklogTimes::new(at(100), Some(at(100))).validate(),
+            Err(WorklogError::ZeroDuration)
+        );
         assert_eq!(WorklogTimes::new(at(100), Some(at(200))).validate(), Ok(()));
         assert_eq!(
             WorklogTimes::new(at(200), Some(at(100))).validate(),
@@ -342,7 +358,7 @@ mod tests {
         );
         assert_eq!(
             original.validate_correction(WorklogTimes::new(at(300), Some(at(300))), at(300)),
-            Ok(())
+            Err(WorklogCorrectionError::ZeroDuration)
         );
         assert_eq!(
             WorklogTimes::new(at(100), None)
@@ -352,11 +368,13 @@ mod tests {
     }
 
     #[test]
-    fn new_accepts_active_completed_and_zero_duration_worklogs() {
+    fn new_accepts_active_and_positive_completed_worklogs() {
         let active = Worklog::new(worklog_id(1), task_id(1), at(100), None).unwrap();
         assert_eq!(active.end(), None);
-        let boundary = Worklog::new(worklog_id(2), task_id(1), at(100), Some(at(100))).unwrap();
-        assert_eq!(boundary.end(), Some(at(100)));
+        assert_eq!(
+            Worklog::new(worklog_id(2), task_id(1), at(100), Some(at(100))),
+            Err(WorklogError::ZeroDuration)
+        );
         let completed = Worklog::new(worklog_id(3), task_id(1), at(100), Some(at(200))).unwrap();
         assert_eq!(completed.end(), Some(at(200)));
     }
@@ -395,18 +413,6 @@ mod tests {
 
         assert!(!first.overlaps(&second));
         assert!(!second.overlaps(&first));
-    }
-
-    #[test]
-    fn completed_zero_duration_intervals_do_not_overlap() {
-        let interval = Worklog::new(worklog_id(1), task_id(1), at(100), Some(at(200))).unwrap();
-        let inside = Worklog::new(worklog_id(2), task_id(1), at(150), Some(at(150))).unwrap();
-        let same_start = Worklog::new(worklog_id(3), task_id(1), at(100), Some(at(100))).unwrap();
-
-        assert!(!interval.overlaps(&inside));
-        assert!(!inside.overlaps(&interval));
-        assert!(!interval.overlaps(&same_start));
-        assert!(!same_start.overlaps(&interval));
     }
 
     #[test]
@@ -498,12 +504,11 @@ mod tests {
     }
 
     #[test]
-    fn correction_accepts_zero_duration_and_rejects_end_before_start() {
+    fn correction_rejects_zero_duration_and_end_before_start() {
         let completed = Worklog::new(worklog_id(1), task_id(1), at(100), Some(at(200))).unwrap();
-        assert!(
-            completed
-                .corrected(WorklogTimes::new(at(150), Some(at(150))), at(300))
-                .is_ok()
+        assert_eq!(
+            completed.corrected(WorklogTimes::new(at(150), Some(at(150))), at(300)),
+            Err(WorklogCorrectionError::ZeroDuration)
         );
         assert_eq!(
             completed.corrected(WorklogTimes::new(at(151), Some(at(150))), at(300)),
@@ -512,18 +517,15 @@ mod tests {
     }
 
     #[test]
-    fn correction_accepts_timestamps_equal_to_occurred_at() {
+    fn correction_accepts_end_equal_to_occurred_at() {
         let occurred_at = at(300);
         let completed = Worklog::new(worklog_id(1), task_id(1), at(100), Some(at(200))).unwrap();
 
         let corrected = completed
-            .corrected(
-                WorklogTimes::new(occurred_at, Some(occurred_at)),
-                occurred_at,
-            )
+            .corrected(WorklogTimes::new(at(299), Some(occurred_at)), occurred_at)
             .unwrap();
 
-        assert_eq!(corrected.start(), occurred_at);
+        assert_eq!(corrected.start(), at(299));
         assert_eq!(corrected.end(), Some(occurred_at));
     }
 
@@ -537,7 +539,7 @@ mod tests {
 
         let completed = Worklog::new(worklog_id(2), task_id(1), at(100), Some(at(200))).unwrap();
         assert_eq!(
-            completed.corrected(WorklogTimes::new(at(301), Some(at(301))), at(300)),
+            completed.corrected(WorklogTimes::new(at(301), Some(at(302))), at(300)),
             Err(WorklogCorrectionError::StartAfterOccurredAt)
         );
         assert_eq!(
@@ -547,13 +549,18 @@ mod tests {
     }
 
     #[test]
-    fn active_stop_accepts_start_and_later_instants() {
+    fn active_stop_rejects_start_and_accepts_later_instants() {
         let active = ActiveWorklog::begin(worklog_id(1), task_id(2), at(100));
         assert_eq!(active.id(), worklog_id(1));
         assert_eq!(active.task_id(), task_id(2));
         assert_eq!(active.start(), at(100));
-        let stopped = active.clone().stop(at(100)).unwrap();
-        assert_eq!(stopped.end(), Some(at(100)));
+        assert_eq!(
+            active.clone().stop(at(100)),
+            Err(crate::tracking::TrackingError::StopAtStart {
+                worklog_id: active.id(),
+                start: at(100)
+            })
+        );
         let stopped = active.stop(at(150)).unwrap();
         assert_eq!(stopped.end(), Some(at(150)));
     }

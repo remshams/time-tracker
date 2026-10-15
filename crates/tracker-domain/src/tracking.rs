@@ -34,6 +34,12 @@ pub enum TrackingError {
         start: DateTime<Utc>,
         stop_at: DateTime<Utc>,
     },
+    /// The stop time equals the worklog start.
+    #[error("worklog {worklog_id} must stop later than its start at {start}")]
+    StopAtStart {
+        worklog_id: WorklogId,
+        start: DateTime<Utc>,
+    },
     /// A switch would start the new worklog before it stops the old one.
     #[error("switch start {start_at} must not precede its stop {stop_at}")]
     StartBeforeStop {
@@ -148,7 +154,7 @@ impl Tracker {
 
     /// Stops the active worklog at the given instant.
     ///
-    /// Fails when nothing is running or when `at` precedes the worklog's start.
+    /// Fails when nothing is running or when `at` is not later than the worklog's start.
     /// On failure the worklog stays active.
     pub fn stop(&mut self, at: DateTime<Utc>) -> Result<Worklog, TrackingError> {
         let active = match &self.state {
@@ -165,7 +171,7 @@ impl Tracker {
     ///
     /// Fails, leaving the current worklog active, when nothing is running, when
     /// the target is the active task, when the target is archived, when
-    /// `stop_at` precedes the active worklog's start, or when `start_at`
+    /// `stop_at` is not later than the active worklog's start, or when `start_at`
     /// precedes `stop_at`. Callers persist both halves of the switch in one
     /// transaction.
     pub fn switch(
@@ -344,13 +350,20 @@ mod tests {
         assert_eq!(tracker.state(), &TrackingState::Idle);
     }
 
-    /// A zero-duration completed interval remains valid.
+    /// Rejecting a zero-duration stop keeps the same worklog active.
     #[test]
-    fn stop_at_exactly_the_start_time_is_accepted() {
+    fn stop_at_exactly_the_start_time_is_rejected_without_changing_state() {
         let mut tracker = Tracker::idle();
-        tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
-        let stopped = tracker.stop(at(100)).unwrap();
-        assert_eq!(stopped.end(), Some(at(100)));
+        let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
+        let state = tracker.state().clone();
+        assert_eq!(
+            tracker.stop(at(100)),
+            Err(TrackingError::StopAtStart {
+                worklog_id: started.id(),
+                start: at(100)
+            })
+        );
+        assert_eq!(tracker.state(), &state);
     }
 
     /// A backwards stop must leave the original worklog active.
@@ -442,16 +455,36 @@ mod tests {
         assert_eq!(tracker.active().map(|e| e.task_id()), Some(task_id(2)));
     }
 
-    /// A switch permits zero-duration old work and adjacent half-open intervals.
+    /// A switch permits adjacent half-open intervals with positive completed duration.
     #[test]
     fn switch_accepts_matching_boundaries() {
         let mut tracker = Tracker::idle();
         tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
-        let switched = tracker
-            .switch(&task(2), worklog_id(2), at(100), at(100))
-            .unwrap();
-        assert_eq!(switched.stopped.end(), Some(at(100)));
-        assert_eq!(switched.started.start(), at(100));
+        let switched = tracker.switch(&task(2), worklog_id(2), at(101), at(101)).unwrap();
+        assert_eq!(switched.stopped.end(), Some(at(101)));
+        assert_eq!(switched.started.start(), at(101));
+    }
+
+    #[test]
+    fn zero_duration_switches_and_toggles_preserve_the_active_worklog() {
+        let mut tracker = Tracker::idle();
+        let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
+        let state = tracker.state().clone();
+        let expected = TrackingError::StopAtStart {
+            worklog_id: started.id(),
+            start: at(100),
+        };
+        for next_start in [at(100), at(150)] {
+            assert_eq!(
+                tracker.switch(&task(2), worklog_id(2), at(100), next_start),
+                Err(expected.clone())
+            );
+            assert_eq!(tracker.state(), &state);
+        }
+        for target in [task(1), task(2)] {
+            assert_eq!(tracker.toggle(&target, worklog_id(2), at(100)), Err(expected.clone()));
+            assert_eq!(tracker.state(), &state);
+        }
     }
 
     /// Invalid completion times must not replace the active worklog during a switch.
