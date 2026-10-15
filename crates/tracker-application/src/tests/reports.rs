@@ -65,8 +65,6 @@ fn report_clips_completed_and_active_work_and_orders_ties_by_id() {
         data.worklogs
             .push(completed_worklog(1, alpha.id(), 90, 120));
         data.worklogs
-            .push(completed_worklog(2, alpha.id(), 130, 130));
-        data.worklogs
             .push(completed_worklog(3, beta.id(), 110, 120));
         data.worklogs.push(worklog(4, beta.id(), 200));
     }

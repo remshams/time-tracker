@@ -36,14 +36,14 @@ fn recently_worked_orders_by_latest_work_then_creation_then_id() {
             worklog(10, one.id(), 900).id(),
             one.id(),
             at(900),
-            Some(at(900)),
+            Some(at(901)),
         )
         .unwrap(),
         Worklog::new(
             worklog(11, three.id(), 800).id(),
             three.id(),
             at(800),
-            Some(at(800)),
+            Some(at(801)),
         )
         .unwrap(),
     ]);
@@ -65,7 +65,7 @@ fn recently_worked_puts_tasks_without_worklogs_last() {
             worklog(10, worked.id(), 50).id(),
             worked.id(),
             at(50),
-            Some(at(50)),
+            Some(at(51)),
         )
         .unwrap(),
     );
@@ -99,7 +99,7 @@ fn ties_break_by_created_descending_then_id_ascending() {
                 WorklogId::from_uuid(uuid::Uuid::from_u128(tag as u128 + 10)),
                 task_id,
                 at(700),
-                Some(at(700)),
+                Some(at(701)),
             )
             .unwrap(),
         );

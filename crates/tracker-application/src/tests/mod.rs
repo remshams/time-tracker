@@ -495,15 +495,14 @@ impl TrackerRepository for MemoryRepository {
         }
         let mut worklogs = data.worklogs.clone();
         worklogs.sort_by_key(|worklog| (std::cmp::Reverse(worklog.start()), worklog.id()));
-        let first = after.map_or(0, |cursor| {
-            worklogs
+        let first = match after {
+            None => 0,
+            Some(cursor) => worklogs
                 .iter()
-                .position(|worklog| {
-                    (std::cmp::Reverse(worklog.start()), worklog.id())
-                        > (std::cmp::Reverse(cursor.start), cursor.id)
-                })
-                .unwrap_or(worklogs.len())
-        });
+                .position(|worklog| worklog.id() == cursor.id)
+                .map(|index| index + 1)
+                .ok_or(RepositoryError::GlobalWorklogHistoryChanged)?,
+        };
         let mut worklogs = worklogs
             .into_iter()
             .skip(first)
@@ -514,7 +513,6 @@ impl TrackerRepository for MemoryRepository {
         let next_cursor = has_next.then(|| {
             let last = worklogs.last().expect("a full page has a last worklog");
             GlobalWorklogCursor {
-                start: last.start(),
                 id: last.id(),
                 revision,
             }
@@ -751,7 +749,7 @@ impl TrackerRepository for MemoryRepository {
         self.read_guard()?;
         let data = self.0.borrow();
         let revision = Self::revision(&data, task_id);
-        if after.is_some_and(|cursor| cursor.task_id != task_id || cursor.revision != revision) {
+        if after.is_some_and(|cursor| cursor.revision != revision) {
             return Err(RepositoryError::WorklogHistoryChanged { task_id });
         }
         let active_worklog = data
@@ -788,11 +786,9 @@ impl TrackerRepository for MemoryRepository {
             None => 0,
             Some(cursor) => worklogs
                 .iter()
-                .position(|worklog| {
-                    (std::cmp::Reverse(worklog.start()), worklog.id())
-                        > (std::cmp::Reverse(cursor.start), cursor.id)
-                })
-                .unwrap_or(worklogs.len()),
+                .position(|worklog| worklog.id() == cursor.id)
+                .map(|index| index + 1)
+                .ok_or(RepositoryError::WorklogHistoryChanged { task_id })?,
         };
         // One worklog past the page size reveals whether a next page
         // follows; the extra worklog is dropped again before returning.
@@ -809,8 +805,6 @@ impl TrackerRepository for MemoryRepository {
         let next_cursor = has_next.then(|| {
             let last = worklogs.last().expect("a full page has a last worklog");
             WorklogCursor {
-                task_id,
-                start: last.start(),
                 id: last.id(),
                 revision,
             }
