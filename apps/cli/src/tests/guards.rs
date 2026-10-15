@@ -37,6 +37,11 @@ fn history_pages_keep_exact_scope_revision_and_backend() {
         }
         let first = command(&path, T1, &args).unwrap();
         assert_eq!(first["worklogs"].as_array().unwrap().len(), 50);
+        assert_eq!(first["next_cursor"]["cursor"].as_object().unwrap().len(), 2);
+        assert_eq!(
+            first["next_cursor"]["cursor"]["id"],
+            first["worklogs"][49]["id"]
+        );
         let cursor = first["next_cursor"].to_string();
         args.extend(["--cursor", &cursor]);
         let second = command(&path, T1, &args).unwrap();
@@ -391,4 +396,38 @@ fn correction_requires_a_replacement_even_when_expected_times_are_valid() {
     assert_eq!(error.exit_code, 2);
     assert_eq!(error.message, "correction requires --start or --end");
     assert!(!path.exists());
+}
+
+#[test]
+fn zero_duration_stop_and_switch_preserve_tracking_and_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tt.db");
+    let first = command(&path, T0, &["tasks", "create", "First task"]).unwrap();
+    let second = command(&path, T0, &["tasks", "create", "Second task"]).unwrap();
+    let first_id = first["id"].as_str().unwrap();
+    let second_id = second["id"].as_str().unwrap();
+    let started = command(&path, T0, &["tracking", "start", first_id]).unwrap();
+    let id = started["worklog"]["id"].as_str().unwrap();
+    let before = command(&path, T0, &["tracking", "status"]).unwrap();
+    let history = command(&path, T0, &["worklogs", "list"]).unwrap();
+    for at in [T0, "2026-01-01T00:00:00.000000999Z"] {
+        for arguments in [
+            vec!["tracking", "stop", "--expected-active", id],
+            vec!["tracking", "start", second_id],
+        ] {
+            assert!(command(&path, at, &arguments).is_err());
+            assert_eq!(command(&path, T0, &["tracking", "status"]).unwrap(), before);
+            assert_eq!(command(&path, T0, &["worklogs", "list"]).unwrap(), history);
+        }
+    }
+    command(
+        &path,
+        "2026-01-01T00:00:00.000001Z",
+        &["tracking", "stop", "--expected-active", id],
+    )
+    .unwrap();
+    assert_eq!(
+        command(&path, T1, &["worklogs", "list"]).unwrap()["worklogs"][0]["end"],
+        "2026-01-01T00:00:00.000001Z"
+    );
 }

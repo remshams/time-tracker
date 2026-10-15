@@ -130,20 +130,11 @@ fn decode_cursor(
     match token {
         CursorToken::Task { backend, cursor } => {
             check_backend(backend, identity)?;
-            let task_id = cursor
-                .task_id
-                .as_deref()
-                .ok_or_else(|| CliError::input("task cursor is missing its task scope"))?
-                .parse()
-                .map_err(CliError::input)?;
-            if task != Some(task_id) {
-                return Err(CliError::input(
-                    "cursor belongs to a different task or scope",
-                ));
+            if task.is_none() {
+                return Err(CliError::input("task cursor requires --task"));
             }
+            validate_revision(cursor.revision)?;
             Ok(DecodedCursor::Task(WorklogCursor {
-                task_id,
-                start: cursor.start,
                 id: cursor.id.parse().map_err(CliError::input)?,
                 revision: cursor.revision,
             }))
@@ -153,12 +144,20 @@ fn decode_cursor(
             if task.is_some() {
                 return Err(CliError::input("global cursor cannot be used with --task"));
             }
+            validate_revision(cursor.revision)?;
             Ok(DecodedCursor::All(GlobalWorklogCursor {
-                start: cursor.start,
                 id: cursor.id.parse().map_err(CliError::input)?,
                 revision: cursor.revision,
             }))
         }
+    }
+}
+
+fn validate_revision(revision: i64) -> Result<(), CliError> {
+    if revision < 0 {
+        Err(CliError::input("cursor revision must be nonnegative"))
+    } else {
+        Ok(())
     }
 }
 
@@ -267,6 +266,66 @@ mod tests {
     use super::*;
     use crate::args::EndTimestamp;
 
+    #[test]
+    fn minimal_cursor_tokens_accept_both_scopes_and_nonnegative_revisions() {
+        let id = "00000000-0000-7000-8000-000000000001";
+        let task = Some(id.parse().unwrap());
+        for revision in [0, 7] {
+            for scope in ["task", "all"] {
+                let token: CursorToken = serde_json::from_value(json!({
+                    "scope": scope,
+                    "backend": "local",
+                    "cursor": {"id": id, "revision": revision}
+                }))
+                .unwrap();
+                let selected = if scope == "task" { task } else { None };
+                assert!(decode_cursor(&token, selected, "local").is_ok());
+                assert!(decode_cursor(&token, selected, "other").is_err());
+                assert!(
+                    decode_cursor(
+                        &token,
+                        if selected.is_some() { None } else { task },
+                        "local"
+                    )
+                    .is_err()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cursor_tokens_reject_invalid_partial_and_legacy_positions() {
+        let id = "00000000-0000-7000-8000-000000000001";
+        for scope in ["task", "all"] {
+            for cursor in [
+                json!({"id": id}),
+                json!({"revision": 0}),
+                json!({"id": "invalid", "revision": 0}),
+                json!({"id": id, "revision": -1}),
+                json!({"id": id, "revision": 0, "start": "2026-01-01T00:00:00Z"}),
+                json!({"id": id, "revision": 0, "task_id": id}),
+            ] {
+                let token = serde_json::from_value::<CursorToken>(json!({
+                    "scope": scope, "backend": "local", "cursor": cursor
+                }));
+                if let Ok(token) = token {
+                    assert!(
+                        decode_cursor(
+                            &token,
+                            if scope == "task" {
+                                Some(id.parse().unwrap())
+                            } else {
+                                None
+                            },
+                            "local"
+                        )
+                        .is_err()
+                    );
+                }
+            }
+        }
+    }
+
     fn correction(start: DateTime<Utc>, end: DateTime<Utc>, replacement: EndTimestamp) -> Worklogs {
         Worklogs::Correct {
             worklog_id: "00000000-0000-7000-8000-000000000001".parse().unwrap(),
@@ -295,6 +354,6 @@ mod tests {
         let later = DateTime::from_timestamp(100, 999).unwrap();
         let now = DateTime::from_timestamp(100, 0).unwrap();
         let mut command = correction(later, earlier, EndTimestamp(Some(later)));
-        assert!(validate(&mut command, "unused", now).is_ok());
+        assert!(validate(&mut command, "unused", now).is_err());
     }
 }
