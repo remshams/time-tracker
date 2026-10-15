@@ -605,93 +605,112 @@ fn database_snapshot(connection: &rusqlite::Connection) -> DatabaseSnapshot {
 #[test]
 fn zero_duration_migration_refuses_every_legacy_version_without_data_or_schema_changes() {
     for version in 1..=6 {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("tracker.db");
-        if version == 1 {
-            create_v1_database(&path);
-        } else if version == 2 {
-            create_v2_database(&path, &[(10, 100, Some(200)), (11, 300, None)]);
-        } else {
-            let repository = SqliteRepository::open(&path).unwrap();
-            repository.create_task(named_task(1, "retained")).unwrap();
-            repository
-                .insert_worklog(
-                    &Worklog::new(worklog_id(10), task_id(1), at(100), Some(at(200))).unwrap(),
-                )
-                .unwrap();
-            repository
-                .insert_worklog(&Worklog::begin(worklog_id(11), task_id(1), at(300)))
-                .unwrap();
+        assert_invalid_duration_migration_preserves_database(version, 42);
+    }
+}
+
+#[test]
+fn negative_duration_migration_refuses_tampered_legacy_rows_without_data_or_schema_changes() {
+    // Version 1 already rejects negative durations when rebuilding the worklogs table.
+    for version in 2..=6 {
+        assert_invalid_duration_migration_preserves_database(version, 41);
+    }
+}
+
+fn assert_invalid_duration_migration_preserves_database(version: i64, end_us: i64) {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tracker.db");
+    if version == 1 {
+        create_v1_database(&path);
+    } else if version == 2 {
+        create_v2_database(&path, &[(10, 100, Some(200)), (11, 300, None)]);
+    } else {
+        let repository = SqliteRepository::open(&path).unwrap();
+        repository.create_task(named_task(1, "retained")).unwrap();
+        repository
+            .insert_worklog(
+                &Worklog::new(worklog_id(10), task_id(1), at(100), Some(at(200))).unwrap(),
+            )
+            .unwrap();
+        repository
+            .insert_worklog(&Worklog::begin(worklog_id(11), task_id(1), at(300)))
+            .unwrap();
+        repository
+            .connection()
+            .execute_batch(
+                "DROP TRIGGER worklogs_reject_nonpositive_duration_insert;
+                DROP TRIGGER worklogs_reject_nonpositive_duration_update;",
+            )
+            .unwrap();
+        if version < 6 {
             repository
                 .connection()
                 .execute_batch(
-                    "DROP TRIGGER worklogs_reject_nonpositive_duration_insert;
-                DROP TRIGGER worklogs_reject_nonpositive_duration_update;",
-                )
-                .unwrap();
-            if version < 6 {
-                repository
-                    .connection()
-                    .execute_batch(
-                        "DROP TRIGGER worklogs_bump_global_revision_insert;
+                    "DROP TRIGGER worklogs_bump_global_revision_insert;
                     DROP TRIGGER worklogs_bump_global_revision_update;
                     DROP TRIGGER worklogs_bump_global_revision_delete;
                     DROP INDEX worklogs_global_start;
                     DROP TABLE global_worklog_revision;",
-                    )
-                    .unwrap();
-            }
-            if version < 5 {
-                repository
-                    .connection()
-                    .execute_batch("DROP TRIGGER worklogs_reject_active_delete;")
-                    .unwrap();
-            }
-            if version < 4 {
-                repository
-                    .connection()
-                    .execute_batch(
-                        "DROP TRIGGER worklogs_reject_archived_task_move;
+                )
+                .unwrap();
+        }
+        if version < 5 {
+            repository
+                .connection()
+                .execute_batch("DROP TRIGGER worklogs_reject_active_delete;")
+                .unwrap();
+        }
+        if version < 4 {
+            repository
+                .connection()
+                .execute_batch(
+                    "DROP TRIGGER worklogs_reject_archived_task_move;
                     DROP INDEX worklogs_nonzero_task_start;",
-                    )
-                    .unwrap();
-            }
+                )
+                .unwrap();
         }
-        let connection = rusqlite::Connection::open(&path).unwrap();
-        connection
-            .pragma_update(None, "user_version", version)
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, 42, 42)",
-                [worklog_id(99).to_string(), task_id(1).to_string()],
-            )
-            .unwrap();
-        let before = database_snapshot(&connection);
-        drop(connection);
-        let error = SqliteRepository::open(&path)
-            .expect_err("zero-duration legacy data needs explicit repair");
-        assert!(
-            matches!(error, StorageError::ZeroDurationWorklogs),
-            "version {version}: {error}"
-        );
-        let message = error.to_string();
-        for guidance in [
-            "Back up",
-            "older Time Tracker client",
-            "correct or delete",
-            "restore a backup",
-            "No data or schema changes",
-        ] {
-            assert!(message.contains(guidance), "missing {guidance}: {message}");
-        }
-        let connection = rusqlite::Connection::open(&path).unwrap();
-        assert_eq!(
-            database_snapshot(&connection),
-            before,
-            "version {version} must roll back every change"
-        );
     }
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .pragma_update(None, "user_version", version)
+        .unwrap();
+    connection
+        .pragma_update(None, "ignore_check_constraints", end_us < 42)
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, 42, ?3)",
+            rusqlite::params![worklog_id(99).to_string(), task_id(1).to_string(), end_us],
+        )
+        .unwrap();
+    connection
+        .pragma_update(None, "ignore_check_constraints", false)
+        .unwrap();
+    let before = database_snapshot(&connection);
+    drop(connection);
+    let error = SqliteRepository::open(&path)
+        .expect_err("nonpositive-duration legacy data needs explicit repair");
+    assert!(
+        matches!(error, StorageError::NonPositiveDurationWorklogs),
+        "version {version}: {error}"
+    );
+    let message = error.to_string();
+    for guidance in [
+        "zero or negative duration",
+        "Back up",
+        "older Time Tracker client",
+        "correct or delete",
+        "restore a backup",
+        "No data or schema changes",
+    ] {
+        assert!(message.contains(guidance), "missing {guidance}: {message}");
+    }
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    assert_eq!(
+        database_snapshot(&connection),
+        before,
+        "version {version} must roll back every change"
+    );
 }
 
 #[test]
