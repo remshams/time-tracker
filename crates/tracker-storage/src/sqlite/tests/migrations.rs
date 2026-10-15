@@ -16,7 +16,7 @@ fn migrations_create_the_schema_triggers_and_are_idempotent() {
     }
     // Reopening applies no migration again and keeps the data.
     let reopened = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&reopened), 6);
+    assert_eq!(user_version(&reopened), 7);
     let tasks = reopened.list_tasks().unwrap();
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0].name().as_str(), "first");
@@ -89,7 +89,7 @@ fn version_5_database_gains_global_history_without_changing_worklogs() {
         repository
             .connection()
             .execute(
-                "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, ?3, ?3)",
+                "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, ?3, ?3 + 1)",
                 rusqlite::params![
                     worklog_id(1).to_string(),
                     task_id(1).to_string(),
@@ -100,7 +100,9 @@ fn version_5_database_gains_global_history_without_changing_worklogs() {
         repository
             .connection()
             .execute_batch(
-                "DROP TRIGGER worklogs_bump_global_revision_insert;
+                "DROP TRIGGER worklogs_reject_nonpositive_duration_insert;
+             DROP TRIGGER worklogs_reject_nonpositive_duration_update;
+             DROP TRIGGER worklogs_bump_global_revision_insert;
              DROP TRIGGER worklogs_bump_global_revision_update;
              DROP TRIGGER worklogs_bump_global_revision_delete;
              DROP INDEX worklogs_global_start;
@@ -110,7 +112,7 @@ fn version_5_database_gains_global_history_without_changing_worklogs() {
             .unwrap();
     }
     let repository = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&repository), 6);
+    assert_eq!(user_version(&repository), 7);
     assert_eq!(
         repository.global_worklog_page(None).unwrap().worklogs[0].id(),
         worklog_id(1)
@@ -127,7 +129,7 @@ fn version_5_database_gains_global_history_without_changing_worklogs() {
 }
 
 #[test]
-fn a_version_1_database_migrates_to_version_6_and_keeps_every_record() {
+fn a_version_1_database_migrates_to_version_7_and_keeps_every_record() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tracker.db");
     create_v1_database(&path);
@@ -136,7 +138,7 @@ fn a_version_1_database_migrates_to_version_6_and_keeps_every_record() {
     let before = Utc::now();
     let repository = SqliteRepository::open(&path).unwrap();
     let after = Utc::now();
-    assert_eq!(user_version(&repository), 6);
+    assert_eq!(user_version(&repository), 7);
     let backfill = repository.list_tasks().unwrap()[0].created_at();
 
     // Every task id, name, and archive flag survived.
@@ -204,16 +206,12 @@ fn a_version_1_database_migrates_to_version_6_and_keeps_every_record() {
 fn version_2_migration_preserves_identity_and_timestamp_values_exactly() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tracker.db");
-    let intervals = [
-        (10, 1_000_001, Some(1_000_007)),
-        (11, 1_000_007, None),
-        (12, 1_000_004, Some(1_000_004)),
-    ];
+    let intervals = [(10, 1_000_001, Some(1_000_007)), (11, 1_000_007, None)];
     create_v2_database(&path, &intervals);
 
     let repository = SqliteRepository::open(&path).unwrap();
 
-    assert_eq!(user_version(&repository), 6);
+    assert_eq!(user_version(&repository), 7);
     let task_values: (String, i64, i64) = repository
         .connection()
         .query_row(
@@ -247,12 +245,6 @@ fn version_2_migration_preserves_identity_and_timestamp_values_exactly() {
                 task_id(1).to_string(),
                 1_000_007,
                 None
-            ),
-            (
-                worklog_id(12).to_string(),
-                task_id(1).to_string(),
-                1_000_004,
-                Some(1_000_004)
             ),
         ]
     );
@@ -313,7 +305,7 @@ fn a_migration_is_not_applied_twice() {
     drop(first);
 
     let second = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&second), 6);
+    assert_eq!(user_version(&second), 7);
     assert_eq!(second.find_task(task_id(1)).unwrap(), Some(task));
 }
 
@@ -397,7 +389,7 @@ fn a_database_from_a_newer_version_is_rejected_without_changes() {
     match error {
         StorageError::DatabaseTooNew { found, latest } => {
             assert_eq!(found, 99);
-            assert_eq!(latest, 6);
+            assert_eq!(latest, 7);
             assert!(error.to_string().contains("newer"));
         }
         other => panic!("expected DatabaseTooNew, got {other:?}"),
@@ -425,7 +417,9 @@ fn a_version_4_database_gains_the_active_delete_guard() {
         repository
             .connection()
             .execute_batch(
-                "DROP TRIGGER worklogs_reject_active_delete;
+                "DROP TRIGGER worklogs_reject_nonpositive_duration_insert;
+                 DROP TRIGGER worklogs_reject_nonpositive_duration_update;
+                 DROP TRIGGER worklogs_reject_active_delete;
                  DROP TRIGGER worklogs_bump_global_revision_insert;
                  DROP TRIGGER worklogs_bump_global_revision_update;
                  DROP TRIGGER worklogs_bump_global_revision_delete;
@@ -437,7 +431,7 @@ fn a_version_4_database_gains_the_active_delete_guard() {
     }
 
     let migrated = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&migrated), 6);
+    assert_eq!(user_version(&migrated), 7);
     assert!(
         migrated
             .connection()
@@ -467,7 +461,7 @@ fn overlap_migration_uses_an_ordered_indexed_sweep_for_large_valid_history() {
     create_v2_database(&path, &rows);
 
     let repository = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&repository), 6);
+    assert_eq!(user_version(&repository), 7);
     let plan: Vec<String> = repository
         .connection()
         .prepare("EXPLAIN QUERY PLAN SELECT id FROM worklogs WHERE task_id = ?1 ORDER BY start_us DESC, id")
@@ -529,7 +523,7 @@ fn version_3_database_gets_indexed_overlap_and_active_delete_guards() {
     drop(connection);
 
     let repository = SqliteRepository::open(&path).unwrap();
-    assert_eq!(user_version(&repository), 6);
+    assert_eq!(user_version(&repository), 7);
     let active_id = worklog_id(1);
     let error = repository
         .connection()
@@ -570,4 +564,178 @@ fn version_3_database_gets_indexed_overlap_and_active_delete_guards() {
         .unwrap();
     assert_eq!(history_revision(&repository, task_id(2)), 2);
     assert_eq!(history_revision(&repository, task_id(3)), 2);
+}
+
+type DatabaseSnapshot = (i64, Vec<(String, Vec<Vec<rusqlite::types::Value>>)>);
+
+fn database_snapshot(connection: &rusqlite::Connection) -> DatabaseSnapshot {
+    let version = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    let tables = connection
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let mut contents = Vec::new();
+    for table in std::iter::once("sqlite_master".to_owned()).chain(tables) {
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT * FROM \"{}\" ORDER BY rowid",
+                table.replace('"', "\"\"")
+            ))
+            .unwrap();
+        let count = statement.column_count();
+        let rows = statement
+            .query_map([], |row| {
+                (0..count)
+                    .map(|column| row.get(column))
+                    .collect::<Result<Vec<rusqlite::types::Value>, _>>()
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        contents.push((table, rows));
+    }
+    (version, contents)
+}
+
+#[test]
+fn zero_duration_migration_refuses_every_legacy_version_without_data_or_schema_changes() {
+    for version in 1..=6 {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("tracker.db");
+        if version == 1 {
+            create_v1_database(&path);
+        } else if version == 2 {
+            create_v2_database(&path, &[(10, 100, Some(200)), (11, 300, None)]);
+        } else {
+            let repository = SqliteRepository::open(&path).unwrap();
+            repository.create_task(named_task(1, "retained")).unwrap();
+            repository
+                .insert_worklog(
+                    &Worklog::new(worklog_id(10), task_id(1), at(100), Some(at(200))).unwrap(),
+                )
+                .unwrap();
+            repository
+                .insert_worklog(&Worklog::begin(worklog_id(11), task_id(1), at(300)))
+                .unwrap();
+            repository
+                .connection()
+                .execute_batch(
+                    "DROP TRIGGER worklogs_reject_nonpositive_duration_insert;
+                DROP TRIGGER worklogs_reject_nonpositive_duration_update;",
+                )
+                .unwrap();
+            if version < 6 {
+                repository
+                    .connection()
+                    .execute_batch(
+                        "DROP TRIGGER worklogs_bump_global_revision_insert;
+                    DROP TRIGGER worklogs_bump_global_revision_update;
+                    DROP TRIGGER worklogs_bump_global_revision_delete;
+                    DROP INDEX worklogs_global_start;
+                    DROP TABLE global_worklog_revision;",
+                    )
+                    .unwrap();
+            }
+            if version < 5 {
+                repository
+                    .connection()
+                    .execute_batch("DROP TRIGGER worklogs_reject_active_delete;")
+                    .unwrap();
+            }
+            if version < 4 {
+                repository
+                    .connection()
+                    .execute_batch(
+                        "DROP TRIGGER worklogs_reject_archived_task_move;
+                    DROP INDEX worklogs_nonzero_task_start;",
+                    )
+                    .unwrap();
+            }
+        }
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .pragma_update(None, "user_version", version)
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, 42, 42)",
+                [worklog_id(99).to_string(), task_id(1).to_string()],
+            )
+            .unwrap();
+        let before = database_snapshot(&connection);
+        drop(connection);
+        let error = SqliteRepository::open(&path)
+            .expect_err("zero-duration legacy data needs explicit repair");
+        assert!(
+            matches!(error, StorageError::ZeroDurationWorklogs),
+            "version {version}: {error}"
+        );
+        let message = error.to_string();
+        for guidance in [
+            "Back up",
+            "older Time Tracker client",
+            "correct or delete",
+            "restore a backup",
+            "No data or schema changes",
+        ] {
+            assert!(message.contains(guidance), "missing {guidance}: {message}");
+        }
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        assert_eq!(
+            database_snapshot(&connection),
+            before,
+            "version {version} must roll back every change"
+        );
+    }
+}
+
+#[test]
+fn positive_duration_guards_reject_sql_inserts_and_updates_without_revision_changes() {
+    let repository = repo();
+    repository.create_task(named_task(1, "guarded")).unwrap();
+    let completed = Worklog::new(worklog_id(1), task_id(1), at(100), Some(at(200))).unwrap();
+    let active = Worklog::begin(worklog_id(2), task_id(1), at(300));
+    repository.insert_worklog(&completed).unwrap();
+    repository.insert_worklog(&active).unwrap();
+    let connection = repository.connection();
+    let before = database_snapshot(connection);
+    for sql in [
+        "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, 42, 42)",
+        "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, 42, 41)",
+    ] {
+        let error = connection
+            .execute(sql, [worklog_id(99).to_string(), task_id(1).to_string()])
+            .expect_err("nonpositive duration insert must fail");
+        assert_eq!(
+            crate::error::failure_message(&error),
+            Some(crate::migrate::TRIGGER_WORKLOG_DURATION)
+        );
+        assert_eq!(database_snapshot(connection), before);
+    }
+    for sql in [
+        "UPDATE worklogs SET end_us = start_us WHERE id = ?1",
+        "UPDATE worklogs SET start_us = end_us WHERE id = ?1",
+        "UPDATE worklogs SET end_us = start_us - 1 WHERE id = ?1",
+    ] {
+        assert!(
+            connection
+                .execute(sql, [completed.id().to_string()])
+                .is_err()
+        );
+        assert_eq!(database_snapshot(connection), before);
+    }
+    assert!(
+        connection
+            .execute(
+                "UPDATE worklogs SET end_us = start_us WHERE id = ?1",
+                [active.id().to_string()]
+            )
+            .is_err()
+    );
+    assert_eq!(database_snapshot(connection), before);
 }

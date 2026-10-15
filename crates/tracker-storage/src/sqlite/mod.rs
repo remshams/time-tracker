@@ -450,6 +450,21 @@ mod unit_tests {
     }
 
     #[test]
+    fn stored_worklog_values_reject_a_zero_duration_interval() {
+        let error = worklog_from_stored(
+            WorklogId::generate().to_string(),
+            TaskId::generate().to_string(),
+            100,
+            Some(100),
+        )
+        .expect_err("zero duration is corrupt");
+        assert!(matches!(
+            error,
+            StorageError::CorruptData("worklog interval")
+        ));
+    }
+
+    #[test]
     fn connections_wait_for_each_other_within_the_busy_timeout() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("tracker.db");

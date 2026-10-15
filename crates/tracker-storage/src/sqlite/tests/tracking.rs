@@ -172,7 +172,7 @@ fn a_duplicate_worklog_id_is_distinct_from_the_active_worklog_conflict() {
 }
 
 #[test]
-fn same_task_overlap_insert_uses_half_open_and_zero_duration_rules() {
+fn same_task_overlap_insert_uses_half_open_rules() {
     let repository = repo();
     let first_task = named_task(1, "first");
     let second_task = named_task(2, "second");
@@ -193,12 +193,11 @@ fn same_task_overlap_insert_uses_half_open_and_zero_duration_rules() {
     for worklog in [
         Worklog::new(worklog_id(3), first_task.id(), at(50), Some(at(100))).unwrap(),
         Worklog::new(worklog_id(4), first_task.id(), at(200), Some(at(250))).unwrap(),
-        Worklog::new(worklog_id(5), first_task.id(), at(150), Some(at(150))).unwrap(),
         Worklog::new(worklog_id(6), second_task.id(), at(150), Some(at(250))).unwrap(),
     ] {
         repository.insert_worklog(&worklog).unwrap();
     }
-    assert_eq!(repository.list_worklogs(first_task.id()).unwrap().len(), 4);
+    assert_eq!(repository.list_worklogs(first_task.id()).unwrap().len(), 3);
     assert_eq!(repository.list_worklogs(second_task.id()).unwrap().len(), 1);
 }
 
@@ -683,4 +682,53 @@ fn stop_and_switch_report_an_active_start_compare_failure() {
         Err(StorageError::WorklogChanged { id }) if id == active.id()
     ));
     assert_eq!(repository.active_worklog().unwrap(), Some(active));
+}
+
+#[test]
+fn stop_switch_and_insert_reject_durations_that_collapse_to_stored_microseconds() {
+    let repository = repo();
+    repository.create_task(named_task(1, "first")).unwrap();
+    repository.create_task(named_task(2, "next")).unwrap();
+    let start = DateTime::from_timestamp(100, 123_456_000).unwrap();
+    let active = Worklog::begin(worklog_id(1), task_id(1), start);
+    repository.insert_worklog(&active).unwrap();
+    for end in [start, DateTime::from_timestamp(100, 123_456_999).unwrap()] {
+        let before = repository.connection().total_changes();
+        assert!(matches!(
+            repository.stop_worklog(active.id(), start, end),
+            Err(StorageError::Constraint(_))
+        ));
+        let next = Worklog::begin(worklog_id(2), task_id(2), end);
+        assert!(matches!(
+            repository.switch_worklog(active.id(), start, end, &next),
+            Err(StorageError::Constraint(_))
+        ));
+        assert_eq!(repository.active_worklog().unwrap(), Some(active.clone()));
+        assert_eq!(
+            repository.list_worklogs(task_id(1)).unwrap(),
+            vec![active.clone()]
+        );
+        assert!(repository.list_worklogs(task_id(2)).unwrap().is_empty());
+        assert_eq!(repository.connection().total_changes(), before);
+    }
+    let collapsed = Worklog::new(
+        worklog_id(3),
+        task_id(2),
+        start,
+        Some(DateTime::from_timestamp(100, 123_456_999).unwrap()),
+    )
+    .unwrap();
+    assert!(matches!(
+        repository.insert_worklog(&collapsed),
+        Err(StorageError::Constraint(_))
+    ));
+    assert!(repository.list_worklogs(task_id(2)).unwrap().is_empty());
+    let end = DateTime::from_timestamp(100, 123_457_000).unwrap();
+    assert_eq!(
+        repository
+            .stop_worklog(active.id(), start, end)
+            .unwrap()
+            .end(),
+        Some(end)
+    );
 }

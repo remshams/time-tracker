@@ -156,14 +156,14 @@ fn completed_deletion_persists_after_reopen() {
 }
 
 #[test]
-fn deletion_preserves_existing_history_cursors_and_revisions() {
+fn deletion_preserves_task_history_continuations_unless_it_removes_the_anchor() {
     let repository = repo();
     let task = named_task(1, "history");
     repository.create_task(task.clone()).unwrap();
     insert_numbered_worklogs(&repository, &task, 55);
     let first = repository.worklog_page(task.id(), None).unwrap();
     let cursor = first.next_cursor.unwrap();
-    let target = repository.find_worklog(cursor.id).unwrap().unwrap();
+    let target = repository.find_worklog(worklog_id(1)).unwrap().unwrap();
     let revision = history_revision(&repository, task.id());
 
     repository
@@ -178,7 +178,22 @@ fn deletion_preserves_existing_history_cursors_and_revisions() {
             .iter()
             .map(Worklog::id)
             .collect::<Vec<_>>(),
-        (1..=5).rev().map(worklog_id).collect::<Vec<_>>()
+        (2..=5).rev().map(worklog_id).collect::<Vec<_>>()
+    );
+    let anchor = repository.find_worklog(cursor.id).unwrap().unwrap();
+    repository
+        .compare_and_delete_completed_worklog(anchor.id(), task.id(), anchor.times())
+        .unwrap();
+    assert_eq!(history_revision(&repository, task.id()), revision);
+    assert!(matches!(repository.worklog_page(task.id(), Some(&cursor)),
+        Err(StorageError::WorklogHistoryChanged { task_id }) if task_id == task.id()));
+    assert_eq!(
+        repository
+            .worklog_page(task.id(), None)
+            .unwrap()
+            .worklogs
+            .len(),
+        WORKLOG_PAGE_SIZE
     );
 }
 
@@ -193,7 +208,7 @@ fn a_failed_post_delete_aggregate_read_rolls_back_the_deletion() {
         .connection()
         .execute(
             "INSERT INTO worklogs (id, task_id, start_us, end_us)
-             VALUES (?1, ?2, ?3, ?3)",
+             VALUES (?1, ?2, ?3 - 1, ?3)",
             rusqlite::params![worklog_id(2).to_string(), task.id().to_string(), i64::MAX,],
         )
         .unwrap();

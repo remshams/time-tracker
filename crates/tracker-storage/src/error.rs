@@ -77,6 +77,11 @@ pub enum StorageError {
         /// The newest schema version this build can migrate to.
         latest: i64,
     },
+    /// Existing completed worklogs need an explicit repair before migration.
+    #[error(
+        "database migration refused because completed worklogs have zero duration. Back up the database, then use an older Time Tracker client to explicitly correct or delete those worklogs, or restore a backup with positive durations. No data or schema changes were applied"
+    )]
+    ZeroDurationWorklogs,
     /// No platform application-data directory could be determined.
     #[error("cannot determine the application data directory")]
     NoDataDir,
@@ -185,7 +190,10 @@ pub(crate) fn is_trigger_violation(error: &rusqlite::Error) -> bool {
 
 /// Maps a write error to the most specific storage error.
 pub(crate) fn classify_write_error(error: rusqlite::Error) -> StorageError {
-    if is_check_violation(&error) {
+    if is_check_violation(&error)
+        || (is_trigger_violation(&error)
+            && failure_message(&error) == Some(crate::migrate::TRIGGER_WORKLOG_DURATION))
+    {
         StorageError::Constraint(error)
     } else {
         StorageError::Sql(error)
@@ -271,7 +279,7 @@ pub(crate) fn insert_worklog_error(
             Some(crate::migrate::TRIGGER_WORKLOG_OVERLAP) => {
                 StorageError::SameTaskWorklogOverlap { id: worklog.id() }
             }
-            _ => StorageError::Sql(error),
+            _ => classify_write_error(error),
         };
     }
     if is_foreign_key_violation(&error) {
