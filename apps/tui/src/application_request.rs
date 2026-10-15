@@ -1184,7 +1184,7 @@ pub(crate) mod remote_resource_tests {
             at(100).to_rfc3339(),
         );
         let mut responses = vec![
-            (200, r#"{"status":"ok","protocol_version":3}"#.to_owned()),
+            (200, r#"{"status":"ok","protocol_version":4}"#.to_owned()),
             (200, report.clone()),
             if metadata_available {
                 (200, metadata)
@@ -1344,12 +1344,11 @@ pub(crate) mod remote_resource_tests {
         let second_id = worklog_id(2);
         let third_id = worklog_id(3);
         let first_page = format!(
-            r#"{{"worklogs":[{{"id":"{first_id}","task_id":"{task_id}","start":"{}","end":"{}"}},{{"id":"{second_id}","task_id":"{task_id}","start":"{}","end":"{}"}}],"next_cursor":{{"task_id":null,"start":"{}","id":"{second_id}","revision":42}},"revision":"history-1"}}"#,
+            r#"{{"worklogs":[{{"id":"{first_id}","task_id":"{task_id}","start":"{}","end":"{}"}},{{"id":"{second_id}","task_id":"{task_id}","start":"{}","end":"{}"}}],"next_cursor":{{"id":"{second_id}","revision":42}},"revision":"history-1"}}"#,
             at(200).to_rfc3339(),
             at(250).to_rfc3339(),
             at(100).to_rfc3339(),
             at(150).to_rfc3339(),
-            at(100).to_rfc3339(),
         );
         let second_page = format!(
             r#"{{"worklogs":[{{"id":"{third_id}","task_id":"{task_id}","start":"{}","end":"{}"}}],"next_cursor":null,"revision":"history-2"}}"#,
@@ -1363,7 +1362,7 @@ pub(crate) mod remote_resource_tests {
             at(200).to_rfc3339(),
         );
         let (endpoint, worker) = resource_server(vec![
-            (200, r#"{"status":"ok","protocol_version":3}"#.to_owned()),
+            (200, r#"{"status":"ok","protocol_version":4}"#.to_owned()),
             (200, first_page),
             (200, metadata),
             (200, second_page),
@@ -1504,7 +1503,7 @@ pub(crate) mod remote_resource_tests {
             at(200).to_rfc3339(),
         );
         let (endpoint, worker) = resource_server(vec![
-            (200, r#"{"status":"ok","protocol_version":3}"#.to_owned()),
+            (200, r#"{"status":"ok","protocol_version":4}"#.to_owned()),
             (
                 200,
                 r#"{"worklogs":[],"next_cursor":null,"revision":"history-1"}"#.to_owned(),

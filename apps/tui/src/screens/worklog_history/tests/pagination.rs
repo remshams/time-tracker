@@ -10,7 +10,7 @@ fn loading_older_appends_the_page_and_keeps_the_selection() {
             history_worklog(20, alpha.id(), 200),
             history_worklog(19, alpha.id(), 100),
         ],
-        Some(cursor(100, 19)),
+        Some(cursor(19)),
     );
     let older = page(
         vec![
@@ -61,7 +61,7 @@ fn loading_older_appends_the_page_and_keeps_the_selection() {
 fn loading_older_reloads_newest_when_the_loaded_active_worklog_stopped() {
     let alpha = task(1, "alpha");
     let active = Worklog::begin(worklog_id(20), alpha.id(), at(200));
-    let first = page(vec![active], Some(cursor(200, 20)));
+    let first = page(vec![active], Some(cursor(20)));
     let continuation = page_with_active(vec![history_worklog(19, alpha.id(), 100)], None, None);
     let newest = page(vec![history_worklog(20, alpha.id(), 200)], None);
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
@@ -95,7 +95,7 @@ fn loading_older_reloads_newest_when_the_loaded_active_worklog_stopped() {
 fn loading_older_appends_when_the_active_worklog_is_unchanged() {
     let alpha = task(1, "alpha");
     let active = Worklog::begin(worklog_id(20), alpha.id(), at(200));
-    let first = page(vec![active.clone()], Some(cursor(200, 20)));
+    let first = page(vec![active.clone()], Some(cursor(20)));
     let continuation = page_with_active(
         vec![history_worklog(19, alpha.id(), 100)],
         Some(active),
@@ -128,20 +128,24 @@ fn loading_older_appends_when_the_active_worklog_is_unchanged() {
     assert_eq!(spy.worklog_reads(), 2);
 }
 #[test]
-fn loading_older_appends_an_unchanged_active_worklog_after_a_full_newest_page() {
+fn loading_older_preserves_an_unchanged_active_worklog_in_a_full_newest_page() {
     let alpha = task(1, "alpha");
-    let active = Worklog::begin(worklog_id(51), alpha.id(), at(500));
-    let newest = (1..=50)
-        .map(|tag| Worklog::new(worklog_id(tag), alpha.id(), at(500), Some(at(500))).unwrap())
+    let active = Worklog::begin(worklog_id(51), alpha.id(), at(5_000));
+    let newest = std::iter::once(active.clone())
+        .chain(
+            (1..=49)
+                .rev()
+                .map(|tag| history_worklog(tag, alpha.id(), tag as i64 * 100)),
+        )
         .collect();
-    let first = page_with_active(newest, Some(active.clone()), Some(cursor(500, 50)));
+    let first = page_with_active(newest, Some(active.clone()), Some(cursor(1)));
     let continuation = page_with_active(
-        vec![active.clone(), history_worklog(52, alpha.id(), 400)],
+        vec![history_worklog(52, alpha.id(), 0)],
         Some(active.clone()),
-        Some(cursor(400, 52)),
+        Some(cursor(52)),
     );
     let older = page_with_active(
-        vec![history_worklog(53, alpha.id(), 300)],
+        vec![history_worklog(53, alpha.id(), -100)],
         Some(active),
         None,
     );
@@ -156,17 +160,19 @@ fn loading_older_appends_an_unchanged_active_worklog_after_a_full_newest_page() 
     ));
 
     let history = app.app_view().history().unwrap();
-    assert_eq!(history.worklogs().len(), 52);
-    assert_eq!(history.worklogs()[50].id(), worklog_id(51));
-    assert_eq!(history.next_cursor(), Some(cursor(400, 52)));
+    assert_eq!(history.worklogs().len(), 51);
+    assert_eq!(history.worklogs()[0].id(), worklog_id(51));
+    assert_eq!(history.worklogs()[50].id(), worklog_id(52));
+    assert_eq!(history.next_cursor(), Some(cursor(52)));
 
     app.handle(Command::WorklogHistory(
         WorklogHistoryCommand::LoadOlderWorklogs,
     ));
 
     let history = app.app_view().history().unwrap();
-    assert_eq!(history.worklogs().len(), 53);
-    assert_eq!(history.worklogs()[52].id(), worklog_id(53));
+    assert_eq!(history.worklogs().len(), 52);
+    assert_eq!(history.worklogs()[0].id(), worklog_id(51));
+    assert_eq!(history.worklogs()[51].id(), worklog_id(53));
     assert_eq!(history.next_cursor(), None);
     assert_eq!(spy.worklog_reads(), 3);
 }
@@ -175,7 +181,7 @@ fn loading_older_reloads_newest_when_the_active_worklog_start_changes() {
     let alpha = task(1, "alpha");
     let first = page(
         vec![Worklog::begin(worklog_id(20), alpha.id(), at(200))],
-        Some(cursor(200, 20)),
+        Some(cursor(20)),
     );
     let active = Worklog::begin(worklog_id(20), alpha.id(), at(300));
     let continuation = page_with_active(
@@ -218,7 +224,7 @@ fn loading_older_reloads_newest_when_active_work_starts_for_the_open_task() {
             history_worklog(20, alpha.id(), 200),
             history_worklog(19, alpha.id(), 100),
         ],
-        Some(cursor(100, 19)),
+        Some(cursor(19)),
     );
     let active = Worklog::begin(worklog_id(21), alpha.id(), at(300));
     let continuation = page_with_active(
@@ -229,7 +235,7 @@ fn loading_older_reloads_newest_when_active_work_starts_for_the_open_task() {
     let newest = page_with_active(
         vec![active, history_worklog(20, alpha.id(), 200)],
         Some(Worklog::begin(worklog_id(21), alpha.id(), at(300))),
-        Some(cursor(200, 20)),
+        Some(cursor(20)),
     );
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![Ok(first), Ok(continuation), Ok(newest)];
@@ -266,7 +272,7 @@ fn loading_older_ignores_active_work_for_another_task() {
             history_worklog(20, alpha.id(), 200),
             history_worklog(19, alpha.id(), 100),
         ],
-        Some(cursor(100, 19)),
+        Some(cursor(19)),
     );
     let continuation = page_with_active(
         vec![history_worklog(18, alpha.id(), 50)],
@@ -303,7 +309,7 @@ fn loading_older_ignores_active_work_for_another_task() {
 fn a_failed_active_row_reload_marks_history_unavailable() {
     let alpha = task(1, "alpha");
     let active = Worklog::begin(worklog_id(20), alpha.id(), at(200));
-    let first = page(vec![active], Some(cursor(200, 20)));
+    let first = page(vec![active], Some(cursor(20)));
     let continuation = page_with_active(vec![history_worklog(19, alpha.id(), 100)], None, None);
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![Ok(first), Ok(continuation), Err(TestService::failure())];
@@ -353,7 +359,7 @@ fn a_failed_load_older_preserves_the_displayed_history() {
             history_worklog(20, alpha.id(), 200),
             history_worklog(19, alpha.id(), 100),
         ],
-        Some(cursor(100, 19)),
+        Some(cursor(19)),
     );
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![Ok(first), Err(TestService::failure())];
@@ -369,7 +375,7 @@ fn a_failed_load_older_preserves_the_displayed_history() {
     assert_eq!(history.worklogs().len(), 2, "no row was lost");
     assert_eq!(
         history.next_cursor(),
-        Some(cursor(100, 19)),
+        Some(cursor(19)),
         "the cursor state survived"
     );
     assert_eq!(
@@ -390,14 +396,14 @@ fn history_change_while_loading_older_resets_to_the_newest_page() {
             history_worklog(20, alpha.id(), 200),
             history_worklog(19, alpha.id(), 100),
         ],
-        Some(cursor(100, 19)),
+        Some(cursor(19)),
     );
     let newest = page(
         vec![
             history_worklog(21, alpha.id(), 300),
             history_worklog(19, alpha.id(), 90),
         ],
-        Some(cursor(90, 19)),
+        Some(cursor(19)),
     );
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![
@@ -423,7 +429,7 @@ fn history_change_while_loading_older_resets_to_the_newest_page() {
             .collect::<Vec<_>>(),
         vec![worklog_id(21), worklog_id(19)]
     );
-    assert_eq!(history.next_cursor(), Some(cursor(90, 19)));
+    assert_eq!(history.next_cursor(), Some(cursor(19)));
     assert_eq!(app.app_view().history_selected_index(), Some(1));
     assert_eq!(
         app.app_view().status(),
@@ -439,7 +445,7 @@ fn failed_reset_after_history_change_marks_history_unavailable() {
             history_worklog(20, alpha.id(), 200),
             history_worklog(19, alpha.id(), 100),
         ],
-        Some(cursor(100, 19)),
+        Some(cursor(19)),
     );
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![
@@ -474,7 +480,7 @@ fn refresh_reloads_the_newest_page_and_keeps_the_selection_by_id() {
             history_worklog(20, alpha.id(), 200),
             history_worklog(19, alpha.id(), 100),
         ],
-        Some(cursor(100, 19)),
+        Some(cursor(19)),
     );
     let newest = page(
         vec![
@@ -523,7 +529,7 @@ fn refresh_falls_back_to_the_newest_row_when_the_selection_left_the_page() {
             history_worklog(19, alpha.id(), 200),
             history_worklog(18, alpha.id(), 100),
         ],
-        Some(cursor(100, 18)),
+        Some(cursor(18)),
     );
     let older = page(vec![history_worklog(17, alpha.id(), 50)], None);
     // The reload keeps only the newest page; the selected worklog of
@@ -551,10 +557,7 @@ fn refresh_falls_back_to_the_newest_row_when_the_selection_left_the_page() {
 #[test]
 fn a_failed_refresh_preserves_the_displayed_history() {
     let alpha = task(1, "alpha");
-    let first = page(
-        vec![history_worklog(20, alpha.id(), 200)],
-        Some(cursor(200, 20)),
-    );
+    let first = page(vec![history_worklog(20, alpha.id(), 200)], Some(cursor(20)));
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![Ok(first), Err(TestService::failure())];
     let mut app = App::load(service);
@@ -574,7 +577,7 @@ fn a_failed_refresh_preserves_the_displayed_history() {
         vec![worklog_id(20)],
         "no row was lost"
     );
-    assert_eq!(history.next_cursor(), Some(cursor(200, 20)));
+    assert_eq!(history.next_cursor(), Some(cursor(20)));
     assert_eq!(app.app_view().history_selected_index(), Some(0));
     assert_eq!(
         app.app_view().status(),

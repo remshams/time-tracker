@@ -44,7 +44,7 @@ fn completed_deletion_uses_the_original_worklog_and_preserves_the_cursor() {
     let alpha = task(1, "alpha");
     let target = history_worklog(12, alpha.id(), 300);
     let following = history_worklog(11, alpha.id(), 200);
-    let cursor = cursor(200, 11);
+    let cursor = cursor(11);
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.latest_work_starts = vec![(alpha.id(), target.start())];
     service.worklog_pages = vec![Ok(page(
@@ -192,7 +192,7 @@ fn deleting_the_loaded_newest_row_uses_an_unloaded_older_row_for_latest_work() {
     let older = history_worklog(11, alpha.id(), 200);
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.latest_work_starts = vec![(alpha.id(), newest.start())];
-    service.worklog_pages = vec![Ok(page(vec![newest.clone()], Some(cursor(300, 10))))];
+    service.worklog_pages = vec![Ok(page(vec![newest.clone()], Some(cursor(10))))];
     service.authoritative_worklogs = vec![newest.clone(), older.clone()];
     let spy = service.spy();
     let mut app = App::load(service);
@@ -203,7 +203,7 @@ fn deleting_the_loaded_newest_row_uses_an_unloaded_older_row_for_latest_work() {
     assert!(app.app_view().history().unwrap().worklogs().is_empty());
     assert_eq!(
         app.app_view().history().unwrap().next_cursor(),
-        Some(cursor(300, 10))
+        Some(cursor(10))
     );
     assert_eq!(spy.latest_work_start(alpha.id()), Some(older.start()));
 }
@@ -295,7 +295,7 @@ fn stale_deletion_refreshes_and_requires_confirmation_again() {
     let newest = history_worklog(10, alpha.id(), 120);
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![
-        Ok(page(vec![target.clone()], Some(cursor(100, 10)))),
+        Ok(page(vec![target.clone()], Some(cursor(10)))),
         Ok(page(vec![newest.clone()], None)),
     ];
     service.authoritative_worklogs = vec![target.clone()];
@@ -381,7 +381,7 @@ fn deleting_loaded_pages_then_loading_older_selects_the_first_appended_row() {
     let older = history_worklog(51, alpha.id(), 1_900);
     let mut service = TestService::with_tasks(vec![alpha.clone()]);
     service.worklog_pages = vec![
-        Ok(page(loaded.clone(), Some(cursor(1_950, 50)))),
+        Ok(page(loaded.clone(), Some(cursor(50)))),
         Ok(page(vec![older.clone()], None)),
     ];
     service.authoritative_worklogs = loaded.clone();
@@ -396,7 +396,7 @@ fn deleting_loaded_pages_then_loading_older_selects_the_first_appended_row() {
 
     let history = app.app_view().history().unwrap();
     assert!(history.worklogs().is_empty());
-    assert_eq!(history.next_cursor(), Some(cursor(1_950, 50)));
+    assert_eq!(history.next_cursor(), Some(cursor(50)));
     assert_eq!(app.app_view().history_selected_index(), None);
 
     app.handle(Command::WorklogHistory(

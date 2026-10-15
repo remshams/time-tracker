@@ -333,7 +333,7 @@ fn saved_correction_marks_history_unavailable_until_retry_succeeds() {
     let corrected = Worklog::new(worklog_id(10), task_id, at(110), Some(at(170))).unwrap();
     let mut service = TestService::with_tasks(vec![task(1, "alpha")]);
     service.worklog_pages = vec![
-        Ok(page(vec![original.clone()], Some(cursor(100, 10)))),
+        Ok(page(vec![original.clone()], Some(cursor(10)))),
         Err(TestService::failure()),
         Ok(page(vec![corrected.clone()], None)),
     ];

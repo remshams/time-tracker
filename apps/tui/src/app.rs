@@ -939,7 +939,6 @@ mod resource_publication_tests {
         let completed = CompletedRequest {
             request: ApplicationRequest::AllWorklogs {
                 after: Some(GlobalWorklogCursor {
-                    start: at(50),
                     id: worklog_id(2),
                     revision: 1,
                 }),
