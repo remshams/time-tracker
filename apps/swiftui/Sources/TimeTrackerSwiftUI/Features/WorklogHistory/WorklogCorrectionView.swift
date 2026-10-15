@@ -78,7 +78,7 @@ private struct WorklogCorrectionSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if let end = state.end, end >= state.start {
+            if let end = state.end, end > state.start {
                 LabeledContent("Duration") {
                     Text(clockDuration(end.timeIntervalSince(state.start)))
                         .accessibilityIdentifier("worklog-correction.duration")
