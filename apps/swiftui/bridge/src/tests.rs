@@ -261,28 +261,34 @@ fn tracking_commands_reject_null_bridges_and_invalid_identifiers() {
 
 #[test]
 fn history_cursor_rejects_incomplete_input() {
-    let task_id = TaskId::generate();
-    assert!(parse_cursor(task_id, "{}").is_err());
-    assert!(parse_cursor(task_id, "not json").is_err());
+    assert!(parse_cursor("{}").is_err());
+    assert!(parse_cursor("not json").is_err());
 }
 
 #[test]
 fn history_cursor_round_trips_page_position() {
-    let task_id = TaskId::generate();
     let id = WorklogId::generate();
-    let start = DateTime::from_timestamp_micros(123_456_789).unwrap();
-    let text = json!({
-        "start": timestamp(start),
-        "id": id.to_string(),
-        "revision": 7
-    })
-    .to_string();
+    for revision in [0, 7] {
+        let text = json!({"id": id.to_string(), "revision": revision}).to_string();
+        let cursor = parse_cursor(&text).unwrap();
+        assert_eq!(cursor.id, id);
+        assert_eq!(cursor.revision, revision);
+    }
+}
 
-    let cursor = parse_cursor(task_id, &text).unwrap();
-    assert_eq!(cursor.task_id, task_id);
-    assert_eq!(cursor.start, start);
-    assert_eq!(cursor.id, id);
-    assert_eq!(cursor.revision, 7);
+#[test]
+fn history_cursor_rejects_invalid_and_legacy_fields() {
+    let id = WorklogId::generate();
+    for value in [
+        json!({"id": id.to_string()}),
+        json!({"revision": 0}),
+        json!({"id": "invalid", "revision": 0}),
+        json!({"id": id.to_string(), "revision": -1}),
+        json!({"id": id.to_string(), "revision": 0, "start": "2026-01-01T00:00:00Z"}),
+        json!({"id": id.to_string(), "revision": 0, "task_id": TaskId::generate().to_string()}),
+    ] {
+        assert!(parse_cursor(&value.to_string()).is_err(), "{value}");
+    }
 }
 
 #[test]
@@ -380,4 +386,56 @@ fn null_bridge_returns_an_error_envelope() {
     assert!(text.contains("Database is not open"));
     // SAFETY: The bridge owns the string until it is freed once.
     unsafe { tt_bridge_string_free(response) };
+}
+
+#[test]
+fn zero_duration_tracking_commands_preserve_bridge_resources_and_history() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut bridge = open_fixture(&directory.path().join("tt.db")).unwrap();
+    let tasks = bridge.application.tasks(TaskOrdering::default());
+    let first = CString::new(tasks[0].task.id().to_string()).unwrap();
+    let second = CString::new(tasks[1].task.id().to_string()).unwrap();
+    let start = c"2026-01-01T00:00:00Z";
+    // SAFETY: The bridge and timestamp strings stay live for these calls.
+    let started = response(unsafe {
+        tt_bridge_start_tracking_at(&mut bridge, first.as_ptr(), start.as_ptr())
+    });
+    let id = CString::new(started["data"]["active"]["id"].as_str().unwrap()).unwrap();
+    let before = test_resource_values(&bridge.application);
+    for at in [start, c"2026-01-01T00:00:00.000000999Z"] {
+        // SAFETY: Each call has exclusive bridge access and live C strings.
+        let stopped =
+            response(unsafe { tt_bridge_stop_tracking_at(&mut bridge, id.as_ptr(), at.as_ptr()) });
+        assert!(stopped["error"].is_string(), "{stopped}");
+        assert_eq!(test_resource_values(&bridge.application), before);
+        // SAFETY: The bridge and input strings remain live.
+        let switched = response(unsafe {
+            tt_bridge_start_tracking_at(&mut bridge, second.as_ptr(), at.as_ptr())
+        });
+        assert!(switched["error"].is_string(), "{switched}");
+        assert_eq!(test_resource_values(&bridge.application), before);
+        let first_history = bridge
+            .application
+            .worklogs_for_task(tasks[0].task.id(), None)
+            .unwrap();
+        assert_eq!(first_history.worklogs.len(), 1);
+        assert!(first_history.worklogs[0].is_active());
+        assert!(
+            bridge
+                .application
+                .worklogs_for_task(tasks[1].task.id(), None)
+                .unwrap()
+                .worklogs
+                .is_empty()
+        );
+    }
+    // SAFETY: The bridge and all C strings remain valid.
+    let stopped = response(unsafe {
+        tt_bridge_stop_tracking_at(
+            &mut bridge,
+            id.as_ptr(),
+            c"2026-01-01T00:00:00.000001Z".as_ptr(),
+        )
+    });
+    assert_eq!(stopped["data"]["didStop"], true);
 }

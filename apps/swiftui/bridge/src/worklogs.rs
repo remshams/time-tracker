@@ -1,7 +1,6 @@
 use std::ffi::{CStr, c_char};
 
-use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracker_application::{ApplicationFailureCategory, WorklogCursor};
 use tracker_domain::{TaskId, WorklogId, WorklogTimes};
@@ -161,25 +160,25 @@ pub unsafe extern "C" fn tt_bridge_move_worklog(
     encode(result)
 }
 
-pub(super) fn parse_cursor(task_id: TaskId, text: &str) -> Result<WorklogCursor, String> {
-    let value: Value =
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HistoryCursor {
+    id: String,
+    revision: i64,
+}
+
+pub(super) fn parse_cursor(text: &str) -> Result<WorklogCursor, String> {
+    let cursor: HistoryCursor =
         serde_json::from_str(text).map_err(|_| "Invalid history cursor".to_owned())?;
-    let start = value["start"]
-        .as_str()
-        .ok_or("Invalid history cursor")?
-        .parse::<DateTime<Utc>>()
-        .map_err(|_| "Invalid history cursor")?;
-    let id = value["id"]
-        .as_str()
-        .ok_or("Invalid history cursor")?
-        .parse::<WorklogId>()
-        .map_err(|_| "Invalid history cursor")?;
-    let revision = value["revision"].as_i64().ok_or("Invalid history cursor")?;
+    if cursor.revision < 0 {
+        return Err("Invalid history cursor".to_owned());
+    }
     Ok(WorklogCursor {
-        task_id,
-        start,
-        id,
-        revision,
+        id: cursor
+            .id
+            .parse::<WorklogId>()
+            .map_err(|_| "Invalid history cursor".to_owned())?,
+        revision: cursor.revision,
     })
 }
 
@@ -211,7 +210,7 @@ pub unsafe extern "C" fn tt_bridge_history(
         unsafe { CStr::from_ptr(cursor) }
             .to_str()
             .map_err(|_| "Invalid history cursor".to_owned())
-            .and_then(|text| parse_cursor(task_id, text).map(Some))
+            .and_then(|text| parse_cursor(text).map(Some))
     };
     let result = cursor.map_err(BridgeError::from).and_then(|cursor| {
         let (page, reset) = match bridge
@@ -235,7 +234,6 @@ pub unsafe extern "C" fn tt_bridge_history(
         };
         let next_cursor = page.next_cursor.map(|next| {
             json!({
-                "start": timestamp(next.start),
                 "id": next.id.to_string(),
                 "revision": next.revision
             })
