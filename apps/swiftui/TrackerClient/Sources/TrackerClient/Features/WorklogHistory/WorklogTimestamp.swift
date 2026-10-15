@@ -7,6 +7,12 @@ func sameWorklogTimestamp(_ lhs: String?, _ rhs: String?) -> Bool {
     return left == right
 }
 
+func hasPositiveWorklogDuration(start: String, end: String) -> Bool {
+    guard let start = worklogTimestampParts(start), let end = worklogTimestampParts(end) else { return false }
+    if start.0 != end.0 { return end.0 > start.0 }
+    return end.1.prefix(6) > start.1.prefix(6)
+}
+
 private func worklogTimestampParts(_ value: String) -> (Int64, String)? {
     guard let separator = value.firstIndex(of: "T") else { return nil }
     let suffix = value[value.index(after: separator)...]
