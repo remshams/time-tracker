@@ -71,9 +71,6 @@ fn report_counts_overlap_for_active_and_archived_tasks() {
         .insert_worklog(&Worklog::new(worklog_id(1), alpha.id(), at(90), Some(at(120))).unwrap())
         .unwrap();
     repository
-        .insert_worklog(&Worklog::new(worklog_id(2), alpha.id(), at(130), Some(at(130))).unwrap())
-        .unwrap();
-    repository
         .insert_worklog(&Worklog::new(worklog_id(3), beta.id(), at(110), Some(at(120))).unwrap())
         .unwrap();
     repository.archive_task(alpha.id(), at(300)).unwrap();
@@ -96,17 +93,11 @@ fn report_counts_overlap_for_active_and_archived_tasks() {
 }
 
 #[test]
-fn report_excludes_touching_and_zero_length_worklogs() {
+fn report_excludes_touching_worklogs() {
     let repository = repo();
     let task = named_task(1, "bounded");
     repository.create_task(task.clone()).unwrap();
-    for (id, start, end) in [
-        (1, 50, 100),
-        (2, 120, 130),
-        (3, 150, 150),
-        (4, 190, 220),
-        (5, 220, 230),
-    ] {
+    for (id, start, end) in [(1, 50, 100), (2, 120, 130), (4, 190, 220), (5, 220, 230)] {
         repository
             .insert_worklog(
                 &Worklog::new(worklog_id(id), task.id(), at(start), Some(at(end))).unwrap(),

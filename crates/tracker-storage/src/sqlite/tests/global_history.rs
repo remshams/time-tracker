@@ -1,23 +1,13 @@
 use super::*;
 
 fn seed_global_history(repository: &SqliteRepository, count: u32) {
-    repository
-        .create_task(named_task(1, "active task"))
-        .unwrap();
-    repository
-        .create_task(named_task(2, "archived task"))
-        .unwrap();
     for tag in (1..=count).rev() {
-        let task = if tag % 2 == 0 { task_id(2) } else { task_id(1) };
         repository
-            .connection()
-            .execute(
-                "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, ?3, ?3)",
-                rusqlite::params![
-                    worklog_id(tag).to_string(),
-                    task.to_string(),
-                    at(200).timestamp_micros()
-                ],
+            .create_task(named_task(tag, &format!("task {tag}")))
+            .unwrap();
+        repository
+            .insert_worklog(
+                &Worklog::new(worklog_id(tag), task_id(tag), at(200), Some(at(201))).unwrap(),
             )
             .unwrap();
     }
@@ -32,7 +22,7 @@ fn global_history_pages_cross_tasks_and_archived_history_without_losing_ties() {
     assert_eq!(first.worklogs.len(), WORKLOG_PAGE_SIZE);
     assert_eq!(first.worklogs.first().unwrap().id(), worklog_id(1));
     assert_eq!(first.worklogs.last().unwrap().id(), worklog_id(50));
-    assert_eq!(first.task_items.len(), 2);
+    assert_eq!(first.task_items.len(), WORKLOG_PAGE_SIZE);
     assert!(
         first
             .task_items
@@ -74,7 +64,7 @@ fn global_cursor_rejects_other_client_insert_update_and_delete() {
     writer
         .connection()
         .execute(
-            "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, ?3, ?3)",
+            "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, ?3, ?3 + 1)",
             rusqlite::params![
                 worklog_id(56).to_string(),
                 task_id(1).to_string(),
@@ -95,7 +85,7 @@ fn global_cursor_rejects_other_client_insert_update_and_delete() {
     writer
         .connection()
         .execute(
-            "UPDATE worklogs SET end_us = start_us + 1 WHERE id = ?1",
+            "UPDATE worklogs SET end_us = start_us + 2 WHERE id = ?1",
             [worklog_id(56).to_string()],
         )
         .unwrap();
@@ -179,4 +169,44 @@ fn global_history_ignores_invalid_metadata_of_tasks_absent_from_the_page() {
     assert!(page.tracking.as_ref().unwrap().active_worklog.is_none());
     assert!(page.tracking.as_ref().unwrap().active_task_item.is_none());
     assert!(repository.load_task_tracking_resources().is_err());
+}
+
+#[test]
+fn missing_and_deleted_global_anchors_require_a_fresh_first_page() {
+    let repository = repo();
+    seed_global_history(&repository, 55);
+    let mut cursor = repository
+        .global_worklog_page(None)
+        .unwrap()
+        .next_cursor
+        .unwrap();
+    cursor.id = worklog_id(99);
+    assert!(matches!(
+        repository.global_worklog_page(Some(&cursor)),
+        Err(StorageError::GlobalWorklogHistoryChanged)
+    ));
+    cursor.id = worklog_id(50);
+    repository
+        .connection()
+        .execute(
+            "DELETE FROM worklogs WHERE id = ?1",
+            [cursor.id.to_string()],
+        )
+        .unwrap();
+    cursor.revision = repository
+        .connection()
+        .query_row(
+            "SELECT revision FROM global_worklog_revision WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(matches!(
+        repository.global_worklog_page(Some(&cursor)),
+        Err(StorageError::GlobalWorklogHistoryChanged)
+    ));
+    assert_eq!(
+        repository.global_worklog_page(None).unwrap().worklogs.len(),
+        WORKLOG_PAGE_SIZE
+    );
 }

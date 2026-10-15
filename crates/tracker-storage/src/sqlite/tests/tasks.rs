@@ -19,7 +19,7 @@ fn configurable_inactivity_period_uses_exact_metadata_and_work_boundaries() {
             (5, "Work ends after cutoff", cutoff - 100, cutoff - 100),
             (6, "Running planning", cutoff - 100, cutoff - 100),
             (7, "Archived planning", cutoff - 100, cutoff - 100),
-            (8, "Zero duration planning", cutoff - 100, cutoff - 100),
+            (8, "Old completed planning", cutoff - 100, cutoff - 100),
         ] {
             repository
                 .create_task(stamped_task(id, name, created, updated))
@@ -49,7 +49,9 @@ fn configurable_inactivity_period_uses_exact_metadata_and_work_boundaries() {
             .archive_task(task_id(7), at(cutoff - 10))
             .unwrap();
         repository
-            .insert_worklog(&Worklog::new(worklog_id(8), task_id(8), as_of, Some(as_of)).unwrap())
+            .insert_worklog(
+                &Worklog::new(worklog_id(8), task_id(8), at(cutoff - 1), Some(at(cutoff))).unwrap(),
+            )
             .unwrap();
         let period = InactivityPeriod::new(days).unwrap();
         let preview = repository
@@ -179,7 +181,7 @@ fn inactive_preview_respects_creation_update_and_worklog_boundaries() {
         (4, "work spans window", cutoff - 100),
         (5, "worked recently", cutoff - 100),
         (6, "future work", cutoff - 100),
-        (7, "zero duration work", cutoff - 100),
+        (7, "work ended before window", cutoff - 100),
         (8, "running work", cutoff - 100),
         (9, "renamed old task", cutoff - 100),
         (10, "archived old task", cutoff - 100),
@@ -238,13 +240,7 @@ fn inactive_preview_respects_creation_update_and_worklog_boundaries() {
         .unwrap();
     repository
         .insert_worklog(
-            &Worklog::new(
-                worklog_id(7),
-                task_id(7),
-                at(cutoff + 10),
-                Some(at(cutoff + 10)),
-            )
-            .unwrap(),
+            &Worklog::new(worklog_id(7), task_id(7), at(cutoff - 1), Some(at(cutoff))).unwrap(),
         )
         .unwrap();
     repository
@@ -419,7 +415,7 @@ fn existing_future_work_is_excluded_from_a_preview_that_can_be_confirmed() {
 }
 
 #[test]
-fn archive_ignores_zero_duration_work_and_future_work_for_other_tasks() {
+fn archive_ignores_future_work_for_other_tasks() {
     let repository = repo();
     let as_of = at(2_000_000);
     repository
@@ -433,11 +429,11 @@ fn archive_ignores_zero_duration_work_and_future_work_for_other_tasks() {
         preview.tasks.iter().map(Task::id).collect::<Vec<_>>(),
         vec![task_id(1)]
     );
-    for (id, task, end) in [(1, task_id(1), as_of), (2, task_id(2), at(2_000_001))] {
-        repository
-            .insert_worklog(&Worklog::new(worklog_id(id), task, as_of, Some(end)).unwrap())
-            .unwrap();
-    }
+    repository
+        .insert_worklog(
+            &Worklog::new(worklog_id(2), task_id(2), as_of, Some(at(2_000_001))).unwrap(),
+        )
+        .unwrap();
     let archived = repository
         .archive_inactive_tasks(&[task_id(1)], as_of)
         .unwrap();
@@ -1101,8 +1097,7 @@ fn corrupt_worklog_rows_are_reported_as_corrupt_data() {
         .expect_err("the aggregate rejects the corrupt start");
     assert!(matches!(error, StorageError::CorruptData("timestamp")));
 
-    // An end before start can only enter the database with CHECKs disabled,
-    // which simulates tampering or a broken writer.
+    // Disable both duration guards to simulate a broken writer.
     let repository = repo();
     let conn = repository.connection();
     conn.execute(
@@ -1112,6 +1107,7 @@ fn corrupt_worklog_rows_are_reported_as_corrupt_data() {
     .unwrap();
     conn.execute_batch(
         "PRAGMA ignore_check_constraints = ON;
+         DROP TRIGGER worklogs_reject_nonpositive_duration_insert;
          INSERT INTO worklogs (id, task_id, start_us, end_us)
          VALUES ('00000000-0000-7000-8000-000000000010',
                  '00000000-0000-0000-0000-000000000001', 200, 100);

@@ -93,7 +93,7 @@ fn corrected_worklog_result(
 
 fn global_worklog_rows_on(
     conn: &Connection,
-    after: Option<&GlobalWorklogCursor>,
+    after: Option<(i64, WorklogId)>,
 ) -> Result<Vec<RawWorklog>, StorageError> {
     let limit = i64::try_from(WORKLOG_PAGE_SIZE + 1).expect("the page size plus one fits i64");
     let rows = match after {
@@ -106,7 +106,7 @@ fn global_worklog_rows_on(
                 .query_map([limit], raw_worklog)?
                 .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
         }
-        Some(cursor) => {
+        Some((start_us, id)) => {
             let mut statement = conn.prepare(
                 "SELECT id, task_id, start_us, end_us FROM worklogs
                  WHERE start_us < ?1 OR (start_us = ?1 AND id > ?2)
@@ -114,7 +114,7 @@ fn global_worklog_rows_on(
             )?;
             statement
                 .query_map(
-                    rusqlite::params![timestamp_to_us(cursor.start), cursor.id.to_string(), limit],
+                    rusqlite::params![start_us, id.to_string(), limit],
                     raw_worklog,
                 )?
                 .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
@@ -126,7 +126,7 @@ fn global_worklog_rows_on(
 fn task_worklog_rows_on(
     conn: &Connection,
     task_id: TaskId,
-    after: Option<&WorklogCursor>,
+    after: Option<(i64, WorklogId)>,
 ) -> Result<Vec<RawWorklog>, StorageError> {
     let limit =
         i64::try_from(WORKLOG_PAGE_SIZE + 1).expect("the page size plus one always fits i64");
@@ -142,7 +142,7 @@ fn task_worklog_rows_on(
                 .query_map(rusqlite::params![task_id.to_string(), limit], raw_worklog)?
                 .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
         }
-        Some(cursor) => {
+        Some((start_us, id)) => {
             let mut statement = conn.prepare(
                 "SELECT id, task_id, start_us, end_us FROM worklogs
                  WHERE task_id = ?1
@@ -152,12 +152,7 @@ fn task_worklog_rows_on(
             )?;
             statement
                 .query_map(
-                    rusqlite::params![
-                        task_id.to_string(),
-                        timestamp_to_us(cursor.start),
-                        cursor.id.to_string(),
-                        limit
-                    ],
+                    rusqlite::params![task_id.to_string(), start_us, id.to_string(), limit],
                     raw_worklog,
                 )?
                 .collect::<rusqlite::Result<Vec<RawWorklog>>>()?
@@ -200,7 +195,20 @@ impl SqliteRepository {
         if after.is_some_and(|cursor| cursor.revision != revision) {
             return Err(StorageError::GlobalWorklogHistoryChanged);
         }
-        let raw = global_worklog_rows_on(&transaction, after)?;
+        let anchor = after
+            .map(|cursor| {
+                transaction
+                    .query_row(
+                        "SELECT start_us FROM worklogs WHERE id = ?1",
+                        [cursor.id.to_string()],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .optional()?
+                    .map(|start| (start, cursor.id))
+                    .ok_or(StorageError::GlobalWorklogHistoryChanged)
+            })
+            .transpose()?;
+        let raw = global_worklog_rows_on(&transaction, anchor)?;
         let has_next = raw.len() > WORKLOG_PAGE_SIZE;
         let worklogs = raw
             .into_iter()
@@ -210,7 +218,6 @@ impl SqliteRepository {
         let next_cursor = has_next.then(|| {
             let last = worklogs.last().expect("a full page has a last worklog");
             GlobalWorklogCursor {
-                start: last.start(),
                 id: last.id(),
                 revision,
             }
@@ -409,22 +416,16 @@ impl SqliteRepository {
 
     /// Reads one bounded page of the task's worklog history.
     ///
-    /// The page is keyset paginated. The optional cursor carries the start
-    /// time and id of the previous page's last row, and the query continues
-    /// strictly after that row in `start_us DESC, id ASC` order. Because the
-    /// cursor carries both values, a boundary between rows that share a
-    /// start time neither repeats nor skips any of them. The statement reads
-    /// one row more than the page size to decide whether a next page
-    /// follows; that extra row is discarded, and no page ever reads the
-    /// whole history. Active worklogs are included.
+    /// The cursor identifies the previous page's last row. Its start is read
+    /// in the same transaction as the revision check and page query, then the
+    /// query continues in `start_us DESC, id ASC` order. A missing anchor or
+    /// one outside this task requires a fresh first page. Active worklogs are
+    /// included. One extra row determines whether another page follows.
     pub fn worklog_page(
         &self,
         task_id: TaskId,
         after: Option<&WorklogCursor>,
     ) -> Result<WorklogPage, StorageError> {
-        if after.is_some_and(|cursor| cursor.task_id != task_id) {
-            return Err(StorageError::WorklogHistoryChanged { task_id });
-        }
         let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Deferred)?;
         let revision = transaction
             .query_row(
@@ -437,7 +438,20 @@ impl SqliteRepository {
         if after.is_some_and(|cursor| cursor.revision != revision) {
             return Err(StorageError::WorklogHistoryChanged { task_id });
         }
-        let raw = task_worklog_rows_on(&transaction, task_id, after)?;
+        let anchor = after
+            .map(|cursor| {
+                transaction
+                    .query_row(
+                        "SELECT start_us FROM worklogs WHERE id = ?1 AND task_id = ?2",
+                        rusqlite::params![cursor.id.to_string(), task_id.to_string()],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .optional()?
+                    .map(|start| (start, cursor.id))
+                    .ok_or(StorageError::WorklogHistoryChanged { task_id })
+            })
+            .transpose()?;
+        let raw = task_worklog_rows_on(&transaction, task_id, anchor)?;
         let has_next = raw.len() > WORKLOG_PAGE_SIZE;
         let worklogs = raw
             .into_iter()
@@ -447,8 +461,6 @@ impl SqliteRepository {
         let next_cursor = has_next.then(|| {
             let last = worklogs.last().expect("a full page has a last worklog");
             WorklogCursor {
-                task_id,
-                start: last.start(),
                 id: last.id(),
                 revision,
             }

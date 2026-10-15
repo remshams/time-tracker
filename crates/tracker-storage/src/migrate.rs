@@ -29,6 +29,9 @@ pub(crate) const TRIGGER_WORKLOG_OVERLAP: &str = "same-task worklog overlap";
 /// The message the active-worklog deletion trigger aborts with.
 pub(crate) const TRIGGER_WORKLOG_ACTIVE_DELETE: &str = "active worklog cannot be deleted";
 
+/// The message the positive-duration guards abort with.
+pub(crate) const TRIGGER_WORKLOG_DURATION: &str = "worklog end must be later than its start";
+
 /// The version 2 tasks table, before history ordering revisions existed.
 const TASKS_TABLE_V2: &str = "CREATE TABLE tasks (
         id TEXT PRIMARY KEY NOT NULL,
@@ -303,6 +306,29 @@ fn apply_global_worklog_revision(transaction: &Transaction<'_>) -> Result<(), St
     Ok(())
 }
 
+/// Refuses legacy zero-duration rows and guards every insert and timestamp update.
+fn apply_positive_worklog_duration(transaction: &Transaction<'_>) -> Result<(), StorageError> {
+    let has_zero_duration: bool = transaction.query_row(
+        "SELECT EXISTS (SELECT 1 FROM worklogs WHERE end_us = start_us)",
+        [],
+        |row| row.get(0),
+    )?;
+    if has_zero_duration {
+        return Err(StorageError::ZeroDurationWorklogs);
+    }
+    transaction.execute_batch(
+        "CREATE TRIGGER worklogs_reject_nonpositive_duration_insert
+         BEFORE INSERT ON worklogs
+         WHEN NEW.end_us IS NOT NULL AND NEW.end_us <= NEW.start_us
+         BEGIN SELECT RAISE(ABORT, 'worklog end must be later than its start'); END;
+         CREATE TRIGGER worklogs_reject_nonpositive_duration_update
+         BEFORE UPDATE OF start_us, end_us ON worklogs
+         WHEN NEW.end_us IS NOT NULL AND NEW.end_us <= NEW.start_us
+         BEGIN SELECT RAISE(ABORT, 'worklog end must be later than its start'); END;",
+    )?;
+    Ok(())
+}
+
 type Migration = fn(&Transaction<'_>) -> Result<(), StorageError>;
 
 /// The migrations in order; index plus one is the version each one produces.
@@ -313,6 +339,7 @@ const MIGRATIONS: &[Migration] = &[
     apply_indexed_worklog_predecessor,
     apply_active_worklog_delete_guard,
     apply_global_worklog_revision,
+    apply_positive_worklog_duration,
 ];
 
 /// The newest schema version this build understands.
@@ -348,7 +375,7 @@ mod tests {
 
     #[test]
     fn latest_version_counts_the_scripts() {
-        assert_eq!(LATEST_VERSION, 6);
+        assert_eq!(LATEST_VERSION, 7);
     }
 
     #[test]

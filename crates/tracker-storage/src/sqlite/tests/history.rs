@@ -20,7 +20,6 @@ fn worklog_pages_walk_55_records_through_the_next_cursor_without_repeats_or_gaps
         .collect();
     assert_eq!(starts, (6..=55).rev().collect::<Vec<_>>());
     let cursor = first.next_cursor.expect("more history follows");
-    assert_eq!(cursor.start, at(6));
     assert_eq!(cursor.id, worklog_id(6));
 
     // The second page carries the remaining five records, and the history
@@ -71,37 +70,64 @@ fn a_history_of_exactly_one_page_has_no_continuation_cursor() {
 }
 
 #[test]
-fn a_page_boundary_inside_equal_starts_neither_dups_nor_skips_rows() {
+fn task_and_global_pages_follow_corrected_starts_when_uuid_order_differs() {
     let repository = repo();
-    let task = named_task(1, "simultaneous");
+    let task = named_task(1, "corrected history");
     repository.create_task(task.clone()).unwrap();
-    // 55 zero-duration worklogs share one start, so identifier ascending
-    // decides the whole order and the page boundary falls between two of
-    // them. Zero-duration intervals do not overlap.
-    for tag in 1..=55u32 {
-        let worklog = Worklog::new(worklog_id(tag), task.id(), at(500), Some(at(500))).unwrap();
-        repository.insert_worklog(&worklog).unwrap();
+    for tag in 1..=55 {
+        let start = i64::from(tag) * 10;
+        repository
+            .insert_worklog(
+                &Worklog::new(worklog_id(tag), task.id(), at(start), Some(at(start + 1))).unwrap(),
+            )
+            .unwrap();
     }
+    let corrected = repository.find_worklog(worklog_id(1)).unwrap().unwrap();
+    repository
+        .compare_and_set_worklog_times(
+            corrected.id(),
+            corrected.times(),
+            WorklogTimes::new(at(1_000), Some(at(1_001))),
+        )
+        .unwrap();
 
     let first = repository.worklog_page(task.id(), None).unwrap();
-    let ids: Vec<u32> = first
-        .worklogs
-        .iter()
-        .map(|worklog| worklog.id().as_uuid().as_u128() as u32)
-        .collect();
-    assert_eq!(ids, (1..=50).collect::<Vec<_>>(), "identifier ascending");
-    let cursor = first.next_cursor.expect("equal starts continue");
-    assert_eq!(cursor.start, at(500));
-    assert_eq!(cursor.id, worklog_id(50));
-
+    let expected = std::iter::once(worklog_id(1))
+        .chain((7..=55).rev().map(worklog_id))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        first.worklogs.iter().map(Worklog::id).collect::<Vec<_>>(),
+        expected
+    );
+    let cursor = first.next_cursor.unwrap();
+    assert_eq!(cursor.id, worklog_id(7));
     let second = repository.worklog_page(task.id(), Some(&cursor)).unwrap();
-    let rest_ids: Vec<u32> = second
-        .worklogs
-        .iter()
-        .map(|worklog| worklog.id().as_uuid().as_u128() as u32)
-        .collect();
-    assert_eq!(rest_ids, (51..=55).collect::<Vec<_>>());
-    assert_eq!(second.next_cursor, None);
+    assert_eq!(
+        second.worklogs.iter().map(Worklog::id).collect::<Vec<_>>(),
+        (2..=6).rev().map(worklog_id).collect::<Vec<_>>()
+    );
+    assert!(second.next_cursor.is_none());
+    let global_first = repository.global_worklog_page(None).unwrap();
+    assert_eq!(
+        global_first
+            .worklogs
+            .iter()
+            .map(Worklog::id)
+            .collect::<Vec<_>>(),
+        expected
+    );
+    let global_second = repository
+        .global_worklog_page(global_first.next_cursor.as_ref())
+        .unwrap();
+    assert_eq!(
+        global_second
+            .worklogs
+            .iter()
+            .map(Worklog::id)
+            .collect::<Vec<_>>(),
+        (2..=6).rev().map(worklog_id).collect::<Vec<_>>()
+    );
+    assert!(global_second.next_cursor.is_none());
 }
 
 #[test]
@@ -318,7 +344,10 @@ fn a_cursor_stays_stable_when_a_newer_worklog_is_inserted_between_page_reads() {
     // A newer worklog lands between the two page reads. The keyset cursor
     // still continues after the page's last row, so the second page neither
     // repeats a row of the first page nor skips one.
-    let newer = Worklog::new(worklog_id(100), task.id(), at(1000), Some(at(1000))).unwrap();
+    repository
+        .stop_worklog(worklog_id(55), at(55), at(56))
+        .unwrap();
+    let newer = Worklog::new(worklog_id(100), task.id(), at(1000), Some(at(1001))).unwrap();
     repository.insert_worklog(&newer).unwrap();
 
     let second = repository.worklog_page(task.id(), Some(&cursor)).unwrap();
@@ -413,7 +442,7 @@ fn direct_task_moves_invalidate_both_history_cursors_and_start_changes_bump_once
                     worklog_id(tag),
                     alpha.id(),
                     at(i64::from(tag) * 10),
-                    Some(at(i64::from(tag) * 10)),
+                    Some(at(i64::from(tag) * 10 + 1)),
                 )
                 .unwrap(),
             )
@@ -424,7 +453,7 @@ fn direct_task_moves_invalidate_both_history_cursors_and_start_changes_bump_once
                     worklog_id(tag + 100),
                     beta.id(),
                     at(10_000 + i64::from(tag) * 10),
-                    Some(at(10_000 + i64::from(tag) * 10)),
+                    Some(at(10_000 + i64::from(tag) * 10 + 1)),
                 )
                 .unwrap(),
             )
@@ -498,8 +527,6 @@ fn a_cursor_for_another_task_is_rejected_before_paging() {
         .unwrap()
         .next_cursor;
     let cursor = cursor.unwrap_or(WorklogCursor {
-        task_id: alpha.id(),
-        start: at(100),
         id: worklog_id(1),
         revision: 0,
     });
@@ -543,4 +570,171 @@ fn predecessor_lookup_uses_the_partial_index_for_large_history_writes() {
             &Worklog::new(worklog_id(3_000), task_id(1), at(20_001), Some(at(20_002))).unwrap(),
         )
         .unwrap();
+}
+
+#[test]
+fn missing_task_cursor_anchors_require_a_fresh_first_page() {
+    let repository = repo();
+    let task = named_task(1, "history");
+    repository.create_task(task.clone()).unwrap();
+    let cursor = WorklogCursor {
+        id: worklog_id(99),
+        revision: 0,
+    };
+    assert!(matches!(repository.worklog_page(task.id(), Some(&cursor)),
+        Err(StorageError::WorklogHistoryChanged { task_id }) if task_id == task.id()));
+    assert!(
+        repository
+            .worklog_page(task.id(), None)
+            .unwrap()
+            .worklogs
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_deleted_anchor_conflicts_even_with_the_current_task_revision() {
+    let repository = repo();
+    let task = named_task(1, "history");
+    repository.create_task(task.clone()).unwrap();
+    insert_numbered_worklogs(&repository, &task, 55);
+    let mut cursor = repository
+        .worklog_page(task.id(), None)
+        .unwrap()
+        .next_cursor
+        .unwrap();
+    let anchor = repository.find_worklog(cursor.id).unwrap().unwrap();
+    repository
+        .compare_and_delete_completed_worklog(anchor.id(), task.id(), anchor.times())
+        .unwrap();
+    cursor.revision = history_revision(&repository, task.id());
+    assert!(matches!(repository.worklog_page(task.id(), Some(&cursor)),
+        Err(StorageError::WorklogHistoryChanged { task_id }) if task_id == task.id()));
+}
+
+struct HistoryReadPause {
+    paused: AtomicBool,
+    reached: SyncSender<()>,
+    release: Mutex<Receiver<()>>,
+}
+
+unsafe extern "C" fn pause_history_anchor_read(
+    context: *mut c_void,
+    action: c_int,
+    table: *const c_char,
+    column: *const c_char,
+    _: *const c_char,
+    _: *const c_char,
+) -> c_int {
+    let pause = unsafe { &*context.cast::<HistoryReadPause>() };
+    if action == rusqlite::ffi::SQLITE_READ
+        && unsafe { CStr::from_ptr(table) }.to_bytes() == b"worklogs"
+        && unsafe { CStr::from_ptr(column) }.to_bytes() == b"start_us"
+        && !pause.paused.swap(true, Ordering::SeqCst)
+        && (pause.reached.send(()).is_err()
+            || pause.release.lock().map_or(true, |release| {
+                release.recv_timeout(Duration::from_secs(5)).is_err()
+            }))
+    {
+        return rusqlite::ffi::SQLITE_DENY;
+    }
+    rusqlite::ffi::SQLITE_OK
+}
+
+#[test]
+fn task_and_global_continuations_read_revision_anchor_and_rows_from_one_snapshot() {
+    for global in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let reader = file_repo(&directory);
+        reader
+            .connection()
+            .execute_batch("PRAGMA journal_mode = WAL")
+            .unwrap();
+        let task = named_task(1, "snapshot");
+        reader.create_task(task.clone()).unwrap();
+        for tag in 1..=55 {
+            let start = i64::from(tag) * 10;
+            reader
+                .insert_worklog(
+                    &Worklog::new(worklog_id(tag), task.id(), at(start), Some(at(start + 1)))
+                        .unwrap(),
+                )
+                .unwrap();
+        }
+        let task_cursor = reader
+            .worklog_page(task.id(), None)
+            .unwrap()
+            .next_cursor
+            .unwrap();
+        let global_cursor = reader
+            .global_worklog_page(None)
+            .unwrap()
+            .next_cursor
+            .unwrap();
+        let writer = file_repo(&directory);
+        let anchor = writer.find_worklog(task_cursor.id).unwrap().unwrap();
+        let (reached_tx, reached_rx) = sync_channel(0);
+        let (release_tx, release_rx) = sync_channel(0);
+        let task_id = task.id();
+        let reading = thread::spawn(move || {
+            let pause = Box::new(HistoryReadPause {
+                paused: AtomicBool::new(false),
+                reached: reached_tx,
+                release: Mutex::new(release_rx),
+            });
+            assert_eq!(
+                unsafe {
+                    rusqlite::ffi::sqlite3_set_authorizer(
+                        reader.connection().handle(),
+                        Some(pause_history_anchor_read),
+                        (&*pause as *const HistoryReadPause).cast_mut().cast(),
+                    )
+                },
+                rusqlite::ffi::SQLITE_OK
+            );
+            let rows = if global {
+                reader
+                    .global_worklog_page(Some(&global_cursor))
+                    .unwrap()
+                    .worklogs
+            } else {
+                reader
+                    .worklog_page(task_id, Some(&task_cursor))
+                    .unwrap()
+                    .worklogs
+            };
+            unsafe {
+                rusqlite::ffi::sqlite3_set_authorizer(
+                    reader.connection().handle(),
+                    None,
+                    std::ptr::null_mut(),
+                );
+            }
+            if global {
+                assert!(matches!(
+                    reader.global_worklog_page(Some(&global_cursor)),
+                    Err(StorageError::GlobalWorklogHistoryChanged)
+                ));
+            } else {
+                assert!(matches!(
+                    reader.worklog_page(task_id, Some(&task_cursor)),
+                    Err(StorageError::WorklogHistoryChanged { .. })
+                ));
+            }
+            rows.into_iter().map(|row| row.id()).collect::<Vec<_>>()
+        });
+        reached_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        writer
+            .compare_and_set_worklog_times(
+                anchor.id(),
+                anchor.times(),
+                WorklogTimes::new(at(1_000), Some(at(1_001))),
+            )
+            .unwrap();
+        release_tx.send(()).unwrap();
+        assert_eq!(
+            reading.join().unwrap(),
+            (1..=5).rev().map(worklog_id).collect::<Vec<_>>()
+        );
+    }
 }

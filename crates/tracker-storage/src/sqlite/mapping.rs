@@ -65,7 +65,9 @@ pub(crate) fn worklog_from_stored(
         end,
     )
     .map_err(|error| match error {
-        WorklogError::EndBeforeStart => StorageError::CorruptData("worklog interval"),
+        WorklogError::EndBeforeStart | WorklogError::ZeroDuration => {
+            StorageError::CorruptData("worklog interval")
+        }
     })
 }
 

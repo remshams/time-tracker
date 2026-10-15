@@ -114,7 +114,7 @@ fn same_task_active_correction_reuses_the_corrected_task_aggregate() {
     assert_eq!(correction.active_task_latest_work_start, Some(at(540)));
     assert_eq!(
         unsafe { (&*start_reads).load(Ordering::SeqCst) },
-        11,
+        12,
         "the active task reuses the corrected task aggregate"
     );
     unsafe {
@@ -234,7 +234,7 @@ fn compare_and_set_enforces_overlap_and_rolls_back_the_failed_update() {
 }
 
 #[test]
-fn compare_and_set_accepts_zero_duration_and_completed_archived_corrections() {
+fn compare_and_set_accepts_positive_completed_archived_corrections() {
     let repository = repo();
     let task = named_task(1, "archived");
     repository.create_task(task.clone()).unwrap();
@@ -246,11 +246,11 @@ fn compare_and_set_accepts_zero_duration_and_completed_archived_corrections() {
         .compare_and_set_worklog_times(
             original.id(),
             original.times(),
-            WorklogTimes::new(at(150), Some(at(150))),
+            WorklogTimes::new(at(150), Some(at(175))),
         )
         .unwrap()
         .worklog;
-    assert_eq!(corrected.end(), Some(corrected.start()));
+    assert_eq!(corrected.end(), Some(at(175)));
     assert!(
         repository
             .find_task(task.id())
@@ -288,4 +288,40 @@ fn a_failed_compare_and_set_transaction_leaves_the_worklog_unchanged() {
         repository.find_worklog(original.id()).unwrap(),
         Some(original)
     );
+}
+
+#[test]
+fn correction_rejects_zero_and_collapsed_durations_without_changing_storage() {
+    let repository = repo();
+    repository.create_task(named_task(1, "corrected")).unwrap();
+    let original = Worklog::new(worklog_id(1), task_id(1), at(100), Some(at(200))).unwrap();
+    repository.insert_worklog(&original).unwrap();
+    let start = DateTime::from_timestamp(150, 123_456_000).unwrap();
+    for end in [start, DateTime::from_timestamp(150, 123_456_999).unwrap()] {
+        let before = repository.connection().total_changes();
+        assert!(matches!(
+            repository.compare_and_set_worklog_times(
+                original.id(),
+                original.times(),
+                WorklogTimes::new(start, Some(end))
+            ),
+            Err(StorageError::Constraint(_))
+        ));
+        assert_eq!(
+            repository.find_worklog(original.id()).unwrap(),
+            Some(original.clone())
+        );
+        assert_eq!(repository.connection().total_changes(), before);
+    }
+    let end = DateTime::from_timestamp(150, 123_457_000).unwrap();
+    let corrected = repository
+        .compare_and_set_worklog_times(
+            original.id(),
+            original.times(),
+            WorklogTimes::new(start, Some(end)),
+        )
+        .unwrap()
+        .worklog;
+    assert_eq!(corrected.start(), start);
+    assert_eq!(corrected.end(), Some(end));
 }
