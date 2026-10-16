@@ -25,7 +25,7 @@ public struct TrackerMenuContent: Equatable {
     public let otherTasks: [TrackerMenuTask]
 
     @MainActor
-    init(_ session: TrackerSession) {
+    init(_ session: TrackerSession, taskOrder: MenuTaskOrder) {
         connectionSettings = session.connectionSettings
         connectionStatusText = session.connectionStatusText
         isStale = session.isStale
@@ -40,23 +40,13 @@ public struct TrackerMenuContent: Equatable {
         totalsExplanation = session.dailyTotalsExplanation
         let today = session.todayTasks
         let todayIDs = Set(today.map(\.id))
-        todayTasks = today.map { Self.entry($0, session: session) }
-        otherTasks = session.tasks.filter { Self.isOtherTask($0, todayIDs: todayIDs) }
-            .sorted(by: Self.isOrderedBefore)
+        todayTasks = taskOrder.sorted(today).map { Self.entry($0, session: session) }
+        otherTasks = taskOrder.sorted(session.tasks.filter { Self.isOtherTask($0, todayIDs: todayIDs) })
             .map { Self.entry($0, session: session) }
     }
 
     private static func isOtherTask(_ task: TaskItem, todayIDs: Set<String>) -> Bool {
         !task.archived && !todayIDs.contains(task.id)
-    }
-
-    private static func isOrderedBefore(_ left: TaskItem, _ right: TaskItem) -> Bool {
-        if left.name == right.name { return isEarlierID(left, right) }
-        return left.name < right.name
-    }
-
-    private static func isEarlierID(_ left: TaskItem, _ right: TaskItem) -> Bool {
-        left.id < right.id
     }
 
     @MainActor

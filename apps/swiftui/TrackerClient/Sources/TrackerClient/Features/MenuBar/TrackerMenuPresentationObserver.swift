@@ -8,17 +8,19 @@ public final class TrackerMenuPresentationObserver {
     public private(set) var content: TrackerMenuContent
     public private(set) var label: TrackerMenuLabelContent
     public private(set) var values: TrackerMenuValues
+    public private(set) var taskOrder: MenuTaskOrder
     private var trackingDepth = 0
 
-    public init(session: TrackerSession, showDailyTotal: Bool) {
-        content = TrackerMenuContent(session)
+    public init(session: TrackerSession, showDailyTotal: Bool, taskOrder: MenuTaskOrder = .newestFirst) {
+        self.taskOrder = taskOrder
+        content = TrackerMenuContent(session, taskOrder: taskOrder)
         label = TrackerMenuLabelContent(session, showDailyTotal: showDailyTotal)
         values = TrackerMenuValues(session, content: content)
     }
 
     public func update(from session: TrackerSession, showDailyTotal: Bool) {
         // Keep navigation stable while time values continue to update.
-        let nextContent = trackingDepth == 0 ? TrackerMenuContent(session) : content
+        let nextContent = trackingDepth == 0 ? TrackerMenuContent(session, taskOrder: taskOrder) : content
         let nextLabel =
             trackingDepth == 0
             ? TrackerMenuLabelContent(session, showDailyTotal: showDailyTotal) : label
@@ -32,6 +34,12 @@ public final class TrackerMenuPresentationObserver {
         if contentChanged { onContentChange?() }
         if labelChanged { onLabelChange?() }
         if valuesChanged { onValuesChange?() }
+    }
+
+    /// An open menu keeps its captured order until it closes.
+    public func setTaskOrder(_ order: MenuTaskOrder, session: TrackerSession, showDailyTotal: Bool) {
+        taskOrder = order
+        update(from: session, showDailyTotal: showDailyTotal)
     }
 
     public func menuOpened(from session: TrackerSession, showDailyTotal: Bool) {
