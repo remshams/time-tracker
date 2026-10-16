@@ -244,6 +244,12 @@ jobs:
           else:
               raise SystemExit('The mutation scope needs review; refusing an implicit full run.')
           PY
+      - name: Archive Swift mutation diagnostics for upload
+        if: always()
+        run: |
+          if [[ -d .build/swift-mutations ]]; then
+            tar -czf .build/swift-mutations.tar.gz -C .build swift-mutations
+          fi
       - name: Upload the selected scope and mutation diagnostics
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -251,7 +257,7 @@ jobs:
           name: swift-pr-mutations
           path: |
             .build/swift-mutation-scope.json
-            .build/swift-mutations
+            .build/swift-mutations.tar.gz
           include-hidden-files: true
           retention-days: 7
 
