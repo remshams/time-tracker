@@ -73,9 +73,7 @@ final class WorklogMoveTests: XCTestCase {
         let command = try await fixture.client.next()
         let observer = TrackerPresentationObserver(session: fixture.session)
         var publishedRows = fixture.session.worklogs
-        var moveWasDismissed = false
         observer.onContentChange = { publishedRows = fixture.session.worklogs }
-        observer.onWorklogMoveChange = { moveWasDismissed = !fixture.session.worklogMove.isPresented }
         fixture.session.onChange = { observer.update(from: fixture.session) }
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: log.end)
         command.moved(worklog: moved)
@@ -85,7 +83,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertEqual(
             publishedRows, [oldWorklog], "Confirmed move must publish row removal before awaiting the resource refresh."
         )
-        XCTAssertTrue(moveWasDismissed)
+        XCTAssertFalse(fixture.session.moveModel.state.isPresented)
         XCTAssertTrue(fixture.session.isHistoryLoading)
         heldRefresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         try await finishHistory(fixture, rows: [oldWorklog])
