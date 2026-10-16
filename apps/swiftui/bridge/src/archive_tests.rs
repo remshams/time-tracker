@@ -177,7 +177,7 @@ fn remote_archive_and_restore_require_refresh_and_preserve_committed_tracking_an
         .rename_task(target, TaskName::new("Server rename").unwrap(), at(200))
         .unwrap();
     let stale = change(&mut bridge, target, true);
-    assert_eq!(stale["kind"], "general");
+    assert_eq!(stale["kind"], "conflict");
     assert_eq!(stale["uncertain"], false);
     assert_eq!(stale["requiresRefresh"], true);
     let expected_active = writer.application.current_tracking().clone();

@@ -223,3 +223,151 @@ fn rename_rejects_null_and_invalid_c_inputs() {
         before
     );
 }
+
+#[test]
+fn reviewed_commands_validate_c_inputs_before_writing() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut bridge = open_fixture(&directory.path().join("reviewed-inputs.db")).unwrap();
+    let task = bridge.application.tasks(TaskOrdering::default())[0]
+        .task
+        .clone();
+    let id = CString::new(task.id().to_string()).unwrap();
+    let expected = CString::new(task.name().as_str()).unwrap();
+    let name = CString::new("Draft name").unwrap();
+    let at = CString::new(timestamp(Utc::now())).unwrap();
+    let invalid = CString::new("invalid").unwrap();
+    let non_utf8 = CString::new(vec![0xff]).unwrap();
+    let before = crate::tests::test_resource_values(&bridge.application);
+    // SAFETY: Inputs remain live C strings or null and bridge access is exclusive.
+    unsafe {
+        assert_eq!(
+            response(tt_bridge_rename_task_with_expected_name_at(
+                ptr::null_mut(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null()
+            ))["error"],
+            "Database is not open"
+        );
+        assert_eq!(
+            response(tt_bridge_archive_task_with_expected_name_at(
+                ptr::null_mut(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null()
+            ))["error"],
+            "Database is not open"
+        );
+        for bad in [ptr::null(), invalid.as_ptr(), non_utf8.as_ptr()] {
+            assert_eq!(
+                response(tt_bridge_rename_task_with_expected_name_at(
+                    &mut bridge,
+                    bad,
+                    expected.as_ptr(),
+                    name.as_ptr(),
+                    at.as_ptr()
+                ))["error"],
+                "Invalid task ID"
+            );
+            assert_eq!(
+                response(tt_bridge_archive_task_with_expected_name_at(
+                    &mut bridge,
+                    bad,
+                    expected.as_ptr(),
+                    at.as_ptr()
+                ))["error"],
+                "Invalid task ID"
+            );
+            assert_eq!(
+                response(tt_bridge_rename_task_with_expected_name_at(
+                    &mut bridge,
+                    id.as_ptr(),
+                    expected.as_ptr(),
+                    name.as_ptr(),
+                    bad
+                ))["error"],
+                "Invalid rename timestamp"
+            );
+            assert_eq!(
+                response(tt_bridge_archive_task_with_expected_name_at(
+                    &mut bridge,
+                    id.as_ptr(),
+                    expected.as_ptr(),
+                    bad
+                ))["error"],
+                "Invalid archive timestamp"
+            );
+        }
+        for bad in [ptr::null(), non_utf8.as_ptr()] {
+            assert_eq!(
+                response(tt_bridge_rename_task_with_expected_name_at(
+                    &mut bridge,
+                    id.as_ptr(),
+                    bad,
+                    name.as_ptr(),
+                    at.as_ptr()
+                ))["error"],
+                "Invalid reviewed task name"
+            );
+            assert_eq!(
+                response(tt_bridge_archive_task_with_expected_name_at(
+                    &mut bridge,
+                    id.as_ptr(),
+                    bad,
+                    at.as_ptr()
+                ))["error"],
+                "Invalid reviewed task name"
+            );
+            assert_eq!(
+                response(tt_bridge_rename_task_with_expected_name_at(
+                    &mut bridge,
+                    id.as_ptr(),
+                    expected.as_ptr(),
+                    bad,
+                    at.as_ptr()
+                ))["error"],
+                "Invalid task name"
+            );
+        }
+        for bad in [" ", "Bad\nname"] {
+            let bad = CString::new(bad).unwrap();
+            let expected_error = TaskName::new(bad.to_str().unwrap())
+                .unwrap_err()
+                .to_string();
+            assert_eq!(
+                response(tt_bridge_rename_task_with_expected_name_at(
+                    &mut bridge,
+                    id.as_ptr(),
+                    bad.as_ptr(),
+                    name.as_ptr(),
+                    at.as_ptr()
+                ))["error"],
+                expected_error
+            );
+            assert_eq!(
+                response(tt_bridge_archive_task_with_expected_name_at(
+                    &mut bridge,
+                    id.as_ptr(),
+                    bad.as_ptr(),
+                    at.as_ptr()
+                ))["error"],
+                expected_error
+            );
+            assert_eq!(
+                response(tt_bridge_rename_task_with_expected_name_at(
+                    &mut bridge,
+                    id.as_ptr(),
+                    expected.as_ptr(),
+                    bad.as_ptr(),
+                    at.as_ptr()
+                ))["error"],
+                expected_error
+            );
+        }
+    }
+    assert_eq!(
+        crate::tests::test_resource_values(&bridge.application),
+        before
+    );
+}

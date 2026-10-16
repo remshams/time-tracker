@@ -239,6 +239,26 @@ impl Backend {
         result.map_err(|error| self.operation_error(error, true))
     }
 
+    pub fn rename_task_with_expected_name(
+        &mut self,
+        task_id: TaskId,
+        expected_name: TaskName,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, BridgeError> {
+        self.check_write()?;
+        let result = self
+            .runtime
+            .block_on(self.application.rename_task_with_expected_name(
+                task_id,
+                &expected_name,
+                name,
+                occurred_at,
+            ));
+        self.record_write_completion();
+        result.map_err(|error| self.operation_error(error, true))
+    }
+
     pub fn set_active_task(
         &mut self,
         task_id: TaskId,
@@ -436,10 +456,19 @@ impl Backend {
     }
 
     pub fn archive_task(&mut self, id: TaskId, at: DateTime<Utc>) -> Result<Task, BridgeError> {
-        self.change_task_archive(id, at, true)
+        self.change_task_archive(id, at, true, None)
     }
     pub fn unarchive_task(&mut self, id: TaskId, at: DateTime<Utc>) -> Result<Task, BridgeError> {
-        self.change_task_archive(id, at, false)
+        self.change_task_archive(id, at, false, None)
+    }
+
+    pub fn archive_task_with_expected_name(
+        &mut self,
+        id: TaskId,
+        expected_name: TaskName,
+        at: DateTime<Utc>,
+    ) -> Result<Task, BridgeError> {
+        self.change_task_archive(id, at, true, Some(expected_name))
     }
 
     fn change_task_archive(
@@ -447,9 +476,16 @@ impl Backend {
         id: TaskId,
         at: DateTime<Utc>,
         archived: bool,
+        expected_name: Option<TaskName>,
     ) -> Result<Task, BridgeError> {
         self.check_write()?;
-        let result = if archived {
+        let result = if let Some(expected_name) = expected_name {
+            self.runtime
+                .block_on(
+                    self.application
+                        .archive_task_with_expected_name(id, &expected_name, at),
+                )
+        } else if archived {
             self.runtime.block_on(self.application.archive_task(id, at))
         } else {
             self.runtime
@@ -526,7 +562,12 @@ fn operation_error_kind(error: &ApplicationError) -> &'static str {
 }
 
 fn local_error(error: ApplicationError) -> BridgeError {
-    error.failure().message().to_owned().into()
+    let mut mapped: BridgeError = error.failure().message().to_owned().into();
+    if error.failure().category() == ApplicationFailureCategory::TaskChanged {
+        mapped.kind = "conflict";
+        mapped.requires_refresh = true;
+    }
+    mapped
 }
 
 fn local_move_error(
@@ -557,13 +598,10 @@ fn local_archive_error(error: ApplicationError) -> BridgeError {
 fn archive_error(error: &ApplicationError) -> BridgeError {
     let failure = error.failure();
     let kind = match failure.category() {
+        ApplicationFailureCategory::TaskChanged => "conflict",
         ApplicationFailureCategory::ActiveTask => "task_active",
         ApplicationFailureCategory::TaskNotFound => "task_not_found",
-        _ => match failure.source() {
-            ApplicationFailureSource::RemoteUnavailable => "unavailable",
-            ApplicationFailureSource::RemoteProtocol => "protocol",
-            _ => "general",
-        },
+        _ => operation_error_kind(error),
     };
     BridgeError {
         message: failure.message().to_owned(),
@@ -573,7 +611,7 @@ fn archive_error(error: &ApplicationError) -> BridgeError {
             ApplicationFailureSource::RemoteUnavailable | ApplicationFailureSource::RemoteProtocol
         ),
         requires_refresh: failure.recovery_failed()
-            || matches!(kind, "task_active" | "task_not_found"),
+            || matches!(kind, "conflict" | "task_active" | "task_not_found"),
     }
 }
 
