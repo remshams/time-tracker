@@ -66,6 +66,30 @@ class MenuBarUITests: TrackerUITestCase {
         assertRunning(task)
     }
 
+    func testTaskOrderSettingReordersStartTrackingAndPersists() throws {
+        let day: TimeInterval = 86_400
+        let now = Date()
+        let oldest = try fixture.create("Oldest logged task", at: now.addingTimeInterval(-5 * day))
+        let newest = try fixture.create("Newest logged task", at: now.addingTimeInterval(-5 * day))
+        let middle = try fixture.create("Middle logged task", at: now.addingTimeInterval(-5 * day))
+        let unlogged = try fixture.create("Another unlogged task", at: now.addingTimeInterval(-5 * day))
+        for (task, daysAgo) in [(oldest, 4.0), (newest, 2.0), (middle, 3.0)] {
+            let start = now.addingTimeInterval(-daysAgo * day)
+            _ = try fixture.completed(task, start: start, end: start.addingTimeInterval(600))
+        }
+        let tasks = [oldest, newest, middle, unlogged]
+        launch()
+        XCTAssertEqual(startTrackingOrder(tasks), [newest, middle, oldest, unlogged].map(\.name))
+        chooseMenuTaskOrder("Least recently logged first")
+        XCTAssertEqual(startTrackingOrder(tasks), [oldest, middle, newest, unlogged].map(\.name))
+        relaunch()
+        openSettings()
+        XCTAssertEqual(element("menu.task-order").value as? String, "Least recently logged first")
+        XCTAssertEqual(startTrackingOrder(tasks), [oldest, middle, newest, unlogged].map(\.name))
+        chooseMenuTaskOrder("By name")
+        XCTAssertEqual(startTrackingOrder(tasks), [unlogged, middle, newest, oldest].map(\.name))
+    }
+
     func testPrimaryClickStopsAndRestartsRememberedTaskAcrossRelaunch() throws {
         let task = try fixture.create("Remembered task")
         launch()
