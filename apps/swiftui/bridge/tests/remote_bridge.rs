@@ -955,3 +955,66 @@ fn reviewed_task_names_guard_local_and_remote_c_commands_against_a_second_writer
         }
     }
 }
+
+#[test]
+fn rejected_reviewed_task_commands_remain_conflicts_when_recovery_reads_fail() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    for rename in [false, true] {
+        for unavailable in [false, true] {
+            let id = tracker_domain::TaskId::generate().to_string();
+            let task = json!({"id":id,"name":"Reviewed name","archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null});
+            let rejected = Arc::new(AtomicBool::new(false));
+            let requests = Arc::new(Mutex::new(Vec::new()));
+            let task_for_read = task.clone();
+            let read_rejected = rejected.clone();
+            let write_requests = requests.clone();
+            let server = Server::launch(
+                TempDir::new().unwrap(),
+                "127.0.0.1:0".parse().unwrap(),
+                move || {
+                    Router::new()
+                    .route("/v1/health", get(|| async { Json(json!({"status":"ok","protocol_version":tracker_protocol::VERSION})) }))
+                    .route("/v1/state/task-list", get(move || {
+                        let after_rejection = read_rejected.load(Ordering::SeqCst);
+                        let task = task.clone();
+                        async move {
+                            if after_rejection {
+                                (if unavailable { StatusCode::SERVICE_UNAVAILABLE } else { StatusCode::OK }, Json(json!({"invalid":"recovery response"})))
+                            } else {
+                                (StatusCode::OK, Json(json!({"tasks":[task],"active_worklog":null,"revision":"reviewed"})))
+                            }
+                        }
+                    }))
+                    .route("/v1/tasks/{id}", get(move || {
+                        let task = task_for_read.clone();
+                        async move { Json(json!({"task":task,"revision":"reviewed"})) }
+                    }).patch(move |Json(body): Json<Value>| {
+                        rejected.store(true, Ordering::SeqCst);
+                        write_requests.lock().unwrap().push(body);
+                        async { (StatusCode::CONFLICT, Json(json!({"error":"Tracker state changed"}))) }
+                    }))
+                },
+            );
+            let mut client = Client::open(&server.endpoint());
+            let confirmed = client.task_list(true);
+            assert!(confirmed.0.get("error").is_none());
+            let failure = client.reviewed_task_command(&id, "Reviewed name", rename);
+            assert_eq!(
+                failure["kind"], "conflict",
+                "rename={rename}, unavailable={unavailable}: {failure}"
+            );
+            assert_eq!(failure["uncertain"], false);
+            assert_eq!(failure["requiresRefresh"], true);
+            assert_eq!(client.task_list(false), confirmed);
+            let blocked = client.reviewed_task_command(&id, "Reviewed name", rename);
+            assert_eq!(blocked["requiresRefresh"], true);
+            assert_eq!(blocked["uncertain"], false);
+            assert_eq!(requests.lock().unwrap().len(), 1);
+            assert_eq!(
+                requests.lock().unwrap()[0]["action"],
+                if rename { "rename" } else { "archive" }
+            );
+        }
+    }
+}

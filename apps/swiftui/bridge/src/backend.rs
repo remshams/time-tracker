@@ -212,6 +212,17 @@ impl Backend {
         }
     }
 
+    fn task_operation_error(&mut self, error: ApplicationError) -> BridgeError {
+        let kind = task_operation_error_kind(&error);
+        let mut mapped = self.operation_error(error, true);
+        if kind == "conflict" {
+            mapped.kind = kind;
+            mapped.uncertain = false;
+            mapped.requires_refresh = true;
+        }
+        mapped
+    }
+
     pub fn create_task(
         &mut self,
         name: TaskName,
@@ -236,7 +247,7 @@ impl Backend {
             self.runtime
                 .block_on(self.application.rename_task(task_id, name, occurred_at));
         self.record_write_completion();
-        result.map_err(|error| self.operation_error(error, true))
+        result.map_err(|error| self.task_operation_error(error))
     }
 
     pub fn rename_task_with_expected_name(
@@ -256,7 +267,7 @@ impl Backend {
                 occurred_at,
             ));
         self.record_write_completion();
-        result.map_err(|error| self.operation_error(error, true))
+        result.map_err(|error| self.task_operation_error(error))
     }
 
     pub fn set_active_task(
@@ -546,6 +557,15 @@ fn refresh_error(error: RefreshError) -> BridgeError {
     }
 }
 
+fn task_operation_error_kind(error: &ApplicationError) -> &'static str {
+    if let ApplicationError::Recovery { primary, .. } = error
+        && task_operation_error_kind(primary) == "conflict"
+    {
+        return "conflict";
+    }
+    operation_error_kind(error)
+}
+
 fn operation_error_kind(error: &ApplicationError) -> &'static str {
     let failure = error.failure();
     match failure.source() {
@@ -601,15 +621,17 @@ fn archive_error(error: &ApplicationError) -> BridgeError {
         ApplicationFailureCategory::TaskChanged => "conflict",
         ApplicationFailureCategory::ActiveTask => "task_active",
         ApplicationFailureCategory::TaskNotFound => "task_not_found",
-        _ => operation_error_kind(error),
+        _ => task_operation_error_kind(error),
     };
     BridgeError {
         message: failure.message().to_owned(),
         kind,
-        uncertain: matches!(
-            failure.source(),
-            ApplicationFailureSource::RemoteUnavailable | ApplicationFailureSource::RemoteProtocol
-        ),
+        uncertain: kind != "conflict"
+            && matches!(
+                failure.source(),
+                ApplicationFailureSource::RemoteUnavailable
+                    | ApplicationFailureSource::RemoteProtocol
+            ),
         requires_refresh: failure.recovery_failed()
             || matches!(kind, "conflict" | "task_active" | "task_not_found"),
     }
