@@ -24,6 +24,7 @@ RENAME_TEST = scope.TESTS + "Features/TaskRename/TaskRenameTests.swift"
 ARCHIVING_TEST = scope.TESTS + "Features/TaskArchiving/TaskArchivingTests.swift"
 SUPPORT = scope.TESTS + "Support/TestSupport.swift"
 CONTRACT = scope.SOURCES + scope.DEPENDENCIES
+DELETION_TEST = scope.TESTS + "Features/WorklogDeletion/WorklogDeletionTests.swift"
 
 SUPPORT_BEFORE = """import Foundation
 @MainActor
@@ -116,6 +117,26 @@ CONTRACT_AFTER = """public protocol TrackerClient: Sendable {
         -> TaskCommandResult
 }
 """
+
+
+def apply_edits(text, edits):
+    for old, new in edits:
+        text = text.replace(old, new)
+    return text
+
+
+DELETION_SUPPORT_BEFORE = (
+    "import Foundation\n@MainActor\nfinal class FakeClient: TrackerClient {\n    enum Operation: Equatable {\n"
+    + "".join(old if old.endswith("\n") else old + "\n" for old, _ in scope.WORKLOG_DELETION_SUPPORT_EDITS)
+    + "    }\n}\n"
+)
+DELETION_SUPPORT_AFTER = apply_edits(DELETION_SUPPORT_BEFORE, scope.WORKLOG_DELETION_SUPPORT_EDITS)
+DELETION_CONTRACT_BEFORE = (
+    "public protocol TrackerClient: Sendable {\n"
+    + "".join(old for old, _ in scope.WORKLOG_DELETION_CONTRACT_EDITS)
+    + "}\n"
+)
+DELETION_CONTRACT_AFTER = apply_edits(DELETION_CONTRACT_BEFORE, scope.WORKLOG_DELETION_CONTRACT_EDITS)
 
 
 class SwiftMutationScopeTests(unittest.TestCase):
@@ -326,6 +347,73 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
         self.assertEqual(result["files"], [TRACKING])
         self.assertEqual(result["merge_base"], self.base)
+
+    def deletion_baseline(self):
+        self.write(scope.PACKAGE + SUPPORT, DELETION_SUPPORT_BEFORE)
+        self.write(scope.PACKAGE + CONTRACT, DELETION_CONTRACT_BEFORE)
+        self.base = self.commit("Add shared client fixture")
+
+    def deletion_changes(self):
+        self.write(scope.PACKAGE + SUPPORT, DELETION_SUPPORT_AFTER)
+        self.write(scope.PACKAGE + CONTRACT, DELETION_CONTRACT_AFTER)
+        self.write(scope.PACKAGE + DELETION_TEST, "func testDeletion() {}\n")
+
+    def test_worklog_deletion_fixture_addition_keeps_the_complete_focused_scope(self):
+        self.deletion_baseline()
+        self.deletion_changes()
+        self.commit("Add worklog deletion to the client contract and fixture")
+
+        result = self.select()
+
+        expected = {CONTRACT}
+        expected.update(
+            scope.SOURCES + source for source in scope.TEST_PRODUCTION[DELETION_TEST.removeprefix(scope.TESTS)])
+        self.assertEqual(result["status"], "focused", result["review_reasons"])
+        self.assertEqual(result["files"], sorted(expected))
+        self.assertIn(scope.SOURCES + scope.DELETION, result["files"])
+        self.assertTrue(any("Shared fixture only adds the worklog deletion reply" in reason
+                            for reason in result["reasons"]))
+
+    def test_worklog_deletion_fixture_addition_requires_the_contract_and_suite(self):
+        self.deletion_baseline()
+        for missing in (CONTRACT, DELETION_TEST):
+            with self.subTest(missing=missing):
+                self.git("reset", "--hard", self.base)
+                self.git("clean", "-fd")
+                self.deletion_changes()
+                if missing == DELETION_TEST:
+                    (self.root / scope.PACKAGE / DELETION_TEST).unlink()
+                else:
+                    self.git("restore", scope.PACKAGE + missing)
+                self.commit("Omit a required deletion change")
+                self.assertEqual(self.select()["status"], "review-required")
+
+    def test_worklog_deletion_fixture_rejects_other_shared_fixture_and_contract_changes(self):
+        self.deletion_baseline()
+        variants = {
+            SUPPORT: {
+                "reply": DELETION_SUPPORT_AFTER.replace("worklog == expected", "worklog.id == expected.id"),
+                "operation": DELETION_SUPPORT_AFTER.replace(
+                    "case delete(expected: WorklogItem)", "case delete(expected: WorklogItem, at: String)"),
+                "extra line": DELETION_SUPPORT_AFTER.replace("    }\n}\n", "    }\n    var extra = 0\n}\n"),
+                "missing reply": DELETION_SUPPORT_AFTER.replace("        case deleted(WorklogDeletionResult)\n", ""),
+            },
+            CONTRACT: {
+                "signature": DELETION_CONTRACT_AFTER.replace(
+                    "func deleteWorklog(expected: WorklogItem)", "func deleteWorklog(id: String)"),
+                "extra requirement": DELETION_CONTRACT_AFTER.replace(
+                    "}\n", "    func purgeWorklogs() async throws\n}\n"),
+            },
+        }
+        for path, contents in variants.items():
+            for label, content in contents.items():
+                with self.subTest(path=path, change=label):
+                    self.git("reset", "--hard", self.base)
+                    self.git("clean", "-fd")
+                    self.deletion_changes()
+                    self.write(scope.PACKAGE + path, content)
+                    self.commit("Change the deletion fixture shape")
+                    self.assertEqual(self.select()["status"], "review-required")
 
     def test_test_only_change_mutates_the_exercised_production_file(self):
         self.write(scope.PACKAGE + TRACKING_TEST, "func testTrackingElapsedAfterStopping() {}\n")

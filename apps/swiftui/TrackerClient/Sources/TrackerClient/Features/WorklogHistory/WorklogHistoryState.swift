@@ -29,7 +29,7 @@ final class WorklogHistoryState {
         nextCursor = nil
     }
 
-    func removeMovedWorklog(id: String) {
+    func removeWorklog(id: String) {
         worklogs.removeAll { $0.id == id }
         nextCursor = nil
     }

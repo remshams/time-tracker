@@ -316,6 +316,23 @@ private final class RustBridge {
             }
         }
     }
+
+    func deleteWorklog(expected: WorklogItem) throws -> WorklogDeletionResult {
+        guard let expectedEnd = expected.end else {
+            throw BridgeFailure(message: "Running worklogs cannot be deleted. Stop the timer first.")
+        }
+        return try expected.id.withCString { worklog in
+            try expected.taskId.withCString { task in
+                try expected.start.withCString { start in
+                    try expectedEnd.withCString { end in
+                        try decode(
+                            tt_bridge_delete_worklog(handle, worklog, task, start, end),
+                            requiresRefreshOnMalformed: true)
+                    }
+                }
+            }
+        }
+    }
 }
 
 // Every handle operation, including creation and destruction, belongs to this queue.
@@ -500,5 +517,9 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         try await perform {
             try $0.currentBridge().moveWorklog(expected: expected, destinationTaskID: destinationTaskID)
         }
+    }
+
+    func deleteWorklog(expected: WorklogItem) async throws -> WorklogDeletionResult {
+        try await perform { try $0.currentBridge().deleteWorklog(expected: expected) }
     }
 }

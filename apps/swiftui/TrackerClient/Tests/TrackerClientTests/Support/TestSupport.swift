@@ -25,6 +25,7 @@ final class FakeClient: TrackerClient, ReportClient {
         case correct(expected: WorklogItem, start: String, end: String?, at: String)
         case candidates(source: String, query: String)
         case move(expected: WorklogItem, destination: String)
+        case delete(expected: WorklogItem)
         case start(task: String, expected: String?, at: String)
         case stop(worklog: String, at: String)
         case pause(worklog: String, at: String)
@@ -43,6 +44,7 @@ final class FakeClient: TrackerClient, ReportClient {
         case corrected(WorklogCorrectionResult)
         case candidates([WorklogMoveCandidate])
         case moved(WorklogMoveResult)
+        case deleted(WorklogDeletionResult)
         case paused(TrackingPauseResult)
         case report(TaskListTotalsRefresh)
         case reportResource(TrackerReport)
@@ -134,6 +136,13 @@ final class FakeClient: TrackerClient, ReportClient {
                 publishAfterCommand(resources)
             }
             complete(.success(.moved(WorklogMoveResult(worklog: worklog))))
+        }
+        func deleted(worklog: WorklogItem) {
+            complete(.success(.deleted(WorklogDeletionResult(worklog: worklog))))
+        }
+        func deleted(worklog: WorklogItem, resources: TaskListResources) {
+            if case .delete(let expected) = operation, worklog == expected { publishAfterCommand(resources) }
+            complete(.success(.deleted(WorklogDeletionResult(worklog: worklog))))
         }
         func inactivePreview(_ preview: InactiveTaskPreview) { complete(.success(.inactivePreview(preview))) }
         func archivedInactive(count: Int, resources: TaskListResources) {
@@ -338,6 +347,13 @@ final class FakeClient: TrackerClient, ReportClient {
         let operation = Operation.move(expected: expected, destination: destinationTaskID)
         guard case .moved(let value) = try await perform(operation) else {
             throw wrongReply("move", operation: operation)
+        }
+        return value
+    }
+    func deleteWorklog(expected: WorklogItem) async throws -> WorklogDeletionResult {
+        let operation = Operation.delete(expected: expected)
+        guard case .deleted(let value) = try await perform(operation) else {
+            throw wrongReply("deletion", operation: operation)
         }
         return value
     }

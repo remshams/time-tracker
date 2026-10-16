@@ -29,6 +29,7 @@ public protocol TrackerClient: Sendable {
     ) async throws -> WorklogCorrectionResult
     func moveCandidates(sourceTaskID: String, query: String) async throws -> [WorklogMoveCandidate]
     func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult
+    func deleteWorklog(expected: WorklogItem) async throws -> WorklogDeletionResult
     func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws
         -> TrackingCommandResult
     func stopTracking(worklogID: String, occurredAt: String) async throws -> TrackingCommandResult

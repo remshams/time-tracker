@@ -47,7 +47,8 @@ elif [[ "${1:-}" == --group && $# == 2 ]]; then
     case "$2" in
         core) suites=(SmokeUITests TaskCatalogUITests ServerTaskCatalogUITests TaskCreationUITests ServerTaskCreationUITests TrackingUITests ServerTrackingUITests WorklogHistoryUITests ServerWorklogHistoryUITests) ;;
         tasks) suites=(TaskRenameUITests ServerTaskRenameUITests TaskArchivingUITests ServerTaskArchivingUITests BulkTaskArchivingUITests BulkTaskArchivingExtendedUITests ServerBulkTaskArchivingUITests) ;;
-        worklogs) suites=(WorklogCorrectionUITests ServerWorklogCorrectionUITests WorklogMoveUITests ServerWorklogMoveUITests) ;;
+        worklogs) suites=(WorklogCorrectionUITests ServerWorklogCorrectionUITests WorklogMoveUITests ServerWorklogMoveUITests
+            WorklogDeletionUITests ServerWorklogDeletionUITests) ;;
         server) suites=(ConnectionUITests ServerRecoveryUITests) ;;
         menu) suites=(MenuBarUITests ServerMenuBarUITests MenuSourceUITests SettingsUITests) ;;
         mac) suites=(WindowRoutingUITests DailyTotalsUITests ServerDailyTotalsUITests LifecycleUITests ServerLifecycleUITests AppearanceUITests) ;;
