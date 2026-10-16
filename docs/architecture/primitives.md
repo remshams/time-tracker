@@ -2,7 +2,7 @@
 
 Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. [Revisions and concurrency](#revisions-and-concurrency) explains stale-write and pagination guards. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
 
-Source scope: the Rust core, TUI, CLI, and native macOS client at `16d009ae4e1e1505c7c24c920b29042da368d85c`, inspected on 16 October 2026. Native reviewed task-name contracts additionally describe `384069b` on 16 October 2026. Native worklog deletion additionally describes the `feat/delete-task-worklog` changes on top of `3f19471`, inspected on 16 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
+Source scope: the Rust core, TUI, CLI, and native macOS client at `16d009ae4e1e1505c7c24c920b29042da368d85c`, inspected on 16 October 2026. Native reviewed task-name contracts additionally describe `384069b` on 16 October 2026. Native worklog deletion additionally describes `67ae0ed`, inspected on 16 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
 
 ## Architecture primitives
 
