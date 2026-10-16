@@ -28,6 +28,10 @@ public final class TrackerPresentationObserver {
     private var canOpenMove: Bool
     public var onWorklogCorrectionChange: (() -> Void)?
     public private(set) var worklogCorrectionSheetContent: WorklogCorrectionPresentation
+    public var onWorklogDeletionChange: (() -> Void)?
+    public private(set) var worklogDeletionSheetContent: WorklogDeletionPresentation
+    private var deletion: WorklogDeletionPresentation
+    private var canOpenDeletion: Bool
 
     private var content: Content
     private var activity: Activity
@@ -52,6 +56,9 @@ public final class TrackerPresentationObserver {
         move = session.worklogMove
         canOpenMove = session.canOpenWorklogMove
         worklogMoveSheetContent = move
+        deletion = session.worklogDeletion
+        canOpenDeletion = session.canOpenWorklogDeletion
+        worklogDeletionSheetContent = deletion
         content = Content(session)
         activity = Activity(session)
         timerText = session.timerDisplayText
@@ -84,6 +91,12 @@ public final class TrackerPresentationObserver {
         move = nextMove
         canOpenMove = nextCanOpenMove
         if nextMove.isPresented { worklogMoveSheetContent = nextMove }
+        let nextDeletion = session.worklogDeletion
+        let nextCanOpenDeletion = session.canOpenWorklogDeletion
+        let deletionChanged = deletion != nextDeletion || canOpenDeletion != nextCanOpenDeletion
+        deletion = nextDeletion
+        canOpenDeletion = nextCanOpenDeletion
+        if nextDeletion.isPresented { worklogDeletionSheetContent = nextDeletion }
         let nextContent = Content(session)
         let nextActivity = Activity(session)
         let nextTimerText = session.timerDisplayText
@@ -118,6 +131,7 @@ public final class TrackerPresentationObserver {
         if bulkChanged { onBulkTaskArchivingChange?() }
         if archivingChanged { onTaskArchivingChange?() }
         if moveChanged { onWorklogMoveChange?() }
+        if deletionChanged { onWorklogDeletionChange?() }
         if contentChanged { onContentChange?() }
         if activityChanged { onActivityChange?() }
         if timerChanged { onTimerChange?() }

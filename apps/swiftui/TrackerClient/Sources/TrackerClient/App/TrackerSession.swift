@@ -7,7 +7,8 @@ public final class TrackerSession {
     // Background reads still serialize requests without disabling controls.
     public var isBlockingControls: Bool {
         (isBusy && operationBlocksControls) || pendingControlCommand != nil || bulkArchiving.ownsPresentation
-            || rename.hasPendingIntent || creation.pending || correction.pending || move.pending || archiving.pending
+            || rename.hasPendingIntent || creation.pending || correction.pending || move.pending
+            || deletion.pending || archiving.pending
     }
     public private(set) var now: Date
 
@@ -34,6 +35,7 @@ public final class TrackerSession {
     private let bulkArchiving = BulkTaskArchivingState()
     private let correction = WorklogCorrectionState()
     private let move = WorklogMoveState()
+    private let deletion = WorklogDeletionState()
     private let dailyTotals: DailyTotalsState
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
@@ -119,27 +121,37 @@ public final class TrackerSession {
     public var canOpenTaskCreation: Bool {
         running && connection.confirmed && !connection.changing && !rename.presentation.isPresented
             && !rename.blocksConnectionChange && !correction.blocksConnectionChange && !move.blocksConnectionChange
-            && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
+            && !deletion.blocksConnectionChange && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
     }
     public var taskRename: TaskRenamePresentation { rename.presentation }
     public var canOpenTaskRename: Bool {
         running && connection.confirmed && !connection.changing && !creation.presentation.isPresented
             && !creation.blocksConnectionChange && !correction.blocksConnectionChange && !move.blocksConnectionChange
-            && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
+            && !deletion.blocksConnectionChange && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
             && (selectedTask != nil || rename.intent != nil)
     }
     public var worklogCorrection: WorklogCorrectionPresentation { correction.presentation }
     public var canOpenWorklogCorrection: Bool {
         running && connection.confirmed && !connection.changing && !creation.presentation.isPresented
             && !creation.blocksConnectionChange && !rename.presentation.isPresented && !rename.blocksConnectionChange
-            && !move.blocksConnectionChange && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
+            && !move.blocksConnectionChange && !deletion.blocksConnectionChange && !archiving.ownsPresentation
+            && !bulkArchiving.ownsPresentation
     }
 
     public var worklogMove: WorklogMovePresentation { move.presentation }
     public var canOpenWorklogMove: Bool {
         running && connection.confirmed && !connection.changing && !creation.presentation.isPresented
             && !creation.blocksConnectionChange && !rename.presentation.isPresented && !rename.blocksConnectionChange
-            && !correction.blocksConnectionChange && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
+            && !correction.blocksConnectionChange && !deletion.blocksConnectionChange && !archiving.ownsPresentation
+            && !bulkArchiving.ownsPresentation
+    }
+
+    public var worklogDeletion: WorklogDeletionPresentation { deletion.presentation }
+    public var canOpenWorklogDeletion: Bool {
+        running && connection.confirmed && !connection.changing && !creation.presentation.isPresented
+            && !creation.blocksConnectionChange && !rename.presentation.isPresented && !rename.blocksConnectionChange
+            && !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.ownsPresentation
+            && !bulkArchiving.ownsPresentation
     }
 
     public var canStartSelectedTask: Bool {
@@ -254,6 +266,7 @@ public final class TrackerSession {
         rename.reset()
         correction.reset()
         move.reset()
+        deletion.reset()
         archiving.reset()
         bulkArchiving.reset()
         pendingRefresh = false
@@ -301,8 +314,8 @@ public final class TrackerSession {
         dailyTotals.reanchor(clock: clock)
         updateDisplayTimer()
         updateRolloverTimer()
-        if rename.hasPendingIntent || creation.pending || correction.pending || move.pending || archiving.pending
-            || bulkArchiving.pendingSubmit
+        if rename.hasPendingIntent || creation.pending || correction.pending || move.pending || deletion.pending
+            || archiving.pending || bulkArchiving.pendingSubmit
         {
             if drainAutomation() { return }
             if drainBulkArchiving() { return }
@@ -311,6 +324,7 @@ public final class TrackerSession {
             if drainCreation() { return }
             if drainCorrection() { return }
             if drainMove() { return }
+            if drainDeletion() { return }
         }
         refresh()
     }
@@ -356,7 +370,7 @@ public final class TrackerSession {
             && pendingControlCommand == nil && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
             && !creation.presentation.isPresented && !creation.blocksConnectionChange
             && !rename.presentation.isPresented && !rename.blocksConnectionChange && !correction.blocksConnectionChange
-            && !move.blocksConnectionChange
+            && !move.blocksConnectionChange && !deletion.blocksConnectionChange
     }
 
     var taskArchivingAvailability: [String: Bool] {
@@ -408,7 +422,8 @@ public final class TrackerSession {
         guard running, !sleeping, !connection.changing,
             !creation.presentation.isPresented, !creation.blocksConnectionChange,
             !rename.presentation.isPresented, !rename.blocksConnectionChange,
-            !correction.blocksConnectionChange, !move.blocksConnectionChange, !bulkArchiving.ownsPresentation
+            !correction.blocksConnectionChange, !move.blocksConnectionChange, !deletion.blocksConnectionChange,
+            !bulkArchiving.ownsPresentation
         else { return }
         archiving.reopen()
         publish()
@@ -579,6 +594,35 @@ public final class TrackerSession {
         publish()
     }
 
+    public func openWorklogDeletion(worklogID: String) {
+        guard canOpenWorklogDeletion else { return }
+        guard let worklog = deletion.original ?? worklog(withID: worklogID, in: worklogs) else { return }
+        deletion.open(
+            worklog, taskName: task(withID: worklog.taskId, in: tasks)?.name ?? "Unknown task",
+            historyPageLimit: max(1, (worklogs.count + 49) / 50) + 1)
+        publish()
+    }
+
+    public func cancelWorklogDeletion() {
+        guard running else { return }
+        deletion.cancel()
+        publish()
+    }
+
+    public func submitWorklogDeletion() {
+        guard canOpenWorklogDeletion else { return }
+        guard deletion.submit() else { return }
+        drainDeletion()
+        publish()
+    }
+
+    public func reviewLatestWorklogDeletion() {
+        guard running else { return }
+        let taskID = deletion.presentation.latest?.taskId
+        deletion.reviewLatest(taskName: tasks.first { $0.id == taskID }?.name)
+        publish()
+    }
+
     public func setPauseOnScreenLock(_ enabled: Bool) {
         guard lifecycle != .stopped,
             automation.setEnabled(
@@ -657,6 +701,9 @@ public final class TrackerSession {
         guard !move.blocksConnectionChange else {
             return rejectConnection("Finish or retry worklog moving before changing connections.")
         }
+        guard !deletion.blocksConnectionChange else {
+            return rejectConnection("Finish or retry worklog deletion before changing connections.")
+        }
         guard !correction.blocksConnectionChange && !move.blocksConnectionChange else {
             return rejectConnection("Finish worklog editing before changing connections.")
         }
@@ -676,8 +723,8 @@ public final class TrackerSession {
         defer { finishOperation(token: token) }
         guard controlOperationIsCurrent(operation), !sleeping, !Task.isCancelled else { return false }
         guard !rename.blocksConnectionChange, !creation.blocksConnectionChange,
-            !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.blocksConnectionChange
-                && !bulkArchiving.ownsPresentation
+            !correction.blocksConnectionChange && !move.blocksConnectionChange && !deletion.blocksConnectionChange
+                && !archiving.blocksConnectionChange && !bulkArchiving.ownsPresentation
         else {
             connection.message = "Finish or retry task editing before changing connections."
             return false
@@ -825,6 +872,7 @@ public final class TrackerSession {
         if drainCreation() { return }
         if drainCorrection() { return }
         if drainMove() { return }
+        if drainDeletion() { return }
         if drainControlCommand() { return }
         if !sleeping {
             if drainBulkArchivePreview() { return }
@@ -1224,7 +1272,7 @@ public final class TrackerSession {
         move.reset()
         if let resources { acceptTaskList(resources) }
         if selectedTaskID == intent.expected.taskId {
-            history.removeMovedWorklog(id: intent.expected.id)
+            history.removeWorklog(id: intent.expected.id)
         } else if selectedTaskID == intent.destinationTaskID {
             history.invalidateCursor()
         }
@@ -1332,25 +1380,34 @@ public final class TrackerSession {
         _ intent: WorklogCorrectionState.Intent,
         resources: TaskListResources, token: Int
     ) async throws -> WorklogItem? {
-        if let active = resources.tracking.value, active.id == intent.expected.id { return active }
-        let taskID = intent.expected.taskId
+        try await currentWorklog(
+            intent.expected, historyPageLimit: intent.historyPageLimit, dialog: "editor",
+            resources: resources, token: token)
+    }
+
+    private func currentWorklog(
+        _ expected: WorklogItem, historyPageLimit: Int, dialog: String,
+        resources: TaskListResources, token: Int
+    ) async throws -> WorklogItem? {
+        if let active = resources.tracking.value, active.id == expected.id { return active }
+        let taskID = expected.taskId
         if containsTask(withID: taskID, in: resources.catalog.value) {
             var cursor: String?
             var seen = Set<String>()
             let loadedPages = loadedHistoryPages(for: taskID)
-            let pageLimit = max(intent.historyPageLimit, loadedPages + 1)
+            let pageLimit = max(historyPageLimit, loadedPages + 1)
             var pagesRead = 0
             repeat {
                 guard withinHistoryLimit(pagesRead, limit: pageLimit) else {
                     throw BridgeFailure(
                         message:
-                            "Could not verify this worklog within the history limit. Cancel and reopen the editor before retrying."
+                            "Could not verify this worklog within the history limit. Cancel and reopen the \(dialog) before retrying."
                     )
                 }
                 pagesRead += 1
                 let page = try await client.history(taskID: taskID, cursor: cursor)
                 guard isCurrent(token), !sleeping else { return nil }
-                if let worklog = worklog(withID: intent.expected.id, in: page.worklogs) { return worklog }
+                if let worklog = worklog(withID: expected.id, in: page.worklogs) { return worklog }
                 cursor = page.nextCursor
                 if let cursor, !seen.insert(cursor).inserted {
                     throw BridgeFailure(message: "Worklog history returned a repeated cursor.", kind: "protocol")
@@ -1460,6 +1517,109 @@ public final class TrackerSession {
                 guard isCurrent(token) else { return }
                 correction.fail(error, retainIntent: uncertain || (commandStarted && !reconciled))
                 publish()
+            }
+        }
+        return true
+    }
+
+    private func currentDeletionWorklog(
+        _ intent: WorklogDeletionState.Intent,
+        resources: TaskListResources, token: Int
+    ) async throws -> WorklogItem? {
+        try await currentWorklog(
+            intent.expected, historyPageLimit: intent.historyPageLimit, dialog: "dialog",
+            resources: resources, token: token)
+    }
+
+    private func finishDeletion(_ intent: WorklogDeletionState.Intent) {
+        deletion.reset()
+        if selectedTaskMatches(intent.expected.taskId) { history.removeWorklog(id: intent.expected.id) }
+        requestHistory()
+        publish()
+    }
+
+    private func deletionCanApply(
+        _ intent: WorklogDeletionState.Intent, latest: WorklogItem?, resolveCommitted: Bool
+    ) -> Bool {
+        guard let latest else {
+            // A missing worklog after an uncertain write means the deletion committed.
+            if resolveCommitted {
+                finishDeletion(intent)
+                return false
+            }
+            return requireDeletionReview(
+                latest: nil, message: "This worklog was moved or deleted. Cancel and refresh history.")
+        }
+        guard intent.matches(latest) else {
+            return requireDeletionReview(latest: latest, message: "This worklog changed. Review it before deleting.")
+        }
+        return true
+    }
+
+    @discardableResult
+    private func drainDeletion() -> Bool {
+        guard running, !sleeping, !isBusy, let intent = deletion.takePendingIntent() else { return false }
+        let token = generation
+        beginOperation()
+        Task { [weak self] in
+            guard let self, isCurrent(token) else { return }
+            defer { finishOperation(token: token) }
+            var commandStarted = false
+            do {
+                let resources = try await client.refreshTaskList()
+                guard isCurrent(token) else { return }
+                acceptTaskList(resources)
+                if sleeping { deletion.deferUntilWake(); return }
+                let latest = try await currentDeletionWorklog(intent, resources: resources, token: token)
+                guard isCurrent(token) else { return }
+                if sleeping { deletion.deferUntilWake(); return }
+                guard deletionCanApply(intent, latest: latest, resolveCommitted: deletion.mayHaveCommitted) else {
+                    return
+                }
+                commandStarted = true
+                deletion.commandStarted()
+                let result = try await client.deleteWorklog(expected: intent.expected)
+                guard isCurrent(token) else { return }
+                guard intent.matches(result.worklog) else {
+                    throw BridgeFailure(
+                        message: "The deletion response does not contain the deleted worklog.",
+                        kind: "protocol", uncertain: true, requiresRefresh: true)
+                }
+                finishDeletion(intent)
+                await refreshAfterCommit(token: token)
+            } catch {
+                guard isCurrent(token) else { return }
+                let failure = error as? BridgeFailure
+                let uncertain =
+                    failure == nil || failure?.uncertain == true || failure?.kind == "unavailable"
+                    || failure?.kind == "protocol"
+                var reconciled = false
+                if commandStarted {
+                    if let resources = await reconcileWriteFailure(token: token) {
+                        if sleeping { deletion.fail(error, retainIntent: true); return }
+                        do {
+                            let latest = try await currentDeletionWorklog(intent, resources: resources, token: token)
+                            guard isCurrent(token) else { return }
+                            if sleeping { deletion.fail(error, retainIntent: true); return }
+                            reconciled = true
+                            guard deletionCanApply(intent, latest: latest, resolveCommitted: uncertain) else {
+                                return
+                            }
+                            if isWorklogChangedFailure(failure) {
+                                deletion.requireReview(
+                                    latest: latest, message: "This worklog changed. Review it before deleting.")
+                                return
+                            }
+                        } catch {
+                            guard isCurrent(token) else { return }
+                            recordConnectionFailure(error)
+                        }
+                    }
+                } else if uncertain || failure?.requiresRefresh == true {
+                    recordConnectionFailure(error)
+                }
+                guard isCurrent(token) else { return }
+                deletion.fail(error, retainIntent: uncertain || (commandStarted && !reconciled))
             }
         }
         return true
@@ -1922,6 +2082,11 @@ public final class TrackerSession {
 
     private func isWorklogChangedFailure(_ failure: BridgeFailure?) -> Bool { failure?.kind == "worklog_changed" }
 
+    private func requireDeletionReview(latest: WorklogItem?, message: String) -> Bool {
+        deletion.requireReview(latest: latest, message: message)
+        return false
+    }
+
     private func requireCorrectionReview(latest: WorklogItem?, message: String) -> Bool {
         correction.requireReview(latest: latest, message: message)
         return false
@@ -1980,6 +2145,7 @@ public final class TrackerSession {
     private func observeHistoryWorklog(_ worklog: WorklogItem) {
         correction.observe(worklog)
         move.observe(worklog)
+        deletion.observe(worklog)
     }
 
     private func historyFailureRequiresRecovery(_ failure: BridgeFailure) -> Bool {
