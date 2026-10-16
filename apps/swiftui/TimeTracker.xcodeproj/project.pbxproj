@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0C391F78DA9ADAAB4A231999 /* RunLoopTrackerScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74173FE9F17D4DA10A0F5D9 /* RunLoopTrackerScheduler.swift */; };
+		F30DD6C09A7D9D49A4CD415B /* SystemTrackerClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BC77CADC2857417D88C840D /* SystemTrackerClock.swift */; };
 		A53F467E0E26F6B210E885BA /* MenuShortcutSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD61EBC30BB9A95C20AED30A /* MenuShortcutSettingsSection.swift */; };
 		06AEE760C5198EB5016F7085 /* MenuBarSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D651176EBD36B19B9B164BE /* MenuBarSettingsSection.swift */; };
 		85DD25AF44FE630E7BB7ACEE /* TrackingSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125E89E5A6E0417513C177E8 /* TrackingSettingsSection.swift */; };
@@ -33,7 +35,7 @@
 		9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */; };
 		03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C44057A177E810540FF857 /* WorklogRow.swift */; };
 		99855A0370850FBEBEE64BE3 /* MacLifecycleObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */; };
-		E724446CA77190001E61A002 /* SystemDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EECD295169E48244028EE41 /* SystemDependencies.swift */; };
+		E724446CA77190001E61A002 /* UserDefaultsPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EECD295169E48244028EE41 /* UserDefaultsPreferences.swift */; };
 		5F1D759FC3D354345CBF0671 /* TrackerWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0597366B0A0E2028788E2696 /* TrackerWorker.swift */; };
 		7E768477586D21659FFEC5F7 /* TrackerClient in Frameworks */ = {isa = PBXBuildFile; productRef = C8DF62E0CBC32AE617C1EA99 /* TrackerClient */; };
 		18D2319E48E082F857DD0A32 /* TaskCreationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B10C5FD690BABFF199F3775 /* TaskCreationStore.swift */; };
@@ -46,7 +48,6 @@
 		06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */; };
 		C66F80324842D1AACBE93B6B /* TrackerMenuValueBindings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58AD268792A6ACD87F3B08AA /* TrackerMenuValueBindings.swift */; };
 		25C8A3D06E8274ADA6BBAC4F /* MenuKeyboardSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */; };
-		B54E8C7C53D2D09700847492 /* MenuKeyboardPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2346CBACB68448A001F56706 /* MenuKeyboardPreferences.swift */; };
 		8503050BDB83B0C4D676D937 /* TaskArchivingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B61905FCBC755118476CFF /* TaskArchivingStore.swift */; };
 		2507B5FE7BE977C63473174B /* TaskArchivingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */; };
 		BD73674A963DDEAA117CE002 /* BulkTaskArchivingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */; };
@@ -102,6 +103,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		A74173FE9F17D4DA10A0F5D9 /* RunLoopTrackerScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunLoopTrackerScheduler.swift; sourceTree = "<group>"; };
+		0BC77CADC2857417D88C840D /* SystemTrackerClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemTrackerClock.swift; sourceTree = "<group>"; };
 		FD61EBC30BB9A95C20AED30A /* MenuShortcutSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuShortcutSettingsSection.swift; sourceTree = "<group>"; };
 		2D651176EBD36B19B9B164BE /* MenuBarSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarSettingsSection.swift; sourceTree = "<group>"; };
 		125E89E5A6E0417513C177E8 /* TrackingSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingSettingsSection.swift; sourceTree = "<group>"; };
@@ -133,7 +136,7 @@
 		E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogFormatting.swift; sourceTree = "<group>"; };
 		A8C44057A177E810540FF857 /* WorklogRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogRow.swift; sourceTree = "<group>"; };
 		804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLifecycleObserver.swift; sourceTree = "<group>"; };
-		7EECD295169E48244028EE41 /* SystemDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemDependencies.swift; sourceTree = "<group>"; };
+		7EECD295169E48244028EE41 /* UserDefaultsPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsPreferences.swift; sourceTree = "<group>"; };
 		0597366B0A0E2028788E2696 /* TrackerWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerWorker.swift; sourceTree = "<group>"; };
 		3B10C5FD690BABFF199F3775 /* TaskCreationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskCreationStore.swift; sourceTree = "<group>"; };
 		E20F8E9711E94B95EA2CFCD6 /* TaskCreationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskCreationView.swift; sourceTree = "<group>"; };
@@ -145,7 +148,6 @@
 		D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerStatusItemController.swift; sourceTree = "<group>"; };
 		58AD268792A6ACD87F3B08AA /* TrackerMenuValueBindings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerMenuValueBindings.swift; sourceTree = "<group>"; };
 		E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuKeyboardSupport.swift; sourceTree = "<group>"; };
-		2346CBACB68448A001F56706 /* MenuKeyboardPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuKeyboardPreferences.swift; sourceTree = "<group>"; };
 		B3B61905FCBC755118476CFF /* TaskArchivingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskArchivingStore.swift; sourceTree = "<group>"; };
 		BF3A792A491F1DE4A4443CEF /* TaskArchivingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskArchivingView.swift; sourceTree = "<group>"; };
 		BD73674A963DDEAA117CE001 /* BulkTaskArchivingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTaskArchivingStore.swift; sourceTree = "<group>"; };
@@ -209,6 +211,23 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		87CAB03B8DE693F53DC8CB0C /* System */ = {
+			isa = PBXGroup;
+			children = (
+				0BC77CADC2857417D88C840D /* SystemTrackerClock.swift */,
+				A74173FE9F17D4DA10A0F5D9 /* RunLoopTrackerScheduler.swift */,
+			);
+			path = System;
+			sourceTree = "<group>";
+		};
+		4C29E9FE0A3A7C23C2DDC40B /* Preferences */ = {
+			isa = PBXGroup;
+			children = (
+				7EECD295169E48244028EE41 /* UserDefaultsPreferences.swift */,
+			);
+			path = Preferences;
+			sourceTree = "<group>";
+		};
 		DC27D51D3BAB4404B6E435C9 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
@@ -341,6 +360,8 @@
 			children = (
 				4E3BEBFB03311020BF2AEC66 /* MacLifecycle */,
 				FCEB2C08258D17442B301359 /* RustBridge */,
+				4C29E9FE0A3A7C23C2DDC40B /* Preferences */,
+				87CAB03B8DE693F53DC8CB0C /* System */,
 			);
 			path = Infrastructure;
 			sourceTree = "<group>";
@@ -349,7 +370,6 @@
 			isa = PBXGroup;
 			children = (
 				804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */,
-				7EECD295169E48244028EE41 /* SystemDependencies.swift */,
 			);
 			path = MacLifecycle;
 			sourceTree = "<group>";
@@ -401,7 +421,6 @@
 			children = (
 				D634B6DD1D5D0D366765B878 /* TrackerStatusItemController.swift */,
 				58AD268792A6ACD87F3B08AA /* TrackerMenuValueBindings.swift */,
-				2346CBACB68448A001F56706 /* MenuKeyboardPreferences.swift */,
 				E6F1D847671034888BF65266 /* MenuKeyboardSupport.swift */,
 				2D651176EBD36B19B9B164BE /* MenuBarSettingsSection.swift */,
 				FD61EBC30BB9A95C20AED30A /* MenuShortcutSettingsSection.swift */,
@@ -734,7 +753,6 @@
 				3F7A03677BF75120A989F9AD /* TrackerSplitLayout.swift in Sources */,
 				06BAC82F4057547A724AF1B1 /* TrackerStatusItemController.swift in Sources */,
 				C66F80324842D1AACBE93B6B /* TrackerMenuValueBindings.swift in Sources */,
-				B54E8C7C53D2D09700847492 /* MenuKeyboardPreferences.swift in Sources */,
 				25C8A3D06E8274ADA6BBAC4F /* MenuKeyboardSupport.swift in Sources */,
 				DEC58A6F5CC0E47BC351BD6C /* TaskIndicatorView.swift in Sources */,
 				DA6345968B4AABC0241FA4C2 /* TaskContextMenu.swift in Sources */,
@@ -759,7 +777,7 @@
 				9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */,
 				03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */,
 				99855A0370850FBEBEE64BE3 /* MacLifecycleObserver.swift in Sources */,
-				E724446CA77190001E61A002 /* SystemDependencies.swift in Sources */,
+				E724446CA77190001E61A002 /* UserDefaultsPreferences.swift in Sources */,
 				5F1D759FC3D354345CBF0671 /* TrackerWorker.swift in Sources */,
 				8F47CEF34016B75C457130B1 /* ConnectionDraftStore.swift in Sources */,
 				C4A122BD963E40B822BDBE80 /* ConnectionSettingsSection.swift in Sources */,
@@ -768,6 +786,8 @@
 				85DD25AF44FE630E7BB7ACEE /* TrackingSettingsSection.swift in Sources */,
 				06AEE760C5198EB5016F7085 /* MenuBarSettingsSection.swift in Sources */,
 				A53F467E0E26F6B210E885BA /* MenuShortcutSettingsSection.swift in Sources */,
+				F30DD6C09A7D9D49A4CD415B /* SystemTrackerClock.swift in Sources */,
+				0C391F78DA9ADAAB4A231999 /* RunLoopTrackerScheduler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
