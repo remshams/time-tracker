@@ -60,17 +60,18 @@ Paths below are relative to this directory. Local feature suites also have real-
 | 8 | Bulk preview, period, geometry, confirmation, concurrent candidates and lost response | [retained cases](Tests/UITests/Features/BulkTaskArchiving/BulkTaskArchivingUITests.swift), [extended cases](Tests/UITests/Features/BulkTaskArchiving/BulkTaskArchivingExtendedUITests.swift) |
 | 9 | Completed/running correction, precision, validation, conflicts | [WorklogCorrectionUITests](Tests/UITests/Features/WorklogHistory/WorklogCorrectionUITests.swift) |
 | 10 | Completed/running moves, search, archived source, overlap, conflict | [WorklogMoveUITests](Tests/UITests/Features/WorklogHistory/WorklogMoveUITests.swift) |
-| 11 | Test/adopt connection, distinct sources, rollback, saved settings | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
-| 12 | Initial/later outage, cached state, disabled writes, Retry, incompatible endpoint | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
-| 13 | Captured commands, other-client replacement, uncertain writes and retained editor intent | [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
-| 14 | Native menu opening, navigation, Return and dismissal | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
-| 15 | Menu tracking, primary clicks, remembered task per source, saved task order | `MenuBarUITests`, `ServerMenuBarUITests`, and `MenuSourceUITests` in the same file |
-| 16 | Clipboard, zero/archived/cached values, menu identity during refresh and ticks | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
-| 17 | Saved toggles, shortcut recording/cancellation/defaults, registration conflict | [SettingsUITests](Tests/UITests/Features/Connection/SettingsUITests.swift) |
-| 18 | Windows, editor ownership, reopening, quit with running timer | [WindowRoutingUITests](Tests/UITests/App/WindowRoutingUITests.swift) |
-| 19 | Daily totals against CLI reports, overnight/live totals, source clearing | [DailyTotalsUITests](Tests/UITests/Features/DailyTotals/DailyTotalsUITests.swift), [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
-| 20 | Visibility, controlled lock/unlock/sleep/wake, display ticks without requests | [LifecycleUITests](Tests/UITests/Infrastructure/MacLifecycle/LifecycleUITests.swift); real-event checks below remain open |
-| 21 | Light/Dark identity, size, sidebar, text status, task color identity | [AppearanceUITests](Tests/UITests/App/AppearanceUITests.swift); platform checks below remain open |
+| 11 | Completed deletion, cancellation, running guard, conflict review | [WorklogDeletionUITests](Tests/UITests/Features/WorklogHistory/WorklogDeletionUITests.swift) |
+| 12 | Test/adopt connection, distinct sources, rollback, saved settings | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
+| 13 | Initial/later outage, cached state, disabled writes, Retry, incompatible endpoint | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
+| 14 | Captured commands, other-client replacement, uncertain writes and retained editor intent | [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
+| 15 | Native menu opening, navigation, Return and dismissal | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
+| 16 | Menu tracking, primary clicks, remembered task per source, saved task order | `MenuBarUITests`, `ServerMenuBarUITests`, and `MenuSourceUITests` in the same file |
+| 17 | Clipboard, zero/archived/cached values, menu identity during refresh and ticks | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
+| 18 | Saved toggles, shortcut recording/cancellation/defaults, registration conflict | [SettingsUITests](Tests/UITests/Features/Connection/SettingsUITests.swift) |
+| 19 | Windows, editor ownership, reopening, quit with running timer | [WindowRoutingUITests](Tests/UITests/App/WindowRoutingUITests.swift) |
+| 20 | Daily totals against CLI reports, overnight/live totals, source clearing | [DailyTotalsUITests](Tests/UITests/Features/DailyTotals/DailyTotalsUITests.swift), [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
+| 21 | Visibility, controlled lock/unlock/sleep/wake, display ticks without requests | [LifecycleUITests](Tests/UITests/Infrastructure/MacLifecycle/LifecycleUITests.swift); real-event checks below remain open |
+| 22 | Light/Dark identity, size, sidebar, text status, task color identity | [AppearanceUITests](Tests/UITests/App/AppearanceUITests.swift); platform checks below remain open |
 
 ## Dedicated-Mac acceptance
 
