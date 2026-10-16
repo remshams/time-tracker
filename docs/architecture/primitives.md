@@ -2,7 +2,7 @@
 
 Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. [Revisions and concurrency](#revisions-and-concurrency) explains stale-write and pagination guards. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
 
-Source scope: the Rust core, TUI, CLI, and native macOS client at `e0f570ade9dd633046cb784d9c546a2d34516f35`, inspected on 14 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
+Source scope: the Rust core, TUI, CLI, and native macOS client at `e0f570ade9dd633046cb784d9c546a2d34516f35`, inspected on 14 October 2026. Native reviewed task-name contracts additionally describe `42fc210` on 16 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
 
 ## Architecture primitives
 
@@ -82,7 +82,7 @@ Source: [crate](../../apps/cli/Cargo.toml), [entry point](../../apps/cli/src/mai
 
 ### tracker-swift-bridge
 
-Owns the Rust static library's C ABI, connection handles, JSON results, and persistent current-thread Tokio runtime. It dispatches through `TrackerBackend` and maps failures for Swift. The native app's serial `TrackerWorker` owns call ordering and handle disposal; the bridge owns neither windows nor feature state.
+Owns the Rust static library's C ABI, connection handles, JSON results, and persistent current-thread Tokio runtime. It dispatches through `TrackerBackend` and maps failures for Swift. Additive guarded rename and archive exports carry the reviewed task name into the shared application operation. Existing desired-state exports remain available. The native app's serial `TrackerWorker` owns call ordering and handle disposal; the bridge owns neither windows nor feature state.
 
 Depends on: [tracker-client](#tracker-client), [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-remote](#tracker-remote), [tracker-storage](#tracker-storage).
 
@@ -90,7 +90,7 @@ Source: [crate](../../apps/swiftui/bridge/Cargo.toml), [backend](../../apps/swif
 
 ### TrackerClient Swift package
 
-Owns portable feature state and `TrackerSession` coordination through injected client, clock, scheduler, and settings interfaces. Connection and selection generations reject obsolete results. It composes resource observations for features and separates command success from later refresh failures. Rust continues to own domain rules and persistence.
+Owns portable feature state and `TrackerSession` coordination through injected client, clock, scheduler, and settings interfaces. Connection and selection generations reject obsolete results. It composes resource observations for features and separates command success from later refresh failures. Queued rename and archive intents retain their reviewed names through background updates and pass them through the client contract. Rust compares the name and writes in one transaction; a conflict requires refresh and review. Rust continues to own domain rules and persistence.
 
 Depends on: Foundation and injected interfaces. No direct Rust, SwiftUI, AppKit, network, or database dependency.
 
