@@ -29,6 +29,28 @@ extension TrackerUITestCase {
 
     func menuTask(_ task: FixtureTask) -> XCUIElement { element("menu.task.\(task.id)") }
 
+    /// Reads Start tracking from top to bottom. It requires that no task has time logged today.
+    func startTrackingOrder(_ tasks: [FixtureTask]) -> [String] {
+        openStatusMenu()
+        app.typeKey(.downArrow, modifierFlags: [])
+        app.typeKey(.rightArrow, modifierFlags: [])
+        for task in tasks { XCTAssertTrue(menuTask(task).waitForExistence(timeout: timeout)) }
+        let order = tasks.sorted { menuTask($0).frame.minY < menuTask($1).frame.minY }.map(\.name)
+        app.typeKey(.leftArrow, modifierFlags: [])
+        dismissStatusMenu()
+        return order
+    }
+
+    func chooseMenuTaskOrder(_ title: String) {
+        openSettings()
+        let picker = element("menu.task-order")
+        picker.click()
+        let item = app.menuItems[title].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: timeout))
+        item.click()
+        waitUntil("Settings selects \(title)") { picker.value as? String == title }
+    }
+
     func copyMenuItem(_ action: MenuCopyAction, task: FixtureTask) -> XCUIElement {
         menuTask(task).menuItems["menu.copy.\(task.id).\(action.rawValue)"]
     }
