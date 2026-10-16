@@ -26,6 +26,7 @@ final class TrackerStore {
     let archiving: TaskArchivingStore
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore
+    let deletion: WorklogDeletionStore
     private var lifecycle: MacLifecycleObserver?
 
     init() {
@@ -55,6 +56,7 @@ final class TrackerStore {
         archiving = TaskArchivingStore(session: session, presentation: presentation)
         correction = WorklogCorrectionStore(session: session, presentation: presentation)
         move = WorklogMoveStore(session: session, presentation: presentation)
+        deletion = WorklogDeletionStore(session: session, presentation: presentation)
         dailyTotals.onMenuBarTick = { [weak self] in self?.menu.update() }
         presentation.onContentChange = { [weak self] in self?.objectWillChange.send() }
         session.onChange = { [weak self] in

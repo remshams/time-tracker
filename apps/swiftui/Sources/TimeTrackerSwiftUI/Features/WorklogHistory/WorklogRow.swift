@@ -7,6 +7,7 @@ struct WorklogRow: View {
     let timer: TrackerTimerStore
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore
+    let deletion: WorklogDeletionStore
 
     private var duration: TimeInterval {
         guard let start = timestamp(worklog.start), let end = timestamp(worklog.end) else { return 0 }
@@ -35,7 +36,7 @@ struct WorklogRow: View {
             .foregroundStyle(.primary)
             .monospacedDigit()
             .fixedSize()
-            WorklogActionsMenu(correction: correction, move: move, worklogID: worklog.id)
+            WorklogActionsMenu(correction: correction, move: move, deletion: deletion, worklog: worklog)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("worklog-history.row.\(worklog.id)")
@@ -46,7 +47,7 @@ struct WorklogRow: View {
                 .stroke(.quaternary, lineWidth: 1)
         }
         .contextMenu {
-            WorklogContextMenu(correction: correction, move: move, worklogID: worklog.id)
+            WorklogContextMenu(correction: correction, move: move, deletion: deletion, worklog: worklog)
         }
     }
 }
@@ -55,11 +56,12 @@ struct WorklogRow: View {
 private struct WorklogActionsMenu: View {
     @ObservedObject var correction: WorklogCorrectionStore
     @ObservedObject var move: WorklogMoveStore
-    let worklogID: String
+    @ObservedObject var deletion: WorklogDeletionStore
+    let worklog: WorklogItem
 
     var body: some View {
         Menu {
-            WorklogContextMenu(correction: correction, move: move, worklogID: worklogID)
+            WorklogContextMenu(correction: correction, move: move, deletion: deletion, worklog: worklog)
         } label: {
             Label("Worklog actions", systemImage: "ellipsis.circle")
                 .labelStyle(.iconOnly)
@@ -67,9 +69,12 @@ private struct WorklogActionsMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .disabled(correction.state.isPresented || move.state.isPresented || (!correction.canOpen && !move.canOpen))
+        .disabled(
+            correction.state.isPresented || move.state.isPresented || deletion.state.isPresented
+                || (!correction.canOpen && !move.canOpen && !deletion.canOpen)
+        )
         .help("Worklog actions")
-        .accessibilityIdentifier("worklog-history.actions.\(worklogID)")
+        .accessibilityIdentifier("worklog-history.actions.\(worklog.id)")
     }
 }
 
@@ -77,12 +82,17 @@ private struct WorklogActionsMenu: View {
 private struct WorklogContextMenu: View {
     @ObservedObject var correction: WorklogCorrectionStore
     @ObservedObject var move: WorklogMoveStore
-    let worklogID: String
+    @ObservedObject var deletion: WorklogDeletionStore
+    let worklog: WorklogItem
 
     var body: some View {
-        Button("Edit times...") { correction.open(worklogID: worklogID) }
+        Button("Edit times...") { correction.open(worklogID: worklog.id) }
             .disabled(!correction.canOpen || correction.state.isPresented)
-        Button("Move to task...") { move.open(worklogID: worklogID) }
+        Button("Move to task...") { move.open(worklogID: worklog.id) }
             .disabled(!move.canOpen || move.state.isPresented)
+        Divider()
+        // Running worklogs cannot be deleted. Stop the timer first.
+        Button("Delete...", role: .destructive) { deletion.open(worklogID: worklog.id) }
+            .disabled(!deletion.canOpen || deletion.state.isPresented || worklog.end == nil)
     }
 }
