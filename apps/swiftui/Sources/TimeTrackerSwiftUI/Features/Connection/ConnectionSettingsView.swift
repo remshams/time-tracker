@@ -93,11 +93,9 @@ struct ConnectionSettingsView: View {
                         }
                     }
                     .accessibilityIdentifier("menu.task-order")
-                    Text(
-                        "Applies to Today and Start tracking. When ordering by logged time, tasks with no logged time appear last."
-                    )
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text("Tasks with no logged time appear last when ordering by time.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Section("Menu shortcut") {
@@ -113,6 +111,11 @@ struct ConnectionSettingsView: View {
                             .accessibilityIdentifier("menu.shortcut.open")
                         }
                     }
+                    if let error = store.menuShortcutError {
+                        Text(error).foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("menu.shortcut.error")
+                    }
                     Text(
                         "Click the shortcut and press its new keys. Escape cancels. Open menu opens the native menu across apps. Use arrow keys to navigate and open task submenus for tracking and copying."
                     )
@@ -123,11 +126,6 @@ struct ConnectionSettingsView: View {
                     )
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    if let error = store.menuShortcutError {
-                        Text(error).foregroundStyle(.red)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("menu.shortcut.error")
-                    }
                     Button("Restore default shortcut") { store.resetMenuShortcuts() }
                         .accessibilityIdentifier("menu.shortcut.restore")
                 }
