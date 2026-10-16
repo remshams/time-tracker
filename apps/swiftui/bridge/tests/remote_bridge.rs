@@ -16,8 +16,10 @@ use tracker_application::TrackerApplication;
 use tracker_domain::{TaskName, TrackingState};
 use tracker_storage::SqliteRepository;
 use tracker_swift_bridge::{
-    Bridge, tt_bridge_close, tt_bridge_create_task_at, tt_bridge_history, tt_bridge_open_remote,
-    tt_bridge_refresh_resources, tt_bridge_rename_task_at, tt_bridge_start_tracking_at,
+    Bridge, tt_bridge_archive_task_with_expected_name_at, tt_bridge_close,
+    tt_bridge_create_task_at, tt_bridge_history, tt_bridge_open_path, tt_bridge_open_remote,
+    tt_bridge_refresh_resources, tt_bridge_rename_task_at,
+    tt_bridge_rename_task_with_expected_name_at, tt_bridge_start_tracking_at,
     tt_bridge_start_tracking_if_active_at, tt_bridge_stop_tracking_at, tt_bridge_string_free,
     tt_bridge_tasks, tt_bridge_tracking,
 };
@@ -123,6 +125,42 @@ impl Client {
         assert!(error.is_null());
         Self(bridge)
     }
+    fn local(path: &std::path::Path) -> Self {
+        let path = CString::new(path.to_str().unwrap()).unwrap();
+        let mut error = ptr::null_mut();
+        // SAFETY: The path and writable error pointer remain live.
+        let bridge = unsafe { tt_bridge_open_path(path.as_ptr(), &mut error) };
+        assert!(!bridge.is_null());
+        assert!(error.is_null());
+        Self(bridge)
+    }
+
+    fn reviewed_task_command(&mut self, id: &str, expected: &str, rename: bool) -> Value {
+        let id = CString::new(id).unwrap();
+        let expected = CString::new(expected).unwrap();
+        let name = CString::new("Draft name").unwrap();
+        let instant = CString::new(at().to_rfc3339()).unwrap();
+        // SAFETY: This client owns the bridge and all input strings remain live.
+        response(unsafe {
+            if rename {
+                tt_bridge_rename_task_with_expected_name_at(
+                    self.0,
+                    id.as_ptr(),
+                    expected.as_ptr(),
+                    name.as_ptr(),
+                    instant.as_ptr(),
+                )
+            } else {
+                tt_bridge_archive_task_with_expected_name_at(
+                    self.0,
+                    id.as_ptr(),
+                    expected.as_ptr(),
+                    instant.as_ptr(),
+                )
+            }
+        })
+    }
+
     fn task_list(&mut self, refresh: bool) -> (Value, Value) {
         // SAFETY: This client owns and serializes access to its bridge.
         unsafe {
@@ -846,4 +884,74 @@ fn invalid_remote_endpoints_and_tracking_timestamps_are_rejected() {
         );
     }
     assert!(client.task_list(false).1["data"]["value"].is_null());
+}
+
+#[test]
+fn reviewed_task_names_guard_local_and_remote_c_commands_against_a_second_writer() {
+    for remote in [false, true] {
+        for rename in [false, true] {
+            for refresh_after_competing_write in [false, true] {
+                let server = Server::start();
+                let mut first = if remote {
+                    Client::open(&server.endpoint())
+                } else {
+                    Client::local(&server.path())
+                };
+                let mut writer = Client::local(&server.path());
+                let initial = first.task_list(true);
+                let reviewed = &initial.0["data"]["value"][0];
+                let id = reviewed["id"].as_str().unwrap();
+                let original_name = reviewed["name"].as_str().unwrap();
+                assert!(
+                    writer
+                        .rename(id, "Competing name", at())
+                        .get("error")
+                        .is_none()
+                );
+                if refresh_after_competing_write {
+                    assert!(first.task_list(true).0.get("error").is_none());
+                }
+                let rejected = first.reviewed_task_command(id, original_name, rename);
+                assert_eq!(
+                    rejected["kind"], "conflict",
+                    "remote={remote}, rename={rename}: {rejected}"
+                );
+                assert_eq!(rejected["uncertain"], false);
+                assert_eq!(rejected["requiresRefresh"], true);
+                let stored =
+                    TrackerApplication::load(SqliteRepository::open(server.path()).unwrap())
+                        .unwrap();
+                let task = stored.task(id.parse().unwrap()).unwrap();
+                assert_eq!(task.name().as_str(), "Competing name");
+                assert!(!task.is_archived());
+                drop(stored);
+                assert!(first.task_list(true).0.get("error").is_none());
+                let applied = first.reviewed_task_command(id, "Competing name", rename);
+                assert!(applied.get("error").is_none(), "{applied}");
+                assert_eq!(applied["data"]["task"]["id"], id);
+                assert_eq!(
+                    applied["data"]["task"]["name"],
+                    if rename {
+                        "Draft name"
+                    } else {
+                        "Competing name"
+                    }
+                );
+                assert_eq!(applied["data"]["task"]["archived"], !rename);
+                let stored =
+                    TrackerApplication::load(SqliteRepository::open(server.path()).unwrap())
+                        .unwrap();
+                let task = stored.task(id.parse().unwrap()).unwrap();
+                assert_eq!(
+                    task.name().as_str(),
+                    if rename {
+                        "Draft name"
+                    } else {
+                        "Competing name"
+                    }
+                );
+                assert_eq!(task.is_archived(), !rename);
+            }
+        }
+    }
 }

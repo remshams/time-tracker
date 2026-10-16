@@ -20,6 +20,8 @@ char *tt_bridge_report_observation(Bridge *bridge);
 char *tt_bridge_report(Bridge *bridge, const char *start, const char *end, const char *now);
 char *tt_bridge_create_task_at(Bridge *bridge, const char *name, const char *occurred_at);
 char *tt_bridge_rename_task_at(Bridge *bridge, const char *task_id, const char *name, const char *occurred_at);
+char *tt_bridge_rename_task_with_expected_name_at(Bridge *bridge, const char *task_id, const char *expected_name, const char *name, const char *occurred_at);
+char *tt_bridge_archive_task_with_expected_name_at(Bridge *bridge, const char *task_id, const char *expected_name, const char *occurred_at);
 char *tt_bridge_archive_task_at(Bridge *bridge, const char *task_id, const char *occurred_at);
 char *tt_bridge_unarchive_task_at(Bridge *bridge, const char *task_id, const char *occurred_at);
 char *tt_bridge_preview_inactive_tasks_at(Bridge *bridge, uint32_t inactive_days, const char *as_of);
