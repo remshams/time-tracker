@@ -10,6 +10,7 @@ struct ReportRequest {
 }
 
 impl ReportRequest {
+    /// Rejects empty microsecond ranges before consulting connection or availability state.
     fn new(
         start: DateTime<Utc>,
         end: DateTime<Utc>,
@@ -22,6 +23,7 @@ impl ReportRequest {
         Ok(Self { start, end, now })
     }
 
+    /// Fetches and validates totals without publishing any response resources.
     async fn fetch<T: serde::de::DeserializeOwned>(
         &self,
         session: &mut RemoteSession,

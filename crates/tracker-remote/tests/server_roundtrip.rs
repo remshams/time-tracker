@@ -48,6 +48,7 @@ async fn report_range_validation_uses_microseconds_before_connecting() {
     }
 }
 
+/// Invalid canonical input preserves network probes and existing availability state.
 #[tokio::test]
 async fn invalid_report_refreshes_do_not_contact_the_server_or_start_an_outage_cooldown() {
     use std::sync::{
