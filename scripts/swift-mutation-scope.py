@@ -28,6 +28,7 @@ MENU = "Features/MenuBar/TrackerMenuContent.swift"
 MENU_VALUES = "Features/MenuBar/TrackerMenuValues.swift"
 MENU_OBSERVER = "Features/MenuBar/TrackerMenuPresentationObserver.swift"
 LAST_TASK = "Features/MenuBar/LastTrackedTaskState.swift"
+MENU_ORDER = "Features/MenuBar/MenuTaskOrder.swift"
 CONNECTION = "Features/Connection/ConnectionState.swift"
 AUTOMATION = "Features/TrackingAutomation/TrackingAutomationState.swift"
 CREATION = "Features/TaskCreation/TaskCreationState.swift"
@@ -71,7 +72,11 @@ TEST_PRODUCTION = {
         SESSION, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CONNECTION, CATALOG, LAST_TASK, INDICATOR,
     ],
     "Features/MenuBar/MenuPresentationTests.swift": [
-        SESSION, OBSERVER, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION,
+        SESSION, OBSERVER, MENU_OBSERVER, MENU, MENU_ORDER, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION,
+        LAST_TASK, INDICATOR,
+    ],
+    "Features/MenuBar/MenuTaskOrderTests.swift": [
+        SESSION, MENU_ORDER, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION,
         LAST_TASK, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskClipboardTests.swift": [
