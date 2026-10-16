@@ -345,6 +345,37 @@ final class TaskRenameTests: XCTestCase {
     }
 
     @MainActor
+    func testRejectedRenameRequiresReviewWhenReconciliationAlsoFails() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let resources = TaskListResources(tasks: [firstTask], active: nil)
+        try await fixture.start(resources)
+        fixture.session.openTaskRename()
+        fixture.session.setTaskRenameName("Desired name")
+        fixture.session.submitTaskRename()
+        let preflight = try await fixture.client.next()
+        preflight.succeed(resources)
+        let command = try await fixture.client.next()
+        command.fail(
+            BridgeFailure(message: "Revision conflict. Recovery failed.", kind: "conflict", requiresRefresh: true))
+        let reconciliation = try await fixture.client.next()
+        reconciliation.fail(BridgeFailure(message: "Refresh failed", kind: "unavailable"))
+        try await fixture.settled()
+        XCTAssertEqual(
+            fixture.session.taskRename.error,
+            "The task changed on another client. Cancel and reopen the editor to review its current state.")
+        XCTAssertFalse(fixture.session.taskRename.canSubmit)
+        XCTAssertFalse(fixture.session.taskRename.canEditName)
+        XCTAssertEqual(fixture.session.taskRename.originalName, firstTask.name)
+        XCTAssertEqual(fixture.session.taskRename.name, "Desired name")
+        fixture.session.submitTaskRename()
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .rename = $0 { return true }; return false
+            }.count, 1)
+    }
+
+    @MainActor
     func testUncertainWriteReconciliationDetectsAnotherClientsNameInsteadOfRebasing() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
