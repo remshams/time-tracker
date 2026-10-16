@@ -1053,18 +1053,18 @@ public final class TrackerSession {
                 guard isCurrent(token) else { return }
                 let confirmed = commandStarted ? await reconcileWriteFailure(token: token) : nil
                 guard isCurrent(token) else { return }
-                if let confirmed {
-                    switch archiving.preflight(intent, resources: confirmed) {
-                    case .applied: finishTaskArchiving(intent); return
-                    case .review: archiving.setStatusVisibility(windowVisible); return
-                    case .apply: break
-                    }
-                }
                 if let failure = error as? BridgeFailure, failure.kind == "conflict" {
                     archiving.requireReview(
                         "The task changed on another client. Review its current state before continuing.",
                         latest: confirmed?.catalog.value.first { $0.id == intent.taskID })
                 } else {
+                    if let confirmed {
+                        switch archiving.preflight(intent, resources: confirmed) {
+                        case .applied: finishTaskArchiving(intent); return
+                        case .review: archiving.setStatusVisibility(windowVisible); return
+                        case .apply: break
+                        }
+                    }
                     archiving.fail(
                         error,
                         retainIntent: TaskArchivingState.requiresRecovery(error) || (commandStarted && confirmed == nil)
@@ -1119,11 +1119,11 @@ public final class TrackerSession {
                 let uncertain = TaskNameEditingPolicy.requiresRecovery(error)
                 let confirmed = commandStarted ? await reconcileWriteFailure(token: token) : nil
                 guard isCurrent(token) else { return }
-                if let confirmed, !renameCanApply(intent, resources: confirmed) { return }
                 if let failure = error as? BridgeFailure, failure.kind == "conflict" {
                     rename.requireReview(
                         "The task changed on another client. Cancel and reopen the editor to review its current state.")
                 } else {
+                    if let confirmed, !renameCanApply(intent, resources: confirmed) { return }
                     rename.fail(
                         error,
                         retainIntent: retainRenameIntent(

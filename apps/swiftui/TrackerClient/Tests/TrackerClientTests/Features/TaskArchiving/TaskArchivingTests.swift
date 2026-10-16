@@ -706,6 +706,41 @@ final class TaskArchivingTests: XCTestCase {
                 TaskListResources(tasks: [archived(archivedTask, false)], active: activeWorklog), intent: restore))
     }
     @MainActor
+    func testRejectedArchiveRequiresReviewWhenAnotherWriterAlreadyArchivedTheTask() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let resources = TaskListResources(tasks: [firstTask], active: nil)
+        try await fixture.start(resources)
+        fixture.session.openTaskArchive(taskID: firstTask.id)
+        fixture.session.submitTaskArchiving()
+        let preflight = try await fixture.client.next()
+        preflight.succeed(resources)
+        let command = try await fixture.client.next()
+        command.fail(
+            BridgeFailure(message: "Revision conflict", kind: "conflict", uncertain: false, requiresRefresh: true))
+        let desired = archived(firstTask, name: "Competing archive name")
+        let reconciliation = try await fixture.client.next()
+        reconciliation.succeed(TaskListResources(tasks: [desired], active: nil))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.tasks, [desired])
+        XCTAssertTrue(fixture.session.taskArchiving.isPresented)
+        XCTAssertTrue(fixture.session.taskArchiving.requiresReview)
+        XCTAssertFalse(fixture.session.taskArchiving.canSubmit)
+        XCTAssertFalse(fixture.session.taskArchiving.hasUnresolvedIntent)
+        XCTAssertEqual(fixture.session.taskArchiving.taskID, firstTask.id)
+        XCTAssertEqual(fixture.session.taskArchiving.taskName, firstTask.name)
+        XCTAssertEqual(fixture.session.taskArchiving.latest, desired)
+        XCTAssertEqual(
+            fixture.session.taskArchiving.error,
+            "The task changed on another client. Review its current state before continuing.")
+        fixture.session.submitTaskArchiving()
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .archive = $0 { return true }; return false
+            }.count, 1)
+    }
+
+    @MainActor
     func testRejectedArchiveRequiresReviewEvenWhenReconciliationFailsOrStillShowsTheReviewedName() async throws {
         for reconciliationFails in [false, true] {
             let fixture = Fixture()
