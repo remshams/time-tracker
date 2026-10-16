@@ -2,12 +2,6 @@ import Foundation
 import TrackerClient
 
 @MainActor
-struct SystemTrackerClock: TrackerClock {
-    var now: Date { Date() }
-    var uptime: TimeInterval { ProcessInfo.processInfo.systemUptime }
-}
-
-@MainActor
 final class UserDefaultsConnectionSettings: ConnectionSettingsRepository {
     private let defaults: UserDefaults
     private let key = "tracker.connection"
@@ -79,23 +73,24 @@ final class UserDefaultsLastTrackedTasks: LastTrackedTaskRepository {
 }
 
 @MainActor
-struct RunLoopTrackerScheduler: TrackerScheduler {
-    func schedule(
-        after interval: TimeInterval, repeating: Bool, tolerance: TimeInterval,
-        action: @escaping @MainActor () -> Void
-    ) -> any TrackerCancellation {
-        let timer = Timer(timeInterval: interval, repeats: repeating) { _ in
-            MainActor.assumeIsolated { action() }
-        }
-        timer.tolerance = tolerance
-        RunLoop.main.add(timer, forMode: .common)
-        return TimerCancellation(timer: timer)
-    }
-}
+final class UserDefaultsMenuKeyboardPreferences {
+    private let defaults: UserDefaults
+    private let key = "tracker.menuKeyboardShortcuts"
 
-private final class TimerCancellation: TrackerCancellation {
-    private var timer: Timer?
-    init(timer: Timer) { self.timer = timer }
-    func cancel() { timer?.invalidate(); timer = nil }
-    deinit { timer?.invalidate() }
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    func load() -> MenuKeyboardShortcuts {
+        guard let data = defaults.data(forKey: key),
+            let shortcuts = try? JSONDecoder().decode(MenuKeyboardShortcuts.self, from: data),
+            shortcuts.validationError == nil
+        else { return .defaults }
+        return shortcuts
+    }
+
+    func save(_ shortcuts: MenuKeyboardShortcuts) {
+        guard shortcuts.validationError == nil,
+            let data = try? JSONEncoder().encode(shortcuts)
+        else { return }
+        defaults.set(data, forKey: key)
+    }
 }
