@@ -1,0 +1,451 @@
+#!/usr/bin/env python3
+"""Build a revision on a server host, check it against a database copy, and deploy it.
+
+Run it from a checkout on your workstation:
+
+    python3 scripts/deploy-server.py --host HOST --root /path/to/deployment
+
+The script archives the revision, uploads itself and the archive to the host, and runs
+the build, preflight and deployment steps there through SSH. Host-specific settings live
+in ROOT/deploy.json on the host, so this public repository holds no addresses or paths.
+"""
+
+import argparse
+import contextlib
+import datetime
+import hashlib
+import json
+import os
+import pathlib
+import re
+import shlex
+import shutil
+import socket
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.parse
+import urllib.request
+
+
+REPOSITORY = pathlib.Path(__file__).resolve().parents[1]
+PROTOCOL_SOURCE = "crates/tracker-protocol/src/lib.rs"
+PACKAGE = "tracker-tui"
+BINARY = "tt"
+CONFIG_KEYS = {"service", "live_binary", "database", "base_url", "rust_image"}
+HELPER = "build/deploy-server.py"
+
+
+class DeployError(Exception):
+    pass
+
+
+# Shared helpers
+
+
+def run(*arguments, **options):
+    return subprocess.run(arguments, check=True, **options)
+
+
+def capture(*arguments):
+    return subprocess.run(arguments, check=True, capture_output=True, text=True).stdout
+
+
+def digest(path):
+    hasher = hashlib.sha256()
+    with pathlib.Path(path).open("rb") as source:
+        for block in iter(lambda: source.read(1 << 20), b""):
+            hasher.update(block)
+    return hasher.hexdigest()
+
+
+def short(revision):
+    return revision[:7]
+
+
+def utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def load_config(text):
+    try:
+        config = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise DeployError(f"deploy.json is not valid JSON: {error}") from error
+    if not isinstance(config, dict):
+        raise DeployError("deploy.json must contain a JSON object")
+    missing = sorted(CONFIG_KEYS - set(config))
+    if missing:
+        raise DeployError(f"deploy.json is missing: {', '.join(missing)}")
+    unknown = sorted(set(config) - CONFIG_KEYS)
+    if unknown:
+        raise DeployError(f"deploy.json has unknown keys: {', '.join(unknown)}")
+    for key in sorted(CONFIG_KEYS):
+        if not isinstance(config[key], str) or not config[key]:
+            raise DeployError(f"deploy.json value {key} must be a non-empty string")
+    if not config["base_url"].startswith(("http://", "https://")):
+        raise DeployError("deploy.json base_url must start with http:// or https://")
+    config["base_url"] = config["base_url"].rstrip("/")
+    return config
+
+
+def protocol_version(source):
+    match = re.search(r"^pub const VERSION: u32 = (\d+);$", source, re.MULTILINE)
+    if match is None:
+        raise DeployError(f"Could not find the protocol VERSION in {PROTOCOL_SOURCE}")
+    return int(match.group(1))
+
+
+# Workstation side
+
+
+def resolve_revision(revision):
+    try:
+        return capture("git", "-C", str(REPOSITORY), "rev-parse", "--verify", f"{revision}^{{commit}}").strip()
+    except subprocess.CalledProcessError as error:
+        raise DeployError(f"Unknown revision: {revision}") from error
+
+
+def remote(host, *arguments):
+    return capture("ssh", "-o", "BatchMode=yes", host, shlex.join(arguments))
+
+
+def remote_helper(host, root, *arguments):
+    command = ["python3", f"{root}/{HELPER}", "remote", *arguments, "--root", root]
+    run("ssh", "-o", "BatchMode=yes", host, shlex.join(command))
+
+
+def upload_archive(host, root, archive, name, archive_hash):
+    destination = f"{root}/build/{name}"
+    existing = remote(host, "sh", "-c", f"test ! -e {shlex.quote(destination)} || sha256sum {shlex.quote(destination)}")
+    if existing:
+        if existing.split()[0] != archive_hash:
+            raise DeployError(f"{destination} already exists with different contents")
+        print(f"Reusing uploaded source archive {name}", flush=True)
+        return
+    run("scp", "-q", "-o", "BatchMode=yes", str(archive), f"{host}:{destination}")
+
+
+def check_health(base_url, version):
+    health = get_json(base_url, "/v1/health")
+    if health != {"status": "ok", "protocol_version": version}:
+        raise DeployError(f"Unexpected health response from {base_url}: {health}")
+
+
+def deploy_from_workstation(arguments):
+    revision = resolve_revision(arguments.revision)
+    version = protocol_version(capture("git", "-C", str(REPOSITORY), "show", f"{revision}:{PROTOCOL_SOURCE}"))
+    host, root = arguments.host, arguments.root.rstrip("/")
+    config = load_config(remote(host, "cat", f"{root}/deploy.json"))
+    print(f"Deploying {revision} (protocol {version}) to {host}:{root}", flush=True)
+    with tempfile.TemporaryDirectory(prefix="tt-deploy-") as directory:
+        archive = pathlib.Path(directory) / f"source-{short(revision)}.tar"
+        with archive.open("wb") as output:
+            run("git", "-C", str(REPOSITORY), "archive", "--format=tar", revision, stdout=output)
+        archive_hash = digest(archive)
+        upload_archive(host, root, archive, archive.name, archive_hash)
+    run("scp", "-q", "-o", "BatchMode=yes", str(pathlib.Path(__file__).resolve()), f"{host}:{root}/{HELPER}")
+    common = ["--revision", revision, "--archive-sha256", archive_hash, "--protocol-version", str(version)]
+    remote_helper(host, root, "build", *common, *(["--rebuild"] if arguments.rebuild else []))
+    remote_helper(host, root, "preflight", *common)
+    if arguments.preflight_only:
+        print("Preflight passed. The live service was not changed.", flush=True)
+        return
+    remote_helper(host, root, "deploy", *common, *(["--keep-backup"] if arguments.keep_backup else []))
+    check_health(config["base_url"], version)
+    print(f"Deployed {short(revision)}; {config['base_url']} reports protocol {version}.", flush=True)
+
+
+# Host side
+
+
+class Host:
+    def __init__(self, root, revision, archive_hash, version):
+        self.root = pathlib.Path(root)
+        self.config = load_config((self.root / "deploy.json").read_text())
+        self.revision = revision
+        self.short = short(revision)
+        self.archive_hash = archive_hash
+        self.version = version
+        self.build = self.root / "build"
+        self.archive = self.build / f"source-{self.short}.tar"
+        self.candidate = self.root / "bin" / f"{BINARY}-{self.short}"
+        self.manifest = self.build / f"preflight-{self.short}.json"
+        self.database = self.root / self.config["database"]
+        self.live = pathlib.Path(self.config["live_binary"])
+
+    def check_archive(self):
+        if digest(self.archive) != self.archive_hash:
+            raise DeployError(f"{self.archive} does not match the uploaded archive")
+
+
+def docker_build_command(host, source, output, uid, gid):
+    script = (f"cargo build --release --locked -p {PACKAGE} && "
+              f"install -o {uid} -g {gid} -m 0755 /target/release/{BINARY} /out/{output}")
+    return ["docker", "run", "--rm",
+            "-v", f"{source}:/src:ro",
+            "-v", f"{host.build / 'cargo-home'}:/cargo-home", "-e", "CARGO_HOME=/cargo-home",
+            "-v", f"{host.build / 'target'}:/target", "-e", "CARGO_TARGET_DIR=/target",
+            "-v", f"{host.candidate.parent}:/out",
+            "-w", "/src", host.config["rust_image"], "sh", "-c", script]
+
+
+def remote_build(host, rebuild):
+    host.check_archive()
+    if host.candidate.exists() and not rebuild:
+        print(f"Reusing built binary {host.candidate}", flush=True)
+        return
+    source = host.build / f"source-{host.short}"
+    if source.exists():
+        shutil.rmtree(source)
+    source.mkdir()
+    run("tar", "-xf", str(host.archive), "-C", str(source))
+    staged = f".{host.candidate.name}.new"
+    log_path = host.build / f"build-{host.short}.log"
+    print(f"Building {PACKAGE} in {host.config['rust_image']}; log: {log_path}", flush=True)
+    try:
+        with log_path.open("w") as log:
+            run(*docker_build_command(host, source, staged, *ids()), stdout=log, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as error:
+        raise DeployError(f"The build failed; see {log_path}") from error
+    finally:
+        shutil.rmtree(source)
+    (host.candidate.parent / staged).replace(host.candidate)
+    print(f"Built {host.candidate} ({digest(host.candidate)})", flush=True)
+
+
+def ids():
+    return os.getuid(), os.getgid()
+
+
+def database_state(path):
+    with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as connection:
+        connection.execute("PRAGMA query_only=ON")
+        connection.execute("BEGIN")
+        return {
+            "schema": connection.execute("PRAGMA user_version").fetchone()[0],
+            "tasks": [list(row) for row in connection.execute(
+                "SELECT id,name,archived,created_at_us,updated_at_us FROM tasks ORDER BY id")],
+            "worklogs": [list(row) for row in connection.execute(
+                "SELECT id,task_id,start_us,end_us FROM worklogs ORDER BY id")],
+        }
+
+
+def backup_database(source_path, destination):
+    with contextlib.closing(sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)) as source, \
+            contextlib.closing(sqlite3.connect(destination)) as target:
+        source.backup(target)
+        if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise DeployError(f"The database copy at {destination} failed its integrity check")
+
+
+def get_json(base, route):
+    with urllib.request.urlopen(base + route, timeout=3) as response:
+        if response.status != 200:
+            raise DeployError(f"{route} returned HTTP {response.status}")
+        return json.load(response)
+
+
+def wait_until_ready(base, version, timeout=20):
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            if get_json(base, "/v1/health") == {"status": "ok", "protocol_version": version}:
+                return
+            raise DeployError(f"{base} reported an unexpected health response")
+        except Exception:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.2)
+
+
+def timestamp_us(value):
+    instant = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    delta = instant - datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+    return (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds
+
+
+def require(condition, message):
+    if not condition:
+        raise DeployError(message)
+
+
+def verify(base, version, expected, now=None):
+    wait_until_ready(base, version)
+    state = get_json(base, "/v1/state/task-list")
+    require(set(state) == {"tasks", "active_worklog", "revision"} and state["revision"],
+            "The task-list state has an unexpected shape")
+    catalog = sorted([task["id"], task["name"], int(task["archived"]),
+                      timestamp_us(task["created_at"]), timestamp_us(task["updated_at"])]
+                     for task in state["tasks"])
+    require(catalog == expected["tasks"], "The served task catalog differs from the database")
+    active_rows = [row for row in expected["worklogs"] if row[3] is None]
+    active = state["active_worklog"]
+    if active_rows:
+        require(len(active_rows) == 1 and active is not None, "The running worklog is missing")
+        served = [active["id"], active["task_id"], timestamp_us(active["start"]), active["end"]]
+        require(served == active_rows[0], "The served running worklog differs from the database")
+    else:
+        require(active is None, "The server reports a running worklog that the database lacks")
+    now = now or utc_now()
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    query = urllib.parse.urlencode({"start": start.isoformat(),
+                                    "end": (start + datetime.timedelta(days=1)).isoformat(),
+                                    "now": now.isoformat()})
+    overview = get_json(base, "/v1/state/daily-overview?" + query)
+    report = get_json(base, "/v1/reports/task-totals?" + query)
+    require(overview["tasks"] == state["tasks"], "The daily overview tasks differ from the task list")
+    require(overview["active_worklog"] == active, "The daily overview timer differs from the task list")
+    require({key: value for key, value in overview.items() if key not in {"tasks", "active_worklog"}} == report,
+            "The daily overview totals differ from the report route")
+    require(overview["revision"] == state["revision"], "The daily overview revision differs from the task list")
+    require(overview["total_us"] == sum(row["duration_us"] for row in overview["rows"]),
+            "The daily overview total differs from its rows")
+    require(get_json(base, "/v1/tasks")["tasks"] == state["tasks"], "The task route differs from the task list")
+    require(get_json(base, "/v1/tracking")["active_worklog"] == active, "The tracking route differs from the task list")
+    require(set(get_json(base, "/v1/worklogs")) == {"worklogs", "next_cursor", "revision"},
+            "The worklog route has an unexpected shape")
+
+
+def free_port():
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        return reservation.getsockname()[1]
+
+
+def remote_preflight(host):
+    host.check_archive()
+    require(host.candidate.exists(), f"{host.candidate} has not been built")
+    directory = pathlib.Path(tempfile.mkdtemp(prefix=f"smoke-{host.short}-", dir=host.build))
+    copied = directory / "tt-server.db"
+    backup_database(host.database, copied)
+    expected = database_state(copied)
+    port = free_port()
+    with (directory / "server.log").open("w") as log:
+        server = subprocess.Popen([str(host.candidate), "serve", "--bind", f"127.0.0.1:{port}",
+                                   "--db", str(copied)], stdout=log, stderr=log)
+        try:
+            verify(f"http://127.0.0.1:{port}", host.version, expected)
+            require(database_state(copied) == expected, "Startup or reads changed the copied database")
+        finally:
+            server.terminate()
+            try:
+                server.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait()
+    shutil.rmtree(directory)
+    manifest = {"commit": host.revision, "sha256": digest(host.candidate),
+                "source_archive_sha256": host.archive_hash, "protocol_version": host.version,
+                "preflight_tasks": len(expected["tasks"]), "preflight_worklogs": len(expected["worklogs"]),
+                "preflight_at": utc_now().isoformat()}
+    host.manifest.write_text(json.dumps(manifest, indent=2) + "\n")
+    print(json.dumps({"preflight": "passed", **manifest}), flush=True)
+
+
+def sudo(*arguments):
+    run("sudo", "-n", *arguments)
+
+
+def install_binary(source, staged, live):
+    sudo("install", "-o", "root", "-g", "root", "-m", "0755", str(source), staged)
+    sudo("mv", staged, str(live))
+
+
+def remote_deploy(host, keep_backup):
+    manifest = json.loads(host.manifest.read_text())
+    require(manifest["commit"] == host.revision and manifest["sha256"] == digest(host.candidate),
+            "The preflight record does not match the candidate binary; run the preflight again")
+    service = host.config["service"]
+    backup = host.root / "backups" / f"deploy-{host.short}-{utc_now().strftime('%Y%m%dT%H%M%SZ')}"
+    backup.mkdir(mode=0o700, parents=True)
+    shutil.copy2(host.live, backup / f"{BINARY}.previous")
+    staged = f"{host.live}.new-{host.short}"
+    require(not pathlib.Path(staged).exists(), f"{staged} already exists")
+    sudo("install", "-o", "root", "-g", "root", "-m", "0755", str(host.candidate), staged)
+    stopped = replaced = False
+    try:
+        sudo("systemctl", "stop", service)
+        stopped = True
+        backup_database(host.database, backup / host.database.name)
+        expected = database_state(host.database)
+        (backup / "database.before.json").write_text(json.dumps(expected, indent=2) + "\n")
+        sudo("mv", staged, str(host.live))
+        replaced = True
+        sudo("systemctl", "start", service)
+        verify(host.config["base_url"], host.version, expected)
+        require(database_state(host.database) == expected, "The deployment changed stored data")
+        sudo("systemctl", "is-active", "--quiet", service)
+        require(digest(host.live) == manifest["sha256"], "The live binary differs from the candidate")
+    except BaseException:
+        if stopped:
+            if replaced:
+                sudo("systemctl", "stop", service)
+                install_binary(backup / f"{BINARY}.previous", staged, host.live)
+            sudo("systemctl", "start", service)
+        print(f"Deployment failed and was rolled back. The backup is in {backup}", file=sys.stderr, flush=True)
+        raise
+    result = {"deployment": "passed", **manifest, "deployed_at": utc_now().isoformat(),
+              "backup_directory": str(backup), "tasks": len(expected["tasks"]),
+              "worklogs": len(expected["worklogs"]), "stored_data_preserved": True}
+    if not keep_backup:
+        shutil.rmtree(backup)
+        result["backup_files_removed_at"] = utc_now().isoformat()
+    record = json.dumps(result, indent=2) + "\n"
+    (host.build / f"deployment-{host.short}.json").write_text(record)
+    (host.build / "deployment-latest.json").write_text(record)
+    print(json.dumps(result), flush=True)
+
+
+# Command line
+
+
+def workstation_parser():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--host", required=True, help="SSH destination of the server host")
+    parser.add_argument("--root", required=True, help="Deployment directory on the host, containing deploy.json")
+    parser.add_argument("--revision", default="HEAD", help="Git revision to deploy, default HEAD")
+    parser.add_argument("--preflight-only", action="store_true",
+                        help="Build and check the candidate without changing the live service")
+    parser.add_argument("--rebuild", action="store_true", help="Build again even if the candidate binary exists")
+    parser.add_argument("--keep-backup", action="store_true",
+                        help="Keep the previous binary and database backup after a successful deployment")
+    return parser
+
+
+def host_parser():
+    parser = argparse.ArgumentParser(prog="deploy-server.py remote")
+    parser.add_argument("step", choices=["build", "preflight", "deploy"])
+    parser.add_argument("--root", required=True)
+    parser.add_argument("--revision", required=True)
+    parser.add_argument("--archive-sha256", required=True)
+    parser.add_argument("--protocol-version", required=True, type=int)
+    parser.add_argument("--rebuild", action="store_true")
+    parser.add_argument("--keep-backup", action="store_true")
+    return parser
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    try:
+        if argv[:1] == ["remote"]:
+            arguments = host_parser().parse_args(argv[1:])
+            host = Host(arguments.root, arguments.revision, arguments.archive_sha256, arguments.protocol_version)
+            if arguments.step == "build":
+                remote_build(host, arguments.rebuild)
+            elif arguments.step == "preflight":
+                remote_preflight(host)
+            else:
+                remote_deploy(host, arguments.keep_backup)
+        else:
+            deploy_from_workstation(workstation_parser().parse_args(argv))
+    except (DeployError, subprocess.CalledProcessError, OSError) as error:
+        print(f"Deployment stopped: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
