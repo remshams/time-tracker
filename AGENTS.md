@@ -18,6 +18,10 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 
 - When pushing a branch, push it to every configured remote unless the user explicitly requests otherwise.
 
+## GitHub issues
+
+- Follow the [GitHub issue guide](docs/github-issues.md) when creating or updating an issue. Apply the `unslop` skill before publishing it.
+
 ## Pull request descriptions
 
 - Follow the [pull request description guide](docs/pull-request-descriptions.md) when creating or updating a PR description. Apply the `unslop` skill to the description before publishing it.
