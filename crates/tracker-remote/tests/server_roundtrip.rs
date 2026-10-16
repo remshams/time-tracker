@@ -25,6 +25,87 @@ async fn report_range_validation_uses_microseconds_before_connecting() {
         Err(tracker_application::ApplicationError::InvalidReportRange)
     );
     assert!(client.cached_task_totals().is_none());
+    for selection in [
+        ResourceSelection::DailyTotals {
+            start,
+            end,
+            now: end,
+        },
+        ResourceSelection::TaskListWithTotals {
+            start,
+            end,
+            now: end,
+        },
+    ] {
+        let mut client = RemoteApplication::disconnected("http://127.0.0.1:1/").unwrap();
+        assert!(matches!(
+            client.refresh_resources(selection).await,
+            Err(tracker_remote::RemoteError::Protocol(message)) if message == "invalid report range"
+        ));
+        assert!(client.report_observation().is_none());
+        assert!(client.task_observation().is_none());
+        assert!(client.tracking_observation().is_none());
+    }
+}
+
+#[tokio::test]
+async fn invalid_report_refreshes_do_not_contact_the_server_or_start_an_outage_cooldown() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    let reads = Arc::new(AtomicUsize::new(0));
+    let health_reads = reads.clone();
+    let server = StubServer::from_router(Router::new().route(
+        "/v1/health",
+        get(move || {
+            health_reads.fetch_add(1, Ordering::SeqCst);
+            async { axum::http::StatusCode::SERVICE_UNAVAILABLE }
+        }),
+    ));
+    let start = DateTime::from_timestamp(100, 100).unwrap();
+    let end = DateTime::from_timestamp(100, 900).unwrap();
+    for include_tasks in [false, true] {
+        let mut client = RemoteApplication::disconnected(&server.endpoint()).unwrap();
+        let selection = |end| {
+            if include_tasks {
+                ResourceSelection::TaskListWithTotals {
+                    start,
+                    end,
+                    now: end,
+                }
+            } else {
+                ResourceSelection::DailyTotals {
+                    start,
+                    end,
+                    now: end,
+                }
+            }
+        };
+        let before = reads.load(Ordering::SeqCst);
+        let failure = client.last_failure();
+        assert!(matches!(
+            client.refresh_resources(selection(end)).await,
+            Err(tracker_remote::RemoteError::Protocol(message)) if message == "invalid report range"
+        ));
+        assert_eq!(reads.load(Ordering::SeqCst), before);
+        assert_eq!(client.last_failure(), failure);
+        assert!(
+            client
+                .refresh_resources(selection(end + Duration::seconds(1)))
+                .await
+                .unwrap_err()
+                .is_unavailable()
+        );
+        assert_eq!(reads.load(Ordering::SeqCst), before + 1);
+        assert!(matches!(
+            client.refresh_resources(selection(end)).await,
+            Err(tracker_remote::RemoteError::Protocol(message)) if message == "invalid report range"
+        ));
+        assert_eq!(reads.load(Ordering::SeqCst), before + 1);
+        assert_eq!(client.last_failure(), Some(RemoteFailureKind::Unavailable));
+    }
 }
 
 /// Checks that request bounds, returned cutoffs, and the retained report use identical precision.
@@ -46,6 +127,31 @@ async fn report_request_and_echo_use_the_same_microsecond_context() {
     assert_eq!(client.cached_task_totals(), Some(&report));
     assert!(client.task_revision().is_empty());
     assert!(client.tracking_revision().is_empty());
+
+    for selection in [
+        ResourceSelection::DailyTotals { start, end, now },
+        ResourceSelection::TaskListWithTotals { start, end, now },
+    ] {
+        client.refresh_resources(selection).await.unwrap();
+        assert_eq!(client.report_observation().unwrap().start, report.start);
+        assert_eq!(client.report_observation().unwrap().end, report.end);
+        assert_eq!(client.report_observation().unwrap().now, report.now);
+        assert_eq!(client.tracking_revision(), report.revision);
+        assert_eq!(client.last_failure(), None);
+    }
+    let confirmed = client.report_observation().cloned();
+    assert!(
+        client
+            .refresh_resources(ResourceSelection::DailyTotals {
+                start,
+                end: start,
+                now,
+            })
+            .await
+            .is_err()
+    );
+    assert_eq!(client.last_failure(), None);
+    assert_eq!(client.report_observation(), confirmed.as_ref());
 }
 
 struct TestServer {
