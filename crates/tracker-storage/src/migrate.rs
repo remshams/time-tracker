@@ -306,15 +306,21 @@ fn apply_global_worklog_revision(transaction: &Transaction<'_>) -> Result<(), St
     Ok(())
 }
 
-/// Refuses legacy nonpositive durations and guards every insert and timestamp update.
+/// Deletes legacy zero-duration worklogs, refuses negative durations, and
+/// guards every insert and timestamp update.
+///
+/// A zero-duration worklog covers no time, so deleting it changes no totals.
+/// Negative durations only exist when stored data bypassed the CHECK
+/// constraint; the migration rolls back without changing them.
 fn apply_positive_worklog_duration(transaction: &Transaction<'_>) -> Result<(), StorageError> {
-    let has_nonpositive_duration: bool = transaction.query_row(
-        "SELECT EXISTS (SELECT 1 FROM worklogs WHERE end_us <= start_us)",
+    transaction.execute("DELETE FROM worklogs WHERE end_us = start_us", [])?;
+    let has_negative_duration: bool = transaction.query_row(
+        "SELECT EXISTS (SELECT 1 FROM worklogs WHERE end_us < start_us)",
         [],
         |row| row.get(0),
     )?;
-    if has_nonpositive_duration {
-        return Err(StorageError::NonPositiveDurationWorklogs);
+    if has_negative_duration {
+        return Err(StorageError::NegativeDurationWorklogs);
     }
     transaction.execute_batch(
         "CREATE TRIGGER worklogs_reject_nonpositive_duration_insert

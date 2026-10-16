@@ -603,9 +603,40 @@ fn database_snapshot(connection: &rusqlite::Connection) -> DatabaseSnapshot {
 }
 
 #[test]
-fn zero_duration_migration_refuses_every_legacy_version_without_data_or_schema_changes() {
+fn zero_duration_migration_deletes_only_zero_duration_rows_from_every_legacy_version() {
     for version in 1..=6 {
-        assert_invalid_duration_migration_preserves_database(version, 42);
+        let (_temp, path) = legacy_database_with_durations(version, &[(99, 42)]);
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        let retained = worklog_rows(&connection)
+            .into_iter()
+            .filter(|row| row.0 != worklog_id(99).to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(retained.len() + 1, worklog_rows(&connection).len());
+        drop(connection);
+
+        SqliteRepository::open(&path)
+            .unwrap_or_else(|error| panic!("version {version} must migrate: {error}"));
+
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        let migrated: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            migrated,
+            crate::migrate::LATEST_VERSION,
+            "version {version}"
+        );
+        assert_eq!(worklog_rows(&connection), retained, "version {version}");
+        let guards: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name IN
+                 ('worklogs_reject_nonpositive_duration_insert',
+                  'worklogs_reject_nonpositive_duration_update')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(guards, 2, "version {version}");
     }
 }
 
@@ -613,11 +644,55 @@ fn zero_duration_migration_refuses_every_legacy_version_without_data_or_schema_c
 fn negative_duration_migration_refuses_tampered_legacy_rows_without_data_or_schema_changes() {
     // Version 1 already rejects negative durations when rebuilding the worklogs table.
     for version in 2..=6 {
-        assert_invalid_duration_migration_preserves_database(version, 41);
+        let (_temp, path) = legacy_database_with_durations(version, &[(98, 42), (99, 41)]);
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        let before = database_snapshot(&connection);
+        drop(connection);
+        let error = SqliteRepository::open(&path)
+            .expect_err("negative-duration legacy data needs explicit repair");
+        assert!(
+            matches!(error, StorageError::NegativeDurationWorklogs),
+            "version {version}: {error}"
+        );
+        let message = error.to_string();
+        for guidance in [
+            "end before they start",
+            "Back up",
+            "repair the invalid worklogs",
+            "restore a backup",
+            "No data or schema changes",
+        ] {
+            assert!(message.contains(guidance), "missing {guidance}: {message}");
+        }
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        assert_eq!(
+            database_snapshot(&connection),
+            before,
+            "version {version} must roll back every change, including zero-duration deletion"
+        );
     }
 }
 
-fn assert_invalid_duration_migration_preserves_database(version: i64, end_us: i64) {
+type WorklogRow = (String, String, i64, Option<i64>);
+
+fn worklog_rows(connection: &rusqlite::Connection) -> Vec<WorklogRow> {
+    connection
+        .prepare("SELECT id, task_id, start_us, end_us FROM worklogs ORDER BY id")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+}
+
+/// Builds a database at a legacy schema version with extra completed rows
+/// that start at 42 microseconds and end at each given `end_us`.
+fn legacy_database_with_durations(
+    version: i64,
+    extra: &[(u32, i64)],
+) -> (tempfile::TempDir, std::path::PathBuf) {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tracker.db");
     if version == 1 {
@@ -674,43 +749,21 @@ fn assert_invalid_duration_migration_preserves_database(version: i64, end_us: i6
     connection
         .pragma_update(None, "user_version", version)
         .unwrap();
-    connection
-        .pragma_update(None, "ignore_check_constraints", end_us < 42)
-        .unwrap();
-    connection
-        .execute(
-            "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, 42, ?3)",
-            rusqlite::params![worklog_id(99).to_string(), task_id(1).to_string(), end_us],
-        )
-        .unwrap();
+    for &(tag, end_us) in extra {
+        connection
+            .pragma_update(None, "ignore_check_constraints", end_us < 42)
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO worklogs (id, task_id, start_us, end_us) VALUES (?1, ?2, 42, ?3)",
+                rusqlite::params![worklog_id(tag).to_string(), task_id(1).to_string(), end_us],
+            )
+            .unwrap();
+    }
     connection
         .pragma_update(None, "ignore_check_constraints", false)
         .unwrap();
-    let before = database_snapshot(&connection);
-    drop(connection);
-    let error = SqliteRepository::open(&path)
-        .expect_err("nonpositive-duration legacy data needs explicit repair");
-    assert!(
-        matches!(error, StorageError::NonPositiveDurationWorklogs),
-        "version {version}: {error}"
-    );
-    let message = error.to_string();
-    for guidance in [
-        "zero or negative duration",
-        "Back up",
-        "older Time Tracker client",
-        "correct or delete",
-        "restore a backup",
-        "No data or schema changes",
-    ] {
-        assert!(message.contains(guidance), "missing {guidance}: {message}");
-    }
-    let connection = rusqlite::Connection::open(&path).unwrap();
-    assert_eq!(
-        database_snapshot(&connection),
-        before,
-        "version {version} must roll back every change"
-    );
+    (temp, path)
 }
 
 #[test]

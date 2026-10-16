@@ -79,9 +79,9 @@ pub enum StorageError {
     },
     /// Existing completed worklogs need an explicit repair before migration.
     #[error(
-        "database migration refused because completed worklogs have zero or negative duration. Back up the database, then explicitly repair the invalid worklogs or restore a backup with positive durations. An older Time Tracker client can correct or delete zero-duration worklogs. No data or schema changes were applied"
+        "database migration refused because completed worklogs end before they start. Back up the database, then explicitly repair the invalid worklogs or restore a backup with positive durations. No data or schema changes were applied"
     )]
-    NonPositiveDurationWorklogs,
+    NegativeDurationWorklogs,
     /// No platform application-data directory could be determined.
     #[error("cannot determine the application data directory")]
     NoDataDir,
