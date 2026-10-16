@@ -22,6 +22,13 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 
 - Follow the [GitHub issue guide](docs/github-issues.md) when creating or updating an issue. Apply the `unslop` skill before publishing it.
 
+## Subagents and model selection
+
+- Use subagents during implementation when they help, for example for independent parts of a feature or focused investigations. Decide case by case whether to delegate.
+- Choose each subagent's model for its task. A faster or cheaper model is fine when it handles the task equally well, but never trade quality for speed or cost.
+- After finishing the implementation and before creating the pull request, start subagents to review the change, including security issues, and to look for refactoring opportunities. Resolve or answer their findings before creating the pull request.
+- Run the review and refactoring subagents on a model from a different provider in the same model category as the implementing model, when one is available. For example, if Claude Opus 5.5 implemented the change, use GPT-6.1-Sol for the reviews. If no such model is available, use a model from the same provider and mention that at handoff.
+
 ## Pull request descriptions
 
 - Follow the [pull request description guide](docs/pull-request-descriptions.md) when creating or updating a PR description. Apply the `unslop` skill to the description before publishing it.
