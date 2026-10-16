@@ -1032,7 +1032,8 @@ public final class TrackerSession {
                 let result: TaskCommandResult
                 switch intent.action {
                 case .archive:
-                    result = try await client.archiveTask(taskID: intent.taskID, occurredAt: intent.occurredAt)
+                    result = try await client.archiveTask(
+                        taskID: intent.taskID, expectedName: intent.taskName, occurredAt: intent.occurredAt)
                 case .unarchive:
                     result = try await client.unarchiveTask(taskID: intent.taskID, occurredAt: intent.occurredAt)
                 }
@@ -1059,9 +1060,16 @@ public final class TrackerSession {
                     case .apply: break
                     }
                 }
-                archiving.fail(
-                    error,
-                    retainIntent: TaskArchivingState.requiresRecovery(error) || (commandStarted && confirmed == nil))
+                if let failure = error as? BridgeFailure, failure.kind == "conflict" {
+                    archiving.requireReview(
+                        "The task changed on another client. Review its current state before continuing.",
+                        latest: confirmed?.catalog.value.first { $0.id == intent.taskID })
+                } else {
+                    archiving.fail(
+                        error,
+                        retainIntent: TaskArchivingState.requiresRecovery(error) || (commandStarted && confirmed == nil)
+                    )
+                }
                 archiving.setStatusVisibility(windowVisible)
                 publish()
             }
@@ -1096,7 +1104,7 @@ public final class TrackerSession {
                 }
                 commandStarted = true
                 let result = try await client.renameTask(
-                    taskID: intent.taskID, name: intent.name,
+                    taskID: intent.taskID, expectedName: intent.originalName, name: intent.name,
                     occurredAt: intent.occurredAt)
                 guard isCurrent(token) else { return }
                 guard result.task.id == intent.taskID, result.task.name == intent.desiredName else {

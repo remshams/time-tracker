@@ -48,7 +48,9 @@ final class TaskRenameTests: XCTestCase {
         preflight.succeed(resources)
         let rename = try await fixture.client.next()
         XCTAssertEqual(
-            rename.operation, .rename(task: firstTask.id, name: "Renamed task", at: "2025-01-01T00:00:00.000Z"))
+            rename.operation,
+            .rename(
+                task: firstTask.id, expectedName: firstTask.name, name: "Renamed task", at: "2025-01-01T00:00:00.000Z"))
         fixture.session.submitTaskRename()
         fixture.session.cancelTaskRename()
         fixture.session.setTaskRenameName("Replacement")
@@ -110,13 +112,17 @@ final class TaskRenameTests: XCTestCase {
         fixture.clock.now.addTimeInterval(60)
         fixture.session.submitTaskRename()
         XCTAssertEqual(fixture.client.operations.count, 3)
-        poll.succeed(resources)
+        let backgroundName = TaskItem(id: firstTask.id, name: "Background name", archived: false, latestStart: nil)
+        poll.succeed(TaskListResources(tasks: [backgroundName], active: nil))
         let preflight = try await fixture.client.next()
+        XCTAssertEqual(fixture.session.taskRename.originalName, firstTask.name)
         XCTAssertEqual(fixture.session.taskRename.name, "Draft name")
         preflight.succeed(resources)
         let rename = try await fixture.client.next()
         XCTAssertEqual(
-            rename.operation, .rename(task: firstTask.id, name: "Draft name", at: "2025-01-01T00:00:00.000Z"))
+            rename.operation,
+            .rename(
+                task: firstTask.id, expectedName: firstTask.name, name: "Draft name", at: "2025-01-01T00:00:00.000Z"))
         let renamed = TaskItem(id: firstTask.id, name: "Draft name", archived: false, latestStart: nil)
         rename.succeed(TaskListResources(tasks: [renamed], active: nil))
         try await fixture.settled()
@@ -448,7 +454,10 @@ final class TaskRenameTests: XCTestCase {
         wakePreflight.succeed(resources)
         let rename = try await fixture.client.next()
         XCTAssertEqual(
-            rename.operation, .rename(task: firstTask.id, name: "Queued rename", at: "2025-01-01T00:00:00.000Z"))
+            rename.operation,
+            .rename(
+                task: firstTask.id, expectedName: firstTask.name, name: "Queued rename", at: "2025-01-01T00:00:00.000Z")
+        )
         let renamed = TaskItem(id: firstTask.id, name: "Queued rename", archived: false, latestStart: nil)
         rename.succeed(TaskListResources(tasks: [renamed], active: nil))
         try await fixture.settled()

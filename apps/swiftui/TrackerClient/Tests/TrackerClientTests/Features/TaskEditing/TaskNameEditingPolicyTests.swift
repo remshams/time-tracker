@@ -52,7 +52,10 @@ final class TaskNameEditingPolicyTests: XCTestCase {
             let preflight = try await fixture.client.next()
             preflight.succeed(original)
             let rename = try await fixture.client.next()
-            XCTAssertEqual(rename.operation, .rename(task: firstTask.id, name: rawName, at: "2025-01-01T00:00:00.000Z"))
+            XCTAssertEqual(
+                rename.operation,
+                .rename(task: firstTask.id, expectedName: firstTask.name, name: rawName, at: "2025-01-01T00:00:00.000Z")
+            )
             let task = TaskItem(
                 id: firstTask.id, name: "\u{200b}Renamed task\u{200b}", archived: false, latestStart: nil)
             let updated = TaskListResources(tasks: [task], active: nil)
