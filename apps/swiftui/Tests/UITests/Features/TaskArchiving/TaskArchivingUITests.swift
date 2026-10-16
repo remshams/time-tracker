@@ -71,7 +71,9 @@ class TaskArchivingUITests: TrackerUITestCase {
         app.buttons["task-archive.confirm"].click()
         XCTAssertTrue(app.buttons["task-archive.review"].waitForExistence(timeout: timeout))
         XCTAssertFalse(app.buttons["task-archive.confirm"].isEnabled)
-        XCTAssertFalse(try XCTUnwrap(fixture.tasks().first).archived)
+        let competing = try XCTUnwrap(fixture.tasks().first)
+        XCTAssertFalse(competing.archived)
+        XCTAssertEqual(competing.name, "External archive name")
         app.buttons["task-archive.review"].click()
         app.buttons["task-archive.confirm"].click()
         waitUntil("Reviewed archive closes") { !self.app.buttons["task-archive.confirm"].exists }
