@@ -122,6 +122,42 @@ TEST_PRODUCTION = {
 }
 
 
+# These exact edits only carry reviewed names through the shared fake client.
+# Comparing the remaining bytes keeps reply and scheduling changes under review.
+REVIEWED_NAME_SUPPORT = TESTS + "Support/TestSupport.swift"
+REVIEWED_NAME_SUPPORT_EDITS = (
+    ("        case archive(task: String, at: String)\n",
+     "        case archive(task: String, expectedName: String, at: String)\n"),
+    ("        case rename(task: String, name: String, at: String)\n",
+     "        case rename(task: String, expectedName: String, name: String, at: String)\n"),
+    ("            case .rename(let id, _, _), .archive(let id, _), .unarchive(let id, _):\n",
+     "            case .rename(let id, _, _, _), .archive(let id, _, _), .unarchive(let id, _):\n"),
+    ("                case .rename(_, let name, _):\n",
+     "                case .rename(_, _, let name, _):\n"),
+    ("    func archiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult {\n"
+     "        try await taskReply(.archive(task: taskID, at: occurredAt))\n"
+     "    }\n",
+     "    func archiveTask(taskID: String, expectedName: String, occurredAt: String) async throws -> TaskCommandResult {\n"
+     "        try await taskReply(.archive(task: taskID, expectedName: expectedName, at: occurredAt))\n"
+     "    }\n"),
+    ("    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TaskCommandResult {\n"
+     "        try await taskReply(.rename(task: taskID, name: name, at: occurredAt))\n"
+     "    }\n",
+     "    func renameTask(taskID: String, expectedName: String, name: String, occurredAt: String) async throws\n"
+     "        -> TaskCommandResult\n"
+     "    {\n"
+     "        try await taskReply(.rename(task: taskID, expectedName: expectedName, name: name, at: occurredAt))\n"
+     "    }\n"),
+)
+REVIEWED_NAME_CONTRACT_EDITS = (
+    ("    func archiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult\n",
+     "    func archiveTask(taskID: String, expectedName: String, occurredAt: String) async throws -> TaskCommandResult\n"),
+    ("    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TaskCommandResult\n",
+     "    func renameTask(taskID: String, expectedName: String, name: String, occurredAt: String) async throws\n"
+     "        -> TaskCommandResult\n"),
+)
+
+
 class ScopeError(Exception):
     pass
 
@@ -181,6 +217,40 @@ def valid_source(root: Path, name: str, tree: dict[str, str]) -> bool:
     return candidate.is_file() and candidate.resolve().is_relative_to(package.resolve())
 
 
+def only_reviewed_name_edits(root: Path, base: str, head: str, path: str, edits: tuple) -> bool:
+    contents = []
+    for revision in (base, head):
+        record = git(root, "ls-tree", "-z", revision, "--", path)
+        if not record or record.split()[0] != b"100644":
+            return False
+        contents.append(git(root, "show", revision + ":" + path))
+    before, after = contents
+    for old, new in edits:
+        old, new = old.encode("utf-8"), new.encode("utf-8")
+        if before.count(old) != 1 or after.count(new) != 1:
+            return False
+        after = after.replace(new, old)
+    return after == before
+
+
+def reviewed_name_support_change(root: Path, base: str, head: str, entries: list[dict]) -> bool:
+    modified = {entry["path"] for entry in entries if entry["status"] == "M"}
+    required = {
+        PACKAGE + REVIEWED_NAME_SUPPORT,
+        PACKAGE + SOURCES + DEPENDENCIES,
+        PACKAGE + TESTS + "Features/TaskRename/TaskRenameTests.swift",
+        PACKAGE + TESTS + "Features/TaskArchiving/TaskArchivingTests.swift",
+    }
+    if not required.issubset(modified):
+        return False
+    return (
+        only_reviewed_name_edits(root, base, head, PACKAGE + REVIEWED_NAME_SUPPORT,
+                                 REVIEWED_NAME_SUPPORT_EDITS)
+        and only_reviewed_name_edits(root, base, head, PACKAGE + SOURCES + DEPENDENCIES,
+                                    REVIEWED_NAME_CONTRACT_EDITS)
+    )
+
+
 def select_scope(root: Path, base: str, head: str) -> dict:
     base = commit(root, base)
     head = commit(root, head)
@@ -189,6 +259,7 @@ def select_scope(root: Path, base: str, head: str) -> dict:
     merge_base = git(root, "merge-base", base, head).decode().strip()
     entries = changes(root, merge_base, head)
     tree = source_tree(root, head)
+    reviewed_names_only = reviewed_name_support_change(root, merge_base, head, entries)
     renamed = {
         entry["old_path"].removeprefix(PACKAGE): entry["path"].removeprefix(PACKAGE)
         for entry in entries if entry["status"].startswith("R")
@@ -223,7 +294,9 @@ def select_scope(root: Path, base: str, head: str) -> dict:
                     add_source(relative, f"Changed production file: {path}")
             elif path.startswith(PACKAGE + TESTS):
                 test = relative.removeprefix(TESTS)
-                if test not in TEST_PRODUCTION:
+                if relative == REVIEWED_NAME_SUPPORT and reviewed_names_only:
+                    reasons.append(f"Shared fixture only forwards reviewed names; changed rename/archive suites define scope: {path}")
+                elif test not in TEST_PRODUCTION:
                     review.append(f"Unmapped test or shared test support needs scope review: {path}")
                 else:
                     for source in TEST_PRODUCTION[test]:
