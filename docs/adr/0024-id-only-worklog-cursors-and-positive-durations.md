@@ -12,7 +12,7 @@ Accepted. Partially supersedes ADR 0004's cursor fields, ADR 0005's zero-duratio
 
 Worklog continuations repeat the task filter and expose an anchor timestamp that storage already owns. Corrected start times can differ from UUID creation order, so an identifier cannot replace timestamp ordering. Corrections across different tasks can also create equal starts, even when every interval has positive duration.
 
-Allowing a completed interval with no duration complicates interval validation. Tightening that rule must preserve existing user history and leave failed tracking transitions unchanged.
+Allowing a completed interval with no duration complicates interval validation. Tightening that rule must not change recorded time and must leave failed tracking transitions unchanged.
 
 ## Decision
 
@@ -22,14 +22,14 @@ Allowing a completed interval with no duration complicates interval validation. 
 - Task history-order revisions still change on start corrections and moves, not inserts, end-only corrections, or deletions. Deleting the anchor now explicitly invalidates its continuation. Global revisions still change on every worklog write.
 - Completed worklogs require `end > start` after canonicalization to UTC microseconds. Domain validation and SQLite insert/update guards enforce that rule. Corrections cannot collapse a completed interval to zero.
 - A stop or switch at the active start fails with an equality-specific error. The active worklog and all stored rows remain unchanged. Before-start failures retain their existing errors. A repeated request to start the already active task remains an idempotent success.
-- Schema migration 7 checks for completed rows with zero or negative duration before adding guards. If it finds any, the entire migration transaction rolls back without deleting, changing, or inventing duration for any row. Opening the database fails with recovery instructions.
-- Back up a blocked database before repair. For zero-duration entries, open it with the previous application version, inspect affected worklogs, and explicitly correct their timestamps to positive intervals or delete entries the user chooses to remove. Negative durations indicate invalid stored data and require explicit database repair or a valid backup. Close all old clients before retrying the upgrade. New clients never repair history automatically.
+- Schema migration 7 deletes completed rows with zero duration before adding guards. These rows cover no time, so deletion changes no totals or overlap results.
+- Negative durations indicate stored data that bypassed the CHECK constraint. If the migration finds any, the entire transaction rolls back, including the zero-duration deletion, and opening the database fails with recovery instructions. Back up the database and repair those rows explicitly or restore a valid backup.
 - Bump the HTTP protocol to 4 while retaining `/v1` routes. Upgrade server and clients together; incompatible pairs fail the health check before resource loading. Regenerate saved CLI history and archive-preview tokens. Swift treats history cursors as opaque strings; its Rust bridge emits and accepts only the new fields.
 
 ## Consequences
 
 Callers pass fewer cursor fields while SQLite retains chronological ordering and transactional consistency. A deleted anchor produces an explicit reload instead of continuing from an unverified timestamp supplied by the client.
 
-Existing zero-duration records require a user decision before upgrading. This can delay an upgrade, but preserves history and avoids silently assigning time that was never recorded. Keep the pre-upgrade backup for rollback: older builds reject the newer schema version even though the new guards do not rebuild the worklog table.
+Existing zero-duration records disappear during the upgrade without a prompt. Users who want to inspect them must back up the database first. Keep the pre-upgrade backup for rollback: older builds reject the newer schema version even though the new guards do not rebuild the worklog table.
 
 The change adds no background jobs, network paths, or asynchronous state owners. Client generation checks, cancellation behavior, confirmed caches, stale-write guards, and atomic switch ownership remain unchanged.
