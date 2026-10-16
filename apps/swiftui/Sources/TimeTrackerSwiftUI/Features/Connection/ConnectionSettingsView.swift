@@ -81,6 +81,23 @@ struct ConnectionSettingsView: View {
                         )
                     )
                     .accessibilityIdentifier("menu.show-daily-total")
+                    Picker(
+                        "Task order",
+                        selection: Binding(
+                            get: { store.menuTaskOrder },
+                            set: { store.setMenuTaskOrder($0) }
+                        )
+                    ) {
+                        ForEach(MenuTaskOrder.allCases) { order in
+                            Text(order.title).tag(order)
+                        }
+                    }
+                    .accessibilityIdentifier("menu.task-order")
+                    Text(
+                        "Applies to Today and Start tracking. When ordering by logged time, tasks with no logged time appear last."
+                    )
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Section("Menu shortcut") {
