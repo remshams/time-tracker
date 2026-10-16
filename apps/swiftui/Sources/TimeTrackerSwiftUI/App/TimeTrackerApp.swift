@@ -20,7 +20,7 @@ struct TimeTrackerApp: App {
         .commands { TrackerApplicationMenus(runtime: delegate.runtime) }
 
         Window("Settings", id: TrackerSceneID.settings) {
-            ConnectionSettingsView(store: delegate.runtime.store)
+            SettingsView(store: delegate.runtime.store)
                 .frame(height: 680)
         }
         .defaultSize(width: 540, height: 680)
