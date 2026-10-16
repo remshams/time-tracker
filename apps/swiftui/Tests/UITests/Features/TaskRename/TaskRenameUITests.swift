@@ -66,7 +66,15 @@ class TaskRenameUITests: TrackerUITestCase {
         XCTAssertTrue(element("task-name.error").waitForExistence(timeout: timeout))
         XCTAssertEqual(app.textFields["task-name.input"].value as? String, "My draft")
         XCTAssertEqual(try fixture.tasks().first?.name, "External name")
+        XCTAssertFalse(app.buttons["task-name.submit"].isEnabled)
         app.buttons["task-name.cancel"].click()
+        let latest = try XCTUnwrap(fixture.tasks().first)
+        openRename(latest)
+        XCTAssertEqual(app.textFields["task-name.input"].value as? String, "External name")
+        replaceText(app.textFields["task-name.input"], "Reviewed replacement")
+        app.buttons["task-name.submit"].click()
+        waitUntil("Reviewed rename closes") { !self.element("task-name.input").exists }
+        XCTAssertEqual(try fixture.tasks().first?.name, "Reviewed replacement")
     }
 }
 
