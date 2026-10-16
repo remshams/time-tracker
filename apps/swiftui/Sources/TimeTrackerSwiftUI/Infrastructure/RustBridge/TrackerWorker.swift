@@ -146,14 +146,19 @@ private final class RustBridge {
         }
     }
 
-    func renameTask(taskID: String, name: String, occurredAt: String) throws -> TaskCommandResult {
-        guard !name.utf8.contains(0) else {
+    func renameTask(taskID: String, expectedName: String, name: String, occurredAt: String) throws -> TaskCommandResult
+    {
+        guard !name.utf8.contains(0), !expectedName.utf8.contains(0) else {
             throw BridgeFailure(message: "Task names must not contain control characters.")
         }
         return try taskID.withCString { task in
-            try name.withCString { name in
-                try occurredAt.withCString { instant in
-                    try decode(tt_bridge_rename_task_at(handle, task, name, instant), requiresRefreshOnMalformed: true)
+            try expectedName.withCString { expected in
+                try name.withCString { name in
+                    try occurredAt.withCString { instant in
+                        try decode(
+                            tt_bridge_rename_task_with_expected_name_at(handle, task, expected, name, instant),
+                            requiresRefreshOnMalformed: true)
+                    }
                 }
             }
         }
@@ -177,10 +182,17 @@ private final class RustBridge {
         }
     }
 
-    func archiveTask(taskID: String, occurredAt: String) throws -> TaskCommandResult {
-        try taskID.withCString { task in
-            try occurredAt.withCString { instant in
-                try decode(tt_bridge_archive_task_at(handle, task, instant), requiresRefreshOnMalformed: true)
+    func archiveTask(taskID: String, expectedName: String, occurredAt: String) throws -> TaskCommandResult {
+        guard !expectedName.utf8.contains(0) else {
+            throw BridgeFailure(message: "Task names must not contain control characters.")
+        }
+        return try taskID.withCString { task in
+            try expectedName.withCString { expected in
+                try occurredAt.withCString { instant in
+                    try decode(
+                        tt_bridge_archive_task_with_expected_name_at(handle, task, expected, instant),
+                        requiresRefreshOnMalformed: true)
+                }
             }
         }
     }
@@ -397,8 +409,13 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         try await perform { try $0.currentBridge().createTask(name: name, occurredAt: occurredAt) }
     }
 
-    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TaskCommandResult {
-        try await perform { try $0.currentBridge().renameTask(taskID: taskID, name: name, occurredAt: occurredAt) }
+    func renameTask(taskID: String, expectedName: String, name: String, occurredAt: String) async throws
+        -> TaskCommandResult
+    {
+        try await perform {
+            try $0.currentBridge().renameTask(
+                taskID: taskID, expectedName: expectedName, name: name, occurredAt: occurredAt)
+        }
     }
 
     func previewInactiveTasks(inactiveDays: Int, asOf: String) async throws -> InactiveTaskPreview {
@@ -409,8 +426,10 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         try await perform { try $0.currentBridge().archiveInactiveTasks(preview: preview) }
     }
 
-    func archiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult {
-        try await perform { try $0.currentBridge().archiveTask(taskID: taskID, occurredAt: occurredAt) }
+    func archiveTask(taskID: String, expectedName: String, occurredAt: String) async throws -> TaskCommandResult {
+        try await perform {
+            try $0.currentBridge().archiveTask(taskID: taskID, expectedName: expectedName, occurredAt: occurredAt)
+        }
     }
 
     func unarchiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult {
