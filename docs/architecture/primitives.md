@@ -2,7 +2,7 @@
 
 Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. [Revisions and concurrency](#revisions-and-concurrency) explains stale-write and pagination guards. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
 
-Source scope: the Rust core, TUI, CLI, and native macOS client at `16d009ae4e1e1505c7c24c920b29042da368d85c`, inspected on 16 October 2026. Native reviewed task-name contracts additionally describe `384069b` on 16 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
+Source scope: the Rust core, TUI, CLI, and native macOS client at `16d009ae4e1e1505c7c24c920b29042da368d85c`, inspected on 16 October 2026. Native reviewed task-name contracts additionally describe `384069b` on 16 October 2026. Native worklog deletion additionally describes the `feat/delete-task-worklog` changes on top of `3f19471`, inspected on 16 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
 
 ## Architecture primitives
 
@@ -82,7 +82,7 @@ Source: [crate](../../apps/cli/Cargo.toml), [entry point](../../apps/cli/src/mai
 
 ### tracker-swift-bridge
 
-Owns the Rust static library's C ABI, connection handles, JSON results, and persistent current-thread Tokio runtime. It dispatches through `TrackerBackend` and maps failures for Swift. Additive guarded rename and archive exports carry the reviewed task name into the shared application operation. Existing desired-state exports remain available. The native app's serial `TrackerWorker` owns call ordering and handle disposal; the bridge owns neither windows nor feature state.
+Owns the Rust static library's C ABI, connection handles, JSON results, and persistent current-thread Tokio runtime. It dispatches through `TrackerBackend` and maps failures for Swift. Additive guarded rename and archive exports carry the reviewed task name into the shared application operation. Existing desired-state exports remain available. The worklog delete export requires the expected task, start, and end, so it cannot delete a running worklog. The native app's serial `TrackerWorker` owns call ordering and handle disposal; the bridge owns neither windows nor feature state.
 
 Depends on: [tracker-client](#tracker-client), [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-remote](#tracker-remote), [tracker-storage](#tracker-storage).
 
@@ -90,11 +90,11 @@ Source: [crate](../../apps/swiftui/bridge/Cargo.toml), [backend](../../apps/swif
 
 ### TrackerClient Swift package
 
-Owns portable feature state and `TrackerSession` coordination through injected client, clock, scheduler, and settings interfaces. Connection and selection generations reject obsolete results. It composes resource observations for features and separates command success from later refresh failures. Queued rename and archive intents retain their reviewed names through background updates and pass them through the client contract. Rust compares the name and writes in one transaction; a conflict requires refresh and review. Rust continues to own domain rules and persistence.
+Owns portable feature state and `TrackerSession` coordination through injected client, clock, scheduler, and settings interfaces. Connection and selection generations reject obsolete results. It composes resource observations for features and separates command success from later refresh failures. Queued rename and archive intents retain their reviewed names through background updates and pass them through the client contract. Rust compares the name and writes in one transaction; a conflict requires refresh and review. Worklog deletion finds the completed row in bounded task history, then deletes it with its expected task and times. A changed row requires review. After an uncertain failure, a missing row counts as deleted. Rust continues to own domain rules and persistence.
 
 Depends on: Foundation and injected interfaces. No direct Rust, SwiftUI, AppKit, network, or database dependency.
 
-Source: [package](../../apps/swiftui/TrackerClient/Package.swift), [session](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift), [contracts](../../apps/swiftui/TrackerClient/Sources/TrackerClient/Contracts/Dependencies.swift). Decision: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md).
+Source: [package](../../apps/swiftui/TrackerClient/Package.swift), [session](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift), [contracts](../../apps/swiftui/TrackerClient/Sources/TrackerClient/Contracts/Dependencies.swift). Decisions: [ADR 0007](../adr/0007-completed-worklog-deletion.md), [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md).
 
 ### TimeTrackerSwiftUI macOS app
 
