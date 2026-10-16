@@ -160,6 +160,47 @@ pub unsafe extern "C" fn tt_bridge_move_worklog(
     encode(result)
 }
 
+/// Permanently deletes a completed worklog only when its stored task and
+/// timestamps match the selection. Running worklogs cannot be deleted, so the
+/// expected end is required.
+///
+/// # Safety
+/// `bridge` must be live and uniquely accessed. Strings must be null or valid
+/// C strings. Free the result with `tt_bridge_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tt_bridge_delete_worklog(
+    bridge: *mut Bridge,
+    worklog_id: *const c_char,
+    expected_task_id: *const c_char,
+    expected_start: *const c_char,
+    expected_end: *const c_char,
+) -> *mut c_char {
+    // SAFETY: The caller guarantees exclusive access to the live bridge.
+    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
+        return encode(Err("Database is not open".to_owned().into()));
+    };
+    let result = (|| {
+        // SAFETY: The caller supplies valid C strings or null for all inputs.
+        let (id, task, start, end) = unsafe {
+            (
+                read_identifier(worklog_id, "Invalid worklog ID")?,
+                read_identifier(expected_task_id, "Invalid task ID")?,
+                read_identifier(expected_start, "Invalid original start timestamp")?,
+                read_identifier(expected_end, "Invalid original end timestamp")?,
+            )
+        };
+        let worklog = bridge.application.delete_completed_worklog(
+            id,
+            task,
+            WorklogTimes::new(start, Some(end)),
+        )?;
+        Ok(
+            json!({ "worklog": worklog_json(&worklog), "receipt": bridge.application.command_receipt() }),
+        )
+    })();
+    encode(result)
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HistoryCursor {
