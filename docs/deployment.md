@@ -24,7 +24,7 @@ The deploy step uses `sudo -n` to install the binary and control the service, so
 
 ## Host configuration
 
-The host keeps its settings in `ROOT/deploy.json`, so this repository holds no host addresses:
+To set up a new host, create `ROOT` and `ROOT/deploy.json`. The script creates `ROOT/build` and `ROOT/bin` on its first run. The host keeps its settings in `deploy.json`, so this repository holds no host addresses:
 
 ```json
 {

@@ -139,6 +139,7 @@ def deploy_from_workstation(arguments):
     version = protocol_version(capture("git", "-C", str(REPOSITORY), "show", f"{revision}:{PROTOCOL_SOURCE}"))
     host, root = arguments.host, arguments.root.rstrip("/")
     config = load_config(remote(host, "cat", f"{root}/deploy.json"))
+    remote(host, "mkdir", "-p", f"{root}/build", f"{root}/bin")
     print(f"Deploying {revision} (protocol {version}) to {host}:{root}", flush=True)
     with tempfile.TemporaryDirectory(prefix="tt-deploy-") as directory:
         archive = pathlib.Path(directory) / f"source-{short(revision)}.tar"
@@ -385,6 +386,8 @@ def remote_deploy(host, keep_backup):
                 sudo("systemctl", "stop", service)
                 install_binary(backup / f"{BINARY}.previous", staged, host.live)
             sudo("systemctl", "start", service)
+        if not replaced:
+            sudo("rm", "-f", staged)
         print(f"Deployment failed and was rolled back. The backup is in {backup}", file=sys.stderr, flush=True)
         raise
     result = {"deployment": "passed", **manifest, "deployed_at": utc_now().isoformat(),

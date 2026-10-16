@@ -93,6 +93,8 @@ class FakeSudo:
             shutil.copyfile(arguments[-2], arguments[-1])
         elif arguments[0] == "mv":
             Path(arguments[1]).replace(arguments[2])
+        elif arguments[0] == "rm":
+            Path(arguments[-1]).unlink(missing_ok=True)
 
 
 class DeploymentRoot:
@@ -239,6 +241,21 @@ class DeployTests(unittest.TestCase):
             self.assertTrue((backups[0] / "tt-server.db").exists())
             self.assertFalse((root.root / "build/deployment-latest.json").exists())
 
+    def test_failure_before_the_swap_restarts_the_service_and_removes_the_staged_binary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory)
+            root.write_manifest()
+            sudo = FakeSudo()
+            failure = DEPLOY.DeployError("The database copy failed its integrity check")
+            with patch.object(DEPLOY, "sudo", sudo), patch.object(DEPLOY, "backup_database", side_effect=failure), \
+                    patch("sys.stderr", io.StringIO()):
+                with self.assertRaises(DEPLOY.DeployError):
+                    DEPLOY.remote_deploy(root.host(), keep_backup=False)
+            staged = f"{root.live}.new-0123456"
+            self.assertEqual(root.live.read_bytes(), b"previous binary")
+            self.assertFalse(Path(staged).exists())
+            self.assertEqual(sudo.calls[-2:], [("systemctl", "start", "tracker.service"), ("rm", "-f", staged)])
+
     def test_rejects_a_candidate_that_changed_after_preflight(self):
         with tempfile.TemporaryDirectory() as directory:
             root = DeploymentRoot(directory)
@@ -253,10 +270,16 @@ class DeployTests(unittest.TestCase):
 class WorkstationTests(unittest.TestCase):
     def run_workstation(self, *extra):
         helpers = []
+        self.remote_calls = []
+
+        def remote(host, *arguments):
+            self.remote_calls.append((host, *arguments))
+            return json.dumps(CONFIG) if arguments[0] == "cat" else ""
+
         arguments = DEPLOY.workstation_parser().parse_args(["--host", "server", "--root", "/srv/tt/", *extra])
         with patch.object(DEPLOY, "resolve_revision", return_value=REVISION), \
                 patch.object(DEPLOY, "capture", return_value="pub const VERSION: u32 = 3;\n"), \
-                patch.object(DEPLOY, "remote", return_value=json.dumps(CONFIG)), \
+                patch.object(DEPLOY, "remote", side_effect=remote), \
                 patch.object(DEPLOY, "run"), patch.object(DEPLOY, "upload_archive"), \
                 patch.object(DEPLOY, "remote_helper", side_effect=lambda *call: helpers.append(call)), \
                 patch.object(DEPLOY, "check_health") as health, patch("sys.stdout", io.StringIO()):
@@ -266,6 +289,7 @@ class WorkstationTests(unittest.TestCase):
     def test_preflight_only_never_runs_the_deploy_step(self):
         helpers, health = self.run_workstation("--preflight-only")
         self.assertEqual([call[2] for call in helpers], ["build", "preflight"])
+        self.assertEqual(self.remote_calls[1], ("server", "mkdir", "-p", "/srv/tt/build", "/srv/tt/bin"))
         self.assertTrue(all(call[:2] == ("server", "/srv/tt") for call in helpers))
         health.assert_not_called()
 
