@@ -109,6 +109,7 @@ struct TrackerDetailPresentation: View {
                 TaskRenameDialog(rename: store.rename, isPresentationOwner: isOwner)
                 WorklogCorrectionDialog(correction: store.correction, isPresentationOwner: isOwner)
                 WorklogMoveDialog(move: store.move, isPresentationOwner: isOwner)
+                WorklogDeletionDialog(deletion: store.deletion, isPresentationOwner: isOwner)
                 BulkTaskArchivingDialog(archiving: store.bulkArchiving, isPresentationOwner: isOwner)
                 TaskArchivingDialog(archiving: store.archiving, isPresentationOwner: isOwner)
             }
