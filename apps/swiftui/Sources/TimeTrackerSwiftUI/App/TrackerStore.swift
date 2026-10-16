@@ -9,6 +9,7 @@ final class TrackerStore {
     private let presentation: TrackerPresentationObserver
     private let menuBarPreferences: UserDefaultsMenuBarPreferences
     private(set) var showDailyTotalInMenuBar: Bool
+    private(set) var menuTaskOrder: MenuTaskOrder
     private let keyboardPreferences: UserDefaultsMenuKeyboardPreferences
     private(set) var menuShortcuts: MenuKeyboardShortcuts
     private var menuShortcutValidationError: String?
@@ -31,6 +32,7 @@ final class TrackerStore {
         let launch = TrackerLaunchConfiguration.current
         menuBarPreferences = UserDefaultsMenuBarPreferences(defaults: launch.defaults)
         showDailyTotalInMenuBar = menuBarPreferences.load()
+        menuTaskOrder = menuBarPreferences.loadTaskOrder()
         keyboardPreferences = UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults)
         menuShortcuts = keyboardPreferences.load()
         let worker = TrackerWorker(localDatabasePath: launch.localDatabasePath)
@@ -45,7 +47,8 @@ final class TrackerStore {
         activity = TrackerActivityStore(session: session, presentation: presentation)
         timer = TrackerTimerStore(session: session, presentation: presentation)
         dailyTotals = TrackerDailyTotalsStore(presentation: presentation)
-        menu = TrackerMenuStore(session: session, showDailyTotal: showDailyTotalInMenuBar)
+        menu = TrackerMenuStore(
+            session: session, showDailyTotal: showDailyTotalInMenuBar, taskOrder: menuTaskOrder)
         creation = TaskCreationStore(session: session, presentation: presentation)
         rename = TaskRenameStore(session: session, presentation: presentation)
         bulkArchiving = BulkTaskArchivingStore(session: session, presentation: presentation)
@@ -97,6 +100,14 @@ final class TrackerStore {
         menuBarPreferences.save(enabled)
         menu.setShowDailyTotal(enabled)
         updateMenuBarTimer()
+    }
+
+    func setMenuTaskOrder(_ order: MenuTaskOrder) {
+        guard menuTaskOrder != order else { return }
+        objectWillChange.send()
+        menuTaskOrder = order
+        menuBarPreferences.saveTaskOrder(order)
+        menu.setTaskOrder(order)
     }
 
     private func updateMenuBarTimer() {
@@ -244,10 +255,11 @@ final class TrackerMenuStore {
     private let presentation: TrackerMenuPresentationObserver
     private var showDailyTotal: Bool
 
-    init(session: TrackerSession, showDailyTotal: Bool) {
+    init(session: TrackerSession, showDailyTotal: Bool, taskOrder: MenuTaskOrder) {
         self.session = session
         self.showDailyTotal = showDailyTotal
-        presentation = TrackerMenuPresentationObserver(session: session, showDailyTotal: showDailyTotal)
+        presentation = TrackerMenuPresentationObserver(
+            session: session, showDailyTotal: showDailyTotal, taskOrder: taskOrder)
         label = TrackerMenuLabelStore(presentation: presentation)
         presentation.onValuesChange = { [weak self] in
             guard let self else { return }
@@ -263,6 +275,10 @@ final class TrackerMenuStore {
     func setShowDailyTotal(_ enabled: Bool) {
         showDailyTotal = enabled
         update()
+    }
+
+    func setTaskOrder(_ order: MenuTaskOrder) {
+        presentation.setTaskOrder(order, session: session, showDailyTotal: showDailyTotal)
     }
 
     func menuOpened() { presentation.menuOpened(from: session, showDailyTotal: showDailyTotal) }
