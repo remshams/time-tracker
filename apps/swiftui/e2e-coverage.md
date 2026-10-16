@@ -66,7 +66,7 @@ Paths below are relative to this directory. Local feature suites also have real-
 | 12 | Initial/later outage, cached state, disabled writes, Retry, incompatible endpoint | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
 | 13 | Captured commands, other-client replacement, uncertain writes and retained editor intent | [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
 | 14 | Native menu opening, navigation, Return and dismissal | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
-| 15 | Menu tracking, primary clicks, remembered task per source | `MenuBarUITests`, `ServerMenuBarUITests`, and `MenuSourceUITests` in the same file |
+| 15 | Menu tracking, primary clicks, remembered task per source, saved task order | `MenuBarUITests`, `ServerMenuBarUITests`, and `MenuSourceUITests` in the same file |
 | 16 | Clipboard, zero/archived/cached values, menu identity during refresh and ticks | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
 | 17 | Saved toggles, shortcut recording/cancellation/defaults, registration conflict | [SettingsUITests](Tests/UITests/Features/Connection/SettingsUITests.swift) |
 | 18 | Windows, editor ownership, reopening, quit with running timer | [WindowRoutingUITests](Tests/UITests/App/WindowRoutingUITests.swift) |
