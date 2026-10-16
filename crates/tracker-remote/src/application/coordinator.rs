@@ -93,6 +93,7 @@ impl RemoteTrackerCoordinator {
         }
     }
 
+    /// Validates a daily overview before publishing its selected resources together.
     async fn refresh_totals_resources(
         &mut self,
         start: DateTime<Utc>,
