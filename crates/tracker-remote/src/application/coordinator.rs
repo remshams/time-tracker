@@ -1,16 +1,16 @@
 use super::{
     ApplicationError, ApplicationFailureCategory, ArchiveInactiveTasksRequest,
-    ClearActiveTaskOutcome, CreateTaskRequest, DailyOverviewDto, DateTime, DeleteWorklogRequest,
-    GlobalWorklogCursor, GlobalWorklogPage, InactiveTaskPreview, InactivityPeriod, Instant, Method,
-    MoveCandidate, MutationDto, MutationScope, Recovery, RemoteError, RemoteFailureKind,
-    RemoteSession, ReportDto, ReportsClient, ResourceObservation, ResourceSelection,
-    SetActiveTaskOutcome, SetTrackingRequest, StatusCode, Task, TaskChangeRequest, TaskId,
-    TaskListItem, TaskListStateDto, TaskName, TaskOrdering, TaskResourceDto, TasksClient,
-    TrackingClient, TrackingState, Utc, Worklog, WorklogChangeRequest, WorklogCursor, WorklogId,
-    WorklogPage, WorklogPageDto, WorklogResourceDto, WorklogTimes, WorklogsClient, WriteGuard,
-    active_id, app_decode_worklog, canonical, creation_needs_recovery, decode_task_list_state,
-    map_application_error, original_worklog_matches, protocol_failure, report_cooldown_active,
-    reviewed_tracking_changed, validate_inactive_preview, validate_report,
+    ClearActiveTaskOutcome, CreateTaskRequest, DateTime, DeleteWorklogRequest, GlobalWorklogCursor,
+    GlobalWorklogPage, InactiveTaskPreview, InactivityPeriod, MoveCandidate, MutationDto,
+    MutationScope, Recovery, RemoteError, RemoteFailureKind, RemoteSession, ReportDto,
+    ReportsClient, ResourceObservation, ResourceSelection, SetActiveTaskOutcome,
+    SetTrackingRequest, StatusCode, Task, TaskChangeRequest, TaskId, TaskListItem,
+    TaskListStateDto, TaskName, TaskOrdering, TaskResourceDto, TasksClient, TrackingClient,
+    TrackingState, Utc, Worklog, WorklogChangeRequest, WorklogCursor, WorklogId, WorklogPage,
+    WorklogPageDto, WorklogResourceDto, WorklogTimes, WorklogsClient, WriteGuard, active_id,
+    app_decode_worklog, canonical, creation_needs_recovery, decode_task_list_state,
+    map_application_error, original_worklog_matches, protocol_failure, reviewed_tracking_changed,
+    validate_inactive_preview,
 };
 
 /// Coordinates remote tracker workflows across resource clients.
@@ -100,37 +100,10 @@ impl RemoteTrackerCoordinator {
         now: DateTime<Utc>,
         include_tasks: bool,
     ) -> Result<(), RemoteError> {
-        if end <= start {
-            return Err(self
-                .session
-                .record_error(RemoteError::Protocol("invalid report range".into())));
-        }
-        if report_cooldown_active(self.session.last_unavailable_at(), Instant::now()) {
-            return Err(RemoteError::Unavailable(
-                "tracker server is unavailable".into(),
-            ));
-        }
-        self.session.ensure_version().await?;
-        let (start, end, now) = (canonical(start), canonical(end), canonical(now));
-        let mut url = self.session.url("v1/state/daily-overview");
-        url.query_pairs_mut()
-            .append_pair("start", &start.to_rfc3339())
-            .append_pair("end", &end.to_rfc3339())
-            .append_pair("now", &now.to_rfc3339());
-        let dto: DailyOverviewDto = self
-            .session
-            .send(Method::GET, url, None::<&()>)
-            .await
-            .map_err(|error| self.session.record_error(error))?;
-        validate_report(&dto.totals).map_err(|error| {
-            self.session
-                .record_error(RemoteError::Protocol(error.to_string()))
-        })?;
-        if dto.totals.start != start || dto.totals.end != end || dto.totals.now != now {
-            return Err(self.session.record_error(RemoteError::Protocol(
-                "report context does not match request".into(),
-            )));
-        }
+        let dto = self
+            .reports
+            .fetch_daily_overview(&mut self.session, start, end, now)
+            .await?;
         let (items, state, revision) = decode_task_list_state(TaskListStateDto {
             tasks: dto.tasks,
             active_worklog: dto.active_worklog,
