@@ -81,7 +81,9 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertEqual(preflight.operation, .taskList)
         preflight.succeed(resources)
         let command = try await fixture.client.next()
-        XCTAssertEqual(command.operation, .archive(task: secondTask.id, at: "2025-01-01T00:00:00.000Z"))
+        XCTAssertEqual(
+            command.operation,
+            .archive(task: secondTask.id, expectedName: secondTask.name, at: "2025-01-01T00:00:00.000Z"))
         fixture.session.submitTaskArchiving()
         fixture.session.cancelTaskArchiving()
         command.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: activeWorklog))
@@ -170,7 +172,8 @@ final class TaskArchivingTests: XCTestCase {
         let reviewedRead = try await fixture.client.next()
         reviewedRead.succeed(resources)
         let command = try await fixture.client.next()
-        XCTAssertEqual(command.operation, .archive(task: secondTask.id, at: "2025-01-01T00:00:30.000Z"))
+        XCTAssertEqual(
+            command.operation, .archive(task: secondTask.id, expectedName: latest.name, at: "2025-01-01T00:00:30.000Z"))
         command.succeed(TaskListResources(tasks: [firstTask, archived(latest)], active: nil))
         try await fixture.settled()
     }
@@ -408,8 +411,10 @@ final class TaskArchivingTests: XCTestCase {
         fixture.session.openTaskArchive(taskID: secondTask.id)
         fixture.session.submitTaskArchiving()
         XCTAssertTrue(fixture.session.isBlockingControls)
-        poll.succeed(resources)
+        let backgroundName = TaskItem(id: secondTask.id, name: "Background name", archived: false, latestStart: nil)
+        poll.succeed(TaskListResources(tasks: [firstTask, backgroundName], active: nil))
         let preflight = try await fixture.client.next()
+        XCTAssertEqual(fixture.session.taskArchiving.taskName, secondTask.name)
         fixture.session.sleep()
         preflight.succeed(resources)
         try await fixture.settled()
@@ -420,7 +425,9 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertEqual(awakeRead.operation, .taskList)
         awakeRead.succeed(resources)
         let command = try await fixture.client.next()
-        XCTAssertEqual(command.operation, .archive(task: secondTask.id, at: "2025-01-01T00:00:00.000Z"))
+        XCTAssertEqual(
+            command.operation,
+            .archive(task: secondTask.id, expectedName: secondTask.name, at: "2025-01-01T00:00:00.000Z"))
         command.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: nil))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.taskArchiving.isPresented)
@@ -698,4 +705,43 @@ final class TaskArchivingTests: XCTestCase {
             state.responseMatches(
                 TaskListResources(tasks: [archived(archivedTask, false)], active: activeWorklog), intent: restore))
     }
+    @MainActor
+    func testRejectedArchiveRequiresReviewEvenWhenReconciliationFailsOrStillShowsTheReviewedName() async throws {
+        for reconciliationFails in [false, true] {
+            let fixture = Fixture()
+            defer { fixture.cleanup() }
+            let resources = TaskListResources(tasks: [firstTask], active: nil)
+            try await fixture.start(resources)
+            fixture.session.openTaskArchive(taskID: firstTask.id)
+            fixture.session.submitTaskArchiving()
+            let preflight = try await fixture.client.next()
+            preflight.succeed(resources)
+            let command = try await fixture.client.next()
+            XCTAssertEqual(
+                command.operation,
+                .archive(task: firstTask.id, expectedName: firstTask.name, at: "2025-01-01T00:00:00.000Z"))
+            command.fail(
+                BridgeFailure(message: "Task changed in another client", kind: "conflict", requiresRefresh: true))
+            let reconciliation = try await fixture.client.next()
+            if reconciliationFails {
+                reconciliation.fail(BridgeFailure(message: "Refresh failed", kind: "unavailable"))
+            } else {
+                reconciliation.succeed(resources)
+            }
+            try await fixture.settled()
+            XCTAssertTrue(fixture.session.taskArchiving.requiresReview)
+            XCTAssertFalse(fixture.session.taskArchiving.canSubmit)
+            XCTAssertFalse(fixture.session.taskArchiving.hasUnresolvedIntent)
+            XCTAssertEqual(fixture.session.taskArchiving.latest, reconciliationFails ? nil : firstTask)
+            XCTAssertEqual(
+                fixture.session.taskArchiving.error,
+                "The task changed on another client. Review its current state before continuing.")
+            fixture.session.submitTaskArchiving()
+            XCTAssertEqual(
+                fixture.client.operations.filter {
+                    if case .archive = $0 { return true }; return false
+                }.count, 1)
+        }
+    }
+
 }

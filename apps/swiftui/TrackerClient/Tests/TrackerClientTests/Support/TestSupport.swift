@@ -19,9 +19,9 @@ final class FakeClient: TrackerClient, ReportClient {
         case create(name: String, at: String)
         case inactivePreview(days: Int, at: String)
         case archiveInactive(InactiveTaskPreview)
-        case archive(task: String, at: String)
+        case archive(task: String, expectedName: String, at: String)
         case unarchive(task: String, at: String)
-        case rename(task: String, name: String, at: String)
+        case rename(task: String, expectedName: String, name: String, at: String)
         case correct(expected: WorklogItem, start: String, end: String?, at: String)
         case candidates(source: String, query: String)
         case move(expected: WorklogItem, destination: String)
@@ -61,14 +61,14 @@ final class FakeClient: TrackerClient, ReportClient {
 
         func succeed(_ resources: TaskListResources) {
             switch operation {
-            case .rename(let id, _, _), .archive(let id, _), .unarchive(let id, _):
+            case .rename(let id, _, _, _), .archive(let id, _, _), .unarchive(let id, _):
                 var task =
                     resources.catalog.value.first { $0.id == id }
                     ?? TaskItem(id: "", name: "Missing task", archived: false, latestStart: nil)
                 let desiredName: String?
                 let desiredArchived: Bool?
                 switch operation {
-                case .rename(_, let name, _):
+                case .rename(_, _, let name, _):
                     desiredName = TaskNameEditingPolicy.normalized(name); desiredArchived = nil
                 case .archive: desiredName = nil; desiredArchived = true
                 case .unarchive: desiredName = nil; desiredArchived = false
@@ -305,14 +305,16 @@ final class FakeClient: TrackerClient, ReportClient {
         }
         return value
     }
-    func archiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult {
-        try await taskReply(.archive(task: taskID, at: occurredAt))
+    func archiveTask(taskID: String, expectedName: String, occurredAt: String) async throws -> TaskCommandResult {
+        try await taskReply(.archive(task: taskID, expectedName: expectedName, at: occurredAt))
     }
     func unarchiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult {
         try await taskReply(.unarchive(task: taskID, at: occurredAt))
     }
-    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TaskCommandResult {
-        try await taskReply(.rename(task: taskID, name: name, at: occurredAt))
+    func renameTask(taskID: String, expectedName: String, name: String, occurredAt: String) async throws
+        -> TaskCommandResult
+    {
+        try await taskReply(.rename(task: taskID, expectedName: expectedName, name: name, at: occurredAt))
     }
     func correctWorklog(
         expected: WorklogItem, replacementStart: String, replacementEnd: String?,

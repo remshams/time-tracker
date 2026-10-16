@@ -19,9 +19,10 @@ public protocol TrackerClient: Sendable {
     func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult
     func previewInactiveTasks(inactiveDays: Int, asOf: String) async throws -> InactiveTaskPreview
     func archiveInactiveTasks(preview: InactiveTaskPreview) async throws -> InactiveTaskArchiveResult
-    func archiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult
+    func archiveTask(taskID: String, expectedName: String, occurredAt: String) async throws -> TaskCommandResult
     func unarchiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult
-    func renameTask(taskID: String, name: String, occurredAt: String) async throws -> TaskCommandResult
+    func renameTask(taskID: String, expectedName: String, name: String, occurredAt: String) async throws
+        -> TaskCommandResult
     func correctWorklog(
         expected: WorklogItem, replacementStart: String, replacementEnd: String?,
         occurredAt: String
