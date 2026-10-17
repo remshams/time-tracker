@@ -297,22 +297,6 @@ impl From<WorklogCursor> for WorklogCursorDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct GlobalWorklogCursorDto {
-    pub id: String,
-    pub revision: i64,
-}
-
-impl From<GlobalWorklogCursor> for GlobalWorklogCursorDto {
-    fn from(cursor: GlobalWorklogCursor) -> Self {
-        Self {
-            id: cursor.id.to_string(),
-            revision: cursor.revision,
-        }
-    }
-}
-
 impl From<GlobalWorklogCursor> for WorklogCursorDto {
     fn from(cursor: GlobalWorklogCursor) -> Self {
         Self {
