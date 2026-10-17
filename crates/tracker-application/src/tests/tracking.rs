@@ -10,7 +10,7 @@ fn idle_only_start_uses_the_requested_id_and_canonical_timestamp() {
     let canonical = DateTime::from_timestamp(100, 123_456_000).unwrap();
 
     let outcome = application
-        .start_tracking_if_idle_with_id(alpha.id(), requested_id, occurred_at)
+        .set_active_task_with_id_and_expected_active(alpha.id(), requested_id, None, occurred_at)
         .unwrap();
     assert!(matches!(outcome,
         SetActiveTaskOutcome::Started { worklog }
@@ -39,7 +39,7 @@ fn idle_only_start_generates_a_new_worklog_after_a_pause() {
     let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
     let mut application = TrackerApplication::load(repository.clone()).unwrap();
     let first = match application
-        .start_tracking_if_idle(alpha.id(), at(100))
+        .set_active_task_with_expected_active(alpha.id(), None, at(100))
         .unwrap()
     {
         SetActiveTaskOutcome::Started { worklog } => worklog,
@@ -47,7 +47,7 @@ fn idle_only_start_generates_a_new_worklog_after_a_pause() {
     };
     application.clear_active_task(first.id(), at(120)).unwrap();
     let next = match application
-        .start_tracking_if_idle(alpha.id(), at(200))
+        .set_active_task_with_expected_active(alpha.id(), None, at(200))
         .unwrap()
     {
         SetActiveTaskOutcome::Started { worklog } => worklog,
@@ -71,7 +71,7 @@ fn idle_only_start_adopts_a_competing_timer_without_switching_it() {
 
     for task_id in [alpha.id(), beta.id()] {
         assert_eq!(
-            application.start_tracking_if_idle(task_id, at(100)),
+            application.set_active_task_with_expected_active(task_id, None, at(100)),
             Err(ApplicationError::TrackingStateChanged)
         );
     }
@@ -88,14 +88,14 @@ fn idle_only_start_rejects_missing_and_newly_archived_tasks() {
     let mut application = TrackerApplication::load(repository.clone()).unwrap();
     repository.0.borrow_mut().tasks[0].task.archive(at(50));
     assert_eq!(
-        application.start_tracking_if_idle(alpha.id(), at(100)),
+        application.set_active_task_with_expected_active(alpha.id(), None, at(100)),
         Err(ApplicationError::Domain(TrackingError::TaskArchived {
             id: alpha.id()
         }))
     );
     let missing = TaskId::generate();
     assert_eq!(
-        application.start_tracking_if_idle(missing, at(100)),
+        application.set_active_task_with_expected_active(missing, None, at(100)),
         Err(ApplicationError::Repository(
             RepositoryError::TaskNotFound { id: missing }
         ))
@@ -113,7 +113,7 @@ fn idle_only_insert_conflict_recovers_the_timer_that_won_the_race() {
     let foreign = worklog(99, beta.id(), 90);
     repository.fail_next_write(RepositoryError::ActiveWorklogExists, Some(foreign.clone()));
     assert_eq!(
-        application.start_tracking_if_idle(alpha.id(), at(100)),
+        application.set_active_task_with_expected_active(alpha.id(), None, at(100)),
         Err(ApplicationError::TrackingWrite(
             RepositoryError::ActiveWorklogExists
         ))
@@ -135,7 +135,7 @@ fn idle_only_start_reports_read_and_recovery_failures_without_creating_work() {
     let mut application = TrackerApplication::load(repository.clone()).unwrap();
     repository.0.borrow_mut().fail_reads = true;
     assert!(matches!(
-        application.start_tracking_if_idle(alpha.id(), at(100)),
+        application.set_active_task_with_expected_active(alpha.id(), None, at(100)),
         Err(ApplicationError::Repository(
             RepositoryError::Backend { .. }
         ))
@@ -144,7 +144,7 @@ fn idle_only_start_reports_read_and_recovery_failures_without_creating_work() {
     repository.fail_next_write(RepositoryError::ActiveWorklogExists, None);
     repository.fail_recovery_after_next_write();
     assert!(matches!(
-        application.start_tracking_if_idle(alpha.id(), at(100)),
+        application.set_active_task_with_expected_active(alpha.id(), None, at(100)),
         Err(ApplicationError::TrackingRecovery(
             RepositoryError::Backend { .. }
         ))
