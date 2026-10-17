@@ -3,7 +3,8 @@ import TrackerClient
 
 @MainActor
 struct WorklogMoveDialog: View {
-    @ObservedObject var move: WorklogMoveStore
+    let session: TrackerSession
+    @ObservedObject var move: WorklogMoveModel
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -12,17 +13,18 @@ struct WorklogMoveDialog: View {
             .sheet(
                 isPresented: Binding(
                     get: { isPresentationOwner && move.state.isPresented },
-                    set: { if isPresentationOwner && !$0 { move.cancel() } }
+                    set: { if isPresentationOwner && !$0 { session.cancelWorklogMove() } }
                 )
             ) {
-                WorklogMoveSheet(move: move)
+                WorklogMoveSheet(session: session, move: move)
             }
     }
 }
 
 @MainActor
 private struct WorklogMoveSheet: View {
-    @ObservedObject var move: WorklogMoveStore
+    let session: TrackerSession
+    @ObservedObject var move: WorklogMoveModel
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -48,7 +50,7 @@ private struct WorklogMoveSheet: View {
             TextField(
                 "Search destination tasks",
                 text: Binding(
-                    get: { move.sheetContent.query }, set: { move.setQuery($0) }
+                    get: { move.sheetContent.query }, set: { session.setWorklogMoveQuery($0) }
                 )
             )
             .textFieldStyle(.roundedBorder)
@@ -57,14 +59,14 @@ private struct WorklogMoveSheet: View {
             .accessibilityIdentifier("worklog-move.search")
             .disabled(!state.canEdit)
             .onKeyPress(.upArrow) {
-                move.moveSelection(by: -1)
+                session.moveWorklogDestinationSelection(by: -1)
                 return .handled
             }
             .onKeyPress(.downArrow) {
-                move.moveSelection(by: 1)
+                session.moveWorklogDestinationSelection(by: 1)
                 return .handled
             }
-            .onSubmit { if move.state.canSubmit { move.submit() } }
+            .onSubmit { if move.state.canSubmit { session.submitWorklogMove() } }
 
             VStack(spacing: 8) {
                 DelayedProgressIndicator(
@@ -84,7 +86,7 @@ private struct WorklogMoveSheet: View {
                         List(
                             selection: Binding<String?>(
                                 get: { move.sheetContent.selectedTaskID },
-                                set: { if let taskID = $0 { move.select(taskID: taskID) } }
+                                set: { if let taskID = $0 { session.selectWorklogMoveDestination(taskID: taskID) } }
                             )
                         ) {
                             ForEach(state.candidates) { candidate in
@@ -113,7 +115,7 @@ private struct WorklogMoveSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if state.canEdit, state.candidates.isEmpty {
-                    Button("Reload destinations") { move.retryCandidates() }
+                    Button("Reload destinations") { session.retryWorklogMoveCandidates() }
                 }
             }
 
@@ -122,7 +124,7 @@ private struct WorklogMoveSheet: View {
                     Text("Latest saved times").font(.subheadline.weight(.semibold))
                     Text("Start: \(localTimestamp(latest.start))")
                     Text(latest.end.map { "End: \(localTimestamp($0))" } ?? "Still running")
-                    Button("Review latest entry") { move.reviewLatest() }
+                    Button("Review latest entry") { session.reviewLatestWorklogMove() }
                         .accessibilityIdentifier("worklog-move.review")
                 }
                 .padding(12)
@@ -135,12 +137,12 @@ private struct WorklogMoveSheet: View {
                     isBusy: state.isSubmitting, title: "Moving worklog...",
                     identifier: "worklog-move.submit-progress")
                 Spacer()
-                Button("Cancel") { move.cancel() }
+                Button("Cancel") { session.cancelWorklogMove() }
                     .accessibilityIdentifier("worklog-move.cancel")
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
                 Button(state.error != nil && !state.canEdit && state.canSubmit ? "Retry" : "Move") {
-                    move.submit()
+                    session.submitWorklogMove()
                 }
                 .accessibilityIdentifier("worklog-move.confirm")
                 .keyboardShortcut(.defaultAction)
@@ -157,11 +159,12 @@ private struct WorklogMoveSheet: View {
 
 @MainActor
 struct PendingWorklogMoveButton: View {
-    @ObservedObject var move: WorklogMoveStore
+    let session: TrackerSession
+    @ObservedObject var move: WorklogMoveModel
 
     var body: some View {
         if !move.state.isPresented, let original = move.state.original {
-            Button("Retry worklog move") { move.open(worklogID: original.id) }
+            Button("Retry worklog move") { session.openWorklogMove(worklogID: original.id) }
                 .disabled(!move.canOpen)
         }
     }

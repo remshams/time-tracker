@@ -17,6 +17,7 @@ SOURCES = "Sources/TrackerClient/"
 TESTS = "Tests/TrackerClientTests/"
 SESSION = "App/TrackerSession.swift"
 OBSERVER = "App/TrackerPresentationObserver.swift"
+DIALOGS = "App/TrackerDialogPresentation.swift"
 MODELS = "Contracts/Models.swift"
 DEPENDENCIES = "Contracts/Dependencies.swift"
 TRACKING = "Features/Tracking/TrackingState.swift"
@@ -45,6 +46,9 @@ TEST_PRODUCTION = {
     "App/BackgroundRefreshInteractionTests.swift": [
         SESSION, "Features/Connection/ConnectionState.swift", TRACKING, CATALOG, HISTORY, TOTALS,
         "Features/TrackingAutomation/TrackingAutomationState.swift",
+    ],
+    "App/DialogPresentationTests.swift": [
+        SESSION, DIALOGS, CREATION, RENAME, ARCHIVING, BULK_ARCHIVING, CORRECTION, MOVE
     ],
     "App/HistoryPresentationTests.swift": [SESSION, OBSERVER, HISTORY, CATALOG],
     "App/LifecycleTests.swift": [

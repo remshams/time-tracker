@@ -53,6 +53,7 @@ final class BulkTaskArchivingTests: XCTestCase {
             XCTAssertTrue(fixture.session.isStale, failure.message)
             XCTAssertEqual(fixture.session.connectionMessage, failure.message)
             XCTAssertEqual(fixture.session.bulkTaskArchiving.error, failure.message)
+            XCTAssertEqual(fixture.session.bulkArchivingModel.state, fixture.session.bulkTaskArchiving)
         }
     }
 
@@ -196,6 +197,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.session.bulkTaskArchiving.canSubmit)
         XCTAssertFalse(fixture.session.bulkTaskArchiving.isLoading)
         XCTAssertEqual(fixture.session.bulkTaskArchiving.error, "Preview unavailable")
+        XCTAssertEqual(fixture.session.bulkArchivingModel.state, fixture.session.bulkTaskArchiving)
         let requests = fixture.client.operations.count
         fixture.session.submitBulkTaskArchiving()
         XCTAssertEqual(fixture.client.operations.count, requests)
@@ -277,6 +279,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         request.fail(BridgeFailure(message: "Offline", kind: "unavailable"))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.bulkTaskArchiving.error, "Offline")
+        XCTAssertEqual(fixture.session.bulkArchivingModel.state, fixture.session.bulkTaskArchiving)
         XCTAssertFalse(fixture.session.bulkTaskArchiving.canSubmit)
     }
 
@@ -408,24 +411,21 @@ final class BulkTaskArchivingTests: XCTestCase {
     }
 
     @MainActor
-    func testObserverRetainsSheetContentWhileDismissalAnimates() async throws {
+    func testModelRetainsSheetContentWhileDismissalAnimates() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
         let observer = TrackerPresentationObserver(session: fixture.session)
-        var updates = 0
-        observer.onBulkTaskArchivingChange = { updates += 1 }
         fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.session.openBulkTaskArchiving()
         _ = try answerPreview(try await fixture.client.next())
         try await fixture.settled()
         observer.update(from: fixture.session)
         fixture.session.onChange = { observer.update(from: fixture.session) }
-        let content = observer.bulkTaskArchivingSheetContent
+        let content = fixture.session.bulkArchivingModel.sheetContent
         fixture.session.cancelBulkTaskArchiving()
         XCTAssertFalse(fixture.session.bulkTaskArchiving.isPresented)
-        XCTAssertEqual(observer.bulkTaskArchivingSheetContent, content)
-        XCTAssertGreaterThan(updates, 1)
+        XCTAssertEqual(fixture.session.bulkArchivingModel.sheetContent, content)
     }
 
     @MainActor

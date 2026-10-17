@@ -1,4 +1,5 @@
 import SwiftUI
+import TrackerClient
 #if DEBUG
     import AppKit
 #endif
@@ -155,14 +156,16 @@ struct TrackerWindow: View {
 
 @MainActor
 private struct TrackerSidebarToolbar: View {
+    private let session: TrackerSession
     let preferWindow: () -> Void
-    @ObservedObject private var creation: TaskCreationStore
-    @ObservedObject private var rename: TaskRenameStore
-    @ObservedObject private var bulkArchiving: BulkTaskArchivingStore
+    @ObservedObject private var creation: TaskCreationModel
+    @ObservedObject private var rename: TaskRenameModel
+    @ObservedObject private var bulkArchiving: BulkTaskArchivingModel
     @Environment(\.openWindow) private var openWindow
 
     init(store: TrackerStore, preferWindow: @escaping () -> Void) {
         self.preferWindow = preferWindow
+        session = store.session
         creation = store.creation
         rename = store.rename
         bulkArchiving = store.bulkArchiving
@@ -183,7 +186,7 @@ private struct TrackerSidebarToolbar: View {
         Button {
             guard canCreate else { return }
             preferWindow()
-            creation.open()
+            session.openTaskCreation()
         } label: {
             Label("New task", systemImage: "plus")
         }
@@ -193,7 +196,7 @@ private struct TrackerSidebarToolbar: View {
         Button {
             guard bulkArchiving.canOpen else { return }
             preferWindow()
-            bulkArchiving.open()
+            session.openBulkTaskArchiving()
         } label: {
             Label("Archive inactive tasks", systemImage: "archivebox")
         }
@@ -205,15 +208,17 @@ private struct TrackerSidebarToolbar: View {
 
 @MainActor
 private struct TrackerTaskToolbar: View {
+    private let session: TrackerSession
     let preferWindow: () -> Void
     @ObservedObject var store: TrackerStore
     @ObservedObject private var activity: TrackerActivityStore
-    @ObservedObject private var creation: TaskCreationStore
-    @ObservedObject private var rename: TaskRenameStore
-    @ObservedObject private var archiving: TaskArchivingStore
+    @ObservedObject private var creation: TaskCreationModel
+    @ObservedObject private var rename: TaskRenameModel
+    @ObservedObject private var archiving: TaskArchivingModel
 
     init(store: TrackerStore, preferWindow: @escaping () -> Void) {
         self.preferWindow = preferWindow
+        session = store.session
         self.store = store
         activity = store.activity
         creation = store.creation
@@ -226,12 +231,12 @@ private struct TrackerTaskToolbar: View {
     }
 
     var body: some View {
-        PendingTaskArchivingButton(archiving: archiving)
+        PendingTaskArchivingButton(session: session, archiving: archiving)
         if let task = store.selectedTask {
             Button {
                 guard rename.canOpen, !hasTaskEditor else { return }
                 preferWindow()
-                rename.open(taskID: task.id)
+                session.openTaskRename(taskID: task.id)
             } label: {
                 Label("Edit task name", systemImage: "pencil")
             }
@@ -240,15 +245,15 @@ private struct TrackerTaskToolbar: View {
 
             let canChangeArchive =
                 task.archived
-                ? archiving.canUnarchive(taskID: task.id)
-                : archiving.canArchive(taskID: task.id)
+                ? session.canUnarchiveTask(taskID: task.id)
+                : session.canArchiveTask(taskID: task.id)
             Button {
                 guard canChangeArchive else { return }
                 preferWindow()
                 if task.archived {
-                    archiving.unarchive(taskID: task.id)
+                    session.unarchiveTask(taskID: task.id)
                 } else {
-                    archiving.openArchive(taskID: task.id)
+                    session.openTaskArchive(taskID: task.id)
                 }
             } label: {
                 Label(

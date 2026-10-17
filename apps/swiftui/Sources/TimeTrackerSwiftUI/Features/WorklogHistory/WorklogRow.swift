@@ -2,11 +2,12 @@ import SwiftUI
 import TrackerClient
 
 struct WorklogRow: View {
+    let session: TrackerSession
     let worklog: WorklogItem
     let active: WorklogItem?
     let timer: TrackerTimerStore
-    let correction: WorklogCorrectionStore
-    let move: WorklogMoveStore
+    let correction: WorklogCorrectionModel
+    let move: WorklogMoveModel
 
     private var duration: TimeInterval {
         guard let start = timestamp(worklog.start), let end = timestamp(worklog.end) else { return 0 }
@@ -35,7 +36,7 @@ struct WorklogRow: View {
             .foregroundStyle(.primary)
             .monospacedDigit()
             .fixedSize()
-            WorklogActionsMenu(correction: correction, move: move, worklogID: worklog.id)
+            WorklogActionsMenu(session: session, correction: correction, move: move, worklogID: worklog.id)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("worklog-history.row.\(worklog.id)")
@@ -46,20 +47,21 @@ struct WorklogRow: View {
                 .stroke(.quaternary, lineWidth: 1)
         }
         .contextMenu {
-            WorklogContextMenu(correction: correction, move: move, worklogID: worklog.id)
+            WorklogContextMenu(session: session, correction: correction, move: move, worklogID: worklog.id)
         }
     }
 }
 
 @MainActor
 private struct WorklogActionsMenu: View {
-    @ObservedObject var correction: WorklogCorrectionStore
-    @ObservedObject var move: WorklogMoveStore
+    let session: TrackerSession
+    @ObservedObject var correction: WorklogCorrectionModel
+    @ObservedObject var move: WorklogMoveModel
     let worklogID: String
 
     var body: some View {
         Menu {
-            WorklogContextMenu(correction: correction, move: move, worklogID: worklogID)
+            WorklogContextMenu(session: session, correction: correction, move: move, worklogID: worklogID)
         } label: {
             Label("Worklog actions", systemImage: "ellipsis.circle")
                 .labelStyle(.iconOnly)
@@ -75,14 +77,15 @@ private struct WorklogActionsMenu: View {
 
 @MainActor
 private struct WorklogContextMenu: View {
-    @ObservedObject var correction: WorklogCorrectionStore
-    @ObservedObject var move: WorklogMoveStore
+    let session: TrackerSession
+    @ObservedObject var correction: WorklogCorrectionModel
+    @ObservedObject var move: WorklogMoveModel
     let worklogID: String
 
     var body: some View {
-        Button("Edit times...") { correction.open(worklogID: worklogID) }
+        Button("Edit times...") { session.openWorklogCorrection(worklogID: worklogID) }
             .disabled(!correction.canOpen || correction.state.isPresented)
-        Button("Move to task...") { move.open(worklogID: worklogID) }
+        Button("Move to task...") { session.openWorklogMove(worklogID: worklogID) }
             .disabled(!move.canOpen || move.state.isPresented)
     }
 }

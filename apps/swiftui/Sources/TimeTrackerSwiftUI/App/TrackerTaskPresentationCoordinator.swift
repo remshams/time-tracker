@@ -52,10 +52,12 @@ final class TrackerTaskPresentationCoordinator {
         update()
     }
 
+    // Publishers emit before model snapshots change; routing reads the authoritative session.
     private var hasPresentation: Bool {
-        store.creation.state.isPresented || store.rename.state.isPresented || store.correction.state.isPresented
-            || store.move.state.isPresented || store.archiving.state.isPresented
-            || store.bulkArchiving.state.isPresented || store.trackingError != nil
+        store.session.taskCreation.isPresented || store.session.taskRename.isPresented
+            || store.session.worklogCorrection.isPresented
+            || store.session.worklogMove.isPresented || store.session.taskArchiving.isPresented
+            || store.session.bulkTaskArchiving.isPresented || store.trackingError != nil
     }
 
     private func update() {
@@ -68,9 +70,10 @@ final class TrackerTaskPresentationCoordinator {
         isChoosingOwner = true
         defer { isChoosingOwner = false }
         let needsEditor =
-            store.creation.state.isPresented || store.rename.state.isPresented || store.correction.state.isPresented
-            || store.move.state.isPresented || store.archiving.state.isPresented
-            || store.bulkArchiving.state.isPresented
+            store.session.taskCreation.isPresented || store.session.taskRename.isPresented
+            || store.session.worklogCorrection.isPresented
+            || store.session.worklogMove.isPresented || store.session.taskArchiving.isPresented
+            || store.session.bulkTaskArchiving.isPresented
         setOwner(presentingWindow(needsEditor))
     }
 
@@ -105,12 +108,14 @@ struct TrackerDetailPresentation: View {
     var body: some View {
         TaskDetails(store: store)
             .background {
-                TaskCreationDialog(creation: store.creation, isPresentationOwner: isOwner)
-                TaskRenameDialog(rename: store.rename, isPresentationOwner: isOwner)
-                WorklogCorrectionDialog(correction: store.correction, isPresentationOwner: isOwner)
-                WorklogMoveDialog(move: store.move, isPresentationOwner: isOwner)
-                BulkTaskArchivingDialog(archiving: store.bulkArchiving, isPresentationOwner: isOwner)
-                TaskArchivingDialog(archiving: store.archiving, isPresentationOwner: isOwner)
+                TaskCreationDialog(session: store.session, creation: store.creation, isPresentationOwner: isOwner)
+                TaskRenameDialog(session: store.session, rename: store.rename, isPresentationOwner: isOwner)
+                WorklogCorrectionDialog(
+                    session: store.session, correction: store.correction, isPresentationOwner: isOwner)
+                WorklogMoveDialog(session: store.session, move: store.move, isPresentationOwner: isOwner)
+                BulkTaskArchivingDialog(
+                    session: store.session, archiving: store.bulkArchiving, isPresentationOwner: isOwner)
+                TaskArchivingDialog(session: store.session, archiving: store.archiving, isPresentationOwner: isOwner)
             }
             .alert("Could not change tracking", isPresented: trackingFailurePresented) {
                 Button("OK", role: .cancel) { store.dismissTrackingError() }

@@ -1,10 +1,11 @@
 import SwiftUI
+import TrackerClient
 
 @MainActor
 struct TrackerApplicationMenus: Commands {
     let runtime: TrackerAppRuntime
-    @ObservedObject private var creation: TaskCreationStore
-    @ObservedObject private var rename: TaskRenameStore
+    @ObservedObject private var creation: TaskCreationModel
+    @ObservedObject private var rename: TaskRenameModel
     @Environment(\.openWindow) private var openWindow
 
     init(runtime: TrackerAppRuntime) {
@@ -23,7 +24,7 @@ struct TrackerApplicationMenus: Commands {
                 guard canCreateTask else { return }
                 installSceneOpener()
                 runtime.showTracker()
-                creation.open()
+                runtime.store.session.openTaskCreation()
             }
             .keyboardShortcut("n")
             .disabled(!canCreateTask)

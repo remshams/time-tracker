@@ -3,7 +3,8 @@ import TrackerClient
 
 @MainActor
 struct TaskArchivingDialog: View {
-    @ObservedObject var archiving: TaskArchivingStore
+    let session: TrackerSession
+    @ObservedObject var archiving: TaskArchivingModel
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -12,17 +13,18 @@ struct TaskArchivingDialog: View {
             .sheet(
                 isPresented: Binding(
                     get: { isPresentationOwner && archiving.state.isPresented },
-                    set: { if isPresentationOwner && !$0 { archiving.cancel() } }
+                    set: { if isPresentationOwner && !$0 { session.cancelTaskArchiving() } }
                 )
             ) {
-                TaskArchivingSheet(archiving: archiving)
+                TaskArchivingSheet(session: session, archiving: archiving)
             }
     }
 }
 
 @MainActor
 private struct TaskArchivingSheet: View {
-    @ObservedObject var archiving: TaskArchivingStore
+    let session: TrackerSession
+    @ObservedObject var archiving: TaskArchivingModel
 
     var body: some View {
         let state = archiving.sheetContent
@@ -56,7 +58,7 @@ private struct TaskArchivingSheet: View {
                     Text(latest.name).textSelection(.enabled)
                     Text(latest.archived ? "Archived" : "Active")
                         .foregroundStyle(.secondary)
-                    Button("Review latest task") { archiving.reviewLatest() }
+                    Button("Review latest task") { session.reviewLatestTaskArchiving() }
                         .accessibilityIdentifier("task-archive.review")
                         .disabled(state.isSubmitting)
                 }
@@ -70,12 +72,12 @@ private struct TaskArchivingSheet: View {
                     isBusy: state.isSubmitting, title: isUnarchiving ? "Unarchiving task..." : "Archiving task...",
                     identifier: "task-archive.progress")
                 Spacer()
-                Button("Cancel") { archiving.cancel() }
+                Button("Cancel") { session.cancelTaskArchiving() }
                     .accessibilityIdentifier("task-archive.cancel")
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
                 Button(state.hasUnresolvedIntent && state.error != nil ? "Retry" : actionTitle) {
-                    archiving.submit()
+                    session.submitTaskArchiving()
                 }
                 .accessibilityIdentifier("task-archive.confirm")
                 .keyboardShortcut(.defaultAction)
@@ -91,11 +93,12 @@ private struct TaskArchivingSheet: View {
 
 @MainActor
 struct PendingTaskArchivingButton: View {
-    @ObservedObject var archiving: TaskArchivingStore
+    let session: TrackerSession
+    @ObservedObject var archiving: TaskArchivingModel
 
     var body: some View {
         if archiving.state.hasPendingAction, archiving.state.error != nil {
-            Button("Review task action") { archiving.reopen() }
+            Button("Review task action") { session.reopenTaskArchiving() }
                 .disabled(archiving.state.isSubmitting)
         }
     }
