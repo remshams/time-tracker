@@ -111,7 +111,6 @@ private struct WorklogDeletionSummary: View {
             Text(clockDuration(duration))
                 .font(.system(.title3, design: .monospaced).weight(.medium))
                 .monospacedDigit()
-                .strikethrough(color: .red.opacity(0.6))
                 .accessibilityLabel("Duration \(clockDuration(duration))")
         }
         .accessibilityElement(children: .combine)
