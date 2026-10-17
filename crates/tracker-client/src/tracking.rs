@@ -48,18 +48,13 @@ impl TrackerBackend {
         }
     }
 
+    /// Starts tracking only if no worklog is active, for local and remote backends alike.
     pub async fn start_tracking_if_idle(
         &mut self,
         id: TaskId,
         at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
-        match self {
-            Self::Local(application) => application.start_tracking_if_idle(id, at),
-            Self::Remote(application) => {
-                application
-                    .set_active_task_with_expected_active(id, None, at)
-                    .await
-            }
-        }
+        self.set_active_task_with_expected_active(id, None, at)
+            .await
     }
 }
