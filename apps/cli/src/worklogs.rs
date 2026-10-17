@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use tracker_application::timestamps::{canonical_timestamp as canonical, canonical_worklog_times};
 use tracker_application::{GlobalWorklogCursor, WorklogCursor};
 use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
-use tracker_protocol::{GlobalWorklogCursorDto, WorklogCursorDto, WorklogDto};
+use tracker_protocol::{WorklogCursorDto, WorklogDto};
 
 use crate::args::{ExpectedTimes, Worklogs};
 use crate::backend::Backend;
@@ -19,7 +19,7 @@ pub(crate) enum CursorToken {
     },
     All {
         backend: String,
-        cursor: GlobalWorklogCursorDto,
+        cursor: WorklogCursorDto,
     },
 }
 
@@ -127,30 +127,25 @@ fn decode_cursor(
     task: Option<TaskId>,
     identity: &str,
 ) -> Result<DecodedCursor, CliError> {
-    match token {
-        CursorToken::Task { backend, cursor } => {
-            check_backend(backend, identity)?;
-            if task.is_none() {
-                return Err(CliError::input("task cursor requires --task"));
-            }
-            validate_revision(cursor.revision)?;
-            Ok(DecodedCursor::Task(WorklogCursor {
-                id: cursor.id.parse().map_err(CliError::input)?,
-                revision: cursor.revision,
-            }))
-        }
-        CursorToken::All { backend, cursor } => {
-            check_backend(backend, identity)?;
-            if task.is_some() {
-                return Err(CliError::input("global cursor cannot be used with --task"));
-            }
-            validate_revision(cursor.revision)?;
-            Ok(DecodedCursor::All(GlobalWorklogCursor {
-                id: cursor.id.parse().map_err(CliError::input)?,
-                revision: cursor.revision,
-            }))
-        }
+    let (backend, cursor, task_scoped) = match token {
+        CursorToken::Task { backend, cursor } => (backend, cursor, true),
+        CursorToken::All { backend, cursor } => (backend, cursor, false),
+    };
+    check_backend(backend, identity)?;
+    if task_scoped && task.is_none() {
+        return Err(CliError::input("task cursor requires --task"));
     }
+    if !task_scoped && task.is_some() {
+        return Err(CliError::input("global cursor cannot be used with --task"));
+    }
+    validate_revision(cursor.revision)?;
+    let id = cursor.id.parse().map_err(CliError::input)?;
+    let revision = cursor.revision;
+    Ok(if task_scoped {
+        DecodedCursor::Task(WorklogCursor { id, revision })
+    } else {
+        DecodedCursor::All(GlobalWorklogCursor { id, revision })
+    })
 }
 
 fn validate_revision(revision: i64) -> Result<(), CliError> {
