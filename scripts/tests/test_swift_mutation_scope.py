@@ -313,6 +313,36 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.assertIn(scope.SOURCES + scope.PRESENTATION, result["files"])
         self.assertTrue(any("Reviewed replacement" in reason for reason in result["reasons"]))
 
+    def test_reviewed_replacement_reported_as_a_rename_selects_the_successor_scope(self):
+        retired_suite = scope.TESTS + "App/PresentationObserverTests.swift"
+        successor_suite = scope.TESTS + "App/PresentationTests.swift"
+        body = "".join(f"func testPresentation{index}() {{ XCTAssertTrue(true) }}\n" for index in range(20))
+        self.write(scope.PACKAGE + retired_suite, body)
+        self.base = self.commit("Add the retired suite")
+        self.git("mv", scope.PACKAGE + retired_suite, scope.PACKAGE + successor_suite)
+        self.write(scope.PACKAGE + successor_suite, body + "func testSuccessor() {}\n")
+        self.commit("Rename the retired suite to its successor")
+
+        result = self.select()
+
+        self.assertTrue(result["changes"][0]["status"].startswith("R"), result["changes"])
+        self.assertEqual(result["status"], "focused", result["review_reasons"])
+        self.assertEqual(
+            result["files"], sorted(scope.SOURCES + source for source in scope.TEST_PRODUCTION[
+                successor_suite.removeprefix(scope.TESTS)]))
+        self.assertTrue(any("Reviewed replacement" in reason for reason in result["reasons"]))
+
+    def test_unreviewed_test_rename_still_requires_review(self):
+        retired_suite = scope.TESTS + "App/RetiredTests.swift"
+        successor_suite = scope.TESTS + "App/PresentationTests.swift"
+        body = "".join(f"func testPresentation{index}() {{ XCTAssertTrue(true) }}\n" for index in range(20))
+        self.write(scope.PACKAGE + retired_suite, body)
+        self.base = self.commit("Add an unmapped suite")
+        self.git("mv", scope.PACKAGE + retired_suite, scope.PACKAGE + successor_suite)
+        self.commit("Rename an unmapped suite")
+
+        self.assertEqual(self.select()["status"], "review-required")
+
     def test_reviewed_replacement_requires_its_successor_in_the_same_diff(self):
         retired_source = next(iter(scope.REVIEWED_REPLACEMENTS))
         self.write(scope.PACKAGE + retired_source, "final class Retired {}\n")

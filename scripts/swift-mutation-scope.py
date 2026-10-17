@@ -323,7 +323,10 @@ def select_scope(root: Path, base: str, head: str) -> dict:
             reasons.append(f"Reviewed replacement by {PACKAGE + successor}: {entry['path']}")
             continue
         paths = [entry["path"]]
-        if "old_path" in entry:
+        replaced = REVIEWED_REPLACEMENTS.get(entry.get("old_path", "").removeprefix(PACKAGE))
+        if replaced and entry["path"] == PACKAGE + replaced:
+            reasons.append(f"Reviewed replacement by {entry['path']}: {entry['old_path']}")
+        elif "old_path" in entry:
             paths.append(entry["old_path"])
         for path in dict.fromkeys(paths):
             relative = path.removeprefix(PACKAGE)
