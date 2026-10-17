@@ -331,10 +331,12 @@ async fn serialized_preview_confirms_the_chosen_period_and_returns_the_persisted
     assert_eq!(preview.count(), 2);
     let mut expected = vec![first.id().to_string(), second.id().to_string()];
     expected.sort();
-    let mut candidate_ids = preview.candidate_ids().to_vec();
+    let token = serde_json::to_value(&preview).unwrap();
+    let mut candidate_ids: Vec<String> =
+        serde_json::from_value(token["candidate_task_ids"].clone()).unwrap();
     candidate_ids.sort();
     assert_eq!(candidate_ids, expected);
-    assert!(preview.has_confirmation_guard());
+    assert!(!token["revision"].as_str().unwrap().is_empty());
     let serialized = serde_json::to_string(&preview).unwrap();
     let restored = serde_json::from_str(&serialized).unwrap();
     let count = client

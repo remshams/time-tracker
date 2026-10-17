@@ -45,10 +45,29 @@ pub enum RemoteFailureKind {
 }
 
 /// An inactive-task preview with its confirmation guard retained by the adapter.
+///
+/// Deserializing a saved token runs the same checks as decoding a server preview. A token
+/// with an empty guard, an invalid period, a non-canonical cutoff, or candidates that disagree
+/// with the count fails to load. Serialization writes the protocol DTO unchanged.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(transparent)]
+#[serde(try_from = "InactiveTaskPreviewDto", into = "InactiveTaskPreviewDto")]
 pub struct InactiveTaskPreview {
     dto: InactiveTaskPreviewDto,
+}
+
+impl TryFrom<InactiveTaskPreviewDto> for InactiveTaskPreview {
+    type Error = &'static str;
+
+    fn try_from(dto: InactiveTaskPreviewDto) -> Result<Self, Self::Error> {
+        validate_inactive_preview(&dto).map_err(|_| "invalid inactive task preview")?;
+        Ok(Self { dto })
+    }
+}
+
+impl From<InactiveTaskPreview> for InactiveTaskPreviewDto {
+    fn from(preview: InactiveTaskPreview) -> Self {
+        preview.dto
+    }
 }
 
 impl InactiveTaskPreview {
