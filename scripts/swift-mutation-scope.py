@@ -39,95 +39,120 @@ CORRECTION = "Features/WorklogCorrection/WorklogCorrectionState.swift"
 MOVE = "Features/WorklogMove/WorklogMoveState.swift"
 DELETION = "Features/WorklogDeletion/WorklogDeletionState.swift"
 INDICATOR = "Features/TaskIndicators/TaskIndicator.swift"
+REGISTRY = "App/EditorRegistry.swift"
+INTERFACES = "App/WorkflowInterfaces.swift"
+GUARDED_WRITE = "Features/WorklogEditing/GuardedWorklogWrite.swift"
+AUTOMATION_WORKFLOW = "Features/TrackingAutomation/TrackingAutomationWorkflow.swift"
+CREATION_WORKFLOW = "Features/TaskCreation/TaskCreationWorkflow.swift"
+RENAME_WORKFLOW = "Features/TaskRename/TaskRenameWorkflow.swift"
+ARCHIVING_WORKFLOW = "Features/TaskArchiving/TaskArchivingWorkflow.swift"
+BULK_ARCHIVING_WORKFLOW = "Features/BulkTaskArchiving/BulkTaskArchivingWorkflow.swift"
+CORRECTION_WORKFLOW = "Features/WorklogCorrection/WorklogCorrectionWorkflow.swift"
+MOVE_WORKFLOW = "Features/WorklogMove/WorklogMoveWorkflow.swift"
+DELETION_WORKFLOW = "Features/WorklogDeletion/WorklogDeletionWorkflow.swift"
 
 # Map each suite's assertions to complete files, including its session coordinator.
+# Session suites also exercise the editor registry, and a feature's workflow
+# drives its state, so a suite that asserts a feature state also lists its workflow.
 # Update this map when a suite gains assertions about another production component.
 TEST_PRODUCTION = {
     "App/BackgroundRefreshInteractionTests.swift": [
         SESSION, "Features/Connection/ConnectionState.swift", TRACKING, CATALOG, HISTORY, TOTALS,
-        "Features/TrackingAutomation/TrackingAutomationState.swift",
+        "Features/TrackingAutomation/TrackingAutomationState.swift", REGISTRY, AUTOMATION_WORKFLOW,
     ],
-    "App/HistoryPresentationTests.swift": [SESSION, OBSERVER, HISTORY, CATALOG],
+    "App/HistoryPresentationTests.swift": [SESSION, OBSERVER, HISTORY, CATALOG, REGISTRY],
     "App/LifecycleTests.swift": [
         SESSION, "Features/Connection/ConnectionState.swift", TRACKING, CATALOG, HISTORY, TOTALS,
-        "Features/TrackingAutomation/TrackingAutomationState.swift", LAST_TASK,
+        "Features/TrackingAutomation/TrackingAutomationState.swift", LAST_TASK, REGISTRY, AUTOMATION_WORKFLOW,
     ],
-    "App/ObserverTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION],
+    "App/ObserverTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION, REGISTRY],
     "App/PresentationObserverTests.swift": [
-        SESSION, OBSERVER, TRACKING, CATALOG, TOTALS, CREATION, AUTOMATION, CONNECTION,
+        SESSION, OBSERVER, TRACKING, CATALOG, TOTALS, CREATION, AUTOMATION, CONNECTION, REGISTRY, AUTOMATION_WORKFLOW,
+        CREATION_WORKFLOW,
     ],
-    "App/RefreshPresentationTests.swift": [SESSION, OBSERVER, TRACKING, CATALOG, TOTALS, MODELS, CONNECTION],
+    "App/RefreshPresentationTests.swift": [SESSION, OBSERVER, TRACKING, CATALOG, TOTALS, MODELS, CONNECTION, REGISTRY],
     "Contracts/ModelsTests.swift": [MODELS, DEPENDENCIES, TRACKING],
     "Features/BulkTaskArchiving/BulkTaskArchivingTests.swift": [
-        SESSION, OBSERVER, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION, CREATION, RENAME,
-        ARCHIVING, CORRECTION, MOVE,
+        SESSION, OBSERVER, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION, CREATION, RENAME, ARCHIVING, CORRECTION,
+        MOVE, REGISTRY, CREATION_WORKFLOW, RENAME_WORKFLOW, ARCHIVING_WORKFLOW, BULK_ARCHIVING_WORKFLOW,
+        CORRECTION_WORKFLOW, GUARDED_WRITE, INTERFACES, MOVE_WORKFLOW,
     ],
-    "Features/Connection/ConnectionTests.swift": [SESSION, CONNECTION, CATALOG, TRACKING, HISTORY, ARCHIVING],
+    "Features/Connection/ConnectionTests.swift": [
+        SESSION, CONNECTION, CATALOG, TRACKING, HISTORY, ARCHIVING, REGISTRY, ARCHIVING_WORKFLOW,
+    ],
     "Features/DailyTotals/DailyTotalsTests.swift": [
-        SESSION, OBSERVER, TOTALS, TRACKING, MODELS, CONNECTION, CATALOG, HISTORY,
+        SESSION, OBSERVER, TOTALS, TRACKING, MODELS, CONNECTION, CATALOG, HISTORY, REGISTRY,
     ],
     "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
         "Features/MenuBar/MenuKeyboardShortcuts.swift", DEPENDENCIES,
     ],
     "Features/MenuBar/MenuLiveValuesTests.swift": [
         SESSION, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CONNECTION, CATALOG, LAST_TASK, INDICATOR,
+        REGISTRY,
     ],
     "Features/MenuBar/MenuPresentationTests.swift": [
         SESSION, OBSERVER, MENU_OBSERVER, MENU, MENU_ORDER, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION,
-        LAST_TASK, INDICATOR,
+        LAST_TASK, INDICATOR, REGISTRY,
     ],
     "Features/MenuBar/MenuTaskOrderTests.swift": [
-        SESSION, MENU_ORDER, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION,
-        LAST_TASK, INDICATOR,
+        SESSION, MENU_ORDER, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION, LAST_TASK,
+        INDICATOR, REGISTRY,
     ],
     "Features/MenuBar/MenuTaskClipboardTests.swift": [
         SESSION, "Features/MenuBar/MenuTaskClipboard.swift", "Features/MenuBar/MenuKeyboardShortcuts.swift",
-        MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION, LAST_TASK, INDICATOR,
+        MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION, LAST_TASK, INDICATOR, REGISTRY,
     ],
     "Features/MenuBar/MenuTaskTrackingActionTests.swift": [
         SESSION, "Features/MenuBar/MenuTaskTrackingAction.swift", MENU_OBSERVER, MENU, MENU_VALUES, TRACKING,
-        "Features/MenuBar/MenuTaskClipboard.swift", "Features/MenuBar/MenuKeyboardShortcuts.swift",
-        CATALOG, CONNECTION, LAST_TASK, INDICATOR,
+        "Features/MenuBar/MenuTaskClipboard.swift", "Features/MenuBar/MenuKeyboardShortcuts.swift", CATALOG,
+        CONNECTION, LAST_TASK, INDICATOR, REGISTRY,
     ],
     "Features/MenuBar/StatusItemTests.swift": [
-        SESSION, LAST_TASK, "Features/TaskIndicators/TaskIndicator.swift", MENU_OBSERVER, MENU, MENU_VALUES,
-        TRACKING, CATALOG, CONNECTION, AUTOMATION,
+        SESSION, LAST_TASK, "Features/TaskIndicators/TaskIndicator.swift", MENU_OBSERVER, MENU, MENU_VALUES, TRACKING,
+        CATALOG, CONNECTION, AUTOMATION, REGISTRY, AUTOMATION_WORKFLOW,
     ],
     "Features/ProgressPresentation/DelayedProgressPresentationTests.swift": [
         "Features/ProgressPresentation/DelayedProgressPresentation.swift",
     ],
     "Features/TaskArchiving/TaskArchivingTests.swift": [
         SESSION, OBSERVER, ARCHIVING, CATALOG, TRACKING, HISTORY, CREATION, RENAME, CORRECTION, MOVE, CONNECTION,
+        REGISTRY, CREATION_WORKFLOW, RENAME_WORKFLOW, ARCHIVING_WORKFLOW, CORRECTION_WORKFLOW, GUARDED_WRITE,
+        INTERFACES, MOVE_WORKFLOW,
     ],
     "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG],
     "Features/TaskCreation/TaskCreationTests.swift": [
         SESSION, OBSERVER, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION, AUTOMATION,
-        "Features/TaskEditing/TaskNameEditingPolicy.swift",
+        "Features/TaskEditing/TaskNameEditingPolicy.swift", REGISTRY, AUTOMATION_WORKFLOW, CREATION_WORKFLOW,
     ],
     "Features/TaskEditing/TaskNameEditingPolicyTests.swift": [
-        SESSION, "Features/TaskEditing/TaskNameEditingPolicy.swift", CREATION, RENAME, CATALOG,
+        SESSION, "Features/TaskEditing/TaskNameEditingPolicy.swift", CREATION, RENAME, CATALOG, REGISTRY,
+        CREATION_WORKFLOW, RENAME_WORKFLOW,
     ],
     "Features/TaskRename/TaskRenameTests.swift": [
         SESSION, OBSERVER, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION, CONNECTION,
-        "Features/TaskEditing/TaskNameEditingPolicy.swift",
+        "Features/TaskEditing/TaskNameEditingPolicy.swift", REGISTRY, AUTOMATION_WORKFLOW, CREATION_WORKFLOW,
+        RENAME_WORKFLOW,
     ],
     "Features/Tracking/TrackingStateTests.swift": [TRACKING],
-    "Features/Tracking/TrackingTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, LAST_TASK, CONNECTION],
+    "Features/Tracking/TrackingTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, LAST_TASK, CONNECTION, REGISTRY],
     "Features/TrackingAutomation/TrackingAutomationTests.swift": [
-        SESSION, AUTOMATION, TRACKING, CATALOG, CONNECTION, HISTORY,
+        SESSION, AUTOMATION, TRACKING, CATALOG, CONNECTION, HISTORY, REGISTRY, AUTOMATION_WORKFLOW,
     ],
     "Features/WindowRouting/WindowRoutingTests.swift": ["Features/WindowRouting/TrackerWindowRoutingState.swift"],
     "Features/WorklogCorrection/WorklogCorrectionTests.swift": [
-        SESSION, OBSERVER, CORRECTION, TIMESTAMP, TRACKING, HISTORY, CATALOG, CONNECTION, CREATION, RENAME,
+        SESSION, OBSERVER, CORRECTION, TIMESTAMP, TRACKING, HISTORY, CATALOG, CONNECTION, CREATION, RENAME, REGISTRY,
+        CREATION_WORKFLOW, RENAME_WORKFLOW, CORRECTION_WORKFLOW, GUARDED_WRITE, INTERFACES,
     ],
-    "Features/WorklogHistory/HistoryTests.swift": [SESSION, HISTORY, TRACKING, CATALOG, CONNECTION],
+    "Features/WorklogHistory/HistoryTests.swift": [SESSION, HISTORY, TRACKING, CATALOG, CONNECTION, REGISTRY],
     "Features/WorklogHistory/WorklogHistoryStateTests.swift": [HISTORY],
     "Features/WorklogMove/WorklogMoveTests.swift": [
-        SESSION, OBSERVER, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, CORRECTION,
+        SESSION, OBSERVER, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, CORRECTION, REGISTRY,
+        CREATION_WORKFLOW, CORRECTION_WORKFLOW, GUARDED_WRITE, INTERFACES, MOVE_WORKFLOW,
     ],
     "Features/WorklogDeletion/WorklogDeletionTests.swift": [
-        SESSION, OBSERVER, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, RENAME,
-        CORRECTION, ARCHIVING,
+        SESSION, OBSERVER, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, RENAME, CORRECTION,
+        ARCHIVING, REGISTRY, CREATION_WORKFLOW, RENAME_WORKFLOW, ARCHIVING_WORKFLOW, CORRECTION_WORKFLOW,
+        GUARDED_WRITE, INTERFACES, DELETION_WORKFLOW,
     ],
 }
 

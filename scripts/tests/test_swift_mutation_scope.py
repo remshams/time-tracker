@@ -225,6 +225,42 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.assertIn(scope.SOURCES + "Features/TaskCreation/TaskCreationState.swift", result["files"])
         self.assertIn(scope.SOURCES + "Features/TrackingAutomation/TrackingAutomationState.swift", result["files"])
 
+    def test_worklog_suites_select_their_workflow_and_the_shared_guarded_write(self):
+        for suite, workflow in [("WorklogCorrection/WorklogCorrectionTests.swift", scope.CORRECTION_WORKFLOW),
+                                ("WorklogMove/WorklogMoveTests.swift", scope.MOVE_WORKFLOW),
+                                ("WorklogDeletion/WorklogDeletionTests.swift", scope.DELETION_WORKFLOW)]:
+            with self.subTest(suite=suite):
+                self.write(scope.PACKAGE + scope.TESTS + "Features/" + suite, "func testReviewedWorklogWrite() {}\n")
+                head = self.commit(f"Change {suite}")
+
+                result = self.select(head=head)
+
+                self.assertEqual(result["status"], "focused")
+                for source in [workflow, scope.GUARDED_WRITE, scope.INTERFACES, scope.REGISTRY, scope.SESSION]:
+                    self.assertIn(scope.SOURCES + source, result["files"])
+
+    def test_session_suite_selects_the_editor_registry_without_unrelated_workflows(self):
+        test = scope.TESTS + "Features/WorklogHistory/HistoryTests.swift"
+        self.write(scope.PACKAGE + test, "func testHistoryPagingWaitsForEditors() {}\n")
+        self.commit("Change history assertions")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "focused")
+        self.assertIn(scope.SOURCES + scope.REGISTRY, result["files"])
+        self.assertNotIn(scope.SOURCES + scope.GUARDED_WRITE, result["files"])
+        self.assertNotIn(scope.SOURCES + scope.CREATION_WORKFLOW, result["files"])
+
+    def test_feature_suites_select_the_workflow_that_drives_their_state(self):
+        pairs = [(scope.AUTOMATION, scope.AUTOMATION_WORKFLOW), (scope.CREATION, scope.CREATION_WORKFLOW),
+                 (scope.RENAME, scope.RENAME_WORKFLOW), (scope.ARCHIVING, scope.ARCHIVING_WORKFLOW),
+                 (scope.BULK_ARCHIVING, scope.BULK_ARCHIVING_WORKFLOW), (scope.CORRECTION, scope.CORRECTION_WORKFLOW),
+                 (scope.MOVE, scope.MOVE_WORKFLOW), (scope.DELETION, scope.DELETION_WORKFLOW)]
+        for test, sources in scope.TEST_PRODUCTION.items():
+            for state, workflow in pairs:
+                with self.subTest(test=test, state=state):
+                    self.assertEqual(state in sources, workflow in sources)
+
     def test_docs_only_change_records_explicit_empty_scope(self):
         self.write("README.md", "Updated documentation\n")
         self.write(scope.PACKAGE + "README.md", "Package documentation\n")
