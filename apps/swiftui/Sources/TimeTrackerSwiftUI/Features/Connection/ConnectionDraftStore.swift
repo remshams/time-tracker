@@ -1,18 +1,18 @@
-import Combine
+import Observation
 import SwiftUI
 import TrackerClient
 
 /// Holds the unsaved data source shown in Settings and the result of testing or adopting it.
 @MainActor
+@Observable
 final class ConnectionDraftStore {
-    let objectWillChange = ObservableObjectPublisher()
     private let store: TrackerStore
-    private var presentationGeneration = UUID()
+    @ObservationIgnored private var presentationGeneration = UUID()
 
-    var settings: ConnectionSettings { willSet { objectWillChange.send() } }
-    private(set) var operationPending = false { willSet { objectWillChange.send() } }
-    private(set) var resultMessage: String? { willSet { objectWillChange.send() } }
-    private(set) var resultSucceeded = false { willSet { objectWillChange.send() } }
+    var settings: ConnectionSettings
+    private(set) var operationPending = false
+    private(set) var resultMessage: String?
+    private(set) var resultSucceeded = false
 
     init(store: TrackerStore) {
         self.store = store
@@ -75,13 +75,6 @@ final class ConnectionDraftStore {
     }
 }
 
-// Keep publisher access on the main actor with compilers that support isolated conformances.
-#if compiler(>=6.2)
-    extension ConnectionDraftStore: @MainActor ObservableObject {}
-#else
-    extension ConnectionDraftStore: ObservableObject {}
-#endif
-
 extension View {
     /// Resets the draft when Settings appears and ignores in-flight results after it disappears.
     /// Apply it outside the Form so scrolling sections in and out of view does not reset the draft.
@@ -93,8 +86,8 @@ extension View {
 
 @MainActor
 private struct ConnectionDraftLifecycle: ViewModifier {
-    @ObservedObject var store: TrackerStore
-    @ObservedObject var draft: ConnectionDraftStore
+    let store: TrackerStore
+    let draft: ConnectionDraftStore
 
     func body(content: Content) -> some View {
         content

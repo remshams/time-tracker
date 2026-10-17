@@ -3,7 +3,7 @@ import TrackerClient
 
 @MainActor
 struct WorklogCorrectionDialog: View {
-    @ObservedObject var correction: WorklogCorrectionStore
+    let correction: WorklogCorrectionStore
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -22,7 +22,7 @@ struct WorklogCorrectionDialog: View {
 
 @MainActor
 private struct WorklogCorrectionSheet: View {
-    @ObservedObject var correction: WorklogCorrectionStore
+    let correction: WorklogCorrectionStore
 
     private var timezone: TimeZone {
         TimeZone(identifier: correction.sheetContent.timezoneIdentifier) ?? .gmt
@@ -150,9 +150,9 @@ private struct WorklogCorrectionSheet: View {
 
 @MainActor
 struct WorklogHistoryHeading: View {
-    @ObservedObject var correction: WorklogCorrectionStore
-    @ObservedObject var move: WorklogMoveStore
-    @ObservedObject var deletion: WorklogDeletionStore
+    let correction: WorklogCorrectionStore
+    let move: WorklogMoveStore
+    let deletion: WorklogDeletionStore
 
     var body: some View {
         HStack {
@@ -168,7 +168,7 @@ struct WorklogHistoryHeading: View {
 
 @MainActor
 struct PendingWorklogCorrectionButton: View {
-    @ObservedObject var correction: WorklogCorrectionStore
+    let correction: WorklogCorrectionStore
 
     var body: some View {
         if !correction.state.isPresented, let original = correction.state.original {

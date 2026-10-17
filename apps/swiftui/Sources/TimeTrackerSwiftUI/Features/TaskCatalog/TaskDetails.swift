@@ -2,7 +2,7 @@ import SwiftUI
 import TrackerClient
 
 struct TaskDetails: View {
-    @ObservedObject var store: TrackerStore
+    let store: TrackerStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -68,12 +68,12 @@ struct TaskDetails: View {
 
                         ForEach(store.worklogs) { worklog in
                             WorklogRow(
-                                worklog: worklog, active: store.active, timer: store.timer,
+                                worklog: worklog, active: store.active, store: store,
                                 correction: store.correction, move: store.move, deletion: store.deletion)
                         }
 
                         if store.hasMoreHistory {
-                            HistoryPaginationButton(store: store, activity: store.activity)
+                            HistoryPaginationButton(store: store)
                                 .padding(.top, 8)
                         }
                     }
@@ -127,12 +127,11 @@ struct TaskDetails: View {
 }
 
 private struct HistoryPaginationButton: View {
-    @ObservedObject var store: TrackerStore
-    @ObservedObject var activity: TrackerActivityStore
+    let store: TrackerStore
 
     var body: some View {
         Button("Load older worklogs") { store.loadOlder() }
             .accessibilityIdentifier("worklog-history.load-older")
-            .disabled(activity.isBlockingControls || store.isStale || store.isHistoryLoading)
+            .disabled(store.isBlockingControls || store.isStale || store.isHistoryLoading)
     }
 }

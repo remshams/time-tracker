@@ -5,12 +5,12 @@ struct SettingsView: View {
     let store: TrackerStore
     var showsDoneButton = false
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var connectionDraft: ConnectionDraftStore
+    @State private var connectionDraft: ConnectionDraftStore
 
     init(store: TrackerStore, showsDoneButton: Bool = false) {
         self.store = store
         self.showsDoneButton = showsDoneButton
-        _connectionDraft = StateObject(wrappedValue: ConnectionDraftStore(store: store))
+        _connectionDraft = State(initialValue: ConnectionDraftStore(store: store))
     }
 
     var body: some View {
@@ -20,7 +20,7 @@ struct SettingsView: View {
                 TrackingSettingsSection(store: store)
                 MenuBarSettingsSection(store: store)
                 MenuShortcutSettingsSection(store: store)
-                ConnectionActionsSection(draft: connectionDraft, activity: store.activity)
+                ConnectionActionsSection(draft: connectionDraft, store: store)
                 CurrentConnectionSection(store: store)
             }
             .formStyle(.grouped)

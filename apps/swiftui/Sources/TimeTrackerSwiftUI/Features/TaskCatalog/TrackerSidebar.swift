@@ -3,7 +3,7 @@ import TrackerClient
 
 @MainActor
 struct TrackerSidebar: View {
-    @ObservedObject var store: TrackerStore
+    let store: TrackerStore
 
     private var tabBinding: Binding<TaskTab> {
         Binding(get: { store.tab }, set: { store.changeTab($0) })
@@ -90,7 +90,7 @@ struct TrackerSidebar: View {
 
 @MainActor
 struct TrackerDailyTotalText: View {
-    @ObservedObject private var task: TrackerTaskDailyTotalStore
+    private let task: TaskDailyTotal
     private let taskID: String
 
     init(totals: TrackerDailyTotalsStore, taskID: String) {

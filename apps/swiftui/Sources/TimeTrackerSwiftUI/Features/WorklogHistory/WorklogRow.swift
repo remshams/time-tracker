@@ -4,7 +4,7 @@ import TrackerClient
 struct WorklogRow: View {
     let worklog: WorklogItem
     let active: WorklogItem?
-    let timer: TrackerTimerStore
+    let store: TrackerStore
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore
     let deletion: WorklogDeletionStore
@@ -27,7 +27,7 @@ struct WorklogRow: View {
             Spacer(minLength: 12)
             Group {
                 if active?.id == worklog.id {
-                    TrackerElapsedText(timer: timer)
+                    TrackerElapsedText(store: store)
                 } else {
                     Text(clockDuration(duration))
                 }
@@ -54,9 +54,9 @@ struct WorklogRow: View {
 
 @MainActor
 private struct WorklogActionsMenu: View {
-    @ObservedObject var correction: WorklogCorrectionStore
-    @ObservedObject var move: WorklogMoveStore
-    @ObservedObject var deletion: WorklogDeletionStore
+    let correction: WorklogCorrectionStore
+    let move: WorklogMoveStore
+    let deletion: WorklogDeletionStore
     let worklog: WorklogItem
 
     var body: some View {
@@ -80,9 +80,9 @@ private struct WorklogActionsMenu: View {
 
 @MainActor
 private struct WorklogContextMenu: View {
-    @ObservedObject var correction: WorklogCorrectionStore
-    @ObservedObject var move: WorklogMoveStore
-    @ObservedObject var deletion: WorklogDeletionStore
+    let correction: WorklogCorrectionStore
+    let move: WorklogMoveStore
+    let deletion: WorklogDeletionStore
     let worklog: WorklogItem
 
     var body: some View {

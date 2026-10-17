@@ -3,13 +3,7 @@ import TrackerClient
 
 @MainActor
 struct ConnectionSummary: View {
-    @ObservedObject var store: TrackerStore
-    @ObservedObject private var activity: TrackerActivityStore
-
-    init(store: TrackerStore) {
-        self.store = store
-        activity = store.activity
-    }
+    let store: TrackerStore
 
     var body: some View {
         HStack(spacing: 12) {
@@ -40,7 +34,7 @@ struct ConnectionSummary: View {
             if !store.isChangingConnection, store.isStale {
                 Button("Retry") { store.refresh() }
                     .accessibilityIdentifier("connection-summary.retry")
-                    .disabled(activity.isBlockingControls)
+                    .disabled(store.isBlockingControls)
             }
         }
         .padding(.horizontal, 12)

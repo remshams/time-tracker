@@ -2,10 +2,10 @@ import SwiftUI
 
 @MainActor
 struct ConnectionActionsSection: View {
-    @ObservedObject var draft: ConnectionDraftStore
-    @ObservedObject var activity: TrackerActivityStore
+    let draft: ConnectionDraftStore
+    let store: TrackerStore
 
-    private var controlsDisabled: Bool { draft.operationPending || activity.isBlockingControls }
+    private var controlsDisabled: Bool { draft.operationPending || store.isBlockingControls }
 
     var body: some View {
         Section {

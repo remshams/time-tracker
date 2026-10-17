@@ -3,7 +3,7 @@ import TrackerClient
 
 @MainActor
 struct TaskArchivingDialog: View {
-    @ObservedObject var archiving: TaskArchivingStore
+    let archiving: TaskArchivingStore
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -22,7 +22,7 @@ struct TaskArchivingDialog: View {
 
 @MainActor
 private struct TaskArchivingSheet: View {
-    @ObservedObject var archiving: TaskArchivingStore
+    let archiving: TaskArchivingStore
 
     var body: some View {
         let state = archiving.sheetContent
@@ -91,7 +91,7 @@ private struct TaskArchivingSheet: View {
 
 @MainActor
 struct PendingTaskArchivingButton: View {
-    @ObservedObject var archiving: TaskArchivingStore
+    let archiving: TaskArchivingStore
 
     var body: some View {
         if archiving.state.hasPendingAction, archiving.state.error != nil {

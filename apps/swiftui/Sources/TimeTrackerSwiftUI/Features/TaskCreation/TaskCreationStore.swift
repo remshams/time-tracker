@@ -1,28 +1,20 @@
-import Combine
 import TrackerClient
 
 @MainActor
 final class TaskCreationStore {
-    let objectWillChange = ObservableObjectPublisher()
     private let session: TrackerSession
+    private let presentation: TrackerPresentation
 
-    init(session: TrackerSession, presentation: TrackerPresentationObserver) {
+    init(session: TrackerSession, presentation: TrackerPresentation) {
         self.session = session
-        presentation.onTaskCreationChange = { [weak self] in self?.objectWillChange.send() }
+        self.presentation = presentation
     }
 
-    var state: TaskCreationPresentation { session.taskCreation }
-    var canOpen: Bool { session.canOpenTaskCreation }
+    var state: TaskCreationPresentation { presentation.taskCreation }
+    var canOpen: Bool { presentation.canOpenTaskCreation }
 
     func open() { session.openTaskCreation() }
     func setName(_ name: String) { session.setTaskCreationName(name) }
     func cancel() { session.cancelTaskCreation() }
     func submit() { session.submitTaskCreation() }
 }
-
-// Keep publisher access on the main actor with compilers that support isolated conformances.
-#if compiler(>=6.2)
-    extension TaskCreationStore: @MainActor ObservableObject {}
-#else
-    extension TaskCreationStore: ObservableObject {}
-#endif
