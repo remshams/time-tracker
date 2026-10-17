@@ -44,6 +44,7 @@ public typealias TaskArchivingModel = TrackerDialogPresentation<TaskArchivingPre
 public typealias BulkTaskArchivingModel = TrackerDialogPresentation<BulkTaskArchivingPresentation, Bool>
 public typealias WorklogCorrectionModel = TrackerDialogPresentation<WorklogCorrectionPresentation, Bool>
 public typealias WorklogMoveModel = TrackerDialogPresentation<WorklogMovePresentation, Bool>
+public typealias WorklogDeletionModel = TrackerDialogPresentation<WorklogDeletionPresentation, Bool>
 
 #if canImport(Combine)
     // Keep publisher access on the main actor when isolated conformances are supported.

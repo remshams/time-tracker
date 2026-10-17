@@ -12,10 +12,6 @@ public final class TrackerPresentationObserver {
     public var onTimerChange: (() -> Void)?
     public var onDailyTotalsChange: (() -> Void)?
     public var onTaskDailyTotalsChange: ((Set<String>) -> Void)?
-    public var onWorklogDeletionChange: (() -> Void)?
-    public private(set) var worklogDeletionSheetContent: WorklogDeletionPresentation
-    private var deletion: WorklogDeletionPresentation
-    private var canOpenDeletion: Bool
     private var content: Content
     private var activity: Activity
     private var timerText: String
@@ -23,9 +19,6 @@ public final class TrackerPresentationObserver {
     public var taskDailyTotals: [String: TaskDailyTotalPresentation] { daily.taskTotals }
 
     public init(session: TrackerSession) {
-        deletion = session.worklogDeletion
-        canOpenDeletion = session.canOpenWorklogDeletion
-        worklogDeletionSheetContent = deletion
         content = Content(session)
         activity = Activity(session)
         timerText = session.timerDisplayText
@@ -33,12 +26,6 @@ public final class TrackerPresentationObserver {
     }
 
     public func update(from session: TrackerSession) {
-        let nextDeletion = session.worklogDeletion
-        let nextCanOpenDeletion = session.canOpenWorklogDeletion
-        let deletionChanged = deletion != nextDeletion || canOpenDeletion != nextCanOpenDeletion
-        deletion = nextDeletion
-        canOpenDeletion = nextCanOpenDeletion
-        if nextDeletion.isPresented { worklogDeletionSheetContent = nextDeletion }
         let nextContent = Content(session)
         let nextActivity = Activity(session)
         let nextTimerText = session.timerDisplayText
@@ -53,7 +40,6 @@ public final class TrackerPresentationObserver {
         activity = nextActivity
         timerText = nextTimerText
         daily = nextDaily
-        if deletionChanged { onWorklogDeletionChange?() }
         if contentChanged { onContentChange?() }
         if activityChanged { onActivityChange?() }
         if timerChanged { onTimerChange?() }

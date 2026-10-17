@@ -200,9 +200,7 @@ final class WorklogDeletionTests: XCTestCase {
         XCTAssertTrue(fixture.session.tasks.contains(renamed))
         let observer = TrackerPresentationObserver(session: fixture.session)
         var publishedRows = fixture.session.worklogs
-        var dismissed = false
         observer.onContentChange = { publishedRows = fixture.session.worklogs }
-        observer.onWorklogDeletionChange = { dismissed = !fixture.session.worklogDeletion.isPresented }
         fixture.session.onChange = { observer.update(from: fixture.session) }
 
         command.deleted(worklog: precise)
@@ -211,7 +209,7 @@ final class WorklogDeletionTests: XCTestCase {
         XCTAssertEqual(heldRefresh.operation, .taskList)
         XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
         XCTAssertEqual(publishedRows, [oldWorklog])
-        XCTAssertTrue(dismissed)
+        XCTAssertFalse(fixture.session.deletionModel.state.isPresented)
         XCTAssertNil(fixture.session.nextCursor)
         XCTAssertTrue(fixture.session.isHistoryLoading)
         XCTAssertNil(fixture.session.worklogDeletion.original)
@@ -256,12 +254,10 @@ final class WorklogDeletionTests: XCTestCase {
         let poll = try await fixture.client.next()
         XCTAssertFalse(fixture.session.isBlockingControls)
         fixture.session.openWorklogDeletion(worklogID: precise.id)
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        fixture.session.onChange = { observer.update(from: fixture.session) }
 
         fixture.session.submitWorklogDeletion()
 
-        XCTAssertTrue(observer.worklogDeletionSheetContent.isSubmitting)
+        XCTAssertTrue(fixture.session.deletionModel.sheetContent.isSubmitting)
         XCTAssertTrue(fixture.session.isBlockingControls)
         XCTAssertFalse(fixture.session.canStopTracking)
         XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
@@ -296,13 +292,10 @@ final class WorklogDeletionTests: XCTestCase {
         fixture.session.submitWorklogDeletion()
         XCTAssertFalse(fixture.session.worklogDeletion.isSubmitting)
 
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.session.reviewLatestWorklogDeletion()
-        fixture.session.onChange = nil
 
         state = fixture.session.worklogDeletion
-        XCTAssertEqual(observer.worklogDeletionSheetContent, state)
+        XCTAssertEqual(fixture.session.deletionModel.sheetContent, state)
         XCTAssertFalse(state.requiresReview)
         XCTAssertEqual(state.original, changed)
         XCTAssertEqual(state.taskName, firstTask.name)
@@ -647,39 +640,36 @@ final class WorklogDeletionTests: XCTestCase {
         }
     }
 
-    // MARK: - Presentation observer
+    // MARK: - Dialog model
 
     @MainActor
-    func testObserverFreezesDismissedContentAndOnlyPublishesDeletionChanges() async throws {
+    func testModelFreezesDismissedContentAndFollowsAvailability() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await open(fixture)
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var changes = 0
-        observer.onWorklogDeletionChange = { changes += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let model = fixture.session.deletionModel
         let visible = fixture.session.worklogDeletion
-        XCTAssertEqual(observer.worklogDeletionSheetContent, visible)
+        XCTAssertEqual(model.state, visible)
+        XCTAssertEqual(model.sheetContent, visible)
 
         fixture.session.cancelWorklogDeletion()
-        XCTAssertEqual(changes, 1)
-        XCTAssertEqual(observer.worklogDeletionSheetContent, visible)
+        XCTAssertFalse(model.state.isPresented)
+        XCTAssertEqual(model.sheetContent, visible)
 
         fixture.session.retryHistory()
         let page = try await fixture.client.next()
         page.succeed(HistoryPage(worklogs: [precise, oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
-        fixture.session.onChange = { observer.update(from: fixture.session) }
-        XCTAssertEqual(changes, 1)
+        XCTAssertEqual(model.sheetContent, visible)
 
         fixture.session.openTaskCreation()
-        XCTAssertEqual(changes, 2)
+        XCTAssertFalse(model.canOpen)
         fixture.session.cancelTaskCreation()
-        XCTAssertEqual(changes, 3)
+        XCTAssertTrue(model.canOpen)
 
         fixture.session.openWorklogDeletion(worklogID: oldWorklog.id)
-        XCTAssertEqual(changes, 4)
-        XCTAssertEqual(observer.worklogDeletionSheetContent.original, oldWorklog)
+        XCTAssertTrue(model.state.isPresented)
+        XCTAssertEqual(model.sheetContent.original, oldWorklog)
     }
 
     // MARK: - State

@@ -65,6 +65,7 @@ final class DialogPresentationTests: XCTestCase {
         let bulk = fixture.session.bulkArchivingModel
         let correction = fixture.session.correctionModel
         let move = fixture.session.moveModel
+        let deletion = fixture.session.deletionModel
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         XCTAssertTrue(creation === fixture.session.creationModel)
         XCTAssertTrue(rename === fixture.session.renameModel)
@@ -72,12 +73,14 @@ final class DialogPresentationTests: XCTestCase {
         XCTAssertTrue(bulk === fixture.session.bulkArchivingModel)
         XCTAssertTrue(correction === fixture.session.correctionModel)
         XCTAssertTrue(move === fixture.session.moveModel)
+        XCTAssertTrue(deletion === fixture.session.deletionModel)
         XCTAssertTrue(creation.canOpen)
         XCTAssertTrue(rename.canOpen)
         XCTAssertEqual(archiving.availability[firstTask.id], true)
         XCTAssertTrue(bulk.canOpen)
         XCTAssertTrue(correction.canOpen)
         XCTAssertTrue(move.canOpen)
+        XCTAssertTrue(deletion.canOpen)
         fixture.session.shutdown()
         XCTAssertFalse(creation.canOpen)
         XCTAssertFalse(rename.canOpen)
@@ -85,6 +88,7 @@ final class DialogPresentationTests: XCTestCase {
         XCTAssertFalse(bulk.canOpen)
         XCTAssertFalse(correction.canOpen)
         XCTAssertFalse(move.canOpen)
+        XCTAssertFalse(deletion.canOpen)
     }
 
     #if canImport(Combine)
@@ -119,6 +123,7 @@ final class DialogPresentationTests: XCTestCase {
             var archiveChanges = 0
             var correctionChanges = 0
             var moveChanges = 0
+            var deletionChanges = 0
             let subscriptions = [
                 fixture.session.creationModel.objectWillChange.sink { creationChanges += 1 },
                 fixture.session.renameModel.objectWillChange.sink { renameChanges += 1 },
@@ -126,21 +131,24 @@ final class DialogPresentationTests: XCTestCase {
                 fixture.session.archivingModel.objectWillChange.sink { archiveChanges += 1 },
                 fixture.session.correctionModel.objectWillChange.sink { correctionChanges += 1 },
                 fixture.session.moveModel.objectWillChange.sink { moveChanges += 1 },
+                fixture.session.deletionModel.objectWillChange.sink { deletionChanges += 1 },
             ]
             defer { subscriptions.forEach { $0.cancel() } }
+            let changes = {
+                [
+                    creationChanges, renameChanges, bulkChanges, archiveChanges, correctionChanges, moveChanges,
+                    deletionChanges,
+                ]
+            }
             let display = try XCTUnwrap(fixture.scheduler.display)
             for _ in 0..<3 {
                 fixture.clock.now.addTimeInterval(1)
                 fixture.clock.uptime += 1
                 display.fire()
             }
-            XCTAssertEqual(
-                [creationChanges, renameChanges, bulkChanges, archiveChanges, correctionChanges, moveChanges],
-                [0, 0, 0, 0, 0, 0])
+            XCTAssertEqual(changes(), [0, 0, 0, 0, 0, 0, 0])
             fixture.session.openTaskCreation()
-            XCTAssertEqual(
-                [creationChanges, renameChanges, bulkChanges, archiveChanges, correctionChanges, moveChanges],
-                [1, 1, 1, 1, 1, 1])
+            XCTAssertEqual(changes(), [1, 1, 1, 1, 1, 1, 1])
             fixture.session.setTaskCreationName("Invalid\u{0000}name")
             XCTAssertEqual(creationChanges, 2)
             fixture.session.setTaskCreationName("Invalid\u{0000}name")
@@ -150,9 +158,7 @@ final class DialogPresentationTests: XCTestCase {
             XCTAssertEqual(
                 fixture.session.creationModel.sheetContent.error, "Task names must not contain control characters.")
             fixture.session.cancelTaskCreation()
-            XCTAssertEqual(
-                [creationChanges, renameChanges, bulkChanges, archiveChanges, correctionChanges, moveChanges],
-                [4, 2, 2, 2, 2, 2])
+            XCTAssertEqual(changes(), [4, 2, 2, 2, 2, 2, 2])
         }
     #endif
 }
