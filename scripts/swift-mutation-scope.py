@@ -37,6 +37,7 @@ ARCHIVING = "Features/TaskArchiving/TaskArchivingState.swift"
 BULK_ARCHIVING = "Features/BulkTaskArchiving/BulkTaskArchivingState.swift"
 CORRECTION = "Features/WorklogCorrection/WorklogCorrectionState.swift"
 MOVE = "Features/WorklogMove/WorklogMoveState.swift"
+DELETION = "Features/WorklogDeletion/WorklogDeletionState.swift"
 INDICATOR = "Features/TaskIndicators/TaskIndicator.swift"
 
 # Map each suite's assertions to complete files, including its session coordinator.
@@ -124,7 +125,54 @@ TEST_PRODUCTION = {
     "Features/WorklogMove/WorklogMoveTests.swift": [
         SESSION, OBSERVER, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, CORRECTION,
     ],
+    "Features/WorklogDeletion/WorklogDeletionTests.swift": [
+        SESSION, OBSERVER, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, RENAME,
+        CORRECTION, ARCHIVING,
+    ],
 }
+
+
+SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
+# These exact additions only give the shared fake client a worklog deletion
+# request and reply. They leave every existing operation unchanged.
+WORKLOG_DELETION_SUPPORT_EDITS = (
+    ("        case move(expected: WorklogItem, destination: String)\n",
+     "        case move(expected: WorklogItem, destination: String)\n"
+     "        case delete(expected: WorklogItem)\n"),
+    ("        case moved(WorklogMoveResult)\n",
+     "        case moved(WorklogMoveResult)\n"
+     "        case deleted(WorklogDeletionResult)\n"),
+    ("        func inactivePreview(_ preview: InactiveTaskPreview) {",
+     "        func deleted(worklog: WorklogItem) {\n"
+     "            complete(.success(.deleted(WorklogDeletionResult(worklog: worklog))))\n"
+     "        }\n"
+     "        func deleted(worklog: WorklogItem, resources: TaskListResources) {\n"
+     "            if case .delete(let expected) = operation, worklog == expected { publishAfterCommand(resources) }\n"
+     "            complete(.success(.deleted(WorklogDeletionResult(worklog: worklog))))\n"
+     "        }\n"
+     "        func inactivePreview(_ preview: InactiveTaskPreview) {"),
+    ("    func history(taskID: String, cursor: String?) async throws -> HistoryPage {\n",
+     "    func deleteWorklog(expected: WorklogItem) async throws -> WorklogDeletionResult {\n"
+     "        let operation = Operation.delete(expected: expected)\n"
+     "        guard case .deleted(let value) = try await perform(operation) else {\n"
+     "            throw wrongReply(\"deletion\", operation: operation)\n"
+     "        }\n"
+     "        return value\n"
+     "    }\n"
+     "    func history(taskID: String, cursor: String?) async throws -> HistoryPage {\n"),
+)
+WORKLOG_DELETION_CONTRACT_EDITS = (
+    ("    func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult\n",
+     "    func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult\n"
+     "    func deleteWorklog(expected: WorklogItem) async throws -> WorklogDeletionResult\n"),
+)
+# Each reviewed adaptation names the exact shared fixture and contract edits it
+# accepts and the changed suites whose mappings define the resulting scope.
+REVIEWED_SUPPORT_ADAPTATIONS = (
+    ("Shared fixture only adds the worklog deletion reply; the changed deletion suite defines scope",
+     WORKLOG_DELETION_SUPPORT_EDITS, WORKLOG_DELETION_CONTRACT_EDITS,
+     ("Features/WorklogDeletion/WorklogDeletionTests.swift",)),
+)
 
 
 class ScopeError(Exception):
@@ -186,6 +234,38 @@ def valid_source(root: Path, name: str, tree: dict[str, str]) -> bool:
     return candidate.is_file() and candidate.resolve().is_relative_to(package.resolve())
 
 
+def only_reviewed_edits(root: Path, base: str, head: str, path: str, edits: tuple) -> bool:
+    contents = []
+    for revision in (base, head):
+        record = git(root, "ls-tree", "-z", revision, "--", path)
+        if not record or record.split()[0] != b"100644":
+            return False
+        contents.append(git(root, "show", revision + ":" + path))
+    before, after = contents
+    for old, new in edits:
+        old, new = old.encode("utf-8"), new.encode("utf-8")
+        if before.count(old) != 1 or after.count(new) != 1:
+            return False
+        after = after.replace(new, old)
+    return after == before
+
+
+def reviewed_support_adaptation(root: Path, base: str, head: str, entries: list[dict]) -> str | None:
+    """Return the reason for a reviewed shared-fixture adaptation, if one applies."""
+    modified = {entry["path"] for entry in entries if entry["status"] == "M"}
+    changed_suites = {entry["path"] for entry in entries if entry["status"] in {"A", "M"}}
+    if not {PACKAGE + SHARED_TEST_SUPPORT, PACKAGE + SOURCES + DEPENDENCIES}.issubset(modified):
+        return None
+    for reason, support_edits, contract_edits, suites in REVIEWED_SUPPORT_ADAPTATIONS:
+        if (
+            {PACKAGE + TESTS + suite for suite in suites}.issubset(changed_suites)
+            and only_reviewed_edits(root, base, head, PACKAGE + SHARED_TEST_SUPPORT, support_edits)
+            and only_reviewed_edits(root, base, head, PACKAGE + SOURCES + DEPENDENCIES, contract_edits)
+        ):
+            return reason
+    return None
+
+
 def select_scope(root: Path, base: str, head: str) -> dict:
     base = commit(root, base)
     head = commit(root, head)
@@ -194,6 +274,7 @@ def select_scope(root: Path, base: str, head: str) -> dict:
     merge_base = git(root, "merge-base", base, head).decode().strip()
     entries = changes(root, merge_base, head)
     tree = source_tree(root, head)
+    reviewed_support = reviewed_support_adaptation(root, merge_base, head, entries)
     renamed = {
         entry["old_path"].removeprefix(PACKAGE): entry["path"].removeprefix(PACKAGE)
         for entry in entries if entry["status"].startswith("R")
@@ -228,7 +309,9 @@ def select_scope(root: Path, base: str, head: str) -> dict:
                     add_source(relative, f"Changed production file: {path}")
             elif path.startswith(PACKAGE + TESTS):
                 test = relative.removeprefix(TESTS)
-                if test not in TEST_PRODUCTION:
+                if relative == SHARED_TEST_SUPPORT and reviewed_support:
+                    reasons.append(f"{reviewed_support}: {path}")
+                elif test not in TEST_PRODUCTION:
                     review.append(f"Unmapped test or shared test support needs scope review: {path}")
                 else:
                     for source in TEST_PRODUCTION[test]:
