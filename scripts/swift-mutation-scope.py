@@ -49,7 +49,7 @@ TEST_PRODUCTION = {
         "Features/TrackingAutomation/TrackingAutomationState.swift",
     ],
     "App/DialogPresentationTests.swift": [
-        SESSION, DIALOGS, CREATION, RENAME, ARCHIVING, BULK_ARCHIVING, CORRECTION, MOVE
+        SESSION, DIALOGS, CREATION, RENAME, ARCHIVING, BULK_ARCHIVING, CORRECTION, MOVE, DELETION
     ],
     "App/HistoryPresentationTests.swift": [SESSION, OBSERVER, HISTORY, CATALOG],
     "App/LifecycleTests.swift": [
