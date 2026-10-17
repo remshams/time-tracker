@@ -394,8 +394,7 @@ public final class TrackerSession {
     }
 
     public func reviewLatestTaskArchiving() {
-        guard running else { return }
-        archiving.reviewLatest()
+        guard running, archiving.reviewLatest() else { return }
         publish()
     }
 

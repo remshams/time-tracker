@@ -15,9 +15,11 @@ final class TaskArchivingWorkflow: EditorWorkflow {
         self.client = client
     }
 
-    func reviewLatest() {
-        guard let taskID = state.original?.id else { return }
+    /// Reviews the latest copy of the task. Returns false when no archive dialog has a task.
+    func reviewLatest() -> Bool {
+        guard let taskID = state.original?.id else { return false }
         state.reviewLatest(resources.tasks.first { $0.id == taskID }, active: resources.active)
+        return true
     }
 
     @discardableResult
