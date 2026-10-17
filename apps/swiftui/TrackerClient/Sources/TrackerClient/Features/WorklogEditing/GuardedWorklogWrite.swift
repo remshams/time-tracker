@@ -1,10 +1,5 @@
 import Foundation
 
-extension WorklogLookup {
-    /// Reads one history page beyond the pages loaded when the editor opened, and at least two pages.
-    static func pageLimit(loadedWorklogs count: Int) -> Int { max(1, (count + 49) / 50) + 1 }
-}
-
 /// What a reviewed worklog intent needs once the latest copy of the worklog is known.
 enum WorklogWritePreflight {
     case apply

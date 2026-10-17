@@ -1,5 +1,20 @@
 import Foundation
 
+/// Runs feature workflows behind the session's single operation gate.
+///
+/// `run` passes `work` the session generation that started it. A shutdown
+/// advances the generation, so work must check `isCurrent` after each await.
+@MainActor
+protocol OperationRunner: AnyObject {
+    /// The session is running and no operation holds the gate.
+    var isIdle: Bool { get }
+    var isSleeping: Bool { get }
+    func isCurrent(_ token: Int) -> Bool
+    /// Takes the gate, runs `work`, and releases the gate when `work` returns.
+    func run(blocksControls: Bool, _ work: @escaping @MainActor (_ token: Int) async -> Void)
+    func publish()
+}
+
 /// Where to look for the latest copy of a reviewed worklog.
 struct WorklogLookup {
     let expected: WorklogItem
@@ -8,6 +23,11 @@ struct WorklogLookup {
     let historyPageLimit: Int
     /// Names the dialog in the message shown when the history limit is reached.
     let dialog: String
+}
+
+extension WorklogLookup {
+    /// Reads one history page beyond the pages loaded when the editor opened, and at least two pages.
+    static func pageLimit(loadedWorklogs count: Int) -> Int { max(1, (count + 49) / 50) + 1 }
 }
 
 /// The shared tracker state that feature workflows read and update.
