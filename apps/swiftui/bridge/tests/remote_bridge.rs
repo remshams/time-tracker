@@ -18,10 +18,9 @@ use tracker_storage::SqliteRepository;
 use tracker_swift_bridge::{
     Bridge, tt_bridge_archive_task_with_expected_name_at, tt_bridge_close,
     tt_bridge_create_task_at, tt_bridge_history, tt_bridge_open_path, tt_bridge_open_remote,
-    tt_bridge_refresh_resources, tt_bridge_rename_task_at,
-    tt_bridge_rename_task_with_expected_name_at, tt_bridge_start_tracking_at,
-    tt_bridge_start_tracking_if_active_at, tt_bridge_stop_tracking_at, tt_bridge_string_free,
-    tt_bridge_tasks, tt_bridge_tracking,
+    tt_bridge_refresh_resources, tt_bridge_rename_task_with_expected_name_at,
+    tt_bridge_start_tracking_at, tt_bridge_start_tracking_if_active_at, tt_bridge_stop_tracking_at,
+    tt_bridge_string_free, tt_bridge_tasks, tt_bridge_tracking,
 };
 
 struct Server {
@@ -182,13 +181,30 @@ impl Client {
         // SAFETY: The client owns the bridge and both strings remain live.
         response(unsafe { tt_bridge_create_task_at(self.0, name.as_ptr(), at.as_ptr()) })
     }
+    /// Renames under the name this client last read, as the macOS app does.
     fn rename(&mut self, id: &str, name: &str, at: DateTime<Utc>) -> Value {
+        let tasks = self.task_list(false).0;
+        let expected = tasks["data"]["value"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|task| task["id"] == id)
+            .and_then(|task| task["name"].as_str())
+            .unwrap_or("Missing task")
+            .to_owned();
         let id = CString::new(id).unwrap();
+        let expected = CString::new(expected).unwrap();
         let name = CString::new(name).unwrap();
         let at = CString::new(at.to_rfc3339()).unwrap();
         // SAFETY: The client owns the bridge and every input string remains live.
         response(unsafe {
-            tt_bridge_rename_task_at(self.0, id.as_ptr(), name.as_ptr(), at.as_ptr())
+            tt_bridge_rename_task_with_expected_name_at(
+                self.0,
+                id.as_ptr(),
+                expected.as_ptr(),
+                name.as_ptr(),
+                at.as_ptr(),
+            )
         })
     }
     fn start(&mut self, task: &str, at: DateTime<Utc>) -> Value {

@@ -150,10 +150,7 @@ fn candidates_use_cached_tasks_filter_search_and_exclude_source_and_archived_row
     let tasks = bridge.application.tasks(TaskOrdering::default());
     let source = tasks[0].task.id();
     let destination = tasks[1].task.id();
-    bridge
-        .application
-        .archive_task(tasks[2].task.id(), at(0))
-        .unwrap();
+    crate::tests::archive_cached_task(&mut bridge.application, tasks[2].task.id(), at(0)).unwrap();
     let first = candidates(&mut bridge, source, "");
     assert_eq!(
         first["data"],
@@ -221,9 +218,7 @@ fn stale_source_times_missing_rows_overlap_and_unavailable_destination_are_class
         move_to(&mut bridge, &original, TaskId::generate())["kind"],
         "destination_unavailable"
     );
-    bridge
-        .application
-        .archive_task(tasks[2].task.id(), at(300))
+    crate::tests::archive_cached_task(&mut bridge.application, tasks[2].task.id(), at(300))
         .unwrap();
     assert_eq!(
         move_to(&mut bridge, &original, tasks[2].task.id())["kind"],
@@ -690,9 +685,7 @@ fn remote_move_classifies_archived_and_missing_destination_from_recovered_resour
     let mut writer = open_fixture(&path).unwrap();
     let tasks = writer.application.tasks(TaskOrdering::default());
     let original = record(&mut writer, tasks[0].task.id(), 100, Some(200));
-    writer
-        .application
-        .archive_task(tasks[1].task.id(), at(300))
+    crate::tests::archive_cached_task(&mut writer.application, tasks[1].task.id(), at(300))
         .unwrap();
     let server = report_tests::Server::start(tracker_server::router_for_database(&path).unwrap());
     let mut bridge = server.client();

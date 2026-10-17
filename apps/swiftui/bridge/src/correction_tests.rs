@@ -74,7 +74,7 @@ fn correction_preserves_identity_precision_and_archived_task_and_updates_totals(
         .task
         .id();
     let expected = record(&mut bridge, task, 100, Some(200));
-    bridge.application.archive_task(task, at(300)).unwrap();
+    crate::tests::archive_cached_task(&mut bridge.application, task, at(300)).unwrap();
     let corrected = correct(&mut bridge, &expected, 90, Some(220));
     assert!(corrected.get("error").is_none(), "{corrected}");
     assert_eq!(

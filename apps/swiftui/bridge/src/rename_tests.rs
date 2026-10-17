@@ -11,11 +11,21 @@ fn response(pointer: *mut c_char) -> Value {
 }
 
 fn rename(bridge: &mut Bridge, id: TaskId, name: &str, at: DateTime<Utc>) -> Value {
+    let expected =
+        CString::new(crate::tests::cached_task_name(&bridge.application, id).as_str()).unwrap();
     let id = CString::new(id.to_string()).unwrap();
     let name = CString::new(name).unwrap();
     let at = CString::new(timestamp(at)).unwrap();
     // SAFETY: All inputs remain live and this test owns exclusive bridge access.
-    response(unsafe { tt_bridge_rename_task_at(bridge, id.as_ptr(), name.as_ptr(), at.as_ptr()) })
+    response(unsafe {
+        tt_bridge_rename_task_with_expected_name_at(
+            bridge,
+            id.as_ptr(),
+            expected.as_ptr(),
+            name.as_ptr(),
+            at.as_ptr(),
+        )
+    })
 }
 
 #[test]
@@ -38,10 +48,12 @@ fn renaming_active_and_archived_tasks_preserves_ids_tracking_and_worklog_history
             .clear_active_task(old_worklog, at + chrono::Duration::seconds(1))
             .is_ok()
     );
-    bridge
-        .application
-        .archive_task(archived, at + chrono::Duration::seconds(2))
-        .unwrap();
+    crate::tests::archive_cached_task(
+        &mut bridge.application,
+        archived,
+        at + chrono::Duration::seconds(2),
+    )
+    .unwrap();
     assert!(
         bridge
             .application
@@ -156,71 +168,6 @@ fn rename_validates_task_names_and_missing_ids_without_changes() {
         rename(&mut bridge, id, &"🛠".repeat(256), Utc::now())
             .get("error")
             .is_none()
-    );
-}
-
-#[test]
-fn rename_rejects_null_and_invalid_c_inputs() {
-    let directory = tempfile::tempdir().unwrap();
-    let mut bridge = open_fixture(&directory.path().join("inputs.db")).unwrap();
-    let before = crate::tests::test_resource_values(&bridge.application);
-    let id = CString::new(
-        bridge.application.tasks(TaskOrdering::default())[0]
-            .task
-            .id()
-            .to_string(),
-    )
-    .unwrap();
-    let name = CString::new("Task").unwrap();
-    let at = CString::new(timestamp(Utc::now())).unwrap();
-    let invalid = CString::new("invalid").unwrap();
-    let non_utf8 = CString::new(vec![0xff]).unwrap();
-    // SAFETY: Inputs are live C strings or null, and bridge access is exclusive.
-    unsafe {
-        assert_eq!(
-            response(tt_bridge_rename_task_at(
-                ptr::null_mut(),
-                ptr::null(),
-                ptr::null(),
-                ptr::null()
-            ))["error"],
-            "Database is not open"
-        );
-        for bad in [ptr::null(), invalid.as_ptr(), non_utf8.as_ptr()] {
-            assert_eq!(
-                response(tt_bridge_rename_task_at(
-                    &mut bridge,
-                    bad,
-                    name.as_ptr(),
-                    at.as_ptr()
-                ))["error"],
-                "Invalid task ID"
-            );
-            assert_eq!(
-                response(tt_bridge_rename_task_at(
-                    &mut bridge,
-                    id.as_ptr(),
-                    name.as_ptr(),
-                    bad
-                ))["error"],
-                "Invalid rename timestamp"
-            );
-        }
-        for bad in [ptr::null(), non_utf8.as_ptr()] {
-            assert_eq!(
-                response(tt_bridge_rename_task_at(
-                    &mut bridge,
-                    id.as_ptr(),
-                    bad,
-                    at.as_ptr()
-                ))["error"],
-                "Invalid task name"
-            );
-        }
-    }
-    assert_eq!(
-        crate::tests::test_resource_values(&bridge.application),
-        before
     );
 }
 

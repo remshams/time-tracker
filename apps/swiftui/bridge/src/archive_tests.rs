@@ -14,13 +14,21 @@ fn at(seconds: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(seconds, 123_456_000).unwrap()
 }
 
+/// Archives under the cached name, as the macOS app does, or restores the task.
 fn change(bridge: &mut Bridge, id: TaskId, archived: bool) -> Value {
+    let expected =
+        CString::new(crate::tests::cached_task_name(&bridge.application, id).as_str()).unwrap();
     let id = CString::new(id.to_string()).unwrap();
     let instant = CString::new(timestamp(at(400))).unwrap();
     // SAFETY: The bridge and strings remain live with exclusive access.
     response(unsafe {
         if archived {
-            tt_bridge_archive_task_at(bridge, id.as_ptr(), instant.as_ptr())
+            tt_bridge_archive_task_with_expected_name_at(
+                bridge,
+                id.as_ptr(),
+                expected.as_ptr(),
+                instant.as_ptr(),
+            )
         } else {
             tt_bridge_unarchive_task_at(bridge, id.as_ptr(), instant.as_ptr())
         }
@@ -54,6 +62,10 @@ fn archive_and_restore_preserve_history_other_tracking_and_concurrent_names() {
         .unwrap();
     writer.set_active_task(tasks[1].task.id(), at(300)).unwrap();
     let expected_active = writer.current_tracking().clone();
+    let stale = change(&mut bridge, target, true);
+    assert_eq!(stale["kind"], "conflict", "{stale}");
+    assert_eq!(stale["requiresRefresh"], true);
+    assert!(!writer.task(target).unwrap().is_archived());
     for archived in [true, true, false, false] {
         let result = change(&mut bridge, target, archived);
         assert!(result.get("error").is_none(), "{result}");
@@ -120,33 +132,38 @@ fn archive_and_restore_reject_invalid_c_inputs_without_mutating_state() {
     let directory = tempfile::tempdir().unwrap();
     let mut bridge = open_fixture(&directory.path().join("inputs.db")).unwrap();
     let before = crate::tests::test_resource_values(&bridge.application);
-    let id = CString::new(
-        bridge.application.tasks(TaskOrdering::default())[0]
-            .task
-            .id()
-            .to_string(),
-    )
-    .unwrap();
+    let task = bridge.application.tasks(TaskOrdering::default())[0]
+        .task
+        .clone();
+    let id = CString::new(task.id().to_string()).unwrap();
+    let expected = CString::new(task.name().as_str()).unwrap();
     let instant = CString::new(timestamp(at(400))).unwrap();
     let malformed = CString::new("invalid").unwrap();
     let non_utf8 = CString::new(vec![0xff]).unwrap();
-    for operation in [tt_bridge_archive_task_at, tt_bridge_unarchive_task_at] {
-        // SAFETY: Every non-null input is a live C string and access is exclusive.
-        unsafe {
+    let archive = |bridge, id, at| {
+        // SAFETY: The caller passes live C strings or null and exclusive bridge access.
+        unsafe { tt_bridge_archive_task_with_expected_name_at(bridge, id, expected.as_ptr(), at) }
+    };
+    let restore = |bridge, id, at| {
+        // SAFETY: The caller passes live C strings or null and exclusive bridge access.
+        unsafe { tt_bridge_unarchive_task_at(bridge, id, at) }
+    };
+    let operations: [&dyn Fn(*mut Bridge, *const c_char, *const c_char) -> *mut c_char; 2] =
+        [&archive, &restore];
+    for operation in operations {
+        assert_eq!(
+            response(operation(ptr::null_mut(), id.as_ptr(), instant.as_ptr()))["error"],
+            "Database is not open"
+        );
+        for invalid in [ptr::null(), malformed.as_ptr(), non_utf8.as_ptr()] {
             assert_eq!(
-                response(operation(ptr::null_mut(), id.as_ptr(), instant.as_ptr()))["error"],
-                "Database is not open"
+                response(operation(&mut bridge, invalid, instant.as_ptr()))["error"],
+                "Invalid task ID"
             );
-            for invalid in [ptr::null(), malformed.as_ptr(), non_utf8.as_ptr()] {
-                assert_eq!(
-                    response(operation(&mut bridge, invalid, instant.as_ptr()))["error"],
-                    "Invalid task ID"
-                );
-                assert_eq!(
-                    response(operation(&mut bridge, id.as_ptr(), invalid))["error"],
-                    "Invalid archive timestamp"
-                );
-            }
+            assert_eq!(
+                response(operation(&mut bridge, id.as_ptr(), invalid))["error"],
+                "Invalid archive timestamp"
+            );
         }
     }
     assert_eq!(
@@ -174,7 +191,12 @@ fn remote_archive_and_restore_require_refresh_and_preserve_committed_tracking_an
     second.application.refresh_resources(3).unwrap();
     second
         .application
-        .rename_task(target, TaskName::new("Server rename").unwrap(), at(200))
+        .rename_task_with_expected_name(
+            target,
+            tasks[0].task.name().clone(),
+            TaskName::new("Server rename").unwrap(),
+            at(200),
+        )
         .unwrap();
     let stale = change(&mut bridge, target, true);
     assert_eq!(stale["kind"], "conflict");
@@ -270,7 +292,7 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
         let tasks = writer.application.tasks(TaskOrdering::default());
         let target = tasks[0].task.id();
         if !archived {
-            writer.application.archive_task(target, at(50)).unwrap();
+            crate::tests::archive_cached_task(&mut writer.application, target, at(50)).unwrap();
         }
         writer
             .application
@@ -363,7 +385,7 @@ fn unavailable_archive_and_restore_keep_confirmed_state_and_block_writes_until_r
             .task
             .id();
         if !archived {
-            writer.application.archive_task(target, at(100)).unwrap();
+            crate::tests::archive_cached_task(&mut writer.application, target, at(100)).unwrap();
         }
         let server =
             report_tests::Server::start(tracker_server::router_for_database(&path).unwrap());
@@ -489,8 +511,9 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
         let mut bridge = server.client();
         bridge.application.refresh_resources(3).unwrap();
         let before = crate::tests::test_resource_values(&bridge.application);
-        let result = bridge.application.rename_task(
+        let result = bridge.application.rename_task_with_expected_name(
             task.id(),
+            TaskName::new("Original name").unwrap(),
             TaskName::new("Requested name").unwrap(),
             at(400),
         );
@@ -613,13 +636,15 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
             bridge.application.refresh_resources(3).unwrap();
             let value = if action == "rename" {
                 let id = CString::new(task.id().to_string()).unwrap();
+                let expected = c"Original project";
                 let name = CString::new("Requested name").unwrap();
                 let timestamp = CString::new(timestamp(at(400))).unwrap();
                 // SAFETY: The bridge and input strings are live for this call.
                 response(unsafe {
-                    tt_bridge_rename_task_at(
+                    tt_bridge_rename_task_with_expected_name_at(
                         &mut bridge,
                         id.as_ptr(),
+                        expected.as_ptr(),
                         name.as_ptr(),
                         timestamp.as_ptr(),
                     )
@@ -802,13 +827,15 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
     bridge.application.refresh_resources(3).unwrap();
     let confirmed_before = crate::tests::test_resource_values(&bridge.application);
     let id = CString::new(task.id().to_string()).unwrap();
+    let expected = c"Before name";
     let name = c"Committed name";
     let occurred_at = CString::new(timestamp(at(400))).unwrap();
     // SAFETY: The bridge and all input strings remain live during the call.
     let result = response(unsafe {
-        tt_bridge_rename_task_at(
+        tt_bridge_rename_task_with_expected_name_at(
             &mut bridge,
             id.as_ptr(),
+            expected.as_ptr(),
             name.as_ptr(),
             occurred_at.as_ptr(),
         )
@@ -824,7 +851,12 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
     assert_eq!(writes.load(Ordering::SeqCst), 1);
     let blocked = bridge
         .application
-        .rename_task(task.id(), TaskName::new("Next name").unwrap(), at(500))
+        .rename_task_with_expected_name(
+            task.id(),
+            TaskName::new("Committed name").unwrap(),
+            TaskName::new("Next name").unwrap(),
+            at(500),
+        )
         .unwrap_err();
     assert_eq!(blocked.kind, "unavailable");
     assert!(blocked.requires_refresh);
@@ -837,7 +869,12 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
         let reads_before = task_reads.load(Ordering::SeqCst);
         let blocked = bridge
             .application
-            .rename_task(task.id(), TaskName::new("Next name").unwrap(), at(500))
+            .rename_task_with_expected_name(
+                task.id(),
+                TaskName::new("Committed name").unwrap(),
+                TaskName::new("Next name").unwrap(),
+                at(500),
+            )
             .unwrap_err();
         assert_eq!(blocked.kind, "unavailable");
         assert_eq!(
@@ -852,7 +889,12 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
     bridge.application.refresh_resources(3).unwrap();
     let next = bridge
         .application
-        .rename_task(task.id(), TaskName::new("Next name").unwrap(), at(500))
+        .rename_task_with_expected_name(
+            task.id(),
+            TaskName::new("Committed name").unwrap(),
+            TaskName::new("Next name").unwrap(),
+            at(500),
+        )
         .unwrap();
     assert_eq!(next.name().as_str(), "Next name");
     assert_eq!(writes.load(Ordering::SeqCst), 2);
