@@ -85,6 +85,29 @@ final class WorklogCorrectionTests: XCTestCase {
     }
 
     @MainActor
+    func testRefreshedRunningWorklogRequiresReviewOfTheOpenEditor() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let running = WorklogItem(
+            id: "running-log", taskId: secondTask.id, start: "2024-12-31T23:58:12.123456Z", end: nil)
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: running))
+        fixture.session.openWorklogCorrection(worklogID: running.id)
+        XCTAssertEqual(fixture.session.worklogCorrection.original, running)
+
+        fixture.session.refresh()
+        let refresh = try await fixture.client.next()
+        let restarted = WorklogItem(
+            id: running.id, taskId: running.taskId, start: "2024-12-31T23:50:00.000000Z", end: nil)
+        refresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: restarted))
+        try await fixture.settled()
+
+        XCTAssertTrue(fixture.session.worklogCorrection.requiresReview)
+        XCTAssertEqual(fixture.session.worklogCorrection.latest, restarted)
+        XCTAssertEqual(
+            fixture.session.worklogCorrection.error, "This worklog changed. Review its latest times before saving.")
+    }
+
+    @MainActor
     func testSuccessfulSaveKeepsSubmittingSheetContentDuringDismissal() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
