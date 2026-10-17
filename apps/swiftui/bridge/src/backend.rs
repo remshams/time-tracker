@@ -591,8 +591,8 @@ fn local_archive_error(error: ApplicationError) -> BridgeError {
 
 fn archive_error(error: &ApplicationError) -> BridgeError {
     let failure = error.failure();
+    // TaskChanged needs no arm: task_operation_error_kind already reports it as a conflict.
     let kind = match failure.category() {
-        ApplicationFailureCategory::TaskChanged => "conflict",
         ApplicationFailureCategory::ActiveTask => "task_active",
         ApplicationFailureCategory::TaskNotFound => "task_not_found",
         _ => task_operation_error_kind(error),
