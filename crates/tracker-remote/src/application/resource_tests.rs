@@ -154,9 +154,8 @@ fn persisted_preview_tokens_preserve_period_candidates_and_confirmation_guard() 
     assert_eq!(preview.as_of(), at());
     assert_eq!(preview.inactive_days(), 21);
     assert_eq!(preview.count(), 2);
-    assert_eq!(preview.candidate_ids(), candidate_ids.as_slice());
-    assert!(preview.has_confirmation_guard());
-    assert!(validate_inactive_preview(&preview.dto).is_ok());
+    assert_eq!(preview.dto.candidate_task_ids, candidate_ids);
+    assert_eq!(preview.dto.revision, "captured-revision");
     assert_eq!(serde_json::to_value(&preview).unwrap(), token);
 
     let mut missing_guard = token.clone();
@@ -164,9 +163,43 @@ fn persisted_preview_tokens_preserve_period_candidates_and_confirmation_guard() 
     assert!(serde_json::from_value::<InactiveTaskPreview>(missing_guard).is_err());
     let mut empty_guard = token;
     empty_guard["revision"] = serde_json::json!("");
-    let invalid: InactiveTaskPreview = serde_json::from_value(empty_guard).unwrap();
-    assert!(!invalid.has_confirmation_guard());
-    assert!(validate_inactive_preview(&invalid.dto).is_err());
+    assert!(serde_json::from_value::<InactiveTaskPreview>(empty_guard).is_err());
+}
+
+/// Pins the saved token text so previews written before validation moved into
+/// deserialization still load and serialize to the same bytes.
+#[test]
+fn persisted_preview_token_text_is_unchanged() {
+    let token = concat!(
+        r#"{"as_of":"2027-01-15T08:00:00Z","inactive_days":14,"count":1,"#,
+        r#""candidate_task_ids":["00000000-0000-7000-8000-000000000001"],"#,
+        r#""revision":"revision-1"}"#
+    );
+    let preview: InactiveTaskPreview = serde_json::from_str(token).unwrap();
+    assert_eq!(serde_json::to_string(&preview).unwrap(), token);
+}
+
+/// Rejects restored tokens whose cutoff or count was edited after capture.
+#[test]
+fn restored_preview_tokens_reject_tampered_cutoffs_and_counts() {
+    let token = serde_json::json!({
+        "as_of": "2027-01-15T08:00:00Z",
+        "inactive_days": 14,
+        "count": 1,
+        "candidate_task_ids": ["00000000-0000-7000-8000-000000000001"],
+        "revision": "revision-1",
+    });
+    assert!(serde_json::from_value::<InactiveTaskPreview>(token.clone()).is_ok());
+    for (field, value) in [
+        ("as_of", serde_json::json!("2027-01-15T08:00:00.000000001Z")),
+        ("count", serde_json::json!(2)),
+        ("count", serde_json::json!(0)),
+    ] {
+        let mut tampered = token.clone();
+        tampered[field] = value;
+        let error = serde_json::from_value::<InactiveTaskPreview>(tampered).unwrap_err();
+        assert_eq!(error.to_string(), "invalid inactive task preview");
+    }
 }
 
 /// Checks receipt identity and revision independently before retaining a successful command result.
@@ -269,6 +302,9 @@ fn previews_require_complete_unique_ids_a_period_and_a_revision() {
         },
     ] {
         assert!(validate_inactive_preview(&invalid).is_err());
+        let token = serde_json::to_string(&invalid).unwrap();
+        let error = serde_json::from_str::<InactiveTaskPreview>(&token).unwrap_err();
+        assert!(error.to_string().contains("invalid inactive task preview"));
     }
 }
 #[test]

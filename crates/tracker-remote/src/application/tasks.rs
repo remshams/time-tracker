@@ -116,7 +116,6 @@ impl TasksClient {
         preview: &InactiveTaskPreview,
     ) -> Result<Vec<Task>, ApplicationError> {
         let preview = &preview.dto;
-        validate_inactive_preview(preview)?;
         let mut tasks = Vec::with_capacity(preview.count);
         for raw_id in &preview.candidate_task_ids {
             let id = raw_id

@@ -48,13 +48,15 @@ Source: [crate](../../crates/tracker-server/Cargo.toml), [entry points](../../cr
 
 ### tracker-remote
 
-Used by clients in remote mode; local clients and the HTTP server use the local application and storage path. Owns asynchronous HTTP transport, response validation, confirmed resource caches, and guarded command recovery. `RemoteApplication` publishes only validated observations. Failed refreshes retain confirmed values; a saved command remains saved after a display refresh fails. Unloaded tracking differs from observed idle tracking. Report requests share canonical range, query, cooldown, and echoed-context validation in `ReportsClient`; the coordinator validates the remaining daily-overview resources before publishing them together. It never opens the server's database.
+Used by clients in remote mode; local clients and the HTTP server use the local application and storage path. Owns asynchronous HTTP transport, response validation, confirmed resource caches, and guarded command recovery. `RemoteApplication` publishes only validated observations. Failed refreshes retain confirmed values; a saved command remains saved after a display refresh fails. Unloaded tracking differs from observed idle tracking. Report requests share canonical range, query, cooldown, and echoed-context validation in `ReportsClient`; the coordinator validates the remaining daily-overview resources before publishing them together. A restored inactive-task preview token passes the same validation as a server preview while it is deserialized. It never opens the server's database.
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol).
 
 Source: [crate](../../crates/tracker-remote/Cargo.toml), [remote application](../../crates/tracker-remote/src/application/mod.rs), [transport](../../crates/tracker-remote/src/transport.rs). Decisions: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
 
 Report validation scope: `a1e1da396889f63aa65a1fc3ef21c5af3068eea1`, inspected on 16 October 2026. [Report requests](../../crates/tracker-remote/src/application/reports.rs) fetch validated totals without publishing aggregate resources; the [coordinator](../../crates/tracker-remote/src/application/coordinator.rs) owns coherent adoption.
+
+Preview token validation scope: `9cc4e78fa6b02c5dfa835c3572ca4f94fc60e5fc`, inspected on 17 October 2026. [`InactiveTaskPreview`](../../crates/tracker-remote/src/application/mod.rs) deserializes through its protocol DTO and rejects tokens that fail [preview validation](../../crates/tracker-remote/src/application/decoding.rs).
 
 ### tracker-client
 
@@ -144,7 +146,7 @@ Owner: [report use cases](../../crates/tracker-application/src/service/reports.r
 
 ### Inactive-task archive preview
 
-A reviewed candidate set captured at a fixed time and positive inactivity period, defaulting to 14 days. Eligibility checks task creation, metadata changes, and work in that window. Confirmation rechecks eligibility in one transaction. Local confirmation guards the candidate IDs; remote confirmation guards the revision and preview expiry. Running tasks remain protected and archiving keeps history.
+A reviewed candidate set captured at a fixed time and positive inactivity period, defaulting to 14 days. Eligibility checks task creation, metadata changes, and work in that window. Confirmation rechecks eligibility in one transaction. Local confirmation guards the candidate IDs; remote confirmation guards the revision and preview expiry. tracker-remote rejects a restored remote token whose fields fail server-preview validation. Running tasks remain protected and archiving keeps history.
 
 Owner: [inactivity period](../../crates/tracker-domain/src/inactivity.rs) and [task use cases](../../crates/tracker-application/src/service/tasks.rs). Decisions: [ADR 0012](../adr/0012-share-client-query-and-failure-policies.md), [ADR 0016](../adr/0016-configurable-inactive-task-archiving.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md).
 

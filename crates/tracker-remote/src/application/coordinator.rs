@@ -10,7 +10,6 @@ use super::{
     WorklogPageDto, WorklogResourceDto, WorklogTimes, WorklogsClient, WriteGuard, active_id,
     app_decode_worklog, canonical, creation_needs_recovery, decode_task_list_state,
     map_application_error, original_worklog_matches, protocol_failure, reviewed_tracking_changed,
-    validate_inactive_preview,
 };
 
 /// Coordinates remote tracker workflows across resource clients.
@@ -516,7 +515,6 @@ impl RemoteTrackerCoordinator {
     ) -> Result<usize, ApplicationError> {
         self.session.begin_command();
         let preview = &preview.dto;
-        validate_inactive_preview(preview)?;
         let body = ArchiveInactiveTasksRequest {
             as_of: preview.as_of,
             inactive_days: preview.inactive_days,

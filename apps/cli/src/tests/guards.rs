@@ -351,7 +351,7 @@ fn remote_preview_tokens_reject_invalid_guards_and_candidates_before_connecting(
     for (field, value) in [
         ("revision", serde_json::json!("")),
         ("inactive_days", serde_json::json!(0)),
-        ("inactive_days", serde_json::json!(7)),
+        ("as_of", serde_json::json!("2026-01-01T00:00:00.000000001Z")),
         ("candidate_task_ids", serde_json::json!(["invalid"])),
         ("candidate_task_ids", serde_json::json!([id, id])),
         ("candidate_task_ids", serde_json::json!([])),
@@ -360,8 +360,15 @@ fn remote_preview_tokens_reject_invalid_guards_and_candidates_before_connecting(
     ] {
         let mut invalid = valid.clone();
         invalid["preview"][field] = value;
-        assert_eq!(validate(&invalid, backend).unwrap_err().exit_code, 2);
+        let error = validate(&invalid, backend).unwrap_err();
+        assert_eq!((error.code, error.exit_code), ("invalid_input", 2));
+        assert_eq!(error.message, "invalid inactive task preview");
     }
+    let mut weekly = valid.clone();
+    weekly["preview"]["inactive_days"] = serde_json::json!(7);
+    let error = validate(&weekly, backend).unwrap_err();
+    assert_eq!((error.code, error.exit_code), ("invalid_input", 2));
+    assert_eq!(error.message, "remote preview must use the 14-day period");
     assert_eq!(
         validate(&valid, "local:/tmp/tt.db").unwrap_err().exit_code,
         2
