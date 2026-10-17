@@ -27,9 +27,18 @@ CONFIG = {
     "rust_image": "rust:1-bookworm",
 }
 NOW = datetime.datetime(2026, 10, 16, 12, 0, tzinfo=datetime.timezone.utc)
+MIGRATIONS_SOURCE = """type Migration = fn(&Transaction<'_>) -> Result<(), StorageError>;
+
+const MIGRATIONS: &[Migration] = &[
+    apply_baseline,
+    apply_task_timestamps,
+];
+
+pub(crate) const LATEST_VERSION: i64 = MIGRATIONS.len() as i64;
+"""
 
 
-def create_database(path, active=True):
+def create_database(path, active=True, zero_duration=False):
     with contextlib.closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("CREATE TABLE tasks (id TEXT, name TEXT, archived INTEGER, "
                            "created_at_us INTEGER, updated_at_us INTEGER)")
@@ -39,6 +48,31 @@ def create_database(path, active=True):
         connection.execute("INSERT INTO worklogs VALUES ('worklog-1', 'task-1', 3000000, 4000000)")
         if active:
             connection.execute("INSERT INTO worklogs VALUES ('worklog-2', 'task-1', 5000000, NULL)")
+        if zero_duration:
+            connection.execute("INSERT INTO worklogs VALUES ('worklog-0', 'task-1', 4500000, 4500000)")
+
+
+def migrate_to_version_8(path):
+    """Stands in for a candidate migration that deletes zero-duration worklogs."""
+    with contextlib.closing(sqlite3.connect(path)) as connection, connection:
+        connection.execute("DELETE FROM worklogs WHERE end_us = start_us")
+        connection.execute("PRAGMA user_version = 8")
+
+
+class FakeCandidate:
+    """Replaces the candidate process and applies its startup migration to the --db file."""
+
+    migration = None
+
+    def __init__(self, command, **options):
+        if FakeCandidate.migration:
+            FakeCandidate.migration(command[command.index("--db") + 1])
+
+    def terminate(self):
+        pass
+
+    def wait(self, timeout=None):
+        return 0
 
 
 def served_routes(task_name="Planning"):
@@ -82,13 +116,19 @@ def fake_server(routes):
 
 
 class FakeSudo:
-    """Applies install and mv to real files and records every privileged command."""
+    """Applies install and mv to real files and records every privileged command.
 
-    def __init__(self):
+    When the started live binary is the candidate, start runs the candidate migration."""
+
+    def __init__(self, live=None, database=None, migration=None):
         self.calls = []
+        self.live, self.database, self.migration = live, database, migration
 
     def __call__(self, *arguments):
         self.calls.append(arguments)
+        if arguments[:2] == ("systemctl", "start") and self.migration \
+                and self.live.read_bytes() == b"candidate binary":
+            self.migration(self.database)
         if arguments[0] == "install":
             shutil.copyfile(arguments[-2], arguments[-1])
         elif arguments[0] == "mv":
@@ -98,7 +138,7 @@ class FakeSudo:
 
 
 class DeploymentRoot:
-    def __init__(self, directory):
+    def __init__(self, directory, zero_duration=False):
         self.root = Path(directory)
         (self.root / "build").mkdir()
         (self.root / "bin").mkdir()
@@ -107,18 +147,39 @@ class DeploymentRoot:
         self.live.write_bytes(b"previous binary")
         config = {**CONFIG, "live_binary": str(self.live)}
         (self.root / "deploy.json").write_text(json.dumps(config))
-        create_database(self.root / "data/tt-server.db")
+        self.database = self.root / "data/tt-server.db"
+        create_database(self.database, zero_duration=zero_duration)
         self.archive = self.root / "build/source-0123456.tar"
         self.archive.write_bytes(b"source archive")
         self.candidate = self.root / "bin/tt-0123456"
         self.candidate.write_bytes(b"candidate binary")
 
-    def host(self):
-        return DEPLOY.Host(self.root, REVISION, DEPLOY.digest(self.archive), 3)
+    def host(self, schema=7):
+        return DEPLOY.Host(self.root, REVISION, DEPLOY.digest(self.archive), 3, schema)
 
-    def write_manifest(self):
-        manifest = {"commit": REVISION, "sha256": DEPLOY.digest(self.candidate)}
+    def write_manifest(self, migration=None):
+        before = DEPLOY.database_state(self.database)
+        after = before
+        if migration:
+            copied = self.root / "copy.db"
+            DEPLOY.backup_database(self.database, copied)
+            migration(copied)
+            after = DEPLOY.database_state(copied)
+            copied.unlink()
+        manifest = {"commit": REVISION, "sha256": DEPLOY.digest(self.candidate),
+                    "database_before_sha256": DEPLOY.fingerprint(before),
+                    "database_after_sha256": DEPLOY.fingerprint(after)}
         (self.root / "build/preflight-0123456.json").write_text(json.dumps(manifest))
+
+    def manifest(self):
+        return json.loads((self.root / "build/preflight-0123456.json").read_text())
+
+    def preflight(self, schema=7, migration=None, accept=False):
+        FakeCandidate.migration = migration
+        with patch.object(DEPLOY.subprocess, "Popen", FakeCandidate), patch.object(DEPLOY, "verify"), \
+                patch.object(DEPLOY, "wait_until_ready"), patch("sys.stdout", io.StringIO()) as output:
+            DEPLOY.remote_preflight(self.host(schema), accept)
+        return output.getvalue()
 
 
 class ConfigTests(unittest.TestCase):
@@ -145,6 +206,13 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(DEPLOY.protocol_version("//! Protocol\npub const VERSION: u32 = 3;\n"), 3)
         with self.assertRaisesRegex(DEPLOY.DeployError, "protocol VERSION"):
             DEPLOY.protocol_version("pub const OTHER: u32 = 3;\n")
+
+    def test_counts_the_migrations_in_source(self):
+        self.assertEqual(DEPLOY.schema_version(MIGRATIONS_SOURCE), 2)
+        source = (SCRIPTS.parent / DEPLOY.MIGRATION_SOURCE).read_text()
+        self.assertGreaterEqual(DEPLOY.schema_version(source), 7)
+        with self.assertRaisesRegex(DEPLOY.DeployError, "MIGRATIONS list"):
+            DEPLOY.schema_version("const OTHER: &[Migration] = &[\n    apply_baseline,\n];\n")
 
 
 class BuildTests(unittest.TestCase):
@@ -205,14 +273,159 @@ class VerifyTests(unittest.TestCase):
                 DEPLOY.wait_until_ready(base, 4, timeout=0)
 
 
+class PreflightTests(unittest.TestCase):
+    def test_unchanged_database_needs_no_approval(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory)
+            root.preflight()
+            manifest = root.manifest()
+            self.assertEqual(manifest["database_before_sha256"], manifest["database_after_sha256"])
+            self.assertIsNone(manifest["migration_changes"])
+            self.assertEqual((manifest["schema_version"], manifest["preflight_worklogs"]), (7, 2))
+            self.assertEqual(len(list((root.root / "build").glob("smoke-*"))), 0)
+
+    def test_migration_changes_need_approval(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory, zero_duration=True)
+            with self.assertRaisesRegex(DEPLOY.DeployError, r"\(schema version 7 -> 8; worklogs: 1 removed\)"
+                                                           r".*--accept-migration-changes"):
+                root.preflight(schema=8, migration=migrate_to_version_8)
+            self.assertFalse((root.root / "build/preflight-0123456.json").exists())
+
+    def test_approved_migration_records_both_fingerprints(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory, zero_duration=True)
+            before = DEPLOY.database_state(root.database)
+            output = root.preflight(schema=8, migration=migrate_to_version_8, accept=True)
+            manifest = root.manifest()
+            self.assertIn("Approved migration changes: schema version 7 -> 8; worklogs: 1 removed", output)
+            self.assertEqual(manifest["migration_changes"], "schema version 7 -> 8; worklogs: 1 removed")
+            self.assertEqual(manifest["database_before_sha256"], DEPLOY.fingerprint(before))
+            self.assertNotEqual(manifest["database_after_sha256"], manifest["database_before_sha256"])
+            self.assertEqual((manifest["schema_version"], manifest["preflight_worklogs"]), (8, 2))
+            self.assertEqual(DEPLOY.database_state(root.database), before)
+
+    def test_schema_must_end_at_the_candidates_latest_migration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory)
+            with self.assertRaisesRegex(DEPLOY.DeployError, "left schema version 7, but its migrations end at 8"):
+                root.preflight(schema=8, accept=True)
+            with self.assertRaisesRegex(DEPLOY.DeployError, "left schema version 8, but its migrations end at 7"):
+                root.preflight(schema=7, migration=migrate_to_version_8, accept=True)
+            with self.assertRaisesRegex(DEPLOY.DeployError, "schema version 7, newer than the candidate's 6"):
+                root.preflight(schema=6)
+
+    def test_describes_added_removed_and_changed_rows(self):
+        before = {"schema": 7, "tasks": [["task-1", "Planning"], ["task-2", "Review"]],
+                  "worklogs": [["worklog-1", "task-1"]]}
+        after = {"schema": 7, "tasks": [["task-1", "Renamed"], ["task-3", "Support"]],
+                 "worklogs": [["worklog-1", "task-1"]]}
+        self.assertEqual(DEPLOY.describe_changes(before, after), "tasks: 1 removed, 1 added, 1 changed")
+        self.assertEqual(DEPLOY.describe_changes(before, before), "")
+
+
 class DeployTests(unittest.TestCase):
+    def deploy(self, root, sudo, **patches):
+        with patch.object(DEPLOY, "sudo", sudo), patch.object(DEPLOY, "verify", **patches), \
+                patch.object(DEPLOY, "wait_until_ready"), patch("sys.stdout", io.StringIO()), \
+                patch("sys.stderr", io.StringIO()) as errors:
+            try:
+                DEPLOY.remote_deploy(root.host(), keep_backup=False)
+            finally:
+                self.errors = errors.getvalue()
+
+    def test_approved_migration_deploys_and_records_the_migrated_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory, zero_duration=True)
+            root.write_manifest(migrate_to_version_8)
+            self.deploy(root, FakeSudo(root.live, root.database, migrate_to_version_8))
+            latest = json.loads((root.root / "build/deployment-latest.json").read_text())
+            self.assertEqual((latest["tasks"], latest["worklogs"]), (1, 2))
+            self.assertEqual(DEPLOY.database_state(root.database)["schema"], 8)
+
+    def test_failure_after_a_migration_restores_the_database_and_the_previous_binary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory, zero_duration=True)
+            before = DEPLOY.database_state(root.database)
+            root.write_manifest(migrate_to_version_8)
+            sudo = FakeSudo(root.live, root.database, migrate_to_version_8)
+            failure = DEPLOY.DeployError("The served task catalog differs from the database")
+            with self.assertRaises(DEPLOY.DeployError):
+                self.deploy(root, sudo, side_effect=failure)
+            self.assertEqual(DEPLOY.database_state(root.database), before)
+            self.assertEqual(root.live.read_bytes(), b"previous binary")
+            self.assertEqual([call[:2] for call in sudo.calls if call[0] == "systemctl"],
+                             [("systemctl", "stop"), ("systemctl", "start"),
+                              ("systemctl", "stop"), ("systemctl", "start")])
+            self.assertIn("rolled back", self.errors)
+
+    def test_unapproved_startup_changes_are_rolled_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory, zero_duration=True)
+            before = DEPLOY.database_state(root.database)
+            root.write_manifest()
+            with self.assertRaisesRegex(DEPLOY.DeployError, "differently from the preflight"):
+                self.deploy(root, FakeSudo(root.live, root.database, migrate_to_version_8))
+            self.assertEqual(DEPLOY.database_state(root.database), before)
+            self.assertEqual(root.live.read_bytes(), b"previous binary")
+
+    def test_live_changes_after_the_preflight_stop_the_deployment_before_the_swap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory)
+            root.write_manifest()
+            with contextlib.closing(sqlite3.connect(root.database)) as connection, connection:
+                connection.execute("UPDATE tasks SET name = 'Renamed'")
+            sudo = FakeSudo()
+            with self.assertRaisesRegex(DEPLOY.DeployError, "changed after the preflight"):
+                self.deploy(root, sudo)
+            self.assertEqual(root.live.read_bytes(), b"previous binary")
+            self.assertEqual(sudo.calls[-2:], [("systemctl", "start", "tracker.service"),
+                                               ("rm", "-f", f"{root.live}.new-0123456")])
+
+    def test_failed_restore_reports_an_unfinished_rollback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory)
+            root.write_manifest()
+            sudo = FakeSudo()
+            restore = DEPLOY.DeployError("The restored database differs")
+            failure = DEPLOY.DeployError("The served task catalog differs from the database")
+            with patch.object(DEPLOY, "restore_database", side_effect=restore):
+                with self.assertRaisesRegex(DEPLOY.DeployError, "restored database differs"):
+                    self.deploy(root, sudo, side_effect=failure)
+            self.assertIn("rollback did not finish", self.errors)
+            self.assertEqual(sudo.calls[-1], ("systemctl", "stop", "tracker.service"))
+
+    def test_restore_rejects_a_backup_with_different_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            backup, live = Path(directory) / "backup.db", Path(directory) / "live.db"
+            create_database(backup)
+            create_database(live, active=False)
+            expected = DEPLOY.database_state(live)
+            with self.assertRaisesRegex(DEPLOY.DeployError, "restored database differs"):
+                DEPLOY.restore_database(backup, live, expected)
+            DEPLOY.restore_database(backup, live, DEPLOY.database_state(backup))
+
+    def test_rejects_a_preflight_record_without_fingerprints_or_a_read_only_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory)
+            manifest = {"commit": REVISION, "sha256": DEPLOY.digest(root.candidate)}
+            (root.root / "build/preflight-0123456.json").write_text(json.dumps(manifest))
+            with patch.object(DEPLOY, "sudo") as sudo:
+                with self.assertRaisesRegex(DEPLOY.DeployError, "no database fingerprints"):
+                    DEPLOY.remote_deploy(root.host(), keep_backup=False)
+                root.write_manifest()
+                with patch.object(DEPLOY.os, "access", return_value=False), \
+                        self.assertRaisesRegex(DEPLOY.DeployError, "must be writable"):
+                    DEPLOY.remote_deploy(root.host(), keep_backup=False)
+            sudo.assert_not_called()
+
     def test_successful_deployment_records_the_result_and_removes_the_backup(self):
         with tempfile.TemporaryDirectory() as directory:
             root = DeploymentRoot(directory)
             root.write_manifest()
             sudo = FakeSudo()
             with patch.object(DEPLOY, "sudo", sudo), patch.object(DEPLOY, "verify"), \
-                    patch("sys.stdout", io.StringIO()):
+                    patch.object(DEPLOY, "wait_until_ready"), patch("sys.stdout", io.StringIO()):
                 DEPLOY.remote_deploy(root.host(), keep_backup=False)
             self.assertEqual(root.live.read_bytes(), b"candidate binary")
             self.assertEqual([call[:2] for call in sudo.calls if call[0] == "systemctl"],
@@ -230,7 +443,7 @@ class DeployTests(unittest.TestCase):
             sudo = FakeSudo()
             failure = DEPLOY.DeployError("The served task catalog differs from the database")
             with patch.object(DEPLOY, "sudo", sudo), patch.object(DEPLOY, "verify", side_effect=failure), \
-                    patch("sys.stderr", io.StringIO()) as errors:
+                    patch.object(DEPLOY, "wait_until_ready"), patch("sys.stderr", io.StringIO()) as errors:
                 with self.assertRaises(DEPLOY.DeployError):
                     DEPLOY.remote_deploy(root.host(), keep_backup=False)
             self.assertEqual(root.live.read_bytes(), b"previous binary")
@@ -278,7 +491,7 @@ class WorkstationTests(unittest.TestCase):
 
         arguments = DEPLOY.workstation_parser().parse_args(["--host", "server", "--root", "/srv/tt/", *extra])
         with patch.object(DEPLOY, "resolve_revision", return_value=REVISION), \
-                patch.object(DEPLOY, "capture", return_value="pub const VERSION: u32 = 3;\n"), \
+                patch.object(DEPLOY, "capture", return_value="pub const VERSION: u32 = 3;\n" + MIGRATIONS_SOURCE), \
                 patch.object(DEPLOY, "remote", side_effect=remote), \
                 patch.object(DEPLOY, "run"), patch.object(DEPLOY, "upload_archive"), \
                 patch.object(DEPLOY, "remote_helper", side_effect=lambda *call: helpers.append(call)), \
@@ -289,17 +502,20 @@ class WorkstationTests(unittest.TestCase):
     def test_preflight_only_never_runs_the_deploy_step(self):
         helpers, health = self.run_workstation("--preflight-only")
         self.assertEqual([call[2] for call in helpers], ["build", "preflight"])
+        self.assertNotIn("--accept-migration-changes", helpers[1])
         self.assertEqual(self.remote_calls[1], ("server", "mkdir", "-p", "/srv/tt/build", "/srv/tt/bin"))
         self.assertTrue(all(call[:2] == ("server", "/srv/tt") for call in helpers))
         health.assert_not_called()
 
     def test_full_deployment_passes_options_and_checks_health(self):
-        helpers, health = self.run_workstation("--rebuild", "--keep-backup")
+        helpers, health = self.run_workstation("--rebuild", "--keep-backup", "--accept-migration-changes")
         self.assertEqual([call[2] for call in helpers], ["build", "preflight", "deploy"])
         self.assertIn("--rebuild", helpers[0])
         self.assertIn("--keep-backup", helpers[2])
         self.assertEqual(helpers[1][3:], ("--revision", REVISION, "--archive-sha256", helpers[1][6],
-                                           "--protocol-version", "3"))
+                                           "--protocol-version", "3", "--schema-version", "2",
+                                           "--accept-migration-changes"))
+        self.assertNotIn("--accept-migration-changes", helpers[2])
         health.assert_called_once_with("http://127.0.0.1:8765", 3)
 
     def test_upload_refuses_to_replace_a_different_archive(self):
