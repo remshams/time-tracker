@@ -18,8 +18,10 @@
 		8F47CEF34016B75C457130B1 /* ConnectionDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF4B35BBAC9E510A4F1B6719 /* ConnectionDraftStore.swift */; };
 		04FBC52E93CEB524F6B023B1 /* WorklogCorrectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373690BD6F341E81B72C511D /* WorklogCorrectionStore.swift */; };
 		7C4433CC7C90A7FF3715CE06 /* WorklogMoveStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E333FB30857DC1841F6A488 /* WorklogMoveStore.swift */; };
+		C88EDC1E136D70620F0B0ECF /* WorklogDeletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FDBB33BC912AB6A8A85E66B /* WorklogDeletionStore.swift */; };
 		EA53E0B162E3868C3E6CD353 /* WorklogCorrectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */; };
 		8FB1818DF921B787854DFCA6 /* WorklogMoveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40EB26AD584B87CAF03F7FD /* WorklogMoveView.swift */; };
+		B8C0B64849481F9C0CB43B5D /* WorklogDeletionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEB2F7A3DAD9589579344164 /* WorklogDeletionView.swift */; };
 		EEFD5BD538B369A492C794E7 /* TrackerApplicationMenus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */; };
 		C06F25F76FAA72DB1B696C6D /* TrackerApplicationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */; };
 		9766315AC90A7BB55587764A /* TrackerTaskPresentationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */; };
@@ -79,6 +81,7 @@
 		EE59833B62521F3AC3B2331A /* WorklogCorrectionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 159FCA19B14C578400C291DC /* WorklogCorrectionUITests.swift */; };
 		221826F79696ED28C6AE568B /* WorklogHistoryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3E20D30926C26B66C91D265 /* WorklogHistoryUITests.swift */; };
 		8AE6E9F0F9F9A41A450035CF /* WorklogMoveUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 497BEDD3FC9242AA26F3F6D5 /* WorklogMoveUITests.swift */; };
+		0A592C60A56BDDDEDB8E2169 /* WorklogDeletionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B9302CBE784C495573CC162 /* WorklogDeletionUITests.swift */; };
 		22E7B3EB13B43650ABE84A7B /* ConnectionUITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA500C2003656D25C152693 /* ConnectionUITestSupport.swift */; };
 		0832BFE9F3604EABDB3A63CA /* WriteIntentAssertions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E33ABC2778868456F82BED2 /* WriteIntentAssertions.swift */; };
 		254655ACF2FA9DC2800681FA /* WindowRoutingUITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B148E0E75584082DBBB18332 /* WindowRoutingUITestSupport.swift */; };
@@ -114,8 +117,10 @@
 		DF4B35BBAC9E510A4F1B6719 /* ConnectionDraftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionDraftStore.swift; sourceTree = "<group>"; };
 		373690BD6F341E81B72C511D /* WorklogCorrectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogCorrectionStore.swift; sourceTree = "<group>"; };
 		9E333FB30857DC1841F6A488 /* WorklogMoveStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogMoveStore.swift; sourceTree = "<group>"; };
+		0FDBB33BC912AB6A8A85E66B /* WorklogDeletionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogDeletionStore.swift; sourceTree = "<group>"; };
 		C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogCorrectionView.swift; sourceTree = "<group>"; };
 		B40EB26AD584B87CAF03F7FD /* WorklogMoveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogMoveView.swift; sourceTree = "<group>"; };
+		DEB2F7A3DAD9589579344164 /* WorklogDeletionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogDeletionView.swift; sourceTree = "<group>"; };
 		522FFC78EE89FF09F0C97E43 /* TrackerApplicationMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerApplicationMenus.swift; sourceTree = "<group>"; };
 		1A1AC2E49DD81605438725C4 /* TrackerApplicationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerApplicationDelegate.swift; sourceTree = "<group>"; };
 		A59AD7BD855B23CF95B15701 /* TrackerTaskPresentationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerTaskPresentationCoordinator.swift; sourceTree = "<group>"; };
@@ -180,6 +185,7 @@
 		159FCA19B14C578400C291DC /* WorklogCorrectionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogCorrectionUITests.swift; sourceTree = "<group>"; };
 		F3E20D30926C26B66C91D265 /* WorklogHistoryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogHistoryUITests.swift; sourceTree = "<group>"; };
 		497BEDD3FC9242AA26F3F6D5 /* WorklogMoveUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogMoveUITests.swift; sourceTree = "<group>"; };
+		1B9302CBE784C495573CC162 /* WorklogDeletionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogDeletionUITests.swift; sourceTree = "<group>"; };
 		DFA500C2003656D25C152693 /* ConnectionUITestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionUITestSupport.swift; sourceTree = "<group>"; };
 		5E33ABC2778868456F82BED2 /* WriteIntentAssertions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WriteIntentAssertions.swift; sourceTree = "<group>"; };
 		B148E0E75584082DBBB18332 /* WindowRoutingUITestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowRoutingUITestSupport.swift; sourceTree = "<group>"; };
@@ -347,8 +353,10 @@
 			children = (
 				373690BD6F341E81B72C511D /* WorklogCorrectionStore.swift */,
 				9E333FB30857DC1841F6A488 /* WorklogMoveStore.swift */,
+				0FDBB33BC912AB6A8A85E66B /* WorklogDeletionStore.swift */,
 				C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */,
 				B40EB26AD584B87CAF03F7FD /* WorklogMoveView.swift */,
+				DEB2F7A3DAD9589579344164 /* WorklogDeletionView.swift */,
 				E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */,
 				A8C44057A177E810540FF857 /* WorklogRow.swift */,
 			);
@@ -518,6 +526,7 @@
 				159FCA19B14C578400C291DC /* WorklogCorrectionUITests.swift */,
 				F3E20D30926C26B66C91D265 /* WorklogHistoryUITests.swift */,
 				497BEDD3FC9242AA26F3F6D5 /* WorklogMoveUITests.swift */,
+				1B9302CBE784C495573CC162 /* WorklogDeletionUITests.swift */,
 				32D251D129980236EBE71C01 /* WorklogUITestSupport.swift */,
 			);
 			path = WorklogHistory;
@@ -744,8 +753,10 @@
 			files = (
 				04FBC52E93CEB524F6B023B1 /* WorklogCorrectionStore.swift in Sources */,
 				7C4433CC7C90A7FF3715CE06 /* WorklogMoveStore.swift in Sources */,
+				C88EDC1E136D70620F0B0ECF /* WorklogDeletionStore.swift in Sources */,
 				EA53E0B162E3868C3E6CD353 /* WorklogCorrectionView.swift in Sources */,
 				8FB1818DF921B787854DFCA6 /* WorklogMoveView.swift in Sources */,
+				B8C0B64849481F9C0CB43B5D /* WorklogDeletionView.swift in Sources */,
 				ED605C1B494E79DC7EF1215D /* TrackerSidebar.swift in Sources */,
 				9766315AC90A7BB55587764A /* TrackerTaskPresentationCoordinator.swift in Sources */,
 				C06F25F76FAA72DB1B696C6D /* TrackerApplicationDelegate.swift in Sources */,
@@ -823,6 +834,7 @@
 				EE59833B62521F3AC3B2331A /* WorklogCorrectionUITests.swift in Sources */,
 				221826F79696ED28C6AE568B /* WorklogHistoryUITests.swift in Sources */,
 				8AE6E9F0F9F9A41A450035CF /* WorklogMoveUITests.swift in Sources */,
+				0A592C60A56BDDDEDB8E2169 /* WorklogDeletionUITests.swift in Sources */,
 				254655ACF2FA9DC2800681FA /* WindowRoutingUITestSupport.swift in Sources */,
 				6BF0B6C817DF8551D0D58151 /* DailyTotalsUITestSupport.swift in Sources */,
 				35A53A222566F67615C62A38 /* TaskCatalogUITestSupport.swift in Sources */,

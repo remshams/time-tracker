@@ -230,6 +230,7 @@ public struct WorklogMoveCandidate: Decodable, Identifiable, Equatable, Sendable
 }
 
 public typealias WorklogMoveResult = WorklogCorrectionResult
+public typealias WorklogDeletionResult = WorklogCorrectionResult
 
 public struct InactiveTaskPreview: Decodable, Equatable, Sendable {
     public let asOf: String

@@ -363,6 +363,32 @@ impl Backend {
         result.map_err(|error| self.move_error(error, destination_task_id))
     }
 
+    pub fn delete_completed_worklog(
+        &mut self,
+        id: WorklogId,
+        expected_task_id: TaskId,
+        expected: WorklogTimes,
+    ) -> Result<Worklog, BridgeError> {
+        let result = self
+            .runtime
+            .block_on(
+                self.application
+                    .delete_completed_worklog(id, expected_task_id, expected),
+            );
+        self.record_write_completion();
+        result.map_err(|error| {
+            if !self.application.is_remote() {
+                return deletion_error(error);
+            }
+            let kind = deletion_error_kind(&error);
+            let mut mapped = self.operation_error(error, true);
+            if let Some(kind) = kind {
+                mapped.kind = kind;
+            }
+            mapped
+        })
+    }
+
     fn move_error(&mut self, error: ApplicationError, destination: TaskId) -> BridgeError {
         if !self.application.is_remote() {
             return local_move_error(&self.application, error, destination);
@@ -625,6 +651,26 @@ fn correction_error(error: ApplicationError) -> BridgeError {
         kind,
         uncertain: false,
         requires_refresh: kind == "worklog_changed",
+    }
+}
+
+fn deletion_error_kind(error: &ApplicationError) -> Option<&'static str> {
+    match error.failure().category() {
+        ApplicationFailureCategory::WorklogNotFound => Some("worklog_not_found"),
+        ApplicationFailureCategory::WorklogChanged => Some("worklog_changed"),
+        ApplicationFailureCategory::ActiveWorklog => Some("worklog_active"),
+        _ => None,
+    }
+}
+
+fn deletion_error(error: ApplicationError) -> BridgeError {
+    let failure = error.failure();
+    let kind = deletion_error_kind(&error);
+    BridgeError {
+        message: failure.message().to_owned(),
+        kind: kind.unwrap_or("general"),
+        uncertain: false,
+        requires_refresh: failure.recovery_failed() || kind.is_some(),
     }
 }
 

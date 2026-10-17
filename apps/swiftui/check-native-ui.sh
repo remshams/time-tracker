@@ -46,7 +46,7 @@ elif [[ "${1:-}" == --group && $# == 2 ]]; then
     execution_timeout=1800
     case "$2" in
         core) suites=(SmokeUITests TaskCatalogUITests ServerTaskCatalogUITests TaskCreationUITests ServerTaskCreationUITests TrackingUITests ServerTrackingUITests WorklogHistoryUITests ServerWorklogHistoryUITests DailyTotalsUITests ServerDailyTotalsUITests WorklogMoveUITests ServerWorklogMoveUITests) ;;
-        editing) suites=(TaskRenameUITests ServerTaskRenameUITests TaskArchivingUITests ServerTaskArchivingUITests BulkTaskArchivingUITests BulkTaskArchivingExtendedUITests ServerBulkTaskArchivingUITests WorklogCorrectionUITests ServerWorklogCorrectionUITests) ;;
+        editing) suites=(TaskRenameUITests ServerTaskRenameUITests TaskArchivingUITests ServerTaskArchivingUITests BulkTaskArchivingUITests BulkTaskArchivingExtendedUITests ServerBulkTaskArchivingUITests WorklogCorrectionUITests ServerWorklogCorrectionUITests WorklogDeletionUITests ServerWorklogDeletionUITests) ;;
         server) suites=(ConnectionUITests ServerRecoveryUITests SettingsUITests MenuSourceUITests AppearanceUITests) ;;
         mac) suites=(MenuBarUITests ServerMenuBarUITests WindowRoutingUITests LifecycleUITests ServerLifecycleUITests) ;;
         *) echo "Unknown native UI group: $2" >&2; exit 2 ;;

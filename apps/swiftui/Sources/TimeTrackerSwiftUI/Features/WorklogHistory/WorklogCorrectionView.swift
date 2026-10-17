@@ -152,6 +152,7 @@ private struct WorklogCorrectionSheet: View {
 struct WorklogHistoryHeading: View {
     @ObservedObject var correction: WorklogCorrectionStore
     @ObservedObject var move: WorklogMoveStore
+    @ObservedObject var deletion: WorklogDeletionStore
 
     var body: some View {
         HStack {
@@ -159,6 +160,7 @@ struct WorklogHistoryHeading: View {
             Spacer()
             PendingWorklogCorrectionButton(correction: correction)
             PendingWorklogMoveButton(move: move)
+            PendingWorklogDeletionButton(deletion: deletion)
         }
         .padding(.bottom, 4)
     }
