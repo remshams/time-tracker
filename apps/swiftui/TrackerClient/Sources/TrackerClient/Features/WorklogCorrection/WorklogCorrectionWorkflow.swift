@@ -2,8 +2,9 @@ import Foundation
 
 /// Opens the worklog editor and writes reviewed corrections.
 @MainActor
-final class WorklogCorrectionWorkflow {
+final class WorklogCorrectionWorkflow: EditorWorkflow {
     let state = WorklogCorrectionState()
+    var editor: any TrackerEditor { state }
     private unowned let operations: any OperationRunner
     private unowned let resources: any WorkflowResources
     private let client: any TrackerClient

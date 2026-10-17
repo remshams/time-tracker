@@ -26,14 +26,30 @@ extension TrackerEditor {
     func observeHistory(_ worklog: WorklogItem) {}
 }
 
-/// Answers the session's editor gates from every registered editor.
+/// A feature workflow that owns one editor and its operations.
+@MainActor
+protocol EditorWorkflow: AnyObject {
+    var editor: any TrackerEditor { get }
+    /// Starts the editor's pending write. Returns false when nothing started.
+    func drainWrite() -> Bool
+    /// Starts a pending read, such as a search, that leaves tracking controls enabled.
+    func drainRead() -> Bool
+}
+
+extension EditorWorkflow {
+    func drainRead() -> Bool { false }
+}
+
+/// Answers the session's editor gates and drains editor operations from every registered workflow.
 @MainActor
 final class EditorRegistry {
+    private let workflows: [any EditorWorkflow]
     private let editors: [any TrackerEditor]
 
-    /// Registration order decides which blocker a rejected connection change reports.
-    init(_ editors: [any TrackerEditor]) {
-        self.editors = editors
+    /// Registration order sets the drain order and which blocker a rejected connection change reports.
+    init(_ workflows: [any EditorWorkflow]) {
+        self.workflows = workflows
+        editors = workflows.map { $0.editor }
     }
 
     var blocksControls: Bool { editors.contains { $0.blocksControls } }
@@ -44,6 +60,22 @@ final class EditorRegistry {
     /// Whether an editor other than `editor` keeps the others closed.
     func blocksEditors(except editor: (any TrackerEditor)?) -> Bool {
         editors.contains { $0 !== editor && $0.blocksOtherEditors }
+    }
+
+    /// Starts the first pending write in registration order.
+    func drainWrite() -> Bool {
+        for workflow in workflows {
+            if workflow.drainWrite() { return true }
+        }
+        return false
+    }
+
+    /// Starts the first pending read in registration order.
+    func drainRead() -> Bool {
+        for workflow in workflows {
+            if workflow.drainRead() { return true }
+        }
+        return false
     }
 
     func sleep() { editors.forEach { $0.sleep() } }

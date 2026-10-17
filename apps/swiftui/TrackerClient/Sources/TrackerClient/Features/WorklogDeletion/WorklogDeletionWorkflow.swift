@@ -2,8 +2,9 @@ import Foundation
 
 /// Opens the deletion dialog and deletes reviewed completed worklogs.
 @MainActor
-final class WorklogDeletionWorkflow {
+final class WorklogDeletionWorkflow: EditorWorkflow {
     let state = WorklogDeletionState()
+    var editor: any TrackerEditor { state }
     private unowned let operations: any OperationRunner
     private unowned let resources: any WorkflowResources
     private let client: any TrackerClient

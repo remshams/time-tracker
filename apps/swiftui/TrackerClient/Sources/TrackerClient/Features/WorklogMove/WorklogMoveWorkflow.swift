@@ -2,8 +2,9 @@ import Foundation
 
 /// Searches destination tasks and moves reviewed worklogs.
 @MainActor
-final class WorklogMoveWorkflow {
+final class WorklogMoveWorkflow: EditorWorkflow {
     let state = WorklogMoveState()
+    var editor: any TrackerEditor { state }
     private unowned let operations: any OperationRunner
     private unowned let resources: any WorkflowResources
     private let client: any TrackerClient
