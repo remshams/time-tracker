@@ -192,6 +192,7 @@ final class TaskArchivingTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.taskArchiving.error, "Stop tracking this task before archiving it.")
+        XCTAssertEqual(fixture.session.archivingModel.state, fixture.session.taskArchiving)
         fixture.session.reviewLatestTaskArchiving()
         XCTAssertTrue(fixture.session.taskArchiving.requiresReview)
         fixture.session.cancelTaskArchiving()
@@ -316,6 +317,7 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.session.taskArchiving.hasUnresolvedIntent)
         XCTAssertTrue(fixture.session.taskArchiving.canSubmit)
         XCTAssertEqual(fixture.session.taskArchiving.error, "Storage rejected write")
+        XCTAssertEqual(fixture.session.archivingModel.state, fixture.session.taskArchiving)
     }
 
     @MainActor
@@ -356,6 +358,7 @@ final class TaskArchivingTests: XCTestCase {
         try await fixture.settled()
         XCTAssertTrue(fixture.session.taskArchiving.hasUnresolvedIntent)
         XCTAssertEqual(fixture.session.taskArchiving.error, "The response does not confirm the task's archive state.")
+        XCTAssertEqual(fixture.session.archivingModel.state, fixture.session.taskArchiving)
         XCTAssertFalse(fixture.session.tasks.first { $0.id == secondTask.id }!.archived)
     }
 
@@ -380,6 +383,7 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertTrue(fixture.session.taskArchiving.isPresented)
         XCTAssertEqual(fixture.session.taskArchiving.action, .unarchive)
         XCTAssertEqual(fixture.session.taskArchiving.error, "Rejected")
+        XCTAssertEqual(fixture.session.archivingModel.state, fixture.session.taskArchiving)
         fixture.session.cancelTaskArchiving()
         XCTAssertFalse(fixture.session.taskArchiving.hasPendingAction)
     }
@@ -467,9 +471,7 @@ final class TaskArchivingTests: XCTestCase {
         fixture.session.cancelTaskRename()
         fixture.session.openWorklogCorrection(worklogID: "missing")
         let observer = TrackerPresentationObserver(session: fixture.session)
-        var archiveUpdates = 0
         var contentUpdates = 0
-        observer.onTaskArchivingChange = { archiveUpdates += 1 }
         observer.onContentChange = { contentUpdates += 1 }
         fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.session.openTaskArchive(taskID: secondTask.id)
@@ -477,11 +479,10 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.session.canOpenTaskRename)
         XCTAssertFalse(fixture.session.canOpenWorklogCorrection)
         XCTAssertFalse(fixture.session.canOpenWorklogMove)
-        let shown = observer.taskArchivingSheetContent
+        let shown = fixture.session.archivingModel.sheetContent
         fixture.session.cancelTaskArchiving()
-        XCTAssertEqual(observer.taskArchivingSheetContent, shown)
+        XCTAssertEqual(fixture.session.archivingModel.sheetContent, shown)
         XCTAssertFalse(fixture.session.taskArchiving.isPresented)
-        XCTAssertEqual(archiveUpdates, 2)
         XCTAssertEqual(contentUpdates, 0)
     }
 
@@ -650,15 +651,6 @@ final class TaskArchivingTests: XCTestCase {
         try await fixture.start(resources)
         let observer = TrackerPresentationObserver(session: fixture.session)
         let original = fixture.session.taskArchiving
-        var observedAvailability: [(Bool, Bool, Bool)] = []
-        observer.onTaskArchivingChange = {
-            observedAvailability.append(
-                (
-                    fixture.session.canArchiveTask(taskID: firstTask.id),
-                    fixture.session.canArchiveTask(taskID: secondTask.id),
-                    fixture.session.canUnarchiveTask(taskID: archivedTask.id)
-                ))
-        }
         fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
@@ -667,16 +659,18 @@ final class TaskArchivingTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.taskArchiving, original)
-        XCTAssertTrue(observedAvailability.contains { !$0.0 && $0.1 && $0.2 })
-        let countAfterStart = observedAvailability.count
+        XCTAssertEqual(
+            fixture.session.archivingModel.availability,
+            [firstTask.id: false, secondTask.id: true, archivedTask.id: true])
+        let availabilityAfterStart = fixture.session.archivingModel.availability
         fixture.session.onChange = { observer.update(from: fixture.session) }
         observer.update(from: fixture.session)
-        XCTAssertEqual(observedAvailability.count, countAfterStart)
+        XCTAssertEqual(fixture.session.archivingModel.availability, availabilityAfterStart)
         fixture.session.openTaskCreation()
         XCTAssertTrue(fixture.session.taskCreation.isPresented)
-        XCTAssertFalse(observedAvailability.last!.0)
-        XCTAssertFalse(observedAvailability.last!.1)
-        XCTAssertFalse(observedAvailability.last!.2)
+        XCTAssertEqual(
+            fixture.session.archivingModel.availability,
+            [firstTask.id: false, secondTask.id: false, archivedTask.id: false])
     }
 
     @MainActor

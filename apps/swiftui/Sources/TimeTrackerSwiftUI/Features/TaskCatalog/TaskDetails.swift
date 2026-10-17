@@ -50,7 +50,8 @@ struct TaskDetails: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         WorklogHistoryHeading(
-                            correction: store.correction, move: store.move, deletion: store.deletion)
+                            session: store.session, correction: store.correction, move: store.move,
+                            deletion: store.deletion)
                         errorView
 
                         if store.worklogs.isEmpty && store.isHistoryLoading {
@@ -68,7 +69,7 @@ struct TaskDetails: View {
 
                         ForEach(store.worklogs) { worklog in
                             WorklogRow(
-                                worklog: worklog, active: store.active, timer: store.timer,
+                                session: store.session, worklog: worklog, active: store.active, timer: store.timer,
                                 correction: store.correction, move: store.move, deletion: store.deletion)
                         }
 
@@ -87,9 +88,9 @@ struct TaskDetails: View {
                     Label("Select a task", systemImage: "checklist")
                         .font(.title3)
                         .foregroundStyle(.secondary)
-                    PendingWorklogCorrectionButton(correction: store.correction)
-                    PendingWorklogMoveButton(move: store.move)
-                    PendingWorklogDeletionButton(deletion: store.deletion)
+                    PendingWorklogCorrectionButton(session: store.session, correction: store.correction)
+                    PendingWorklogMoveButton(session: store.session, move: store.move)
+                    PendingWorklogDeletionButton(session: store.session, deletion: store.deletion)
                 }
                 .padding(24)
             }

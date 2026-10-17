@@ -3,6 +3,18 @@ import Foundation
 @MainActor
 public final class TrackerSession {
     public var onChange: (() -> Void)?
+    public private(set) lazy var creationModel = TaskCreationModel(
+        state: taskCreation, availability: canOpenTaskCreation)
+    public private(set) lazy var renameModel = TaskRenameModel(state: taskRename, availability: canOpenTaskRename)
+    public private(set) lazy var archivingModel = TaskArchivingModel(
+        state: taskArchiving, availability: taskArchivingAvailability)
+    public private(set) lazy var bulkArchivingModel = BulkTaskArchivingModel(
+        state: bulkTaskArchiving, availability: canOpenBulkTaskArchiving)
+    public private(set) lazy var correctionModel = WorklogCorrectionModel(
+        state: worklogCorrection, availability: canOpenWorklogCorrection)
+    public private(set) lazy var moveModel = WorklogMoveModel(state: worklogMove, availability: canOpenWorklogMove)
+    public private(set) lazy var deletionModel = WorklogDeletionModel(
+        state: worklogDeletion, availability: canOpenWorklogDeletion)
     public private(set) var isBusy = true
     // Background reads still serialize requests without disabling controls.
     public var isBlockingControls: Bool {
@@ -2160,5 +2172,14 @@ public final class TrackerSession {
 
     private func hasReportClient() -> Bool { reports != nil }
 
-    private func publish() { onChange?() }
+    private func publish() {
+        creationModel.update(state: taskCreation, availability: canOpenTaskCreation)
+        renameModel.update(state: taskRename, availability: canOpenTaskRename)
+        archivingModel.update(state: taskArchiving, availability: taskArchivingAvailability)
+        bulkArchivingModel.update(state: bulkTaskArchiving, availability: canOpenBulkTaskArchiving)
+        correctionModel.update(state: worklogCorrection, availability: canOpenWorklogCorrection)
+        moveModel.update(state: worklogMove, availability: canOpenWorklogMove)
+        deletionModel.update(state: worklogDeletion, availability: canOpenWorklogDeletion)
+        onChange?()
+    }
 }

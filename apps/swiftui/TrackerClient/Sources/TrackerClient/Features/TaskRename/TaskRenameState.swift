@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TaskRenamePresentation: Equatable, Sendable {
+public struct TaskRenamePresentation: TrackerDialogState {
     public let isPresented: Bool
     public let taskID: String?
     public let originalName: String

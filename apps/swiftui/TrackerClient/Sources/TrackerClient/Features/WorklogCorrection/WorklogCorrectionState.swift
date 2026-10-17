@@ -1,6 +1,6 @@
 import Foundation
 
-public struct WorklogCorrectionPresentation: Equatable, Sendable {
+public struct WorklogCorrectionPresentation: TrackerDialogState {
     public let isPresented: Bool
     public let taskName: String
     public let original: WorklogItem?

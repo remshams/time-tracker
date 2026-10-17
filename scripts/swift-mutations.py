@@ -186,13 +186,14 @@ def terminate_group(process: subprocess.Popen) -> None:
     process.wait()
 
 
-def run(arguments: list[str], package: Path, log, *, check: bool = True, timeout: float = 180) -> int:
+def run(arguments: list[str], package: Path, log, *, check: bool = True, timeout: float = 180,
+        environment: dict[str, str] | None = None) -> int:
     positive_timeout(timeout)
     log.write("$ " + " ".join(arguments) + "\n")
     log.flush()
     try:
         process = subprocess.Popen(arguments, cwd=package, stdout=log, stderr=subprocess.STDOUT,
-                                   start_new_session=True)
+                                   start_new_session=True, env=environment)
     except OSError as error:
         raise MutationError(f"Could not run {arguments[0]}: {error}") from None
     try:
@@ -250,7 +251,10 @@ def collect(swift: str, muter: str, selected: list[str] | None = None, *, timeou
                     for filename in relative_files:
                         command.extend(["--files-to-mutate", filename])
                 print(f"Running {'focused' if selected is not None else 'full package'} Swift mutations. Log: {OUTPUT / 'run.log'}", flush=True)
-                status = run(command, package, log, check=False, timeout=timeout)
+                # A crashing mutant can fail hundreds of tests. Symbolicated backtraces take seconds each and
+                # push the detected mutant past Muter's timeout, while the fatal error still reports the kill.
+                status = run(command, package, log, check=False, timeout=timeout,
+                             environment={**os.environ, "SWIFT_BACKTRACE": "enable=no"})
         finally:
             preserve_test_logs(package, logs_path)
         try:

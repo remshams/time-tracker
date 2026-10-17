@@ -7,7 +7,7 @@ public enum TaskArchivingAction: Equatable, Sendable {
     var desiredArchived: Bool { self == .archive }
 }
 
-public struct TaskArchivingPresentation: Equatable, Sendable {
+public struct TaskArchivingPresentation: TrackerDialogState {
     public let taskID: String?
     public let taskName: String
     public let action: TaskArchivingAction

@@ -183,6 +183,7 @@ final class TaskCreationTests: XCTestCase {
         reconcile.succeed(emptyTaskListResources)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.taskCreation.error, "Response lost")
+        XCTAssertEqual(fixture.session.creationModel.state, fixture.session.taskCreation)
         XCTAssertFalse(fixture.session.taskCreation.canEditName)
         XCTAssertNil(fixture.session.trackingError)
         fixture.session.setTaskCreationName("Replacement")
@@ -217,6 +218,7 @@ final class TaskCreationTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(fixture.session.taskCreation.name, "Task\u{0001}")
         XCTAssertEqual(fixture.session.taskCreation.error, "Invalid task name")
+        XCTAssertEqual(fixture.session.creationModel.state, fixture.session.taskCreation)
         XCTAssertTrue(fixture.session.taskCreation.canEditName)
         XCTAssertFalse(fixture.session.isStale)
         fixture.clock.now.addTimeInterval(30)
@@ -252,24 +254,20 @@ final class TaskCreationTests: XCTestCase {
     }
 
     @MainActor
-    func testDraftChangesOnlyNotifyCreationObserver() async throws {
+    func testDraftChangesUpdateCreationWithoutRedrawingLists() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
         let observer = TrackerPresentationObserver(session: fixture.session)
-        var creationUpdates = 0
         var contentUpdates = 0
-        observer.onTaskCreationChange = { creationUpdates += 1 }
         observer.onContentChange = { contentUpdates += 1 }
         fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.session.openTaskCreation()
         fixture.session.setTaskCreationName("Draft")
         fixture.session.setTaskCreationName("Draft")
         observer.update(from: fixture.session)
-        XCTAssertEqual(creationUpdates, 2)
         XCTAssertEqual(contentUpdates, 0)
         fixture.session.cancelTaskCreation()
-        XCTAssertEqual(creationUpdates, 3)
         XCTAssertEqual(contentUpdates, 0)
     }
 
@@ -350,6 +348,7 @@ final class TaskCreationTests: XCTestCase {
         try await fixture.settled()
         XCTAssertTrue(fixture.session.isStale)
         XCTAssertEqual(fixture.session.taskCreation.error, "Response lost")
+        XCTAssertEqual(fixture.session.creationModel.state, fixture.session.taskCreation)
         fixture.session.cancelTaskCreation()
         fixture.session.openTaskCreation()
         XCTAssertTrue(fixture.session.taskCreation.isPresented)
@@ -478,16 +477,14 @@ final class TaskCreationTests: XCTestCase {
         fixture.session.openTaskCreation()
         fixture.session.setTaskCreationName("Valid\u{0000}suffix")
         let observer = TrackerPresentationObserver(session: fixture.session)
-        var displayedErrors: [String?] = []
-        observer.onTaskCreationChange = { displayedErrors.append(fixture.session.taskCreation.error) }
         fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.session.submitTaskCreation()
         XCTAssertEqual(fixture.session.taskCreation.error, "Task names must not contain control characters.")
+        XCTAssertEqual(fixture.session.creationModel.state, fixture.session.taskCreation)
         XCTAssertEqual(fixture.session.taskCreation.name, "Valid\u{0000}suffix")
         XCTAssertTrue(fixture.session.taskCreation.canEditName)
         XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
         XCTAssertEqual(fixture.client.operations.count, 1)
-        XCTAssertEqual(displayedErrors, ["Task names must not contain control characters."])
     }
 
     @MainActor
@@ -508,6 +505,7 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
         XCTAssertEqual(fixture.session.taskCreation.name, "Queued task")
         XCTAssertEqual(fixture.session.taskCreation.error, "Cannot confirm connection")
+        XCTAssertEqual(fixture.session.creationModel.state, fixture.session.taskCreation)
         XCTAssertTrue(fixture.session.isStale)
         XCTAssertEqual(fixture.client.operations.count, 3)
     }
@@ -602,17 +600,12 @@ final class TaskCreationTests: XCTestCase {
         let recovery = try await fixture.client.next()
 
         let observer = TrackerPresentationObserver(session: fixture.session)
-        var closedSheetUpdates = 0
-        observer.onTaskCreationChange = {
-            if !fixture.session.taskCreation.isPresented { closedSheetUpdates += 1 }
-        }
         fixture.session.onChange = { observer.update(from: fixture.session) }
         recovery.created(taskID: firstTask.id, resources: confirmed)
         let finished = Task { @MainActor in
             while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
         }
         try await fixture.taskValue(finished)
-        XCTAssertEqual(closedSheetUpdates, 1)
         XCTAssertFalse(fixture.session.taskCreation.isPresented)
         XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
         XCTAssertFalse(fixture.session.isBusy)
