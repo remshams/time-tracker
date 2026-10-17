@@ -53,7 +53,7 @@ Clients and servers require protocol version 4 under `/v1`. Task-list and daily 
 
 The first remote release assumes a trusted Tailscale network or localhost. HTTP traffic has no application-level authentication or TLS, so bind only to an address available to trusted peers. The server rejects wildcard, public, and ordinary LAN bind addresses and checks non-loopback addresses against the device's current `tailscale ip` output. It also rejects unexpected HTTP Host names. To export or remove the data, stop the server and copy or delete its SQLite database file and associated SQLite sidecar files.
 
-To update a server that runs under systemd on another machine, use the [deployment script](docs/deployment.md). It builds a revision on the host, checks it against a copy of the database, and rolls back if the live checks fail.
+To update a server that runs under systemd on another machine, use the [deployment script](docs/deployment.md). It builds a revision on the host and checks it against a copy of the database. If the revision's migrations change the schema or rows, it shows the changes and deploys only after you pass `--accept-migration-changes`. If the live checks fail, it restores the database backup and the previous binary.
 
 ## Data and database location
 
