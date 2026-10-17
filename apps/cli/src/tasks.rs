@@ -69,7 +69,7 @@ fn validate_preview(token: &PreviewToken, identity: &str) -> Result<(), CliError
             backend
         }
         PreviewToken::Remote { backend, preview } => {
-            validate_remote_candidates(preview)?;
+            validate_remote_period(preview)?;
             if !identity.starts_with("remote:") {
                 return Err(CliError::input("remote preview requires a server"));
             }
@@ -93,15 +93,13 @@ fn validate_local_candidates(task_ids: &[String]) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Rejects malformed saved preview tokens before opening a remote connection.
-fn validate_remote_candidates(preview: &InactiveTaskPreview) -> Result<(), CliError> {
-    if !preview.has_confirmation_guard() {
-        return Err(CliError::input("invalid remote preview guard"));
+/// Rejects remote previews outside the CLI's fixed period before opening a connection.
+///
+/// `tracker-remote` validates the rest of the token while deserializing it.
+fn validate_remote_period(preview: &InactiveTaskPreview) -> Result<(), CliError> {
+    if preview.inactive_days() != 14 {
+        return Err(CliError::input("remote preview must use the 14-day period"));
     }
-    if preview.inactive_days() != 14 || preview.count() != preview.candidate_ids().len() {
-        return Err(CliError::input("invalid remote preview candidates"));
-    }
-    validate_local_candidates(preview.candidate_ids())?;
     Ok(())
 }
 
