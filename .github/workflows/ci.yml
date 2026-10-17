@@ -71,16 +71,8 @@ jobs:
 
   rust-tests:
     if: ${{ !inputs.native_benchmark }}
-    name: Rust tests on ${{ matrix.platform }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: Linux
-            runner: ubuntu-24.04
-          - platform: macOS
-            runner: macos-26
-    runs-on: ${{ matrix.runner }}
+    name: Rust tests on Linux
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -261,15 +253,39 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-  native-macos:
+  native-scope:
     if: ${{ !inputs.native_benchmark }}
+    name: Native check scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      native: ${{ steps.scope.outputs.native }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide whether the changes need native checks
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci-native-scope.py --event "$EVENT_NAME" --base "$BASE" --head "$HEAD" \
+            --github-output "$GITHUB_OUTPUT"
+
+  native-macos:
+    needs: native-scope
+    if: ${{ !inputs.native_benchmark && needs.native-scope.outputs.native == 'true' }}
     name: Native macOS UI tests, ${{ matrix.group }}
     strategy:
       fail-fast: false
       matrix:
-        group: [core, tasks, worklogs, server, menu, mac]
+        # Four groups leave a macOS runner free under GitHub's five-job concurrency limit.
+        group: [core, editing, server, mac]
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
     steps:
@@ -287,7 +303,7 @@ jobs:
           fi
       - uses: ./.github/actions/setup-rust
         with:
-          cache-key: native
+          cache-key: ${{ matrix.group == 'mac' && 'native-tests' || 'native' }}
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - name: Cache native build output
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -302,6 +318,9 @@ jobs:
       - name: Test the Swift package on macOS
         if: matrix.group == 'mac'
         run: swift test --package-path apps/swiftui/TrackerClient
+      - name: Test the full Rust workspace on macOS
+        if: matrix.group == 'mac'
+        run: cargo test --workspace --all-features --locked
       - name: Build the native Debug app and Rust bridge
         run: |
           mkdir -p .build
@@ -310,7 +329,7 @@ jobs:
             -derivedDataPath .build/native-debug -resultBundlePath .build/native-debug.xcresult \
             CODE_SIGNING_ALLOWED=NO build | tee .build/native-debug.log
       - name: Test SwiftUI workflows through the native macOS UI
-        timeout-minutes: 25
+        timeout-minutes: 32
         run: apps/swiftui/check-native-ui.sh --group "${{ matrix.group }}"
       - name: Build the universal Release app and Rust bridge
         if: matrix.group == 'mac'
@@ -396,7 +415,7 @@ jobs:
 
   ci-passed:
     name: CI passed
-    needs: [lint, rust-tests, rust-quality, swift-quality, swift-mutations, native-macos]
+    needs: [lint, rust-tests, rust-quality, swift-quality, swift-mutations, native-scope, native-macos]
     if: ${{ always() && !inputs.native_benchmark }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -405,6 +424,7 @@ jobs:
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
           EVENT_NAME: ${{ github.event_name }}
+          NATIVE_REQUIRED: ${{ needs.native-scope.outputs.native }}
         run: |
           python3 - <<'PY'
           import json
@@ -417,6 +437,8 @@ jobs:
               if job['result'] != 'success'
               and not (name == 'swift-mutations' and job['result'] == 'skipped'
                        and os.environ['EVENT_NAME'] != 'pull_request')
+              and not (name == 'native-macos' and job['result'] == 'skipped'
+                       and os.environ['NATIVE_REQUIRED'] == 'false')
           ]
           for name, job in jobs.items():
               print(f"{name}: {job['result']}")

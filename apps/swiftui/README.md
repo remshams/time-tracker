@@ -217,7 +217,7 @@ shortcut reopening separately.
 
 The suite covers task creation, selection, tracking, history, rename, archive, correction, move, connection recovery, native menus, clipboard actions, settings, windows, totals, lifecycle delivery, and appearance. The seven original bulk archive scenarios are retained. See the [coverage map and dedicated-Mac acceptance checklist](e2e-coverage.md) for the cases and remaining platform evidence.
 
-Use `--smoke` for launch checks or `--group core`, `tasks`, `worklogs`, `server`, `menu`, or `mac` for a focused run. CI requires all six groups, each running serially on its own desktop. It retains logs and result bundles in `native-macos-diagnostics-<group>` artifacts, including after failure. Open the result bundle in Xcode to inspect screenshots and accessibility diagnostics.
+Use `--smoke` for launch checks or `--group core`, `editing`, `server`, or `mac` for a focused run. CI requires all four groups, each running serially on its own desktop. It retains logs and result bundles in `native-macos-diagnostics-<group>` artifacts, including after failure. Open the result bundle in Xcode to inspect screenshots and accessibility diagnostics.
 
 The runner forwards absolute CLI, server, proxy, and Python paths using `TEST_RUNNER_` environment variables. UI automation may request permission on your first local run. Allow Xcode to control the desktop when macOS asks. Native tests require an active desktop session; real lock, sleep, multiple-display, and keyboard-layout acceptance checks require a dedicated Mac.
 

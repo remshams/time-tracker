@@ -43,14 +43,12 @@ if [[ "${1:-}" == --smoke ]]; then
     execution_timeout=1440
     test_selection=(-only-testing:TimeTrackerUITests/SmokeUITests)
 elif [[ "${1:-}" == --group && $# == 2 ]]; then
-    execution_timeout=1440
+    execution_timeout=1800
     case "$2" in
-        core) suites=(SmokeUITests TaskCatalogUITests ServerTaskCatalogUITests TaskCreationUITests ServerTaskCreationUITests TrackingUITests ServerTrackingUITests WorklogHistoryUITests ServerWorklogHistoryUITests) ;;
-        tasks) suites=(TaskRenameUITests ServerTaskRenameUITests TaskArchivingUITests ServerTaskArchivingUITests BulkTaskArchivingUITests BulkTaskArchivingExtendedUITests ServerBulkTaskArchivingUITests) ;;
-        worklogs) suites=(WorklogCorrectionUITests ServerWorklogCorrectionUITests WorklogMoveUITests ServerWorklogMoveUITests) ;;
-        server) suites=(ConnectionUITests ServerRecoveryUITests) ;;
-        menu) suites=(MenuBarUITests ServerMenuBarUITests MenuSourceUITests SettingsUITests) ;;
-        mac) suites=(WindowRoutingUITests DailyTotalsUITests ServerDailyTotalsUITests LifecycleUITests ServerLifecycleUITests AppearanceUITests) ;;
+        core) suites=(SmokeUITests TaskCatalogUITests ServerTaskCatalogUITests TaskCreationUITests ServerTaskCreationUITests TrackingUITests ServerTrackingUITests WorklogHistoryUITests ServerWorklogHistoryUITests DailyTotalsUITests ServerDailyTotalsUITests WorklogMoveUITests ServerWorklogMoveUITests) ;;
+        editing) suites=(TaskRenameUITests ServerTaskRenameUITests TaskArchivingUITests ServerTaskArchivingUITests BulkTaskArchivingUITests BulkTaskArchivingExtendedUITests ServerBulkTaskArchivingUITests WorklogCorrectionUITests ServerWorklogCorrectionUITests) ;;
+        server) suites=(ConnectionUITests ServerRecoveryUITests SettingsUITests MenuSourceUITests AppearanceUITests) ;;
+        mac) suites=(MenuBarUITests ServerMenuBarUITests WindowRoutingUITests LifecycleUITests ServerLifecycleUITests) ;;
         *) echo "Unknown native UI group: $2" >&2; exit 2 ;;
     esac
     test_selection=()
@@ -64,7 +62,7 @@ elif [[ "${1:-}" == --pagination && $# == 1 ]]; then
         -only-testing:TimeTrackerUITests/ServerWorklogHistoryUITests/testHistoryPaginationLoadsMoreThanFiftyWithoutMissingOrDuplicateIDs
     )
 elif (( $# != 0 )); then
-    echo 'Usage: check-native-ui.sh [--smoke | --pagination | --group core|tasks|worklogs|server|menu|mac]' >&2
+    echo 'Usage: check-native-ui.sh [--smoke | --pagination | --group core|editing|server|mac]' >&2
     exit 2
 fi
 python3 scripts/run-native-ui.py --log "$output_dir/native-ui.log" --timeout "$execution_timeout" -- \

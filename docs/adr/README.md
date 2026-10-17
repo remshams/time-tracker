@@ -37,3 +37,4 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0022](0022-consolidate-application-and-repository-contracts.md) | Consolidate application and repository contracts | Accepted |
 | [0023](0023-enforce-reviewed-intent-at-application-boundaries.md) | Enforce reviewed intent at application boundaries | Accepted |
 | [0024](0024-id-only-worklog-cursors-and-positive-durations.md) | ID-only worklog cursors and positive durations | Accepted |
+| [0025](0025-fit-native-ci-within-the-macos-runner-limit.md) | Fit native CI within the macOS runner limit | Proposed |
