@@ -294,6 +294,32 @@ mod tests {
     }
 
     #[test]
+    fn cursor_tokens_keep_their_saved_json_format() {
+        let id: WorklogId = "00000000-0000-7000-8000-000000000001".parse().unwrap();
+        let tokens = [
+            (
+                CursorToken::Task {
+                    backend: "local".into(),
+                    cursor: WorklogCursor { id, revision: 7 }.into(),
+                },
+                r#"{"scope":"task","backend":"local","cursor":{"id":"00000000-0000-7000-8000-000000000001","revision":7}}"#,
+            ),
+            (
+                CursorToken::All {
+                    backend: "local".into(),
+                    cursor: GlobalWorklogCursor { id, revision: 7 }.into(),
+                },
+                r#"{"scope":"all","backend":"local","cursor":{"id":"00000000-0000-7000-8000-000000000001","revision":7}}"#,
+            ),
+        ];
+        for (token, saved) in tokens {
+            assert_eq!(serde_json::to_string(&token).unwrap(), saved);
+            let parsed: CursorToken = serde_json::from_str(saved).unwrap();
+            assert_eq!(serde_json::to_string(&parsed).unwrap(), saved);
+        }
+    }
+
+    #[test]
     fn cursor_tokens_reject_invalid_partial_and_legacy_positions() {
         let id = "00000000-0000-7000-8000-000000000001";
         for scope in ["task", "all"] {
