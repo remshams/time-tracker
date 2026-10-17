@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "swift-mutation-scope.py"
@@ -190,7 +190,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.assertEqual(result["status"], "focused")
         self.assertIn(scope.SOURCES + "Features/WorklogMove/WorklogMoveState.swift", result["files"])
         self.assertIn(scope.SOURCES + scope.SESSION, result["files"])
-        self.assertIn(scope.SOURCES + scope.OBSERVER, result["files"])
+        self.assertIn(scope.SOURCES + scope.PRESENTATION, result["files"])
         self.assertIn(scope.SOURCES + scope.TIMESTAMP, result["files"])
         self.assertNotIn(scope.SOURCES + "Features/WindowRouting/TrackerWindowRoutingState.swift", result["files"])
 
@@ -266,6 +266,72 @@ class SwiftMutationScopeTests(unittest.TestCase):
                 self.write(scope.PACKAGE + name, "Updated shared input\n")
                 self.commit("Change shared input")
                 self.assertEqual(self.select()["status"], "review-required")
+
+    def test_reviewed_platform_raise_selects_the_observable_presentation(self):
+        manifest = scope.PACKAGE + "Package.swift"
+        self.write(manifest, "let package = Package(\n    platforms: [.macOS(.v13)],\n)\n")
+        self.base = self.commit("Add package manifest")
+        self.write(manifest, "let package = Package(\n    platforms: [.macOS(.v14)],\n)\n")
+        self.commit("Raise the package platform")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "focused", result["review_reasons"])
+        self.assertEqual(result["files"], [scope.SOURCES + scope.PRESENTATION])
+        self.assertTrue(any("Swift Observation" in reason for reason in result["reasons"]))
+
+    def test_other_package_manifest_edits_still_require_review(self):
+        manifest = scope.PACKAGE + "Package.swift"
+        self.write(manifest, "let package = Package(\n    platforms: [.macOS(.v13)],\n)\n")
+        self.base = self.commit("Add package manifest")
+        for label, content in {
+            "other platform": "let package = Package(\n    platforms: [.macOS(.v15)],\n)\n",
+            "extra change": "let package = Package(\n    platforms: [.macOS(.v14)],\n    products: [],\n)\n",
+        }.items():
+            with self.subTest(change=label):
+                self.git("reset", "--hard", self.base)
+                self.write(manifest, content)
+                self.commit("Change the package manifest")
+                self.assertEqual(self.select()["status"], "review-required")
+
+    def test_reviewed_replacement_accepts_a_deleted_file_with_its_added_successor(self):
+        retired_source, successor_source = next(iter(scope.REVIEWED_REPLACEMENTS.items()))
+        retired_suite = scope.TESTS + "App/PresentationObserverTests.swift"
+        self.write(scope.PACKAGE + retired_source, "final class Retired {}\n")
+        self.write(scope.PACKAGE + retired_suite, "func testRetired() {}\n")
+        self.git("rm", "--cached", "-q", scope.PACKAGE + successor_source)
+        (self.root / scope.PACKAGE / successor_source).unlink()
+        self.base = self.commit("Add the retired files")
+        self.git("rm", "-q", scope.PACKAGE + retired_source, scope.PACKAGE + retired_suite)
+        self.write(scope.PACKAGE + successor_source, "final class Successor { var value = 0 }\n")
+        self.write(scope.PACKAGE + scope.TESTS + "App/PresentationTests.swift", "func testSuccessor() {}\n")
+        self.commit("Replace the retired files")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "focused", result["review_reasons"])
+        self.assertIn(scope.SOURCES + scope.PRESENTATION, result["files"])
+        self.assertTrue(any("Reviewed replacement" in reason for reason in result["reasons"]))
+
+    def test_reviewed_replacement_requires_its_successor_in_the_same_diff(self):
+        retired_source = next(iter(scope.REVIEWED_REPLACEMENTS))
+        self.write(scope.PACKAGE + retired_source, "final class Retired {}\n")
+        self.base = self.commit("Add the retired source")
+        self.git("rm", "-q", scope.PACKAGE + retired_source)
+        self.commit("Delete the retired source without a successor")
+
+        self.assertEqual(self.select()["status"], "review-required")
+
+    def test_observation_support_selects_the_production_it_asserts(self):
+        self.write(scope.PACKAGE + scope.TESTS + "Support/ObservationProbe.swift", "func assertMirrors() {}\n")
+        self.commit("Change observation support")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "focused", result["review_reasons"])
+        self.assertEqual(
+            result["files"], sorted(scope.SOURCES + source for source in scope.SUPPORT_PRODUCTION[
+                "Support/ObservationProbe.swift"]))
 
     def test_unknown_shared_swift_build_input_requires_review(self):
         self.write(".swiftpm/configuration", "Updated build configuration\n")
@@ -430,7 +496,11 @@ class SwiftMutationScopeMapTests(unittest.TestCase):
         tests = {path.relative_to(test_root).as_posix() for path in test_root.rglob("*.swift")
                  if "Support" not in path.relative_to(test_root).parts}
         self.assertEqual(set(scope.TEST_PRODUCTION), tests)
-        for test, sources in scope.TEST_PRODUCTION.items():
+        for support in scope.SUPPORT_PRODUCTION:
+            with self.subTest(support=support):
+                self.assertEqual(PurePosixPath(support).parts[0], "Support")
+                self.assertTrue((test_root / support).is_file(), support)
+        for test, sources in (scope.TEST_PRODUCTION | scope.SUPPORT_PRODUCTION).items():
             with self.subTest(test=test):
                 self.assertTrue(sources)
                 self.assertEqual(len(sources), len(set(sources)))

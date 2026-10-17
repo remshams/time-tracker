@@ -16,7 +16,7 @@ PACKAGE = "apps/swiftui/TrackerClient/"
 SOURCES = "Sources/TrackerClient/"
 TESTS = "Tests/TrackerClientTests/"
 SESSION = "App/TrackerSession.swift"
-OBSERVER = "App/TrackerPresentationObserver.swift"
+PRESENTATION = "App/TrackerPresentation.swift"
 MODELS = "Contracts/Models.swift"
 DEPENDENCIES = "Contracts/Dependencies.swift"
 TRACKING = "Features/Tracking/TrackingState.swift"
@@ -47,24 +47,24 @@ TEST_PRODUCTION = {
         SESSION, "Features/Connection/ConnectionState.swift", TRACKING, CATALOG, HISTORY, TOTALS,
         "Features/TrackingAutomation/TrackingAutomationState.swift",
     ],
-    "App/HistoryPresentationTests.swift": [SESSION, OBSERVER, HISTORY, CATALOG],
+    "App/HistoryPresentationTests.swift": [SESSION, PRESENTATION, HISTORY, CATALOG],
     "App/LifecycleTests.swift": [
         SESSION, "Features/Connection/ConnectionState.swift", TRACKING, CATALOG, HISTORY, TOTALS,
         "Features/TrackingAutomation/TrackingAutomationState.swift", LAST_TASK,
     ],
     "App/ObserverTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION],
-    "App/PresentationObserverTests.swift": [
-        SESSION, OBSERVER, TRACKING, CATALOG, TOTALS, CREATION, AUTOMATION, CONNECTION,
+    "App/PresentationTests.swift": [
+        SESSION, PRESENTATION, TRACKING, CATALOG, TOTALS, CREATION, AUTOMATION, CONNECTION,
     ],
-    "App/RefreshPresentationTests.swift": [SESSION, OBSERVER, TRACKING, CATALOG, TOTALS, MODELS, CONNECTION],
+    "App/RefreshPresentationTests.swift": [SESSION, PRESENTATION, TRACKING, CATALOG, TOTALS, MODELS, CONNECTION],
     "Contracts/ModelsTests.swift": [MODELS, DEPENDENCIES, TRACKING],
     "Features/BulkTaskArchiving/BulkTaskArchivingTests.swift": [
-        SESSION, OBSERVER, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION, CREATION, RENAME,
+        SESSION, PRESENTATION, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION, CREATION, RENAME,
         ARCHIVING, CORRECTION, MOVE,
     ],
     "Features/Connection/ConnectionTests.swift": [SESSION, CONNECTION, CATALOG, TRACKING, HISTORY, ARCHIVING],
     "Features/DailyTotals/DailyTotalsTests.swift": [
-        SESSION, OBSERVER, TOTALS, TRACKING, MODELS, CONNECTION, CATALOG, HISTORY,
+        SESSION, PRESENTATION, TOTALS, TRACKING, MODELS, CONNECTION, CATALOG, HISTORY,
     ],
     "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
         "Features/MenuBar/MenuKeyboardShortcuts.swift", DEPENDENCIES,
@@ -73,7 +73,7 @@ TEST_PRODUCTION = {
         SESSION, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CONNECTION, CATALOG, LAST_TASK, INDICATOR,
     ],
     "Features/MenuBar/MenuPresentationTests.swift": [
-        SESSION, OBSERVER, MENU_OBSERVER, MENU, MENU_ORDER, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION,
+        SESSION, PRESENTATION, MENU_OBSERVER, MENU, MENU_ORDER, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION,
         LAST_TASK, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskOrderTests.swift": [
@@ -97,18 +97,18 @@ TEST_PRODUCTION = {
         "Features/ProgressPresentation/DelayedProgressPresentation.swift",
     ],
     "Features/TaskArchiving/TaskArchivingTests.swift": [
-        SESSION, OBSERVER, ARCHIVING, CATALOG, TRACKING, HISTORY, CREATION, RENAME, CORRECTION, MOVE, CONNECTION,
+        SESSION, PRESENTATION, ARCHIVING, CATALOG, TRACKING, HISTORY, CREATION, RENAME, CORRECTION, MOVE, CONNECTION,
     ],
     "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG],
     "Features/TaskCreation/TaskCreationTests.swift": [
-        SESSION, OBSERVER, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION, AUTOMATION,
+        SESSION, PRESENTATION, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION, AUTOMATION,
         "Features/TaskEditing/TaskNameEditingPolicy.swift",
     ],
     "Features/TaskEditing/TaskNameEditingPolicyTests.swift": [
         SESSION, "Features/TaskEditing/TaskNameEditingPolicy.swift", CREATION, RENAME, CATALOG,
     ],
     "Features/TaskRename/TaskRenameTests.swift": [
-        SESSION, OBSERVER, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION, CONNECTION,
+        SESSION, PRESENTATION, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION, CONNECTION,
         "Features/TaskEditing/TaskNameEditingPolicy.swift",
     ],
     "Features/Tracking/TrackingStateTests.swift": [TRACKING],
@@ -118,15 +118,15 @@ TEST_PRODUCTION = {
     ],
     "Features/WindowRouting/WindowRoutingTests.swift": ["Features/WindowRouting/TrackerWindowRoutingState.swift"],
     "Features/WorklogCorrection/WorklogCorrectionTests.swift": [
-        SESSION, OBSERVER, CORRECTION, TIMESTAMP, TRACKING, HISTORY, CATALOG, CONNECTION, CREATION, RENAME,
+        SESSION, PRESENTATION, CORRECTION, TIMESTAMP, TRACKING, HISTORY, CATALOG, CONNECTION, CREATION, RENAME,
     ],
     "Features/WorklogHistory/HistoryTests.swift": [SESSION, HISTORY, TRACKING, CATALOG, CONNECTION],
     "Features/WorklogHistory/WorklogHistoryStateTests.swift": [HISTORY],
     "Features/WorklogMove/WorklogMoveTests.swift": [
-        SESSION, OBSERVER, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, CORRECTION,
+        SESSION, PRESENTATION, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, CORRECTION,
     ],
     "Features/WorklogDeletion/WorklogDeletionTests.swift": [
-        SESSION, OBSERVER, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, RENAME,
+        SESSION, PRESENTATION, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, RENAME,
         CORRECTION, ARCHIVING,
     ],
 }
@@ -172,6 +172,22 @@ REVIEWED_SUPPORT_ADAPTATIONS = (
     ("Shared fixture only adds the worklog deletion reply; the changed deletion suite defines scope",
      WORKLOG_DELETION_SUPPORT_EDITS, WORKLOG_DELETION_CONTRACT_EDITS,
      ("Features/WorklogDeletion/WorklogDeletionTests.swift",)),
+)
+# Test support with its own assertions selects the production files it asserts.
+SUPPORT_PRODUCTION = {
+    "Support/ObservationProbe.swift": [PRESENTATION, SESSION],
+}
+# A reviewed deleted file whose successor is added in the same diff. The
+# successor's own scope covers the deleted file's role.
+REVIEWED_REPLACEMENTS = {
+    SOURCES + "App/TrackerPresentationObserver.swift": SOURCES + PRESENTATION,
+    TESTS + "App/PresentationObserverTests.swift": TESTS + "App/PresentationTests.swift",
+}
+# Each reviewed package manifest edit names its exact text changes and the
+# production files whose behavior depends on it.
+REVIEWED_PACKAGE_EDITS = (
+    ("Package raises the macOS platform for Swift Observation",
+     (("platforms: [.macOS(.v13)],", "platforms: [.macOS(.v14)],"),), (PRESENTATION,)),
 )
 
 
@@ -266,6 +282,14 @@ def reviewed_support_adaptation(root: Path, base: str, head: str, entries: list[
     return None
 
 
+def reviewed_package_edit(root: Path, base: str, head: str) -> tuple[str, tuple[str, ...]] | None:
+    """Return the reason and production scope for a reviewed package manifest edit, if one applies."""
+    for reason, edits, sources in REVIEWED_PACKAGE_EDITS:
+        if only_reviewed_edits(root, base, head, PACKAGE + "Package.swift", edits):
+            return reason, sources
+    return None
+
+
 def select_scope(root: Path, base: str, head: str) -> dict:
     base = commit(root, base)
     head = commit(root, head)
@@ -292,7 +316,12 @@ def select_scope(root: Path, base: str, head: str) -> dict:
             selected.add(name)
             reasons.append(reason)
 
+    added = {entry["path"] for entry in entries if entry["status"] == "A" or entry["status"].startswith("R")}
     for entry in entries:
+        successor = REVIEWED_REPLACEMENTS.get(entry["path"].removeprefix(PACKAGE))
+        if entry["status"] == "D" and successor and PACKAGE + successor in added:
+            reasons.append(f"Reviewed replacement by {PACKAGE + successor}: {entry['path']}")
+            continue
         paths = [entry["path"]]
         if "old_path" in entry:
             paths.append(entry["old_path"])
@@ -311,11 +340,18 @@ def select_scope(root: Path, base: str, head: str) -> dict:
                 test = relative.removeprefix(TESTS)
                 if relative == SHARED_TEST_SUPPORT and reviewed_support:
                     reasons.append(f"{reviewed_support}: {path}")
+                elif test in SUPPORT_PRODUCTION:
+                    for source in SUPPORT_PRODUCTION[test]:
+                        add_source(SOURCES + source, f"Production asserted by changed test support: {path}")
                 elif test not in TEST_PRODUCTION:
                     review.append(f"Unmapped test or shared test support needs scope review: {path}")
                 else:
                     for source in TEST_PRODUCTION[test]:
                         add_source(SOURCES + source, f"Production exercised by changed test: {path}")
+            elif path == PACKAGE + "Package.swift" and (package_edit := reviewed_package_edit(root, merge_base, head)):
+                reason, sources = package_edit
+                for source in sources:
+                    add_source(SOURCES + source, f"{reason}: {path}")
             elif path.startswith(PACKAGE):
                 review.append(f"Portable package build or dependency input needs scope review: {path}")
             elif path in {"Package.swift", "Package.resolved", ".swift-version"} or path.startswith(".swiftpm/"):
