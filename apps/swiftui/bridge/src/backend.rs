@@ -412,14 +412,13 @@ impl Backend {
         task_id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, BridgeError> {
-        if self.application.is_remote() {
-            return self.set_active_task_if_active(task_id, None, occurred_at);
-        }
+        self.check_write()?;
         let result = self.runtime.block_on(
             self.application
                 .start_tracking_if_idle(task_id, occurred_at),
         );
-        result.map_err(local_error)
+        self.record_write_completion();
+        result.map_err(|error| self.operation_error(error, true))
     }
 
     /// Rejects a tracking command when the reviewed active worklog no longer matches.

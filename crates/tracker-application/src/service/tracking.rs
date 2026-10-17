@@ -19,7 +19,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         task_id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
-        self.set_active_task_with_id(task_id, WorklogId::generate(), occurred_at)
+        self.set_active_task_guarded(task_id, WorklogId::generate(), None, occurred_at)
     }
 
     /// Generates an identifier for a new worklog while preserving the reviewed active state.
@@ -73,54 +73,6 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             }
             Err(error) => Err(self.recover_after_tracking_write(error)),
         }
-    }
-
-    /// Starts a new worklog only while tracking remains idle.
-    /// The repository's single-active constraint guards competing inserts.
-    pub fn start_tracking_if_idle(
-        &mut self,
-        task_id: TaskId,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
-        self.start_tracking_if_idle_with_id(task_id, WorklogId::generate(), occurred_at)
-    }
-
-    /// Starts idle tracking with a caller-provided worklog identifier.
-    pub fn start_tracking_if_idle_with_id(
-        &mut self,
-        task_id: TaskId,
-        worklog_id: WorklogId,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
-        let occurred_at = canonical_timestamp(occurred_at);
-        self.refresh_tracking()?;
-        if self.tracker.active().is_some() {
-            return Err(ApplicationError::TrackingStateChanged);
-        }
-        let task = self
-            .tasks
-            .iter()
-            .find(|item| item.task.id() == task_id)
-            .map(|item| &item.task)
-            .ok_or_else(|| ApplicationError::from(RepositoryError::TaskNotFound { id: task_id }))?;
-        let mut candidate = self.tracker.clone();
-        let worklog = candidate.start(task, worklog_id, occurred_at)?;
-        if let Err(error) = self.repository.insert_worklog(&worklog) {
-            return Err(self.recover_after_tracking_write(error));
-        }
-        self.tracker = candidate;
-        self.note_work_start(task_id, occurred_at);
-        Ok(SetActiveTaskOutcome::Started { worklog })
-    }
-
-    /// Starts or switches tracking with an identifier chosen before the request.
-    pub fn set_active_task_with_id(
-        &mut self,
-        task_id: TaskId,
-        worklog_id: WorklogId,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
-        self.set_active_task_guarded(task_id, worklog_id, None, occurred_at)
     }
 
     /// Preserves both the caller's worklog identifier and reviewed active state.

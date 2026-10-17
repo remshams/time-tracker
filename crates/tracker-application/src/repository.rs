@@ -1,20 +1,20 @@
 //! Backend-neutral persistence ports.
 //!
-//! Implementations return task rows in identifier order and a task's
-//! worklog history as bounded pages ordered by start descending, then
-//! identifier. They enforce one active worklog, reject an end before its
-//! start, reject worklogs on archived tasks, and reject archiving the
+//! Implementations return task rows in identifier order and a task's worklog
+//! history as bounded pages ordered by start descending, then identifier.
+//! They enforce one active worklog, require a completed worklog to end after
+//! it starts, reject worklogs on archived tasks, and reject archiving the
 //! active task. Unarchiving a task is non-destructive and must not discard
 //! its worklogs. A switch must stop the old worklog and start the new one
 //! atomically. Every worklog write rejects overlaps on the same task.
-//! Intervals are half-open: touching is allowed, zero-duration worklogs
-//! overlap nothing, and different tasks may overlap. Worklog corrections use
-//! exact timestamp compare-and-swap and preserve identity, task, and active or
-//! completed state. Completed worklog deletion uses an exact match on
-//! identity, task, start, and end; active worklogs cannot be deleted. A move
-//! uses the same exact match and changes only the task. The task-list read
-//! model carries each task's latest worklog start as a per-task `MAX(start)`
-//! aggregate, without loading full worklogs.
+//! Intervals are half-open, so touching is allowed, and different tasks may
+//! overlap. Worklog corrections use exact timestamp compare-and-swap and
+//! preserve identity, task, and active or completed state. Completed worklog
+//! deletion uses an exact match on identity, task, start, and end; active
+//! worklogs cannot be deleted. A move uses the same exact match and changes
+//! only the task. The task-list read model carries each task's latest
+//! worklog start as a per-task `MAX(start)` aggregate, without loading full
+//! worklogs.
 
 use chrono::{DateTime, Utc};
 use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
