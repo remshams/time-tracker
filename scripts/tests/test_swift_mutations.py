@@ -236,11 +236,14 @@ class SwiftMutationTests(unittest.TestCase):
             self.assertFalse((package / ".build/sentinel").exists())
             self.assertTrue((package / "Tests").is_dir())
             if arguments[0] == "swift":
+                self.assertIsNone(kwargs.get("environment"))
                 module_cache = package / ".build/module-cache"
                 module_cache.mkdir(parents=True)
                 (module_cache / "sentinel").write_text("baseline cache", encoding="utf-8")
             if arguments[0] == "muter":
                 self.assertFalse((package / ".build").exists())
+                self.assertEqual(kwargs["environment"]["SWIFT_BACKTRACE"], "enable=no")
+                self.assertEqual(kwargs["environment"]["PATH"], os.environ["PATH"])
                 config = json.loads((package / "muter.conf.yml").read_text(encoding="utf-8"))
                 self.assertEqual(config["mutationTestTimeout"], 180)
                 self.assertEqual(config["arguments"], ["test", "-j", "2", "--parallel", "--num-workers", "4"])
@@ -282,6 +285,13 @@ class SwiftMutationTests(unittest.TestCase):
                 mutations.run(["missing"], self.package, log)
             with self.assertRaisesRegex(mutations.MutationError, "exit code 2"):
                 mutations.run([sys.executable, "-c", "raise SystemExit(2)"], self.package, log)
+
+    def test_run_passes_its_environment_to_the_command(self) -> None:
+        with (self.directory / "run.log").open("w", encoding="utf-8") as log:
+            check = "import os; raise SystemExit(os.environ.get('SWIFT_BACKTRACE') != 'enable=no')"
+            self.assertEqual(
+                mutations.run([sys.executable, "-c", check], self.package, log,
+                              environment={**os.environ, "SWIFT_BACKTRACE": "enable=no"}), 0)
 
     def test_invalid_process_timeouts_fail_before_spawning(self) -> None:
         for timeout in (0, -1, float("nan"), float("inf")):
