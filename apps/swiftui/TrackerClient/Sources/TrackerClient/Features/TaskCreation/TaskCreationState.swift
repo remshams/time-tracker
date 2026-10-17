@@ -82,3 +82,12 @@ final class TaskCreationState {
         pending = false
     }
 }
+
+extension TaskCreationState: TrackerEditor {
+    var blocksControls: Bool { pending }
+    var blocksOtherEditors: Bool { isPresented || blocksConnectionChange }
+    var connectionChangeBlocker: String? {
+        blocksConnectionChange ? "Finish or retry task creation before changing connections." : nil
+    }
+    var hasPendingWrite: Bool { pending }
+}

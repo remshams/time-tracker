@@ -124,3 +124,14 @@ final class WorklogDeletionState {
         mayHaveCommitted = false
     }
 }
+
+extension WorklogDeletionState: TrackerEditor {
+    var blocksControls: Bool { pending }
+    var blocksOtherEditors: Bool { blocksConnectionChange }
+    var connectionChangeBlocker: String? {
+        blocksConnectionChange ? "Finish or retry worklog deletion before changing connections." : nil
+    }
+    var hasPendingWrite: Bool { pending }
+    // Running worklogs cannot be deleted, so only history rows can change the reviewed worklog.
+    func observeHistory(_ worklog: WorklogItem) { observe(worklog) }
+}

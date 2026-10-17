@@ -155,3 +155,12 @@ final class BulkTaskArchivingState {
         preparedSubmission = false
     }
 }
+
+extension BulkTaskArchivingState: TrackerEditor {
+    var blocksControls: Bool { ownsPresentation }
+    var blocksOtherEditors: Bool { ownsPresentation }
+    var connectionChangeBlocker: String? {
+        ownsPresentation ? "Close the archive dialog before changing connections." : nil
+    }
+    var hasPendingWrite: Bool { pendingSubmit }
+}

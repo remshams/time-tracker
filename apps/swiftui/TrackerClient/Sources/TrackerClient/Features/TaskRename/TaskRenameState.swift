@@ -42,7 +42,6 @@ final class TaskRenameState {
     }
 
     var blocksConnectionChange: Bool { isSubmitting || intent != nil }
-    var hasPendingIntent: Bool { pending }
 
     func open(_ task: TaskItem?) {
         if intent != nil || isPresented {
@@ -119,4 +118,15 @@ final class TaskRenameState {
         pending = false
         requiresReview = false
     }
+}
+
+extension TaskRenameState: TrackerEditor {
+    var blocksControls: Bool { pending }
+    var blocksOtherEditors: Bool { isPresented || blocksConnectionChange }
+    var connectionChangeBlocker: String? {
+        blocksConnectionChange ? "Finish or retry task renaming before changing connections." : nil
+    }
+    var hasPendingWrite: Bool { pending }
+    // Task identifiers belong to the previous connection.
+    func connectionDidChange() { reset() }
 }

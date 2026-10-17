@@ -210,3 +210,14 @@ final class WorklogCorrectionState {
         pending = false
     }
 }
+
+extension WorklogCorrectionState: TrackerEditor {
+    var blocksControls: Bool { pending }
+    var blocksOtherEditors: Bool { blocksConnectionChange }
+    var connectionChangeBlocker: String? {
+        blocksConnectionChange ? "Finish worklog editing before changing connections." : nil
+    }
+    var hasPendingWrite: Bool { pending }
+    func observeActive(_ worklog: WorklogItem) { observe(worklog) }
+    func observeHistory(_ worklog: WorklogItem) { observe(worklog) }
+}

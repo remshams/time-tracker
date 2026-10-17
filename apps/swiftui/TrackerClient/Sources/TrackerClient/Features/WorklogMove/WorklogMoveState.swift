@@ -232,3 +232,14 @@ final class WorklogMoveState {
         pending = false
     }
 }
+
+extension WorklogMoveState: TrackerEditor {
+    var blocksControls: Bool { pending }
+    var blocksOtherEditors: Bool { blocksConnectionChange }
+    var connectionChangeBlocker: String? {
+        blocksConnectionChange ? "Finish or retry worklog moving before changing connections." : nil
+    }
+    var hasPendingWrite: Bool { pending }
+    func observeActive(_ worklog: WorklogItem) { observe(worklog) }
+    func observeHistory(_ worklog: WorklogItem) { observe(worklog) }
+}

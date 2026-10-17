@@ -6,9 +6,7 @@ public final class TrackerSession {
     public private(set) var isBusy = true
     // Background reads still serialize requests without disabling controls.
     public var isBlockingControls: Bool {
-        (isBusy && operationBlocksControls) || pendingControlCommand != nil || bulkArchiving.ownsPresentation
-            || rename.hasPendingIntent || creation.pending || correction.pending || move.pending
-            || deletion.pending || archiving.pending
+        (isBusy && operationBlocksControls) || pendingControlCommand != nil || editors.blocksControls
     }
     public private(set) var now: Date
 
@@ -36,6 +34,10 @@ public final class TrackerSession {
     private let correction = WorklogCorrectionState()
     private let move = WorklogMoveState()
     private let deletion = WorklogDeletionState()
+    // Drain order. Only one editor can block at a time because each gate checks the others.
+    private lazy var editors = EditorRegistry([
+        bulkArchiving, archiving, rename, creation, correction, move, deletion,
+    ])
     private let dailyTotals: DailyTotalsState
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
@@ -118,40 +120,22 @@ public final class TrackerSession {
     public var selectedTask: TaskItem? { catalog.selectedTask }
     public var hasMoreHistory: Bool { nextCursor != nil }
     public var taskCreation: TaskCreationPresentation { creation.presentation }
-    public var canOpenTaskCreation: Bool {
-        running && connection.confirmed && !connection.changing && !rename.presentation.isPresented
-            && !rename.blocksConnectionChange && !correction.blocksConnectionChange && !move.blocksConnectionChange
-            && !deletion.blocksConnectionChange && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
-    }
+    public var canOpenTaskCreation: Bool { canOpenEditor(creation) }
     public var taskRename: TaskRenamePresentation { rename.presentation }
     public var canOpenTaskRename: Bool {
-        running && connection.confirmed && !connection.changing && !creation.presentation.isPresented
-            && !creation.blocksConnectionChange && !correction.blocksConnectionChange && !move.blocksConnectionChange
-            && !deletion.blocksConnectionChange && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
-            && (selectedTask != nil || rename.intent != nil)
+        canOpenEditor(rename) && (selectedTask != nil || rename.intent != nil)
     }
     public var worklogCorrection: WorklogCorrectionPresentation { correction.presentation }
-    public var canOpenWorklogCorrection: Bool {
-        running && connection.confirmed && !connection.changing && !creation.presentation.isPresented
-            && !creation.blocksConnectionChange && !rename.presentation.isPresented && !rename.blocksConnectionChange
-            && !move.blocksConnectionChange && !deletion.blocksConnectionChange && !archiving.ownsPresentation
-            && !bulkArchiving.ownsPresentation
-    }
+    public var canOpenWorklogCorrection: Bool { canOpenEditor(correction) }
 
     public var worklogMove: WorklogMovePresentation { move.presentation }
-    public var canOpenWorklogMove: Bool {
-        running && connection.confirmed && !connection.changing && !creation.presentation.isPresented
-            && !creation.blocksConnectionChange && !rename.presentation.isPresented && !rename.blocksConnectionChange
-            && !correction.blocksConnectionChange && !deletion.blocksConnectionChange && !archiving.ownsPresentation
-            && !bulkArchiving.ownsPresentation
-    }
+    public var canOpenWorklogMove: Bool { canOpenEditor(move) }
 
     public var worklogDeletion: WorklogDeletionPresentation { deletion.presentation }
-    public var canOpenWorklogDeletion: Bool {
-        running && connection.confirmed && !connection.changing && !creation.presentation.isPresented
-            && !creation.blocksConnectionChange && !rename.presentation.isPresented && !rename.blocksConnectionChange
-            && !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.ownsPresentation
-            && !bulkArchiving.ownsPresentation
+    public var canOpenWorklogDeletion: Bool { canOpenEditor(deletion) }
+
+    private func canOpenEditor(_ editor: any TrackerEditor) -> Bool {
+        running && connection.confirmed && !connection.changing && !editors.blocksEditors(except: editor)
     }
 
     public var canStartSelectedTask: Bool {
@@ -262,13 +246,7 @@ public final class TrackerSession {
         cancelPendingControlCommand("The tracker has stopped.")
         history.invalidate()
         automation.cancel()
-        creation.reset()
-        rename.reset()
-        correction.reset()
-        move.reset()
-        deletion.reset()
-        archiving.reset()
-        bulkArchiving.reset()
+        editors.reset()
         pendingRefresh = false
         cancelTimers()
         isBusy = false
@@ -300,7 +278,7 @@ public final class TrackerSession {
     public func sleep() {
         guard running else { return }
         sleeping = true
-        bulkArchiving.sleep()
+        editors.sleep()
         cancelPendingControlCommand("The command was cancelled because the computer went to sleep.")
         cancelTimers()
         publish()
@@ -314,9 +292,7 @@ public final class TrackerSession {
         dailyTotals.reanchor(clock: clock)
         updateDisplayTimer()
         updateRolloverTimer()
-        if rename.hasPendingIntent || creation.pending || correction.pending || move.pending || deletion.pending
-            || archiving.pending || bulkArchiving.pendingSubmit
-        {
+        if editors.hasPendingWrite {
             if drainAutomation() { return }
             if drainBulkArchiving() { return }
             if drainArchiving() { return }
@@ -367,10 +343,7 @@ public final class TrackerSession {
 
     private var canBeginTaskArchiving: Bool {
         running && !sleeping && connection.confirmed && !connection.changing && (!isBusy || !operationBlocksControls)
-            && pendingControlCommand == nil && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
-            && !creation.presentation.isPresented && !creation.blocksConnectionChange
-            && !rename.presentation.isPresented && !rename.blocksConnectionChange && !correction.blocksConnectionChange
-            && !move.blocksConnectionChange && !deletion.blocksConnectionChange
+            && pendingControlCommand == nil && !editors.blocksEditors(except: nil)
     }
 
     var taskArchivingAvailability: [String: Bool] {
@@ -419,12 +392,7 @@ public final class TrackerSession {
     }
 
     public func reopenTaskArchiving() {
-        guard running, !sleeping, !connection.changing,
-            !creation.presentation.isPresented, !creation.blocksConnectionChange,
-            !rename.presentation.isPresented, !rename.blocksConnectionChange,
-            !correction.blocksConnectionChange, !move.blocksConnectionChange, !deletion.blocksConnectionChange,
-            !bulkArchiving.ownsPresentation
-        else { return }
+        guard running, !sleeping, !connection.changing, !editors.blocksEditors(except: archiving) else { return }
         archiving.reopen()
         publish()
     }
@@ -692,27 +660,7 @@ public final class TrackerSession {
     }
 
     public func connect(_ settings: ConnectionSettings) async -> Bool {
-        guard !bulkArchiving.ownsPresentation else {
-            return rejectConnection("Close the archive dialog before changing connections.")
-        }
-        guard !archiving.blocksConnectionChange else {
-            return rejectConnection("Finish or retry task archiving before changing connections.")
-        }
-        guard !move.blocksConnectionChange else {
-            return rejectConnection("Finish or retry worklog moving before changing connections.")
-        }
-        guard !deletion.blocksConnectionChange else {
-            return rejectConnection("Finish or retry worklog deletion before changing connections.")
-        }
-        guard !correction.blocksConnectionChange && !move.blocksConnectionChange else {
-            return rejectConnection("Finish worklog editing before changing connections.")
-        }
-        guard !rename.blocksConnectionChange else {
-            return rejectConnection("Finish or retry task renaming before changing connections.")
-        }
-        guard !creation.blocksConnectionChange else {
-            return rejectConnection("Finish or retry task creation before changing connections.")
-        }
+        if let blocker = editors.connectionChangeBlocker { return rejectConnection(blocker) }
         automation.cancel()
         let operation: ControlOperation
         do { operation = try await acquireControlOperation() } catch {
@@ -722,10 +670,7 @@ public final class TrackerSession {
         let token = operation.token
         defer { finishOperation(token: token) }
         guard controlOperationIsCurrent(operation), !sleeping, !Task.isCancelled else { return false }
-        guard !rename.blocksConnectionChange, !creation.blocksConnectionChange,
-            !correction.blocksConnectionChange && !move.blocksConnectionChange && !deletion.blocksConnectionChange
-                && !archiving.blocksConnectionChange && !bulkArchiving.ownsPresentation
-        else {
+        guard !editors.blocksConnectionChange else {
             connection.message = "Finish or retry task editing before changing connections."
             return false
         }
@@ -1816,7 +1761,7 @@ public final class TrackerSession {
         let previousActive = active
         automation.observeActive(resources.tracking.value)
         tracking.apply(resources.tracking.value, clock: clock)
-        if let active = resources.tracking.value { correction.observe(active); move.observe(active) }
+        if let active = resources.tracking.value { editors.observeActive(active) }
         if reports != nil && requestReport { dailyTotals.invalidate() }
         if catalog.apply(resources.catalog.value, previousActive: previousActive, active: active) {
             requestHistory()
@@ -2027,8 +1972,7 @@ public final class TrackerSession {
         reportResource = nil
         settingsRepository.save(settings)
         catalog.resetSelections()
-        rename.reset()
-        archiving.reset()
+        editors.connectionDidChange()
         history.request(selectedTaskID: nil)
         tracking.error = nil
         acceptTaskList(resources)
@@ -2138,14 +2082,8 @@ public final class TrackerSession {
     ) -> Bool {
         guard historyRequestIsCurrent(token: token, historyToken: historyToken, taskID: taskID) else { return false }
         history.accept(page, cursor: cursor)
-        page.worklogs.forEach(observeHistoryWorklog)
+        page.worklogs.forEach(editors.observeHistory)
         return true
-    }
-
-    private func observeHistoryWorklog(_ worklog: WorklogItem) {
-        correction.observe(worklog)
-        move.observe(worklog)
-        deletion.observe(worklog)
     }
 
     private func historyFailureRequiresRecovery(_ failure: BridgeFailure) -> Bool {

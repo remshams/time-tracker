@@ -207,3 +207,14 @@ final class TaskArchivingState {
         pending = false
     }
 }
+
+extension TaskArchivingState: TrackerEditor {
+    var blocksControls: Bool { pending }
+    var blocksOtherEditors: Bool { ownsPresentation }
+    var connectionChangeBlocker: String? {
+        blocksConnectionChange ? "Finish or retry task archiving before changing connections." : nil
+    }
+    var hasPendingWrite: Bool { pending }
+    // Task identifiers belong to the previous connection.
+    func connectionDidChange() { reset() }
+}
