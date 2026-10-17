@@ -85,16 +85,6 @@ impl InactiveTaskPreview {
     pub fn count(&self) -> usize {
         self.dto.count
     }
-
-    /// Returns captured candidate identities for serialized-token validation.
-    pub fn candidate_ids(&self) -> &[String] {
-        &self.dto.candidate_task_ids
-    }
-
-    /// Reports whether a restored token contains a server revision for confirmation.
-    pub fn has_confirmation_guard(&self) -> bool {
-        !self.dto.revision.is_empty()
-    }
 }
 
 /// A confirmed resource value and the opaque revision observed with it.
