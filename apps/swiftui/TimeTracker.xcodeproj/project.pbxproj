@@ -16,7 +16,6 @@
 		8BE6CE736C624EFAB0D710CC /* ConnectionActionsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11F96E69433F249D449B83E0 /* ConnectionActionsSection.swift */; };
 		C4A122BD963E40B822BDBE80 /* ConnectionSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9B47B96FF5B18ABDE339C8F /* ConnectionSettingsSection.swift */; };
 		8F47CEF34016B75C457130B1 /* ConnectionDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF4B35BBAC9E510A4F1B6719 /* ConnectionDraftStore.swift */; };
-		C88EDC1E136D70620F0B0ECF /* WorklogDeletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FDBB33BC912AB6A8A85E66B /* WorklogDeletionStore.swift */; };
 		EA53E0B162E3868C3E6CD353 /* WorklogCorrectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */; };
 		8FB1818DF921B787854DFCA6 /* WorklogMoveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40EB26AD584B87CAF03F7FD /* WorklogMoveView.swift */; };
 		B8C0B64849481F9C0CB43B5D /* WorklogDeletionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEB2F7A3DAD9589579344164 /* WorklogDeletionView.swift */; };
@@ -109,7 +108,6 @@
 		11F96E69433F249D449B83E0 /* ConnectionActionsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionActionsSection.swift; sourceTree = "<group>"; };
 		B9B47B96FF5B18ABDE339C8F /* ConnectionSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSettingsSection.swift; sourceTree = "<group>"; };
 		DF4B35BBAC9E510A4F1B6719 /* ConnectionDraftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionDraftStore.swift; sourceTree = "<group>"; };
-		0FDBB33BC912AB6A8A85E66B /* WorklogDeletionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogDeletionStore.swift; sourceTree = "<group>"; };
 		C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogCorrectionView.swift; sourceTree = "<group>"; };
 		B40EB26AD584B87CAF03F7FD /* WorklogMoveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogMoveView.swift; sourceTree = "<group>"; };
 		DEB2F7A3DAD9589579344164 /* WorklogDeletionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogDeletionView.swift; sourceTree = "<group>"; };
@@ -339,7 +337,6 @@
 		3ABD701C8406AD405352A72E /* WorklogHistory */ = {
 			isa = PBXGroup;
 			children = (
-				0FDBB33BC912AB6A8A85E66B /* WorklogDeletionStore.swift */,
 				C48C42EE145BEE5CE894933B /* WorklogCorrectionView.swift */,
 				B40EB26AD584B87CAF03F7FD /* WorklogMoveView.swift */,
 				DEB2F7A3DAD9589579344164 /* WorklogDeletionView.swift */,
@@ -733,7 +730,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C88EDC1E136D70620F0B0ECF /* WorklogDeletionStore.swift in Sources */,
 				EA53E0B162E3868C3E6CD353 /* WorklogCorrectionView.swift in Sources */,
 				8FB1818DF921B787854DFCA6 /* WorklogMoveView.swift in Sources */,
 				B8C0B64849481F9C0CB43B5D /* WorklogDeletionView.swift in Sources */,

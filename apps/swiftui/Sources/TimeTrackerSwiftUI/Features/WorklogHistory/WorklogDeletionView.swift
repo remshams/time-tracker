@@ -3,7 +3,8 @@ import TrackerClient
 
 @MainActor
 struct WorklogDeletionDialog: View {
-    @ObservedObject var deletion: WorklogDeletionStore
+    let session: TrackerSession
+    @ObservedObject var deletion: WorklogDeletionModel
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -12,17 +13,18 @@ struct WorklogDeletionDialog: View {
             .sheet(
                 isPresented: Binding(
                     get: { isPresentationOwner && deletion.state.isPresented },
-                    set: { if isPresentationOwner && !$0 { deletion.cancel() } }
+                    set: { if isPresentationOwner && !$0 { session.cancelWorklogDeletion() } }
                 )
             ) {
-                WorklogDeletionSheet(deletion: deletion)
+                WorklogDeletionSheet(session: session, deletion: deletion)
             }
     }
 }
 
 @MainActor
 private struct WorklogDeletionSheet: View {
-    @ObservedObject var deletion: WorklogDeletionStore
+    let session: TrackerSession
+    @ObservedObject var deletion: WorklogDeletionModel
 
     var body: some View {
         let state = deletion.sheetContent
@@ -56,7 +58,7 @@ private struct WorklogDeletionSheet: View {
                     Text("Start: \(localDay(latest.start)), \(localTimestamp(latest.start))")
                     Text(latest.end.map { "End: \(localDay($0)), \(localTimestamp($0))" } ?? "Still running")
                     if latest.end != nil {
-                        Button("Review latest entry") { deletion.reviewLatest() }
+                        Button("Review latest entry") { session.reviewLatestWorklogDeletion() }
                             .accessibilityIdentifier("worklog-deletion.review")
                     }
                 }
@@ -70,12 +72,12 @@ private struct WorklogDeletionSheet: View {
                     isBusy: state.isSubmitting, title: "Deleting worklog...",
                     identifier: "worklog-deletion.progress")
                 Spacer()
-                Button("Cancel") { deletion.cancel() }
+                Button("Cancel") { session.cancelWorklogDeletion() }
                     .accessibilityIdentifier("worklog-deletion.cancel")
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
                 Button(state.error != nil && state.canSubmit ? "Retry" : "Delete", role: .destructive) {
-                    deletion.submit()
+                    session.submitWorklogDeletion()
                 }
                 .accessibilityIdentifier("worklog-deletion.confirm")
                 .keyboardShortcut(.defaultAction)
@@ -127,11 +129,12 @@ private struct WorklogDeletionSummary: View {
 
 @MainActor
 struct PendingWorklogDeletionButton: View {
-    @ObservedObject var deletion: WorklogDeletionStore
+    let session: TrackerSession
+    @ObservedObject var deletion: WorklogDeletionModel
 
     var body: some View {
         if !deletion.state.isPresented, let original = deletion.state.original {
-            Button("Retry worklog deletion") { deletion.open(worklogID: original.id) }
+            Button("Retry worklog deletion") { session.openWorklogDeletion(worklogID: original.id) }
                 .disabled(!deletion.canOpen)
         }
     }

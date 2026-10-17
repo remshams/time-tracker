@@ -8,7 +8,7 @@ struct WorklogRow: View {
     let timer: TrackerTimerStore
     let correction: WorklogCorrectionModel
     let move: WorklogMoveModel
-    let deletion: WorklogDeletionStore
+    let deletion: WorklogDeletionModel
 
     private var duration: TimeInterval {
         guard let start = timestamp(worklog.start), let end = timestamp(worklog.end) else { return 0 }
@@ -60,7 +60,7 @@ private struct WorklogActionsMenu: View {
     let session: TrackerSession
     @ObservedObject var correction: WorklogCorrectionModel
     @ObservedObject var move: WorklogMoveModel
-    @ObservedObject var deletion: WorklogDeletionStore
+    @ObservedObject var deletion: WorklogDeletionModel
     let worklog: WorklogItem
 
     var body: some View {
@@ -88,7 +88,7 @@ private struct WorklogContextMenu: View {
     let session: TrackerSession
     @ObservedObject var correction: WorklogCorrectionModel
     @ObservedObject var move: WorklogMoveModel
-    @ObservedObject var deletion: WorklogDeletionStore
+    @ObservedObject var deletion: WorklogDeletionModel
     let worklog: WorklogItem
 
     var body: some View {
@@ -98,7 +98,7 @@ private struct WorklogContextMenu: View {
             .disabled(!move.canOpen || move.state.isPresented)
         Divider()
         // Running worklogs cannot be deleted. Stop the timer first.
-        Button("Delete...", role: .destructive) { deletion.open(worklogID: worklog.id) }
+        Button("Delete...", role: .destructive) { session.openWorklogDeletion(worklogID: worklog.id) }
             .disabled(!deletion.canOpen || deletion.state.isPresented || worklog.end == nil)
     }
 }

@@ -116,7 +116,7 @@ struct TrackerDetailPresentation: View {
                 WorklogCorrectionDialog(
                     session: store.session, correction: store.correction, isPresentationOwner: isOwner)
                 WorklogMoveDialog(session: store.session, move: store.move, isPresentationOwner: isOwner)
-                WorklogDeletionDialog(deletion: store.deletion, isPresentationOwner: isOwner)
+                WorklogDeletionDialog(session: store.session, deletion: store.deletion, isPresentationOwner: isOwner)
                 BulkTaskArchivingDialog(
                     session: store.session, archiving: store.bulkArchiving, isPresentationOwner: isOwner)
                 TaskArchivingDialog(session: store.session, archiving: store.archiving, isPresentationOwner: isOwner)

@@ -155,7 +155,7 @@ struct WorklogHistoryHeading: View {
     let session: TrackerSession
     @ObservedObject var correction: WorklogCorrectionModel
     @ObservedObject var move: WorklogMoveModel
-    @ObservedObject var deletion: WorklogDeletionStore
+    @ObservedObject var deletion: WorklogDeletionModel
 
     var body: some View {
         HStack {
@@ -163,7 +163,7 @@ struct WorklogHistoryHeading: View {
             Spacer()
             PendingWorklogCorrectionButton(session: session, correction: correction)
             PendingWorklogMoveButton(session: session, move: move)
-            PendingWorklogDeletionButton(deletion: deletion)
+            PendingWorklogDeletionButton(session: session, deletion: deletion)
         }
         .padding(.bottom, 4)
     }

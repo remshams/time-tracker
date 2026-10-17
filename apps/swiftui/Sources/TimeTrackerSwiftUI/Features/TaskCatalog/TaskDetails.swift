@@ -90,7 +90,7 @@ struct TaskDetails: View {
                         .foregroundStyle(.secondary)
                     PendingWorklogCorrectionButton(session: store.session, correction: store.correction)
                     PendingWorklogMoveButton(session: store.session, move: store.move)
-                    PendingWorklogDeletionButton(deletion: store.deletion)
+                    PendingWorklogDeletionButton(session: store.session, deletion: store.deletion)
                 }
                 .padding(24)
             }
