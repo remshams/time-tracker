@@ -89,40 +89,6 @@ pub unsafe extern "C" fn tt_bridge_create_task_at(
     encode(result)
 }
 
-/// Renames an existing task at the submitted timestamp and returns the committed task.
-/// Task identity, archive state, and worklogs remain intact.
-///
-/// # Safety
-/// `bridge` must be live and uniquely accessed. Strings must be null or valid
-/// C strings. Free the result with `tt_bridge_string_free`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tt_bridge_rename_task_at(
-    bridge: *mut Bridge,
-    task_id: *const c_char,
-    name: *const c_char,
-    occurred_at: *const c_char,
-) -> *mut c_char {
-    // SAFETY: The caller guarantees exclusive access to the live bridge.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    let result = (|| {
-        // SAFETY: The caller supplies valid C strings or null.
-        let task_id =
-            unsafe { read_identifier(task_id, "Invalid task ID") }.map_err(BridgeError::from)?;
-        // SAFETY: The caller supplies a valid C string or null.
-        let name = unsafe { read_identifier::<String>(name, "Invalid task name") }
-            .map_err(BridgeError::from)?;
-        let name = TaskName::new(&name).map_err(|error| BridgeError::from(error.to_string()))?;
-        // SAFETY: The caller supplies a valid C string or null.
-        let occurred_at = unsafe { read_identifier(occurred_at, "Invalid rename timestamp") }
-            .map_err(BridgeError::from)?;
-        let task = bridge.application.rename_task(task_id, name, occurred_at)?;
-        Ok(task_result(&bridge.application, &task))
-    })();
-    encode(result)
-}
-
 /// Renames a task only if its stored name still matches the reviewed name.
 ///
 /// # Safety
@@ -203,21 +169,6 @@ unsafe fn read_task_name(pointer: *const c_char, message: &str) -> Result<TaskNa
     TaskName::new(&name).map_err(|error| BridgeError::from(error.to_string()))
 }
 
-/// Archives a stopped task and returns the committed outcome.
-///
-/// # Safety
-/// `bridge` must be live and uniquely accessed. Strings must be null or valid
-/// C strings. Free the result with `tt_bridge_string_free`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tt_bridge_archive_task_at(
-    bridge: *mut Bridge,
-    task_id: *const c_char,
-    occurred_at: *const c_char,
-) -> *mut c_char {
-    // SAFETY: The caller guarantees the bridge and strings meet this contract.
-    unsafe { change_task_archive_at(bridge, task_id, occurred_at, true) }
-}
-
 /// Restores a task and returns the committed outcome.
 ///
 /// # Safety
@@ -228,16 +179,6 @@ pub unsafe extern "C" fn tt_bridge_unarchive_task_at(
     bridge: *mut Bridge,
     task_id: *const c_char,
     occurred_at: *const c_char,
-) -> *mut c_char {
-    // SAFETY: The caller guarantees the bridge and strings meet this contract.
-    unsafe { change_task_archive_at(bridge, task_id, occurred_at, false) }
-}
-
-unsafe fn change_task_archive_at(
-    bridge: *mut Bridge,
-    task_id: *const c_char,
-    occurred_at: *const c_char,
-    archived: bool,
 ) -> *mut c_char {
     // SAFETY: The caller supplies exclusive access to a live bridge or null.
     let Some(bridge) = (unsafe { bridge.as_mut() }) else {
@@ -250,11 +191,7 @@ unsafe fn change_task_archive_at(
         // SAFETY: The caller supplies valid C strings or null.
         let occurred_at = unsafe { read_identifier(occurred_at, "Invalid archive timestamp") }
             .map_err(BridgeError::from)?;
-        let task = if archived {
-            bridge.application.archive_task(task_id, occurred_at)?
-        } else {
-            bridge.application.unarchive_task(task_id, occurred_at)?
-        };
+        let task = bridge.application.unarchive_task(task_id, occurred_at)?;
         Ok(task_result(&bridge.application, &task))
     })();
     encode(result)

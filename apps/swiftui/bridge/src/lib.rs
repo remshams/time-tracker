@@ -23,8 +23,7 @@ pub use lifecycle::{
 };
 pub use reports::{tt_bridge_refresh_totals, tt_bridge_report, tt_bridge_report_observation};
 pub use tasks::{
-    tt_bridge_archive_task_at, tt_bridge_archive_task_with_expected_name_at,
-    tt_bridge_create_task_at, tt_bridge_rename_task_at,
+    tt_bridge_archive_task_with_expected_name_at, tt_bridge_create_task_at,
     tt_bridge_rename_task_with_expected_name_at, tt_bridge_tasks, tt_bridge_unarchive_task_at,
 };
 pub use tracking::{

@@ -13,6 +13,28 @@ pub(super) fn test_resource_values(application: &Backend) -> (Value, Value) {
     )
 }
 
+/// Returns the name the bridge cache holds for `id`, or a placeholder for unknown tasks.
+pub(super) fn cached_task_name(application: &Backend, id: TaskId) -> TaskName {
+    application
+        .tasks(TaskOrdering::default())
+        .into_iter()
+        .find(|item| item.task.id() == id)
+        .map_or_else(
+            || TaskName::new("Missing task").unwrap(),
+            |item| item.task.name().clone(),
+        )
+}
+
+/// Archives a fixture task under the name the bridge last read for it.
+pub(super) fn archive_cached_task(
+    application: &mut Backend,
+    id: TaskId,
+    at: DateTime<Utc>,
+) -> Result<tracker_domain::Task, backend::BridgeError> {
+    let name = cached_task_name(application, id);
+    application.archive_task_with_expected_name(id, name, at)
+}
+
 use super::*;
 
 #[test]
@@ -203,10 +225,7 @@ fn start_rejects_missing_and_newly_archived_tasks_without_switching() {
     let tasks = bridge.application.tasks(TaskOrdering::default());
     let started = start_tracking(&mut bridge, tasks[0].task.id());
     let mut other = open_fixture(&path).unwrap();
-    other
-        .application
-        .archive_task(tasks[1].task.id(), Utc::now())
-        .unwrap();
+    archive_cached_task(&mut other.application, tasks[1].task.id(), Utc::now()).unwrap();
 
     let archived = start_tracking(&mut bridge, tasks[1].task.id());
     assert_eq!(

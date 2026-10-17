@@ -236,20 +236,6 @@ impl Backend {
         result.map_err(|error| self.operation_error(error, true))
     }
 
-    pub fn rename_task(
-        &mut self,
-        task_id: TaskId,
-        name: TaskName,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<Task, BridgeError> {
-        self.check_write()?;
-        let result =
-            self.runtime
-                .block_on(self.application.rename_task(task_id, name, occurred_at));
-        self.record_write_completion();
-        result.map_err(|error| self.task_operation_error(error))
-    }
-
     pub fn rename_task_with_expected_name(
         &mut self,
         task_id: TaskId,
@@ -465,56 +451,44 @@ impl Backend {
         self.operation_error(error, false)
     }
 
-    pub fn archive_task(&mut self, id: TaskId, at: DateTime<Utc>) -> Result<Task, BridgeError> {
-        self.change_task_archive(id, at, true, None)
-    }
-    pub fn unarchive_task(&mut self, id: TaskId, at: DateTime<Utc>) -> Result<Task, BridgeError> {
-        self.change_task_archive(id, at, false, None)
-    }
-
     pub fn archive_task_with_expected_name(
         &mut self,
         id: TaskId,
         expected_name: TaskName,
         at: DateTime<Utc>,
     ) -> Result<Task, BridgeError> {
-        self.change_task_archive(id, at, true, Some(expected_name))
+        self.check_write()?;
+        let result = self
+            .runtime
+            .block_on(
+                self.application
+                    .archive_task_with_expected_name(id, &expected_name, at),
+            );
+        self.record_write_completion();
+        result.map_err(|error| self.archive_operation_error(error))
     }
 
-    fn change_task_archive(
-        &mut self,
-        id: TaskId,
-        at: DateTime<Utc>,
-        archived: bool,
-        expected_name: Option<TaskName>,
-    ) -> Result<Task, BridgeError> {
+    pub fn unarchive_task(&mut self, id: TaskId, at: DateTime<Utc>) -> Result<Task, BridgeError> {
         self.check_write()?;
-        let result = if let Some(expected_name) = expected_name {
-            self.runtime
-                .block_on(
-                    self.application
-                        .archive_task_with_expected_name(id, &expected_name, at),
-                )
-        } else if archived {
-            self.runtime.block_on(self.application.archive_task(id, at))
-        } else {
-            self.runtime
-                .block_on(self.application.unarchive_task(id, at))
-        };
+        let result = self
+            .runtime
+            .block_on(self.application.unarchive_task(id, at));
         self.record_write_completion();
-        result.map_err(|error| {
-            if !self.application.is_remote() {
-                return local_archive_error(error);
-            }
-            self.requires_refresh = true;
-            let mut mapped = archive_error(&error);
-            mapped.uncertain &= self
-                .application
-                .remote_application()
-                .is_some_and(|application| application.last_write_attempted());
-            mapped.requires_refresh = true;
-            mapped
-        })
+        result.map_err(|error| self.archive_operation_error(error))
+    }
+
+    fn archive_operation_error(&mut self, error: ApplicationError) -> BridgeError {
+        if !self.application.is_remote() {
+            return local_archive_error(error);
+        }
+        self.requires_refresh = true;
+        let mut mapped = archive_error(&error);
+        mapped.uncertain &= self
+            .application
+            .remote_application()
+            .is_some_and(|application| application.last_write_attempted());
+        mapped.requires_refresh = true;
+        mapped
     }
 }
 
@@ -616,8 +590,8 @@ fn local_archive_error(error: ApplicationError) -> BridgeError {
 
 fn archive_error(error: &ApplicationError) -> BridgeError {
     let failure = error.failure();
+    // TaskChanged needs no arm: task_operation_error_kind already reports it as a conflict.
     let kind = match failure.category() {
-        ApplicationFailureCategory::TaskChanged => "conflict",
         ApplicationFailureCategory::ActiveTask => "task_active",
         ApplicationFailureCategory::TaskNotFound => "task_not_found",
         _ => task_operation_error_kind(error),

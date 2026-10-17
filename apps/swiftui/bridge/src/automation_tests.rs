@@ -183,10 +183,12 @@ fn local_resume_rejects_missing_and_archived_tasks() {
     let task_id = bridge.application.tasks(TaskOrdering::default())[0]
         .task
         .id();
-    bridge
-        .application
-        .archive_task(task_id, "2026-10-04T10:00:00Z".parse().unwrap())
-        .unwrap();
+    crate::tests::archive_cached_task(
+        &mut bridge.application,
+        task_id,
+        "2026-10-04T10:00:00Z".parse().unwrap(),
+    )
+    .unwrap();
     assert!(
         resume(&mut bridge, task_id, "2026-10-04T10:10:00Z")
             .get("error")
