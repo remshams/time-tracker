@@ -82,7 +82,7 @@ Source: [crate](../../apps/cli/Cargo.toml), [entry point](../../apps/cli/src/mai
 
 ### tracker-swift-bridge
 
-Owns the Rust static library's C ABI, connection handles, JSON results, and persistent current-thread Tokio runtime. It dispatches through `TrackerBackend` and maps failures for Swift. Additive guarded rename and archive exports carry the reviewed task name into the shared application operation. Existing desired-state exports remain available. The native app's serial `TrackerWorker` owns call ordering and handle disposal; the bridge owns neither windows nor feature state.
+Owns the Rust static library's C ABI, connection handles, JSON results, and persistent current-thread Tokio runtime. It dispatches through `TrackerBackend` and maps failures for Swift. Rename and archive exports carry the reviewed task name into the shared application operation; the bridge has no unguarded rename or archive export. Restore has no name guard. The native app's serial `TrackerWorker` owns call ordering and handle disposal; the bridge owns neither windows nor feature state.
 
 Depends on: [tracker-client](#tracker-client), [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-remote](#tracker-remote), [tracker-storage](#tracker-storage).
 
