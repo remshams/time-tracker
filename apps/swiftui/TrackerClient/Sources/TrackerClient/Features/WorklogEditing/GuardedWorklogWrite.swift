@@ -111,13 +111,14 @@ struct GuardedWorklogWrite {
         var reconciled = false
         if commandStarted {
             if let taskList = await resources.reconcileWriteFailure(token: token) {
-                if operations.isSleeping { return retain(error, state: state) }
+                // Sleep interrupts recovery, so keep the intent of the uncertain write.
+                if operations.isSleeping { return state.fail(error, retainIntent: true) }
                 do {
                     // A lost response can follow a committed write, so look where a committed write leaves the worklog.
                     let latest = try await resources.findWorklog(
                         editor.lookup(intent, includeCommitted: true), in: taskList, token: token)
                     guard operations.isCurrent(token) else { return }
-                    if operations.isSleeping { return retain(error, state: state) }
+                    if operations.isSleeping { return state.fail(error, retainIntent: true) }
                     reconciled = true
                     let preflight = editor.preflight(
                         intent, latest: latest, resources: taskList, resolveCommitted: uncertain)
@@ -137,12 +138,6 @@ struct GuardedWorklogWrite {
         }
         guard operations.isCurrent(token) else { return }
         state.fail(error, retainIntent: uncertain || (commandStarted && !reconciled))
-        operations.publish()
-    }
-
-    /// Keeps the intent after an uncertain write when sleep interrupts recovery.
-    private func retain(_ error: Error, state: some GuardedWorklogState) {
-        state.fail(error, retainIntent: true)
         operations.publish()
     }
 
