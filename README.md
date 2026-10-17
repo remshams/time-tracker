@@ -196,20 +196,20 @@ Missed and timed-out mutants fail the check, as do CRAP scores above 12. The pin
 ## Continuous integration
 
 GitHub Actions runs every regular check for every pull request, push to `main`,
-and manual CI run. There are no changed-file filters. Portable checks use
-GitHub-hosted Ubuntu 24.04 runners; macOS runners cover platform compatibility and
-the native app. The workflows use read-only repository permissions, pinned
+and manual CI run. The only changed-file filter skips the native macOS jobs when a
+change cannot affect them. Portable checks use GitHub-hosted Ubuntu 24.04 runners;
+macOS runners cover platform compatibility and the native app. The workflows use read-only repository permissions, pinned
 action revisions, dependency and build caches, and seven-day report retention.
 
 | # | Workflow | Checks | Trigger |
 |---|---|---|---|
 | 1 | [CI](.github/workflows/ci.yml) | Rust formatting, Clippy with warnings denied, Python script tests, and actionlint | Every PR, push to `main`, and manual run |
-| 2 | CI | Full Rust workspace tests on Linux and macOS, including existing integration and TUI E2E tests | Every PR, push to `main`, and manual run |
+| 2 | CI | Full Rust workspace tests on Linux, including existing integration and TUI E2E tests | Every PR, push to `main`, and manual run |
 | 3 | CI | Rust coverage and the configured CRAP threshold of 12 | Every PR, push to `main`, and manual run |
 | 4 | CI | Pinned Swift formatting and linting, portable Swift tests, and at least 95% executable line coverage on Linux | Every PR, push to `main`, and manual run |
 | 5 | CI, `swift-mutations` job | Focused portable Swift mutation checks for changed production files and mapped tests; reports are uploaded as `swift-pr-mutations` | Every pull request only |
-| 6 | CI | Six required native UI E2E groups, Swift package tests on macOS, native Debug and universal Release builds, and scene layout checks | Every PR, push to `main`, and manual run |
-| 7 | CI | `CI passed` requires every regular job to succeed, including both Rust test platforms | Every PR, push to `main`, and manual run |
+| 6 | CI | Four required native UI E2E groups, full Rust workspace tests and Swift package tests on macOS, native Debug and universal Release builds, and scene layout checks | Every manual run, and every PR or push to `main` with changes outside the native scope's skip list |
+| 7 | CI | `CI passed` requires every regular job to succeed. It accepts skipped native jobs only when the native scope found no change that affects them | Every PR, push to `main`, and manual run |
 | 8 | [Mutation tests](.github/workflows/mutations.yml) | Full Rust and portable Swift mutation suites on Linux; missed, timed-out, and unresolved mutants fail their jobs | Manual only |
 | 9 | [Dependency audit](.github/workflows/dependencies.yml) | `cargo audit` checks `Cargo.lock` against RustSec advisories | Monday at 06:23 UTC and manual runs |
 
@@ -225,12 +225,20 @@ Broad dependency or shared test-support changes, deleted production files, and c
 
 CI pins Rust 1.98.1 in the [shared Rust setup action](.github/actions/setup-rust/action.yml),
 Swift 6.1.3 for Linux, and Xcode 27.0 for the native app. Coverage and mutation tool
-versions follow `AGENTS.md`. The macOS job uses
+versions follow `AGENTS.md`. The macOS jobs use
 GitHub's `xcode-27` public preview image, which includes macOS 27, Xcode 27.0,
-and the macOS 27 SDK. Rust platform tests use the stable `macos-26` image.
+and the macOS 27 SDK. The `mac` native group also runs the Rust workspace tests,
+so each CI run needs at most four macOS runners. GitHub allows this personal
+account five concurrent macOS jobs.
 Native UI E2E and layout checks require a desktop session. The [native coverage map](apps/swiftui/e2e-coverage.md) records automated cases and dedicated-Mac acceptance checks.
 
-Native jobs have a 30-minute limit. Their UI step has a 25-minute limit, with
+The `native-scope` job runs `scripts/ci-native-scope.py` against the pull request
+or push diff. Changes limited to Markdown files, `docs/`, `.githooks/`,
+`scripts/tests/`, and a short list of Linux-only tooling files skip the native jobs.
+Manual runs, pushes without a previous commit, failed comparisons, and any other
+changed path run them.
+
+Native jobs have a 40-minute limit. Their UI step has a 32-minute limit, with
 per-test XCTest limits and a process watchdog that fails on prolonged silence.
 Native diagnostics include per-test timings and stack samples from stalled
 processes. These limits keep an unresponsive accessibility query from consuming

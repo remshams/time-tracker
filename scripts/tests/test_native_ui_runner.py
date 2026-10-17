@@ -196,7 +196,7 @@ class NativeUIRunnerTests(unittest.TestCase):
             path.write_text(source)
             path.chmod(0o755)
         output_directory = self.directory / "benchmark" / "run-1"
-        result = subprocess.run(["bash", str(application / "check-native-ui.sh"), "--group", "menu"],
+        result = subprocess.run(["bash", str(application / "check-native-ui.sh"), "--group", "mac"],
                                 env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
                                      "TT_UI_TEST_OUTPUT_DIR": str(output_directory),
                                      "TT_UI_HISTORY_BINDING": "accessibility"},
@@ -205,7 +205,8 @@ class NativeUIRunnerTests(unittest.TestCase):
         arguments = json.loads(result.stdout.splitlines()[0])
         self.assertEqual([argument for argument in arguments if argument.startswith("-only-testing:")],
                          [f"-only-testing:TimeTrackerUITests/{suite}" for suite in
-                          ("MenuBarUITests", "ServerMenuBarUITests", "MenuSourceUITests", "SettingsUITests")])
+                          ("MenuBarUITests", "ServerMenuBarUITests", "WindowRoutingUITests",
+                           "LifecycleUITests", "ServerLifecycleUITests")])
         for flag, value in [("-test-timeouts-enabled", "YES"),
                             ("-default-test-execution-time-allowance", "360"),
                             ("-maximum-test-execution-time-allowance", "360")]:
@@ -218,7 +219,7 @@ class NativeUIRunnerTests(unittest.TestCase):
                                                  "TEST_RUNNER_TT_UI_HISTORY_BINDING": "accessibility"})
         report = json.loads((output_directory / "native-ui-timings.json").read_text())
         self.assertEqual(report["exit_status"], 7)
-        self.assertEqual(report["timeout_seconds"], 1440)
+        self.assertEqual(report["timeout_seconds"], 1800)
         result = subprocess.run(["bash", str(application / "check-native-ui.sh")],
                                 env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"]},
                                 capture_output=True, text=True, timeout=5)
