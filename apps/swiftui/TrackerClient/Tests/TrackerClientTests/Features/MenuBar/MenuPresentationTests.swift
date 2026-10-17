@@ -17,14 +17,12 @@ final class MenuPresentationTests: XCTestCase {
         observer.onContentChange = { contentChanges += 1 }
         observer.onLabelChange = { labelChanges += 1 }
         observer.onValuesChange = { valueChanges += 1 }
-        let window = TrackerPresentationObserver(session: fixture.session)
-        var windowTicks = 0
-        var windowControls = 0
-        window.onTimerChange = { windowTicks += 1 }
-        window.onActivityChange = { windowControls += 1 }
+        let window = PresentationHarness(session: fixture.session)
+        let windowTicks = window.counter(PresentationReads.timer)
+        let windowControls = window.counter(PresentationReads.controls)
         fixture.session.onChange = {
             observer.update(from: fixture.session, showDailyTotal: true)
-            window.update(from: fixture.session)
+            window.update()
         }
         observer.menuOpened(from: fixture.session, showDailyTotal: true)
         observer.menuOpened(from: fixture.session, showDailyTotal: true)
@@ -58,8 +56,8 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertEqual(contentChanges, 0)
         XCTAssertEqual(labelChanges, 0)
         XCTAssertGreaterThanOrEqual(valueChanges, 3)
-        XCTAssertEqual(windowTicks, 3, "Freezing a menu must not freeze the window's clock.")
-        XCTAssertEqual(windowControls, 0, "Background polls must keep the window's controls stable.")
+        XCTAssertEqual(windowTicks.count, 3, "Freezing a menu must not freeze the window's clock.")
+        XCTAssertEqual(windowControls.count, 0, "Background polls must keep the window's controls stable.")
         XCTAssertEqual(observer.label, originalLabel)
         observer.menuClosed(from: fixture.session, showDailyTotal: true)
         XCTAssertEqual(

@@ -359,7 +359,7 @@ final class DailyTotalsSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testDailyObserverNotifiesWhenFractionalSumChangesButIndividualTextsStayTheSame() async throws {
+    func testFractionalSumChangeKeepsTaskTotalLabelsAndListsUnchanged() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, archivedTask], active: nil)
@@ -367,12 +367,9 @@ final class DailyTotalsSessionTests: XCTestCase {
         try await fixture.start(resources, rows: initialRows)
         XCTAssertEqual(try XCTUnwrap(fixture.session.totalDailyDuration), 0.8, accuracy: 0.000001)
         XCTAssertEqual(fixture.session.totalDailyDurationText, "00:00:00")
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var totalTexts: [String] = []
-        var contentChanges = 0
-        observer.onDailyTotalsChange = { totalTexts.append(fixture.session.totalDailyDurationText) }
-        observer.onContentChange = { contentChanges += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let totals = TaskTotalProbes(harness.presentation, taskIDs: resources.catalog.value.map(\.id))
+        let contentChanges = harness.counter(PresentationReads.content)
         fixture.scheduler.poll?.fire()
         let report = try await fixture.client.next()
         let updatedRows = resources.catalog.value.map { TaskReportTotal(taskId: $0.id, durationMicroseconds: 600_000) }
@@ -382,26 +379,23 @@ final class DailyTotalsSessionTests: XCTestCase {
         for task in resources.catalog.value {
             XCTAssertEqual(fixture.session.dailyDurationText(taskID: task.id), "00:00:00")
         }
-        XCTAssertEqual(totalTexts, ["00:00:01"])
-        XCTAssertEqual(contentChanges, 0)
+        XCTAssertEqual(fixture.session.totalDailyDurationText, "00:00:01")
+        XCTAssertEqual(totals.changed(), [])
+        XCTAssertEqual(contentChanges.count, 0)
     }
 
     @MainActor
-    func testDailyObserverSurfacesChangedErrorWhileCachedStatusAndDurationStayTheSame() async throws {
+    func testChangedErrorKeepsCachedStatusDurationAndTaskTotalLabels() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(resources, rows: [total(firstTask, 4)])
-        let observer = TrackerPresentationObserver(session: fixture.session)
+        let harness = PresentationHarness(session: fixture.session)
+        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id])
         var observedErrors: [String?] = []
         var observedStatuses: [DailyTotalsStatus] = []
         var observedTexts: [String] = []
-        observer.onDailyTotalsChange = {
-            observedErrors.append(fixture.session.dailyTotalsError)
-            observedStatuses.append(fixture.session.dailyTotalsStatus)
-            observedTexts.append(fixture.session.dailyDurationText(taskID: firstTask.id))
-        }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        var changedTotals: [Set<String>] = []
         for message in ["First report failure", "Second report failure"] {
             fixture.scheduler.poll?.fire()
             let report = try await fixture.client.next()
@@ -409,26 +403,35 @@ final class DailyTotalsSessionTests: XCTestCase {
             let finished = Task { @MainActor in while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
             }
             try await fixture.taskValue(finished)
+            observedErrors.append(fixture.session.dailyTotalsError)
+            observedStatuses.append(harness.presentation.dailyTotalsStatus)
+            observedTexts.append(harness.presentation.taskDailyTotal(taskID: firstTask.id).content?.text ?? "")
+            changedTotals.append(totals.changed())
         }
         XCTAssertEqual(observedErrors, ["First report failure", "Second report failure"])
         XCTAssertEqual(observedStatuses, [.cached, .cached])
         XCTAssertEqual(observedTexts, ["00:00:04", "00:00:04"])
+        XCTAssertEqual(changedTotals, [Set([firstTask.id]), []], "Only the cached explanation changes the label.")
     }
 
     @MainActor
-    func testDailyObserverSurfacesNewDayDuringEmptyStartupBeforeReportBecomesAvailable() async throws {
+    func testSessionPublishesNewDayDuringEmptyStartupBeforeReportBecomesAvailable() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
-        let observer = TrackerPresentationObserver(session: fixture.session)
+        let harness = PresentationHarness(session: fixture.session)
         var observedDays: [Date?] = []
         var observedStatuses: [DailyTotalsStatus] = []
         var observedErrors: [String?] = []
-        observer.onDailyTotalsChange = {
+        var previous = (fixture.session.dailyTotalsDayStart, harness.presentation.dailyTotalsStatus)
+        fixture.session.onChange = {
+            harness.update()
+            let current = (fixture.session.dailyTotalsDayStart, harness.presentation.dailyTotalsStatus)
+            guard current != previous else { return }
+            previous = current
             observedDays.append(fixture.session.dailyTotalsDayStart)
-            observedStatuses.append(fixture.session.dailyTotalsStatus)
+            observedStatuses.append(harness.presentation.dailyTotalsStatus)
             observedErrors.append(fixture.session.dailyTotalsError)
         }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.session.start()
         let open = try await fixture.client.next()
         fixture.clock.now.addTimeInterval(86_400)
@@ -437,7 +440,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(observedDays.first), fixture.clock.now)
         XCTAssertEqual(
             observedStatuses.first, .unavailable,
-            "The changed day must reach the daily observer before loading changes its status.")
+            "The changed day must be published before loading changes its status.")
         XCTAssertNil(try XCTUnwrap(observedErrors.first))
         XCTAssertTrue(fixture.session.tasks.isEmpty)
         report.succeed(TaskListTotalsRefresh(taskList: emptyTaskListResources, rows: []))
@@ -641,29 +644,28 @@ final class DailyTotalsSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testDisplayTicksUseDedicatedDailyNotificationAndDoNotInvalidateTaskLists() async throws {
+    func testDisplayTicksUpdateOnlyTheRunningTaskTotalAndDoNotInvalidateTaskLists() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
         fixture.session.setWindowVisible(true)
         try await fixture.start(
             TaskListResources(tasks: [firstTask], active: activeWorklog), rows: [total(firstTask, 10)])
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var content = 0
-        var daily = 0
-        observer.onContentChange = { content += 1 }
-        observer.onDailyTotalsChange = { daily += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let content = harness.counter(PresentationReads.content)
+        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id])
         let count = fixture.client.operations.count
+        var changedTotals: [Set<String>] = []
         for _ in 0..<3 {
             fixture.clock.now.addTimeInterval(1)
             fixture.clock.uptime += 1
             fixture.scheduler.display?.fire()
+            changedTotals.append(totals.changed())
         }
-        XCTAssertEqual(daily, 3)
-        XCTAssertEqual(content, 0)
+        XCTAssertEqual(changedTotals, Array(repeating: Set([firstTask.id]), count: 3))
+        XCTAssertEqual(content.count, 0)
         XCTAssertEqual(fixture.client.operations.count, count)
-        observer.update(from: fixture.session)
-        XCTAssertEqual(daily, 3)
+        harness.update()
+        XCTAssertEqual(totals.changed(), [])
     }
 
     @MainActor
@@ -956,19 +958,16 @@ final class DailyTotalsSessionTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: nil)
         try await fixture.start(resources, rows: [total(firstTask, 4)])
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var content = 0
-        var daily = 0
-        observer.onContentChange = { content += 1 }
-        observer.onDailyTotalsChange = { daily += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let content = harness.counter(PresentationReads.content)
+        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id])
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
         poll.succeed(TaskListTotalsRefresh(taskList: resources, rows: [total(firstTask, 4)]))
         let finished = Task { @MainActor in while fixture.session.isBusy && !Task.isCancelled { await Task.yield() } }
         try await fixture.taskValue(finished)
-        XCTAssertEqual(content, 0)
-        XCTAssertEqual(daily, 0)
+        XCTAssertEqual(content.count, 0)
+        XCTAssertEqual(totals.changed(), [])
         fixture.scheduler.poll?.fire()
         let failed = try await fixture.client.next()
         failed.fail(BridgeFailure(message: "Totals unavailable"))
@@ -976,8 +975,8 @@ final class DailyTotalsSessionTests: XCTestCase {
             while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
         }
         try await fixture.taskValue(failureFinished)
-        XCTAssertEqual(content, 1)
-        XCTAssertEqual(daily, 1)
+        XCTAssertEqual(content.count, 1)
+        XCTAssertEqual(totals.changed(), Set([firstTask.id]))
         XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 4)
         XCTAssertFalse(fixture.session.isStale)
         XCTAssertTrue(fixture.session.canStartSelectedTask)

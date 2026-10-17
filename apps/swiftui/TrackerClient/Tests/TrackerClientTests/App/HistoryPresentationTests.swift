@@ -7,25 +7,19 @@ final class HistoryPresentationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var contentChanges = 0
-        observer.onContentChange = { contentChanges += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let content = harness.counter(PresentationReads.content)
 
         fixture.session.select(secondTask.id)
         let request = try await fixture.client.next()
-        let changesWhileWaiting = contentChanges
-        let completion = XCTestExpectation(description: "Empty history completion publishes content")
-        observer.onContentChange = {
-            contentChanges += 1
-            completion.fulfill()
-        }
+        let changesWhileWaiting = content.count
+        XCTAssertTrue(harness.presentation.isHistoryLoading)
         request.succeed(emptyPage)
-        let result = await XCTWaiter.fulfillment(of: [completion], timeout: 2)
-        XCTAssertEqual(result, .completed)
+        try await harness.settled(fixture)
         XCTAssertFalse(fixture.session.isBusy)
+        XCTAssertFalse(harness.presentation.isHistoryLoading)
         XCTAssertGreaterThan(
-            contentChanges, changesWhileWaiting,
+            content.count, changesWhileWaiting,
             "Completing an empty history read must replace the loading presentation.")
     }
 

@@ -56,17 +56,16 @@ final class WorklogCorrectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         _ = try await openCompleted(fixture)
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
         fixture.session.setWorklogCorrectionStart(timestamp("2024-12-30T08:45:00.000Z")!)
         let visible = fixture.session.worklogCorrection
-        XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
+        XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent, visible)
 
         fixture.session.cancelWorklogCorrection()
         XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
         XCTAssertNil(fixture.session.worklogCorrection.original)
         XCTAssertTrue(fixture.session.canOpenTaskCreation)
-        XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
+        XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent, visible)
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
         let running = WorklogItem(
@@ -74,14 +73,14 @@ final class WorklogCorrectionTests: XCTestCase {
             start: "2024-12-31T23:58:12.123456Z", end: nil)
         refresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: running))
         try await fixture.settled()
-        fixture.session.onChange = { observer.update(from: fixture.session) }
-        XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
+        harness.attach()
+        XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent, visible)
 
         fixture.session.openWorklogCorrection(worklogID: running.id)
-        XCTAssertEqual(observer.worklogCorrectionSheetContent, fixture.session.worklogCorrection)
-        XCTAssertEqual(observer.worklogCorrectionSheetContent.original, running)
-        XCTAssertEqual(observer.worklogCorrectionSheetContent.taskName, secondTask.name)
-        XCTAssertNil(observer.worklogCorrectionSheetContent.end)
+        XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent, fixture.session.worklogCorrection)
+        XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent.original, running)
+        XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent.taskName, secondTask.name)
+        XCTAssertNil(harness.presentation.worklogCorrectionSheetContent.end)
     }
 
     @MainActor
@@ -89,15 +88,14 @@ final class WorklogCorrectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await openCompleted(fixture)
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
         fixture.session.setWorklogCorrectionStart(timestamp("2024-12-30T08:45:00.000Z")!)
         fixture.session.submitWorklogCorrection()
         try await completePreflight(fixture, worklog: log)
         let command = try await fixture.client.next()
         let visible = fixture.session.worklogCorrection
         XCTAssertTrue(visible.isSubmitting)
-        XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
+        XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent, visible)
         let corrected = WorklogItem(
             id: log.id, taskId: log.taskId,
             start: "2024-12-30T08:45:00.000000Z", end: log.end)
@@ -107,15 +105,15 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
         XCTAssertFalse(fixture.session.worklogCorrection.isSubmitting)
         XCTAssertNil(fixture.session.worklogCorrection.original)
-        XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
+        XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent, visible)
         history.succeed(HistoryPage(worklogs: [corrected], nextCursor: nil, reset: false))
         try await fixture.settled()
-        fixture.session.onChange = { observer.update(from: fixture.session) }
-        XCTAssertEqual(observer.worklogCorrectionSheetContent, visible)
+        harness.attach()
+        XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent, visible)
         fixture.session.openWorklogCorrection(worklogID: corrected.id)
-        XCTAssertEqual(observer.worklogCorrectionSheetContent, fixture.session.worklogCorrection)
-        XCTAssertEqual(observer.worklogCorrectionSheetContent.original, corrected)
-        XCTAssertFalse(observer.worklogCorrectionSheetContent.isSubmitting)
+        XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent, fixture.session.worklogCorrection)
+        XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent.original, corrected)
+        XCTAssertFalse(harness.presentation.worklogCorrectionSheetContent.isSubmitting)
     }
 
     @MainActor
@@ -463,16 +461,14 @@ final class WorklogCorrectionTests: XCTestCase {
         defer { fixture.cleanup() }
         _ = try await openCompleted(fixture)
         fixture.session.setWorklogCorrectionStart(fixture.clock.now.addingTimeInterval(60))
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var changes = 0
-        observer.onWorklogCorrectionChange = { changes += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let changes = harness.counter(PresentationReads.worklogCorrection)
         let requests = fixture.client.operations.count
 
         fixture.session.submitWorklogCorrection()
 
-        XCTAssertEqual(changes, 1)
-        XCTAssertEqual(observer.worklogCorrectionSheetContent.error, "Start must not be in the future.")
+        XCTAssertEqual(changes.count, 1)
+        XCTAssertEqual(harness.presentation.worklogCorrectionSheetContent.error, "Start must not be in the future.")
         XCTAssertEqual(fixture.client.operations.count, requests)
     }
 
@@ -725,15 +721,12 @@ final class WorklogCorrectionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await openCompleted(fixture)
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var corrections = 0
-        var content = 0
-        observer.onWorklogCorrectionChange = { corrections += 1 }
-        observer.onContentChange = { content += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let corrections = harness.counter(PresentationReads.worklogCorrection)
+        let content = harness.counter(PresentationReads.content)
         fixture.session.setWorklogCorrectionStart(timestamp("2024-12-30T08:00:00.000Z")!)
-        XCTAssertEqual(corrections, 1)
-        XCTAssertEqual(content, 0)
+        XCTAssertEqual(corrections.count, 1)
+        XCTAssertEqual(content.count, 0)
         XCTAssertFalse(fixture.session.canOpenTaskCreation)
         XCTAssertFalse(fixture.session.canOpenTaskRename)
         fixture.session.openTaskCreation()
