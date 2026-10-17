@@ -732,7 +732,7 @@ public final class TrackerSession {
         publish()
     }
 
-    private func isCurrent(_ token: Int) -> Bool { running && token == generation }
+    func isCurrent(_ token: Int) -> Bool { running && token == generation }
 
     private func controlOperationIsCurrent(_ operation: ControlOperation) -> Bool {
         isCurrent(operation.token) && operation.controlGeneration == controlGeneration
@@ -964,7 +964,7 @@ public final class TrackerSession {
     }
 
     @discardableResult
-    private func reconcileWriteFailure(token: Int) async -> TaskListResources? {
+    func reconcileWriteFailure(token: Int) async -> TaskListResources? {
         connection.stale = true
         publish()
         do {
@@ -980,7 +980,7 @@ public final class TrackerSession {
         }
     }
 
-    private func refreshAfterCommit(token: Int) async {
+    func refreshAfterCommit(token: Int) async {
         do {
             let resources = try await client.refreshTaskList()
             guard isCurrent(token) else { return }
@@ -1174,43 +1174,24 @@ public final class TrackerSession {
         return true
     }
 
-    private func currentMoveWorklog(
-        _ intent: WorklogMoveState.Intent,
-        resources: TaskListResources, token: Int, includeDestination: Bool
-    ) async throws -> WorklogItem? {
-        if let active = resources.tracking.value, active.id == intent.expected.id { return active }
-        let taskIDs =
-            includeDestination ? [intent.destinationTaskID, intent.expected.taskId] : [intent.expected.taskId]
-        var verificationFailure: BridgeFailure?
-        for taskID in taskIDs {
-            guard containsTask(withID: taskID, in: resources.catalog.value) else { continue }
-            var cursor: String?
-            var seen = Set<String>()
-            var pagesRead = 0
-            let loadedPages = loadedHistoryPages(for: taskID)
-            let limit = max(intent.historyPageLimit, loadedPages + 1)
-            repeat {
-                guard withinHistoryLimit(pagesRead, limit: limit) else {
-                    verificationFailure = BridgeFailure(
-                        message:
-                            "Could not verify this worklog within the history limit. Cancel and reopen the mover before retrying."
-                    )
-                    break
-                }
-                pagesRead += 1
-                let page = try await client.history(taskID: taskID, cursor: cursor)
-                guard isCurrent(token), !sleeping else { return nil }
-                if let worklog = worklog(withID: intent.expected.id, in: page.worklogs) { return worklog }
-                cursor = page.nextCursor
-                if let cursor, !seen.insert(cursor).inserted {
-                    verificationFailure = BridgeFailure(
-                        message: "Worklog history returned a repeated cursor.", kind: "protocol")
-                    break
-                }
-            } while hasMoreHistory(cursor)
-        }
-        if let verificationFailure { throw verificationFailure }
-        return nil
+    private func moveLookup(_ intent: WorklogMoveState.Intent, includeDestination: Bool) -> WorklogLookup {
+        WorklogLookup(
+            expected: intent.expected,
+            taskIDs: includeDestination
+                ? [intent.destinationTaskID, intent.expected.taskId] : [intent.expected.taskId],
+            historyPageLimit: intent.historyPageLimit, dialog: "mover")
+    }
+
+    private func correctionLookup(_ intent: WorklogCorrectionState.Intent) -> WorklogLookup {
+        WorklogLookup(
+            expected: intent.expected, taskIDs: [intent.expected.taskId],
+            historyPageLimit: intent.historyPageLimit, dialog: "editor")
+    }
+
+    private func deletionLookup(_ intent: WorklogDeletionState.Intent) -> WorklogLookup {
+        WorklogLookup(
+            expected: intent.expected, taskIDs: [intent.expected.taskId],
+            historyPageLimit: intent.historyPageLimit, dialog: "dialog")
     }
 
     private func finishMove(_ intent: WorklogMoveState.Intent, resources: TaskListResources? = nil) {
@@ -1263,8 +1244,8 @@ public final class TrackerSession {
                 guard isCurrent(token) else { return }
                 acceptTaskList(resources)
                 if sleeping { move.deferUntilWake(); return }
-                let latest = try await currentMoveWorklog(
-                    intent, resources: resources, token: token, includeDestination: move.mayHaveCommitted)
+                let latest = try await findWorklog(
+                    moveLookup(intent, includeDestination: move.mayHaveCommitted), in: resources, token: token)
                 guard isCurrent(token) else { return }
                 if sleeping { move.deferUntilWake(); return }
                 guard
@@ -1293,8 +1274,8 @@ public final class TrackerSession {
                     if let resources = await reconcileWriteFailure(token: token) {
                         if sleeping { move.fail(error, retainIntent: true); return }
                         do {
-                            let latest = try await currentMoveWorklog(
-                                intent, resources: resources, token: token, includeDestination: true)
+                            let latest = try await findWorklog(
+                                moveLookup(intent, includeDestination: true), in: resources, token: token)
                             guard isCurrent(token) else { return }
                             if sleeping { move.fail(error, retainIntent: true); return }
                             reconciled = true
@@ -1319,47 +1300,6 @@ public final class TrackerSession {
             }
         }
         return true
-    }
-
-    private func currentCorrectionWorklog(
-        _ intent: WorklogCorrectionState.Intent,
-        resources: TaskListResources, token: Int
-    ) async throws -> WorklogItem? {
-        try await currentWorklog(
-            intent.expected, historyPageLimit: intent.historyPageLimit, dialog: "editor",
-            resources: resources, token: token)
-    }
-
-    private func currentWorklog(
-        _ expected: WorklogItem, historyPageLimit: Int, dialog: String,
-        resources: TaskListResources, token: Int
-    ) async throws -> WorklogItem? {
-        if let active = resources.tracking.value, active.id == expected.id { return active }
-        let taskID = expected.taskId
-        if containsTask(withID: taskID, in: resources.catalog.value) {
-            var cursor: String?
-            var seen = Set<String>()
-            let loadedPages = loadedHistoryPages(for: taskID)
-            let pageLimit = max(historyPageLimit, loadedPages + 1)
-            var pagesRead = 0
-            repeat {
-                guard withinHistoryLimit(pagesRead, limit: pageLimit) else {
-                    throw BridgeFailure(
-                        message:
-                            "Could not verify this worklog within the history limit. Cancel and reopen the \(dialog) before retrying."
-                    )
-                }
-                pagesRead += 1
-                let page = try await client.history(taskID: taskID, cursor: cursor)
-                guard isCurrent(token), !sleeping else { return nil }
-                if let worklog = worklog(withID: expected.id, in: page.worklogs) { return worklog }
-                cursor = page.nextCursor
-                if let cursor, !seen.insert(cursor).inserted {
-                    throw BridgeFailure(message: "Worklog history returned a repeated cursor.", kind: "protocol")
-                }
-            } while hasMoreHistory(cursor)
-        }
-        return nil
     }
 
     private func correctionCanApply(
@@ -1397,7 +1337,7 @@ public final class TrackerSession {
                 guard isCurrent(token) else { return }
                 acceptTaskList(resources)
                 if sleeping { correction.deferUntilWake(); return }
-                let latest = try await currentCorrectionWorklog(intent, resources: resources, token: token)
+                let latest = try await findWorklog(correctionLookup(intent), in: resources, token: token)
                 guard isCurrent(token) else { return }
                 if sleeping { correction.deferUntilWake(); return }
                 guard correctionCanApply(intent, latest: latest, resolveCommitted: true) else { return }
@@ -1433,7 +1373,7 @@ public final class TrackerSession {
                             return
                         }
                         do {
-                            let latest = try await currentCorrectionWorklog(intent, resources: resources, token: token)
+                            let latest = try await findWorklog(correctionLookup(intent), in: resources, token: token)
                             guard isCurrent(token) else { return }
                             if sleeping {
                                 correction.fail(error, retainIntent: true)
@@ -1465,15 +1405,6 @@ public final class TrackerSession {
             }
         }
         return true
-    }
-
-    private func currentDeletionWorklog(
-        _ intent: WorklogDeletionState.Intent,
-        resources: TaskListResources, token: Int
-    ) async throws -> WorklogItem? {
-        try await currentWorklog(
-            intent.expected, historyPageLimit: intent.historyPageLimit, dialog: "dialog",
-            resources: resources, token: token)
     }
 
     private func finishDeletion(_ intent: WorklogDeletionState.Intent) {
@@ -1515,7 +1446,7 @@ public final class TrackerSession {
                 guard isCurrent(token) else { return }
                 acceptTaskList(resources)
                 if sleeping { deletion.deferUntilWake(); return }
-                let latest = try await currentDeletionWorklog(intent, resources: resources, token: token)
+                let latest = try await findWorklog(deletionLookup(intent), in: resources, token: token)
                 guard isCurrent(token) else { return }
                 if sleeping { deletion.deferUntilWake(); return }
                 guard deletionCanApply(intent, latest: latest, resolveCommitted: deletion.mayHaveCommitted) else {
@@ -1543,7 +1474,7 @@ public final class TrackerSession {
                     if let resources = await reconcileWriteFailure(token: token) {
                         if sleeping { deletion.fail(error, retainIntent: true); return }
                         do {
-                            let latest = try await currentDeletionWorklog(intent, resources: resources, token: token)
+                            let latest = try await findWorklog(deletionLookup(intent), in: resources, token: token)
                             guard isCurrent(token) else { return }
                             if sleeping { deletion.fail(error, retainIntent: true); return }
                             reconciled = true
@@ -1750,7 +1681,11 @@ public final class TrackerSession {
         return date >= start
     }
 
-    private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
+    func acceptTaskList(_ resources: TaskListResources) {
+        acceptTaskList(resources, requestReport: true)
+    }
+
+    private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool) {
         operationHasResources = true
         taskCatalogResource = resources.catalog
         trackingResource = resources.tracking
@@ -1809,13 +1744,13 @@ public final class TrackerSession {
         }
     }
 
-    private func recordConnectionFailure(_ failure: Error) {
+    func recordConnectionFailure(_ failure: Error) {
         connection.recordFailure(failure)
         history.error = failure.localizedDescription
         publish()
     }
 
-    private func requestHistory() {
+    func requestHistory() {
         history.request(selectedTaskID: selectedTaskID)
         guard running, !isBusy, !sleeping else { return }
         history.pending = false
@@ -2098,5 +2033,86 @@ public final class TrackerSession {
 
     private func hasReportClient() -> Bool { reports != nil }
 
-    private func publish() { onChange?() }
+    func publish() { onChange?() }
+}
+
+extension TrackerSession: OperationRunner {
+    var isIdle: Bool { running && !isBusy }
+    var isSleeping: Bool { sleeping }
+
+    func run(blocksControls: Bool, _ work: @escaping @MainActor (_ token: Int) async -> Void) {
+        let token = generation
+        beginOperation(blocksControls: blocksControls)
+        Task { [weak self] in
+            guard let self, isCurrent(token) else { return }
+            defer { finishOperation(token: token) }
+            await work(token)
+        }
+    }
+}
+
+extension TrackerSession: WorkflowResources {
+    var isConnectionConfirmed: Bool { connection.confirmed }
+    var isWindowVisible: Bool { windowVisible }
+
+    func refreshTaskList(token: Int, recordsFailure: Bool) async throws -> TaskListResources? {
+        let resources: TaskListResources
+        do {
+            resources = try await client.refreshTaskList()
+        } catch {
+            if recordsFailure && isCurrent(token) { recordConnectionFailure(error) }
+            throw error
+        }
+        guard isCurrent(token) else { return nil }
+        acceptTaskList(resources)
+        return resources
+    }
+
+    func findWorklog(_ lookup: WorklogLookup, in resources: TaskListResources, token: Int) async throws
+        -> WorklogItem?
+    {
+        if let active = resources.tracking.value, active.id == lookup.expected.id { return active }
+        var verificationFailure: BridgeFailure?
+        for taskID in lookup.taskIDs {
+            guard containsTask(withID: taskID, in: resources.catalog.value) else { continue }
+            var cursor: String?
+            var seen = Set<String>()
+            var pagesRead = 0
+            let limit = max(lookup.historyPageLimit, loadedHistoryPages(for: taskID) + 1)
+            repeat {
+                guard withinHistoryLimit(pagesRead, limit: limit) else {
+                    verificationFailure = BridgeFailure(
+                        message:
+                            "Could not verify this worklog within the history limit. Cancel and reopen the \(lookup.dialog) before retrying."
+                    )
+                    break
+                }
+                pagesRead += 1
+                let page = try await client.history(taskID: taskID, cursor: cursor)
+                guard isCurrent(token), !sleeping else { return nil }
+                if let worklog = worklog(withID: lookup.expected.id, in: page.worklogs) { return worklog }
+                cursor = page.nextCursor
+                if let cursor, !seen.insert(cursor).inserted {
+                    verificationFailure = BridgeFailure(
+                        message: "Worklog history returned a repeated cursor.", kind: "protocol")
+                    break
+                }
+            } while hasMoreHistory(cursor)
+        }
+        if let verificationFailure { throw verificationFailure }
+        return nil
+    }
+
+    func clearHistory() { history.clearAfterCorrection() }
+    func removeFromHistory(worklogID: String) { history.removeWorklog(id: worklogID) }
+    func invalidateHistoryCursor() { history.invalidateCursor() }
+
+    func showTask(_ task: TaskItem) {
+        let changedTab = catalog.changeTab(task.archived ? .archived : .active)
+        let changedSelection = catalog.select(task.id)
+        if changedTab || changedSelection { requestHistory() }
+    }
+
+    func rememberRestoredTask(_ taskID: String) { catalog.rememberRestoredTask(taskID) }
+    func setTrackingError(_ message: String?) { tracking.error = message }
 }
