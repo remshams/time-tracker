@@ -2,7 +2,7 @@
 
 Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. [Revisions and concurrency](#revisions-and-concurrency) explains stale-write and pagination guards. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
 
-Source scope: the Rust core, TUI, CLI, and native macOS client at `e4eb464d5b23fec9dee6c5953a2266e3bf02ed20`, inspected on 16 October 2026. Native reviewed task-name contracts additionally describe `be493ab` on 16 October 2026. The shared cursor DTO describes issue #67 at `fa3c662` on 17 October 2026. Native worklog deletion additionally describes `23aa8c2`, inspected on 17 October 2026. Swift Observation presentation additionally describes `72af5a3`, inspected on 17 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
+Source scope: the Rust core, TUI, CLI, and native macOS client at `e4eb464d5b23fec9dee6c5953a2266e3bf02ed20`, inspected on 16 October 2026. Native reviewed task-name contracts additionally describe `be493ab` on 16 October 2026. The shared cursor DTO describes issue #67 at `fa3c662` on 17 October 2026. Shared cursor parsing describes issue #80 at `ae34dbf` on 18 October 2026. Native worklog deletion additionally describes `23aa8c2`, inspected on 17 October 2026. Swift Observation presentation additionally describes `72af5a3`, inspected on 17 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
 
 ## Architecture primitives
 
@@ -32,7 +32,7 @@ Source: [crate](../../crates/tracker-storage/Cargo.toml), [SQLite adapter](../..
 
 ### tracker-protocol
 
-Defines protocol-4 JSON requests, resource observations, command receipts, and conversions at the HTTP boundary. Observations pair read values with revisions. Receipts describe committed writes and do not replace current read state. This crate contains no HTTP client, server, or database connection.
+Defines protocol-4 JSON requests, resource observations, command receipts, and conversions at the HTTP boundary. `parse_worklog_cursor` holds the one cursor validation rule: the revision is nonnegative and the ID is a `WorklogId`. Observations pair read values with revisions. Receipts describe committed writes and do not replace current read state. This crate contains no HTTP client, server, or database connection.
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain).
 
@@ -134,9 +134,9 @@ Owner: [application service](../../crates/tracker-application/src/service/mod.rs
 
 ### History and cursors
 
-Worklogs load in pages of at most 50, newest start first with ID ascending as the tie-break. Task and global cursors carry only the last row ID and their database revision. Both scopes use `WorklogCursorDto` in protocol pages and CLI history tokens; the token's `scope` field records which history the cursor belongs to. Storage resolves the anchor start and collection membership in the same transaction as revision checks and page reads. Changing a start or moving a worklog invalidates affected task cursors. Inserts and end-only edits preserve task cursors; deleting the anchor requires a fresh first page. Global revisions change on every worklog write. History is a bounded read, not the source of report totals.
+Worklogs load in pages of at most 50, newest start first with ID ascending as the tie-break. Task and global cursors carry only the last row ID and their database revision. Both scopes use `WorklogCursorDto` in protocol pages and CLI history tokens; the token's `scope` field records which history the cursor belongs to. The server, remote client, CLI and Swift bridge validate incoming cursors with `parse_worklog_cursor` and then build their own task or global cursor. Storage resolves the anchor start and collection membership in the same transaction as revision checks and page reads. Changing a start or moving a worklog invalidates affected task cursors. Inserts and end-only edits preserve task cursors; deleting the anchor requires a fresh first page. Global revisions change on every worklog write. History is a bounded read, not the source of report totals.
 
-Owner: [page and cursor models](../../crates/tracker-application/src/model.rs) and [SQLite history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs). Decisions: [ADR 0004](../adr/0004-paginated-worklog-history.md), [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md).
+Owner: [page and cursor models](../../crates/tracker-application/src/model.rs), [cursor wire format and parsing](../../crates/tracker-protocol/src/lib.rs), and [SQLite history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs). Decisions: [ADR 0004](../adr/0004-paginated-worklog-history.md), [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md).
 
 ### Reports
 
