@@ -5,6 +5,7 @@ use super::{
     TaskName, TasksDto, Tracker, TrackingDto, TrackingState, Worklog, WorklogDto, WorklogId,
     WorklogPageDto, canonical, protocol_failure,
 };
+use tracker_protocol::{WorklogCursorError, parse_worklog_cursor};
 
 /// Returns the parsed candidate IDs in preview order.
 pub(super) fn validate_inactive_preview(
@@ -167,19 +168,19 @@ pub(super) fn decode_history(
     let next_cursor = dto
         .next_cursor
         .as_ref()
-        .map(|cursor| {
-            Ok::<_, RemoteError>(GlobalWorklogCursor {
-                id: cursor
-                    .id
-                    .parse()
-                    .map_err(|_| RemoteError::Protocol("invalid cursor worklog id".into()))?,
-                revision: cursor.revision,
-            })
-        })
+        .map(
+            |cursor| match parse_worklog_cursor(&cursor.id, cursor.revision) {
+                Ok((id, revision)) => Ok(GlobalWorklogCursor { id, revision }),
+                Err(WorklogCursorError::InvalidId) => {
+                    Err(RemoteError::Protocol("invalid cursor worklog id".into()))
+                }
+                Err(WorklogCursorError::NegativeRevision) => Err(RemoteError::Protocol(
+                    "invalid history cursor anchor".into(),
+                )),
+            },
+        )
         .transpose()?;
-    if next_cursor.is_some_and(|cursor| {
-        cursor.revision < 0 || worklogs.last().is_none_or(|last| last.id() != cursor.id)
-    }) {
+    if next_cursor.is_some_and(|cursor| worklogs.last().is_none_or(|last| last.id() != cursor.id)) {
         return Err(RemoteError::Protocol(
             "invalid history cursor anchor".into(),
         ));

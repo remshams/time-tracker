@@ -306,6 +306,39 @@ impl From<GlobalWorklogCursor> for WorklogCursorDto {
     }
 }
 
+/// Reason a protocol-4 worklog cursor position is invalid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorklogCursorError {
+    InvalidId,
+    NegativeRevision,
+}
+
+impl std::fmt::Display for WorklogCursorError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidId => "invalid worklog id",
+            Self::NegativeRevision => "cursor revision must be nonnegative",
+        })
+    }
+}
+
+impl std::error::Error for WorklogCursorError {}
+
+/// Validates a worklog cursor position and returns its ID and revision.
+///
+/// The revision is checked before the ID. Callers build their task or global
+/// cursor type from the returned pair.
+pub fn parse_worklog_cursor(
+    id: &str,
+    revision: i64,
+) -> Result<(WorklogId, i64), WorklogCursorError> {
+    if revision < 0 {
+        return Err(WorklogCursorError::NegativeRevision);
+    }
+    let id = id.parse().map_err(|_| WorklogCursorError::InvalidId)?;
+    Ok((id, revision))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct WorklogPageDto {
@@ -411,4 +444,48 @@ pub fn parse_task_id(value: &str) -> Result<TaskId, &'static str> {
 
 pub fn parse_worklog_id(value: &str) -> Result<WorklogId, &'static str> {
     value.parse().map_err(|_| "invalid worklog id")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ID: &str = "00000000-0000-7000-8000-000000000001";
+
+    #[test]
+    fn worklog_cursors_accept_valid_ids_with_nonnegative_revisions() {
+        for revision in [0, 7] {
+            let (id, parsed) = parse_worklog_cursor(ID, revision).unwrap();
+            assert_eq!(id.to_string(), ID);
+            assert_eq!(parsed, revision);
+        }
+    }
+
+    #[test]
+    fn worklog_cursors_reject_negative_revisions_before_invalid_ids() {
+        assert_eq!(
+            parse_worklog_cursor(ID, -1),
+            Err(WorklogCursorError::NegativeRevision)
+        );
+        assert_eq!(
+            parse_worklog_cursor("invalid", -1),
+            Err(WorklogCursorError::NegativeRevision)
+        );
+        assert_eq!(
+            parse_worklog_cursor("invalid", 0),
+            Err(WorklogCursorError::InvalidId)
+        );
+    }
+
+    #[test]
+    fn worklog_cursor_errors_describe_the_rejected_field() {
+        assert_eq!(
+            WorklogCursorError::InvalidId.to_string(),
+            "invalid worklog id"
+        );
+        assert_eq!(
+            WorklogCursorError::NegativeRevision.to_string(),
+            "cursor revision must be nonnegative"
+        );
+    }
 }
