@@ -6,9 +6,10 @@ use super::{
     WorklogPageDto, canonical, protocol_failure,
 };
 
+/// Returns the parsed candidate IDs in preview order.
 pub(super) fn validate_inactive_preview(
     preview: &InactiveTaskPreviewDto,
-) -> Result<(), ApplicationError> {
+) -> Result<Vec<TaskId>, ApplicationError> {
     if preview.revision.is_empty()
         || InactivityPeriod::new(preview.inactive_days).is_err()
         || preview.as_of != canonical(preview.as_of)
@@ -16,16 +17,18 @@ pub(super) fn validate_inactive_preview(
     {
         return Err(protocol_failure("invalid inactive task preview"));
     }
-    let mut ids = HashSet::new();
+    let mut seen = HashSet::new();
+    let mut ids = Vec::with_capacity(preview.candidate_task_ids.len());
     for raw_id in &preview.candidate_task_ids {
         let id = raw_id
             .parse::<TaskId>()
             .map_err(|_| protocol_failure("invalid inactive task preview"))?;
-        if !ids.insert(id) {
+        if !seen.insert(id) {
             return Err(protocol_failure("invalid inactive task preview"));
         }
+        ids.push(id);
     }
-    Ok(())
+    Ok(ids)
 }
 
 pub(super) fn validate_report(dto: &ReportDto) -> Result<(), ApplicationError> {

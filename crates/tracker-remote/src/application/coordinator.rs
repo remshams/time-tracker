@@ -360,10 +360,6 @@ impl RemoteTrackerCoordinator {
         self.reports.report_observation()
     }
 
-    pub fn cached_task_totals(&self) -> Option<&ReportDto> {
-        self.reports.cached_task_totals()
-    }
-
     async fn task_guard(&mut self, id: TaskId) -> Result<String, ApplicationError> {
         let reviewed = self.task(id).cloned();
         let (item, revision) = self.read_task_item(id).await?;
@@ -779,7 +775,7 @@ impl RemoteTrackerCoordinator {
         expected_task: Option<TaskId>,
         expected: WorklogTimes,
         destination: Option<TaskId>,
-    ) -> Result<String, ApplicationError> {
+    ) -> Result<(String, TaskId), ApplicationError> {
         self.session
             .ensure_version()
             .await
@@ -814,7 +810,7 @@ impl RemoteTrackerCoordinator {
                     return Err(self.intent_changed());
                 }
             }
-            return Ok(dto.revision);
+            return Ok((dto.revision, worklog.task_id()));
         }
         Err(self.intent_changed())
     }
@@ -827,7 +823,7 @@ impl RemoteTrackerCoordinator {
         destination_task_id: TaskId,
     ) -> Result<Worklog, ApplicationError> {
         self.session.begin_command();
-        let revision = self
+        let (revision, _) = self
             .worklog_guard(
                 id,
                 Some(expected_source_task_id),
@@ -864,14 +860,7 @@ impl RemoteTrackerCoordinator {
         occurred_at: DateTime<Utc>,
     ) -> Result<Worklog, ApplicationError> {
         self.session.begin_command();
-        let revision = self.worklog_guard(id, None, expected, None).await?;
-        let expected_task_id = self
-            .worklogs
-            .cached_worklog(id)
-            .expect("successful preflight caches the worklog")
-            .worklog
-            .task_id
-            .clone();
+        let (revision, expected_task_id) = self.worklog_guard(id, None, expected, None).await?;
         let body = WorklogChangeRequest::Correct {
             expected_start: canonical(expected.start()),
             expected_end: expected.end().map(canonical),
@@ -882,7 +871,7 @@ impl RemoteTrackerCoordinator {
         };
         let result = self
             .worklogs
-            .correct_worklog(&mut self.session, id, &expected_task_id, replacement, &body)
+            .correct_worklog(&mut self.session, id, expected_task_id, replacement, &body)
             .await;
         self.finish_mutation(
             result,
@@ -904,7 +893,7 @@ impl RemoteTrackerCoordinator {
         let end = expected
             .end()
             .ok_or_else(|| ApplicationError::active_worklog(id))?;
-        let revision = self
+        let (revision, _) = self
             .worklog_guard(id, Some(expected_task_id), expected, None)
             .await?;
         let body = DeleteWorklogRequest {
