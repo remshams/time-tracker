@@ -265,8 +265,9 @@ pub(crate) fn create_task_error(error: rusqlite::Error, id: TaskId) -> StorageEr
 /// Maps an `insert_worklog` error.
 ///
 /// Duplicate worklog keys, the single-active-worklog rule, the task foreign key,
-/// and the archived-task trigger each produce their own violations;
-/// everything else stays generic.
+/// the archived-task trigger, and the same-task overlap trigger each produce
+/// their own violations. The positive-duration trigger and check violations
+/// become `StorageError::Constraint`, and everything else stays generic.
 pub(crate) fn insert_worklog_error(
     error: rusqlite::Error,
     worklog: &tracker_domain::Worklog,

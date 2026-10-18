@@ -91,6 +91,26 @@ fn corrected_worklog_result(
     })
 }
 
+/// Resolves a history cursor to its `(start_us, id)` continuation key.
+///
+/// With a task scope, an anchor that belongs to another task counts as
+/// missing. Returns `None` when the anchor is missing so each caller can
+/// report its own history-changed error.
+fn cursor_anchor_on(
+    conn: &Connection,
+    id: WorklogId,
+    task_id: Option<TaskId>,
+) -> Result<Option<(i64, WorklogId)>, StorageError> {
+    let start = conn
+        .query_row(
+            "SELECT start_us FROM worklogs WHERE id = ?1 AND (?2 IS NULL OR task_id = ?2)",
+            rusqlite::params![id.to_string(), task_id.map(|task_id| task_id.to_string())],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    Ok(start.map(|start| (start, id)))
+}
+
 fn global_worklog_rows_on(
     conn: &Connection,
     after: Option<(i64, WorklogId)>,
@@ -128,8 +148,7 @@ fn task_worklog_rows_on(
     task_id: TaskId,
     after: Option<(i64, WorklogId)>,
 ) -> Result<Vec<RawWorklog>, StorageError> {
-    let limit =
-        i64::try_from(WORKLOG_PAGE_SIZE + 1).expect("the page size plus one always fits i64");
+    let limit = i64::try_from(WORKLOG_PAGE_SIZE + 1).expect("the page size plus one fits i64");
     let rows = match after {
         None => {
             let mut statement = conn.prepare(
@@ -197,14 +216,7 @@ impl SqliteRepository {
         }
         let anchor = after
             .map(|cursor| {
-                transaction
-                    .query_row(
-                        "SELECT start_us FROM worklogs WHERE id = ?1",
-                        [cursor.id.to_string()],
-                        |row| row.get::<_, i64>(0),
-                    )
-                    .optional()?
-                    .map(|start| (start, cursor.id))
+                cursor_anchor_on(&transaction, cursor.id, None)?
                     .ok_or(StorageError::GlobalWorklogHistoryChanged)
             })
             .transpose()?;
@@ -440,14 +452,7 @@ impl SqliteRepository {
         }
         let anchor = after
             .map(|cursor| {
-                transaction
-                    .query_row(
-                        "SELECT start_us FROM worklogs WHERE id = ?1 AND task_id = ?2",
-                        rusqlite::params![cursor.id.to_string(), task_id.to_string()],
-                        |row| row.get::<_, i64>(0),
-                    )
-                    .optional()?
-                    .map(|start| (start, cursor.id))
+                cursor_anchor_on(&transaction, cursor.id, Some(task_id))?
                     .ok_or(StorageError::WorklogHistoryChanged { task_id })
             })
             .transpose()?;
