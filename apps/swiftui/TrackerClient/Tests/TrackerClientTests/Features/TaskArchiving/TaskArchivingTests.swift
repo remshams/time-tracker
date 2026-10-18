@@ -87,6 +87,25 @@ final class TaskArchivingTests: XCTestCase {
     }
 
     @MainActor
+    func testSuccessfulArchiveClosesTheDialogBeforeTheReloadFinishes() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
+        fixture.session.openTaskArchive(taskID: secondTask.id)
+        fixture.session.submitTaskArchiving()
+        let command = try await fixture.client.next()
+        let harness = PresentationHarness(session: fixture.session)
+        command.complete(.success(.task(TaskCommandResult(task: archived(secondTask), receipt: nil))))
+        let reload = try await fixture.client.next()
+        XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings))
+        XCTAssertFalse(harness.presentation.taskArchiving.isPresented, "The dialog must close before the reload.")
+        XCTAssertFalse(harness.presentation.taskArchiving.isSubmitting)
+        reload.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: nil))
+        try await harness.settled(fixture)
+        XCTAssertEqual(harness.presentation.visibleTasks, [firstTask])
+    }
+
+    @MainActor
     func testSelectedArchivedTaskFallsBackAndReloadsHistory() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }

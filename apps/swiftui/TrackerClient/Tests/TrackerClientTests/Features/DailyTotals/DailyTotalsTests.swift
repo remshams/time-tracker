@@ -466,6 +466,9 @@ final class DailyTotalsSessionTests: XCTestCase {
         yesterday.fail(BridgeFailure(message: "Yesterday's report failed"))
         try await fixture.settled()
         XCTAssertNil(fixture.session.dailyDuration(taskID: firstTask.id))
+        XCTAssertEqual(fixture.session.dailyTotalsDayStart, fixture.clock.now, "The failure must move to today.")
+        XCTAssertEqual(fixture.session.dailyTotalsStatus, .unavailable)
+        XCTAssertEqual(fixture.session.dailyTotalsError, "Yesterday's report failed")
         fixture.scheduler.poll?.fire()
         let today = try await fixture.client.next()
         guard case .report(_, let start, let end, let now) = today.operation else {
@@ -778,6 +781,35 @@ final class DailyTotalsSessionTests: XCTestCase {
     }
 
     @MainActor
+    func testTaskListRefreshAfterStaleConnectionMarksTotalsCachedUntilTheReportArrives() async throws {
+        let fixture = Fixture(reports: true, calendar: dailyCalendar())
+        defer { fixture.cleanup() }
+        let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(resources, rows: [total(firstTask, 10)])
+        XCTAssertEqual(fixture.session.dailyTotalsStatus, .current)
+        fixture.session.retryHistory()
+        let history = try await fixture.client.next()
+        history.fail(BridgeFailure(message: "History unavailable", kind: "unavailable"))
+        try await fixture.settled()
+        XCTAssertTrue(fixture.session.isStale)
+        XCTAssertEqual(fixture.session.dailyTotalsStatus, .current)
+
+        fixture.session.refresh()
+        let refresh = try await fixture.client.next()
+        XCTAssertEqual(refresh.operation, .refresh(.local))
+        refresh.succeed(resources)
+        let report = try await fixture.client.next()
+        guard case .report = report.operation else {
+            return XCTFail("The refreshed task list must reload totals, got \(report.operation).")
+        }
+        XCTAssertEqual(fixture.session.dailyTotalsStatus, .cached)
+        report.succeed(TaskListTotalsRefresh(taskList: resources, rows: [total(firstTask, 15)]))
+        try await fixture.client.next().succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.dailyTotalsStatus, .current)
+    }
+
+    @MainActor
     func testBothLocalDayTimersClearYesterdayWithoutRetryingProtocolFailure() async throws {
         for useDisplayTimer in [false, true] {
             let fixture = Fixture(reports: true, calendar: dailyCalendar())
@@ -795,6 +827,7 @@ final class DailyTotalsSessionTests: XCTestCase {
             fixture.clock.now.addTimeInterval(86_400)
             fixture.clock.uptime += 86_400
             if useDisplayTimer { display.fire() } else { rollover.fire() }
+            XCTAssertEqual(fixture.session.dailyTotalsDayStart, fixture.clock.now)
             XCTAssertEqual(fixture.client.operations.count, operationCount)
             XCTAssertFalse(fixture.client.hasPendingRequests)
             XCTAssertNil(fixture.session.dailyDuration(taskID: firstTask.id))

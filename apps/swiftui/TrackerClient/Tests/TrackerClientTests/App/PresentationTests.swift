@@ -162,6 +162,21 @@ final class PresentationTests: XCTestCase {
     }
 
     @MainActor
+    func testStartupFailureUpdatesPresentedConnectionStatus() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let harness = PresentationHarness(session: fixture.session)
+
+        fixture.session.start()
+        let open = try await fixture.client.next()
+        open.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
+        try await harness.settled(fixture)
+        XCTAssertEqual(harness.presentation.connectionStatusText, "Unavailable")
+        XCTAssertEqual(harness.presentation.connectionMessage, "Server offline")
+        XCTAssertTrue(harness.presentation.isStale)
+    }
+
+    @MainActor
     func testFailuresAndConnectionChangesUpdatePresentedValues() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
@@ -222,5 +237,102 @@ final class PresentationTests: XCTestCase {
         try await harness.settled(fixture)
         XCTAssertEqual(harness.presentation.autoPauseStatusText, "Paused while screen is locked")
         XCTAssertNil(harness.presentation.active)
+
+        fixture.session.screenUnlocked(at: fixture.clock.now)
+        XCTAssertNil(harness.presentation.autoPauseStatusText, "Unlocking must clear the status before the resume.")
+        let resume = try await fixture.client.next()
+        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: commandTimestamp(fixture.clock.now)))
+        resume.succeed(running)
+        try await fixture.client.next().succeed(emptyPage)
+        try await harness.settled(fixture)
+        XCTAssertEqual(harness.presentation.active, activeWorklog)
+    }
+
+    private struct EditorStep {
+        let name: String
+        let action: @MainActor () -> Void
+        let presents: @MainActor (TrackerPresentation) -> Bool
+        var reply: (@MainActor (FakeClient.Request) -> Void)?
+    }
+
+    @MainActor
+    func testEditorActionsUpdatePresentedValuesBeforeAnyReply() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
+        fixture.session.retryHistory()
+        try await fixture.client.next().succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
+        try await fixture.settled()
+        let harness = PresentationHarness(session: fixture.session)
+        let session = fixture.session
+        let second = WorklogMoveCandidate(id: secondTask.id, name: secondTask.name)
+        let third = WorklogMoveCandidate(id: "task-three", name: "Third task")
+        let correctedEnd = try XCTUnwrap(timestamp("2024-12-30T10:30:00.000Z"))
+        let preview: @MainActor (FakeClient.Request) -> Void = { request in
+            guard case .inactivePreview(let days, let at) = request.operation else {
+                return XCTFail("Expected an inactive task preview, got \(request.operation).")
+            }
+            request.inactivePreview(InactiveTaskPreview(asOf: at, inactiveDays: days, tasks: [secondTask]))
+        }
+        let steps = [
+            EditorStep(
+                name: "open bulk archiving", action: { session.openBulkTaskArchiving() },
+                presents: { $0.bulkTaskArchiving.isPresented }, reply: preview),
+            EditorStep(
+                name: "change bulk archive days", action: { session.updateBulkArchiveDays("30") },
+                presents: { $0.bulkTaskArchiving.daysText == "30" && $0.bulkTaskArchiving.isLoading },
+                reply: preview),
+            EditorStep(
+                name: "refresh bulk archive preview", action: { session.refreshBulkArchivePreview() },
+                presents: { $0.bulkTaskArchiving.isLoading }, reply: preview),
+            EditorStep(
+                name: "cancel bulk archiving", action: { session.cancelBulkTaskArchiving() },
+                presents: { !$0.bulkTaskArchiving.isPresented }),
+            EditorStep(
+                name: "open rename", action: { session.openTaskRename() },
+                presents: { $0.taskRename.isPresented }),
+            EditorStep(
+                name: "cancel rename", action: { session.cancelTaskRename() },
+                presents: { !$0.taskRename.isPresented }),
+            EditorStep(
+                name: "open move", action: { session.openWorklogMove(worklogID: oldWorklog.id) },
+                presents: { $0.worklogMove.isSearching }, reply: { $0.candidates([second, third]) }),
+            EditorStep(
+                name: "move the destination selection", action: { session.moveWorklogDestinationSelection(by: 1) },
+                presents: { $0.worklogMove.selectedTaskID == third.id }),
+            EditorStep(
+                name: "select a move destination", action: { session.selectWorklogMoveDestination(taskID: second.id) },
+                presents: { $0.worklogMove.selectedTaskID == second.id }),
+            EditorStep(
+                name: "change the move query", action: { session.setWorklogMoveQuery("task") },
+                presents: { $0.worklogMove.query == "task" && $0.worklogMove.isSearching },
+                reply: { $0.fail(BridgeFailure(message: "Search unavailable")) }),
+            EditorStep(
+                name: "retry move candidates", action: { session.retryWorklogMoveCandidates() },
+                presents: { $0.worklogMove.isSearching && $0.worklogMove.error == nil },
+                reply: { $0.candidates([second]) }),
+            EditorStep(
+                name: "cancel move", action: { session.cancelWorklogMove() },
+                presents: { !$0.worklogMove.isPresented }),
+            EditorStep(
+                name: "open correction", action: { session.openWorklogCorrection(worklogID: oldWorklog.id) },
+                presents: { $0.worklogCorrection.isPresented }),
+            EditorStep(
+                name: "change the correction end", action: { session.setWorklogCorrectionEnd(correctedEnd) },
+                presents: { $0.worklogCorrection.end == correctedEnd }),
+            EditorStep(
+                name: "cancel correction", action: { session.cancelWorklogCorrection() },
+                presents: { !$0.worklogCorrection.isPresented }),
+        ]
+
+        for step in steps {
+            step.action()
+            XCTAssertTrue(step.presents(harness.presentation), "The presentation must show: \(step.name).")
+            assertMirrors(harness.presentation, session)
+            if let reply = step.reply {
+                reply(try await fixture.client.next())
+                try await harness.settled(fixture)
+            }
+        }
     }
 }

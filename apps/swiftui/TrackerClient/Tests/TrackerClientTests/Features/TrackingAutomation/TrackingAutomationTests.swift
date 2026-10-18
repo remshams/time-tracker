@@ -121,6 +121,49 @@ final class TrackingAutomationTests: XCTestCase {
         }
     }
 
+    func testDisablingThePreferenceWhileLockedNeverPausesARunningTask() async throws {
+        let fixture = Fixture(pauseOnScreenLock: true)
+        defer { fixture.cleanup() }
+        try await fixture.start(idle)
+        fixture.session.screenLocked(at: fixture.clock.now)
+        fixture.session.refresh()
+        let startedElsewhere = try await fixture.client.next()
+        XCTAssertEqual(startedElsewhere.operation, .refresh(.local))
+        startedElsewhere.succeed(running)
+        try await finishHistory(fixture)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.active, activeWorklog)
+
+        fixture.session.setPauseOnScreenLock(false)
+        fixture.session.refresh()
+        let next = try await fixture.client.next()
+        XCTAssertEqual(next.operation, .refresh(.local), "Disabling the preference must not pause tracking.")
+        next.succeed(running)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.active, activeWorklog)
+    }
+
+    func testManualStopAfterUnlockDuringPauseCancelsTheAutomaticResume() async throws {
+        let fixture = Fixture(pauseOnScreenLock: true)
+        defer { fixture.cleanup() }
+        try await fixture.start(running)
+        fixture.session.screenLocked(at: fixture.clock.now)
+        let pause = try await fixture.client.next()
+        fixture.session.screenUnlocked(at: fixture.clock.now)
+        fixture.session.stopTracking(worklogID: activeWorklog.id)
+        let stop = try await fixture.client.next()
+        XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: commandTimestamp(fixture.clock.now)))
+        pause.paused(idle)
+        try await finishHistory(fixture)
+        stop.succeed(idle)
+        try await fixture.settled()
+        XCTAssertNil(fixture.session.active)
+        XCTAssertFalse(
+            fixture.client.operations.contains {
+                if case .resume = $0 { return true }; return false
+            }, "A manual stop must win over the automatic resume.")
+    }
+
     func testCancelledPendingPauseCannotGrantResumeAfterUnlock() {
         let state = TrackingAutomationState(preferences: TrackingPreferences(pauseOnScreenLock: true))
         XCTAssertTrue(state.lock())
