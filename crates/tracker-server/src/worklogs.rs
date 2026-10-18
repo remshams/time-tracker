@@ -7,8 +7,8 @@ use serde::Deserialize;
 use tracker_application::{ApplicationError, GlobalWorklogCursor, WorklogCursor};
 use tracker_domain::WorklogTimes;
 use tracker_protocol::{
-    DeleteWorklogRequest, MutationDto, MutationResultDto, WorklogChangeRequest, WorklogDto,
-    WorklogPageDto, WorklogResourceDto,
+    DeleteWorklogRequest, MutationDto, MutationResultDto, WorklogChangeRequest, WorklogCursorError,
+    WorklogDto, WorklogPageDto, WorklogResourceDto, parse_worklog_cursor,
 };
 
 use crate::core::{Shared, lock};
@@ -41,12 +41,19 @@ pub(super) struct PageQuery {
 fn worklog_cursor(query: PageQuery) -> Result<Option<GlobalWorklogCursor>, ApiError> {
     match (query.after_id, query.after_revision) {
         (None, None) => Ok(None),
-        (Some(id), Some(revision)) if revision >= 0 => Ok(Some(GlobalWorklogCursor {
-            id: worklog_id(&id)?,
-            revision,
-        })),
-        _ => Err(ApiError::invalid("Incomplete or invalid worklog cursor")),
+        (Some(id), Some(revision)) => match parse_worklog_cursor(&id, revision) {
+            Ok((id, revision)) => Ok(Some(GlobalWorklogCursor { id, revision })),
+            Err(error @ WorklogCursorError::InvalidId) => {
+                Err(ApiError::invalid(&error.to_string()))
+            }
+            Err(WorklogCursorError::NegativeRevision) => Err(invalid_cursor()),
+        },
+        _ => Err(invalid_cursor()),
     }
+}
+
+fn invalid_cursor() -> ApiError {
+    ApiError::invalid("Incomplete or invalid worklog cursor")
 }
 
 pub(super) async fn all_worklogs(
