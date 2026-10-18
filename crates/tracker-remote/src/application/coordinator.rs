@@ -360,15 +360,17 @@ impl RemoteTrackerCoordinator {
         self.reports.report_observation()
     }
 
-    async fn task_guard(&mut self, id: TaskId) -> Result<String, ApplicationError> {
+    /// Returns the task revision and the name the server stores for the task.
+    async fn task_guard(&mut self, id: TaskId) -> Result<(String, TaskName), ApplicationError> {
         let reviewed = self.task(id).cloned();
         let (item, revision) = self.read_task_item(id).await?;
         let changed = reviewed.is_some_and(|old| old != item.task);
+        let name = item.task.name().clone();
         self.adopt_task(item, revision.clone());
         if changed {
             return Err(self.intent_changed());
         }
-        Ok(revision)
+        Ok((revision, name))
     }
 
     pub async fn create_task(
@@ -445,8 +447,9 @@ impl RemoteTrackerCoordinator {
                 .rename_task_with_expected_name(id, &expected_name, name, occurred_at)
                 .await;
         }
-        let revision = self.task_guard(id).await?;
+        let (revision, expected_name) = self.task_guard(id).await?;
         let body = TaskChangeRequest::Rename {
+            expected_name: expected_name.as_str().to_owned(),
             name: name.as_str().to_owned(),
             occurred_at: canonical(occurred_at),
             guard: Self::guard(&revision),
@@ -460,10 +463,11 @@ impl RemoteTrackerCoordinator {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.session.begin_command();
-        let revision = self.task_guard(id).await?;
+        let (revision, expected_name) = self.task_guard(id).await?;
         self.task_mutation(
             id,
             TaskChangeRequest::Archive {
+                expected_name: expected_name.as_str().to_owned(),
                 occurred_at: canonical(occurred_at),
                 guard: Self::guard(&revision),
             },
@@ -477,7 +481,7 @@ impl RemoteTrackerCoordinator {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.session.begin_command();
-        let revision = self.task_guard(id).await?;
+        let (revision, _) = self.task_guard(id).await?;
         self.task_mutation(
             id,
             TaskChangeRequest::Restore {
@@ -548,7 +552,7 @@ impl RemoteTrackerCoordinator {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.session.begin_command();
-        let revision = self.task_guard(id).await?;
+        let (revision, _) = self.task_guard(id).await?;
         if self
             .task(id)
             .is_none_or(|task| task.name() != expected_name)
@@ -556,6 +560,7 @@ impl RemoteTrackerCoordinator {
             return Err(self.intent_changed());
         }
         let body = TaskChangeRequest::Rename {
+            expected_name: expected_name.as_str().to_owned(),
             name: name.as_str().to_owned(),
             occurred_at: canonical(occurred_at),
             guard: Self::guard(&revision),
@@ -571,7 +576,7 @@ impl RemoteTrackerCoordinator {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.session.begin_command();
-        let revision = self.task_guard(id).await?;
+        let (revision, _) = self.task_guard(id).await?;
         if self
             .task(id)
             .is_none_or(|task| task.name() != expected_name)
@@ -581,6 +586,7 @@ impl RemoteTrackerCoordinator {
         self.task_mutation(
             id,
             TaskChangeRequest::Archive {
+                expected_name: expected_name.as_str().to_owned(),
                 occurred_at: canonical(occurred_at),
                 guard: Self::guard(&revision),
             },
