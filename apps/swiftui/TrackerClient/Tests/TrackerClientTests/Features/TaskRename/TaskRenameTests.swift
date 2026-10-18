@@ -52,7 +52,7 @@ final class TaskRenameTests: XCTestCase {
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
         rename.complete(.success(.task(TaskCommandResult(task: renamed, receipt: nil))))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .taskList)
+        XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings))
         XCTAssertFalse(fixture.session.taskRename.isPresented)
         XCTAssertFalse(fixture.session.taskRename.isSubmitting)
         try await fixture.update("the reloaded task list") {
@@ -68,7 +68,7 @@ final class TaskRenameTests: XCTestCase {
                 .rename(
                     task: firstTask.id, expectedName: firstTask.name, name: "Renamed task",
                     at: "2025-01-01T00:00:00.000Z"),
-                .taskList,
+                .refresh(fixture.session.connectionSettings),
             ])
     }
 
@@ -157,8 +157,9 @@ final class TaskRenameTests: XCTestCase {
                 task: firstTask.id, expectedName: firstTask.name, name: "Draft name", at: "2025-01-01T00:00:00.000Z"))
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 2)
         let backgroundName = TaskItem(id: firstTask.id, name: "Background name", archived: false, latestStart: nil)
-        poll.succeed(TaskListResources(tasks: [backgroundName], active: nil))
-        try await fixture.settled()
+        try await fixture.update("the background task name") {
+            poll.succeed(TaskListResources(tasks: [backgroundName], active: nil))
+        }
         XCTAssertEqual(fixture.session.tasks, [backgroundName])
         XCTAssertEqual(fixture.session.taskRename.originalName, firstTask.name)
         XCTAssertEqual(fixture.session.taskRename.name, "Draft name")
@@ -182,7 +183,7 @@ final class TaskRenameTests: XCTestCase {
         let rename = try await fixture.client.next()
         rename.fail(BridgeFailure(message: "Invalid name", kind: "validation"))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .taskList)
+        XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings))
         XCTAssertFalse(fixture.session.taskRename.isSubmitting)
         XCTAssertEqual(fixture.session.taskRename.error, "Invalid name")
         let changed = TaskItem(id: firstTask.id, name: "Changed elsewhere", archived: false, latestStart: nil)
@@ -231,7 +232,7 @@ final class TaskRenameTests: XCTestCase {
         let rename = try await fixture.client.next()
         rename.fail(BridgeFailure(message: "Name rejected", kind: "validation"))
         let reload = try await fixture.client.next()
-        XCTAssertEqual(reload.operation, .taskList)
+        XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings))
         try await fixture.update("the failed reload") {
             reload.fail(BridgeFailure(message: "Cannot confirm server state", kind: "unavailable"))
         } until: {
@@ -257,7 +258,6 @@ final class TaskRenameTests: XCTestCase {
         fixture.session.submitTaskRename()
         let rename = try await fixture.client.next()
         XCTAssertTrue(fixture.session.taskRename.isSubmitting)
-        XCTAssertFalse(fixture.session.isBlockingControls)
         XCTAssertTrue(fixture.session.canOpenTaskCreation)
         XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
         XCTAssertTrue(fixture.session.canOpenWorklogMove)
@@ -270,8 +270,7 @@ final class TaskRenameTests: XCTestCase {
         stop.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let stoppedHistory = try await fixture.client.next()
         XCTAssertEqual(stoppedHistory.operation, .history(task: firstTask.id, cursor: nil))
-        stoppedHistory.succeed(emptyPage)
-        try await fixture.settled()
+        try await fixture.update("the stopped timer history") { stoppedHistory.succeed(emptyPage) }
         XCTAssertNil(fixture.session.active)
         XCTAssertTrue(fixture.session.taskRename.isSubmitting)
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
@@ -402,17 +401,13 @@ final class TaskRenameTests: XCTestCase {
                 at: "2025-01-01T00:00:00.000Z"))
         fixture.session.screenLocked(at: fixture.clock.now)
         poll.succeed(resources)
-        let automationRead = try await fixture.client.next()
-        XCTAssertEqual(automationRead.operation, .taskList)
-        automationRead.succeed(resources)
         let pause = try await fixture.client.next()
         XCTAssertEqual(pause.operation, .pause(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
         let paused = TaskListResources(tasks: [firstTask], active: nil)
         pause.paused(paused)
         let pausedHistory = try await fixture.client.next()
         XCTAssertEqual(pausedHistory.operation, .history(task: firstTask.id, cursor: nil))
-        pausedHistory.succeed(emptyPage)
-        try await fixture.settled()
+        try await fixture.update("the paused history") { pausedHistory.succeed(emptyPage) }
         XCTAssertNil(fixture.session.active)
         let renamed = TaskItem(id: firstTask.id, name: "Renamed while locked", archived: false, latestStart: nil)
         let renamedPaused = TaskListResources(tasks: [renamed], active: nil)
@@ -422,8 +417,6 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertFalse(fixture.session.taskRename.isPresented)
         fixture.clock.now.addTimeInterval(30)
         fixture.session.screenUnlocked(at: fixture.clock.now)
-        let resumeRead = try await fixture.client.next()
-        resumeRead.succeed(renamedPaused)
         let resume = try await fixture.client.next()
         XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: "2025-01-01T00:00:30.000Z"))
         let resumed = WorklogItem(id: "resumed", taskId: firstTask.id, start: "2025-01-01T00:00:30.000Z", end: nil)

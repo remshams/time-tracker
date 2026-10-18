@@ -4,26 +4,6 @@ import XCTest
 
 final class ConnectionTests: XCTestCase {
     @MainActor
-    func testCancellingConnectionFromItsQueuedPublicationReleasesTheReservation() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start()
-        fixture.session.refresh()
-        let refresh = try await fixture.client.next()
-        var connecting: Task<Bool, Never>?
-        fixture.session.onChange = {
-            if fixture.session.isBlockingControls { connecting?.cancel() }
-        }
-        connecting = Task { await fixture.session.connect(serverSettings) }
-        let connected = try await fixture.taskValue(connecting!)
-        XCTAssertFalse(connected)
-        XCTAssertFalse(fixture.session.isBlockingControls)
-        refresh.succeed(emptyTaskListResources)
-        try await fixture.settled()
-        XCTAssertFalse(fixture.client.operations.contains(.connect(serverSettings)))
-    }
-
-    @MainActor
     func testUnarchiveFailureDialogDoesNotBlockSourceSwitch() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
@@ -51,30 +31,6 @@ final class ConnectionTests: XCTestCase {
         XCTAssertTrue(fixture.session.taskArchiving.isPresented)
         XCTAssertEqual(fixture.session.taskArchiving.taskID, archivedTask.id)
         XCTAssertEqual(fixture.session.taskArchiving.error, "Unarchive rejected")
-    }
-
-    @MainActor
-    func testAlreadyCancelledConnectionDoesNotLeaveAQueuedOperationWaiting() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        let resources = TaskListResources(tasks: [firstTask], active: nil)
-        try await fixture.start(resources)
-        fixture.session.refresh()
-        let poll = try await fixture.client.next()
-        let connecting = Task { await fixture.session.connect(serverSettings) }
-        connecting.cancel()
-
-        let connected = try await fixture.taskValue(connecting)
-
-        XCTAssertFalse(connected)
-        XCTAssertFalse(fixture.session.isBlockingControls)
-        poll.succeed(resources)
-        try await fixture.settled()
-        XCTAssertEqual(fixture.session.connectionSettings, .local)
-        XCTAssertFalse(
-            fixture.client.operations.contains {
-                if case .connect = $0 { return true }; return false
-            })
     }
 
     @MainActor
@@ -201,13 +157,13 @@ final class ConnectionTests: XCTestCase {
         let testing = Task { try await fixture.session.testConnection(candidate) }
         let request = try await fixture.client.next()
         XCTAssertEqual(request.operation, .test(serverSettings))
-        XCTAssertTrue(fixture.session.isBusy)
+        XCTAssertTrue(fixture.client.hasPendingRequests)
         request.tested()
         try await fixture.taskValue(testing)
 
         XCTAssertEqual(fixture.session.connectionSettings, .local)
         XCTAssertTrue(fixture.settings.writes.isEmpty)
-        XCTAssertFalse(fixture.session.isBusy)
+        XCTAssertFalse(fixture.client.hasPendingRequests)
         XCTAssertEqual(fixture.client.operations, [.open(.local), .test(serverSettings)])
     }
 
@@ -255,10 +211,10 @@ final class ConnectionTests: XCTestCase {
         stop.fail(BridgeFailure(message: "Write failed", uncertain: true))
         let confirmation = try await fixture.client.next()
         confirmation.succeed(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        let retriedHistory = try await fixture.client.next()
-        retriedHistory.fail(BridgeFailure(message: "History unavailable"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.trackingError, "Write failed")
+        XCTAssertEqual(
+            fixture.session.trackingError,
+            "Could not confirm the change. Check the reloaded data before trying again. Write failed")
 
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let request = try await fixture.client.next()

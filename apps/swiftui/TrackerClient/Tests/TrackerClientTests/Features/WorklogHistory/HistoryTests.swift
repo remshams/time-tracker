@@ -24,22 +24,6 @@ final class HistoryTests: XCTestCase {
     }
 
     @MainActor
-    func testShutdownInvalidatesLoadingAndRejectsLateEmptyResponse() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        fixture.session.retryHistory()
-        let request = try await fixture.client.next()
-        XCTAssertTrue(fixture.session.isHistoryLoading)
-        fixture.session.shutdown()
-        XCTAssertFalse(fixture.session.isHistoryLoading)
-        request.succeed(emptyPage)
-        await Task.yield()
-        XCTAssertFalse(fixture.session.isHistoryLoading)
-        XCTAssertFalse(fixture.session.isBusy)
-    }
-
-    @MainActor
     func testPollingKeepsExistingRowsWhileSameTaskHistoryRefreshes() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
@@ -83,7 +67,6 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(fixture.session.nextCursor, "older")
         XCTAssertTrue(fixture.session.hasMoreHistory)
         XCTAssertTrue(fixture.session.isHistoryLoading)
-        XCTAssertFalse(fixture.session.isBlockingControls)
         fixture.session.loadOlder()
         refresh.succeed(page)
         try await fixture.settled()
@@ -222,39 +205,27 @@ final class HistoryTests: XCTestCase {
     }
 
     @MainActor
-    func testReturningToTaskRejectsAnEarlierHistoryGeneration() async throws {
-        for failedResponse in [false, true] {
-            let fixture = Fixture()
-            defer { fixture.cleanup() }
-            try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
-            fixture.session.retryHistory()
-            let oldRequest = try await fixture.client.next()
-            XCTAssertEqual(oldRequest.operation, .history(task: firstTask.id, cursor: nil))
-
-            fixture.session.select(secondTask.id)
-            fixture.session.select(firstTask.id)
-            XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
-            if failedResponse {
-                oldRequest.fail(BridgeFailure(message: "An earlier history request failed", kind: "unavailable"))
-            } else {
-                oldRequest.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "obsolete", reset: false))
-            }
-
-            let freshRequest = try await fixture.client.next()
-            XCTAssertEqual(freshRequest.operation, .history(task: firstTask.id, cursor: nil))
-            XCTAssertTrue(fixture.session.worklogs.isEmpty)
-            XCTAssertNil(fixture.session.nextCursor)
-            XCTAssertFalse(fixture.session.historyUnavailable)
-            XCTAssertNil(fixture.session.error)
-            XCTAssertFalse(fixture.session.isStale)
-            freshRequest.succeed(emptyPage)
-            try await fixture.settled()
-            XCTAssertTrue(fixture.session.worklogs.isEmpty)
-            XCTAssertNil(fixture.session.nextCursor)
-            XCTAssertNil(fixture.session.error)
-            XCTAssertFalse(fixture.session.isStale)
-            XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
+    func testReturningToTaskAcceptsItsEarlierHistoryRequest() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
+        fixture.session.retryHistory()
+        let earlier = try await fixture.client.next()
+        fixture.session.select(secondTask.id)
+        let other = try await fixture.client.next()
+        fixture.session.select(firstTask.id)
+        let current = try await fixture.client.next()
+        current.succeed(emptyPage)
+        try await fixture.update("the earlier page for the selected task") {
+            earlier.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
         }
+        XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
+        XCTAssertEqual(fixture.session.nextCursor, "older")
+        other.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
+        XCTAssertFalse(fixture.session.isStale)
+        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 3)
     }
 
     @MainActor

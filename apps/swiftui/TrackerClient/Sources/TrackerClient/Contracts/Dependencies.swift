@@ -15,7 +15,6 @@ public protocol TrackerClient: Sendable {
     func test(_ settings: ConnectionSettings) async throws
     func connect(_ settings: ConnectionSettings) async throws -> TaskListResources
     func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources
-    func refreshTaskList() async throws -> TaskListResources
     func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult
     func previewInactiveTasks(inactiveDays: Int, asOf: String) async throws -> InactiveTaskPreview
     func archiveInactiveTasks(preview: InactiveTaskPreview) async throws -> InactiveTaskArchiveResult

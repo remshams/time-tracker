@@ -96,7 +96,7 @@ extension PresentationHarness {
     /// Waits for the session to finish its operation without replacing the presentation's change handler.
     func settled(_ fixture: Fixture) async throws {
         let finished = Task { @MainActor in
-            while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
+            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
         }
         try await fixture.taskValue(finished)
     }
@@ -149,7 +149,6 @@ enum PresentationReads {
     }
 
     static func controls(_ presentation: TrackerPresentation) {
-        _ = presentation.isBlockingControls
         _ = presentation.canStopTracking
         _ = presentation.startableTaskIDs
     }
@@ -218,7 +217,6 @@ func assertMirrors(
     XCTAssertEqual(presentation.pauseOnScreenLock, session.pauseOnScreenLock, file: file, line: line)
     XCTAssertEqual(presentation.autoPauseStatusText, session.autoPauseStatusText, file: file, line: line)
     XCTAssertEqual(presentation.dailyTotalsStatus, session.dailyTotalsStatus, file: file, line: line)
-    XCTAssertEqual(presentation.isBlockingControls, session.isBlockingControls, file: file, line: line)
     XCTAssertEqual(presentation.canStopTracking, session.canStopTracking, file: file, line: line)
     XCTAssertEqual(presentation.timerDisplayText, session.timerDisplayText, file: file, line: line)
     XCTAssertEqual(presentation.taskCreation, session.taskCreation, file: file, line: line)

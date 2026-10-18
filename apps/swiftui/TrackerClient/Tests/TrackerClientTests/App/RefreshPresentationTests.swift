@@ -177,7 +177,7 @@ final class RefreshPresentationTests: XCTestCase {
     @MainActor
     private func settleWithoutReplacingObserver(_ fixture: Fixture) async throws {
         let finished = Task { @MainActor in
-            while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
+            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
         }
         try await fixture.taskValue(finished)
     }

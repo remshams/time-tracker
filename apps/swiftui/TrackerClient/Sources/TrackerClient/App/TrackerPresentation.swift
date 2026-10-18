@@ -43,7 +43,6 @@ public final class TrackerPresentation {
     public private(set) var autoPauseStatusText: String?
     public private(set) var dailyTotalsStatus: DailyTotalsStatus
 
-    public private(set) var isBlockingControls: Bool
     public private(set) var canStopTracking: Bool
     public private(set) var startableTaskIDs: Set<String>
     public private(set) var timerDisplayText: String
@@ -92,7 +91,6 @@ public final class TrackerPresentation {
         pauseOnScreenLock = session.pauseOnScreenLock
         autoPauseStatusText = session.autoPauseStatusText
         dailyTotalsStatus = session.dailyTotalsStatus
-        isBlockingControls = session.isBlockingControls
         canStopTracking = session.canStopTracking
         startableTaskIDs = Self.startableTaskIDs(session)
         timerDisplayText = session.timerDisplayText
@@ -139,7 +137,6 @@ public final class TrackerPresentation {
         set(\.pauseOnScreenLock, session.pauseOnScreenLock)
         set(\.autoPauseStatusText, session.autoPauseStatusText)
         set(\.dailyTotalsStatus, session.dailyTotalsStatus)
-        set(\.isBlockingControls, session.isBlockingControls)
         set(\.canStopTracking, session.canStopTracking)
         set(\.startableTaskIDs, Self.startableTaskIDs(session))
         set(\.timerDisplayText, session.timerDisplayText)

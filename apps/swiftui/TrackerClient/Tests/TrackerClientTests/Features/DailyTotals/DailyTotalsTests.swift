@@ -169,7 +169,6 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertNil(state.duration(taskID: firstTask.id, active: activeWorklog, clock: clock))
         state.accept(report, requested: request, clock: clock)
         XCTAssertEqual(state.status, .unavailable)
-        XCTAssertTrue(state.pending)
         XCTAssertNil(state.duration(taskID: firstTask.id, active: activeWorklog, clock: clock))
     }
 
@@ -248,7 +247,6 @@ final class DailyTotalsTests: XCTestCase {
         clock.now.addTimeInterval(8)
         XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 12)
         XCTAssertEqual(state.status, .cached)
-        XCTAssertFalse(state.pending)
         let taskList = TaskListResources(tasks: [], active: nil, tasksRevision: "epoch:1", trackingRevision: "epoch:2")
         XCTAssertNotEqual(taskList.catalog.revision, taskList.tracking.revision)
     }
@@ -374,7 +372,9 @@ final class DailyTotalsSessionTests: XCTestCase {
         let report = try await fixture.client.next()
         let updatedRows = resources.catalog.value.map { TaskReportTotal(taskId: $0.id, durationMicroseconds: 600_000) }
         report.succeed(TaskListTotalsRefresh(taskList: resources, rows: updatedRows))
-        let finished = Task { @MainActor in while fixture.session.isBusy && !Task.isCancelled { await Task.yield() } }
+        let finished = Task { @MainActor in
+            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
+        }
         try await fixture.taskValue(finished)
         for task in resources.catalog.value {
             XCTAssertEqual(fixture.session.dailyDurationText(taskID: task.id), "00:00:00")
@@ -400,7 +400,8 @@ final class DailyTotalsSessionTests: XCTestCase {
             fixture.scheduler.poll?.fire()
             let report = try await fixture.client.next()
             report.fail(BridgeFailure(message: message))
-            let finished = Task { @MainActor in while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
+            let finished = Task { @MainActor in
+                while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
             }
             try await fixture.taskValue(finished)
             observedErrors.append(fixture.session.dailyTotalsError)
@@ -444,14 +445,16 @@ final class DailyTotalsSessionTests: XCTestCase {
         XCTAssertNil(try XCTUnwrap(observedErrors.first))
         XCTAssertTrue(fixture.session.tasks.isEmpty)
         report.succeed(TaskListTotalsRefresh(taskList: emptyTaskListResources, rows: []))
-        let finished = Task { @MainActor in while fixture.session.isBusy && !Task.isCancelled { await Task.yield() } }
+        let finished = Task { @MainActor in
+            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
+        }
         try await fixture.taskValue(finished)
         XCTAssertEqual(observedStatuses.last, .current)
         XCTAssertTrue(observedDays.allSatisfy { $0 == fixture.clock.now })
     }
 
     @MainActor
-    func testDelayedReportFailureAcrossMidnightImmediatelyRequestsTodaysTotals() async throws {
+    func testDelayedReportFailureAcrossMidnightLoadsTodaysTotalsOnNextPoll() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
         fixture.clock.now = dailyDate("2025-01-01T23:59:58.000Z")
@@ -461,9 +464,12 @@ final class DailyTotalsSessionTests: XCTestCase {
         let yesterday = try await fixture.client.next()
         fixture.clock.now.addTimeInterval(2)
         yesterday.fail(BridgeFailure(message: "Yesterday's report failed"))
+        try await fixture.settled()
+        XCTAssertNil(fixture.session.dailyDuration(taskID: firstTask.id))
+        fixture.scheduler.poll?.fire()
         let today = try await fixture.client.next()
         guard case .report(_, let start, let end, let now) = today.operation else {
-            return XCTFail("A delayed failure crossing midnight must request today's report.")
+            return XCTFail("The next poll after midnight must request today's report.")
         }
         XCTAssertEqual(start, "2025-01-02T00:00:00.000Z")
         XCTAssertEqual(end, "2025-01-03T00:00:00.000Z")
@@ -492,10 +498,10 @@ final class DailyTotalsSessionTests: XCTestCase {
         XCTAssertEqual(fixture.session.dailyTotalsError, "Yesterday unavailable")
         fixture.clock.now.addTimeInterval(86_400)
         fixture.session.refresh()
+        let refresh = try await fixture.client.next()
         XCTAssertEqual(fixture.session.dailyTotalsDayStart, fixture.clock.now)
         XCTAssertNil(fixture.session.dailyTotalsError)
         XCTAssertTrue(fixture.session.todayTasks.isEmpty)
-        let refresh = try await fixture.client.next()
         XCTAssertEqual(refresh.operation, .refresh(.local))
         refresh.succeed(resources)
         let report = try await fixture.client.next()
@@ -504,7 +510,7 @@ final class DailyTotalsSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testTrackingAcknowledgmentAcrossMidnightPublishesTodaysDayAndClearsYesterdayError() async throws {
+    func testTrackingReportAcrossMidnightPublishesTodaysDayAndClearsYesterdayError() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
         fixture.clock.now = dailyDate("2025-01-01T23:59:59.000Z")
@@ -528,7 +534,6 @@ final class DailyTotalsSessionTests: XCTestCase {
         let stoppedResources = TaskListResources(tasks: [firstTask], active: nil)
         stop.succeed(stoppedResources)
         let report = try await fixture.client.next()
-        XCTAssertFalse(observedDays.isEmpty)
         XCTAssertTrue(
             observedDays.allSatisfy { $0 == fixture.clock.now },
             "The acknowledged resources must publish today's day before its report arrives.")
@@ -539,6 +544,9 @@ final class DailyTotalsSessionTests: XCTestCase {
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
+        XCTAssertFalse(observedDays.isEmpty)
+        XCTAssertTrue(observedDays.allSatisfy { $0 == fixture.clock.now })
+        XCTAssertTrue(observedErrors.allSatisfy { $0 == nil })
     }
 
     @MainActor
@@ -614,7 +622,9 @@ final class DailyTotalsSessionTests: XCTestCase {
             TaskListTotalsRefresh(
                 taskList: TaskListResources(tasks: tasks, active: newActive),
                 rows: [total(firstTask, 10), total(secondTask, 77)]))
-        let finished = Task { @MainActor in while fixture.session.isBusy && !Task.isCancelled { await Task.yield() } }
+        let finished = Task { @MainActor in
+            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
+        }
         try await fixture.taskValue(finished)
         XCTAssertFalse(publishedTotals.isEmpty)
         XCTAssertTrue(
@@ -786,7 +796,7 @@ final class DailyTotalsSessionTests: XCTestCase {
             fixture.clock.uptime += 86_400
             if useDisplayTimer { display.fire() } else { rollover.fire() }
             XCTAssertEqual(fixture.client.operations.count, operationCount)
-            XCTAssertFalse(fixture.session.isBusy)
+            XCTAssertFalse(fixture.client.hasPendingRequests)
             XCTAssertNil(fixture.session.dailyDuration(taskID: firstTask.id))
             XCTAssertTrue(fixture.session.todayTasks.isEmpty)
             XCTAssertEqual(fixture.session.dailyTotalsStatus, .unavailable)
@@ -810,8 +820,6 @@ final class DailyTotalsSessionTests: XCTestCase {
         let connected = Task { await fixture.session.connect(serverSettings) }
         let connect = try await fixture.client.next()
         connect.succeed(resources)
-        let connectedResult = try await fixture.taskValue(connected)
-        XCTAssertTrue(connectedResult)
         let report = try await fixture.client.next()
         XCTAssertNil(fixture.session.dailyDuration(taskID: firstTask.id))
         guard case .report(let settings, _, _, _) = report.operation else {
@@ -821,12 +829,14 @@ final class DailyTotalsSessionTests: XCTestCase {
         report.succeed(TaskListTotalsRefresh(taskList: resources, rows: []))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
+        let connectedResult = try await fixture.taskValue(connected)
+        XCTAssertTrue(connectedResult)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 0)
     }
 
     @MainActor
-    func testTrackingCommandQueuesReportBeforeHistoryAndNeverAddsWholeActiveElapsed() async throws {
+    func testTrackingCommandReloadsReportBeforeHistoryAndNeverAddsWholeActiveElapsed() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
@@ -836,7 +846,8 @@ final class DailyTotalsSessionTests: XCTestCase {
         stop.succeed(TaskListResources(tasks: [firstTask], active: nil))
         let report = try await fixture.client.next()
         guard case .report = report.operation else { return XCTFail("Tracking changes must report before history.") }
-        XCTAssertEqual(fixture.session.dailyTotalsStatus, .cached)
+        XCTAssertEqual(fixture.session.dailyTotalsStatus, .current)
+        XCTAssertEqual(fixture.session.active, activeWorklog)
         report.succeed(
             TaskListTotalsRefresh(
                 taskList: TaskListResources(tasks: [firstTask], active: nil), rows: [total(firstTask, 7)]))
@@ -845,34 +856,6 @@ final class DailyTotalsSessionTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 7)
-    }
-
-    @MainActor
-    func testMidnightTimerCoalescesReportsAndIgnoresLateResultAfterShutdown() async throws {
-        let fixture = Fixture(reports: true, calendar: dailyCalendar())
-        defer { fixture.cleanup() }
-        fixture.clock.now = dailyDate("2025-01-01T23:59:59.000Z")
-        fixture.session.setWindowVisible(true)
-        try await fixture.start(
-            TaskListResources(tasks: [firstTask], active: activeWorklog), rows: [total(firstTask, 5)])
-        fixture.clock.now.addTimeInterval(1)
-        fixture.clock.uptime += 1
-        fixture.scheduler.display?.fire()
-        let report = try await fixture.client.next()
-        guard case .report(_, let start, _, _) = report.operation else {
-            return XCTFail("Midnight must request the new day.")
-        }
-        XCTAssertEqual(start, "2025-01-02T00:00:00.000Z")
-        XCTAssertNil(fixture.session.dailyDuration(taskID: firstTask.id))
-        let count = fixture.client.operations.count
-        fixture.scheduler.display?.fire()
-        XCTAssertEqual(fixture.client.operations.count, count)
-        fixture.session.shutdown()
-        report.succeed(TaskListTotalsRefresh(taskList: emptyTaskListResources, rows: []))
-        await Task.yield()
-        XCTAssertEqual(fixture.session.tasks, [firstTask])
-        XCTAssertTrue(fixture.scheduler.active.isEmpty)
-        XCTAssertFalse(fixture.session.isBusy)
     }
 
     @MainActor
@@ -898,7 +881,7 @@ final class DailyTotalsSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testDelayedReportAcrossMidnightCannotRestoreYesterdayAndQueuesOneReplacement() async throws {
+    func testDelayedReportAcrossMidnightCannotRestoreYesterdayAndNextPollLoadsToday() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
         fixture.clock.now = dailyDate("2025-01-01T23:59:58.000Z")
@@ -911,6 +894,9 @@ final class DailyTotalsSessionTests: XCTestCase {
         rollover.fire()
         XCTAssertNil(fixture.session.dailyDuration(taskID: firstTask.id))
         yesterday.succeed(TaskListTotalsRefresh(taskList: resources, rows: [total(firstTask, 40)]))
+        try await fixture.settled()
+        XCTAssertNil(fixture.session.dailyDuration(taskID: firstTask.id))
+        fixture.scheduler.poll?.fire()
         let today = try await fixture.client.next()
         guard case .report(_, let start, _, _) = today.operation else {
             return XCTFail("Delayed report must be replaced for today.")
@@ -964,7 +950,9 @@ final class DailyTotalsSessionTests: XCTestCase {
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
         poll.succeed(TaskListTotalsRefresh(taskList: resources, rows: [total(firstTask, 4)]))
-        let finished = Task { @MainActor in while fixture.session.isBusy && !Task.isCancelled { await Task.yield() } }
+        let finished = Task { @MainActor in
+            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
+        }
         try await fixture.taskValue(finished)
         XCTAssertEqual(content.count, 0)
         XCTAssertEqual(totals.changed(), [])
@@ -972,7 +960,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         let failed = try await fixture.client.next()
         failed.fail(BridgeFailure(message: "Totals unavailable"))
         let failureFinished = Task { @MainActor in
-            while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
+            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
         }
         try await fixture.taskValue(failureFinished)
         XCTAssertEqual(content.count, 1)

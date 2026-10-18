@@ -2,19 +2,9 @@ import Foundation
 
 @MainActor
 final class TrackingAutomationState {
-    struct Pause {
-        let occurredAt: Date
-        let expectedWorklogID: String?
-        let ownStartTaskID: String?
-        let discoverAtStartup: Bool
-    }
-
     private(set) var enabled: Bool
     private(set) var locked = false
-    private(set) var generation = 0
-    var pendingPause: Pause?
-    var resumeAt: Date?
-    var pausedTaskID: String?
+    private var pausedTaskID: String?
 
     init(preferences: TrackingPreferences) { enabled = preferences.pauseOnScreenLock }
 
@@ -22,60 +12,38 @@ final class TrackingAutomationState {
         pausedTaskID == nil ? nil : "Paused while screen is locked"
     }
 
-    func setEnabled(
-        _ enabled: Bool, at date: Date, active: WorklogItem?,
-        ownStartTaskID: String?, confirmed: Bool
-    ) -> Bool {
+    func setEnabled(_ enabled: Bool) -> Bool {
         guard self.enabled != enabled else { return false }
         self.enabled = enabled
-        cancel()
-        if enabled && locked && (active != nil || ownStartTaskID != nil || !confirmed) {
-            pendingPause = Pause(
-                occurredAt: date, expectedWorklogID: active?.id,
-                ownStartTaskID: ownStartTaskID, discoverAtStartup: !confirmed)
-        }
+        pausedTaskID = nil
         return true
     }
 
-    func lock(at date: Date, active: WorklogItem?, ownStartTaskID: String?, confirmed: Bool) {
-        guard !locked else { return }
+    /// Returns false when the screen was already locked.
+    func lock() -> Bool {
+        guard !locked else { return false }
         locked = true
-        resumeAt = nil
-        if enabled && (active != nil || ownStartTaskID != nil || !confirmed) {
-            pendingPause = Pause(
-                occurredAt: date, expectedWorklogID: active?.id,
-                ownStartTaskID: ownStartTaskID, discoverAtStartup: !confirmed)
-        }
+        return true
+    }
+
+    /// Remembers a task stopped by the screen-lock pause so that unlocking can resume it.
+    func paused(taskID: String, didStop: Bool) {
+        if didStop && enabled && locked { pausedTaskID = taskID }
+    }
+
+    /// Returns the task to resume, if the screen-lock pause stopped one.
+    func unlock() -> String? {
+        guard locked else { return nil }
+        locked = false
+        defer { pausedTaskID = nil }
+        return enabled ? pausedTaskID : nil
     }
 
     func observeActive(_ active: WorklogItem?) {
-        if pausedTaskID != nil && active != nil {
-            pausedTaskID = nil
-            resumeAt = nil
-        }
+        if active != nil { pausedTaskID = nil }
     }
 
-    func acknowledgeOwnStart(_ active: WorklogItem?, taskID: String) {
-        guard let pending = pendingPause, pending.ownStartTaskID == taskID,
-            let active, active.taskId == taskID
-        else { return }
-        pendingPause = Pause(
-            occurredAt: pending.occurredAt, expectedWorklogID: active.id,
-            ownStartTaskID: nil, discoverAtStartup: false)
-    }
-
-    func unlock(at date: Date) {
-        guard locked else { return }
-        locked = false
-        if enabled { resumeAt = date }
-    }
-
-    // Ownership is granted only by an acknowledged stop. In-flight replies cannot
-    // restore ownership after disabling, changing connections, or shutdown.
     func cancel() {
-        generation += 1
-        pendingPause = nil
-        resumeAt = nil
         pausedTaskID = nil
     }
 }

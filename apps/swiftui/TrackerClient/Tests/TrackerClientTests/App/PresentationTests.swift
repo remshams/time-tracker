@@ -87,9 +87,8 @@ final class PresentationTests: XCTestCase {
         for _ in 0..<3 {
             fixture.scheduler.poll?.fire()
             let refresh = try await fixture.client.next()
-            XCTAssertTrue(fixture.session.isBusy)
+            XCTAssertTrue(fixture.client.hasPendingRequests)
             XCTAssertTrue(fixture.session.canStopTracking)
-            XCTAssertFalse(fixture.session.isBlockingControls)
             refresh.succeed(resources)
             try await harness.settled(fixture)
             XCTAssertTrue(fixture.session.canStopTracking)
@@ -152,7 +151,6 @@ final class PresentationTests: XCTestCase {
 
         XCTAssertTrue(harness.presentation.canStartTracking(taskID: firstTask.id))
         fixture.session.startTracking(taskID: firstTask.id)
-        XCTAssertTrue(harness.presentation.isBlockingControls)
         XCTAssertFalse(harness.presentation.canStartTracking(taskID: firstTask.id))
         let start = try await fixture.client.next()
         start.succeed(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
@@ -210,13 +208,13 @@ final class PresentationTests: XCTestCase {
         let confirmation = try await fixture.client.next()
         confirmation.succeed(running)
         try await harness.settled(fixture)
-        XCTAssertEqual(harness.presentation.trackingError, "Response lost")
+        XCTAssertEqual(
+            harness.presentation.trackingError,
+            "Could not confirm the change. Check the reloaded data before trying again. Response lost")
         fixture.session.dismissTrackingError()
         XCTAssertNil(harness.presentation.trackingError)
 
         fixture.session.screenLocked(at: fixture.clock.now)
-        let taskList = try await fixture.client.next()
-        taskList.succeed(running)
         let pause = try await fixture.client.next()
         pause.paused(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         let history = try await fixture.client.next()
