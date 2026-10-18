@@ -89,6 +89,31 @@ final class ConnectionUITests: ConnectionUITestCase {
         XCTAssertTrue(element("task-sidebar.task.\(local.id)").exists)
     }
 
+    func testConnectionChangeAfterUnconfirmedRenameKeepsEditorAndLaterSaveFails() throws {
+        let local = try fixture.create("Local task")
+        let remote = try TrackerFixture(source: .server)
+        addTeardownBlock { try remote.cleanup() }
+        let serverTask = try remote.create("Server rename original")
+        let proxy = try remote.enableProxy()
+        launch()
+        connectTo(remote.serverURL!)
+        openRename(serverTask)
+        replaceText(app.textFields["task-name.input"], "Unconfirmed server name")
+        try proxy.dropWriteResponses(method: "PATCH", path: "/v1/tasks/\(serverTask.id)")
+        app.buttons["task-name.submit"].click()
+        waitForText("task-name.error", containing: unconfirmedChangeMessage)
+        connectTo(nil)
+        assertConnectionStatus("Local database")
+        XCTAssertTrue(taskRow(local).waitForExistence(timeout: timeout))
+        XCTAssertTrue(element("task-name.input").exists, "The editor stays open across the connection change.")
+        app.buttons["task-name.submit"].click()
+        waitForText("task-name.error", containing: "not found")
+        XCTAssertEqual(try fixture.tasks().map(\.name), [local.name])
+        XCTAssertEqual(try remote.tasks().map(\.name), ["Unconfirmed server name"])
+        try assertAcceptedWriteIntent(proxy, method: "PATCH", path: "/v1/tasks/\(serverTask.id)")
+        app.buttons["task-name.cancel"].click()
+    }
+
     func testUnavailableConfiguredServerNeverFallsBackToLocalStorage() throws {
         let local = try fixture.create("Private local task")
         let remote = try TrackerFixture(source: .server)

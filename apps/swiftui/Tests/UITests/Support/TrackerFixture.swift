@@ -13,7 +13,6 @@ final class TrackerFixture {
     private var serverEndpoint: String?
     private(set) var proxy: ControlledProxy?
     var serverURL: String? { proxy?.endpoint ?? serverEndpoint }
-    var directServerURL: String? { serverEndpoint }
 
     init(source: Source = .local) throws {
         self.source = source

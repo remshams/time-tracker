@@ -61,7 +61,7 @@ class TaskArchivingUITests: TrackerUITestCase {
         XCTAssertFalse(try XCTUnwrap(fixture.tasks().first).archived)
     }
 
-    func testExternalRenameRequiresReviewBeforeArchiveAndKeepsLatestName() throws {
+    func testExternalRenameShowsConflictOnConfirmAndReopenedArchiveKeepsLatestName() throws {
         let task = try fixture.create("Archive original")
         launch()
         select(task)
@@ -69,14 +69,19 @@ class TaskArchivingUITests: TrackerUITestCase {
         XCTAssertTrue(app.buttons["task-archive.confirm"].waitForExistence(timeout: timeout))
         try fixture.rename(task, to: "External archive name")
         app.buttons["task-archive.confirm"].click()
-        XCTAssertTrue(app.buttons["task-archive.review"].waitForExistence(timeout: timeout))
-        XCTAssertFalse(app.buttons["task-archive.confirm"].isEnabled)
+        waitForText("task-archive.error", containing: "changed")
+        XCTAssertTrue(app.buttons["task-archive.confirm"].isEnabled)
+        XCTAssertFalse(app.buttons["task-archive.review"].exists)
         let competing = try XCTUnwrap(fixture.tasks().first)
         XCTAssertFalse(competing.archived)
         XCTAssertEqual(competing.name, "External archive name")
-        app.buttons["task-archive.review"].click()
+        app.buttons["task-archive.cancel"].click()
+        waitUntil("Archive confirmation closes") { !self.app.buttons["task-archive.confirm"].exists }
+        waitUntil("The reload shows the external name") { self.taskDetailsNameText == "External archive name" }
+        app.buttons["Archive task"].click()
+        XCTAssertTrue(app.buttons["task-archive.confirm"].waitForExistence(timeout: timeout))
         app.buttons["task-archive.confirm"].click()
-        waitUntil("Reviewed archive closes") { !self.app.buttons["task-archive.confirm"].exists }
+        waitUntil("Reopened archive closes") { !self.app.buttons["task-archive.confirm"].exists }
         let stored = try XCTUnwrap(fixture.tasks().first)
         XCTAssertTrue(stored.archived)
         XCTAssertEqual(stored.name, "External archive name")

@@ -56,10 +56,10 @@ final class ControlledProxy {
     func arm(method: String, path: String, mode: Mode) throws {
         try arm([Rule(method: method, path: path, mode: mode)])
     }
-    func dropWriteResponses(method: String, path: String, then following: [Rule] = []) throws {
+    func dropWriteResponses(method: String, path: String) throws {
         // The remote transport retries an unavailable write once with the same request ID.
         let drop = Rule(method: method, path: path, mode: .dropAfter)
-        try arm([drop, drop] + following)
+        try arm([drop, drop])
     }
     func arm(_ plan: [Rule]) throws {
         try reset()
@@ -73,7 +73,8 @@ final class ControlledProxy {
         while Date() < limit {
             if let data = try? Data(contentsOf: directory.appendingPathComponent("proxy-held.json")),
                let held = try? JSONDecoder().decode(Held.self, from: data),
-               rules.contains(where: { $0["token"] == held.token }) {
+               rules.contains(where: { $0["token"] == held.token }),
+               !released.contains(held.token) {
                 heldToken = held.token
                 return held.request
             }

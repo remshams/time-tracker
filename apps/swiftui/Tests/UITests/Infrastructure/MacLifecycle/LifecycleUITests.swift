@@ -12,9 +12,13 @@ class LifecycleUITests: TrackerUITestCase {
         select(task)
         app.buttons["Start tracking"].click()
         assertRunning(task)
+        waitUntil("The app has applied the start result") {
+            self.app.buttons["Stop tracking"].exists && self.app.buttons["Stop tracking"].isEnabled
+        }
         let original = try XCTUnwrap(fixture.activeWorklog())
         postScreenEvent("lock")
         assertStopped()
+        waitForScreenLockPause()
         let stopped = try XCTUnwrap(fixture.worklogs(task).first { $0.id == original.id })
         XCTAssertEqual(stopped.start, original.start)
         XCTAssertNotNil(stopped.end)
@@ -38,6 +42,7 @@ class LifecycleUITests: TrackerUITestCase {
     func testUnlockDoesNotReplaceTimerStartedByAnotherClient() throws {
         let first = try fixture.create("Paused task")
         let second = try fixture.create("Other client task")
+        let proxy = fixtureSource == .server ? try fixture.enableProxy() : nil
         launch()
         openSettings()
         element("tracking.pause-on-lock").click()
@@ -45,12 +50,26 @@ class LifecycleUITests: TrackerUITestCase {
         select(first)
         app.buttons["Start tracking"].click()
         assertRunning(first)
+        waitUntil("The app has applied the start result") {
+            self.app.buttons["Stop tracking"].exists && self.app.buttons["Stop tracking"].isEnabled
+        }
         postScreenEvent("lock")
         assertStopped()
+        waitForScreenLockPause()
+        if let proxy {
+            // Keep the app's confirmed state idle until Unlock captures the paused task.
+            try proxy.arm(method: "GET", path: "/v1/state/daily-overview", mode: .holdAfter)
+            _ = try proxy.waitForHeldRequest()
+        }
         let external = try fixture.start(second)
         postScreenEvent("unlock")
-        waitUntil("Unlock reconciles the other client's timer") {
+        try proxy?.release()
+        waitUntil("Unlock reloads the other client's timer") {
             self.statusButton.label == "Tracking: \(second.name)"
+        }
+        // A local poll may already have seen the competing timer and cleared the paused task.
+        if proxy != nil || app.staticTexts["Could not change tracking"].exists {
+            dismissTrackingFailure(containing: "changed")
         }
         XCTAssertEqual(try fixture.activeWorklog(), external)
     }
@@ -70,6 +89,15 @@ class LifecycleUITests: TrackerUITestCase {
         showTrackerWindow()
         XCTAssertTrue(taskRow(hidden).waitForExistence(timeout: timeout))
         XCTAssertEqual(try fixture.activeWorklog(), original)
+    }
+
+    /// Waits until the app has recorded the paused task and shows the stopped timer.
+    /// Unlocking earlier would not resume, because the pause result has not arrived yet.
+    func waitForScreenLockPause() {
+        waitUntil("The app records the screen-lock pause") {
+            self.app.staticTexts["Paused while screen is locked"].exists
+                && self.statusButton.label.hasPrefix("Stopped.")
+        }
     }
 
     func postScreenEvent(_ event: String) {

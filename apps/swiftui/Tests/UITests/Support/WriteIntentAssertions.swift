@@ -20,4 +20,18 @@ extension TrackerUITestCase {
                           file: file, line: line)
         }
     }
+
+    /// Checks that the write has no native task-list or history preflight.
+    /// Background overview polls and the Rust adapter's item reads may precede it.
+    func assertWriteSentWithoutPriorRead(_ proxy: ControlledProxy, after baseline: Int, method: String, path: String,
+                                         file: StaticString = #filePath, line: UInt = #line) throws {
+        let requests = try proxy.requests().dropFirst(baseline)
+        let write = try XCTUnwrap(requests.firstIndex { $0.method == method && $0.path.contains(path) },
+                                  "The app sent the write.", file: file, line: line)
+        let reads = requests[..<write].filter {
+            $0.method == "GET" && ($0.path.contains("/v1/state/task-list") || $0.path.contains("/v1/worklogs?task_id="))
+        }
+        XCTAssertEqual(reads.map(\.path), [], "No task-list or history read precedes the write.",
+                       file: file, line: line)
+    }
 }

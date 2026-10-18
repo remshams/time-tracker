@@ -126,7 +126,7 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         app.buttons["worklog-correction.cancel"].click()
     }
 
-    func testExternalCorrectionRequiresReviewBeforeSavingRetainedDraft() throws {
+    func testExternalCorrectionShowsConflictOnSaveAndReopenedEditorSaves() throws {
         let task = try fixture.create("Concurrent correction")
         let start = Date().addingTimeInterval(-3600)
         let end = Date().addingTimeInterval(-1800)
@@ -137,14 +137,23 @@ class WorklogCorrectionUITests: TrackerUITestCase {
         stepMinute("worklog-correction.start")
         let external = try fixture.correct(log, start: start.addingTimeInterval(-60), end: end)
         app.buttons["worklog-correction.save"].click()
-        XCTAssertTrue(app.buttons["worklog-correction.review"].waitForExistence(timeout: timeout))
-        XCTAssertFalse(app.buttons["worklog-correction.save"].isEnabled)
+        waitForText("worklog-correction.error", containing: "changed")
+        XCTAssertTrue(app.buttons["worklog-correction.save"].isEnabled)
+        XCTAssertFalse(app.buttons["worklog-correction.review"].exists)
         XCTAssertEqual(try fixture.worklogs(task), [external])
-        app.buttons["worklog-correction.review"].click()
+        app.buttons["worklog-correction.cancel"].click()
+        waitUntil("Correction closes") { !self.element("worklog-correction.start").exists }
+        waitForHistoryDuration(of: external)
+        openCorrection(external)
         stepMinute("worklog-correction.start")
         app.buttons["worklog-correction.save"].click()
-        waitUntil("Reviewed correction closes") { !self.element("worklog-correction.start").exists }
-        XCTAssertEqual(try fixture.worklogs(task).first?.id, log.id)
+        waitUntil("Reopened correction closes") { !self.element("worklog-correction.start").exists }
+        let saved = try XCTUnwrap(fixture.worklogs(task).first)
+        XCTAssertEqual(saved.id, log.id)
+        XCTAssertEqual(saved.end, external.end)
+        let externalStart = try parsed(external.start)
+        XCTAssertEqual(try parsed(saved.start).timeIntervalSince1970,
+                       floor(externalStart.timeIntervalSince1970 / 60) * 60 + 60, accuracy: 0.001)
     }
 
     func testFutureRunningStartShowsValidationAndPreservesTheTimer() throws {
