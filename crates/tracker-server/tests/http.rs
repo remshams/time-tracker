@@ -376,7 +376,7 @@ async fn health_create_retry_and_stale_revision() {
     let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
     let (status, health) = call(&router, Method::GET, "/v1/health", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(health, json!({"status":"ok","protocol_version":4}));
+    assert_eq!(health, json!({"status":"ok","protocol_version":5}));
     let before = state(&router).await;
     assert!(before.0.tasks.is_empty());
     let task_id = Uuid::now_v7().to_string();
@@ -516,14 +516,14 @@ async fn task_changes_and_request_limit() {
     let initial = state(&router).await;
     let route = format!("/v1/tasks/{id}");
     let rename = merge(
-        json!({"action":"rename","name":"Renamed task","occurred_at":at(100)}),
+        json!({"action":"rename","expected_name":"Change this task","name":"Renamed task","occurred_at":at(100)}),
         guard(&initial.0.revision),
     );
     let (status, body) = call(&router, Method::PATCH, &route, Some(rename)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let renamed: MutationDto = serde_json::from_value(body).unwrap();
     let archive = merge(
-        json!({"action":"archive","occurred_at":at(110)}),
+        json!({"action":"archive","expected_name":"Renamed task","occurred_at":at(110)}),
         guard(&renamed.applied_revision),
     );
     let (status, body) = call(&router, Method::PATCH, &route, Some(archive)).await;
@@ -577,6 +577,59 @@ async fn task_changes_and_request_limit() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["code"], "invalid_request");
+}
+
+#[tokio::test]
+async fn rename_and_archive_reject_a_name_another_client_changed_after_review() {
+    let temp = TempDir::new().unwrap();
+    let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
+    let id = create_fixture_task(&router, "Reviewed task").await;
+    let route = format!("/v1/tasks/{id}");
+    let reviewed = state(&router).await;
+    let other_client = merge(
+        json!({"action":"rename","expected_name":"Reviewed task","name":"Other client task","occurred_at":at(100)}),
+        guard(&reviewed.0.revision),
+    );
+    let (status, body) = call(&router, Method::PATCH, &route, Some(other_client)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let current = state(&router).await;
+    // The current revision passes the revision check, so only the name check can reject.
+    let stale_changes = [
+        json!({"action":"rename","expected_name":"Reviewed task","name":"Stale rename","occurred_at":at(110)}),
+        json!({"action":"archive","expected_name":"Reviewed task","occurred_at":at(120)}),
+    ];
+    for change in stale_changes {
+        let request = merge(change, guard(&current.0.revision));
+        let (status, body) = call(&router, Method::PATCH, &route, Some(request)).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert_eq!(body["code"], "conflict");
+        assert_eq!(state(&router).await, current);
+    }
+    let task = current.0.tasks.iter().find(|item| item.id == id).unwrap();
+    assert_eq!(task.name, "Other client task");
+    assert!(!task.archived);
+}
+
+#[tokio::test]
+async fn rename_and_archive_require_a_valid_expected_name() {
+    let temp = TempDir::new().unwrap();
+    let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
+    let id = create_fixture_task(&router, "Reviewed task").await;
+    let route = format!("/v1/tasks/{id}");
+    let before = state(&router).await;
+    let invalid_changes = [
+        json!({"action":"rename","name":"Renamed task","occurred_at":at(100)}),
+        json!({"action":"archive","occurred_at":at(100)}),
+        json!({"action":"rename","expected_name":"   ","name":"Renamed task","occurred_at":at(100)}),
+        json!({"action":"archive","expected_name":"   ","occurred_at":at(100)}),
+    ];
+    for change in invalid_changes {
+        let request = merge(change, guard(&before.0.revision));
+        let (status, body) = call(&router, Method::PATCH, &route, Some(request)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["code"], "invalid_request");
+        assert_eq!(state(&router).await, before);
+    }
 }
 
 #[tokio::test]
@@ -636,7 +689,7 @@ async fn error_mapping_distinguishes_invalid_and_missing_tasks() {
 
     let missing_id = Uuid::now_v7().to_string();
     let change = merge(
-        json!({"action":"rename","name":"Missing task","occurred_at":at(100)}),
+        json!({"action":"rename","expected_name":"Missing task","name":"Missing task","occurred_at":at(100)}),
         guard(&before.0.revision),
     );
     let (status, body) = call(
@@ -1250,7 +1303,7 @@ async fn write_receipts_replay_original_resources_after_subsequent_writes_and_ex
     assert_eq!(receipt["request_id"], request["request_id"]);
     assert_eq!(receipt["replayed"], false);
     let rename = merge(
-        json!({"action":"rename","name":"New project","occurred_at":at(200)}),
+        json!({"action":"rename","expected_name":"Original project","name":"New project","occurred_at":at(200)}),
         guard(receipt["applied_revision"].as_str().unwrap()),
     );
     let (status, renamed) = call(

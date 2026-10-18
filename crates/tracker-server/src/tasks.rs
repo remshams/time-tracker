@@ -166,9 +166,23 @@ pub(super) async fn change_task(
     let response = core.execute(&guard, key, |app| {
         let task = match request {
             TaskChangeRequest::Rename {
-                name, occurred_at, ..
-            } => app.rename_task(id, task_name(&name)?, occurred_at)?,
-            TaskChangeRequest::Archive { occurred_at, .. } => app.archive_task(id, occurred_at)?,
+                expected_name,
+                name,
+                occurred_at,
+                ..
+            } => app.rename_task_with_expected_name(
+                id,
+                &task_name(&expected_name)?,
+                task_name(&name)?,
+                occurred_at,
+            )?,
+            TaskChangeRequest::Archive {
+                expected_name,
+                occurred_at,
+                ..
+            } => {
+                app.archive_task_with_expected_name(id, &task_name(&expected_name)?, occurred_at)?
+            }
             TaskChangeRequest::Restore { occurred_at, .. } => {
                 app.unarchive_task(id, occurred_at)?
             }
