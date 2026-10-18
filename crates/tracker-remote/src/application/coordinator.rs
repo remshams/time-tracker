@@ -331,10 +331,11 @@ impl RemoteTrackerCoordinator {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.session.begin_command();
-        self.refresh_task_command_view()
-            .await
-            .map_err(|error| map_application_error(&error, None, None))?;
-        if let Some(pending) = self.pending_create.clone() {
+        let pending_create = self.pending_create.clone();
+        if let Some(pending) = &pending_create {
+            self.refresh_task_command_view()
+                .await
+                .map_err(|error| map_application_error(&error, None, None))?;
             if pending.name != name.as_str() {
                 return Err(ApplicationError::semantic_failure(
                     ApplicationFailureCategory::General,
@@ -363,11 +364,17 @@ impl RemoteTrackerCoordinator {
             .task_id
             .parse()
             .map_err(|_| protocol_failure("invalid pending task id"))?;
+        self.session
+            .ensure_version()
+            .await
+            .map_err(|error| map_application_error(&error, None, Some(id)))?;
         self.pending_create = Some(body.clone());
         let result = self.tasks.create_task(&mut self.session, id, &body).await;
         let receipt_confirmed = result.is_ok();
         let result = self.finish_mutation(result, Recovery::Tasks).await;
-        if !result
+        if !self.session.last_write_attempted() {
+            self.pending_create = pending_create;
+        } else if !result
             .as_ref()
             .is_err_and(|error| creation_needs_recovery(error, receipt_confirmed))
         {

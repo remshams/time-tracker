@@ -604,6 +604,97 @@ async fn uncommitted_task_create_retries_after_server_restart() {
 }
 
 #[tokio::test]
+async fn canceling_a_fresh_creation_during_health_allows_a_different_draft() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    use tokio::sync::Notify;
+
+    let health_started = Arc::new(Notify::new());
+    let release_health = Arc::new(Notify::new());
+    let first_health = Arc::new(AtomicBool::new(true));
+    let writes = Arc::new(AtomicUsize::new(0));
+    let started = health_started.clone();
+    let release = release_health.clone();
+    let count = writes.clone();
+    let directory = TempDir::new().unwrap();
+    let router =
+        tracker_server::router_for_database(&directory.path().join("cancellation.sqlite3"))
+            .unwrap()
+            .layer(axum::middleware::from_fn(
+                move |request: axum::extract::Request, next: axum::middleware::Next| {
+                    let first_health = first_health.clone();
+                    let started = started.clone();
+                    let release = release.clone();
+                    let count = count.clone();
+                    async move {
+                        if request.uri().path() == "/v1/health"
+                            && first_health.swap(false, Ordering::SeqCst)
+                        {
+                            started.notify_one();
+                            release.notified().await;
+                        }
+                        if request.method() == axum::http::Method::POST {
+                            count.fetch_add(1, Ordering::SeqCst);
+                        }
+                        next.run(request).await
+                    }
+                },
+            ));
+    let server = StubServer::from_router(router);
+    let mut client = RemoteApplication::disconnected(&server.endpoint()).unwrap();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    {
+        let command = client.create_task(name("Canceled draft"), at);
+        tokio::pin!(command);
+        tokio::select! {
+            result = &mut command => panic!("creation completed before health was released: {result:?}"),
+            started = tokio::time::timeout(std::time::Duration::from_secs(5), health_started.notified()) => {
+                started.expect("creation must wait for the initial health response");
+            }
+        }
+    }
+    release_health.notify_one();
+    assert_eq!(writes.load(Ordering::SeqCst), 0);
+    assert!(!client.last_write_attempted());
+
+    let created = client
+        .create_task(name("Different draft"), at + Duration::seconds(1))
+        .await
+        .unwrap();
+    assert_eq!(created.name().as_str(), "Different draft");
+    assert_eq!(writes.load(Ordering::SeqCst), 1);
+    assert!(client.last_write_attempted());
+}
+
+#[tokio::test]
+async fn a_refused_fresh_creation_allows_a_different_draft_after_server_restart() {
+    let mut server = TestServer::start();
+    let mut client = connected(&server.endpoint()).await.unwrap();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    server.stop();
+    assert!(
+        client
+            .create_task(name("Original draft"), at)
+            .await
+            .is_err()
+    );
+    assert!(!client.last_write_attempted());
+
+    server.restart();
+    let created = client
+        .create_task(name("Different draft"), at + Duration::seconds(1))
+        .await
+        .unwrap();
+    assert_eq!(created.name().as_str(), "Different draft");
+    let observer = connected(&server.endpoint()).await.unwrap();
+    let items = observer.tasks(TaskOrdering::RecentlyCreated);
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].task, created);
+}
+
+#[tokio::test]
 async fn remote_client_round_trips_every_application_operation() {
     fn assert_send<T: Send>() {}
     assert_send::<RemoteApplication>();
@@ -1378,9 +1469,10 @@ async fn replayed_receipt_returns_original_result_without_overwriting_a_newer_re
 
 #[tokio::test]
 async fn possibly_committed_creation_rereads_tasks_and_recovers_the_original_identity() {
+    use axum::{http::StatusCode, response::IntoResponse};
     use std::sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     };
     use tracker_protocol::{CreateTaskRequest, TaskDto, TasksDto};
     let current = Arc::new(Mutex::new(Vec::<TaskDto>::new()));
@@ -1388,6 +1480,8 @@ async fn possibly_committed_creation_rereads_tasks_and_recovers_the_original_ide
     let for_post = current.clone();
     let writes = Arc::new(AtomicUsize::new(0));
     let count = writes.clone();
+    let fail_recovery = Arc::new(AtomicBool::new(false));
+    let fail_get = fail_recovery.clone();
     let router = Router::new()
         .route(
             "/v1/health",
@@ -1402,16 +1496,22 @@ async fn possibly_committed_creation_rereads_tasks_and_recovers_the_original_ide
             "/v1/tasks",
             get(move || {
                 let current = for_get.clone();
+                let fail_get = fail_get.clone();
                 async move {
+                    if fail_get.swap(false, Ordering::SeqCst) {
+                        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                    }
                     Json(TasksDto {
                         tasks: current.lock().unwrap().clone(),
                         revision: "confirmed".into(),
                     })
+                    .into_response()
                 }
             })
             .post(move |Json(body): Json<CreateTaskRequest>| {
                 let current = for_post.clone();
                 let count = count.clone();
+                let fail_recovery = fail_recovery.clone();
                 async move {
                     count.fetch_add(1, Ordering::SeqCst);
                     *current.lock().unwrap() = vec![TaskDto {
@@ -1422,6 +1522,7 @@ async fn possibly_committed_creation_rereads_tasks_and_recovers_the_original_ide
                         updated_at: body.occurred_at,
                         latest_work_start: None,
                     }];
+                    fail_recovery.store(true, Ordering::SeqCst);
                     "invalid receipt after commit"
                 }
             }),
@@ -1437,15 +1538,24 @@ async fn possibly_committed_creation_rereads_tasks_and_recovers_the_original_ide
         .unwrap_err();
     assert_eq!(
         error.failure().source(),
-        tracker_application::ApplicationFailureSource::RemoteProtocol
+        tracker_application::ApplicationFailureSource::RemoteUnavailable
     );
+    assert!(matches!(
+        &error,
+        tracker_application::ApplicationError::Recovery { primary, recovery }
+            if matches!(primary.as_ref(), tracker_application::ApplicationError::RemoteProtocol(_))
+                && matches!(recovery.as_ref(), tracker_application::ApplicationError::RemoteUnavailable(_))
+    ));
     assert!(client.last_write_attempted());
-    let original = client.tasks(TaskOrdering::RecentlyCreated)[0].task.clone();
+    assert!(error.failure().recovery_failed());
+    assert!(client.task_items().is_empty());
+    let original = current.lock().unwrap()[0].clone();
     let recovered = client
         .create_task(name("Uncertain create"), clicked_at + Duration::seconds(20))
         .await
         .unwrap();
-    assert_eq!(recovered, original);
+    assert_eq!(recovered.id().to_string(), original.id);
+    assert_eq!(recovered.name().as_str(), original.name);
     assert_eq!(recovered.created_at(), clicked_at);
     assert_eq!(writes.load(Ordering::SeqCst), 1);
 }
@@ -1735,13 +1845,14 @@ async fn report_echoes_and_preview_echoes_must_match_the_original_query() {
     }
 }
 
-/// Resends a possibly lost creation unchanged, even after the catalog revision moves on.
+/// Keeps the original creation request across canceled reconciliation and catalog revision changes.
 #[tokio::test]
 async fn uncertain_uncommitted_creation_resends_the_same_request() {
     use std::sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     };
+    use tokio::sync::Notify;
     use tracker_protocol::{CreateTaskRequest, MutationDto, MutationResultDto, TaskDto, TasksDto};
     for advance_revision in [false, true] {
         let bodies = Arc::new(Mutex::new(Vec::<CreateTaskRequest>::new()));
@@ -1752,6 +1863,12 @@ async fn uncertain_uncommitted_creation_resends_the_same_request() {
         let phase = Arc::new(AtomicUsize::new(0));
         let get_phase = phase.clone();
         let post_phase = phase.clone();
+        let hold_reconciliation = Arc::new(AtomicBool::new(false));
+        let reconciliation_started = Arc::new(Notify::new());
+        let release_reconciliation = Arc::new(Notify::new());
+        let hold_read = hold_reconciliation.clone();
+        let read_started = reconciliation_started.clone();
+        let release_read = release_reconciliation.clone();
         let router = Router::new()
             .route(
                 "/v1/health",
@@ -1767,7 +1884,14 @@ async fn uncertain_uncommitted_creation_resends_the_same_request() {
                 get(move || {
                     let current = for_get.clone();
                     let phase = get_phase.clone();
+                    let hold_read = hold_read.clone();
+                    let read_started = read_started.clone();
+                    let release_read = release_read.clone();
                     async move {
+                        if hold_read.swap(false, Ordering::SeqCst) {
+                            read_started.notify_one();
+                            release_read.notified().await;
+                        }
                         Json(TasksDto {
                             tasks: current.lock().unwrap().clone(),
                             revision: format!(
@@ -1821,6 +1945,20 @@ async fn uncertain_uncommitted_creation_resends_the_same_request() {
                 .await
                 .is_err()
         );
+        hold_reconciliation.store(true, Ordering::SeqCst);
+        {
+            let command = client.create_task(name("Original draft"), clicked_at);
+            tokio::pin!(command);
+            tokio::select! {
+                result = &mut command => panic!("creation completed before reconciliation was released: {result:?}"),
+                started = tokio::time::timeout(std::time::Duration::from_secs(5), reconciliation_started.notified()) => {
+                    started.expect("pending creation must wait for reconciliation");
+                }
+            }
+        }
+        release_reconciliation.notify_one();
+        assert!(!client.last_write_attempted());
+        assert_eq!(bodies.lock().unwrap().len(), 1);
         assert!(
             client
                 .create_task(name("Different draft"), clicked_at + Duration::seconds(1))
@@ -1838,6 +1976,157 @@ async fn uncertain_uncommitted_creation_resends_the_same_request() {
         assert_eq!(bodies[0], bodies[1]);
         assert_eq!(task.created_at(), clicked_at);
     }
+}
+
+#[tokio::test]
+async fn an_uncertain_creation_keeps_its_identity_after_a_refused_resend() {
+    use std::{
+        io::{BufRead, BufReader, Read, Write},
+        net::{TcpListener, TcpStream},
+        time::{Duration as Timeout, Instant},
+    };
+    use tracker_protocol::{CreateTaskRequest, MutationDto, MutationResultDto, TaskDto, TasksDto};
+
+    fn receive(listener: &TcpListener, expected: &str) -> (TcpStream, Vec<u8>) {
+        let deadline = Instant::now() + Timeout::from_secs(5);
+        let stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline, "expected {expected}");
+                    thread::sleep(Timeout::from_millis(10));
+                }
+                Err(error) => panic!("listener failed: {error}"),
+            }
+        };
+        stream.set_nonblocking(false).unwrap();
+        stream
+            .set_read_timeout(Some(Timeout::from_secs(5)))
+            .unwrap();
+        stream
+            .set_write_timeout(Some(Timeout::from_secs(5)))
+            .unwrap();
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        assert!(reader.read_line(&mut line).unwrap() > 0);
+        assert!(line.starts_with(&format!("{expected} ")), "{line}");
+        let mut length = 0;
+        loop {
+            line.clear();
+            assert!(reader.read_line(&mut line).unwrap() > 0);
+            if line == "\r\n" {
+                break;
+            }
+            if let Some((name, value)) = line.split_once(':')
+                && name.eq_ignore_ascii_case("content-length")
+            {
+                length = value.trim().parse().unwrap();
+            }
+        }
+        let mut body = vec![0; length];
+        reader.read_exact(&mut body).unwrap();
+        (reader.into_inner(), body)
+    }
+
+    fn respond(mut stream: TcpStream, body: &[u8]) {
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .unwrap();
+        stream.write_all(body).unwrap();
+    }
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let listener = listener.into_std().unwrap();
+    let (restart_tx, restart_rx) = mpsc::channel::<TcpListener>();
+    let server = thread::spawn(move || {
+        let empty_catalog = serde_json::to_vec(&TasksDto {
+            tasks: vec![],
+            revision: "confirmed".into(),
+        })
+        .unwrap();
+        let (stream, _) = receive(&listener, "GET /v1/health");
+        respond(
+            stream,
+            &serde_json::to_vec(&HealthDto {
+                status: "ok".into(),
+                protocol_version: VERSION,
+            })
+            .unwrap(),
+        );
+        let (stream, original) = receive(&listener, "POST /v1/tasks");
+        respond(stream, b"invalid receipt");
+        let (stream, _) = receive(&listener, "GET /v1/tasks");
+        respond(stream, &empty_catalog);
+        let (stream, _) = receive(&listener, "GET /v1/tasks");
+        // Close the listener before completing reconciliation so both resend connections fail.
+        drop(listener);
+        respond(stream, &empty_catalog);
+
+        let listener = restart_rx.recv_timeout(Timeout::from_secs(5)).unwrap();
+        let (stream, _) = receive(&listener, "GET /v1/tasks");
+        respond(stream, &empty_catalog);
+        let (stream, resent) = receive(&listener, "POST /v1/tasks");
+        let body: CreateTaskRequest = serde_json::from_slice(&resent).unwrap();
+        let task = TaskDto {
+            id: body.task_id,
+            name: body.name,
+            archived: false,
+            created_at: body.occurred_at,
+            updated_at: body.occurred_at,
+            latest_work_start: None,
+        };
+        respond(
+            stream,
+            &serde_json::to_vec(&MutationDto {
+                request_id: body.guard.request_id,
+                applied_revision: "committed".into(),
+                replayed: false,
+                result: MutationResultDto::Task(task.clone()),
+            })
+            .unwrap(),
+        );
+        let (stream, _) = receive(&listener, "GET /v1/tasks");
+        respond(
+            stream,
+            &serde_json::to_vec(&TasksDto {
+                tasks: vec![task],
+                revision: "committed".into(),
+            })
+            .unwrap(),
+        );
+        (original, resent)
+    });
+    let mut client = RemoteApplication::connect(&format!("http://{address}/"))
+        .await
+        .unwrap();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    assert!(
+        client
+            .create_task(name("Original draft"), at)
+            .await
+            .is_err()
+    );
+    assert!(client.last_write_attempted());
+    assert!(
+        client
+            .create_task(name("Original draft"), at + Duration::seconds(1))
+            .await
+            .is_err()
+    );
+    assert!(!client.last_write_attempted());
+    let listener = tokio::net::TcpListener::bind(address).await.unwrap();
+    restart_tx.send(listener.into_std().unwrap()).unwrap();
+    let created = client
+        .create_task(name("Original draft"), at + Duration::seconds(2))
+        .await
+        .unwrap();
+    assert_eq!(created.created_at(), at);
+    let (original, resent) = server.join().unwrap();
+    assert_eq!(original, resent);
 }
 
 #[tokio::test]
@@ -2653,14 +2942,11 @@ async fn command_receipts_reject_results_that_contradict_the_command() {
             }
             .expect_err(&format!("{command:?} receipt changed {field}"));
             assert!(client.last_write_attempted(), "{command:?} {field}");
-            // Creation refreshes the catalog first; every other command writes first.
-            if !matches!(command, Command::Create) {
-                assert_ne!(
-                    requests.lock().unwrap()[reads_before_command],
-                    axum::http::Method::GET,
-                    "{command:?} {field}"
-                );
-            }
+            assert_ne!(
+                requests.lock().unwrap()[reads_before_command],
+                axum::http::Method::GET,
+                "{command:?} {field}"
+            );
             assert_eq!(
                 error.failure().source(),
                 tracker_application::ApplicationFailureSource::RemoteProtocol,
