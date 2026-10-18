@@ -119,14 +119,14 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         select(first)
         try proxy.arm([
             .init(method: "GET", path: "/v1/state/daily-overview", mode: .holdAfter),
-            .init(method: "GET", path: "/v1/tracking", mode: .holdAfter),
+            .init(method: "PUT", path: "/v1/tracking", mode: .holdBefore),
         ])
         _ = try proxy.waitForHeldRequest()
         app.buttons["Stop tracking"].click()
         try proxy.release()
-        // Let the adapter finish its read before the competing client changes tracking.
-        let preflight = try proxy.waitForHeldRequest()
-        XCTAssertTrue(preflight.path.contains("/v1/tracking"))
+        // Hold the stop before the server sees it while the competing client changes tracking.
+        let stop = try proxy.waitForHeldRequest()
+        XCTAssertTrue(stop.path.contains("/v1/tracking"))
         let replacement = try fixture.start(second)
         try proxy.release()
         dismissTrackingFailure(containing: "changed")
@@ -136,9 +136,14 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         XCTAssertEqual(try fixture.activeWorklog(), replacement)
         XCTAssertNotEqual(replacement.id, original.id)
         XCTAssertNotNil(try fixture.worklogs(first).first?.end)
+        // The stop goes straight to the server, which rejects it because another timer is active.
         let writes = try proxy.requests(method: "PUT", path: "/v1/tracking")
         XCTAssertEqual(writes.count, 1)
-        XCTAssertEqual(try XCTUnwrap(writes.first?.status), 409)
+        let write = try XCTUnwrap(writes.first)
+        XCTAssertEqual(write.status, 409)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(write.body.utf8)) as? [String: Any])
+        XCTAssertEqual(body["expected_active"] as? String, original.id)
+        XCTAssertNil(body["expected_revision"])
     }
 
     func testUnconfirmedCreationReportsFailureAndReloadShowsCommittedTask() throws {
