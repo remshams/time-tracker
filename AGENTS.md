@@ -2,6 +2,14 @@
 
 Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a native macOS app. Clients use local SQLite storage or connect to a separate HTTP server that owns its SQLite database. Web clients and external integrations remain future work.
 
+## Project context
+
+- One person uses the application. Design for that user, not for teams or shared accounts.
+- The user works in one window at a time. For example, while the macOS menu bar panel is open, they don't edit data in the main window.
+- The user may switch between computers but rarely sends commands from two of them at once. Concurrent use of several windows or machines can happen, but don't optimize for it.
+- Don't complicate the code for rare cases. If another window or machine changed data in the meantime, telling the user to reload is acceptable when handling the change automatically would add a lot of code or effort.
+- Simple doesn't mean sloppy. The quality bar stays the same: correct behavior, clear errors, tests, and the validation steps below.
+
 ## General
 
 - Always apply the `unslop` skill when writing or editing any text (responses, code comments, docs, commit messages, etc.)
