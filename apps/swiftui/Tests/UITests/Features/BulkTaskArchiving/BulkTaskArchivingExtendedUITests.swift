@@ -66,6 +66,26 @@ class BulkTaskArchivingExtendedUITests: TrackerUITestCase {
 final class ServerBulkTaskArchivingUITests: BulkTaskArchivingExtendedUITests {
     override var fixtureSource: TrackerFixture.Source { .server }
 
+    // The server archives the tasks that match the preview's period when the command runs,
+    // so a candidate added after the preview is archived too.
+    override func testChangedCandidatesRejectConfirmationAndRequireFreshPreview() throws {
+        let old = try fixture.create("Reviewed inactive task", at: Date().addingTimeInterval(-40 * 86400))
+        launch()
+        openBulkPreview()
+        XCTAssertTrue(element("bulk-archive.candidate.\(old.id)").waitForExistence(timeout: timeout))
+        let added = try fixture.create("New inactive candidate", at: Date().addingTimeInterval(-45 * 86400))
+        app.buttons["bulk-archive.confirm"].click()
+        waitUntil("Archive reports the tasks that matched when it ran") {
+            let result = self.element("bulk-archive.result")
+            let text = "Archived 2 tasks."
+            guard result.exists else { return false }
+            return result.value as? String == text
+                || result.staticTexts.matching(NSPredicate(format: "value == %@", text)).firstMatch.exists
+        }
+        XCTAssertFalse(element("bulk-archive.error").exists)
+        XCTAssertEqual(Set(try fixture.tasks().filter(\.archived).map(\.id)), Set([old.id, added.id]))
+    }
+
     func testUnconfirmedBulkArchiveReportsFailureAndReloadsTaskListWithoutResubmission() throws {
         let old = try fixture.create("Committed bulk archive", at: Date().addingTimeInterval(-40 * 86400))
         let running = try fixture.create("Protected running task")
