@@ -340,6 +340,17 @@ class PreflightTests(unittest.TestCase):
                 root.preflight()
             self.assertEqual(list((root.root / "build").glob("smoke-*")), [])
 
+    def test_failed_cleanup_keeps_the_original_error_and_names_the_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory)
+            with patch.object(DEPLOY.shutil, "rmtree", side_effect=PermissionError("denied")), \
+                    self.assertRaisesRegex(DEPLOY.DeployError, "newer than the candidate's 6. "
+                                                               "Could not remove the preflight directory ") as raised:
+                root.preflight(schema=6)
+            smoke = list((root.root / "build").glob("smoke-*"))
+            self.assertEqual(len(smoke), 1)
+            self.assertIn(str(smoke[0]), str(raised.exception))
+
     def test_describes_added_removed_and_changed_rows(self):
         before = {"schema": 7, "tasks": [["task-1", "Planning"], ["task-2", "Review"]],
                   "worklogs": [["worklog-1", "task-1"]]}

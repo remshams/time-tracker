@@ -401,8 +401,11 @@ def remote_preflight(host, accept_changes):
         before = database_state(copied)
         require(before["schema"] <= host.schema,
                 f"The database has schema version {before['schema']}, newer than the candidate's {host.schema}")
-    except BaseException:
-        shutil.rmtree(directory)
+    except BaseException as error:
+        try:
+            shutil.rmtree(directory)
+        except OSError:
+            raise DeployError(f"{error}. Could not remove the preflight directory {directory}") from error
         raise
     try:
         after = smoke_test(host, directory, copied)
