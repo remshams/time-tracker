@@ -99,16 +99,33 @@ fn response(pointer: *mut c_char) -> Value {
     }
 }
 
+fn now() -> CString {
+    CString::new(timestamp(Utc::now())).unwrap()
+}
+
+/// Starts or switches from the worklog this bridge last read, as the macOS app does.
 fn start_tracking(bridge: &mut Bridge, task_id: TaskId) -> Value {
     let task_id = CString::new(task_id.to_string()).unwrap();
-    // SAFETY: Both the bridge and task ID are live and uniquely accessed.
-    response(unsafe { tt_bridge_start_tracking(bridge, task_id.as_ptr()) })
+    let expected = test_active_value(&bridge.application)["id"]
+        .as_str()
+        .map(|id| CString::new(id).unwrap());
+    let at = now();
+    // SAFETY: The bridge is uniquely accessed, and every string stays live for the call.
+    response(unsafe {
+        tt_bridge_start_tracking_if_active_at(
+            bridge,
+            task_id.as_ptr(),
+            expected.as_ref().map_or(ptr::null(), |id| id.as_ptr()),
+            at.as_ptr(),
+        )
+    })
 }
 
 fn stop_tracking(bridge: &mut Bridge, worklog_id: &str) -> Value {
     let worklog_id = CString::new(worklog_id).unwrap();
-    // SAFETY: Both the bridge and worklog ID are live and uniquely accessed.
-    response(unsafe { tt_bridge_stop_tracking(bridge, worklog_id.as_ptr()) })
+    let at = now();
+    // SAFETY: The bridge is uniquely accessed, and both strings stay live for the call.
+    response(unsafe { tt_bridge_stop_tracking_at(bridge, worklog_id.as_ptr(), at.as_ptr()) })
 }
 
 #[test]
@@ -248,14 +265,24 @@ fn tracking_commands_reject_null_bridges_and_invalid_identifiers() {
     let mut bridge = open_fixture(&directory.path().join("tt.db")).unwrap();
     let malformed = CString::new("not an ID").unwrap();
     let non_utf8 = CString::new(vec![0xff]).unwrap();
+    let at = now();
     // SAFETY: Null bridges are supported, and no identifiers are dereferenced.
     unsafe {
         assert_eq!(
-            response(tt_bridge_start_tracking(ptr::null_mut(), ptr::null()))["error"],
+            response(tt_bridge_start_tracking_if_active_at(
+                ptr::null_mut(),
+                ptr::null(),
+                ptr::null(),
+                at.as_ptr()
+            ))["error"],
             "Database is not open"
         );
         assert_eq!(
-            response(tt_bridge_stop_tracking(ptr::null_mut(), ptr::null()))["error"],
+            response(tt_bridge_stop_tracking_at(
+                ptr::null_mut(),
+                ptr::null(),
+                at.as_ptr()
+            ))["error"],
             "Database is not open"
         );
     }
@@ -263,11 +290,20 @@ fn tracking_commands_reject_null_bridges_and_invalid_identifiers() {
         // SAFETY: The bridge is uniquely accessed; inputs are null or live C strings.
         unsafe {
             assert_eq!(
-                response(tt_bridge_start_tracking(&mut bridge, identifier))["error"],
+                response(tt_bridge_start_tracking_if_active_at(
+                    &mut bridge,
+                    identifier,
+                    ptr::null(),
+                    at.as_ptr()
+                ))["error"],
                 "Invalid task ID"
             );
             assert_eq!(
-                response(tt_bridge_stop_tracking(&mut bridge, identifier))["error"],
+                response(tt_bridge_stop_tracking_at(
+                    &mut bridge,
+                    identifier,
+                    at.as_ptr()
+                ))["error"],
                 "Invalid worklog ID"
             );
         }
@@ -417,7 +453,12 @@ fn zero_duration_tracking_commands_preserve_bridge_resources_and_history() {
     let start = c"2026-01-01T00:00:00Z";
     // SAFETY: The bridge and timestamp strings stay live for these calls.
     let started = response(unsafe {
-        tt_bridge_start_tracking_at(&mut bridge, first.as_ptr(), start.as_ptr())
+        tt_bridge_start_tracking_if_active_at(
+            &mut bridge,
+            first.as_ptr(),
+            ptr::null(),
+            start.as_ptr(),
+        )
     });
     let id = CString::new(started["data"]["active"]["id"].as_str().unwrap()).unwrap();
     let before = test_resource_values(&bridge.application);
@@ -429,7 +470,12 @@ fn zero_duration_tracking_commands_preserve_bridge_resources_and_history() {
         assert_eq!(test_resource_values(&bridge.application), before);
         // SAFETY: The bridge and input strings remain live.
         let switched = response(unsafe {
-            tt_bridge_start_tracking_at(&mut bridge, second.as_ptr(), at.as_ptr())
+            tt_bridge_start_tracking_if_active_at(
+                &mut bridge,
+                second.as_ptr(),
+                id.as_ptr(),
+                at.as_ptr(),
+            )
         });
         assert!(switched["error"].is_string(), "{switched}");
         assert_eq!(test_resource_values(&bridge.application), before);

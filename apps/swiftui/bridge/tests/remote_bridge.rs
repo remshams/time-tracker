@@ -19,8 +19,8 @@ use tracker_swift_bridge::{
     Bridge, tt_bridge_archive_task_with_expected_name_at, tt_bridge_close,
     tt_bridge_create_task_at, tt_bridge_history, tt_bridge_open_path, tt_bridge_open_remote,
     tt_bridge_refresh_resources, tt_bridge_rename_task_with_expected_name_at,
-    tt_bridge_start_tracking_at, tt_bridge_start_tracking_if_active_at, tt_bridge_stop_tracking_at,
-    tt_bridge_string_free, tt_bridge_tasks, tt_bridge_tracking,
+    tt_bridge_start_tracking_if_active_at, tt_bridge_stop_tracking_at, tt_bridge_string_free,
+    tt_bridge_tasks, tt_bridge_tracking,
 };
 
 struct Server {
@@ -207,11 +207,11 @@ impl Client {
             )
         })
     }
+    /// Starts or switches from the worklog this client last read, as the macOS app does.
     fn start(&mut self, task: &str, at: DateTime<Utc>) -> Value {
-        let task = CString::new(task).unwrap();
-        let at = CString::new(at.to_rfc3339()).unwrap();
-        // SAFETY: All inputs are live, and the client owns exclusive bridge access.
-        response(unsafe { tt_bridge_start_tracking_at(self.0, task.as_ptr(), at.as_ptr()) })
+        let tracking = self.task_list(false).1;
+        let expected = tracking["data"]["value"]["id"].as_str();
+        self.start_if_active(task, expected, at)
     }
     fn stop(&mut self, id: &str, at: DateTime<Utc>) -> Value {
         let id = CString::new(id).unwrap();
@@ -830,15 +830,6 @@ fn invalid_remote_endpoints_and_tracking_timestamps_are_rejected() {
         assert_eq!(take_string(error), "Invalid server URL");
         assert!(tt_bridge_open_remote(ptr::null(), ptr::null_mut()).is_null());
         assert!(
-            response(tt_bridge_start_tracking_at(
-                ptr::null_mut(),
-                ptr::null(),
-                ptr::null()
-            ))
-            .get("error")
-            .is_some()
-        );
-        assert!(
             response(tt_bridge_stop_tracking_at(
                 ptr::null_mut(),
                 ptr::null(),
@@ -863,9 +854,15 @@ fn invalid_remote_endpoints_and_tracking_timestamps_are_rejected() {
     let resources = client.task_list(true);
     let task = CString::new(resources.0["data"]["value"][0]["id"].as_str().unwrap()).unwrap();
     let invalid = CString::new("not a timestamp").unwrap();
-    // SAFETY: Inputs are live C strings and bridge access is exclusive.
-    let failure =
-        response(unsafe { tt_bridge_start_tracking_at(client.0, task.as_ptr(), invalid.as_ptr()) });
+    // SAFETY: Inputs are live or null, and bridge access is exclusive.
+    let failure = response(unsafe {
+        tt_bridge_start_tracking_if_active_at(
+            client.0,
+            task.as_ptr(),
+            ptr::null(),
+            invalid.as_ptr(),
+        )
+    });
     assert_eq!(failure["error"], "Invalid tracking timestamp");
     assert_eq!(failure["kind"], "general");
     assert_eq!(failure["uncertain"], false);
@@ -879,15 +876,6 @@ fn invalid_remote_endpoints_and_tracking_timestamps_are_rejected() {
                 ptr::null()
             ))["error"],
             "Invalid worklog ID"
-        );
-        assert_eq!(
-            response(tt_bridge_start_tracking_if_active_at(
-                client.0,
-                task.as_ptr(),
-                ptr::null(),
-                invalid.as_ptr()
-            ))["error"],
-            "Invalid tracking timestamp"
         );
         assert_eq!(
             response(tt_bridge_start_tracking_if_active_at(

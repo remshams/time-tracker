@@ -1,6 +1,5 @@
 use std::ffi::c_char;
 
-use chrono::Utc;
 use serde_json::{Value, json};
 use tracker_domain::TrackingState;
 
@@ -78,77 +77,6 @@ pub unsafe extern "C" fn tt_bridge_tracking(bridge: *mut Bridge) -> *mut c_char 
         serde_json::to_value(tracking_json(&bridge.application))
             .map_err(|error| error.to_string().into()),
     )
-}
-
-/// Starts the requested task, or atomically switches from the running task.
-/// Returns the committed outcome without a second database read.
-///
-/// # Safety
-/// `bridge` must point to a live, uniquely accessed bridge. `task_id` must be
-/// null or a valid C string. Release the result with `tt_bridge_string_free`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tt_bridge_start_tracking(
-    bridge: *mut Bridge,
-    task_id: *const c_char,
-) -> *mut c_char {
-    // SAFETY: The caller guarantees the bridge is live and uniquely accessed.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    // SAFETY: The caller supplies a valid C string or null.
-    let result = unsafe { read_identifier(task_id, "Invalid task ID") }
-        .map_err(BridgeError::from)
-        .and_then(|task_id| bridge.application.set_active_task(task_id, Utc::now()));
-    encode(result.map(|outcome| start_result(&bridge.application, outcome)))
-}
-
-/// Stops the expected worklog without stopping a different client's new timer.
-/// Returns the committed outcome without a second database read.
-///
-/// # Safety
-/// `bridge` must point to a live, uniquely accessed bridge. `worklog_id` must be
-/// null or a valid C string. Release the result with `tt_bridge_string_free`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tt_bridge_stop_tracking(
-    bridge: *mut Bridge,
-    worklog_id: *const c_char,
-) -> *mut c_char {
-    // SAFETY: The caller guarantees the bridge is live and uniquely accessed.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    // SAFETY: The caller supplies a valid C string or null.
-    let result = unsafe { read_identifier(worklog_id, "Invalid worklog ID") }
-        .map_err(BridgeError::from)
-        .and_then(|id| bridge.application.clear_active_task(id, Utc::now()));
-    encode(result.map(|outcome| stop_result(&bridge.application, outcome)))
-}
-
-/// Starts or switches tracking at the timestamp captured when the user clicked.
-///
-/// # Safety
-/// `bridge` must be live and uniquely accessed. Both strings must be null or
-/// valid C strings. Free the result with `tt_bridge_string_free`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tt_bridge_start_tracking_at(
-    bridge: *mut Bridge,
-    task_id: *const c_char,
-    occurred_at: *const c_char,
-) -> *mut c_char {
-    // SAFETY: The caller guarantees exclusive access to the live bridge.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    // SAFETY: The caller supplies valid C strings or null.
-    let result = unsafe { read_identifier(task_id, "Invalid task ID") }
-        .map_err(BridgeError::from)
-        .and_then(|task_id| {
-            // SAFETY: The caller supplies a valid C string or null.
-            let occurred_at = unsafe { read_identifier(occurred_at, "Invalid tracking timestamp") }
-                .map_err(BridgeError::from)?;
-            bridge.application.set_active_task(task_id, occurred_at)
-        });
-    encode(result.map(|outcome| start_result(&bridge.application, outcome)))
 }
 
 /// Stops the expected worklog at the timestamp captured when the user clicked.

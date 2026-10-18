@@ -77,9 +77,7 @@ pub unsafe extern "C" fn tt_bridge_create_task_at(
     };
     let result = (|| {
         // SAFETY: The caller supplies valid C strings or null.
-        let name = unsafe { read_identifier::<String>(name, "Invalid task name") }
-            .map_err(BridgeError::from)?;
-        let name = TaskName::new(&name).map_err(|error| BridgeError::from(error.to_string()))?;
+        let name = unsafe { read_task_name(name, "Invalid task name") }?;
         // SAFETY: The caller supplies a valid C string or null.
         let occurred_at = unsafe { read_identifier(occurred_at, "Invalid creation timestamp") }
             .map_err(BridgeError::from)?;
