@@ -715,7 +715,6 @@ public final class TrackerSession {
     private func finishRefresh() {
         refreshing = false
         schedulePolling()
-        publish()
     }
 
     private func reloadAfterWorklogWrite() async {
