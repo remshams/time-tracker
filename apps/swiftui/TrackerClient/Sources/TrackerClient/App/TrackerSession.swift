@@ -7,8 +7,7 @@ public final class TrackerSession {
     // Background reads still serialize requests without disabling controls.
     public var isBlockingControls: Bool {
         (isBusy && operationBlocksControls) || pendingControlCommand != nil || bulkArchiving.ownsPresentation
-            || rename.hasPendingIntent || creation.pending || correction.pending || move.pending
-            || deletion.pending || archiving.pending
+            || correction.pending || move.pending || deletion.pending || archiving.pending
     }
     public private(set) var now: Date
 
@@ -118,38 +117,26 @@ public final class TrackerSession {
     public var selectedTask: TaskItem? { catalog.selectedTask }
     public var hasMoreHistory: Bool { nextCursor != nil }
     public var taskCreation: TaskCreationPresentation { creation.presentation }
-    public var canOpenTaskCreation: Bool {
-        running && connection.confirmed && !connection.changing && !rename.presentation.isPresented
-            && !rename.blocksConnectionChange && !correction.blocksConnectionChange && !move.blocksConnectionChange
-            && !deletion.blocksConnectionChange && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
-    }
+    public var canOpenTaskCreation: Bool { connection.confirmed }
     public var taskRename: TaskRenamePresentation { rename.presentation }
-    public var canOpenTaskRename: Bool {
-        running && connection.confirmed && !connection.changing && !creation.presentation.isPresented
-            && !creation.blocksConnectionChange && !correction.blocksConnectionChange && !move.blocksConnectionChange
-            && !deletion.blocksConnectionChange && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
-            && (selectedTask != nil || rename.intent != nil)
-    }
+    public var canOpenTaskRename: Bool { connection.confirmed && selectedTask != nil }
     public var worklogCorrection: WorklogCorrectionPresentation { correction.presentation }
     public var canOpenWorklogCorrection: Bool {
-        running && connection.confirmed && !connection.changing && !creation.presentation.isPresented
-            && !creation.blocksConnectionChange && !rename.presentation.isPresented && !rename.blocksConnectionChange
+        running && connection.confirmed && !connection.changing
             && !move.blocksConnectionChange && !deletion.blocksConnectionChange && !archiving.ownsPresentation
             && !bulkArchiving.ownsPresentation
     }
 
     public var worklogMove: WorklogMovePresentation { move.presentation }
     public var canOpenWorklogMove: Bool {
-        running && connection.confirmed && !connection.changing && !creation.presentation.isPresented
-            && !creation.blocksConnectionChange && !rename.presentation.isPresented && !rename.blocksConnectionChange
+        running && connection.confirmed && !connection.changing
             && !correction.blocksConnectionChange && !deletion.blocksConnectionChange && !archiving.ownsPresentation
             && !bulkArchiving.ownsPresentation
     }
 
     public var worklogDeletion: WorklogDeletionPresentation { deletion.presentation }
     public var canOpenWorklogDeletion: Bool {
-        running && connection.confirmed && !connection.changing && !creation.presentation.isPresented
-            && !creation.blocksConnectionChange && !rename.presentation.isPresented && !rename.blocksConnectionChange
+        running && connection.confirmed && !connection.changing
             && !correction.blocksConnectionChange && !move.blocksConnectionChange && !archiving.ownsPresentation
             && !bulkArchiving.ownsPresentation
     }
@@ -314,14 +301,10 @@ public final class TrackerSession {
         dailyTotals.reanchor(clock: clock)
         updateDisplayTimer()
         updateRolloverTimer()
-        if rename.hasPendingIntent || creation.pending || correction.pending || move.pending || deletion.pending
-            || archiving.pending || bulkArchiving.pendingSubmit
-        {
+        if correction.pending || move.pending || deletion.pending || archiving.pending || bulkArchiving.pendingSubmit {
             if drainAutomation() { return }
             if drainBulkArchiving() { return }
             if drainArchiving() { return }
-            if drainRename() { return }
-            if drainCreation() { return }
             if drainCorrection() { return }
             if drainMove() { return }
             if drainDeletion() { return }
@@ -368,9 +351,7 @@ public final class TrackerSession {
     private var canBeginTaskArchiving: Bool {
         running && !sleeping && connection.confirmed && !connection.changing && (!isBusy || !operationBlocksControls)
             && pendingControlCommand == nil && !archiving.ownsPresentation && !bulkArchiving.ownsPresentation
-            && !creation.presentation.isPresented && !creation.blocksConnectionChange
-            && !rename.presentation.isPresented && !rename.blocksConnectionChange && !correction.blocksConnectionChange
-            && !move.blocksConnectionChange && !deletion.blocksConnectionChange
+            && !correction.blocksConnectionChange && !move.blocksConnectionChange && !deletion.blocksConnectionChange
     }
 
     var taskArchivingAvailability: [String: Bool] {
@@ -420,8 +401,6 @@ public final class TrackerSession {
 
     public func reopenTaskArchiving() {
         guard running, !sleeping, !connection.changing,
-            !creation.presentation.isPresented, !creation.blocksConnectionChange,
-            !rename.presentation.isPresented, !rename.blocksConnectionChange,
             !correction.blocksConnectionChange, !move.blocksConnectionChange, !deletion.blocksConnectionChange,
             !bulkArchiving.ownsPresentation
         else { return }
@@ -454,13 +433,30 @@ public final class TrackerSession {
     }
 
     public func submitTaskCreation() {
-        guard canOpenTaskCreation else { return }
-        guard creation.submit(at: commandTimestamp(clock.now)) else {
+        guard let name = creation.submit() else {
             publish()
             return
         }
-        drainCreation()
+        let occurredAt = commandTimestamp(clock.now)
         publish()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let created = try await client.createTask(name: name, occurredAt: occurredAt).task
+                creation.reset()
+                publish()
+                await reloadTaskList()
+                let confirmed = task(withID: created.id, in: tasks) ?? created
+                let changedTab = catalog.changeTab(confirmed.archived ? .archived : .active)
+                let changedSelection = catalog.select(created.id)
+                if changedTab || changedSelection { requestHistory() }
+            } catch {
+                creation.fail(writeFailure(error))
+                publish()
+                await reloadTaskList()
+            }
+            publish()
+        }
     }
 
     public func openTaskRename(taskID: String? = nil) {
@@ -483,13 +479,26 @@ public final class TrackerSession {
     }
 
     public func submitTaskRename() {
-        guard canOpenTaskRename else { return }
-        guard rename.submit(at: commandTimestamp(clock.now)) else {
+        guard let request = rename.submit() else {
             publish()
             return
         }
-        drainRename()
+        let occurredAt = commandTimestamp(clock.now)
         publish()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await client.renameTask(
+                    taskID: request.taskID, expectedName: request.originalName, name: request.name,
+                    occurredAt: occurredAt)
+                rename.reset()
+            } catch {
+                rename.fail(writeFailure(error))
+            }
+            publish()
+            await reloadTaskList()
+            publish()
+        }
     }
 
     public func openWorklogCorrection(worklogID: String) {
@@ -707,12 +716,6 @@ public final class TrackerSession {
         guard !correction.blocksConnectionChange && !move.blocksConnectionChange else {
             return rejectConnection("Finish worklog editing before changing connections.")
         }
-        guard !rename.blocksConnectionChange else {
-            return rejectConnection("Finish or retry task renaming before changing connections.")
-        }
-        guard !creation.blocksConnectionChange else {
-            return rejectConnection("Finish or retry task creation before changing connections.")
-        }
         automation.cancel()
         let operation: ControlOperation
         do { operation = try await acquireControlOperation() } catch {
@@ -722,9 +725,8 @@ public final class TrackerSession {
         let token = operation.token
         defer { finishOperation(token: token) }
         guard controlOperationIsCurrent(operation), !sleeping, !Task.isCancelled else { return false }
-        guard !rename.blocksConnectionChange, !creation.blocksConnectionChange,
-            !correction.blocksConnectionChange && !move.blocksConnectionChange && !deletion.blocksConnectionChange
-                && !archiving.blocksConnectionChange && !bulkArchiving.ownsPresentation
+        guard !correction.blocksConnectionChange, !move.blocksConnectionChange, !deletion.blocksConnectionChange,
+            !archiving.blocksConnectionChange, !bulkArchiving.ownsPresentation
         else {
             connection.message = "Finish or retry task editing before changing connections."
             return false
@@ -868,8 +870,6 @@ public final class TrackerSession {
         if drainAutomation() { return }
         if drainBulkArchiving() { return }
         if drainArchiving() { return }
-        if drainRename() { return }
-        if drainCreation() { return }
         if drainCorrection() { return }
         if drainMove() { return }
         if drainDeletion() { return }
@@ -964,61 +964,6 @@ public final class TrackerSession {
     }
 
     @discardableResult
-    private func drainCreation() -> Bool {
-        guard running, !sleeping, !isBusy, creation.pending, let intent = creation.intent else { return false }
-        creation.pending = false
-        let token = generation
-        beginOperation()
-        Task { [weak self] in
-            guard let self, isCurrent(token) else { return }
-            defer { finishOperation(token: token) }
-            var commandStarted = false
-            do {
-                if !connection.confirmed || connection.stale {
-                    let resources: TaskListResources
-                    do {
-                        resources = try await client.refreshTaskList()
-                    } catch {
-                        guard isCurrent(token) else { return }
-                        recordConnectionFailure(error)
-                        throw error
-                    }
-                    guard isCurrent(token) else { return }
-                    acceptTaskList(resources)
-                }
-                if sleeping {
-                    creation.pending = true
-                    return
-                }
-                commandStarted = true
-                let result = try await client.createTask(name: intent.name, occurredAt: intent.occurredAt)
-                guard isCurrent(token) else { return }
-                let created = result.task
-                guard !created.id.isEmpty else {
-                    throw BridgeFailure(
-                        message: "The creation response does not contain the created task.",
-                        kind: "protocol", uncertain: true, requiresRefresh: true)
-                }
-                creation.reset()
-                await refreshAfterCommit(token: token)
-                guard isCurrent(token) else { return }
-                let confirmed = task(withID: created.id, in: tasks) ?? created
-                let changedTab = catalog.changeTab(confirmed.archived ? .archived : .active)
-                let changedSelection = catalog.select(created.id)
-                if changedTab || changedSelection { requestHistory() }
-            } catch {
-                guard isCurrent(token) else { return }
-                let unresolved = TaskCreationState.requiresRecovery(error)
-                if unresolved && commandStarted { await reconcileWriteFailure(token: token) }
-                guard isCurrent(token) else { return }
-                creation.fail(error, retainIntent: unresolved)
-                publish()
-            }
-        }
-        return true
-    }
-
-    @discardableResult
     private func reconcileWriteFailure(token: Int) async -> TaskListResources? {
         connection.stale = true
         publish()
@@ -1033,6 +978,22 @@ public final class TrackerSession {
             recordConnectionFailure(error)
             return nil
         }
+    }
+
+    private func reloadTaskList() async {
+        do {
+            acceptTaskList(try await client.refreshTaskList())
+        } catch {
+            recordConnectionFailure(error)
+        }
+    }
+
+    /// A write that timed out twice may still have landed, so the message asks the user to check.
+    private func writeFailure(_ error: Error) -> Error {
+        guard let failure = error as? BridgeFailure, failure.uncertain else { return error }
+        return BridgeFailure(
+            message: "Could not confirm the change. Check the reloaded data before trying again. \(failure.message)",
+            kind: failure.kind, uncertain: true, requiresRefresh: failure.requiresRefresh)
     }
 
     private func refreshAfterCommit(token: Int) async {
@@ -1121,79 +1082,6 @@ public final class TrackerSession {
                 archiving.setStatusVisibility(windowVisible)
                 publish()
             }
-        }
-        return true
-    }
-
-    @discardableResult
-    private func drainRename() -> Bool {
-        guard running, !sleeping, !isBusy, let intent = rename.takePendingIntent() else { return false }
-        let token = generation
-        beginOperation()
-        Task { [weak self] in
-            guard let self, isCurrent(token) else { return }
-            defer { finishOperation(token: token) }
-            var commandStarted = false
-            do {
-                let resources: TaskListResources
-                do {
-                    resources = try await client.refreshTaskList()
-                } catch {
-                    guard isCurrent(token) else { return }
-                    recordConnectionFailure(error)
-                    throw error
-                }
-                guard isCurrent(token) else { return }
-                acceptTaskList(resources)
-                guard renameCanApply(intent, resources: resources) else { return }
-                if sleeping {
-                    rename.deferUntilWake()
-                    return
-                }
-                commandStarted = true
-                let result = try await client.renameTask(
-                    taskID: intent.taskID, expectedName: intent.originalName, name: intent.name,
-                    occurredAt: intent.occurredAt)
-                guard isCurrent(token) else { return }
-                guard result.task.id == intent.taskID, result.task.name == intent.desiredName else {
-                    throw BridgeFailure(
-                        message: "The rename response does not contain the updated task.",
-                        kind: "protocol", uncertain: true, requiresRefresh: true)
-                }
-                rename.reset()
-                await refreshAfterCommit(token: token)
-            } catch {
-                guard isCurrent(token) else { return }
-                let uncertain = TaskNameEditingPolicy.requiresRecovery(error)
-                let confirmed = commandStarted ? await reconcileWriteFailure(token: token) : nil
-                guard isCurrent(token) else { return }
-                if let failure = error as? BridgeFailure, failure.kind == "conflict" {
-                    rename.requireReview(
-                        "The task changed on another client. Cancel and reopen the editor to review its current state.")
-                } else {
-                    if let confirmed, !renameCanApply(intent, resources: confirmed) { return }
-                    rename.fail(
-                        error,
-                        retainIntent: retainRenameIntent(
-                            uncertain: uncertain, commandStarted: commandStarted, confirmed: confirmed))
-                }
-                publish()
-            }
-        }
-        return true
-    }
-
-    private func renameCanApply(_ intent: TaskRenameState.Intent, resources: TaskListResources) -> Bool {
-        guard let task = task(withID: intent.taskID, in: resources.catalog.value) else {
-            return requireRenameReview("The task no longer exists. Cancel the editor and refresh the task list.")
-        }
-        if task.name == intent.desiredName {
-            rename.reset()
-            return false
-        }
-        guard task.name == intent.originalName else {
-            return requireRenameReview(
-                "The task name changed on another client. Cancel and reopen the editor to review its current name.")
         }
         return true
     }
@@ -2027,7 +1915,6 @@ public final class TrackerSession {
         reportResource = nil
         settingsRepository.save(settings)
         catalog.resetSelections()
-        rename.reset()
         archiving.reset()
         history.request(selectedTaskID: nil)
         tracking.error = nil
@@ -2039,15 +1926,6 @@ public final class TrackerSession {
         guard isCurrent(token) else { return false }
         acceptTaskList(resources)
         return true
-    }
-
-    private func retainRenameIntent(uncertain: Bool, commandStarted: Bool, confirmed: TaskListResources?) -> Bool {
-        uncertain || (commandStarted && confirmed == nil)
-    }
-
-    private func requireRenameReview(_ message: String) -> Bool {
-        rename.requireReview(message)
-        return false
     }
 
     private func prepareMoveSearch() -> Bool {

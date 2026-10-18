@@ -612,8 +612,6 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertFalse(fixture.session.worklogCorrection.canEdit)
         XCTAssertTrue(fixture.session.worklogCorrection.canSubmit)
         fixture.session.cancelWorklogCorrection()
-        XCTAssertFalse(fixture.session.canOpenTaskCreation)
-        XCTAssertFalse(fixture.session.canOpenTaskRename)
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
@@ -717,25 +715,16 @@ final class WorklogCorrectionTests: XCTestCase {
     }
 
     @MainActor
-    func testCorrectionObserverPublishesDraftWithoutRedrawingContentAndEditorsAreExclusive() async throws {
+    func testCorrectionObserverPublishesDraftWithoutRedrawingContent() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let log = try await openCompleted(fixture)
+        _ = try await openCompleted(fixture)
         let harness = PresentationHarness(session: fixture.session)
         let corrections = harness.counter(PresentationReads.worklogCorrection)
         let content = harness.counter(PresentationReads.content)
         fixture.session.setWorklogCorrectionStart(timestamp("2024-12-30T08:00:00.000Z")!)
         XCTAssertEqual(corrections.count, 1)
         XCTAssertEqual(content.count, 0)
-        XCTAssertFalse(fixture.session.canOpenTaskCreation)
-        XCTAssertFalse(fixture.session.canOpenTaskRename)
-        fixture.session.openTaskCreation()
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
-        fixture.session.cancelWorklogCorrection()
-        fixture.session.openTaskRename()
-        XCTAssertFalse(fixture.session.canOpenWorklogCorrection)
-        fixture.session.openWorklogCorrection(worklogID: log.id)
-        XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
     }
 
     @MainActor

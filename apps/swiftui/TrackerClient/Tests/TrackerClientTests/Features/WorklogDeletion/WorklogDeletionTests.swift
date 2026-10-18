@@ -90,8 +90,6 @@ final class WorklogDeletionTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await open(fixture)
-        XCTAssertFalse(fixture.session.canOpenTaskCreation)
-        XCTAssertFalse(fixture.session.canOpenTaskRename)
         XCTAssertFalse(fixture.session.canOpenWorklogCorrection)
         XCTAssertFalse(fixture.session.canOpenWorklogMove)
         XCTAssertFalse(fixture.session.canArchiveTask(taskID: secondTask.id))
@@ -122,21 +120,8 @@ final class WorklogDeletionTests: XCTestCase {
         fixture.session.cancelWorklogDeletion()
         XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
 
-        fixture.session.openTaskCreation()
-        XCTAssertFalse(fixture.session.canOpenWorklogDeletion)
-        XCTAssertFalse(fixture.session.canOpenWorklogCorrection)
-        XCTAssertFalse(fixture.session.canArchiveTask(taskID: secondTask.id))
-        fixture.session.openWorklogDeletion(worklogID: precise.id)
-        XCTAssertFalse(fixture.session.worklogDeletion.isPresented)
-        fixture.session.cancelTaskCreation()
-
-        fixture.session.openTaskRename()
-        XCTAssertFalse(fixture.session.canOpenWorklogDeletion)
-        fixture.session.cancelTaskRename()
-
         fixture.session.openWorklogCorrection(worklogID: precise.id)
         XCTAssertFalse(fixture.session.canOpenWorklogDeletion)
-        XCTAssertFalse(fixture.session.canOpenTaskCreation)
         fixture.session.cancelWorklogCorrection()
 
         fixture.session.openTaskArchive(taskID: secondTask.id)
@@ -161,8 +146,6 @@ final class WorklogDeletionTests: XCTestCase {
         fixture.session.shutdown()
 
         XCTAssertFalse(fixture.session.canOpenWorklogDeletion)
-        XCTAssertFalse(fixture.session.canOpenTaskCreation)
-        XCTAssertFalse(fixture.session.canOpenTaskRename)
         XCTAssertFalse(fixture.session.canOpenWorklogCorrection)
         XCTAssertFalse(fixture.session.canOpenWorklogMove)
         XCTAssertFalse(fixture.session.canArchiveTask(taskID: secondTask.id))
@@ -412,7 +395,6 @@ final class WorklogDeletionTests: XCTestCase {
         state = fixture.session.worklogDeletion
         XCTAssertFalse(state.isPresented)
         XCTAssertEqual(state.original, precise)
-        XCTAssertFalse(fixture.session.canOpenTaskCreation)
 
         fixture.session.openWorklogDeletion(worklogID: oldWorklog.id)
         XCTAssertTrue(fixture.session.worklogDeletion.isPresented)
@@ -668,12 +650,11 @@ final class WorklogDeletionTests: XCTestCase {
         XCTAssertEqual(changes.count, 1)
 
         fixture.session.openTaskCreation()
-        XCTAssertEqual(changes.count, 2)
         fixture.session.cancelTaskCreation()
-        XCTAssertEqual(changes.count, 3)
+        XCTAssertEqual(changes.count, 1)
 
         fixture.session.openWorklogDeletion(worklogID: oldWorklog.id)
-        XCTAssertEqual(changes.count, 4)
+        XCTAssertEqual(changes.count, 2)
         XCTAssertEqual(harness.presentation.worklogDeletionSheetContent.original, oldWorklog)
     }
 

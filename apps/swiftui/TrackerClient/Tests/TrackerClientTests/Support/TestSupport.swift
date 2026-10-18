@@ -516,6 +516,30 @@ final class Fixture {
         return try completedResult.get()
     }
 
+    /// Runs `action`, then waits for the next session update that satisfies `condition`.
+    ///
+    /// Use it for requests that run outside the operation gate, where `settled()` returns before their result lands.
+    func update(
+        _ description: String, timeout: TimeInterval = 2,
+        file: StaticString = #filePath, line: UInt = #line,
+        after action: () -> Void, until condition: @escaping @MainActor () -> Bool = { true }
+    ) async throws {
+        let expectation = XCTestExpectation(description: description)
+        session.onChange = { [weak session] in
+            if condition() {
+                session?.onChange = nil
+                expectation.fulfill()
+            }
+        }
+        action()
+        let result = await XCTWaiter.fulfillment(of: [expectation], timeout: timeout)
+        session.onChange = nil
+        guard result == .completed else {
+            cleanup()
+            throw TestTimeout(description: "Timed out waiting for \(description) at \(file):\(line)")
+        }
+    }
+
     func waitUntil(
         _ description: String, timeout: TimeInterval = 2,
         file: StaticString = #filePath, line: UInt = #line,

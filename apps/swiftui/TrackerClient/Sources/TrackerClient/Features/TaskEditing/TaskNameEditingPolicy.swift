@@ -24,10 +24,4 @@ enum TaskNameEditingPolicy {
     private static func isNullScalar(_ scalar: Unicode.Scalar) -> Bool {
         scalar.value == 0
     }
-
-    static func requiresRecovery(_ error: Error) -> Bool {
-        guard let failure = error as? BridgeFailure else { return true }
-        return failure.uncertain || failure.requiresRefresh || failure.kind == "unavailable"
-            || failure.kind == "protocol"
-    }
 }

@@ -342,8 +342,6 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertFalse(fixture.session.worklogMove.canEdit)
         XCTAssertTrue(fixture.session.worklogMove.canSubmit)
         fixture.session.cancelWorklogMove()
-        XCTAssertFalse(fixture.session.canOpenTaskCreation)
-        XCTAssertFalse(fixture.session.canOpenTaskRename)
         XCTAssertFalse(fixture.session.canOpenWorklogCorrection)
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let connected = try await fixture.taskValue(connecting)
@@ -401,7 +399,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertGreaterThan(moveChanges.count, 0)
         XCTAssertEqual(contentChanges.count, 0)
         fixture.session.openTaskCreation()
-        XCTAssertFalse(fixture.session.canOpenWorklogMove)
+        XCTAssertTrue(fixture.session.canOpenWorklogMove)
     }
 
     @MainActor

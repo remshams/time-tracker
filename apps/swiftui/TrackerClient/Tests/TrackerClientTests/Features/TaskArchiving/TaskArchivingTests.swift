@@ -249,8 +249,6 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertTrue(fixture.session.taskArchiving.hasUnresolvedIntent)
         fixture.session.cancelTaskArchiving()
         XCTAssertTrue(fixture.session.taskArchiving.hasPendingAction)
-        fixture.session.openTaskCreation()
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
@@ -458,20 +456,11 @@ final class TaskArchivingTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil))
-        fixture.session.openTaskCreation()
-        XCTAssertFalse(fixture.session.canArchiveTask(taskID: secondTask.id))
-        XCTAssertFalse(fixture.session.canUnarchiveTask(taskID: archivedTask.id))
-        fixture.session.cancelTaskCreation()
-        fixture.session.openTaskRename()
-        XCTAssertFalse(fixture.session.canArchiveTask(taskID: secondTask.id))
-        fixture.session.cancelTaskRename()
         fixture.session.openWorklogCorrection(worklogID: "missing")
         let harness = PresentationHarness(session: fixture.session)
         let archiveUpdates = harness.counter(PresentationReads.taskArchiving)
         let contentUpdates = harness.counter(PresentationReads.content)
         fixture.session.openTaskArchive(taskID: secondTask.id)
-        XCTAssertFalse(fixture.session.canOpenTaskCreation)
-        XCTAssertFalse(fixture.session.canOpenTaskRename)
         XCTAssertFalse(fixture.session.canOpenWorklogCorrection)
         XCTAssertFalse(fixture.session.canOpenWorklogMove)
         let shown = harness.presentation.taskArchivingSheetContent
@@ -586,7 +575,7 @@ final class TaskArchivingTests: XCTestCase {
     }
 
     @MainActor
-    func testKnownHiddenErrorCannotReopenOverAnotherEditor() async throws {
+    func testKnownHiddenErrorReopensWhileTaskCreationIsOpen() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, archivedTask], active: nil)
@@ -599,10 +588,8 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.session.taskArchiving.hasUnresolvedIntent)
         fixture.session.openTaskCreation()
         fixture.session.reopenTaskArchiving()
-        XCTAssertFalse(fixture.session.taskArchiving.isPresented)
-        fixture.session.cancelTaskCreation()
-        fixture.session.reopenTaskArchiving()
         XCTAssertTrue(fixture.session.taskArchiving.isPresented)
+        XCTAssertTrue(fixture.session.taskCreation.isPresented)
     }
 
     @MainActor
@@ -669,9 +656,8 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertEqual(availability.count, countAfterStart)
         fixture.session.openTaskCreation()
         XCTAssertTrue(fixture.session.taskCreation.isPresented)
-        XCTAssertFalse(availability.values.last!.0)
-        XCTAssertFalse(availability.values.last!.1)
-        XCTAssertFalse(availability.values.last!.2)
+        XCTAssertEqual(availability.count, countAfterStart)
+        XCTAssertTrue(fixture.session.canArchiveTask(taskID: secondTask.id))
     }
 
     @MainActor
