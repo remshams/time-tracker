@@ -174,7 +174,7 @@ final class StatusItemTests: XCTestCase {
     }
 
     @MainActor
-    func testBusyOfflineSleepLockAndShutdownCannotWriteThroughStatusItem() async throws {
+    func testOfflineStateDisablesStatusItemWritesAndRetainsTheLastTask() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
@@ -190,6 +190,30 @@ final class StatusItemTests: XCTestCase {
         let count = fixture.client.operations.count
         XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
         XCTAssertEqual(fixture.client.operations.count, count)
+    }
+
+    @MainActor
+    func testConnectionInFlightLeavesStatusItemTrackingUsable() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connection = try await fixture.client.next()
+        XCTAssertTrue(fixture.session.isChangingConnection)
+        XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .stop(worklogID: activeWorklog.id))
+        let stop = try await fixture.client.next()
+        XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
+        XCTAssertEqual(fixture.session.menuPrimaryAction, .disabled)
+        connection.fail(BridgeFailure(message: "Connection rejected"))
+        let connected = try await fixture.taskValue(connecting)
+        XCTAssertFalse(connected)
+        stop.succeed(TaskListResources(tasks: [firstTask], active: nil))
+        let history = try await fixture.client.next()
+        XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertNil(fixture.session.active)
+        XCTAssertNil(fixture.session.trackingError)
     }
 
     @MainActor

@@ -114,7 +114,7 @@ public final class TrackerSession {
     public var lastTrackedTaskID: String? { lastTracked.taskID }
     public var lastTrackedTask: TaskItem? { tasks.first { $0.id == lastTrackedTaskID } }
     public var menuPrimaryAction: MenuPrimaryAction {
-        guard !automation.locked, !connection.changing, canSendTracking else { return .disabled }
+        guard !automation.locked, canSendTracking else { return .disabled }
         if let active { return .stop(worklogID: active.id) }
         guard let task = lastTrackedTask, !task.archived else { return .openMenu }
         return canStartTracking(taskID: task.id) ? .start(taskID: task.id) : .disabled
