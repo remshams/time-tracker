@@ -43,27 +43,15 @@ class BulkTaskArchivingExtendedUITests: TrackerUITestCase {
         XCTAssertEqual(try fixture.activeWorklog(), timer)
     }
 
-    func testBulkArchiveAndCreationCanStayOpenInSeparateWindows() throws {
+    func testBulkArchiveSheetPreventsAnotherCreationSheet() throws {
         _ = try fixture.create("Old task", at: Date().addingTimeInterval(-40 * 86400))
         launch()
         openBulkPreview()
         app.typeKey("n", modifierFlags: .command)
-        XCTAssertTrue(element("task-name.input").waitForExistence(timeout: timeout))
-        XCTAssertEqual(app.sheets.count, 2)
-        let bulkOwner = app.windows.containing(.any, identifier: "bulk-archive.days").firstMatch
-        let creationOwner = app.windows.containing(.any, identifier: "task-name.input").firstMatch
-        XCTAssertEqual(bulkOwner.sheets.count, 1)
-        XCTAssertEqual(creationOwner.sheets.count, 1)
-        XCTAssertTrue(element("bulk-archive.days").exists)
-        app.textFields["task-name.input"].typeText("Created while preview is open")
-        app.buttons["task-name.submit"].click()
-        waitUntil("Creation closes while bulk archive stays open") {
-            !self.element("task-name.input").exists && self.element("bulk-archive.days").exists
-        }
-        let created = try XCTUnwrap(fixture.tasks().first { $0.name == "Created while preview is open" })
-        XCTAssertFalse(created.archived)
-        app.buttons["bulk-archive.cancel"].click()
-        waitUntil("Cancel closes bulk archive") { !self.element("bulk-archive.days").exists }
+        XCTAssertEqual(app.sheets.count, 1)
+        XCTAssertFalse(element("task-name.input").exists)
+        app.typeKey(.escape, modifierFlags: [])
+        waitUntil("Escape cancels bulk archive") { !self.element("bulk-archive.days").exists }
         XCTAssertTrue(try fixture.tasks().allSatisfy { !$0.archived })
     }
 

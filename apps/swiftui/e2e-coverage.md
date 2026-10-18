@@ -8,7 +8,7 @@ Native suites follow the application's `App`, `Features`, and `Infrastructure` f
 
 `Support` owns the shared test base, database fixtures, process management, proxy controls, and assertions used across features. Local and server variants remain together, and the four CI groups select the same test classes independently of their file paths. Portable `TrackerClientTests` follow that package's `App`, `Contracts`, and `Features` folders, with shared fakes in `Support`.
 
-The issue #95 change, 18 October 2026, builds on `bda4a3b`. It replaces the native client's request scheduling with direct requests. The current sources declare 173 native test executions, including inherited local and server cases. This is a source count, not a completed macOS run. Native execution and final acceptance evidence belong in the implementation PR.
+The issue #95 change, 18 October 2026, builds on `bda4a3b`. It replaces the native client's request scheduling with direct requests. The current sources declare 172 native test executions, including inherited local and server cases. This is a source count, not a completed macOS run. Native execution and final acceptance evidence belong in the implementation PR.
 
 ## Run the tests
 
@@ -57,7 +57,7 @@ Paths below are relative to this directory. Local feature suites also have real-
 | 5 | History order, 50-row pagination, empty/running states, selection and response ownership | [WorklogHistoryUITests](Tests/UITests/Features/WorklogHistory/WorklogHistoryUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
 | 6 | Rename, clicked target, preserved history/timer, conflict on save and reload | [TaskRenameUITests](Tests/UITests/Features/TaskRename/TaskRenameUITests.swift) |
 | 7 | Archive/unarchive, cancellation, fallback selection, running guard, rename conflict on confirm | [TaskArchivingUITests](Tests/UITests/Features/TaskArchiving/TaskArchivingUITests.swift) |
-| 8 | Bulk preview, period, geometry, confirmation, concurrent candidates, creation in another window, unconfirmed response after a double timeout | [retained cases](Tests/UITests/Features/BulkTaskArchiving/BulkTaskArchivingUITests.swift), [extended cases](Tests/UITests/Features/BulkTaskArchiving/BulkTaskArchivingExtendedUITests.swift) |
+| 8 | Bulk preview, period, geometry, confirmation, concurrent candidates, no second sheet while the preview is open, unconfirmed response after a double timeout | [retained cases](Tests/UITests/Features/BulkTaskArchiving/BulkTaskArchivingUITests.swift), [extended cases](Tests/UITests/Features/BulkTaskArchiving/BulkTaskArchivingExtendedUITests.swift) |
 | 9 | Completed/running correction, precision, validation, conflict on save and reload | [WorklogCorrectionUITests](Tests/UITests/Features/WorklogHistory/WorklogCorrectionUITests.swift) |
 | 10 | Completed/running moves, search, archived source, overlap, conflict on confirm and reload | [WorklogMoveUITests](Tests/UITests/Features/WorklogHistory/WorklogMoveUITests.swift) |
 | 11 | Completed deletion, cancellation, running guard, conflict on confirm and reload | [WorklogDeletionUITests](Tests/UITests/Features/WorklogHistory/WorklogDeletionUITests.swift) |
@@ -68,7 +68,7 @@ Paths below are relative to this directory. Local feature suites also have real-
 | 16 | Menu tracking, primary clicks, remembered task per source, saved task order | `MenuBarUITests`, `ServerMenuBarUITests`, and `MenuSourceUITests` in the same file |
 | 17 | Clipboard, zero/archived/cached values, menu identity during refresh and ticks | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
 | 18 | Saved toggles, shortcut recording/cancellation/defaults, registration conflict | [SettingsUITests](Tests/UITests/Features/Connection/SettingsUITests.swift) |
-| 19 | Windows, concurrent editors with one visible sheet per window, reopening, quit with running timer | [WindowRoutingUITests](Tests/UITests/App/WindowRoutingUITests.swift) |
+| 19 | Windows, one owner window for editor sheets, editor actions disabled in other windows while that sheet is open, tracking from another window during a held rename, reopening, quit with running timer | [WindowRoutingUITests](Tests/UITests/App/WindowRoutingUITests.swift) |
 | 20 | Daily totals against CLI reports, overnight/live totals, source clearing | [DailyTotalsUITests](Tests/UITests/Features/DailyTotals/DailyTotalsUITests.swift), [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
 | 21 | Visibility, controlled lock/unlock/sleep/wake, display ticks without requests | [LifecycleUITests](Tests/UITests/Infrastructure/MacLifecycle/LifecycleUITests.swift); real-event checks below remain open |
 | 22 | Light/Dark identity, size, sidebar, text status, task color identity | [AppearanceUITests](Tests/UITests/App/AppearanceUITests.swift); platform checks below remain open |
