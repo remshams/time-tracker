@@ -59,7 +59,6 @@ final class TrackingAutomationState {
 
     func pauseFailed() {
         isPausing = false
-        cancel()
     }
 
     /// Returns the task to resume, if the screen-lock pause stopped one.
@@ -69,7 +68,7 @@ final class TrackingAutomationState {
         defer { pausedTaskID = nil }
         guard enabled else { return nil }
         if let pausedTaskID { return Resume(taskID: pausedTaskID, date: date) }
-        if isPausing && pauseMayResume { unlockedAt = date }
+        if pauseMayResume { unlockedAt = date }
         return nil
     }
 
