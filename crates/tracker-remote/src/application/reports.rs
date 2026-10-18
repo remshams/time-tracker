@@ -111,10 +111,6 @@ impl ReportsClient {
         self.report_cache.as_ref()
     }
 
-    pub(super) fn cached_task_totals(&self) -> Option<&ReportDto> {
-        self.report_cache.as_ref()
-    }
-
     pub(super) fn adopt(&mut self, report: ReportDto) {
         self.report_cache = Some(report);
     }

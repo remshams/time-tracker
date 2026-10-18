@@ -360,10 +360,6 @@ impl RemoteTrackerCoordinator {
         self.reports.report_observation()
     }
 
-    pub fn cached_task_totals(&self) -> Option<&ReportDto> {
-        self.reports.cached_task_totals()
-    }
-
     async fn task_guard(&mut self, id: TaskId) -> Result<String, ApplicationError> {
         let reviewed = self.task(id).cloned();
         let (item, revision) = self.read_task_item(id).await?;

@@ -24,7 +24,7 @@ async fn report_range_validation_uses_microseconds_before_connecting() {
         client.task_totals(start, end, end).await,
         Err(tracker_application::ApplicationError::InvalidReportRange)
     );
-    assert!(client.cached_task_totals().is_none());
+    assert!(client.report_observation().is_none());
     for selection in [
         ResourceSelection::DailyTotals {
             start,
@@ -125,7 +125,7 @@ async fn report_request_and_echo_use_the_same_microsecond_context() {
     assert_eq!(report.start, DateTime::from_timestamp(100, 0).unwrap());
     assert_eq!(report.end, DateTime::from_timestamp(100, 2_000).unwrap());
     assert_eq!(report.now, DateTime::from_timestamp(100, 1_000).unwrap());
-    assert_eq!(client.cached_task_totals(), Some(&report));
+    assert_eq!(client.report_observation(), Some(&report));
     assert!(client.task_revision().is_empty());
     assert!(client.tracking_revision().is_empty());
 
@@ -1089,7 +1089,7 @@ async fn report_and_history_reads_never_authorize_stale_task_or_tracking_intent(
     assert_eq!(second.tracking_revision(), tracking_revision);
     assert_ne!(second.report_revision(), tasks_revision);
     assert_eq!(
-        second.cached_task_totals().unwrap().revision,
+        second.report_observation().unwrap().revision,
         second.report_revision()
     );
     assert!(second.cached_history(None).is_some());
@@ -1552,12 +1552,12 @@ async fn independent_task_totals_keep_valid_rows_without_metadata_or_tracking_re
         .await
         .unwrap();
     assert_eq!(report, expected);
-    assert_eq!(client.cached_task_totals(), Some(&expected));
+    assert_eq!(client.report_observation(), Some(&expected));
     assert!(client.task(id).is_none());
     assert!(client.task_revision().is_empty());
     assert!(client.tracking_revision().is_empty());
     assert!(client.read_task_observation(id).await.is_err());
-    assert_eq!(client.cached_task_totals(), Some(&expected));
+    assert_eq!(client.report_observation(), Some(&expected));
 }
 
 fn with_json_resource(path: &str, response: serde_json::Value) -> StubServer {
@@ -1705,7 +1705,7 @@ async fn report_echoes_and_preview_echoes_must_match_the_original_query() {
                 .await
                 .is_err()
         );
-        assert!(client.cached_task_totals().is_none());
+        assert!(client.report_observation().is_none());
     }
     let valid = InactiveTaskPreviewDto {
         as_of: at,
@@ -3616,7 +3616,7 @@ async fn aggregate_reads_remain_coherent_while_http_commands_switch_tracking() {
             assert_eq!(task.latest_work_start, Some(active.start()));
             if index % 2 == 1 {
                 assert_eq!(reader.task_revision(), reader.report_revision());
-                assert_eq!(reader.cached_task_totals().unwrap().total_us, 30_000_000);
+                assert_eq!(reader.report_observation().unwrap().total_us, 30_000_000);
             }
         }
     };
