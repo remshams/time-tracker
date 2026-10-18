@@ -132,22 +132,27 @@ impl Transport {
                         };
                     }
                 };
-            let result = if status.is_success() {
-                serde_json::from_slice(&bytes).map_err(|error| {
-                    RemoteError::Protocol(format!("invalid server response: {error}"))
-                })
-            } else {
-                Err(RemoteError::Http {
-                    status,
-                    body: bytes,
-                })
-            };
             return Delivery {
-                result,
+                result: Self::decode_response(status, bytes),
                 may_have_reached_server: true,
             };
         }
         unreachable!("the loop returns after its last attempt")
+    }
+
+    fn decode_response<T: DeserializeOwned>(
+        status: StatusCode,
+        bytes: Vec<u8>,
+    ) -> Result<T, RemoteError> {
+        if status.is_success() {
+            serde_json::from_slice(&bytes)
+                .map_err(|error| RemoteError::Protocol(format!("invalid server response: {error}")))
+        } else {
+            Err(RemoteError::Http {
+                status,
+                body: bytes,
+            })
+        }
     }
 
     async fn send_once(
