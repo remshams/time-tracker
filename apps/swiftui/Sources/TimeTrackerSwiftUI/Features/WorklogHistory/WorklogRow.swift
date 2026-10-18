@@ -58,6 +58,7 @@ private struct WorklogActionsMenu: View {
     let move: WorklogMoveStore
     let deletion: WorklogDeletionStore
     let worklog: WorklogItem
+    @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
 
     var body: some View {
         Menu {
@@ -69,7 +70,8 @@ private struct WorklogActionsMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .disabled(!correction.canOpen && !move.canOpen && !deletion.canOpen)
+        // macOS shows one sheet per window, so another editor waits until the owner window's sheet closes.
+        .disabled(presentation.hasPresentation || (!correction.canOpen && !move.canOpen && !deletion.canOpen))
         .help("Worklog actions")
         .accessibilityIdentifier("worklog-history.actions.\(worklog.id)")
     }
@@ -81,15 +83,17 @@ private struct WorklogContextMenu: View {
     let move: WorklogMoveStore
     let deletion: WorklogDeletionStore
     let worklog: WorklogItem
+    @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
 
     var body: some View {
+        let hasPresentation = presentation.hasPresentation
         Button("Edit times...") { correction.open(worklogID: worklog.id) }
-            .disabled(!correction.canOpen)
+            .disabled(!correction.canOpen || hasPresentation)
         Button("Move to task...") { move.open(worklogID: worklog.id) }
-            .disabled(!move.canOpen)
+            .disabled(!move.canOpen || hasPresentation)
         Divider()
         // Running worklogs cannot be deleted. Stop the timer first.
         Button("Delete...", role: .destructive) { deletion.open(worklogID: worklog.id) }
-            .disabled(!deletion.canOpen || worklog.end == nil)
+            .disabled(!deletion.canOpen || hasPresentation || worklog.end == nil)
     }
 }

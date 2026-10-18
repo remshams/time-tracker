@@ -13,7 +13,7 @@ final class WorklogMoveStore {
 
     var state: WorklogMovePresentation { presentation.worklogMove }
     var sheetContent: WorklogMovePresentation { presentation.worklogMoveSheetContent }
-    var canOpen: Bool { presentation.canOpenWorklogMove && !state.isPresented }
+    var canOpen: Bool { presentation.canOpenWorklogMove }
 
     func open(worklogID: String) { session.openWorklogMove(worklogID: worklogID) }
     func setQuery(_ query: String) { session.setWorklogMoveQuery(query) }

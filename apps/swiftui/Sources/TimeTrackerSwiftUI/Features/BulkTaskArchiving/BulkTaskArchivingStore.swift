@@ -12,7 +12,7 @@ final class BulkTaskArchivingStore {
 
     var state: BulkTaskArchivingPresentation { presentation.bulkTaskArchiving }
     var sheetContent: BulkTaskArchivingPresentation { presentation.bulkTaskArchivingSheetContent }
-    var canOpen: Bool { presentation.canOpenBulkTaskArchiving && !state.isPresented }
+    var canOpen: Bool { presentation.canOpenBulkTaskArchiving }
     func open() { session.openBulkTaskArchiving() }
     func updateDays(_ text: String) { session.updateBulkArchiveDays(text) }
     func refresh() { session.refreshBulkArchivePreview() }

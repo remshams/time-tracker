@@ -13,7 +13,7 @@ final class WorklogCorrectionStore {
 
     var state: WorklogCorrectionPresentation { presentation.worklogCorrection }
     var sheetContent: WorklogCorrectionPresentation { presentation.worklogCorrectionSheetContent }
-    var canOpen: Bool { presentation.canOpenWorklogCorrection && !state.isPresented }
+    var canOpen: Bool { presentation.canOpenWorklogCorrection }
 
     func open(worklogID: String) { session.openWorklogCorrection(worklogID: worklogID) }
     func setStart(_ date: Date) { session.setWorklogCorrectionStart(date) }

@@ -57,6 +57,7 @@ struct TrackerWindow: View {
                     }
                 }
         }
+        .environment(presentation)
         .navigationTitle(store.selectedTask?.name ?? "Time Tracker")
         .frame(minWidth: 760, minHeight: 480)
         .windowDismissBehavior(presentation.canClose(windowID) ? .enabled : .disabled)
@@ -159,6 +160,7 @@ private struct TrackerSidebarToolbar: View {
     private let creation: TaskCreationStore
     private let bulkArchiving: BulkTaskArchivingStore
     @Environment(\.openWindow) private var openWindow
+    @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
 
     init(store: TrackerStore, preferWindow: @escaping () -> Void) {
         self.preferWindow = preferWindow
@@ -166,8 +168,9 @@ private struct TrackerSidebarToolbar: View {
         bulkArchiving = store.bulkArchiving
     }
 
-    private var canCreate: Bool { creation.canOpen }
-    private var canOpenBulkArchiving: Bool { bulkArchiving.canOpen }
+    // macOS shows one sheet per window, so another editor waits until the owner window's sheet closes.
+    private var canCreate: Bool { creation.canOpen && !presentation.hasPresentation }
+    private var canOpenBulkArchiving: Bool { bulkArchiving.canOpen && !presentation.hasPresentation }
 
     var body: some View {
         Button {
@@ -206,6 +209,7 @@ private struct TrackerTaskToolbar: View {
     let store: TrackerStore
     private let rename: TaskRenameStore
     private let archiving: TaskArchivingStore
+    @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
 
     init(store: TrackerStore, preferWindow: @escaping () -> Void) {
         self.preferWindow = preferWindow
@@ -216,7 +220,7 @@ private struct TrackerTaskToolbar: View {
 
     var body: some View {
         if let task = store.selectedTask {
-            let canRename = rename.canOpen
+            let canRename = rename.canOpen && !presentation.hasPresentation
             Button {
                 guard canRename else { return }
                 preferWindow()
@@ -228,9 +232,10 @@ private struct TrackerTaskToolbar: View {
             .help("Edit task name")
 
             let canChangeArchive =
-                task.archived
-                ? archiving.canUnarchive(taskID: task.id)
-                : archiving.canArchive(taskID: task.id)
+                !presentation.hasPresentation
+                && (task.archived
+                    ? archiving.canUnarchive(taskID: task.id)
+                    : archiving.canArchive(taskID: task.id))
             Button {
                 guard canChangeArchive else { return }
                 preferWindow()
