@@ -544,7 +544,7 @@ impl RemoteTrackerCoordinator {
         };
         let result = self
             .tracking
-            .set_active_task_guarded(&mut self.session, task_id, new_id, expected_active, &body)
+            .set_active_task(&mut self.session, task_id, new_id, expected_active, &body)
             .await;
         self.finish_mutation(result, Recovery::Tracking).await
     }

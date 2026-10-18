@@ -160,9 +160,9 @@ fn persisted_preview_tokens_preserve_period_candidates_and_read_revision() {
     let mut missing_revision = token.clone();
     missing_revision.as_object_mut().unwrap().remove("revision");
     assert!(serde_json::from_value::<InactiveTaskPreview>(missing_revision).is_err());
-    let mut empty_guard = token;
-    empty_guard["revision"] = serde_json::json!("");
-    assert!(serde_json::from_value::<InactiveTaskPreview>(empty_guard).is_err());
+    let mut empty_revision = token;
+    empty_revision["revision"] = serde_json::json!("");
+    assert!(serde_json::from_value::<InactiveTaskPreview>(empty_revision).is_err());
 }
 
 /// Pins the saved token text so previews written before validation moved into

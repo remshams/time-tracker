@@ -1390,7 +1390,7 @@ async fn candidate_metadata_keeps_original_preview_revision() {
         .await
         .unwrap();
     assert!(client.resolve_preview_tasks(&preview).await.is_err());
-    // Archive confirmation no longer compares the preview revision.
+    // Archive confirmation does not compare the preview revision.
     assert_eq!(client.archive_inactive_tasks(&preview).await.unwrap(), 1);
 }
 
@@ -3917,7 +3917,7 @@ async fn coherent_start_without_a_reviewed_timer_rejects_an_unavailable_pair_bef
     }
 }
 
-/// Another client's correction of the running start no longer rejects a stop by worklog id.
+/// Another client's correction of the running start does not reject a stop by worklog id.
 #[tokio::test]
 async fn coherent_tracking_only_stop_is_not_rejected_by_another_clients_correction() {
     let server = TestServer::start();
@@ -3966,7 +3966,7 @@ async fn coherent_tracking_only_stop_is_not_rejected_by_another_clients_correcti
     assert!(other.active_worklog().is_none());
 }
 
-/// Another client's rename of the target task no longer rejects a start.
+/// Another client's rename of the target task does not reject a start.
 #[tokio::test]
 async fn coherent_catalog_only_start_is_not_rejected_by_another_clients_rename() {
     let server = TestServer::start();

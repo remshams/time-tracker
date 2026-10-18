@@ -64,12 +64,12 @@ impl TrackingClient {
         });
     }
 
-    pub(super) async fn set_active_task_guarded(
+    pub(super) async fn set_active_task(
         &mut self,
         session: &mut RemoteSession,
         task_id: TaskId,
         new_id: WorklogId,
-        old_active: Option<WorklogId>,
+        expected_active: Option<WorklogId>,
         body: &SetTrackingRequest,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
         session
@@ -83,7 +83,7 @@ impl TrackingClient {
                     task_id: Some(task_id),
                 },
                 |result| {
-                    let outcome = set_tracking_result(result, task_id, new_id, old_active)?;
+                    let outcome = set_tracking_result(result, task_id, new_id, expected_active)?;
                     let valid = match &outcome {
                         SetActiveTaskOutcome::Started { worklog } => {
                             worklog.start() == body.occurred_at
@@ -93,7 +93,7 @@ impl TrackingClient {
                                 && started.start() == body.occurred_at
                         }
                         SetActiveTaskOutcome::AlreadyActive { worklog } => {
-                            old_active == Some(worklog.id())
+                            expected_active == Some(worklog.id())
                         }
                     };
                     if !valid {
