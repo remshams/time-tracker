@@ -2,8 +2,8 @@ use super::{
     ApplicationError, DeleteWorklogRequest, GlobalWorklogCursor, GlobalWorklogPage, HashMap,
     HistoryRead, Method, MutationContext, RemoteError, RemoteSession, TaskId, Worklog,
     WorklogChangeRequest, WorklogCursor, WorklogId, WorklogPage, WorklogPageDto,
-    WorklogResourceDto, WorklogTimes, canonical, decode_history, decode_worklog,
-    map_application_error, protocol_failure, worklog_result,
+    WorklogResourceDto, WorklogTimes, decode_history, decode_worklog, map_application_error,
+    original_worklog_matches, protocol_failure, worklog_result,
 };
 
 /// Worklog protocol operations and confirmed history and worklog responses.
@@ -144,10 +144,7 @@ impl WorklogsClient {
                 },
                 |result| {
                     let worklog = worklog_result(result, id)?;
-                    if worklog.task_id() != destination_task_id
-                        || worklog.start() != canonical(expected.start())
-                        || worklog.end() != expected.end().map(canonical)
-                    {
+                    if !original_worklog_matches(&worklog, Some(destination_task_id), expected) {
                         return Err(protocol_failure("moved worklog contradicts command"));
                     }
                     Ok(worklog)
@@ -160,7 +157,7 @@ impl WorklogsClient {
         &mut self,
         session: &mut RemoteSession,
         id: WorklogId,
-        expected_task_id: &str,
+        expected_task_id: TaskId,
         replacement: WorklogTimes,
         body: &WorklogChangeRequest,
     ) -> Result<Worklog, ApplicationError> {
@@ -176,10 +173,7 @@ impl WorklogsClient {
                 },
                 |result| {
                     let worklog = worklog_result(result, id)?;
-                    if worklog.task_id().to_string() != expected_task_id
-                        || worklog.start() != canonical(replacement.start())
-                        || worklog.end() != replacement.end().map(canonical)
-                    {
+                    if !original_worklog_matches(&worklog, Some(expected_task_id), replacement) {
                         return Err(protocol_failure("corrected worklog contradicts command"));
                     }
                     Ok(worklog)
@@ -208,10 +202,7 @@ impl WorklogsClient {
                 },
                 |result| {
                     let worklog = worklog_result(result, id)?;
-                    if worklog.task_id() != expected_task_id
-                        || worklog.start() != canonical(expected.start())
-                        || worklog.end() != expected.end().map(canonical)
-                    {
+                    if !original_worklog_matches(&worklog, Some(expected_task_id), expected) {
                         return Err(protocol_failure("deleted worklog contradicts command"));
                     }
                     Ok(worklog)
