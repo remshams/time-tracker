@@ -417,7 +417,7 @@ mod tests {
             format!(r#"{{"active_worklog":{active},"revision":"{revision}"}}"#)
         };
         let mut replies = vec![
-            (200, r#"{"status":"ok","protocol_version":4}"#.to_owned()),
+            (200, r#"{"status":"ok","protocol_version":5}"#.to_owned()),
             (200, aggregate(&old_worklog, "before")),
             (200, tracking(&old_worklog, "before")),
         ];
@@ -734,7 +734,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_coherent_refresh_clears_saved_tracking_warnings_and_preserves_other_messages() {
-        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":4}"#.to_owned())];
+        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":5}"#.to_owned())];
         responses.extend(task_list_responses("fresh"));
         let (endpoint, worker, _) = stoppable_resource_server(responses);
         let mut remote = RemoteApplication::disconnected(&endpoint).unwrap();
@@ -814,7 +814,7 @@ mod tests {
         let task_id = history_task.id();
         let log_id = worklog_id(1);
         let mut responses = vec![
-            (200, r#"{"status":"ok","protocol_version":4}"#.to_owned()),
+            (200, r#"{"status":"ok","protocol_version":5}"#.to_owned()),
             (
                 200,
                 format!(
@@ -874,7 +874,7 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_remote_refresh_reads_one_aggregate_and_publishes_a_coherent_pair() {
-        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":4}"#.to_owned())];
+        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":5}"#.to_owned())];
         responses.extend(task_list_responses("state-1"));
         responses.extend(task_list_responses("state-1"));
         let (endpoint, worker, stop) = stoppable_resource_server(responses);
@@ -904,7 +904,7 @@ mod tests {
 
     #[tokio::test]
     async fn failed_remote_refresh_does_not_publish_independently_loaded_mismatched_resources() {
-        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":4}"#.to_owned())];
+        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":5}"#.to_owned())];
         responses.extend([
             (200, r#"{"tasks":[],"revision":"tasks-1"}"#.to_owned()),
             (
