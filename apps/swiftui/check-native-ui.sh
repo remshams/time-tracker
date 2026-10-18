@@ -48,7 +48,7 @@ elif [[ "${1:-}" == --group && $# == 2 ]]; then
         core) suites=(SmokeUITests TaskCatalogUITests ServerTaskCatalogUITests TaskCreationUITests ServerTaskCreationUITests TrackingUITests ServerTrackingUITests WorklogHistoryUITests ServerWorklogHistoryUITests DailyTotalsUITests ServerDailyTotalsUITests WorklogMoveUITests ServerWorklogMoveUITests) ;;
         editing) suites=(TaskRenameUITests ServerTaskRenameUITests TaskArchivingUITests ServerTaskArchivingUITests BulkTaskArchivingUITests BulkTaskArchivingExtendedUITests ServerBulkTaskArchivingUITests WorklogCorrectionUITests ServerWorklogCorrectionUITests WorklogDeletionUITests ServerWorklogDeletionUITests) ;;
         server) suites=(ConnectionUITests ServerRecoveryUITests SettingsUITests MenuSourceUITests AppearanceUITests) ;;
-        mac) suites=(MenuBarUITests ServerMenuBarUITests WindowRoutingUITests LifecycleUITests ServerLifecycleUITests) ;;
+        mac) suites=(MenuBarUITests ServerMenuBarUITests WindowRoutingUITests ServerWindowRoutingUITests LifecycleUITests ServerLifecycleUITests) ;;
         *) echo "Unknown native UI group: $2" >&2; exit 2 ;;
     esac
     test_selection=()
