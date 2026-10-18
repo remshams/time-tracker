@@ -139,10 +139,8 @@ fn reports_validate_ids_durations_totals_and_revision_without_task_cache_members
 /// Checks that persisted confirmation tokens retain exact metadata and reject missing guards.
 #[test]
 fn persisted_preview_tokens_preserve_period_candidates_and_confirmation_guard() {
-    let candidate_ids = vec![
-        TaskId::generate().to_string(),
-        TaskId::generate().to_string(),
-    ];
+    let parsed_ids = vec![TaskId::generate(), TaskId::generate()];
+    let candidate_ids: Vec<String> = parsed_ids.iter().map(ToString::to_string).collect();
     let token = serde_json::json!({
         "as_of": at(),
         "inactive_days": 21,
@@ -155,6 +153,7 @@ fn persisted_preview_tokens_preserve_period_candidates_and_confirmation_guard() 
     assert_eq!(preview.inactive_days(), 21);
     assert_eq!(preview.count(), 2);
     assert_eq!(preview.dto.candidate_task_ids, candidate_ids);
+    assert_eq!(preview.candidate_ids, parsed_ids);
     assert_eq!(preview.dto.revision, "captured-revision");
     assert_eq!(serde_json::to_value(&preview).unwrap(), token);
 
@@ -273,7 +272,10 @@ fn previews_require_complete_unique_ids_a_period_and_a_revision() {
         candidate_task_ids: vec![TaskId::generate().to_string()],
         revision: "r1".into(),
     };
-    assert!(validate_inactive_preview(&valid).is_ok());
+    assert_eq!(
+        validate_inactive_preview(&valid).unwrap(),
+        vec![valid.candidate_task_ids[0].parse::<TaskId>().unwrap()]
+    );
     for invalid in [
         InactiveTaskPreviewDto {
             count: 2,

@@ -4,7 +4,7 @@ use super::{
     MutationContext, MutationResultDto, RemoteError, RemoteFailureKind, RemoteSession,
     ResourceObservation, Task, TaskChangeRequest, TaskId, TaskListItem, TaskOrdering,
     TaskResourceDto, TasksDto, Utc, canonical, decode_task, decode_task_item, decode_tasks,
-    map_application_error, protocol_failure, task_result, validate_inactive_preview,
+    map_application_error, protocol_failure, task_result,
 };
 
 /// Task protocol operations and confirmed task observations.
@@ -115,17 +115,13 @@ impl TasksClient {
         session: &mut RemoteSession,
         preview: &InactiveTaskPreview,
     ) -> Result<Vec<Task>, ApplicationError> {
-        let preview = &preview.dto;
-        let mut tasks = Vec::with_capacity(preview.count);
-        for raw_id in &preview.candidate_task_ids {
-            let id = raw_id
-                .parse()
-                .map_err(|_| protocol_failure("invalid candidate task id"))?;
+        let mut tasks = Vec::with_capacity(preview.candidate_ids.len());
+        for &id in &preview.candidate_ids {
             let dto = self
                 .read_task(session, id)
                 .await
                 .map_err(|error| map_application_error(&error, None, Some(id)))?;
-            if dto.revision != preview.revision || dto.task.archived {
+            if dto.revision != preview.dto.revision || dto.task.archived {
                 return Err(session.intent_changed());
             }
             tasks.push(
@@ -177,14 +173,14 @@ impl TasksClient {
             .read(&path)
             .await
             .map_err(|error| map_application_error(&error, None, None))?;
-        validate_inactive_preview(&preview)
+        let preview = InactiveTaskPreview::validated(preview)
             .inspect_err(|_| session.set_failure(RemoteFailureKind::Protocol))?;
-        if preview.as_of != as_of || preview.inactive_days != period.days() {
+        if preview.as_of() != as_of || preview.inactive_days() != period.days() {
             session.set_failure(RemoteFailureKind::Protocol);
             return Err(protocol_failure("invalid inactive task preview"));
         }
         session.confirmed();
-        Ok(InactiveTaskPreview { dto: preview })
+        Ok(preview)
     }
 
     pub(super) fn task_observation(&self) -> Option<&ResourceObservation<Vec<TaskListItem>>> {

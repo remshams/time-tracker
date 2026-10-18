@@ -53,14 +53,21 @@ pub enum RemoteFailureKind {
 #[serde(try_from = "InactiveTaskPreviewDto", into = "InactiveTaskPreviewDto")]
 pub struct InactiveTaskPreview {
     dto: InactiveTaskPreviewDto,
+    candidate_ids: Vec<TaskId>,
+}
+
+impl InactiveTaskPreview {
+    fn validated(dto: InactiveTaskPreviewDto) -> Result<Self, ApplicationError> {
+        let candidate_ids = validate_inactive_preview(&dto)?;
+        Ok(Self { dto, candidate_ids })
+    }
 }
 
 impl TryFrom<InactiveTaskPreviewDto> for InactiveTaskPreview {
     type Error = &'static str;
 
     fn try_from(dto: InactiveTaskPreviewDto) -> Result<Self, Self::Error> {
-        validate_inactive_preview(&dto).map_err(|_| "invalid inactive task preview")?;
-        Ok(Self { dto })
+        Self::validated(dto).map_err(|_| "invalid inactive task preview")
     }
 }
 
