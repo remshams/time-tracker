@@ -62,12 +62,9 @@ impl WorklogTimes {
         if self.is_active() != replacement.is_active() {
             return Err(WorklogCorrectionError::CompletionStateChanged);
         }
-        if replacement.end.is_some_and(|end| end < replacement.start) {
-            return Err(WorklogCorrectionError::EndBeforeStart);
-        }
-        if replacement.end == Some(replacement.start) {
-            return Err(WorklogCorrectionError::ZeroDuration);
-        }
+        replacement
+            .validate()
+            .map_err(WorklogCorrectionError::from_interval)?;
         if replacement.start > occurred_at {
             return Err(WorklogCorrectionError::StartAfterOccurredAt);
         }
@@ -120,6 +117,15 @@ pub enum WorklogCorrectionError {
     /// The corrected end is later than the operation timestamp.
     #[error("corrected worklog end must not be later than occurred_at")]
     EndAfterOccurredAt,
+}
+
+impl WorklogCorrectionError {
+    fn from_interval(error: WorklogError) -> Self {
+        match error {
+            WorklogError::ZeroDuration => Self::ZeroDuration,
+            WorklogError::EndBeforeStart => Self::EndBeforeStart,
+        }
+    }
 }
 
 /// Why a worklog move was rejected.
