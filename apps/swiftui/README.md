@@ -96,7 +96,7 @@ Background refreshes keep tracking and connection controls enabled. A click send
 
 ## Menu bar clicks and task colors
 
-Right-click the menu bar dot to open its menu. Control-click also opens it. Left-click stops the current worklog, or starts the last tracked task when idle. If there is no previous task or that task was deleted or archived, left-click opens the menu. Click decisions use live confirmed state. Left-click does nothing while a start or stop is running, tracking state is stale, the screen is locked, or a connection change is running. The displayed dot never grants write permission.
+Right-click the menu bar dot to open its menu. Control-click also opens it. Left-click stops the current worklog, or starts the last tracked task when idle. If there is no previous task or that task was deleted or archived, left-click opens the menu. Click decisions use live confirmed state. Left-click does nothing while a start or stop is running, tracking state is stale, or the screen is locked. Connection changes leave tracking controls usable. The displayed dot never grants write permission.
 
 The dot is filled while tracking and outlined while idle. Both use the current or last tracked task's color. Task entries in Today and Start tracking show their own colored dots, including when macOS hides optional menu images. An unavailable connection shows an outline and labels the task as last confirmed. Hover shows the running task's name, the last tracked task when idle, or that no task has been tracked yet. Tooltips resolve names from the current catalog, so renaming is reflected there too.
 
