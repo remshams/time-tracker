@@ -66,9 +66,16 @@ class BulkTaskArchivingExtendedUITests: TrackerUITestCase {
 final class ServerBulkTaskArchivingUITests: BulkTaskArchivingExtendedUITests {
     override var fixtureSource: TrackerFixture.Source { .server }
 
+    override func testChangedCandidatesRejectConfirmationAndRequireFreshPreview() throws {
+        throw XCTSkip(
+            "The server archives the tasks that match the preview's period when the command runs; "
+                + "see testServerConfirmationArchivesCandidatesThatMatchWhenItRuns."
+        )
+    }
+
     // The server archives the tasks that match the preview's period when the command runs,
     // so a candidate added after the preview is archived too.
-    override func testChangedCandidatesRejectConfirmationAndRequireFreshPreview() throws {
+    func testServerConfirmationArchivesCandidatesThatMatchWhenItRuns() throws {
         let old = try fixture.create("Reviewed inactive task", at: Date().addingTimeInterval(-40 * 86400))
         launch()
         openBulkPreview()
