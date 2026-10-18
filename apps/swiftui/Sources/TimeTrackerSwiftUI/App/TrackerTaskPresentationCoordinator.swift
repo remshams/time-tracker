@@ -5,16 +5,18 @@ import SwiftUI
 @MainActor
 @Observable
 final class TrackerTaskPresentationCoordinator {
-    private(set) var ownerID: UUID?
-    // Windows read this flag instead of the feature states, so draft edits do not redraw them.
-    private(set) var hasPresentation = false
+    enum Feature: CaseIterable {
+        case creation, rename, correction, move, deletion, archiving, bulkArchiving, trackingError
+    }
+
+    private var owners: [Feature: UUID] = [:]
     private let store: TrackerStore
-    private let presentingWindow: (Bool) -> UUID?
+    private let presentingWindow: (Bool, Set<UUID>) -> UUID?
     @ObservationIgnored private var observationGeneration = 0
     @ObservationIgnored private var isRunning = false
     @ObservationIgnored private var isChoosingOwner = false
 
-    init(store: TrackerStore, presentingWindow: @escaping (Bool) -> UUID?) {
+    init(store: TrackerStore, presentingWindow: @escaping (Bool, Set<UUID>) -> UUID?) {
         self.store = store
         self.presentingWindow = presentingWindow
     }
@@ -29,34 +31,36 @@ final class TrackerTaskPresentationCoordinator {
     func stop() {
         isRunning = false
         observationGeneration += 1
-        hasPresentation = false
-        setOwner(nil)
+        owners.removeAll()
     }
 
     func windowAvailable() { update() }
 
-    func owns(_ windowID: UUID) -> Bool {
-        ownerID == windowID
+    func owns(_ feature: Feature, windowID: UUID) -> Bool {
+        owners[feature] == windowID
     }
 
     func canClose(_ windowID: UUID) -> Bool {
-        !owns(windowID) || !hasPresentation
+        !owners.values.contains(windowID)
     }
 
     func windowClosed(_ windowID: UUID) {
-        guard ownerID == windowID else { return }
-        setOwner(nil)
+        let remaining = owners.filter { $0.value != windowID }
+        if owners != remaining { owners = remaining }
         update()
     }
 
-    private var editorIsPresented: Bool {
-        store.creation.state.isPresented || store.rename.state.isPresented || store.correction.state.isPresented
-            || store.move.state.isPresented || store.deletion.state.isPresented || store.archiving.state.isPresented
-            || store.bulkArchiving.state.isPresented
-    }
-
-    private var presentationIsVisible: Bool {
-        editorIsPresented || store.trackingError != nil
+    private func isVisible(_ feature: Feature) -> Bool {
+        switch feature {
+        case .creation: store.creation.state.isPresented
+        case .rename: store.rename.state.isPresented
+        case .correction: store.correction.state.isPresented
+        case .move: store.move.state.isPresented
+        case .deletion: store.deletion.state.isPresented
+        case .archiving: store.archiving.state.isPresented
+        case .bulkArchiving: store.bulkArchiving.state.isPresented
+        case .trackingError: store.trackingError != nil
+        }
     }
 
     /// Chooses an owner whenever a value read by `update()` changes.
@@ -72,21 +76,16 @@ final class TrackerTaskPresentationCoordinator {
 
     private func update() {
         guard isRunning, !isChoosingOwner else { return }
-        let isVisible = presentationIsVisible
-        if hasPresentation != isVisible { hasPresentation = isVisible }
-        guard isVisible else {
-            setOwner(nil)
-            return
-        }
-        guard ownerID == nil else { return }
         isChoosingOwner = true
         defer { isChoosingOwner = false }
-        setOwner(presentingWindow(editorIsPresented))
-    }
-
-    private func setOwner(_ windowID: UUID?) {
-        guard ownerID != windowID else { return }
-        ownerID = windowID
+        let visible = Feature.allCases.filter(isVisible)
+        let remaining = owners.filter { visible.contains($0.key) }
+        if owners != remaining { owners = remaining }
+        for feature in visible where owners[feature] == nil {
+            if let owner = presentingWindow(feature != .trackingError, Set(owners.values)) {
+                owners[feature] = owner
+            }
+        }
     }
 }
 
@@ -96,30 +95,33 @@ struct TrackerDetailPresentation: View {
     let presentation: TrackerTaskPresentationCoordinator
     let windowID: UUID
 
-    private var isOwner: Bool { presentation.owns(windowID) }
     private var trackingFailurePresented: Binding<Bool> {
         Binding(
-            get: { isOwner && store.trackingError != nil },
+            get: { owns(.trackingError) && store.trackingError != nil },
             set: {
-                if isOwner && !$0 { store.dismissTrackingError() }
+                if owns(.trackingError) && !$0 { store.dismissTrackingError() }
             })
     }
 
     var body: some View {
         TaskDetails(store: store)
             .background {
-                TaskCreationDialog(creation: store.creation, isPresentationOwner: isOwner)
-                TaskRenameDialog(rename: store.rename, isPresentationOwner: isOwner)
-                WorklogCorrectionDialog(correction: store.correction, isPresentationOwner: isOwner)
-                WorklogMoveDialog(move: store.move, isPresentationOwner: isOwner)
-                WorklogDeletionDialog(deletion: store.deletion, isPresentationOwner: isOwner)
-                BulkTaskArchivingDialog(archiving: store.bulkArchiving, isPresentationOwner: isOwner)
-                TaskArchivingDialog(archiving: store.archiving, isPresentationOwner: isOwner)
+                TaskCreationDialog(creation: store.creation, isPresentationOwner: owns(.creation))
+                TaskRenameDialog(rename: store.rename, isPresentationOwner: owns(.rename))
+                WorklogCorrectionDialog(correction: store.correction, isPresentationOwner: owns(.correction))
+                WorklogMoveDialog(move: store.move, isPresentationOwner: owns(.move))
+                WorklogDeletionDialog(deletion: store.deletion, isPresentationOwner: owns(.deletion))
+                BulkTaskArchivingDialog(archiving: store.bulkArchiving, isPresentationOwner: owns(.bulkArchiving))
+                TaskArchivingDialog(archiving: store.archiving, isPresentationOwner: owns(.archiving))
             }
             .alert("Could not change tracking", isPresented: trackingFailurePresented) {
                 Button("OK", role: .cancel) { store.dismissTrackingError() }
             } message: {
                 Text(store.trackingError ?? "Please try again.")
             }
+    }
+
+    private func owns(_ feature: TrackerTaskPresentationCoordinator.Feature) -> Bool {
+        presentation.owns(feature, windowID: windowID)
     }
 }

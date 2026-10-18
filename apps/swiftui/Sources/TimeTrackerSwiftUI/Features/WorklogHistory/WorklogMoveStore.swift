@@ -13,7 +13,7 @@ final class WorklogMoveStore {
 
     var state: WorklogMovePresentation { presentation.worklogMove }
     var sheetContent: WorklogMovePresentation { presentation.worklogMoveSheetContent }
-    var canOpen: Bool { presentation.canOpenWorklogMove }
+    var canOpen: Bool { presentation.canOpenWorklogMove && !state.isPresented }
 
     func open(worklogID: String) { session.openWorklogMove(worklogID: worklogID) }
     func setQuery(_ query: String) { session.setWorklogMoveQuery(query) }
@@ -22,5 +22,4 @@ final class WorklogMoveStore {
     func retryCandidates() { session.retryWorklogMoveCandidates() }
     func cancel() { session.cancelWorklogMove() }
     func submit() { session.submitWorklogMove() }
-    func reviewLatest() { session.reviewLatestWorklogMove() }
 }

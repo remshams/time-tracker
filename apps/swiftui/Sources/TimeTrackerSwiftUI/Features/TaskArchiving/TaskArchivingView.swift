@@ -50,21 +50,6 @@ private struct TaskArchivingSheet: View {
                     .textSelection(.enabled)
             }
 
-            if state.requiresReview, let latest = state.latest {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Latest task").font(.subheadline.weight(.semibold))
-                    Text(latest.name).textSelection(.enabled)
-                    Text(latest.archived ? "Archived" : "Active")
-                        .foregroundStyle(.secondary)
-                    Button("Review latest task") { archiving.reviewLatest() }
-                        .accessibilityIdentifier("task-archive.review")
-                        .disabled(state.isSubmitting)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-            }
-
             HStack(spacing: 12) {
                 DelayedProgressIndicator(
                     isBusy: state.isSubmitting, title: isUnarchiving ? "Unarchiving task..." : "Archiving task...",
@@ -74,7 +59,7 @@ private struct TaskArchivingSheet: View {
                     .accessibilityIdentifier("task-archive.cancel")
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
-                Button(state.hasUnresolvedIntent && state.error != nil ? "Retry" : actionTitle) {
+                Button(actionTitle) {
                     archiving.submit()
                 }
                 .accessibilityIdentifier("task-archive.confirm")
@@ -86,17 +71,5 @@ private struct TaskArchivingSheet: View {
         .padding(24)
         .frame(width: 480)
         .interactiveDismissDisabled(state.isSubmitting)
-    }
-}
-
-@MainActor
-struct PendingTaskArchivingButton: View {
-    let archiving: TaskArchivingStore
-
-    var body: some View {
-        if archiving.state.hasPendingAction, archiving.state.error != nil {
-            Button("Review task action") { archiving.reopen() }
-                .disabled(archiving.state.isSubmitting)
-        }
     }
 }

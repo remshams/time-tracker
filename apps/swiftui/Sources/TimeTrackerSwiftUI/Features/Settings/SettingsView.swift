@@ -20,7 +20,7 @@ struct SettingsView: View {
                 TrackingSettingsSection(store: store)
                 MenuBarSettingsSection(store: store)
                 MenuShortcutSettingsSection(store: store)
-                ConnectionActionsSection(draft: connectionDraft, store: store)
+                ConnectionActionsSection(draft: connectionDraft)
                 CurrentConnectionSection(store: store)
             }
             .formStyle(.grouped)

@@ -11,7 +11,7 @@ final class TaskCreationStore {
     }
 
     var state: TaskCreationPresentation { presentation.taskCreation }
-    var canOpen: Bool { presentation.canOpenTaskCreation }
+    var canOpen: Bool { presentation.canOpenTaskCreation && !state.isPresented }
 
     func open() { session.openTaskCreation() }
     func setName(_ name: String) { session.setTaskCreationName(name) }

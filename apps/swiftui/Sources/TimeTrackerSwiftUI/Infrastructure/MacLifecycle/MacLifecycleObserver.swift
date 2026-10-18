@@ -22,7 +22,6 @@ final class MacLifecycleObserver {
             NSApplication.didUnhideNotification,
         ]
         for name in windowEvents { observe(center, name) { $0.updateVisibility() } }
-        observe(center, NSApplication.willTerminateNotification) { $0.session?.shutdown() }
         let workspace = NSWorkspace.shared.notificationCenter
         observe(workspace, NSWorkspace.willSleepNotification) { $0.session?.sleep() }
         observe(workspace, NSWorkspace.didWakeNotification) {

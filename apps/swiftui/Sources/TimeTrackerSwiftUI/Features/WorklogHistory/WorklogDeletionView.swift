@@ -50,21 +50,6 @@ private struct WorklogDeletionSheet: View {
                     .textSelection(.enabled)
             }
 
-            if state.requiresReview, let latest = state.latest {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Latest saved times").font(.subheadline.weight(.semibold))
-                    Text("Start: \(localDay(latest.start)), \(localTimestamp(latest.start))")
-                    Text(latest.end.map { "End: \(localDay($0)), \(localTimestamp($0))" } ?? "Still running")
-                    if latest.end != nil {
-                        Button("Review latest entry") { deletion.reviewLatest() }
-                            .accessibilityIdentifier("worklog-deletion.review")
-                    }
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-            }
-
             HStack(spacing: 12) {
                 DelayedProgressIndicator(
                     isBusy: state.isSubmitting, title: "Deleting worklog...",
@@ -74,7 +59,7 @@ private struct WorklogDeletionSheet: View {
                     .accessibilityIdentifier("worklog-deletion.cancel")
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
-                Button(state.error != nil && state.canSubmit ? "Retry" : "Delete", role: .destructive) {
+                Button("Delete", role: .destructive) {
                     deletion.submit()
                 }
                 .accessibilityIdentifier("worklog-deletion.confirm")
@@ -121,18 +106,6 @@ private struct WorklogDeletionSummary: View {
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(.quaternary, lineWidth: 1)
-        }
-    }
-}
-
-@MainActor
-struct PendingWorklogDeletionButton: View {
-    let deletion: WorklogDeletionStore
-
-    var body: some View {
-        if !deletion.state.isPresented, let original = deletion.state.original {
-            Button("Retry worklog deletion") { deletion.open(worklogID: original.id) }
-                .disabled(!deletion.canOpen)
         }
     }
 }

@@ -13,12 +13,11 @@ final class WorklogCorrectionStore {
 
     var state: WorklogCorrectionPresentation { presentation.worklogCorrection }
     var sheetContent: WorklogCorrectionPresentation { presentation.worklogCorrectionSheetContent }
-    var canOpen: Bool { presentation.canOpenWorklogCorrection }
+    var canOpen: Bool { presentation.canOpenWorklogCorrection && !state.isPresented }
 
     func open(worklogID: String) { session.openWorklogCorrection(worklogID: worklogID) }
     func setStart(_ date: Date) { session.setWorklogCorrectionStart(date) }
     func setEnd(_ date: Date) { session.setWorklogCorrectionEnd(date) }
     func cancel() { session.cancelWorklogCorrection() }
     func submit() { session.submitWorklogCorrection() }
-    func reviewLatest() { session.reviewLatestWorklogCorrection() }
 }

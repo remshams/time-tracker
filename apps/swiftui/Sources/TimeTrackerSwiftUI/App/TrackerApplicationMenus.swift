@@ -4,18 +4,14 @@ import SwiftUI
 struct TrackerApplicationMenus: Commands {
     let runtime: TrackerAppRuntime
     private let creation: TaskCreationStore
-    private let rename: TaskRenameStore
     @Environment(\.openWindow) private var openWindow
 
     init(runtime: TrackerAppRuntime) {
         self.runtime = runtime
         creation = runtime.store.creation
-        rename = runtime.store.rename
     }
 
-    private var canCreateTask: Bool {
-        creation.canOpen && !creation.state.isPresented && !rename.state.isPresented
-    }
+    private var canCreateTask: Bool { creation.canOpen }
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {

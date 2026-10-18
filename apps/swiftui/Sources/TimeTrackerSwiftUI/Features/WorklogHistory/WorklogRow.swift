@@ -69,10 +69,7 @@ private struct WorklogActionsMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .disabled(
-            correction.state.isPresented || move.state.isPresented || deletion.state.isPresented
-                || (!correction.canOpen && !move.canOpen && !deletion.canOpen)
-        )
+        .disabled(!correction.canOpen && !move.canOpen && !deletion.canOpen)
         .help("Worklog actions")
         .accessibilityIdentifier("worklog-history.actions.\(worklog.id)")
     }
@@ -87,12 +84,12 @@ private struct WorklogContextMenu: View {
 
     var body: some View {
         Button("Edit times...") { correction.open(worklogID: worklog.id) }
-            .disabled(!correction.canOpen || correction.state.isPresented)
+            .disabled(!correction.canOpen)
         Button("Move to task...") { move.open(worklogID: worklog.id) }
-            .disabled(!move.canOpen || move.state.isPresented)
+            .disabled(!move.canOpen)
         Divider()
         // Running worklogs cannot be deleted. Stop the timer first.
         Button("Delete...", role: .destructive) { deletion.open(worklogID: worklog.id) }
-            .disabled(!deletion.canOpen || deletion.state.isPresented || worklog.end == nil)
+            .disabled(!deletion.canOpen || worklog.end == nil)
     }
 }

@@ -104,20 +104,6 @@ private struct WorklogCorrectionSheet: View {
                     .textSelection(.enabled)
             }
 
-            if state.requiresReview, let latest = state.latest {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Latest saved times").font(.subheadline.weight(.semibold))
-                    Text("Start: \(formatted(latest.start))")
-                    Text(latest.end.map { "End: \(formatted($0))" } ?? "Still running")
-                    Button("Review latest entry") { correction.reviewLatest() }
-                        .accessibilityIdentifier("worklog-correction.review")
-                        .disabled(state.isSubmitting)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-            }
-
             HStack(spacing: 12) {
                 DelayedProgressIndicator(
                     isBusy: state.isSubmitting, title: "Saving worklog...",
@@ -127,7 +113,7 @@ private struct WorklogCorrectionSheet: View {
                     .accessibilityIdentifier("worklog-correction.cancel")
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
-                Button(state.error != nil && !state.canEdit && state.canSubmit ? "Retry" : "Save") {
+                Button("Save") {
                     correction.submit()
                 }
                 .accessibilityIdentifier("worklog-correction.save")
@@ -150,30 +136,9 @@ private struct WorklogCorrectionSheet: View {
 
 @MainActor
 struct WorklogHistoryHeading: View {
-    let correction: WorklogCorrectionStore
-    let move: WorklogMoveStore
-    let deletion: WorklogDeletionStore
-
     var body: some View {
-        HStack {
-            Text("Worklogs").font(.title3.weight(.semibold))
-            Spacer()
-            PendingWorklogCorrectionButton(correction: correction)
-            PendingWorklogMoveButton(move: move)
-            PendingWorklogDeletionButton(deletion: deletion)
-        }
-        .padding(.bottom, 4)
-    }
-}
-
-@MainActor
-struct PendingWorklogCorrectionButton: View {
-    let correction: WorklogCorrectionStore
-
-    var body: some View {
-        if !correction.state.isPresented, let original = correction.state.original {
-            Button("Retry worklog edit") { correction.open(worklogID: original.id) }
-                .disabled(!correction.canOpen)
-        }
+        Text("Worklogs").font(.title3.weight(.semibold))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 4)
     }
 }

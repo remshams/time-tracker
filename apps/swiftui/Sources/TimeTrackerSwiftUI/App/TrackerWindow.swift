@@ -157,20 +157,17 @@ struct TrackerWindow: View {
 private struct TrackerSidebarToolbar: View {
     let preferWindow: () -> Void
     private let creation: TaskCreationStore
-    private let rename: TaskRenameStore
     private let bulkArchiving: BulkTaskArchivingStore
     @Environment(\.openWindow) private var openWindow
 
     init(store: TrackerStore, preferWindow: @escaping () -> Void) {
         self.preferWindow = preferWindow
         creation = store.creation
-        rename = store.rename
         bulkArchiving = store.bulkArchiving
     }
 
-    private var canCreate: Bool {
-        creation.canOpen && !creation.state.isPresented && !rename.state.isPresented
-    }
+    private var canCreate: Bool { creation.canOpen }
+    private var canOpenBulkArchiving: Bool { bulkArchiving.canOpen }
 
     var body: some View {
         Button {
@@ -191,13 +188,13 @@ private struct TrackerSidebarToolbar: View {
         .help("New task")
 
         Button {
-            guard bulkArchiving.canOpen else { return }
+            guard canOpenBulkArchiving else { return }
             preferWindow()
             bulkArchiving.open()
         } label: {
             Label("Archive inactive tasks", systemImage: "archivebox")
         }
-        .disabled(!bulkArchiving.canOpen)
+        .disabled(!canOpenBulkArchiving)
         .help("Archive inactive tasks")
         .accessibilityIdentifier("bulk-archive.open")
     }
@@ -207,33 +204,27 @@ private struct TrackerSidebarToolbar: View {
 private struct TrackerTaskToolbar: View {
     let preferWindow: () -> Void
     let store: TrackerStore
-    private let creation: TaskCreationStore
     private let rename: TaskRenameStore
     private let archiving: TaskArchivingStore
 
     init(store: TrackerStore, preferWindow: @escaping () -> Void) {
         self.preferWindow = preferWindow
         self.store = store
-        creation = store.creation
         rename = store.rename
         archiving = store.archiving
     }
 
-    private var hasTaskEditor: Bool {
-        creation.state.isPresented || rename.state.isPresented || archiving.state.isPresented
-    }
-
     var body: some View {
-        PendingTaskArchivingButton(archiving: archiving)
         if let task = store.selectedTask {
+            let canRename = rename.canOpen
             Button {
-                guard rename.canOpen, !hasTaskEditor else { return }
+                guard canRename else { return }
                 preferWindow()
                 rename.open(taskID: task.id)
             } label: {
                 Label("Edit task name", systemImage: "pencil")
             }
-            .disabled(!rename.canOpen || hasTaskEditor)
+            .disabled(!canRename)
             .help("Edit task name")
 
             let canChangeArchive =

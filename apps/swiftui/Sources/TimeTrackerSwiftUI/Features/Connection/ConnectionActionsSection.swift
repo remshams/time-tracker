@@ -3,19 +3,16 @@ import SwiftUI
 @MainActor
 struct ConnectionActionsSection: View {
     let draft: ConnectionDraftStore
-    let store: TrackerStore
-
-    private var controlsDisabled: Bool { draft.operationPending || store.isBlockingControls }
 
     var body: some View {
         Section {
             HStack(spacing: 12) {
                 Button("Test connection") { draft.testConnection() }
-                    .disabled(controlsDisabled || draft.missingEndpoint)
+                    .disabled(draft.operationPending || draft.missingEndpoint)
                     .accessibilityIdentifier("connection.test")
                 Button("Connect") { draft.connect() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(controlsDisabled || draft.missingEndpoint)
+                    .disabled(draft.operationPending || draft.missingEndpoint)
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("connection.connect")
                 DelayedProgressIndicator(

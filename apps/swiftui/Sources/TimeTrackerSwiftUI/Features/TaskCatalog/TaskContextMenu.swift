@@ -9,22 +9,18 @@ struct TaskContextMenu: View {
     var taskIsArchived = false
     var taskIsRunning = false
 
-    private var hasTaskEditor: Bool {
-        creation.state.isPresented || rename.state.isPresented || archiving.state.isPresented
-    }
-
     var body: some View {
         Button("New task") {
-            guard creation.canOpen, !hasTaskEditor else { return }
+            guard creation.canOpen else { return }
             creation.open()
         }
-        .disabled(!creation.canOpen || hasTaskEditor)
+        .disabled(!creation.canOpen)
         if let taskID {
             Button("Edit name") {
-                guard rename.canOpen, !hasTaskEditor else { return }
+                guard rename.canOpen else { return }
                 rename.open(taskID: taskID)
             }
-            .disabled(!rename.canOpen || hasTaskEditor)
+            .disabled(!rename.canOpen)
 
             Divider()
             if taskIsArchived {

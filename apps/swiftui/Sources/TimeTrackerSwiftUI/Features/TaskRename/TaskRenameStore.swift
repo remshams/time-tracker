@@ -11,7 +11,7 @@ final class TaskRenameStore {
     }
 
     var state: TaskRenamePresentation { presentation.taskRename }
-    var canOpen: Bool { presentation.canOpenTaskRename }
+    var canOpen: Bool { presentation.canOpenTaskRename && !state.isPresented }
 
     func open(taskID: String) { session.openTaskRename(taskID: taskID) }
     func setName(_ name: String) { session.setTaskRenameName(name) }

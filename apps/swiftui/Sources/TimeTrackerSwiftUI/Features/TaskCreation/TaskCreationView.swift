@@ -30,7 +30,7 @@ private struct TaskCreationSheet: View {
             title: "New task",
             name: Binding(
                 get: { creation.state.name }, set: { creation.setName($0) }
-            ), actionTitle: state.error != nil && !state.canEditName ? "Retry" : "Create",
+            ), actionTitle: "Create",
             progressTitle: "Creating task...", isSubmitting: state.isSubmitting,
             canEditName: state.canEditName, canSubmit: state.canSubmit, error: state.error,
             cancel: creation.cancel, submit: creation.submit)

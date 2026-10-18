@@ -13,10 +13,9 @@ final class WorklogDeletionStore {
 
     var state: WorklogDeletionPresentation { presentation.worklogDeletion }
     var sheetContent: WorklogDeletionPresentation { presentation.worklogDeletionSheetContent }
-    var canOpen: Bool { presentation.canOpenWorklogDeletion }
+    var canOpen: Bool { presentation.canOpenWorklogDeletion && !state.isPresented }
 
     func open(worklogID: String) { session.openWorklogDeletion(worklogID: worklogID) }
     func cancel() { session.cancelWorklogDeletion() }
     func submit() { session.submitWorklogDeletion() }
-    func reviewLatest() { session.reviewLatestWorklogDeletion() }
 }
