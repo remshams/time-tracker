@@ -234,16 +234,19 @@ def ids():
 
 
 def database_state(path):
-    with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as connection:
-        connection.execute("PRAGMA query_only=ON")
-        connection.execute("BEGIN")
-        return {
-            "schema": connection.execute("PRAGMA user_version").fetchone()[0],
-            "tasks": [list(row) for row in connection.execute(
-                "SELECT id,name,archived,created_at_us,updated_at_us FROM tasks ORDER BY id")],
-            "worklogs": [list(row) for row in connection.execute(
-                "SELECT id,task_id,start_us,end_us FROM worklogs ORDER BY id")],
-        }
+    try:
+        with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as connection:
+            connection.execute("PRAGMA query_only=ON")
+            connection.execute("BEGIN")
+            return {
+                "schema": connection.execute("PRAGMA user_version").fetchone()[0],
+                "tasks": [list(row) for row in connection.execute(
+                    "SELECT id,name,archived,created_at_us,updated_at_us FROM tasks ORDER BY id")],
+                "worklogs": [list(row) for row in connection.execute(
+                    "SELECT id,task_id,start_us,end_us FROM worklogs ORDER BY id")],
+            }
+    except sqlite3.Error as error:
+        raise DeployError(f"Could not read the database {path}: {error}") from error
 
 
 def fingerprint(state):
@@ -279,11 +282,14 @@ def check_migration(before, after, latest, accepted):
 
 
 def backup_database(source_path, destination):
-    with contextlib.closing(sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)) as source, \
-            contextlib.closing(sqlite3.connect(destination)) as target:
-        source.backup(target)
-        if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-            raise DeployError(f"The database copy at {destination} failed its integrity check")
+    try:
+        with contextlib.closing(sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)) as source, \
+                contextlib.closing(sqlite3.connect(destination)) as target:
+            source.backup(target)
+            integrity = target.execute("PRAGMA integrity_check").fetchone()[0]
+    except sqlite3.Error as error:
+        raise DeployError(f"Could not copy the database {source_path} to {destination}: {error}") from error
+    require(integrity == "ok", f"The database copy at {destination} failed its integrity check")
 
 
 def get_json(base, route):
@@ -365,15 +371,7 @@ def started_state(base, version, database):
     return database_state(database)
 
 
-def remote_preflight(host, accept_changes):
-    host.check_archive()
-    require(host.candidate.exists(), f"{host.candidate} has not been built")
-    directory = pathlib.Path(tempfile.mkdtemp(prefix=f"smoke-{host.short}-", dir=host.build))
-    copied = directory / "tt-server.db"
-    backup_database(host.database, copied)
-    before = database_state(copied)
-    require(before["schema"] <= host.schema,
-            f"The database has schema version {before['schema']}, newer than the candidate's {host.schema}")
+def smoke_test(host, directory, copied):
     port = free_port()
     with (directory / "server.log").open("w") as log:
         server = subprocess.Popen([str(host.candidate), "serve", "--bind", f"127.0.0.1:{port}",
@@ -383,6 +381,7 @@ def remote_preflight(host, accept_changes):
             after = started_state(base, host.version, copied)
             verify(base, host.version, after)
             require(database_state(copied) == after, "Reads changed the copied database")
+            return after
         finally:
             server.terminate()
             try:
@@ -390,6 +389,28 @@ def remote_preflight(host, accept_changes):
             except subprocess.TimeoutExpired:
                 server.kill()
                 server.wait()
+
+
+def remote_preflight(host, accept_changes):
+    host.check_archive()
+    require(host.candidate.exists(), f"{host.candidate} has not been built")
+    directory = pathlib.Path(tempfile.mkdtemp(prefix=f"smoke-{host.short}-", dir=host.build))
+    copied = directory / "tt-server.db"
+    try:
+        backup_database(host.database, copied)
+        before = database_state(copied)
+        require(before["schema"] <= host.schema,
+                f"The database has schema version {before['schema']}, newer than the candidate's {host.schema}")
+    except BaseException as error:
+        try:
+            shutil.rmtree(directory)
+        except OSError:
+            raise DeployError(f"{error}. Could not remove the preflight directory {directory}") from error
+        raise
+    try:
+        after = smoke_test(host, directory, copied)
+    except Exception as error:
+        raise DeployError(f"{error}. The server log and database copy are in {directory}") from error
     shutil.rmtree(directory)
     changes = check_migration(before, after, host.schema, accept_changes)
     manifest = {"commit": host.revision, "sha256": digest(host.candidate),
@@ -416,8 +437,22 @@ def restore_database(backup, live, expected):
     require(database_state(live) == expected, f"The restored database differs from {backup}")
 
 
+def read_preflight_record(path):
+    try:
+        record = json.loads(path.read_text())
+    except FileNotFoundError as error:
+        raise DeployError(f"{path} does not exist; run the preflight first") from error
+    except json.JSONDecodeError as error:
+        raise DeployError(f"The preflight record {path} is not valid JSON ({error}); run the preflight again") \
+            from error
+    require(isinstance(record, dict), f"The preflight record {path} must contain a JSON object")
+    missing = sorted({"commit", "sha256"} - set(record))
+    require(not missing, f"The preflight record {path} is missing: {', '.join(missing)}; run the preflight again")
+    return record
+
+
 def remote_deploy(host, keep_backup):
-    manifest = json.loads(host.manifest.read_text())
+    manifest = read_preflight_record(host.manifest)
     require(manifest["commit"] == host.revision and manifest["sha256"] == digest(host.candidate),
             "The preflight record does not match the candidate binary; run the preflight again")
     require("database_before_sha256" in manifest and "database_after_sha256" in manifest,
@@ -425,11 +460,11 @@ def remote_deploy(host, keep_backup):
     require(os.access(host.database, os.W_OK) and os.access(host.database.parent, os.W_OK),
             f"{host.database} and its directory must be writable to restore the database on rollback")
     service = host.config["service"]
+    staged = f"{host.live}.new-{host.short}"
+    require(not pathlib.Path(staged).exists(), f"{staged} already exists")
     backup = host.root / "backups" / f"deploy-{host.short}-{utc_now().strftime('%Y%m%dT%H%M%SZ')}"
     backup.mkdir(mode=0o700, parents=True)
     shutil.copy2(host.live, backup / f"{BINARY}.previous")
-    staged = f"{host.live}.new-{host.short}"
-    require(not pathlib.Path(staged).exists(), f"{staged} already exists")
     sudo("install", "-o", "root", "-g", "root", "-m", "0755", str(host.candidate), staged)
     stopped = replaced = False
     try:
@@ -524,7 +559,7 @@ def main(argv=None):
                 remote_deploy(host, arguments.keep_backup)
         else:
             deploy_from_workstation(workstation_parser().parse_args(argv))
-    except (DeployError, subprocess.CalledProcessError, OSError) as error:
+    except (DeployError, subprocess.CalledProcessError, OSError, sqlite3.Error, json.JSONDecodeError) as error:
         print(f"Deployment stopped: {error}", file=sys.stderr)
         return 1
     return 0
