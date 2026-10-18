@@ -6,7 +6,6 @@ final class PresentationTests: XCTestCase {
     func testEditorAvailabilityNotifiesOnlyWhenTheAvailabilityChanges() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         let harness = PresentationHarness(session: fixture.session)
         let bulk = harness.counter(PresentationReads.bulkTaskArchiving)
         let move = harness.counter(PresentationReads.worklogMove)
@@ -15,17 +14,17 @@ final class PresentationTests: XCTestCase {
 
         harness.update()
         XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [0, 0, 0, 0])
-        fixture.session.openTaskCreation()
-        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [0, 0, 0, 0])
+        XCTAssertFalse(harness.presentation.canOpenWorklogDeletion)
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        harness.attach()
+        harness.update()
+        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
         XCTAssertTrue(harness.presentation.canOpenWorklogDeletion)
+        fixture.session.openTaskCreation()
+        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
         fixture.session.cancelTaskCreation()
         harness.update()
-        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [0, 0, 0, 0])
-        fixture.session.shutdown()
-        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [0, 1, 1, 1])
-        XCTAssertFalse(harness.presentation.canOpenWorklogDeletion)
-        harness.update()
-        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [0, 1, 1, 1])
+        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
     }
 
     @MainActor

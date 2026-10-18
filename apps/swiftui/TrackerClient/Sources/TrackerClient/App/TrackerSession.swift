@@ -7,7 +7,6 @@ public final class TrackerSession {
     // Background reads still serialize requests without disabling controls.
     public var isBlockingControls: Bool {
         (isBusy && operationBlocksControls) || pendingControlCommand != nil
-            || correction.pending || move.pending || deletion.pending
     }
     public private(set) var now: Date
 
@@ -121,22 +120,11 @@ public final class TrackerSession {
     public var taskRename: TaskRenamePresentation { rename.presentation }
     public var canOpenTaskRename: Bool { connection.confirmed && selectedTask != nil }
     public var worklogCorrection: WorklogCorrectionPresentation { correction.presentation }
-    public var canOpenWorklogCorrection: Bool {
-        running && connection.confirmed && !connection.changing
-            && !move.blocksConnectionChange && !deletion.blocksConnectionChange
-    }
-
+    public var canOpenWorklogCorrection: Bool { connection.confirmed }
     public var worklogMove: WorklogMovePresentation { move.presentation }
-    public var canOpenWorklogMove: Bool {
-        running && connection.confirmed && !connection.changing
-            && !correction.blocksConnectionChange && !deletion.blocksConnectionChange
-    }
-
+    public var canOpenWorklogMove: Bool { connection.confirmed }
     public var worklogDeletion: WorklogDeletionPresentation { deletion.presentation }
-    public var canOpenWorklogDeletion: Bool {
-        running && connection.confirmed && !connection.changing
-            && !correction.blocksConnectionChange && !move.blocksConnectionChange
-    }
+    public var canOpenWorklogDeletion: Bool { connection.confirmed }
 
     public var canStartSelectedTask: Bool {
         guard let selectedTaskID else { return false }
@@ -297,12 +285,6 @@ public final class TrackerSession {
         dailyTotals.reanchor(clock: clock)
         updateDisplayTimer()
         updateRolloverTimer()
-        if correction.pending || move.pending || deletion.pending {
-            if drainAutomation() { return }
-            if drainCorrection() { return }
-            if drainMove() { return }
-            if drainDeletion() { return }
-        }
         refresh()
     }
 
@@ -473,134 +455,118 @@ public final class TrackerSession {
     }
 
     public func openWorklogCorrection(worklogID: String) {
-        guard canOpenWorklogCorrection else { return }
-        let worklog =
-            correction.original ?? worklog(withID: worklogID, in: worklogs) ?? (active?.id == worklogID ? active : nil)
-        guard let worklog else { return }
-        correction.open(
-            worklog, taskName: task(withID: worklog.taskId, in: tasks)?.name ?? "Unknown task",
-            historyPageLimit: max(1, (worklogs.count + 49) / 50) + 1)
+        guard canOpenWorklogCorrection, let worklog = worklogForEditor(worklogID) else { return }
+        correction.open(worklog, taskName: task(withID: worklog.taskId, in: tasks)?.name ?? "Unknown task")
         publish()
     }
 
     public func openWorklogMove(worklogID: String) {
-        guard canOpenWorklogMove else { return }
-        let worklog =
-            move.original ?? worklog(withID: worklogID, in: worklogs) ?? (active?.id == worklogID ? active : nil)
-        guard let worklog else { return }
-        move.open(
-            worklog, sourceTaskName: task(withID: worklog.taskId, in: tasks)?.name ?? "Unknown task",
-            historyPageLimit: max(2, (worklogs.count + 49) / 50 + 1))
-        drainMoveSearch()
+        guard canOpenWorklogMove, let worklog = worklogForEditor(worklogID) else { return }
+        loadMoveCandidates(
+            move.open(worklog, sourceTaskName: task(withID: worklog.taskId, in: tasks)?.name ?? "Unknown task"))
         publish()
     }
 
     public func setWorklogMoveQuery(_ query: String) {
-        guard running else { return }
-        move.updateQuery(query)
-        drainMoveSearch()
+        loadMoveCandidates(move.updateQuery(query))
         publish()
     }
 
     public func retryWorklogMoveCandidates() {
-        guard running else { return }
-        move.retrySearch()
-        drainMoveSearch()
+        loadMoveCandidates(move.retrySearch())
         publish()
     }
 
     public func selectWorklogMoveDestination(taskID: String) {
-        guard running else { return }
         move.select(taskID)
         publish()
     }
 
     public func moveWorklogDestinationSelection(by offset: Int) {
-        guard running else { return }
         move.moveSelection(by: offset)
         publish()
     }
 
     public func cancelWorklogMove() {
-        guard running else { return }
         move.cancel()
         publish()
     }
 
     public func submitWorklogMove() {
-        guard canOpenWorklogMove else { return }
-        guard move.submit() else { return }
-        drainMove()
+        guard let request = move.submit() else { return }
         publish()
-    }
-
-    public func reviewLatestWorklogMove() {
-        guard running else { return }
-        let taskID = move.presentation.latest?.taskId
-        move.reviewLatest(taskName: tasks.first { $0.id == taskID }?.name)
-        drainMoveSearch()
-        publish()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await client.moveWorklog(
+                    expected: request.expected, destinationTaskID: request.destinationTaskID)
+                move.reset()
+            } catch {
+                move.fail(writeFailure(error))
+            }
+            await reloadAfterWorklogWrite()
+        }
     }
 
     public func setWorklogCorrectionStart(_ date: Date) {
-        guard running else { return }
         correction.updateStart(date)
         publish()
     }
 
     public func setWorklogCorrectionEnd(_ date: Date) {
-        guard running else { return }
         correction.updateEnd(date)
         publish()
     }
 
     public func cancelWorklogCorrection() {
-        guard running else { return }
         correction.cancel()
         publish()
     }
 
     public func submitWorklogCorrection() {
-        guard canOpenWorklogCorrection else { return }
-        guard correction.submit(at: clock.now) else { publish(); return }
-        drainCorrection()
+        guard let request = correction.submit(at: clock.now) else {
+            publish()
+            return
+        }
         publish()
-    }
-
-    public func reviewLatestWorklogCorrection() {
-        guard running else { return }
-        let taskID = correction.presentation.latest?.taskId
-        correction.reviewLatest(taskName: tasks.first { $0.id == taskID }?.name)
-        publish()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await client.correctWorklog(
+                    expected: request.expected, replacementStart: request.replacementStart,
+                    replacementEnd: request.replacementEnd, occurredAt: request.occurredAt)
+                correction.reset()
+            } catch {
+                correction.fail(writeFailure(error))
+            }
+            await reloadAfterWorklogWrite()
+        }
     }
 
     public func openWorklogDeletion(worklogID: String) {
-        guard canOpenWorklogDeletion else { return }
-        guard let worklog = deletion.original ?? worklog(withID: worklogID, in: worklogs) else { return }
-        deletion.open(
-            worklog, taskName: task(withID: worklog.taskId, in: tasks)?.name ?? "Unknown task",
-            historyPageLimit: max(1, (worklogs.count + 49) / 50) + 1)
+        guard canOpenWorklogDeletion, let worklog = worklog(withID: worklogID, in: worklogs) else { return }
+        deletion.open(worklog, taskName: task(withID: worklog.taskId, in: tasks)?.name ?? "Unknown task")
         publish()
     }
 
     public func cancelWorklogDeletion() {
-        guard running else { return }
         deletion.cancel()
         publish()
     }
 
     public func submitWorklogDeletion() {
-        guard canOpenWorklogDeletion else { return }
-        guard deletion.submit() else { return }
-        drainDeletion()
+        guard let expected = deletion.submit() else { return }
         publish()
-    }
-
-    public func reviewLatestWorklogDeletion() {
-        guard running else { return }
-        let taskID = deletion.presentation.latest?.taskId
-        deletion.reviewLatest(taskName: tasks.first { $0.id == taskID }?.name)
-        publish()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await client.deleteWorklog(expected: expected)
+                deletion.reset()
+            } catch {
+                deletion.fail(writeFailure(error))
+            }
+            await reloadAfterWorklogWrite()
+        }
     }
 
     public func setPauseOnScreenLock(_ enabled: Bool) {
@@ -669,15 +635,6 @@ public final class TrackerSession {
     }
 
     public func connect(_ settings: ConnectionSettings) async -> Bool {
-        guard !move.blocksConnectionChange else {
-            return rejectConnection("Finish or retry worklog moving before changing connections.")
-        }
-        guard !deletion.blocksConnectionChange else {
-            return rejectConnection("Finish or retry worklog deletion before changing connections.")
-        }
-        guard !correction.blocksConnectionChange && !move.blocksConnectionChange else {
-            return rejectConnection("Finish worklog editing before changing connections.")
-        }
         automation.cancel()
         let operation: ControlOperation
         do { operation = try await acquireControlOperation() } catch {
@@ -687,11 +644,6 @@ public final class TrackerSession {
         let token = operation.token
         defer { finishOperation(token: token) }
         guard controlOperationIsCurrent(operation), !sleeping, !Task.isCancelled else { return false }
-        guard !correction.blocksConnectionChange, !move.blocksConnectionChange, !deletion.blocksConnectionChange
-        else {
-            connection.message = "Finish or retry task editing before changing connections."
-            return false
-        }
         automation.cancel()
         connection.changing = true
         defer {
@@ -829,12 +781,8 @@ public final class TrackerSession {
         guard isCurrent(token) else { return }
         isBusy = false
         if drainAutomation() { return }
-        if drainCorrection() { return }
-        if drainMove() { return }
-        if drainDeletion() { return }
         if drainControlCommand() { return }
         if !sleeping {
-            if drainMoveSearch() { return }
             if pendingRefresh {
                 pendingRefresh = false
                 beginRefresh()
@@ -908,6 +856,28 @@ public final class TrackerSession {
             kind: failure.kind, uncertain: true, requiresRefresh: failure.requiresRefresh)
     }
 
+    private func reloadAfterWorklogWrite() async {
+        publish()
+        await reloadTaskList()
+        requestHistory()
+        publish()
+    }
+
+    private func loadMoveCandidates(_ search: WorklogMoveState.Search?) {
+        guard let search else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                move.accept(
+                    try await client.moveCandidates(sourceTaskID: search.sourceTaskID, query: search.query),
+                    search: search)
+            } catch {
+                move.failSearch(error, search: search)
+            }
+            publish()
+        }
+    }
+
     private func refreshAfterCommit(token: Int) async {
         do {
             let resources = try await client.refreshTaskList()
@@ -945,433 +915,6 @@ public final class TrackerSession {
             }
             publish()
         }
-    }
-
-    @discardableResult
-    private func drainMoveSearch() -> Bool {
-        guard running, !sleeping, !isBusy, let initialSearch = move.takeSearch() else { return false }
-        let token = generation
-        beginOperation(blocksControls: false)
-        Task { [weak self] in
-            guard let self, isCurrent(token) else { return }
-            defer { finishOperation(token: token) }
-            var search = initialSearch
-            do {
-                if search.refresh {
-                    let resources = try await client.refreshTaskList()
-                    guard isCurrent(token) else { return }
-                    acceptTaskList(resources)
-                    move.didRefresh(search)
-                }
-                guard prepareMoveSearch() else { return }
-                guard let currentSearch = move.currentSearch(replacing: search) else { return }
-                search = currentSearch
-                let values = try await client.moveCandidates(sourceTaskID: search.sourceTaskID, query: search.query)
-                guard isCurrent(token) else { return }
-                if sleeping { move.deferSearch(); return }
-                move.accept(values, search: search)
-            } catch {
-                guard isCurrent(token) else { return }
-                move.failSearch(error, search: search)
-            }
-        }
-        return true
-    }
-
-    private func currentMoveWorklog(
-        _ intent: WorklogMoveState.Intent,
-        resources: TaskListResources, token: Int, includeDestination: Bool
-    ) async throws -> WorklogItem? {
-        if let active = resources.tracking.value, active.id == intent.expected.id { return active }
-        let taskIDs =
-            includeDestination ? [intent.destinationTaskID, intent.expected.taskId] : [intent.expected.taskId]
-        var verificationFailure: BridgeFailure?
-        for taskID in taskIDs {
-            guard containsTask(withID: taskID, in: resources.catalog.value) else { continue }
-            var cursor: String?
-            var seen = Set<String>()
-            var pagesRead = 0
-            let loadedPages = loadedHistoryPages(for: taskID)
-            let limit = max(intent.historyPageLimit, loadedPages + 1)
-            repeat {
-                guard withinHistoryLimit(pagesRead, limit: limit) else {
-                    verificationFailure = BridgeFailure(
-                        message:
-                            "Could not verify this worklog within the history limit. Cancel and reopen the mover before retrying."
-                    )
-                    break
-                }
-                pagesRead += 1
-                let page = try await client.history(taskID: taskID, cursor: cursor)
-                guard isCurrent(token), !sleeping else { return nil }
-                if let worklog = worklog(withID: intent.expected.id, in: page.worklogs) { return worklog }
-                cursor = page.nextCursor
-                if let cursor, !seen.insert(cursor).inserted {
-                    verificationFailure = BridgeFailure(
-                        message: "Worklog history returned a repeated cursor.", kind: "protocol")
-                    break
-                }
-            } while hasMoreHistory(cursor)
-        }
-        if let verificationFailure { throw verificationFailure }
-        return nil
-    }
-
-    private func finishMove(_ intent: WorklogMoveState.Intent, resources: TaskListResources? = nil) {
-        move.reset()
-        if let resources { acceptTaskList(resources) }
-        if selectedTaskID == intent.expected.taskId {
-            history.removeWorklog(id: intent.expected.id)
-        } else if selectedTaskID == intent.destinationTaskID {
-            history.invalidateCursor()
-        }
-        requestHistory()
-        publish()
-    }
-
-    private func moveCanApply(
-        _ intent: WorklogMoveState.Intent, latest: WorklogItem?,
-        resources: TaskListResources, resolveCommitted: Bool
-    ) -> Bool {
-        if resolveCommitted, let latest, intent.matchesReplacement(latest) {
-            finishMove(intent)
-            return false
-        }
-        guard let latest else {
-            return requireMoveReview(
-                latest: nil, message: "This worklog was moved or deleted. Cancel the mover and refresh history.")
-        }
-        guard latest.id == intent.expected.id, latest.taskId == intent.expected.taskId,
-            sameWorklogTimestamp(latest.start, intent.expected.start),
-            sameWorklogTimestamp(latest.end, intent.expected.end)
-        else {
-            return requireMoveReview(latest: latest, message: "This worklog changed. Review it before moving.")
-        }
-        guard hasTask(withID: intent.destinationTaskID, archived: false, in: resources.catalog.value) else {
-            return failMoveDestination()
-        }
-        return true
-    }
-
-    @discardableResult
-    private func drainMove() -> Bool {
-        guard running, !sleeping, !isBusy, let intent = move.takePendingIntent() else { return false }
-        let token = generation
-        beginOperation()
-        Task { [weak self] in
-            guard let self, isCurrent(token) else { return }
-            defer { finishOperation(token: token) }
-            var commandStarted = false
-            do {
-                let resources = try await client.refreshTaskList()
-                guard isCurrent(token) else { return }
-                acceptTaskList(resources)
-                if sleeping { move.deferUntilWake(); return }
-                let latest = try await currentMoveWorklog(
-                    intent, resources: resources, token: token, includeDestination: move.mayHaveCommitted)
-                guard isCurrent(token) else { return }
-                if sleeping { move.deferUntilWake(); return }
-                guard
-                    moveCanApply(intent, latest: latest, resources: resources, resolveCommitted: move.mayHaveCommitted)
-                else { return }
-                commandStarted = true
-                move.commandStarted()
-                let result = try await client.moveWorklog(
-                    expected: intent.expected, destinationTaskID: intent.destinationTaskID)
-                guard isCurrent(token) else { return }
-                guard intent.matchesReplacement(result.worklog) else {
-                    throw BridgeFailure(
-                        message: "The move response does not contain the moved worklog.",
-                        kind: "protocol", uncertain: true, requiresRefresh: true)
-                }
-                finishMove(intent)
-                await refreshAfterCommit(token: token)
-            } catch {
-                guard isCurrent(token) else { return }
-                let failure = error as? BridgeFailure
-                let uncertain =
-                    failure == nil || failure?.uncertain == true || failure?.kind == "unavailable"
-                    || failure?.kind == "protocol"
-                var reconciled = false
-                if commandStarted {
-                    if let resources = await reconcileWriteFailure(token: token) {
-                        if sleeping { move.fail(error, retainIntent: true); return }
-                        do {
-                            let latest = try await currentMoveWorklog(
-                                intent, resources: resources, token: token, includeDestination: true)
-                            guard isCurrent(token) else { return }
-                            if sleeping { move.fail(error, retainIntent: true); return }
-                            reconciled = true
-                            guard
-                                moveCanApply(intent, latest: latest, resources: resources, resolveCommitted: uncertain)
-                            else { return }
-                            if isWorklogChangedFailure(failure) {
-                                move.requireReview(
-                                    latest: latest, message: "This worklog changed. Review it before moving.")
-                                return
-                            }
-                        } catch {
-                            guard isCurrent(token) else { return }
-                            recordConnectionFailure(error)
-                        }
-                    }
-                } else if uncertain || failure?.requiresRefresh == true {
-                    recordConnectionFailure(error)
-                }
-                guard isCurrent(token) else { return }
-                move.fail(error, retainIntent: uncertain || (commandStarted && !reconciled))
-            }
-        }
-        return true
-    }
-
-    private func currentCorrectionWorklog(
-        _ intent: WorklogCorrectionState.Intent,
-        resources: TaskListResources, token: Int
-    ) async throws -> WorklogItem? {
-        try await currentWorklog(
-            intent.expected, historyPageLimit: intent.historyPageLimit, dialog: "editor",
-            resources: resources, token: token)
-    }
-
-    private func currentWorklog(
-        _ expected: WorklogItem, historyPageLimit: Int, dialog: String,
-        resources: TaskListResources, token: Int
-    ) async throws -> WorklogItem? {
-        if let active = resources.tracking.value, active.id == expected.id { return active }
-        let taskID = expected.taskId
-        if containsTask(withID: taskID, in: resources.catalog.value) {
-            var cursor: String?
-            var seen = Set<String>()
-            let loadedPages = loadedHistoryPages(for: taskID)
-            let pageLimit = max(historyPageLimit, loadedPages + 1)
-            var pagesRead = 0
-            repeat {
-                guard withinHistoryLimit(pagesRead, limit: pageLimit) else {
-                    throw BridgeFailure(
-                        message:
-                            "Could not verify this worklog within the history limit. Cancel and reopen the \(dialog) before retrying."
-                    )
-                }
-                pagesRead += 1
-                let page = try await client.history(taskID: taskID, cursor: cursor)
-                guard isCurrent(token), !sleeping else { return nil }
-                if let worklog = worklog(withID: expected.id, in: page.worklogs) { return worklog }
-                cursor = page.nextCursor
-                if let cursor, !seen.insert(cursor).inserted {
-                    throw BridgeFailure(message: "Worklog history returned a repeated cursor.", kind: "protocol")
-                }
-            } while hasMoreHistory(cursor)
-        }
-        return nil
-    }
-
-    private func correctionCanApply(
-        _ intent: WorklogCorrectionState.Intent, latest: WorklogItem?,
-        resolveCommitted: Bool
-    ) -> Bool {
-        guard let latest else {
-            return requireCorrectionReview(
-                latest: nil, message: "This worklog was moved or deleted. Cancel the editor and refresh history.")
-        }
-        if resolveCommitted && intent.matchesReplacement(latest) {
-            correction.reset()
-            if selectedTaskMatches(intent.expected.taskId) { history.clearAfterCorrection() }
-            requestHistory()
-            return false
-        }
-        guard latest == intent.expected else {
-            return requireCorrectionReview(
-                latest: latest, message: "This worklog changed. Review its latest times before saving.")
-        }
-        return true
-    }
-
-    @discardableResult
-    private func drainCorrection() -> Bool {
-        guard running, !sleeping, !isBusy, let intent = correction.takePendingIntent() else { return false }
-        let token = generation
-        beginOperation()
-        Task { [weak self] in
-            guard let self, isCurrent(token) else { return }
-            defer { finishOperation(token: token) }
-            var commandStarted = false
-            do {
-                let resources = try await client.refreshTaskList()
-                guard isCurrent(token) else { return }
-                acceptTaskList(resources)
-                if sleeping { correction.deferUntilWake(); return }
-                let latest = try await currentCorrectionWorklog(intent, resources: resources, token: token)
-                guard isCurrent(token) else { return }
-                if sleeping { correction.deferUntilWake(); return }
-                guard correctionCanApply(intent, latest: latest, resolveCommitted: true) else { return }
-                commandStarted = true
-                let result = try await client.correctWorklog(
-                    expected: intent.expected,
-                    replacementStart: intent.replacementStart,
-                    replacementEnd: intent.replacementEnd,
-                    occurredAt: intent.occurredAt)
-                guard isCurrent(token) else { return }
-                guard intent.matchesReplacement(result.worklog) else {
-                    throw BridgeFailure(
-                        message: "The correction response does not contain the updated worklog.",
-                        kind: "protocol", uncertain: true, requiresRefresh: true)
-                }
-                correction.reset()
-                await refreshAfterCommit(token: token)
-                guard isCurrent(token) else { return }
-                if selectedTaskMatches(intent.expected.taskId) { history.clearAfterCorrection() }
-                requestHistory()
-            } catch {
-                guard isCurrent(token) else { return }
-                let failure = error as? BridgeFailure
-                let uncertain =
-                    failure == nil || failure?.uncertain == true || failure?.kind == "unavailable"
-                    || failure?.kind == "protocol"
-                var reconciled = false
-                if commandStarted {
-                    if let resources = await reconcileWriteFailure(token: token) {
-                        if sleeping {
-                            correction.fail(error, retainIntent: true)
-                            publish()
-                            return
-                        }
-                        do {
-                            let latest = try await currentCorrectionWorklog(intent, resources: resources, token: token)
-                            guard isCurrent(token) else { return }
-                            if sleeping {
-                                correction.fail(error, retainIntent: true)
-                                publish()
-                                return
-                            }
-                            reconciled = true
-                            guard correctionCanApply(intent, latest: latest, resolveCommitted: uncertain) else {
-                                return
-                            }
-                            if isWorklogChangedFailure(failure) {
-                                correction.requireReview(
-                                    latest: latest,
-                                    message: "This worklog changed. Review its latest times before saving.")
-                                publish()
-                                return
-                            }
-                        } catch {
-                            guard isCurrent(token) else { return }
-                            recordConnectionFailure(error)
-                        }
-                    }
-                } else if uncertain || failure?.requiresRefresh == true {
-                    recordConnectionFailure(error)
-                }
-                guard isCurrent(token) else { return }
-                correction.fail(error, retainIntent: uncertain || (commandStarted && !reconciled))
-                publish()
-            }
-        }
-        return true
-    }
-
-    private func currentDeletionWorklog(
-        _ intent: WorklogDeletionState.Intent,
-        resources: TaskListResources, token: Int
-    ) async throws -> WorklogItem? {
-        try await currentWorklog(
-            intent.expected, historyPageLimit: intent.historyPageLimit, dialog: "dialog",
-            resources: resources, token: token)
-    }
-
-    private func finishDeletion(_ intent: WorklogDeletionState.Intent) {
-        deletion.reset()
-        if selectedTaskMatches(intent.expected.taskId) { history.removeWorklog(id: intent.expected.id) }
-        requestHistory()
-        publish()
-    }
-
-    private func deletionCanApply(
-        _ intent: WorklogDeletionState.Intent, latest: WorklogItem?, resolveCommitted: Bool
-    ) -> Bool {
-        guard let latest else {
-            // A missing worklog after an uncertain write means the deletion committed.
-            if resolveCommitted {
-                finishDeletion(intent)
-                return false
-            }
-            return requireDeletionReview(
-                latest: nil, message: "This worklog was moved or deleted. Cancel and refresh history.")
-        }
-        guard intent.matches(latest) else {
-            return requireDeletionReview(latest: latest, message: "This worklog changed. Review it before deleting.")
-        }
-        return true
-    }
-
-    @discardableResult
-    private func drainDeletion() -> Bool {
-        guard running, !sleeping, !isBusy, let intent = deletion.takePendingIntent() else { return false }
-        let token = generation
-        beginOperation()
-        Task { [weak self] in
-            guard let self, isCurrent(token) else { return }
-            defer { finishOperation(token: token) }
-            var commandStarted = false
-            do {
-                let resources = try await client.refreshTaskList()
-                guard isCurrent(token) else { return }
-                acceptTaskList(resources)
-                if sleeping { deletion.deferUntilWake(); return }
-                let latest = try await currentDeletionWorklog(intent, resources: resources, token: token)
-                guard isCurrent(token) else { return }
-                if sleeping { deletion.deferUntilWake(); return }
-                guard deletionCanApply(intent, latest: latest, resolveCommitted: deletion.mayHaveCommitted) else {
-                    return
-                }
-                commandStarted = true
-                deletion.commandStarted()
-                let result = try await client.deleteWorklog(expected: intent.expected)
-                guard isCurrent(token) else { return }
-                guard intent.matches(result.worklog) else {
-                    throw BridgeFailure(
-                        message: "The deletion response does not contain the deleted worklog.",
-                        kind: "protocol", uncertain: true, requiresRefresh: true)
-                }
-                finishDeletion(intent)
-                await refreshAfterCommit(token: token)
-            } catch {
-                guard isCurrent(token) else { return }
-                let failure = error as? BridgeFailure
-                let uncertain =
-                    failure == nil || failure?.uncertain == true || failure?.kind == "unavailable"
-                    || failure?.kind == "protocol"
-                var reconciled = false
-                if commandStarted {
-                    if let resources = await reconcileWriteFailure(token: token) {
-                        if sleeping { deletion.fail(error, retainIntent: true); return }
-                        do {
-                            let latest = try await currentDeletionWorklog(intent, resources: resources, token: token)
-                            guard isCurrent(token) else { return }
-                            if sleeping { deletion.fail(error, retainIntent: true); return }
-                            reconciled = true
-                            guard deletionCanApply(intent, latest: latest, resolveCommitted: uncertain) else {
-                                return
-                            }
-                            if isWorklogChangedFailure(failure) {
-                                deletion.requireReview(
-                                    latest: latest, message: "This worklog changed. Review it before deleting.")
-                                return
-                            }
-                        } catch {
-                            guard isCurrent(token) else { return }
-                            recordConnectionFailure(error)
-                        }
-                    }
-                } else if uncertain || failure?.requiresRefresh == true {
-                    recordConnectionFailure(error)
-                }
-                guard isCurrent(token) else { return }
-                deletion.fail(error, retainIntent: uncertain || (commandStarted && !reconciled))
-            }
-        }
-        return true
     }
 
     @discardableResult
@@ -1565,7 +1108,6 @@ public final class TrackerSession {
         let previousActive = active
         automation.observeActive(resources.tracking.value)
         tracking.apply(resources.tracking.value, clock: clock)
-        if let active = resources.tracking.value { correction.observe(active); move.observe(active) }
         if reports != nil && requestReport { dailyTotals.invalidate() }
         if catalog.apply(resources.catalog.value, previousActive: previousActive, active: active) {
             requestHistory()
@@ -1745,8 +1287,8 @@ public final class TrackerSession {
         return false
     }
 
-    private func containsTask(withID id: String, in tasks: [TaskItem]) -> Bool {
-        task(withID: id, in: tasks) != nil
+    private func worklogForEditor(_ id: String) -> WorklogItem? {
+        worklog(withID: id, in: worklogs) ?? (active?.id == id ? active : nil)
     }
 
     private func worklog(withID id: String, in worklogs: [WorklogItem]) -> WorklogItem? {
@@ -1760,12 +1302,6 @@ public final class TrackerSession {
 
     private func stopPrimaryAction(worklogID: String) -> MenuPrimaryAction {
         canStopTracking ? .stop(worklogID: worklogID) : .disabled
-    }
-
-    private func rejectConnection(_ message: String) -> Bool {
-        connection.message = message
-        publish()
-        return false
     }
 
     private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) -> Bool {
@@ -1786,48 +1322,6 @@ public final class TrackerSession {
         guard isCurrent(token) else { return false }
         acceptTaskList(resources)
         return true
-    }
-
-    private func prepareMoveSearch() -> Bool {
-        guard !sleeping else {
-            move.deferSearch()
-            return false
-        }
-        return true
-    }
-
-    private func loadedHistoryPages(for taskID: String) -> Int {
-        selectedTaskMatches(taskID) ? (worklogs.count + 49) / 50 : 0
-    }
-
-    private func selectedTaskMatches(_ taskID: String) -> Bool { selectedTaskID == taskID }
-
-    private func withinHistoryLimit(_ pagesRead: Int, limit: Int) -> Bool { pagesRead < limit }
-
-    private func hasMoreHistory(_ cursor: String?) -> Bool { cursor != nil }
-
-    private func requireMoveReview(latest: WorklogItem?, message: String) -> Bool {
-        move.requireReview(latest: latest, message: message)
-        return false
-    }
-
-    private func failMoveDestination() -> Bool {
-        move.fail(
-            BridgeFailure(message: "The destination task is unavailable or archived. Choose another task."),
-            retainIntent: false)
-        return false
-    }
-
-    private func isWorklogChangedFailure(_ failure: BridgeFailure?) -> Bool { failure?.kind == "worklog_changed" }
-
-    private func requireDeletionReview(latest: WorklogItem?, message: String) -> Bool {
-        deletion.requireReview(latest: latest, message: message)
-        return false
-    }
-
-    private func requireCorrectionReview(latest: WorklogItem?, message: String) -> Bool {
-        correction.requireReview(latest: latest, message: message)
-        return false
     }
 
     private func pauseTargetsWorklog(_ action: TrackingAutomationState.Pause, worklog: WorklogItem) -> Bool {
@@ -1876,14 +1370,7 @@ public final class TrackerSession {
     ) -> Bool {
         guard historyRequestIsCurrent(token: token, historyToken: historyToken, taskID: taskID) else { return false }
         history.accept(page, cursor: cursor)
-        page.worklogs.forEach(observeHistoryWorklog)
         return true
-    }
-
-    private func observeHistoryWorklog(_ worklog: WorklogItem) {
-        correction.observe(worklog)
-        move.observe(worklog)
-        deletion.observe(worklog)
     }
 
     private func historyFailureRequiresRecovery(_ failure: BridgeFailure) -> Bool {

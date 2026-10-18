@@ -24,20 +24,6 @@ final class WorklogHistoryState {
         isLoading = pending
     }
 
-    func clearAfterCorrection() {
-        worklogs = []
-        nextCursor = nil
-    }
-
-    func removeWorklog(id: String) {
-        worklogs.removeAll { $0.id == id }
-        nextCursor = nil
-    }
-
-    func invalidateCursor() {
-        nextCursor = nil
-    }
-
     func beginLoading() {
         isLoading = true
     }
