@@ -22,10 +22,10 @@ final class PresentationTests: XCTestCase {
         harness.update()
         XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [0, 0, 0, 0])
         fixture.session.shutdown()
-        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
+        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [0, 1, 1, 1])
         XCTAssertFalse(harness.presentation.canOpenWorklogDeletion)
         harness.update()
-        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [1, 1, 1, 1])
+        XCTAssertEqual([bulk.count, move.count, correction.count, deletion.count], [0, 1, 1, 1])
     }
 
     @MainActor

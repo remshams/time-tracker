@@ -24,34 +24,33 @@ final class ConnectionTests: XCTestCase {
     }
 
     @MainActor
-    func testSourceSwitchClearsAHiddenUnarchiveFailure() async throws {
+    func testUnarchiveFailureDialogDoesNotBlockSourceSwitch() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        fixture.session.setWindowVisible(true)
         let resources = TaskListResources(tasks: [firstTask, archivedTask], active: nil)
         try await fixture.start(resources)
         fixture.session.unarchiveTask(taskID: archivedTask.id)
-        let preflight = try await fixture.client.next()
-        preflight.succeed(resources)
         let command = try await fixture.client.next()
-        fixture.session.setWindowVisible(false)
         command.fail(BridgeFailure(message: "Unarchive rejected", kind: "conflict"))
-        let reconciliation = try await fixture.client.next()
-        reconciliation.succeed(resources)
-        try await fixture.settled()
-        XCTAssertTrue(fixture.session.taskArchiving.hasPendingAction)
-        XCTAssertFalse(fixture.session.taskArchiving.hasUnresolvedIntent)
+        let reload = try await fixture.client.next()
+        try await fixture.update("the reloaded task list") {
+            reload.succeed(resources)
+        }
+        XCTAssertTrue(fixture.session.taskArchiving.isPresented)
+        XCTAssertEqual(fixture.session.taskArchiving.error, "Unarchive rejected")
 
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let request = try await fixture.client.next()
+        XCTAssertEqual(request.operation, .connect(serverSettings))
         request.succeed(emptyTaskListResources)
         let connected = try await fixture.taskValue(connecting)
         try await fixture.settled()
 
         XCTAssertTrue(connected)
-        XCTAssertFalse(fixture.session.taskArchiving.hasPendingAction)
-        XCTAssertNil(fixture.session.taskArchiving.taskID)
-        XCTAssertNil(fixture.session.taskArchiving.error)
+        XCTAssertEqual(fixture.session.connectionSettings, serverSettings)
+        XCTAssertTrue(fixture.session.taskArchiving.isPresented)
+        XCTAssertEqual(fixture.session.taskArchiving.taskID, archivedTask.id)
+        XCTAssertEqual(fixture.session.taskArchiving.error, "Unarchive rejected")
     }
 
     @MainActor

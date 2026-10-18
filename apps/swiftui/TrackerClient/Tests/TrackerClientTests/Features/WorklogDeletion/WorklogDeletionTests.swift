@@ -92,7 +92,7 @@ final class WorklogDeletionTests: XCTestCase {
         try await open(fixture)
         XCTAssertFalse(fixture.session.canOpenWorklogCorrection)
         XCTAssertFalse(fixture.session.canOpenWorklogMove)
-        XCTAssertFalse(fixture.session.canArchiveTask(taskID: secondTask.id))
+        XCTAssertTrue(fixture.session.canArchiveTask(taskID: secondTask.id))
         var publishedMessage: String?
         fixture.session.onChange = { publishedMessage = fixture.session.connectionMessage }
         let connecting = Task { await fixture.session.connect(serverSettings) }
@@ -113,7 +113,7 @@ final class WorklogDeletionTests: XCTestCase {
     }
 
     @MainActor
-    func testOtherEditorsBlockDeletion() async throws {
+    func testWorklogCorrectionBlocksDeletionButTaskArchivingDoesNot() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await open(fixture)
@@ -125,7 +125,7 @@ final class WorklogDeletionTests: XCTestCase {
         fixture.session.cancelWorklogCorrection()
 
         fixture.session.openTaskArchive(taskID: secondTask.id)
-        XCTAssertFalse(fixture.session.canOpenWorklogDeletion)
+        XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
         fixture.session.cancelTaskArchiving()
         XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
     }
@@ -148,7 +148,6 @@ final class WorklogDeletionTests: XCTestCase {
         XCTAssertFalse(fixture.session.canOpenWorklogDeletion)
         XCTAssertFalse(fixture.session.canOpenWorklogCorrection)
         XCTAssertFalse(fixture.session.canOpenWorklogMove)
-        XCTAssertFalse(fixture.session.canArchiveTask(taskID: secondTask.id))
         fixture.session.openWorklogDeletion(worklogID: precise.id)
         XCTAssertFalse(fixture.session.worklogDeletion.isPresented)
     }
