@@ -44,10 +44,10 @@ pub enum RemoteFailureKind {
     Protocol,
 }
 
-/// An inactive-task preview with its confirmation guard retained by the adapter.
+/// An inactive-task preview with its read revision retained by the adapter.
 ///
 /// Deserializing a saved token runs the same checks as decoding a server preview. A token
-/// with an empty guard, an invalid period, a non-canonical cutoff, or candidates that disagree
+/// with an empty revision, an invalid period, a non-canonical cutoff, or candidates that disagree
 /// with the count fails to load. Serialization writes the protocol DTO unchanged.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "InactiveTaskPreviewDto", into = "InactiveTaskPreviewDto")]
@@ -146,9 +146,9 @@ struct HistoryRead {
 }
 
 use decoding::{
-    app_decode_worklog, clear_tracking_result, decode_history, decode_task, decode_task_item,
-    decode_task_list_state, decode_tasks, decode_tracking, decode_worklog, set_tracking_result,
-    task_result, validate_inactive_preview, validate_report, worklog_result,
+    clear_tracking_result, decode_history, decode_task, decode_task_item, decode_task_list_state,
+    decode_tasks, decode_tracking, decode_worklog, set_tracking_result, task_result,
+    validate_inactive_preview, validate_report, worklog_result,
 };
 use error::{classify_error, map_application_error, protocol_failure};
 
@@ -158,16 +158,6 @@ fn creation_needs_recovery(error: &ApplicationError, receipt_confirmed: bool) ->
             error.failure().source(),
             ApplicationFailureSource::RemoteUnavailable | ApplicationFailureSource::RemoteProtocol
         )
-}
-
-fn reviewed_tracking_changed(
-    reviewed: Option<&TrackingState>,
-    current: &TrackingState,
-    reviewed_task: Option<&Task>,
-    current_task: Option<&TaskListItem>,
-) -> bool {
-    reviewed.is_some_and(|old| old != current)
-        || current_task.is_some_and(|item| reviewed_task.is_some_and(|old| old != &item.task))
 }
 
 fn original_worklog_matches(

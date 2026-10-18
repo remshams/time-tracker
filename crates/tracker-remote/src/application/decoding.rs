@@ -195,7 +195,7 @@ pub(super) fn app_decode_task(dto: TaskDto) -> Result<Task, ApplicationError> {
     decode_task(dto).map_err(|error| protocol_failure(&error.to_string()))
 }
 
-pub(super) fn app_decode_worklog(dto: WorklogDto) -> Result<Worklog, ApplicationError> {
+fn app_decode_worklog(dto: WorklogDto) -> Result<Worklog, ApplicationError> {
     decode_worklog(dto).map_err(|error| protocol_failure(&error.to_string()))
 }
 

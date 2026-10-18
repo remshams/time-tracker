@@ -142,11 +142,14 @@ impl RemoteSession {
         self.ensure_version()
             .await
             .map_err(|error| map_application_error(&error, scope.worklog_id, scope.task_id))?;
+        // Stays set if the caller drops the command while the request is in flight.
         self.last_write_attempted = true;
-        let response = self
+        let delivery = self
             .transport
-            .send(method, self.transport.url(path), Some(body))
+            .send_with_delivery(method, self.transport.url(path), Some(body))
             .await;
-        self.decode_receipt(response, guard, scope, decode)
+        // A refused connection proves the server never received the command.
+        self.last_write_attempted = delivery.may_have_reached_server;
+        self.decode_receipt(delivery.result, guard, scope, decode)
     }
 }

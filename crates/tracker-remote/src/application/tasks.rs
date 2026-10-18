@@ -74,7 +74,7 @@ impl TasksClient {
         Ok((dto, item))
     }
 
-    pub(super) async fn read_task_item(
+    async fn read_task_item(
         &mut self,
         session: &mut RemoteSession,
         id: TaskId,
@@ -142,7 +142,7 @@ impl TasksClient {
             .map(|(_, revision)| revision.as_str())
     }
 
-    /// Captures candidates in the default inactivity window with their confirmation guard.
+    /// Captures candidates in the default inactivity window with their read revision.
     pub(super) async fn preview_inactive_tasks(
         &mut self,
         session: &mut RemoteSession,
@@ -152,7 +152,7 @@ impl TasksClient {
             .await
     }
 
-    /// Captures candidate identities for the chosen cutoff and threshold with the server revision.
+    /// Captures candidate identities for the chosen cutoff and threshold.
     pub(super) async fn preview_inactive_tasks_with_period(
         &mut self,
         session: &mut RemoteSession,
@@ -270,7 +270,7 @@ impl TasksClient {
             .await
     }
 
-    /// Confirms the captured preview under its original revision guard.
+    /// Archives the tasks that match the preview's period when the command runs.
     pub(super) async fn archive_inactive_tasks(
         &mut self,
         session: &mut RemoteSession,

@@ -70,7 +70,6 @@ impl TrackingClient {
         task_id: TaskId,
         new_id: WorklogId,
         old_active: Option<WorklogId>,
-        original_active: Option<Worklog>,
         body: &SetTrackingRequest,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
         session
@@ -92,14 +91,9 @@ impl TrackingClient {
                         SetActiveTaskOutcome::Switched { stopped, started } => {
                             stopped.end() == Some(body.occurred_at)
                                 && started.start() == body.occurred_at
-                                && original_active.as_ref().is_some_and(|original| {
-                                    stopped.task_id() == original.task_id()
-                                        && stopped.start() == original.start()
-                                })
                         }
                         SetActiveTaskOutcome::AlreadyActive { worklog } => {
                             old_active == Some(worklog.id())
-                                && original_active.as_ref() == Some(&worklog.to_worklog())
                         }
                     };
                     if !valid {
@@ -115,7 +109,6 @@ impl TrackingClient {
         &mut self,
         session: &mut RemoteSession,
         expected_active: WorklogId,
-        original_active: Option<Worklog>,
         body: &SetTrackingRequest,
     ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
         session
@@ -133,12 +126,9 @@ impl TrackingClient {
                     let valid = match &outcome {
                         ClearActiveTaskOutcome::Stopped { worklog } => {
                             worklog.end() == Some(body.occurred_at)
-                                && original_active.as_ref().is_some_and(|original| {
-                                    worklog.task_id() == original.task_id()
-                                        && worklog.start() == original.start()
-                                })
                         }
-                        ClearActiveTaskOutcome::AlreadyIdle => original_active.is_none(),
+                        // Another client may have stopped the timer first.
+                        ClearActiveTaskOutcome::AlreadyIdle => true,
                     };
                     if !valid {
                         return Err(protocol_failure("stopped worklog contradicts command"));

@@ -136,9 +136,9 @@ fn reports_validate_ids_durations_totals_and_revision_without_task_cache_members
         assert!(validate_report(&invalid).is_err());
     }
 }
-/// Checks that persisted confirmation tokens retain exact metadata and reject missing guards.
+/// Checks that persisted confirmation tokens retain exact metadata and reject missing revisions.
 #[test]
-fn persisted_preview_tokens_preserve_period_candidates_and_confirmation_guard() {
+fn persisted_preview_tokens_preserve_period_candidates_and_read_revision() {
     let parsed_ids = vec![TaskId::generate(), TaskId::generate()];
     let candidate_ids: Vec<String> = parsed_ids.iter().map(ToString::to_string).collect();
     let token = serde_json::json!({
@@ -157,9 +157,9 @@ fn persisted_preview_tokens_preserve_period_candidates_and_confirmation_guard() 
     assert_eq!(preview.dto.revision, "captured-revision");
     assert_eq!(serde_json::to_value(&preview).unwrap(), token);
 
-    let mut missing_guard = token.clone();
-    missing_guard.as_object_mut().unwrap().remove("revision");
-    assert!(serde_json::from_value::<InactiveTaskPreview>(missing_guard).is_err());
+    let mut missing_revision = token.clone();
+    missing_revision.as_object_mut().unwrap().remove("revision");
+    assert!(serde_json::from_value::<InactiveTaskPreview>(missing_revision).is_err());
     let mut empty_guard = token;
     empty_guard["revision"] = serde_json::json!("");
     assert!(serde_json::from_value::<InactiveTaskPreview>(empty_guard).is_err());
@@ -206,7 +206,6 @@ fn restored_preview_tokens_reject_tampered_cutoffs_and_counts() {
 fn command_receipts_require_both_the_matching_request_and_an_applied_revision() {
     let guard = WriteGuard {
         request_id: "expected-command".into(),
-        expected_revision: "reviewed-revision".into(),
     };
     let receipt = MutationDto {
         request_id: guard.request_id.clone(),

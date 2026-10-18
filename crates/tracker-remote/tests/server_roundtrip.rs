@@ -350,18 +350,17 @@ async fn serialized_preview_confirms_the_chosen_period_and_returns_the_persisted
     assert!(!client.task(recent.id()).unwrap().is_archived());
 }
 
-/// Checks that a later catalog refresh cannot replace the guard captured for archive confirmation.
+/// Confirms an older preview after other clients' writes and archives the tasks eligible at run time.
 #[tokio::test]
-async fn remote_inactive_archive_uses_the_preview_revision() {
+async fn remote_inactive_archive_applies_the_preview_period_when_the_command_runs() {
     let server = TestServer::start();
     let mut client = connected(&server.endpoint()).await.unwrap();
     let mut other = connected(&server.endpoint()).await.unwrap();
     let as_of = Utc::now();
-    client
+    let reviewed = client
         .create_task(name("Old remote task"), as_of - Duration::days(20))
         .await
         .unwrap();
-    other.refresh_task_list().await.unwrap();
 
     let preview = client.preview_inactive_tasks(as_of).await.unwrap();
     assert_eq!(preview.count(), 1);
@@ -371,38 +370,20 @@ async fn remote_inactive_archive_uses_the_preview_revision() {
             .as_str(),
         "Old remote task"
     );
-    other
+    let recent = other
         .create_task(name("New remote task"), as_of)
         .await
         .unwrap();
-    client.refresh_task_list().await.unwrap();
+    let unreviewed = other
+        .create_task(name("Unreviewed old task"), as_of - Duration::days(30))
+        .await
+        .unwrap();
 
-    let error = client.archive_inactive_tasks(&preview).await.unwrap_err();
-    assert_eq!(
-        error.failure().message(),
-        "Tracker state changed. Refresh and retry."
-    );
-    assert!(
-        !client
-            .tasks(TaskOrdering::RecentlyCreated)
-            .into_iter()
-            .find(|item| item.task.name().as_str() == "Old remote task")
-            .unwrap()
-            .task
-            .is_archived()
-    );
-
-    let current = client.preview_inactive_tasks(Utc::now()).await.unwrap();
-    assert_eq!(client.archive_inactive_tasks(&current).await.unwrap(), 1);
-    assert!(
-        client
-            .tasks(TaskOrdering::RecentlyCreated)
-            .into_iter()
-            .find(|item| item.task.name().as_str() == "Old remote task")
-            .unwrap()
-            .task
-            .is_archived()
-    );
+    assert_eq!(client.archive_inactive_tasks(&preview).await.unwrap(), 2);
+    assert!(client.last_write_attempted());
+    assert!(client.task(reviewed.id()).unwrap().is_archived());
+    assert!(client.task(unreviewed.id()).unwrap().is_archived());
+    assert!(!client.task(recent.id()).unwrap().is_archived());
 }
 
 #[tokio::test]
@@ -505,8 +486,9 @@ async fn prewrite_compatibility_failure_does_not_retry_or_recover_resources() {
     }
 }
 
+/// The server rejects an outdated reviewed name after the previous command's receipt is cleared.
 #[tokio::test]
-async fn preflight_rejection_clears_the_previous_write_attempt_and_receipt() {
+async fn rejected_rename_reports_the_attempt_and_clears_the_previous_receipt() {
     let server = TestServer::start();
     let mut client = connected(&server.endpoint()).await.unwrap();
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
@@ -523,10 +505,14 @@ async fn preflight_rejection_clears_the_previous_write_attempt_and_receipt() {
         )
         .await
         .unwrap_err();
+    assert_eq!(
+        error.failure().category(),
+        tracker_application::ApplicationFailureCategory::General
+    );
+    assert_eq!(error.failure().message(), "Task changed in another client");
     assert!(!error.failure().recovery_failed());
-    assert!(!client.last_write_attempted());
+    assert!(client.last_write_attempted());
     assert!(client.last_command_receipt().is_none());
-    assert_eq!(client.last_failure(), Some(RemoteFailureKind::Conflict));
     assert_eq!(
         client.task(task.id()).unwrap().name().as_str(),
         "Project work"
@@ -1313,7 +1299,8 @@ async fn candidate_metadata_keeps_original_preview_revision() {
         .await
         .unwrap();
     assert!(client.resolve_preview_tasks(&preview).await.is_err());
-    assert!(client.archive_inactive_tasks(&preview).await.is_err());
+    // Archive confirmation no longer compares the preview revision.
+    assert_eq!(client.archive_inactive_tasks(&preview).await.unwrap(), 1);
 }
 
 #[tokio::test]
@@ -1748,8 +1735,9 @@ async fn report_echoes_and_preview_echoes_must_match_the_original_query() {
     }
 }
 
+/// Resends a possibly lost creation unchanged, even after the catalog revision moves on.
 #[tokio::test]
-async fn uncertain_uncommitted_creation_preserves_id_and_timestamp_under_a_new_guard() {
+async fn uncertain_uncommitted_creation_resends_the_same_request() {
     use std::sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -1847,16 +1835,7 @@ async fn uncertain_uncommitted_creation_preserves_id_and_timestamp_under_a_new_g
         assert_eq!(bodies.len(), 2);
         assert_eq!(bodies[0].task_id, bodies[1].task_id);
         assert_eq!(bodies[0].occurred_at, bodies[1].occurred_at);
-        assert_eq!(bodies[0].name, bodies[1].name);
-        if advance_revision {
-            assert_ne!(
-                bodies[0].guard.expected_revision,
-                bodies[1].guard.expected_revision
-            );
-            assert_ne!(bodies[0].guard.request_id, bodies[1].guard.request_id);
-        } else {
-            assert_eq!(bodies[0], bodies[1]);
-        }
+        assert_eq!(bodies[0], bodies[1]);
         assert_eq!(task.created_at(), clicked_at);
     }
 }
@@ -1889,16 +1868,19 @@ async fn queued_switch_preserves_the_active_worklog_seen_at_click_time() {
         .await
         .unwrap();
     second.refresh_task_list().await.unwrap();
-    assert!(
-        second
-            .set_active_task_with_expected_active(
-                destination.id(),
-                Some(reviewed),
-                at + Duration::seconds(3)
-            )
-            .await
-            .is_err()
+    let error = second
+        .set_active_task_with_expected_active(
+            destination.id(),
+            Some(reviewed),
+            at + Duration::seconds(3),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.failure().message(),
+        "Tracking state changed in another client. Refreshed state."
     );
+    assert!(second.last_write_attempted());
     first.refresh_tracking().await.unwrap();
     assert!(
         matches!(first.current_tracking(),tracker_domain::TrackingState::Running {worklog} if worklog.task_id()==concurrent.id())
@@ -1937,12 +1919,12 @@ async fn archive_confirmation_preserves_the_name_reviewed_before_polling() {
         .await
         .unwrap();
     second.refresh_tasks().await.unwrap();
-    assert!(
-        second
-            .archive_task_with_expected_name(task.id(), task.name(), at + Duration::seconds(2))
-            .await
-            .is_err()
-    );
+    let error = second
+        .archive_task_with_expected_name(task.id(), task.name(), at + Duration::seconds(2))
+        .await
+        .unwrap_err();
+    assert_eq!(error.failure().message(), "Task changed in another client");
+    assert!(second.last_write_attempted());
     first.refresh_tasks().await.unwrap();
     assert!(!first.task(task.id()).unwrap().is_archived());
     second
@@ -2013,8 +1995,9 @@ async fn individual_task_reads_keep_the_catalog_revision_and_catalog_data_separa
     );
 }
 
+/// The server rejects a correction of outdated times, and recovery refreshes the affected caches.
 #[tokio::test]
-async fn source_changed_preflight_is_certain_and_recovers_affected_caches() {
+async fn outdated_correction_is_rejected_by_the_server_and_recovers_affected_caches() {
     let server = TestServer::start();
     let mut first = connected(&server.endpoint()).await.unwrap();
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
@@ -2066,7 +2049,7 @@ async fn source_changed_preflight_is_certain_and_recovers_affected_caches() {
         tracker_application::ApplicationFailureCategory::WorklogChanged
     );
     assert!(!error.failure().recovery_failed());
-    assert!(!second.last_write_attempted());
+    assert!(second.last_write_attempted());
     assert!(
         matches!(second.current_tracking(),tracker_domain::TrackingState::Running {worklog} if worklog.task_id()==timer.id())
     );
@@ -2081,15 +2064,253 @@ async fn source_changed_preflight_is_certain_and_recovers_affected_caches() {
     );
 }
 
+/// The server rejects moves and deletions based on outdated worklog times.
+#[tokio::test]
+async fn outdated_worklog_moves_and_deletions_are_rejected_by_the_server() {
+    use tracker_application::ApplicationFailureCategory;
+    let server = TestServer::start();
+    let mut first = connected(&server.endpoint()).await.unwrap();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let source = first.create_task(name("Source task"), at).await.unwrap();
+    let destination = first
+        .create_task(name("Destination task"), at)
+        .await
+        .unwrap();
+    let started = match first
+        .set_active_task(source.id(), at + Duration::seconds(1))
+        .await
+        .unwrap()
+    {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        _ => panic!("expected start"),
+    };
+    let ClearActiveTaskOutcome::Stopped { worklog: reviewed } = first
+        .clear_active_task(started.id(), at + Duration::seconds(5))
+        .await
+        .unwrap()
+    else {
+        panic!("expected stop");
+    };
+    let mut second = connected(&server.endpoint()).await.unwrap();
+    let corrected = first
+        .correct_worklog(
+            reviewed.id(),
+            reviewed.times(),
+            WorklogTimes::new(at + Duration::seconds(2), Some(at + Duration::seconds(5))),
+            at + Duration::seconds(6),
+        )
+        .await
+        .unwrap();
+
+    let moved = second
+        .move_worklog(
+            reviewed.id(),
+            source.id(),
+            reviewed.times(),
+            destination.id(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        moved.failure().category(),
+        ApplicationFailureCategory::WorklogChanged
+    );
+    assert!(second.last_write_attempted());
+    let deleted = second
+        .delete_completed_worklog(reviewed.id(), source.id(), reviewed.times())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        deleted.failure().category(),
+        ApplicationFailureCategory::WorklogChanged
+    );
+    assert!(second.last_write_attempted());
+
+    let stored = first.read_worklog(reviewed.id()).await.unwrap().worklog;
+    assert_eq!(stored.task_id, source.id().to_string());
+    assert_eq!(stored.start, corrected.start());
+}
+
+/// Another client's write to an unrelated task between this client's read and write does not reject it.
+#[tokio::test]
+async fn unrelated_writes_by_another_client_do_not_reject_commands() {
+    let server = TestServer::start();
+    let mut client = connected(&server.endpoint()).await.unwrap();
+    let mut other = connected(&server.endpoint()).await.unwrap();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let mut step = 0;
+    let mut next_at = || {
+        step += 1;
+        at + Duration::seconds(step)
+    };
+    let task = client
+        .create_task(name("Reviewed task"), next_at())
+        .await
+        .unwrap();
+    let destination = client
+        .create_task(name("Destination task"), next_at())
+        .await
+        .unwrap();
+    async fn interfere(other: &mut RemoteApplication, at: DateTime<Utc>) {
+        other.create_task(name("Unrelated task"), at).await.unwrap();
+    }
+
+    interfere(&mut other, next_at()).await;
+    let renamed = client
+        .rename_task(task.id(), name("Renamed task"), next_at())
+        .await
+        .unwrap();
+    assert_eq!(renamed.name().as_str(), "Renamed task");
+
+    interfere(&mut other, next_at()).await;
+    let started = match client.set_active_task(task.id(), next_at()).await.unwrap() {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        _ => panic!("expected start"),
+    };
+
+    interfere(&mut other, next_at()).await;
+    let switched_at = next_at();
+    let (stopped, running) = match client
+        .set_active_task_with_expected_active(destination.id(), Some(started.id()), switched_at)
+        .await
+        .unwrap()
+    {
+        SetActiveTaskOutcome::Switched { stopped, started } => (stopped, started),
+        _ => panic!("expected switch"),
+    };
+    assert_eq!(stopped.id(), started.id());
+
+    interfere(&mut other, next_at()).await;
+    let cleared_at = next_at();
+    assert!(matches!(
+        client
+            .clear_active_task(running.id(), cleared_at)
+            .await
+            .unwrap(),
+        ClearActiveTaskOutcome::Stopped { .. }
+    ));
+
+    interfere(&mut other, next_at()).await;
+    let replacement =
+        WorklogTimes::new(stopped.start() + Duration::milliseconds(500), stopped.end());
+    let corrected = client
+        .correct_worklog(stopped.id(), stopped.times(), replacement, next_at())
+        .await
+        .unwrap();
+    assert_eq!(corrected.start(), replacement.start());
+
+    interfere(&mut other, next_at()).await;
+    let moved = client
+        .move_worklog(stopped.id(), task.id(), corrected.times(), destination.id())
+        .await
+        .unwrap();
+    assert_eq!(moved.task_id(), destination.id());
+
+    interfere(&mut other, next_at()).await;
+    let deleted = client
+        .delete_completed_worklog(stopped.id(), destination.id(), moved.times())
+        .await
+        .unwrap();
+    assert_eq!(deleted.id(), stopped.id());
+
+    interfere(&mut other, next_at()).await;
+    assert!(
+        client
+            .archive_task(task.id(), next_at())
+            .await
+            .unwrap()
+            .is_archived()
+    );
+
+    interfere(&mut other, next_at()).await;
+    assert!(
+        !client
+            .unarchive_task(task.id(), next_at())
+            .await
+            .unwrap()
+            .is_archived()
+    );
+}
+
+/// Stopping a timer that another client already stopped succeeds as a no-op.
+#[tokio::test]
+async fn stopping_a_timer_another_client_stopped_reports_already_idle() {
+    let server = TestServer::start();
+    let mut client = connected(&server.endpoint()).await.unwrap();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let task = client.create_task(name("Shared timer"), at).await.unwrap();
+    let started = match client
+        .set_active_task(task.id(), at + Duration::seconds(1))
+        .await
+        .unwrap()
+    {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        _ => panic!("expected start"),
+    };
+    let mut other = connected(&server.endpoint()).await.unwrap();
+    other
+        .clear_active_task(started.id(), at + Duration::seconds(2))
+        .await
+        .unwrap();
+
+    let outcome = client
+        .clear_active_task(started.id(), at + Duration::seconds(3))
+        .await
+        .unwrap();
+
+    assert!(matches!(outcome, ClearActiveTaskOutcome::AlreadyIdle));
+    assert!(client.last_write_attempted());
+    assert!(client.active_worklog().is_none());
+}
+
+/// A write to a server that stopped after connecting fails before delivery, so its failure is certain.
+#[tokio::test]
+async fn writes_refused_by_a_stopped_server_are_not_attempted() {
+    let mut server = TestServer::start();
+    let mut client = connected(&server.endpoint()).await.unwrap();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let task = client.create_task(name("Offline task"), at).await.unwrap();
+    assert!(client.last_write_attempted());
+    server.stop();
+
+    let renamed = client
+        .rename_task(task.id(), name("Offline rename"), at + Duration::seconds(1))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        renamed.failure().source(),
+        tracker_application::ApplicationFailureSource::RemoteUnavailable
+    );
+    assert!(!client.last_write_attempted());
+    assert!(client.last_command_receipt().is_none());
+    let started = client
+        .set_active_task(task.id(), at + Duration::seconds(2))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        started.failure().source(),
+        tracker_application::ApplicationFailureSource::RemoteUnavailable
+    );
+    assert!(!client.last_write_attempted());
+    assert_eq!(client.last_failure(), Some(RemoteFailureKind::Unavailable));
+    assert_eq!(
+        client.task(task.id()).unwrap().name().as_str(),
+        "Offline task"
+    );
+}
+
 fn command_receipt_server(
     tasks: Vec<tracker_protocol::TaskDto>,
     active: Option<tracker_protocol::WorklogDto>,
     worklog: tracker_protocol::WorklogDto,
     invalid_receipt_field: Option<&'static str>,
     result: impl Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
-) -> StubServer {
+) -> (
+    StubServer,
+    std::sync::Arc<std::sync::Mutex<Vec<axum::http::Method>>>,
+) {
     use axum::extract::Path;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use tracker_protocol::{TaskResourceDto, TasksDto, TrackingDto, WorklogResourceDto};
     let result = Arc::new(result);
     let write = move |Json(body): Json<serde_json::Value>| {
@@ -2192,11 +2413,25 @@ fn command_receipt_server(
             .patch(write.clone())
             .delete(write),
         );
-    StubServer::from_router(router)
+    // Records resource request methods so tests can check that writes skip pre-write reads.
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let recorder = requests.clone();
+    let router = router.layer(axum::middleware::from_fn(
+        move |request: axum::extract::Request, next: axum::middleware::Next| {
+            let recorder = recorder.clone();
+            async move {
+                if request.uri().path() != "/v1/health" {
+                    recorder.lock().unwrap().push(request.method().clone());
+                }
+                next.run(request).await
+            }
+        },
+    ));
+    (StubServer::from_router(router), requests)
 }
 
 #[tokio::test]
-async fn command_receipts_reject_changed_identities_and_reviewed_result_fields() {
+async fn command_receipts_reject_results_that_contradict_the_command() {
     use serde_json::json;
     use tracker_protocol::{TaskDto, WorklogDto};
     #[derive(Clone, Copy, Debug)]
@@ -2231,8 +2466,6 @@ async fn command_receipts_reject_changed_identities_and_reviewed_result_fields()
             Command::Switch,
             vec![
                 "stopped.id",
-                "stopped.task_id",
-                "stopped.start",
                 "stopped.end",
                 "started.id",
                 "started.task_id",
@@ -2240,13 +2473,10 @@ async fn command_receipts_reject_changed_identities_and_reviewed_result_fields()
                 "started.end",
             ],
         ),
-        (
-            Command::AlreadyActive,
-            vec!["id", "task_id", "start", "end"],
-        ),
-        (Command::Stop, vec!["id", "task_id", "start", "end"]),
+        (Command::AlreadyActive, vec!["id", "task_id", "end"]),
+        (Command::Stop, vec!["id", "end"]),
         (Command::Move, vec!["id", "task_id", "start", "end"]),
-        (Command::Correct, vec!["id", "task_id", "start", "end"]),
+        (Command::Correct, vec!["id", "start", "end"]),
         (Command::Delete, vec!["id", "task_id", "start", "end"]),
     ];
     for (command, fields) in commands {
@@ -2281,7 +2511,7 @@ async fn command_receipts_reject_changed_identities_and_reviewed_result_fields()
             let original_for_receipt = original.clone();
             let source_for_receipt = source.clone();
             let other_id = other_id.clone();
-            let server = command_receipt_server(
+            let (server, requests) = command_receipt_server(
                 vec![source, target],
                 running.then_some(original.clone()),
                 original,
@@ -2374,6 +2604,7 @@ async fn command_receipts_reject_changed_identities_and_reviewed_result_fields()
                 },
             );
             let mut client = connected(&server.endpoint()).await.unwrap();
+            let reads_before_command = requests.lock().unwrap().len();
             let expected = WorklogTimes::new(at, Some(at + Duration::seconds(10)));
             let write_at = at + Duration::seconds(20);
             let error = match command {
@@ -2422,6 +2653,14 @@ async fn command_receipts_reject_changed_identities_and_reviewed_result_fields()
             }
             .expect_err(&format!("{command:?} receipt changed {field}"));
             assert!(client.last_write_attempted(), "{command:?} {field}");
+            // Creation refreshes the catalog first; every other command writes first.
+            if !matches!(command, Command::Create) {
+                assert_ne!(
+                    requests.lock().unwrap()[reads_before_command],
+                    axum::http::Method::GET,
+                    "{command:?} {field}"
+                );
+            }
             assert_eq!(
                 error.failure().source(),
                 tracker_application::ApplicationFailureSource::RemoteProtocol,
@@ -2921,8 +3160,8 @@ async fn definitively_rejected_creation_allows_a_new_task_identity() {
                             return (
                                 StatusCode::CONFLICT,
                                 Json(ErrorDto {
-                                    code: ErrorCode::StaleRevision,
-                                    message: "Tracker state changed. Refresh and retry.".into(),
+                                    code: ErrorCode::Conflict,
+                                    message: "Task changed in another client".into(),
                                 }),
                             )
                                 .into_response();
@@ -2971,8 +3210,9 @@ async fn definitively_rejected_creation_allows_a_new_task_identity() {
     assert_eq!(commands[1].task_id, task.id().to_string());
 }
 
+/// The server rejects stopping a replaced timer, and recovery adopts the new coherent pair.
 #[tokio::test]
-async fn coherent_tracking_preflight_preserves_the_confirmed_view_when_a_new_task_is_running() {
+async fn coherent_stop_of_a_replaced_timer_is_rejected_and_adopts_the_new_pair() {
     let server = TestServer::start();
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
     let mut first = connected(&server.endpoint()).await.unwrap();
@@ -2994,7 +3234,6 @@ async fn coherent_tracking_preflight_preserves_the_confirmed_view_when_a_new_tas
         .with_coherent_task_views();
     second.refresh_task_list().await.unwrap();
     let revision = second.task_revision().to_owned();
-    let confirmed_active = second.active_worklog().clone();
     let new_task = first
         .create_task(name("New timer task"), at + Duration::seconds(2))
         .await
@@ -3004,25 +3243,36 @@ async fn coherent_tracking_preflight_preserves_the_confirmed_view_when_a_new_tas
         .await
         .unwrap();
 
-    second
+    let error = second
         .clear_active_task(original_timer.id(), at + Duration::seconds(4))
         .await
         .unwrap_err();
-    assert!(!second.last_write_attempted());
+    assert_eq!(
+        error.failure().category(),
+        tracker_application::ApplicationFailureCategory::General
+    );
+    assert_eq!(
+        error.failure().message(),
+        "Tracking state changed in another client. Refreshed state."
+    );
+    assert!(second.last_write_attempted());
     assert_eq!(second.task_revision(), second.tracking_revision());
-    assert_eq!(second.task_revision(), revision);
-    assert_eq!(second.active_worklog(), confirmed_active);
-    let active_task_id = second.active_worklog().as_ref().unwrap().task_id();
+    assert_ne!(second.task_revision(), revision);
+    assert_eq!(
+        second.active_worklog().as_ref().unwrap().task_id(),
+        new_task.id()
+    );
     assert!(
         second
             .task_items()
             .iter()
-            .any(|item| item.task.id() == active_task_id)
+            .any(|item| item.task.id() == new_task.id())
     );
 }
 
+/// A fresh coherent client sends its command; the server rejects the unreviewed timer and recovery adopts a pair.
 #[tokio::test]
-async fn coherent_tracking_preflight_initializes_a_pair_before_rejecting_an_unreviewed_timer() {
+async fn coherent_rejected_tracking_command_initializes_a_pair_during_recovery() {
     let server = TestServer::start();
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
     let mut first = connected(&server.endpoint()).await.unwrap();
@@ -3043,18 +3293,23 @@ async fn coherent_tracking_preflight_initializes_a_pair_before_rejecting_an_unre
             .with_coherent_task_views();
         assert!(client.task_revision().is_empty());
         assert!(client.tracking_revision().is_empty());
-        if starting {
+        let error = if starting {
             client
                 .set_active_task_with_expected_active(target.id(), None, at + Duration::seconds(2))
                 .await
-                .unwrap_err();
+                .map(|_| ())
         } else {
             client
                 .clear_active_task(WorklogId::generate(), at + Duration::seconds(2))
                 .await
-                .unwrap_err();
+                .map(|_| ())
         }
-        assert!(!client.last_write_attempted());
+        .unwrap_err();
+        assert_eq!(
+            error.failure().message(),
+            "Tracking state changed in another client. Refreshed state."
+        );
+        assert!(client.last_write_attempted());
         assert!(!client.task_revision().is_empty());
         assert_eq!(client.task_revision(), client.tracking_revision());
         assert_eq!(client.active_worklog().as_ref().unwrap().id(), running.id());
@@ -3244,7 +3499,7 @@ async fn selected_empty_resources_are_loaded_independently() {
 }
 
 #[tokio::test]
-async fn coherent_command_preflight_initializes_tasks_after_a_tracking_only_read() {
+async fn coherent_tracking_command_adopts_the_task_pair_after_a_tracking_only_read() {
     let server = TestServer::start();
     let mut first = connected(&server.endpoint()).await.unwrap();
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
@@ -3267,8 +3522,9 @@ async fn coherent_command_preflight_initializes_tasks_after_a_tracking_only_read
     assert_eq!(client.task_revision(), client.tracking_revision());
 }
 
+/// A start without a reviewed timer needs a baseline pair; an unavailable pair stops it before the write.
 #[tokio::test]
-async fn coherent_tracking_command_rejects_an_unavailable_pair_before_attempting_a_write() {
+async fn coherent_start_without_a_reviewed_timer_rejects_an_unavailable_pair_before_writing() {
     use axum::http::StatusCode;
     use std::sync::{
         Arc,
@@ -3363,26 +3619,21 @@ async fn coherent_tracking_command_rejects_an_unavailable_pair_before_attempting
             .await
             .unwrap()
             .with_coherent_task_views();
-        client.refresh_tracking().await.unwrap();
-        let confirmed_tracking = client.tracking_observation().cloned();
-        assert!(client.task_observation().is_none());
 
-        client
-            .set_active_task_with_expected_active(target, None, at)
-            .await
-            .unwrap_err();
+        client.set_active_task(target, at).await.unwrap_err();
 
         assert!(!client.last_write_attempted());
         assert_eq!(writes.load(Ordering::SeqCst), 0);
         assert_eq!(target_reads.load(Ordering::SeqCst), 0);
         assert!(catalog_reads.load(Ordering::SeqCst) > 0);
         assert!(client.task_observation().is_none());
-        assert_eq!(client.tracking_observation(), confirmed_tracking.as_ref());
+        assert!(client.tracking_observation().is_none());
     }
 }
 
+/// Another client's correction of the running start no longer rejects a stop by worklog id.
 #[tokio::test]
-async fn coherent_tracking_only_stop_preserves_the_reviewed_start_during_initialization() {
+async fn coherent_tracking_only_stop_is_not_rejected_by_another_clients_correction() {
     let server = TestServer::start();
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
     let mut other = connected(&server.endpoint()).await.unwrap();
@@ -3412,24 +3663,26 @@ async fn coherent_tracking_only_stop_preserves_the_reviewed_start_during_initial
         .await
         .unwrap();
 
-    let error = client
+    let outcome = client
         .clear_active_task(started.id(), at + Duration::seconds(4))
         .await
-        .unwrap_err();
+        .unwrap();
 
-    assert_eq!(
-        error.failure().message(),
-        "Tracker state changed. Refresh and retry."
-    );
-    assert!(!client.last_write_attempted());
-    assert_eq!(client.active_worklog(), Some(corrected.clone()));
+    let ClearActiveTaskOutcome::Stopped { worklog } = outcome else {
+        panic!("expected the corrected timer to stop");
+    };
+    assert_eq!(worklog.start(), corrected.start());
+    assert_eq!(worklog.end(), Some(at + Duration::seconds(4)));
+    assert!(client.last_write_attempted());
+    assert!(client.active_worklog().is_none());
     assert_eq!(client.task_revision(), client.tracking_revision());
     other.refresh_tracking().await.unwrap();
-    assert_eq!(other.active_worklog(), Some(corrected));
+    assert!(other.active_worklog().is_none());
 }
 
+/// Another client's rename of the target task no longer rejects a start.
 #[tokio::test]
-async fn coherent_catalog_only_start_preserves_the_reviewed_task_during_initialization() {
+async fn coherent_catalog_only_start_is_not_rejected_by_another_clients_rename() {
     let server = TestServer::start();
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
     let mut other = connected(&server.endpoint()).await.unwrap();
@@ -3446,20 +3699,20 @@ async fn coherent_catalog_only_start_preserves_the_reviewed_task_during_initiali
         .await
         .unwrap();
 
-    let error = client
+    let outcome = client
         .set_active_task_with_expected_active(task.id(), None, at + Duration::seconds(2))
         .await
-        .unwrap_err();
+        .unwrap();
 
-    assert_eq!(
-        error.failure().message(),
-        "Tracker state changed. Refresh and retry."
-    );
-    assert!(!client.last_write_attempted());
+    assert!(matches!(outcome, SetActiveTaskOutcome::Started { .. }));
+    assert!(client.last_write_attempted());
     assert_eq!(client.task(task.id()), Some(&renamed));
     assert_eq!(client.task_revision(), client.tracking_revision());
     other.refresh_tracking().await.unwrap();
-    assert!(other.active_worklog().is_none());
+    assert_eq!(
+        other.active_worklog().as_ref().unwrap().task_id(),
+        task.id()
+    );
 }
 
 #[tokio::test]

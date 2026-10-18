@@ -139,7 +139,6 @@ impl WorklogsClient {
         &mut self,
         session: &mut RemoteSession,
         id: WorklogId,
-        expected_task_id: TaskId,
         replacement: WorklogTimes,
         body: &WorklogChangeRequest,
     ) -> Result<Worklog, ApplicationError> {
@@ -155,7 +154,8 @@ impl WorklogsClient {
                 },
                 |result| {
                     let worklog = worklog_result(result, id)?;
-                    if !original_worklog_matches(&worklog, Some(expected_task_id), replacement) {
+                    // The request names no task, so only the identity and new times are checked.
+                    if !original_worklog_matches(&worklog, None, replacement) {
                         return Err(protocol_failure("corrected worklog contradicts command"));
                     }
                     Ok(worklog)

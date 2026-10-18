@@ -59,9 +59,7 @@ pub(super) fn error_category(
     worklog_id: Option<WorklogId>,
 ) -> ApplicationFailureCategory {
     match code {
-        ErrorCode::InvalidRequest | ErrorCode::Conflict | ErrorCode::StaleRevision => {
-            ApplicationFailureCategory::General
-        }
+        ErrorCode::InvalidRequest | ErrorCode::Conflict => ApplicationFailureCategory::General,
         ErrorCode::NotFound if worklog_id.is_some() => ApplicationFailureCategory::WorklogNotFound,
         ErrorCode::NotFound => ApplicationFailureCategory::TaskNotFound,
         ErrorCode::WorklogChanged => ApplicationFailureCategory::WorklogChanged,
