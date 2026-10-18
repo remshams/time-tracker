@@ -291,6 +291,7 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
             open_fixture(&directory.path().join(format!("protocol-{archived}.db"))).unwrap();
         let tasks = writer.application.tasks(TaskOrdering::default());
         let target = tasks[0].task.id();
+        let reviewed_name = tasks[0].task.name().as_str().to_owned();
         if !archived {
             crate::tests::archive_cached_task(&mut writer.application, target, at(50)).unwrap();
         }
@@ -359,7 +360,12 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
                 assert_eq!(body["occurred_at"], timestamp(at(400)));
                 assert_eq!(body["expected_revision"], "42");
                 assert!(body["request_id"].as_str().is_some());
-                assert_eq!(body.as_object().unwrap().len(), 4);
+                if archived {
+                    assert_eq!(body["expected_name"], reviewed_name.as_str());
+                    assert_eq!(body.as_object().unwrap().len(), 5);
+                } else {
+                    assert_eq!(body.as_object().unwrap().len(), 4);
+                }
             } else {
                 assert_eq!(response["kind"], "protocol", "{index}: {response}");
                 assert_eq!(response["uncertain"], true);
