@@ -162,7 +162,7 @@ final class FakeClient: TrackerClient, ReportClient {
     private(set) var operations: [Operation] = []
     private(set) var maximumOutstandingRequests = 0
 
-    func next(timeout: TimeInterval = 2, file: StaticString = #filePath, line: UInt = #line) async throws -> Request {
+    func next(timeout: TimeInterval = 0.5, file: StaticString = #filePath, line: UInt = #line) async throws -> Request {
         if !requests.isEmpty { return requests.removeFirst() }
         let description =
             "Next client request after \(operations.last.map { String(describing: $0) } ?? "startup") at \(file):\(line)"
@@ -511,7 +511,7 @@ final class Fixture {
     }
 
     func taskValue<Value, Failure>(
-        _ task: Task<Value, Failure>, timeout: TimeInterval = 2,
+        _ task: Task<Value, Failure>, timeout: TimeInterval = 0.5,
         file: StaticString = #filePath, line: UInt = #line
     ) async throws -> Value {
         let expectation = XCTestExpectation(description: "Asynchronous test task at \(file):\(line)")
@@ -532,7 +532,7 @@ final class Fixture {
 
     /// Runs `action`, then waits for the next session update that satisfies `condition`.
     func update(
-        _ description: String, timeout: TimeInterval = 2,
+        _ description: String, timeout: TimeInterval = 0.5,
         file: StaticString = #filePath, line: UInt = #line,
         after action: () -> Void, until condition: @escaping @MainActor () -> Bool = { true }
     ) async throws {
@@ -553,7 +553,7 @@ final class Fixture {
     }
 
     func waitUntil(
-        _ description: String, timeout: TimeInterval = 2,
+        _ description: String, timeout: TimeInterval = 0.5,
         file: StaticString = #filePath, line: UInt = #line,
         _ condition: @escaping @MainActor () -> Bool
     ) async throws {
