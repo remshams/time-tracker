@@ -300,7 +300,8 @@ fn remote_archive_after_other_clients_writes_archives_what_matches_when_it_runs(
         )
         .unwrap();
     first.application.refresh_resources(3).unwrap();
-    // The server archives the tasks that match the period now, not the previewed list.
+    // The server archives the tasks that match the period when confirmation runs, not the
+    // previewed list.
     let result = archive(&mut first, 14, as_of);
     assert_eq!(result["data"]["archivedCount"], 2, "{result}");
     first.application.refresh_resources(3).unwrap();
