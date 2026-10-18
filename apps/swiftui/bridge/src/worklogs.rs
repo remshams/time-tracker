@@ -1,9 +1,10 @@
 use std::ffi::{CStr, c_char};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Value, json};
 use tracker_application::{ApplicationFailureCategory, WorklogCursor};
-use tracker_domain::{TaskId, WorklogId, WorklogTimes};
+use tracker_domain::{TaskId, WorklogTimes};
+use tracker_protocol::{WorklogCursorDto, parse_worklog_cursor};
 
 use crate::Bridge;
 use crate::backend::BridgeError;
@@ -201,26 +202,16 @@ pub unsafe extern "C" fn tt_bridge_delete_worklog(
     encode(result)
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct HistoryCursor {
-    id: String,
-    revision: i64,
+pub(super) fn parse_cursor(text: &str) -> Result<WorklogCursor, String> {
+    let cursor: WorklogCursorDto =
+        serde_json::from_str(text).map_err(|_| "Invalid history cursor".to_owned())?;
+    let (id, revision) = parse_worklog_cursor(&cursor.id, cursor.revision)
+        .map_err(|_| "Invalid history cursor".to_owned())?;
+    Ok(WorklogCursor { id, revision })
 }
 
-pub(super) fn parse_cursor(text: &str) -> Result<WorklogCursor, String> {
-    let cursor: HistoryCursor =
-        serde_json::from_str(text).map_err(|_| "Invalid history cursor".to_owned())?;
-    if cursor.revision < 0 {
-        return Err("Invalid history cursor".to_owned());
-    }
-    Ok(WorklogCursor {
-        id: cursor
-            .id
-            .parse::<WorklogId>()
-            .map_err(|_| "Invalid history cursor".to_owned())?,
-        revision: cursor.revision,
-    })
+fn encode_cursor(cursor: WorklogCursor) -> Result<String, BridgeError> {
+    serde_json::to_string(&WorklogCursorDto::from(cursor)).map_err(|error| error.to_string().into())
 }
 
 /// Returns one bounded history page and an opaque cursor for the next page.
@@ -273,13 +264,7 @@ pub unsafe extern "C" fn tt_bridge_history(
             }
             Err(error) => return Err(bridge.application.history_error(error)),
         };
-        let next_cursor = page.next_cursor.map(|next| {
-            json!({
-                "id": next.id.to_string(),
-                "revision": next.revision
-            })
-            .to_string()
-        });
+        let next_cursor = page.next_cursor.map(encode_cursor).transpose()?;
         Ok(HistoryJson {
             worklogs: page.worklogs.iter().map(worklog_json).collect(),
             next_cursor,
@@ -290,4 +275,21 @@ pub unsafe extern "C" fn tt_bridge_history(
         result
             .and_then(|page| serde_json::to_value(page).map_err(|error| error.to_string().into())),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_cursors_keep_their_token_bytes() {
+        let id = "00000000-0000-7000-8000-000000000001".parse().unwrap();
+        let token = encode_cursor(WorklogCursor { id, revision: 7 }).unwrap();
+        assert_eq!(
+            token,
+            r#"{"id":"00000000-0000-7000-8000-000000000001","revision":7}"#
+        );
+        let parsed = parse_cursor(&token).unwrap();
+        assert_eq!((parsed.id, parsed.revision), (id, 7));
+    }
 }
