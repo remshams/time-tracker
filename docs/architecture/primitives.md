@@ -2,7 +2,7 @@
 
 Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. [Revisions and concurrency](#revisions-and-concurrency) explains stale-write and pagination guards. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
 
-Source scope: the Rust core, TUI, CLI, and native macOS client at `e4eb464d5b23fec9dee6c5953a2266e3bf02ed20`, inspected on 16 October 2026. Native reviewed task-name contracts additionally describe `be493ab` on 16 October 2026. The shared cursor DTO describes issue #67 at `fa3c662` on 17 October 2026. Shared cursor parsing describes issue #80 at `ae34dbf` on 18 October 2026. Native worklog deletion additionally describes `23aa8c2`, inspected on 17 October 2026. Swift Observation presentation additionally describes `72af5a3`, inspected on 17 October 2026. Guarded tracking exports describe `d4249f0`, inspected on 18 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
+Source scope: the Rust core, TUI, CLI, and native macOS client at `e4eb464d5b23fec9dee6c5953a2266e3bf02ed20`, inspected on 16 October 2026. Native reviewed task-name contracts additionally describe `be493ab` on 16 October 2026. The shared cursor DTO describes issue #67 at `fa3c662` on 17 October 2026. Shared cursor parsing describes issue #80 at `ae34dbf` on 18 October 2026. Native worklog deletion additionally describes `23aa8c2`, inspected on 17 October 2026. Swift Observation presentation additionally describes `72af5a3`, inspected on 17 October 2026. Guarded tracking exports describe `d4249f0`, inspected on 18 October 2026. Server-checked reviewed task names describe issue #93 at `67c2e1b`, inspected on 18 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
 
 ## Architecture primitives
 
@@ -32,19 +32,19 @@ Source: [crate](../../crates/tracker-storage/Cargo.toml), [SQLite adapter](../..
 
 ### tracker-protocol
 
-Defines protocol-4 JSON requests, resource observations, command receipts, and conversions at the HTTP boundary. `parse_worklog_cursor` holds the one cursor validation rule: the revision is nonnegative and the ID is a `WorklogId`. Observations pair read values with revisions. Receipts describe committed writes and do not replace current read state. This crate contains no HTTP client, server, or database connection.
+Defines protocol-5 JSON requests, resource observations, command receipts, and conversions at the HTTP boundary. Task rename and archive requests carry the reviewed task name as `expected_name`; restore carries none. `parse_worklog_cursor` holds the one cursor validation rule: the revision is nonnegative and the ID is a `WorklogId`. Observations pair read values with revisions. Receipts describe committed writes and do not replace current read state. This crate contains no HTTP client, server, or database connection.
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain).
 
-Source: [crate](../../crates/tracker-protocol/Cargo.toml), [wire contracts](../../crates/tracker-protocol/src/lib.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
+Source: [crate](../../crates/tracker-protocol/Cargo.toml), [wire contracts](../../crates/tracker-protocol/src/lib.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).
 
 ### tracker-server
 
-Owns HTTP routes, server-side operation serialization, revision guards, command receipts, and its application and SQLite database. Task-list and daily-overview reads capture related resources in one transaction. `tt serve` launches this library against an explicit local or Tailscale bind address.
+Owns HTTP routes, server-side operation serialization, revision guards, command receipts, and its application and SQLite database. Task-list and daily-overview reads capture related resources in one transaction. Rename and archive check the reviewed task name through the shared guarded application operations, which compare and write in one SQLite transaction. `tt serve` launches this library against an explicit local or Tailscale bind address.
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-storage](#tracker-storage).
 
-Source: [crate](../../crates/tracker-server/Cargo.toml), [entry points](../../crates/tracker-server/src/lib.rs), [resource routes](../../crates/tracker-server/src/resources.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
+Source: [crate](../../crates/tracker-server/Cargo.toml), [entry points](../../crates/tracker-server/src/lib.rs), [resource routes](../../crates/tracker-server/src/resources.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).
 
 ### tracker-remote
 
@@ -162,7 +162,7 @@ The server token guards remote commands and coherent resource reads. Database co
 
 ### Server command and resource revision
 
-The server creates a new epoch at startup and starts its sequence at 0. Reads return the token captured under the operation lock. Writes submit `expected_revision`; the server checks equality under that same lock before executing a new command. A mismatch returns HTTP 409. This prevents a stale rename from silently overwriting another client's edit and rejects stale archive previews. Matching read tokens also let clients check that related resource observations agree.
+The server creates a new epoch at startup and starts its sequence at 0. Reads return the token captured under the operation lock. Writes submit `expected_revision`; the server checks equality under that same lock before executing a new command. A mismatch returns HTTP 409. This prevents a stale rename from silently overwriting another client's edit and rejects stale archive previews. Rename and archive also carry `expected_name`, which SQLite compares with the stored name in the write transaction, independent of the revision. A different name returns HTTP 409 `conflict` and leaves the task unchanged. Matching read tokens also let clients check that related resource observations agree.
 
 The token covers server-mediated commands, not direct SQLite writes. It is not persisted. A restart changes the epoch, so old tokens remain invalid even though the sequence resets. Identical successful request replays are checked before the revision guard and return their original receipt.
 
@@ -180,8 +180,12 @@ Pagination counters do not cover stale task metadata writes. Conversely, using t
 
 Local clients have no server token. The TUI, CLI, and native macOS app can open the same local SQLite database concurrently, even if each presents one view. Database counters give all clients the same transactional pagination checks. The current split keeps task-history invalidation narrow while retaining the server's broader write and read-consistency guard.
 
-Source scope: server, protocol, and storage revision mechanisms at `e4eb464d5b23fec9dee6c5953a2266e3bf02ed20`, inspected on 16 October 2026. Code: [server guards](../../crates/tracker-server/src/core.rs), [server initialization](../../crates/tracker-server/src/bootstrap.rs), [cursor contracts](../../crates/tracker-protocol/src/lib.rs), [history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs), and [database triggers](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
+Source scope: server, protocol, and storage revision mechanisms at `e4eb464d5b23fec9dee6c5953a2266e3bf02ed20`, inspected on 16 October 2026. The server's reviewed-name check describes issue #93 at `67c2e1b`, inspected on 18 October 2026. Code: [server guards](../../crates/tracker-server/src/core.rs), [task routes](../../crates/tracker-server/src/tasks.rs), [server initialization](../../crates/tracker-server/src/bootstrap.rs), [cursor contracts](../../crates/tracker-protocol/src/lib.rs), [history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs), and [database triggers](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).
 
 ### Positive-duration migration and protocol upgrade
 
 Schema migration 7 deletes completed worklogs with zero duration; they cover no time. It refuses databases containing negative durations and rolls back without changing any history. Negative durations indicate invalid stored data and require explicit database repair or a valid backup. Back up the database before upgrading. Protocol 4 removes timestamp and task fields from cursors. Upgrade the server and every client together and regenerate saved history and preview tokens. Incompatible pairs fail the health check. See [ADR 0024](../adr/0024-id-only-worklog-cursors-and-positive-durations.md).
+
+### Protocol 5 upgrade
+
+Protocol 5 adds `expected_name` to task rename and archive requests. Upgrade the server and every client together; incompatible pairs fail the health check. No database migration is needed, and saved history and preview tokens stay valid. See [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).
