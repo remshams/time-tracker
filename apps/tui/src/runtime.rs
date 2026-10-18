@@ -413,20 +413,10 @@ mod tests {
                 r#"{{"tasks":[{alpha_json},{beta_json}],"active_worklog":{active},"revision":"{revision}"}}"#
             )
         };
-        let tracking = |active: &str, revision: &str| {
-            format!(r#"{{"active_worklog":{active},"revision":"{revision}"}}"#)
-        };
         let mut replies = vec![
-            (200, r#"{"status":"ok","protocol_version":5}"#.to_owned()),
+            (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
             (200, aggregate(&old_worklog, "before")),
-            (200, tracking(&old_worklog, "before")),
         ];
-        if !stopping {
-            replies.push((
-                200,
-                format!(r#"{{"task":{beta_json},"revision":"before"}}"#),
-            ));
-        }
         let stopped = old_worklog.replace("\"end\":null", "\"end\":\"$occurred_at\"");
         let started = format!(
             r#"{{"id":"$worklog_id","task_id":"{}","start":"$occurred_at","end":null}}"#,
@@ -574,6 +564,15 @@ mod tests {
         )
         .await;
         let paths = worker.join().unwrap();
+        // The write follows the initial load without reading tracking or the task first.
+        assert_eq!(
+            paths[..3],
+            [
+                "GET /v1/health",
+                "GET /v1/state/task-list",
+                "PUT /v1/tracking"
+            ]
+        );
         let ResultKind::Request(completed) = result else {
             panic!("tracking completion")
         };
@@ -734,7 +733,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_coherent_refresh_clears_saved_tracking_warnings_and_preserves_other_messages() {
-        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":5}"#.to_owned())];
+        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":6}"#.to_owned())];
         responses.extend(task_list_responses("fresh"));
         let (endpoint, worker, _) = stoppable_resource_server(responses);
         let mut remote = RemoteApplication::disconnected(&endpoint).unwrap();
@@ -814,7 +813,7 @@ mod tests {
         let task_id = history_task.id();
         let log_id = worklog_id(1);
         let mut responses = vec![
-            (200, r#"{"status":"ok","protocol_version":5}"#.to_owned()),
+            (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
             (
                 200,
                 format!(
@@ -874,7 +873,7 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_remote_refresh_reads_one_aggregate_and_publishes_a_coherent_pair() {
-        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":5}"#.to_owned())];
+        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":6}"#.to_owned())];
         responses.extend(task_list_responses("state-1"));
         responses.extend(task_list_responses("state-1"));
         let (endpoint, worker, stop) = stoppable_resource_server(responses);
@@ -904,7 +903,7 @@ mod tests {
 
     #[tokio::test]
     async fn failed_remote_refresh_does_not_publish_independently_loaded_mismatched_resources() {
-        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":5}"#.to_owned())];
+        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":6}"#.to_owned())];
         responses.extend([
             (200, r#"{"tasks":[],"revision":"tasks-1"}"#.to_owned()),
             (

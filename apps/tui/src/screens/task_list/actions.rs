@@ -759,6 +759,41 @@ mod navigation_tests {
         );
     }
 
+    /// Checks that other archive failures close confirmation and ask for a new preview.
+    #[test]
+    fn other_bulk_archive_failures_close_the_dialog_and_ask_for_a_new_preview() {
+        let old = task(1, "old task");
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
+        state
+            .shell_mut()
+            .task_list_mut()
+            .confirm_inactive_archive(InactiveTaskPreview::local(
+                chrono::Utc::now(),
+                vec![old.id()],
+                vec!["old task".to_owned()],
+            ));
+        state.handle_task_list_command(TaskListCommand::Confirm);
+        let effect = state.take_effect().expect("bulk archive request");
+        let request = effect.request.clone();
+        state.complete_effect_with_resources(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::ArchivedInactiveTasks(Err(
+                    tracker_application::RepositoryError::TaskIsActive { id: old.id() }.into(),
+                )),
+            },
+            Vec::new(),
+            TrackingState::Idle,
+        );
+
+        assert_eq!(state.shell().task_list().mode(), &TaskListMode::Normal);
+        assert_eq!(
+            state.shell().status(),
+            &Status::Error("Task has active work; press D to preview again".to_owned())
+        );
+    }
+
     /// Checks that an older archive completion cannot dismiss a newer task-list interaction.
     #[test]
     fn a_bulk_archive_completion_keeps_a_newer_task_list_mode_open() {

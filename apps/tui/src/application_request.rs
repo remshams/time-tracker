@@ -1184,7 +1184,7 @@ pub(crate) mod remote_resource_tests {
             at(100).to_rfc3339(),
         );
         let mut responses = vec![
-            (200, r#"{"status":"ok","protocol_version":5}"#.to_owned()),
+            (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
             (200, report.clone()),
             if metadata_available {
                 (200, metadata)
@@ -1362,7 +1362,7 @@ pub(crate) mod remote_resource_tests {
             at(200).to_rfc3339(),
         );
         let (endpoint, worker) = resource_server(vec![
-            (200, r#"{"status":"ok","protocol_version":5}"#.to_owned()),
+            (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
             (200, first_page),
             (200, metadata),
             (200, second_page),
@@ -1503,7 +1503,7 @@ pub(crate) mod remote_resource_tests {
             at(200).to_rfc3339(),
         );
         let (endpoint, worker) = resource_server(vec![
-            (200, r#"{"status":"ok","protocol_version":5}"#.to_owned()),
+            (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
             (
                 200,
                 r#"{"worklogs":[],"next_cursor":null,"revision":"history-1"}"#.to_owned(),
