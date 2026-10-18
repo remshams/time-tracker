@@ -35,14 +35,6 @@ impl ApiError {
         }
     }
 
-    pub(super) fn stale() -> Self {
-        Self {
-            status: StatusCode::CONFLICT,
-            code: ErrorCode::StaleRevision,
-            message: "Tracker state changed. Refresh and retry.".to_owned(),
-        }
-    }
-
     pub(super) fn internal() -> Self {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,

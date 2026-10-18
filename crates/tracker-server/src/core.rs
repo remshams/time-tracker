@@ -60,15 +60,12 @@ impl Core {
                 ))
             };
         }
-        if guard.expected_revision != self.revision() {
-            return Err(ApiError::stale());
-        }
         let result = match operation(&mut self.app) {
             Ok(result) => result,
             Err(error) => {
                 if error.status.is_server_error() {
                     // A command may commit before its follow-up read fails.
-                    // The old revision must never authorize another write.
+                    // Advance the revision so reads do not report changed state as unchanged.
                     self.sequence = self.sequence.saturating_add(1);
                     self.needs_refresh = self.app.refresh_authoritative_state().is_err();
                 }
@@ -145,7 +142,6 @@ mod tests {
             core.completion_order.push_back(request_id);
         }
         let guard = WriteGuard {
-            expected_revision: core.revision(),
             request_id: Uuid::now_v7().to_string(),
         };
         let boundary_request_id = guard.request_id.clone();
