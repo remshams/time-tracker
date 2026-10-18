@@ -10,6 +10,12 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 - Don't complicate the code for rare cases. If another window or machine changed data in the meantime, telling the user to reload is acceptable when handling the change automatically would add a lot of code or effort.
 - Simple doesn't mean sloppy. The quality bar stays the same: correct behavior, clear errors, tests, and the validation steps below.
 
+## Code organization
+
+- Follow domain-driven design. Model code around the domain concepts, such as tasks, tracking, and worklogs, and use their names for types, functions, and modules.
+- Inside a crate or app, split code by feature, not by technical layer. Keep a feature's state, logic, and views together, as `crates/tracker-domain/src/` and `apps/swiftui/Sources/TimeTrackerSwiftUI/Features/` do. Don't add folders such as `models/`, `services/`, or `views/` that collect one technical role across all features.
+- Keep the crate boundaries described in `docs/architecture/primitives.md`. This rule covers the code inside each crate and app, not the crate split.
+
 ## General
 
 - Always apply the `unslop` skill when writing or editing any text (responses, code comments, docs, commit messages, etc.)
