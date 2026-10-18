@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use tracker_application::timestamps::{canonical_timestamp as canonical, canonical_worklog_times};
 use tracker_application::{GlobalWorklogCursor, WorklogCursor};
 use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
-use tracker_protocol::{WorklogCursorDto, WorklogDto};
+use tracker_protocol::{WorklogCursorDto, WorklogDto, parse_worklog_cursor};
 
 use crate::args::{ExpectedTimes, Worklogs};
 use crate::backend::Backend;
@@ -117,16 +117,26 @@ fn replacement(
     )
 }
 
-enum DecodedCursor {
-    Task(WorklogCursor),
-    All(GlobalWorklogCursor),
+/// One history page request, with the cursor already matched to its scope.
+enum HistoryRequest {
+    Task(TaskId, Option<WorklogCursor>),
+    All(Option<GlobalWorklogCursor>),
+}
+
+impl HistoryRequest {
+    fn first_page(task: Option<TaskId>) -> Self {
+        match task {
+            Some(task) => Self::Task(task, None),
+            None => Self::All(None),
+        }
+    }
 }
 
 fn decode_cursor(
     token: &CursorToken,
     task: Option<TaskId>,
     identity: &str,
-) -> Result<DecodedCursor, CliError> {
+) -> Result<HistoryRequest, CliError> {
     let (backend, cursor, task_scoped) = match token {
         CursorToken::Task { backend, cursor } => (backend, cursor, true),
         CursorToken::All { backend, cursor } => (backend, cursor, false),
@@ -138,22 +148,12 @@ fn decode_cursor(
     if !task_scoped && task.is_some() {
         return Err(CliError::input("global cursor cannot be used with --task"));
     }
-    validate_revision(cursor.revision)?;
-    let id = cursor.id.parse().map_err(CliError::input)?;
-    let revision = cursor.revision;
-    Ok(if task_scoped {
-        DecodedCursor::Task(WorklogCursor { id, revision })
-    } else {
-        DecodedCursor::All(GlobalWorklogCursor { id, revision })
+    let (id, revision) =
+        parse_worklog_cursor(&cursor.id, cursor.revision).map_err(CliError::input)?;
+    Ok(match task {
+        Some(task) => HistoryRequest::Task(task, Some(WorklogCursor { id, revision })),
+        None => HistoryRequest::All(Some(GlobalWorklogCursor { id, revision })),
     })
-}
-
-fn validate_revision(revision: i64) -> Result<(), CliError> {
-    if revision < 0 {
-        Err(CliError::input("cursor revision must be nonnegative"))
-    } else {
-        Ok(())
-    }
 }
 
 fn check_backend(actual: &str, expected: &str) -> Result<(), CliError> {
@@ -222,38 +222,33 @@ async fn list(
     task: Option<TaskId>,
     cursor: Option<&str>,
 ) -> Result<Value, CliError> {
-    let cursor = cursor.map(read_json::<CursorToken>).transpose()?;
-    let cursor = cursor
-        .as_ref()
-        .map(|token| decode_cursor(token, task, &backend.identity))
-        .transpose()?;
-    if let Some(task) = task {
-        let after = match cursor {
-            Some(DecodedCursor::Task(cursor)) => Some(cursor),
-            _ => None,
-        };
-        let page = backend.worklogs_for_task(task, after.as_ref()).await?;
-        let next = page.next_cursor.map(|cursor| CursorToken::Task {
-            backend: backend.identity.clone(),
-            cursor: cursor.into(),
-        });
-        Ok(
-            json!({"worklogs": page.worklogs.iter().map(WorklogDto::from).collect::<Vec<_>>(), "next_cursor": next}),
-        )
-    } else {
-        let after = match cursor {
-            Some(DecodedCursor::All(cursor)) => Some(cursor),
-            _ => None,
-        };
-        let page = backend.all_worklogs(after.as_ref()).await?;
-        let next = page.next_cursor.map(|cursor| CursorToken::All {
-            backend: backend.identity.clone(),
-            cursor: cursor.into(),
-        });
-        Ok(
-            json!({"worklogs": page.worklogs.iter().map(WorklogDto::from).collect::<Vec<_>>(), "next_cursor": next}),
-        )
-    }
+    let token = cursor.map(read_json::<CursorToken>).transpose()?;
+    let request = match &token {
+        Some(token) => decode_cursor(token, task, &backend.identity)?,
+        None => HistoryRequest::first_page(task),
+    };
+    let (worklogs, next) = match request {
+        HistoryRequest::Task(task, after) => {
+            let page = backend.worklogs_for_task(task, after.as_ref()).await?;
+            let next = page.next_cursor.map(|cursor| CursorToken::Task {
+                backend: backend.identity.clone(),
+                cursor: cursor.into(),
+            });
+            (page.worklogs, next)
+        }
+        HistoryRequest::All(after) => {
+            let page = backend.all_worklogs(after.as_ref()).await?;
+            let next = page.next_cursor.map(|cursor| CursorToken::All {
+                backend: backend.identity.clone(),
+                cursor: cursor.into(),
+            });
+            (page.worklogs, next)
+        }
+    };
+    Ok(json!({
+        "worklogs": worklogs.iter().map(WorklogDto::from).collect::<Vec<_>>(),
+        "next_cursor": next,
+    }))
 }
 
 #[cfg(test)]
