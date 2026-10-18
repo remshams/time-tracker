@@ -24,9 +24,6 @@ char *tt_bridge_archive_task_with_expected_name_at(Bridge *bridge, const char *t
 char *tt_bridge_unarchive_task_at(Bridge *bridge, const char *task_id, const char *occurred_at);
 char *tt_bridge_preview_inactive_tasks_at(Bridge *bridge, uint32_t inactive_days, const char *as_of);
 char *tt_bridge_archive_inactive_tasks_at(Bridge *bridge, uint32_t inactive_days, const char *as_of);
-char *tt_bridge_start_tracking(Bridge *bridge, const char *task_id);
-char *tt_bridge_stop_tracking(Bridge *bridge, const char *worklog_id);
-char *tt_bridge_start_tracking_at(Bridge *bridge, const char *task_id, const char *occurred_at);
 char *tt_bridge_start_tracking_if_active_at(Bridge *bridge, const char *task_id, const char *expected_active_id, const char *occurred_at);
 char *tt_bridge_stop_tracking_at(Bridge *bridge, const char *worklog_id, const char *occurred_at);
 char *tt_bridge_pause_tracking_at(Bridge *bridge, const char *worklog_id, const char *occurred_at);

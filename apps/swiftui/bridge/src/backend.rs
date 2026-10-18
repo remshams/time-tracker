@@ -256,6 +256,8 @@ impl Backend {
         result.map_err(|error| self.task_operation_error(error))
     }
 
+    /// Test fixtures start or switch tracking without a reviewed active worklog.
+    #[cfg(test)]
     pub fn set_active_task(
         &mut self,
         task_id: TaskId,
