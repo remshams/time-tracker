@@ -1885,10 +1885,10 @@ async fn writes_based_on_an_outdated_item_are_rejected_by_expected_values() {
     .await;
 }
 
-/// A protocol 5 client still sends `expected_revision`; the server must reject it instead of
-/// ignoring the field.
+/// A protocol 5 client sends `expected_revision`; the server rejects the field instead of
+/// ignoring it.
 #[tokio::test]
-async fn writes_that_still_send_an_expected_revision_are_rejected_without_writing() {
+async fn writes_that_send_an_expected_revision_are_rejected_without_writing() {
     let temp = TempDir::new().unwrap();
     let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
     let id = create_fixture_task(&router, "Reviewed task").await;
