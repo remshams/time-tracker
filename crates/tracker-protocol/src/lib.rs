@@ -7,7 +7,7 @@ use tracker_application::{
 };
 use tracker_domain::{Task, TaskId, Worklog, WorklogId};
 
-pub const VERSION: u32 = 5;
+pub const VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -133,10 +133,11 @@ impl From<&TaskListItem> for TaskItemDto {
     }
 }
 
+/// Identifies a command so the server can replay its receipt when the client resends it.
+/// Expected values in each command, not the global revision, reject writes based on outdated items.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct WriteGuard {
-    pub expected_revision: String,
     pub request_id: String,
 }
 
@@ -425,7 +426,6 @@ pub enum ErrorCode {
     InvalidRequest,
     NotFound,
     Conflict,
-    StaleRevision,
     WorklogChanged,
     WorklogHistoryChanged,
     WorklogOverlap,
