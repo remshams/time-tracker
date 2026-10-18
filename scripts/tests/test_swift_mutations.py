@@ -283,6 +283,13 @@ class SwiftMutationTests(unittest.TestCase):
             with self.assertRaisesRegex(mutations.MutationError, "exit code 2"):
                 mutations.run([sys.executable, "-c", "raise SystemExit(2)"], self.package, log)
 
+    def test_child_processes_disable_swift_backtraces(self) -> None:
+        with (self.directory / "run.log").open("w", encoding="utf-8") as log:
+            status = mutations.run(
+                [sys.executable, "-c", "import os, sys; sys.exit(os.environ.get('SWIFT_BACKTRACE') != 'enable=no')"],
+                self.package, log, check=False)
+        self.assertEqual(status, 0)
+
     def test_invalid_process_timeouts_fail_before_spawning(self) -> None:
         for timeout in (0, -1, float("nan"), float("inf")):
             with self.subTest(timeout=timeout), self.assertRaisesRegex(mutations.MutationError, "positive, finite"):

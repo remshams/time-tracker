@@ -3,7 +3,7 @@ import TrackerClient
 
 @MainActor
 struct WorklogMoveDialog: View {
-    @ObservedObject var move: WorklogMoveStore
+    let move: WorklogMoveStore
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -22,7 +22,7 @@ struct WorklogMoveDialog: View {
 
 @MainActor
 private struct WorklogMoveSheet: View {
-    @ObservedObject var move: WorklogMoveStore
+    let move: WorklogMoveStore
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -157,7 +157,7 @@ private struct WorklogMoveSheet: View {
 
 @MainActor
 struct PendingWorklogMoveButton: View {
-    @ObservedObject var move: WorklogMoveStore
+    let move: WorklogMoveStore
 
     var body: some View {
         if !move.state.isPresented, let original = move.state.original {

@@ -3,7 +3,7 @@ import TrackerClient
 
 @MainActor
 struct BulkTaskArchivingDialog: View {
-    @ObservedObject var archiving: BulkTaskArchivingStore
+    let archiving: BulkTaskArchivingStore
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -21,7 +21,7 @@ struct BulkTaskArchivingDialog: View {
 
 @MainActor
 private struct BulkTaskArchivingSheet: View {
-    @ObservedObject var archiving: BulkTaskArchivingStore
+    let archiving: BulkTaskArchivingStore
 
     var body: some View {
         let state = archiving.sheetContent

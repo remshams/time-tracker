@@ -39,15 +39,15 @@ final class RefreshPresentationTests: XCTestCase {
                 TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
                 TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
             ])
-        let observer = TrackerPresentationObserver(session: fixture.session)
+        let harness = PresentationHarness(session: fixture.session)
+        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id, secondTask.id])
         var redraws: [Set<String>] = []
-        observer.onTaskDailyTotalsChange = { redraws.append($0) }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
         let display = try XCTUnwrap(fixture.scheduler.display)
         for _ in 0..<3 {
             fixture.clock.now.addTimeInterval(1)
             fixture.clock.uptime += 1
             display.fire()
+            redraws.append(totals.changed())
         }
         XCTAssertEqual(
             redraws, Array(repeating: Set([firstTask.id]), count: 3),
@@ -65,12 +65,9 @@ final class RefreshPresentationTests: XCTestCase {
                 TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
                 TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
             ])
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var redraws: [Set<String>] = []
-        var listUpdates = 0
-        observer.onTaskDailyTotalsChange = { redraws.append($0) }
-        observer.onContentChange = { listUpdates += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id, secondTask.id])
+        let lists = harness.counter(PresentationReads.content)
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
         poll.succeed(
@@ -80,13 +77,13 @@ final class RefreshPresentationTests: XCTestCase {
                     TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
                     TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 25_000_000),
                 ]))
-        try await settleWithoutReplacingObserver(fixture)
-        XCTAssertEqual(redraws, [Set([secondTask.id])])
-        XCTAssertEqual(listUpdates, 0)
-        XCTAssertEqual(observer.taskDailyTotals[firstTask.id]?.text, "00:00:10")
-        XCTAssertEqual(observer.taskDailyTotals[secondTask.id]?.text, "00:00:25")
-        observer.update(from: fixture.session)
-        XCTAssertEqual(redraws.count, 1, "An unchanged report must not publish row updates again.")
+        try await harness.settled(fixture)
+        XCTAssertEqual(totals.changed(), Set([secondTask.id]))
+        XCTAssertEqual(lists.count, 0)
+        XCTAssertEqual(harness.presentation.taskDailyTotal(taskID: firstTask.id).content?.text, "00:00:10")
+        XCTAssertEqual(harness.presentation.taskDailyTotal(taskID: secondTask.id).content?.text, "00:00:25")
+        harness.update()
+        XCTAssertEqual(totals.changed(), [], "An unchanged report must not publish row updates again.")
     }
 
     @MainActor
@@ -100,12 +97,9 @@ final class RefreshPresentationTests: XCTestCase {
                 TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
                 TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
             ])
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var redraws: [Set<String>] = []
-        var listUpdates = 0
-        observer.onTaskDailyTotalsChange = { redraws.append($0) }
-        observer.onContentChange = { listUpdates += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id, secondTask.id])
+        let lists = harness.counter(PresentationReads.content)
         fixture.clock.now.addTimeInterval(5)
         fixture.clock.uptime += 5
         fixture.scheduler.poll?.fire()
@@ -117,11 +111,11 @@ final class RefreshPresentationTests: XCTestCase {
                     TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 15_000_000),
                     TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
                 ]))
-        try await settleWithoutReplacingObserver(fixture)
-        XCTAssertEqual(redraws, [Set([firstTask.id])])
-        XCTAssertEqual(listUpdates, 0)
-        XCTAssertEqual(observer.taskDailyTotals[firstTask.id]?.text, "00:00:15")
-        XCTAssertEqual(observer.taskDailyTotals[secondTask.id]?.text, "00:00:20")
+        try await harness.settled(fixture)
+        XCTAssertEqual(totals.changed(), Set([firstTask.id]))
+        XCTAssertEqual(lists.count, 0)
+        XCTAssertEqual(harness.presentation.taskDailyTotal(taskID: firstTask.id).content?.text, "00:00:15")
+        XCTAssertEqual(harness.presentation.taskDailyTotal(taskID: secondTask.id).content?.text, "00:00:20")
     }
 
     @MainActor
@@ -134,22 +128,22 @@ final class RefreshPresentationTests: XCTestCase {
                 TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
                 TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
             ])
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var redraws: [Set<String>] = []
-        observer.onTaskDailyTotalsChange = { redraws.append($0) }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id, secondTask.id])
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
         poll.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable"))
-        try await settleWithoutReplacingObserver(fixture)
-        XCTAssertEqual(redraws, [Set([firstTask.id, secondTask.id])])
-        XCTAssertEqual(observer.taskDailyTotals[firstTask.id]?.text, "00:00:10")
-        XCTAssertEqual(observer.taskDailyTotals[firstTask.id]?.explanation, fixture.session.dailyTotalsExplanation)
-        XCTAssertTrue(observer.taskDailyTotals[secondTask.id]?.explanation.contains("cached") == true)
+        try await harness.settled(fixture)
+        XCTAssertEqual(totals.changed(), Set([firstTask.id, secondTask.id]))
+        let first = harness.presentation.taskDailyTotal(taskID: firstTask.id).content
+        XCTAssertEqual(first?.text, "00:00:10")
+        XCTAssertEqual(first?.explanation, fixture.session.dailyTotalsExplanation)
+        let second = harness.presentation.taskDailyTotal(taskID: secondTask.id).content
+        XCTAssertTrue(second?.explanation.contains("cached") == true)
     }
 
     @MainActor
-    func testAddedAndRemovedTasksNotifyTheirTotalAdapters() async throws {
+    func testAddedTasksReadCurrentTotalsAndRemovedTasksStopUpdating() async throws {
         let fixture = Fixture(saved: serverSettings, reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
@@ -158,10 +152,9 @@ final class RefreshPresentationTests: XCTestCase {
                 TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
                 TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
             ])
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var redraws: [Set<String>] = []
-        observer.onTaskDailyTotalsChange = { redraws.append($0) }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let removedTotal = harness.presentation.taskDailyTotal(taskID: secondTask.id)
+        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id, secondTask.id])
         let added = TaskItem(id: "task-three", name: "New task", archived: false, latestStart: nil)
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
@@ -172,10 +165,13 @@ final class RefreshPresentationTests: XCTestCase {
                     TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000),
                     TaskReportTotal(taskId: added.id, durationMicroseconds: 30_000_000),
                 ]))
-        try await settleWithoutReplacingObserver(fixture)
-        XCTAssertEqual(redraws, [Set([secondTask.id, added.id])])
-        XCTAssertNil(observer.taskDailyTotals[secondTask.id])
-        XCTAssertEqual(observer.taskDailyTotals[added.id]?.text, "00:00:30")
+        try await harness.settled(fixture)
+        XCTAssertEqual(totals.changed(), [], "A removed task's label keeps its last total.")
+        XCTAssertEqual(removedTotal.content?.text, "00:00:20")
+        let replacement = harness.presentation.taskDailyTotal(taskID: secondTask.id)
+        XCTAssertFalse(replacement === removedTotal, "A removed task's total must stop receiving updates.")
+        XCTAssertNil(replacement.content)
+        XCTAssertEqual(harness.presentation.taskDailyTotal(taskID: added.id).content?.text, "00:00:30")
     }
 
     @MainActor

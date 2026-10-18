@@ -1,12 +1,13 @@
 import Combine
 import Foundation
+import Observation
 import TrackerClient
 
 @MainActor
+@Observable
 final class TrackerStore {
-    let objectWillChange = ObservableObjectPublisher()
     private let session: TrackerSession
-    private let presentation: TrackerPresentationObserver
+    private let presentation: TrackerPresentation
     private let menuBarPreferences: UserDefaultsMenuBarPreferences
     private(set) var showDailyTotalInMenuBar: Bool
     private(set) var menuTaskOrder: MenuTaskOrder
@@ -14,10 +15,8 @@ final class TrackerStore {
     private(set) var menuShortcuts: MenuKeyboardShortcuts
     private var menuShortcutValidationError: String?
     private(set) var menuGlobalShortcutError: String?
-    var registerMenuShortcut: ((MenuShortcut) -> String?)?
+    @ObservationIgnored var registerMenuShortcut: ((MenuShortcut) -> String?)?
     var menuShortcutError: String? { menuShortcutValidationError ?? menuGlobalShortcutError }
-    let activity: TrackerActivityStore
-    let timer: TrackerTimerStore
     let dailyTotals: TrackerDailyTotalsStore
     let menu: TrackerMenuStore
     let creation: TaskCreationStore
@@ -27,13 +26,16 @@ final class TrackerStore {
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore
     let deletion: WorklogDeletionStore
-    private var lifecycle: MacLifecycleObserver?
+    @ObservationIgnored private var lifecycle: MacLifecycleObserver?
 
     init() {
         let launch = TrackerLaunchConfiguration.current
         menuBarPreferences = UserDefaultsMenuBarPreferences(defaults: launch.defaults)
-        showDailyTotalInMenuBar = menuBarPreferences.load()
-        menuTaskOrder = menuBarPreferences.loadTaskOrder()
+        // Observable properties are computed, so init reads these locals instead.
+        let showDailyTotal = menuBarPreferences.load()
+        let taskOrder = menuBarPreferences.loadTaskOrder()
+        showDailyTotalInMenuBar = showDailyTotal
+        menuTaskOrder = taskOrder
         keyboardPreferences = UserDefaultsMenuKeyboardPreferences(defaults: launch.defaults)
         menuShortcuts = keyboardPreferences.load()
         let worker = TrackerWorker(localDatabasePath: launch.localDatabasePath)
@@ -44,12 +46,10 @@ final class TrackerStore {
             trackingPreferences: UserDefaultsTrackingPreferences(defaults: launch.defaults),
             lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
             reports: worker)
-        presentation = TrackerPresentationObserver(session: session)
-        activity = TrackerActivityStore(session: session, presentation: presentation)
-        timer = TrackerTimerStore(session: session, presentation: presentation)
+        presentation = TrackerPresentation(session: session)
         dailyTotals = TrackerDailyTotalsStore(presentation: presentation)
         menu = TrackerMenuStore(
-            session: session, showDailyTotal: showDailyTotalInMenuBar, taskOrder: menuTaskOrder)
+            session: session, showDailyTotal: showDailyTotal, taskOrder: taskOrder)
         creation = TaskCreationStore(session: session, presentation: presentation)
         rename = TaskRenameStore(session: session, presentation: presentation)
         bulkArchiving = BulkTaskArchivingStore(session: session, presentation: presentation)
@@ -58,7 +58,6 @@ final class TrackerStore {
         move = WorklogMoveStore(session: session, presentation: presentation)
         deletion = WorklogDeletionStore(session: session, presentation: presentation)
         dailyTotals.onMenuBarTick = { [weak self] in self?.menu.update() }
-        presentation.onContentChange = { [weak self] in self?.objectWillChange.send() }
         session.onChange = { [weak self] in
             guard let self else { return }
             updateMenuBarTimer()
@@ -70,34 +69,33 @@ final class TrackerStore {
         session.start()
     }
 
-    var tasks: [TaskItem] { session.tasks }
-    var active: WorklogItem? { session.active }
-    var worklogs: [WorklogItem] { session.worklogs }
-    var error: String? { session.error }
-    var trackingError: String? { session.trackingError }
-    var historyUnavailable: Bool { session.historyUnavailable }
-    var isHistoryLoading: Bool { session.isHistoryLoading }
-    var selectedTaskID: String? { session.selectedTaskID }
-    var tab: TaskTab { session.tab }
-    var connectionSettings: ConnectionSettings { session.connectionSettings }
-    var connectionStatusText: String { session.connectionStatusText }
-    var connectionMessage: String? { session.connectionMessage }
-    var isBusy: Bool { session.isBusy }
-    var isChangingConnection: Bool { session.isChangingConnection }
-    var isStale: Bool { session.isStale }
-    var visibleTasks: [TaskItem] { session.visibleTasks }
-    var selectedTask: TaskItem? { session.selectedTask }
-    var hasMoreHistory: Bool { session.hasMoreHistory }
-    var canStopTracking: Bool { session.canStopTracking }
-    var runningTaskName: String { session.runningTaskName }
-    var elapsed: TimeInterval? { session.elapsed }
-    var pauseOnScreenLock: Bool { session.pauseOnScreenLock }
-    var autoPauseStatusText: String? { session.autoPauseStatusText }
-    var dailyTotalsStatus: DailyTotalsStatus { session.dailyTotalsStatus }
+    // Views read these through the observable presentation, so each view redraws only for values it reads.
+    var active: WorklogItem? { presentation.active }
+    var worklogs: [WorklogItem] { presentation.worklogs }
+    var error: String? { presentation.error }
+    var trackingError: String? { presentation.trackingError }
+    var historyUnavailable: Bool { presentation.historyUnavailable }
+    var isHistoryLoading: Bool { presentation.isHistoryLoading }
+    var selectedTaskID: String? { presentation.selectedTaskID }
+    var tab: TaskTab { presentation.tab }
+    var connectionSettings: ConnectionSettings { presentation.connectionSettings }
+    var connectionStatusText: String { presentation.connectionStatusText }
+    var connectionMessage: String? { presentation.connectionMessage }
+    var isChangingConnection: Bool { presentation.isChangingConnection }
+    var isStale: Bool { presentation.isStale }
+    var visibleTasks: [TaskItem] { presentation.visibleTasks }
+    var selectedTask: TaskItem? { presentation.selectedTask }
+    var hasMoreHistory: Bool { presentation.hasMoreHistory }
+    var pauseOnScreenLock: Bool { presentation.pauseOnScreenLock }
+    var autoPauseStatusText: String? { presentation.autoPauseStatusText }
+    var dailyTotalsStatus: DailyTotalsStatus { presentation.dailyTotalsStatus }
+    var isBlockingControls: Bool { presentation.isBlockingControls }
+    var canStopTracking: Bool { presentation.canStopTracking }
+    var timerText: String { presentation.timerDisplayText }
+    func canStartTracking(taskID: String) -> Bool { presentation.canStartTracking(taskID: taskID) }
 
     func setShowDailyTotalInMenuBar(_ enabled: Bool) {
         guard showDailyTotalInMenuBar != enabled else { return }
-        objectWillChange.send()
         showDailyTotalInMenuBar = enabled
         menuBarPreferences.save(enabled)
         menu.setShowDailyTotal(enabled)
@@ -106,7 +104,6 @@ final class TrackerStore {
 
     func setMenuTaskOrder(_ order: MenuTaskOrder) {
         guard menuTaskOrder != order else { return }
-        objectWillChange.send()
         menuTaskOrder = order
         menuBarPreferences.saveTaskOrder(order)
         menu.setTaskOrder(order)
@@ -137,7 +134,6 @@ final class TrackerStore {
                 return
             }
         }
-        objectWillChange.send()
         menuShortcuts = candidate
         menuShortcutValidationError = nil
         if changesGlobal { menuGlobalShortcutError = nil }
@@ -146,13 +142,11 @@ final class TrackerStore {
 
     func reportMenuShortcutError(_ message: String?) {
         guard menuShortcutValidationError != message else { return }
-        objectWillChange.send()
         menuShortcutValidationError = message
     }
 
     func reportMenuGlobalShortcutError(_ message: String?) {
         guard menuGlobalShortcutError != message else { return }
-        objectWillChange.send()
         menuGlobalShortcutError = message
     }
 
@@ -189,26 +183,14 @@ final class TrackerStore {
     }
 }
 
+/// Owns the menu bar's minute clock and looks up each task's observable daily total.
 @MainActor
 final class TrackerDailyTotalsStore {
     var onMenuBarTick: (() -> Void)?
-    private let presentation: TrackerPresentationObserver
-    private var taskStores: [String: TrackerTaskDailyTotalStore] = [:]
+    private let presentation: TrackerPresentation
     private var menuBarTimer: Timer?
 
-    init(presentation: TrackerPresentationObserver) {
-        self.presentation = presentation
-        presentation.onTaskDailyTotalsChange = { [weak self] taskIDs in
-            guard let self else { return }
-            for id in taskIDs {
-                if let content = self.presentation.taskDailyTotals[id] {
-                    taskStores[id]?.update(content)
-                } else {
-                    taskStores.removeValue(forKey: id)
-                }
-            }
-        }
-    }
+    init(presentation: TrackerPresentation) { self.presentation = presentation }
 
     deinit { menuBarTimer?.invalidate() }
 
@@ -227,26 +209,7 @@ final class TrackerDailyTotalsStore {
         RunLoop.main.add(timer, forMode: .common)
     }
 
-    func task(_ taskID: String) -> TrackerTaskDailyTotalStore {
-        if let existing = taskStores[taskID] { return existing }
-        let store = TrackerTaskDailyTotalStore(content: presentation.taskDailyTotals[taskID])
-        taskStores[taskID] = store
-        return store
-    }
-}
-
-@MainActor
-final class TrackerTaskDailyTotalStore {
-    let objectWillChange = ObservableObjectPublisher()
-    private(set) var content: TaskDailyTotalPresentation?
-
-    init(content: TaskDailyTotalPresentation?) { self.content = content }
-
-    func update(_ next: TaskDailyTotalPresentation) {
-        guard content != next else { return }
-        content = next
-        objectWillChange.send()
-    }
+    func task(_ taskID: String) -> TaskDailyTotal { presentation.taskDailyTotal(taskID: taskID) }
 }
 
 @MainActor
@@ -300,46 +263,10 @@ final class TrackerMenuLabelStore {
     var content: TrackerMenuLabelContent { presentation.label }
 }
 
-@MainActor
-final class TrackerActivityStore {
-    let objectWillChange = ObservableObjectPublisher()
-    private let session: TrackerSession
-
-    init(session: TrackerSession, presentation: TrackerPresentationObserver) {
-        self.session = session
-        presentation.onActivityChange = { [weak self] in self?.objectWillChange.send() }
-    }
-
-    var isBlockingControls: Bool { session.isBlockingControls }
-    var canStartSelectedTask: Bool { session.canStartSelectedTask }
-    var canStopTracking: Bool { session.canStopTracking }
-    func canStartTracking(taskID: String) -> Bool { session.canStartTracking(taskID: taskID) }
-}
-
-@MainActor
-final class TrackerTimerStore {
-    let objectWillChange = ObservableObjectPublisher()
-    private let session: TrackerSession
-
-    init(session: TrackerSession, presentation: TrackerPresentationObserver) {
-        self.session = session
-        presentation.onTimerChange = { [weak self] in self?.objectWillChange.send() }
-    }
-
-    var text: String { session.timerDisplayText }
-}
-
+// The AppKit status item subscribes to this publisher; SwiftUI views do not observe it.
 // Keep publisher access on the main actor with compilers that support isolated conformances.
 #if compiler(>=6.2)
-    extension TrackerStore: @MainActor ObservableObject {}
-    extension TrackerTaskDailyTotalStore: @MainActor ObservableObject {}
     extension TrackerMenuLabelStore: @MainActor ObservableObject {}
-    extension TrackerActivityStore: @MainActor ObservableObject {}
-    extension TrackerTimerStore: @MainActor ObservableObject {}
 #else
-    extension TrackerStore: ObservableObject {}
-    extension TrackerTaskDailyTotalStore: ObservableObject {}
     extension TrackerMenuLabelStore: ObservableObject {}
-    extension TrackerActivityStore: ObservableObject {}
-    extension TrackerTimerStore: ObservableObject {}
 #endif

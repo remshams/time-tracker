@@ -2,7 +2,7 @@ import SwiftUI
 
 @MainActor
 struct TaskRenameDialog: View {
-    @ObservedObject var rename: TaskRenameStore
+    let rename: TaskRenameStore
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -21,7 +21,7 @@ struct TaskRenameDialog: View {
 
 @MainActor
 private struct TaskRenameSheet: View {
-    @ObservedObject var rename: TaskRenameStore
+    let rename: TaskRenameStore
 
     var body: some View {
         let state = rename.state

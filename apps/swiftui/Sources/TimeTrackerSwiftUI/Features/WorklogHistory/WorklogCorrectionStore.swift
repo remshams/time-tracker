@@ -1,22 +1,19 @@
-import Combine
 import Foundation
 import TrackerClient
 
 @MainActor
 final class WorklogCorrectionStore {
-    let objectWillChange = ObservableObjectPublisher()
     private let session: TrackerSession
-    private let presentation: TrackerPresentationObserver
+    private let presentation: TrackerPresentation
 
-    init(session: TrackerSession, presentation: TrackerPresentationObserver) {
+    init(session: TrackerSession, presentation: TrackerPresentation) {
         self.session = session
         self.presentation = presentation
-        presentation.onWorklogCorrectionChange = { [weak self] in self?.objectWillChange.send() }
     }
 
-    var state: WorklogCorrectionPresentation { session.worklogCorrection }
+    var state: WorklogCorrectionPresentation { presentation.worklogCorrection }
     var sheetContent: WorklogCorrectionPresentation { presentation.worklogCorrectionSheetContent }
-    var canOpen: Bool { session.canOpenWorklogCorrection }
+    var canOpen: Bool { presentation.canOpenWorklogCorrection }
 
     func open(worklogID: String) { session.openWorklogCorrection(worklogID: worklogID) }
     func setStart(_ date: Date) { session.setWorklogCorrectionStart(date) }
@@ -25,9 +22,3 @@ final class WorklogCorrectionStore {
     func submit() { session.submitWorklogCorrection() }
     func reviewLatest() { session.reviewLatestWorklogCorrection() }
 }
-
-#if compiler(>=6.2)
-    extension WorklogCorrectionStore: @MainActor ObservableObject {}
-#else
-    extension WorklogCorrectionStore: ObservableObject {}
-#endif

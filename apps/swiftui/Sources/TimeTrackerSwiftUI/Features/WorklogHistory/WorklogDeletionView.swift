@@ -3,7 +3,7 @@ import TrackerClient
 
 @MainActor
 struct WorklogDeletionDialog: View {
-    @ObservedObject var deletion: WorklogDeletionStore
+    let deletion: WorklogDeletionStore
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -22,7 +22,7 @@ struct WorklogDeletionDialog: View {
 
 @MainActor
 private struct WorklogDeletionSheet: View {
-    @ObservedObject var deletion: WorklogDeletionStore
+    let deletion: WorklogDeletionStore
 
     var body: some View {
         let state = deletion.sheetContent
@@ -127,7 +127,7 @@ private struct WorklogDeletionSummary: View {
 
 @MainActor
 struct PendingWorklogDeletionButton: View {
-    @ObservedObject var deletion: WorklogDeletionStore
+    let deletion: WorklogDeletionStore
 
     var body: some View {
         if !deletion.state.isPresented, let original = deletion.state.original {

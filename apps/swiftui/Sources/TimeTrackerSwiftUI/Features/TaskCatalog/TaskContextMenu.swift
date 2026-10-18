@@ -2,9 +2,9 @@ import SwiftUI
 
 @MainActor
 struct TaskContextMenu: View {
-    @ObservedObject var creation: TaskCreationStore
-    @ObservedObject var rename: TaskRenameStore
-    @ObservedObject var archiving: TaskArchivingStore
+    let creation: TaskCreationStore
+    let rename: TaskRenameStore
+    let archiving: TaskArchivingStore
     let taskID: String?
     var taskIsArchived = false
     var taskIsRunning = false

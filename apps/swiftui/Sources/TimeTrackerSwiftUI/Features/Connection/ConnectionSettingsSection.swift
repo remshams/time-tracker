@@ -3,8 +3,8 @@ import TrackerClient
 
 @MainActor
 struct ConnectionSettingsSection: View {
-    @ObservedObject var store: TrackerStore
-    @ObservedObject var draft: ConnectionDraftStore
+    let store: TrackerStore
+    @Bindable var draft: ConnectionDraftStore
 
     var body: some View {
         Section("Connection") {

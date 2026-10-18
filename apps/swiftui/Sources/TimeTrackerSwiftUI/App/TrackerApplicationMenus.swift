@@ -3,8 +3,8 @@ import SwiftUI
 @MainActor
 struct TrackerApplicationMenus: Commands {
     let runtime: TrackerAppRuntime
-    @ObservedObject private var creation: TaskCreationStore
-    @ObservedObject private var rename: TaskRenameStore
+    private let creation: TaskCreationStore
+    private let rename: TaskRenameStore
     @Environment(\.openWindow) private var openWindow
 
     init(runtime: TrackerAppRuntime) {

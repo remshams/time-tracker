@@ -2,7 +2,7 @@ import SwiftUI
 
 @MainActor
 struct TrackingSettingsSection: View {
-    @ObservedObject var store: TrackerStore
+    let store: TrackerStore
 
     var body: some View {
         Section("Tracking") {

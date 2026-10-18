@@ -3,7 +3,7 @@ import TrackerClient
 
 @MainActor
 struct TaskCreationDialog: View {
-    @ObservedObject var creation: TaskCreationStore
+    let creation: TaskCreationStore
     let isPresentationOwner: Bool
 
     var body: some View {
@@ -22,7 +22,7 @@ struct TaskCreationDialog: View {
 
 @MainActor
 private struct TaskCreationSheet: View {
-    @ObservedObject var creation: TaskCreationStore
+    let creation: TaskCreationStore
 
     var body: some View {
         let state = creation.state

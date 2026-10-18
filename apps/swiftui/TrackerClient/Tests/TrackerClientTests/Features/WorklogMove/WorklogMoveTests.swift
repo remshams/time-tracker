@@ -71,21 +71,20 @@ final class WorklogMoveTests: XCTestCase {
         fixture.session.submitWorklogMove()
         try await preflight(fixture, log: log)
         let command = try await fixture.client.next()
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var publishedRows = fixture.session.worklogs
-        var moveWasDismissed = false
-        observer.onContentChange = { publishedRows = fixture.session.worklogs }
-        observer.onWorklogMoveChange = { moveWasDismissed = !fixture.session.worklogMove.isPresented }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let publishedRows = harness.recorder(PresentationReads.content) { harness.presentation.worklogs }
+        let moveDismissals = harness.recorder(PresentationReads.worklogMove) {
+            !harness.presentation.worklogMove.isPresented
+        }
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: log.end)
         command.moved(worklog: moved)
         let heldRefresh = try await fixture.client.next()
         XCTAssertEqual(heldRefresh.operation, .taskList)
         XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
         XCTAssertEqual(
-            publishedRows, [oldWorklog], "Confirmed move must publish row removal before awaiting the resource refresh."
-        )
-        XCTAssertTrue(moveWasDismissed)
+            publishedRows.values.last, [oldWorklog],
+            "Confirmed move must publish row removal before awaiting the resource refresh.")
+        XCTAssertEqual(moveDismissals.values.last, true)
         XCTAssertTrue(fixture.session.isHistoryLoading)
         heldRefresh.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         try await finishHistory(fixture, rows: [oldWorklog])
@@ -388,22 +387,19 @@ final class WorklogMoveTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         _ = try await open(fixture)
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var contentChanges = 0
-        var moveChanges = 0
-        observer.onContentChange = { contentChanges += 1 }
-        observer.onWorklogMoveChange = { moveChanges += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let contentChanges = harness.counter(PresentationReads.content)
+        let moveChanges = harness.counter(PresentationReads.worklogMove)
         fixture.session.setWorklogMoveQuery("second")
         let search = try await fixture.client.next()
         search.candidates([candidate])
         try await fixture.settled()
-        fixture.session.onChange = { observer.update(from: fixture.session) }
-        let visible = observer.worklogMoveSheetContent
+        harness.attach()
+        let visible = harness.presentation.worklogMoveSheetContent
         fixture.session.cancelWorklogMove()
-        XCTAssertEqual(observer.worklogMoveSheetContent, visible)
-        XCTAssertGreaterThan(moveChanges, 0)
-        XCTAssertEqual(contentChanges, 0)
+        XCTAssertEqual(harness.presentation.worklogMoveSheetContent, visible)
+        XCTAssertGreaterThan(moveChanges.count, 0)
+        XCTAssertEqual(contentChanges.count, 0)
         fixture.session.openTaskCreation()
         XCTAssertFalse(fixture.session.canOpenWorklogMove)
     }
@@ -930,20 +926,19 @@ final class WorklogMoveTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let log = try await open(fixture, worklog: activeWorklog)
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
         fixture.session.submitWorklogMove()
         try await preflight(fixture, log: log)
         let command = try await fixture.client.next()
-        let visible = observer.worklogMoveSheetContent
+        let visible = harness.presentation.worklogMoveSheetContent
         XCTAssertTrue(visible.isSubmitting)
         let moved = WorklogItem(id: log.id, taskId: secondTask.id, start: log.start, end: nil)
         command.moved(worklog: moved, resources: TaskListResources(tasks: [firstTask, secondTask], active: moved))
         let history = try await fixture.client.next()
-        XCTAssertEqual(observer.worklogMoveSheetContent, visible)
+        XCTAssertEqual(harness.presentation.worklogMoveSheetContent, visible)
         history.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(observer.worklogMoveSheetContent, visible)
+        XCTAssertEqual(harness.presentation.worklogMoveSheetContent, visible)
     }
 
     @MainActor

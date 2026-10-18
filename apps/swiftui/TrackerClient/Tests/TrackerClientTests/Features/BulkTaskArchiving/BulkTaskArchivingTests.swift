@@ -412,20 +412,18 @@ final class BulkTaskArchivingTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var updates = 0
-        observer.onBulkTaskArchivingChange = { updates += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let updates = harness.counter(PresentationReads.bulkTaskArchiving)
         fixture.session.openBulkTaskArchiving()
         _ = try answerPreview(try await fixture.client.next())
         try await fixture.settled()
-        observer.update(from: fixture.session)
-        fixture.session.onChange = { observer.update(from: fixture.session) }
-        let content = observer.bulkTaskArchivingSheetContent
+        harness.update()
+        harness.attach()
+        let content = harness.presentation.bulkTaskArchivingSheetContent
         fixture.session.cancelBulkTaskArchiving()
         XCTAssertFalse(fixture.session.bulkTaskArchiving.isPresented)
-        XCTAssertEqual(observer.bulkTaskArchivingSheetContent, content)
-        XCTAssertGreaterThan(updates, 1)
+        XCTAssertEqual(harness.presentation.bulkTaskArchivingSheetContent, content)
+        XCTAssertGreaterThan(updates.count, 1)
     }
 
     @MainActor

@@ -2,7 +2,7 @@
 
 Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. [Revisions and concurrency](#revisions-and-concurrency) explains stale-write and pagination guards. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
 
-Source scope: the Rust core, TUI, CLI, and native macOS client at `e4eb464d5b23fec9dee6c5953a2266e3bf02ed20`, inspected on 16 October 2026. Native reviewed task-name contracts additionally describe `be493ab` on 16 October 2026. The shared cursor DTO describes issue #67 at `fa3c662` on 17 October 2026. Native worklog deletion additionally describes `23aa8c2`, inspected on 17 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
+Source scope: the Rust core, TUI, CLI, and native macOS client at `e4eb464d5b23fec9dee6c5953a2266e3bf02ed20`, inspected on 16 October 2026. Native reviewed task-name contracts additionally describe `be493ab` on 16 October 2026. The shared cursor DTO describes issue #67 at `fa3c662` on 17 October 2026. Native worklog deletion additionally describes `23aa8c2`, inspected on 17 October 2026. Swift Observation presentation additionally describes `72af5a3`, inspected on 17 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
 
 ## Architecture primitives
 
@@ -92,19 +92,19 @@ Source: [crate](../../apps/swiftui/bridge/Cargo.toml), [backend](../../apps/swif
 
 ### TrackerClient Swift package
 
-Owns portable feature state and `TrackerSession` coordination through injected client, clock, scheduler, and settings interfaces. Connection and selection generations reject obsolete results. It composes resource observations for features and separates command success from later refresh failures. Queued rename and archive intents retain their reviewed names through background updates and pass them through the client contract. Rust compares the name and writes in one transaction; a conflict requires refresh and review. Worklog deletion finds the completed row in bounded task history, then deletes it with its expected task and times. A changed row requires review. After an uncertain failure, a missing row counts as deleted. Rust continues to own domain rules and persistence.
+Owns portable feature state and `TrackerSession` coordination through injected client, clock, scheduler, and settings interfaces. Connection and selection generations reject obsolete results. It composes resource observations for features and separates command success from later refresh failures. Queued rename and archive intents retain their reviewed names through background updates and pass them through the client contract. Rust compares the name and writes in one transaction; a conflict requires refresh and review. Worklog deletion finds the completed row in bounded task history, then deletes it with its expected task and times. A changed row requires review. After an uncertain failure, a missing row counts as deleted. `TrackerPresentation` copies the session values views read into an `@Observable` model and assigns only changed values. Rust continues to own domain rules and persistence.
 
-Depends on: Foundation and injected interfaces. No direct Rust, SwiftUI, AppKit, network, or database dependency.
+Depends on: Foundation, Observation, and injected interfaces. No direct Rust, SwiftUI, AppKit, network, or database dependency.
 
-Source: [package](../../apps/swiftui/TrackerClient/Package.swift), [session](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift), [contracts](../../apps/swiftui/TrackerClient/Sources/TrackerClient/Contracts/Dependencies.swift). Decisions: [ADR 0007](../adr/0007-completed-worklog-deletion.md), [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md).
+Source: [package](../../apps/swiftui/TrackerClient/Package.swift), [session](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift), [presentation](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerPresentation.swift), [contracts](../../apps/swiftui/TrackerClient/Sources/TrackerClient/Contracts/Dependencies.swift). Decisions: [ADR 0007](../adr/0007-completed-worklog-deletion.md), [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0026](../adr/0026-use-swift-observation-for-native-presentation.md).
 
 ### TimeTrackerSwiftUI macOS app
 
-Owns SwiftUI scenes, views and observable adapters, plus AppKit menu-bar and lifecycle integration. Windows share the portable session. Its infrastructure supplies preferences, timers, and the serial `TrackerWorker`, which keeps bridge calls and decoding off the UI thread. Window interaction and error presentation stay in the app.
+Owns SwiftUI scenes, views, observable stores, and feature action stores, plus AppKit menu-bar and lifecycle integration. Views read observable values directly, so SwiftUI redraws only views whose values changed. Windows share the portable session. Its infrastructure supplies preferences, timers, and the serial `TrackerWorker`, which keeps bridge calls and decoding off the UI thread. Window interaction and error presentation stay in the app.
 
 Depends on: [TrackerClient](#trackerclient-swift-package), [tracker-swift-bridge](#tracker-swift-bridge) through the C ABI, SwiftUI, and AppKit.
 
-Source: [app](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift), [worker](../../apps/swiftui/Sources/TimeTrackerSwiftUI/Infrastructure/RustBridge/TrackerWorker.swift), [native architecture](../../apps/swiftui/README.md#architecture). Decisions: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0021](../adr/0021-share-concrete-client-backend.md).
+Source: [app](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift), [worker](../../apps/swiftui/Sources/TimeTrackerSwiftUI/Infrastructure/RustBridge/TrackerWorker.swift), [native architecture](../../apps/swiftui/README.md#architecture). Decisions: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0021](../adr/0021-share-concrete-client-backend.md), [ADR 0026](../adr/0026-use-swift-observation-for-native-presentation.md).
 
 ## Application concepts
 

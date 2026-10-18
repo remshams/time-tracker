@@ -6,13 +6,13 @@ import SwiftUI
 @MainActor
 struct TrackerWindow: View {
     let runtime: TrackerAppRuntime
-    @ObservedObject private var store: TrackerStore
+    private let store: TrackerStore
     @Environment(\.openWindow) private var openWindow
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.appearsActive) private var appearsActive
     @Environment(\.colorScheme) private var colorScheme
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @ObservedObject private var presentation: TrackerTaskPresentationCoordinator
+    private let presentation: TrackerTaskPresentationCoordinator
     let windowID: UUID
 
     init(runtime: TrackerAppRuntime, windowID: UUID) {
@@ -156,9 +156,9 @@ struct TrackerWindow: View {
 @MainActor
 private struct TrackerSidebarToolbar: View {
     let preferWindow: () -> Void
-    @ObservedObject private var creation: TaskCreationStore
-    @ObservedObject private var rename: TaskRenameStore
-    @ObservedObject private var bulkArchiving: BulkTaskArchivingStore
+    private let creation: TaskCreationStore
+    private let rename: TaskRenameStore
+    private let bulkArchiving: BulkTaskArchivingStore
     @Environment(\.openWindow) private var openWindow
 
     init(store: TrackerStore, preferWindow: @escaping () -> Void) {
@@ -206,16 +206,14 @@ private struct TrackerSidebarToolbar: View {
 @MainActor
 private struct TrackerTaskToolbar: View {
     let preferWindow: () -> Void
-    @ObservedObject var store: TrackerStore
-    @ObservedObject private var activity: TrackerActivityStore
-    @ObservedObject private var creation: TaskCreationStore
-    @ObservedObject private var rename: TaskRenameStore
-    @ObservedObject private var archiving: TaskArchivingStore
+    let store: TrackerStore
+    private let creation: TaskCreationStore
+    private let rename: TaskRenameStore
+    private let archiving: TaskArchivingStore
 
     init(store: TrackerStore, preferWindow: @escaping () -> Void) {
         self.preferWindow = preferWindow
         self.store = store
-        activity = store.activity
         creation = store.creation
         rename = store.rename
         archiving = store.archiving
@@ -265,8 +263,8 @@ private struct TrackerTaskToolbar: View {
                 let isRunning = store.active?.taskId == task.id
                 let canTrack =
                     isRunning
-                    ? activity.canStopTracking
-                    : activity.canStartTracking(taskID: task.id)
+                    ? store.canStopTracking
+                    : store.canStartTracking(taskID: task.id)
                 Button {
                     guard canTrack else { return }
                     if let active = store.active, active.taskId == task.id {

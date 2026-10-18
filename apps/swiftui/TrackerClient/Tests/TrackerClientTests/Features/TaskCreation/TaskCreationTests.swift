@@ -256,21 +256,18 @@ final class TaskCreationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var creationUpdates = 0
-        var contentUpdates = 0
-        observer.onTaskCreationChange = { creationUpdates += 1 }
-        observer.onContentChange = { contentUpdates += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let creationUpdates = harness.counter(PresentationReads.taskCreation)
+        let contentUpdates = harness.counter(PresentationReads.content)
         fixture.session.openTaskCreation()
         fixture.session.setTaskCreationName("Draft")
         fixture.session.setTaskCreationName("Draft")
-        observer.update(from: fixture.session)
-        XCTAssertEqual(creationUpdates, 2)
-        XCTAssertEqual(contentUpdates, 0)
+        harness.update()
+        XCTAssertEqual(creationUpdates.count, 2)
+        XCTAssertEqual(contentUpdates.count, 0)
         fixture.session.cancelTaskCreation()
-        XCTAssertEqual(creationUpdates, 3)
-        XCTAssertEqual(contentUpdates, 0)
+        XCTAssertEqual(creationUpdates.count, 3)
+        XCTAssertEqual(contentUpdates.count, 0)
     }
 
     @MainActor
@@ -449,16 +446,17 @@ final class TaskCreationTests: XCTestCase {
         fixture.session.setTaskCreationName("Pending task")
         fixture.session.submitTaskCreation()
         let creation = try await fixture.client.next()
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var displayedConnectionMessages: [String?] = []
-        observer.onContentChange = { displayedConnectionMessages.append(fixture.session.connectionMessage) }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let displayedConnectionMessages = harness.recorder(PresentationReads.content) {
+            fixture.session.connectionMessage
+        }
         let connect = Task { await fixture.session.connect(serverSettings) }
         let connected = try await fixture.taskValue(connect)
         XCTAssertFalse(connected)
         XCTAssertEqual(fixture.session.connectionSettings, .local)
         XCTAssertEqual(fixture.session.connectionMessage, "Finish or retry task creation before changing connections.")
-        XCTAssertEqual(displayedConnectionMessages, ["Finish or retry task creation before changing connections."])
+        XCTAssertEqual(
+            displayedConnectionMessages.values, ["Finish or retry task creation before changing connections."])
         creation.fail(BridgeFailure(message: "Rejected", kind: "validation"))
         try await fixture.settled()
         fixture.session.cancelTaskCreation()
@@ -477,17 +475,15 @@ final class TaskCreationTests: XCTestCase {
         try await fixture.start()
         fixture.session.openTaskCreation()
         fixture.session.setTaskCreationName("Valid\u{0000}suffix")
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var displayedErrors: [String?] = []
-        observer.onTaskCreationChange = { displayedErrors.append(fixture.session.taskCreation.error) }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let displayedErrors = harness.recorder(PresentationReads.taskCreation) { fixture.session.taskCreation.error }
         fixture.session.submitTaskCreation()
         XCTAssertEqual(fixture.session.taskCreation.error, "Task names must not contain control characters.")
         XCTAssertEqual(fixture.session.taskCreation.name, "Valid\u{0000}suffix")
         XCTAssertTrue(fixture.session.taskCreation.canEditName)
         XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
         XCTAssertEqual(fixture.client.operations.count, 1)
-        XCTAssertEqual(displayedErrors, ["Task names must not contain control characters."])
+        XCTAssertEqual(displayedErrors.values, ["Task names must not contain control characters."])
     }
 
     @MainActor
@@ -601,18 +597,16 @@ final class TaskCreationTests: XCTestCase {
         fixture.session.submitTaskCreation()
         let recovery = try await fixture.client.next()
 
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var closedSheetUpdates = 0
-        observer.onTaskCreationChange = {
-            if !fixture.session.taskCreation.isPresented { closedSheetUpdates += 1 }
+        let harness = PresentationHarness(session: fixture.session)
+        let creationUpdates = harness.recorder(PresentationReads.taskCreation) {
+            fixture.session.taskCreation.isPresented
         }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
         recovery.created(taskID: firstTask.id, resources: confirmed)
         let finished = Task { @MainActor in
             while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
         }
         try await fixture.taskValue(finished)
-        XCTAssertEqual(closedSheetUpdates, 1)
+        XCTAssertEqual(creationUpdates.values.filter { !$0 }.count, 1)
         XCTAssertFalse(fixture.session.taskCreation.isPresented)
         XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
         XCTAssertFalse(fixture.session.isBusy)

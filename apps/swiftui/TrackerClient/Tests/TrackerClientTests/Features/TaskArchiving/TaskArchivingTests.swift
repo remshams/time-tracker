@@ -466,23 +466,20 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertFalse(fixture.session.canArchiveTask(taskID: secondTask.id))
         fixture.session.cancelTaskRename()
         fixture.session.openWorklogCorrection(worklogID: "missing")
-        let observer = TrackerPresentationObserver(session: fixture.session)
-        var archiveUpdates = 0
-        var contentUpdates = 0
-        observer.onTaskArchivingChange = { archiveUpdates += 1 }
-        observer.onContentChange = { contentUpdates += 1 }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
+        let harness = PresentationHarness(session: fixture.session)
+        let archiveUpdates = harness.counter(PresentationReads.taskArchiving)
+        let contentUpdates = harness.counter(PresentationReads.content)
         fixture.session.openTaskArchive(taskID: secondTask.id)
         XCTAssertFalse(fixture.session.canOpenTaskCreation)
         XCTAssertFalse(fixture.session.canOpenTaskRename)
         XCTAssertFalse(fixture.session.canOpenWorklogCorrection)
         XCTAssertFalse(fixture.session.canOpenWorklogMove)
-        let shown = observer.taskArchivingSheetContent
+        let shown = harness.presentation.taskArchivingSheetContent
         fixture.session.cancelTaskArchiving()
-        XCTAssertEqual(observer.taskArchivingSheetContent, shown)
+        XCTAssertEqual(harness.presentation.taskArchivingSheetContent, shown)
         XCTAssertFalse(fixture.session.taskArchiving.isPresented)
-        XCTAssertEqual(archiveUpdates, 2)
-        XCTAssertEqual(contentUpdates, 0)
+        XCTAssertEqual(archiveUpdates.count, 2)
+        XCTAssertEqual(contentUpdates.count, 0)
     }
 
     @MainActor
@@ -648,18 +645,16 @@ final class TaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: nil)
         try await fixture.start(resources)
-        let observer = TrackerPresentationObserver(session: fixture.session)
+        let harness = PresentationHarness(session: fixture.session)
         let original = fixture.session.taskArchiving
-        var observedAvailability: [(Bool, Bool, Bool)] = []
-        observer.onTaskArchivingChange = {
-            observedAvailability.append(
-                (
-                    fixture.session.canArchiveTask(taskID: firstTask.id),
-                    fixture.session.canArchiveTask(taskID: secondTask.id),
-                    fixture.session.canUnarchiveTask(taskID: archivedTask.id)
-                ))
+        let presentation = harness.presentation
+        let availability = harness.recorder(PresentationReads.taskArchiving) {
+            (
+                presentation.canArchiveTask(taskID: firstTask.id),
+                presentation.canArchiveTask(taskID: secondTask.id),
+                presentation.canUnarchiveTask(taskID: archivedTask.id)
+            )
         }
-        fixture.session.onChange = { observer.update(from: fixture.session) }
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
         refresh.succeed(TaskListResources(tasks: resources.catalog.value, active: activeWorklog))
@@ -667,16 +662,16 @@ final class TaskArchivingTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.taskArchiving, original)
-        XCTAssertTrue(observedAvailability.contains { !$0.0 && $0.1 && $0.2 })
-        let countAfterStart = observedAvailability.count
-        fixture.session.onChange = { observer.update(from: fixture.session) }
-        observer.update(from: fixture.session)
-        XCTAssertEqual(observedAvailability.count, countAfterStart)
+        XCTAssertTrue(availability.values.contains { !$0.0 && $0.1 && $0.2 })
+        let countAfterStart = availability.count
+        harness.attach()
+        harness.update()
+        XCTAssertEqual(availability.count, countAfterStart)
         fixture.session.openTaskCreation()
         XCTAssertTrue(fixture.session.taskCreation.isPresented)
-        XCTAssertFalse(observedAvailability.last!.0)
-        XCTAssertFalse(observedAvailability.last!.1)
-        XCTAssertFalse(observedAvailability.last!.2)
+        XCTAssertFalse(availability.values.last!.0)
+        XCTAssertFalse(availability.values.last!.1)
+        XCTAssertFalse(availability.values.last!.2)
     }
 
     @MainActor

@@ -1,16 +1,18 @@
 import Foundation
-import Combine
+import Observation
 import SwiftUI
 
 @MainActor
+@Observable
 final class TrackerTaskPresentationCoordinator {
-    let objectWillChange = ObservableObjectPublisher()
     private(set) var ownerID: UUID?
+    // Windows read this flag instead of the feature states, so draft edits do not redraw them.
+    private(set) var hasPresentation = false
     private let store: TrackerStore
     private let presentingWindow: (Bool) -> UUID?
-    private var subscriptions = Set<AnyCancellable>()
-    private var isRunning = false
-    private var isChoosingOwner = false
+    @ObservationIgnored private var observationGeneration = 0
+    @ObservationIgnored private var isRunning = false
+    @ObservationIgnored private var isChoosingOwner = false
 
     init(store: TrackerStore, presentingWindow: @escaping (Bool) -> UUID?) {
         self.store = store
@@ -20,20 +22,14 @@ final class TrackerTaskPresentationCoordinator {
     func start() {
         guard !isRunning else { return }
         isRunning = true
-        for publisher in [
-            store.objectWillChange, store.creation.objectWillChange,
-            store.rename.objectWillChange, store.correction.objectWillChange,
-            store.move.objectWillChange, store.deletion.objectWillChange,
-            store.archiving.objectWillChange, store.bulkArchiving.objectWillChange,
-        ] {
-            publisher.sink { [weak self] _ in self?.update() }.store(in: &subscriptions)
-        }
-        update()
+        observationGeneration += 1
+        observePresentations(generation: observationGeneration)
     }
 
     func stop() {
         isRunning = false
-        subscriptions.removeAll()
+        observationGeneration += 1
+        hasPresentation = false
         setOwner(nil)
     }
 
@@ -53,15 +49,28 @@ final class TrackerTaskPresentationCoordinator {
         update()
     }
 
-    private var hasPresentation: Bool {
+    private var presentationIsVisible: Bool {
         store.creation.state.isPresented || store.rename.state.isPresented || store.correction.state.isPresented
             || store.move.state.isPresented || store.deletion.state.isPresented || store.archiving.state.isPresented
             || store.bulkArchiving.state.isPresented || store.trackingError != nil
     }
 
+    /// Chooses an owner whenever a value read by `update()` changes.
+    private func observePresentations(generation: Int) {
+        guard isRunning, generation == observationGeneration else { return }
+        withObservationTracking {
+            update()
+        } onChange: { [weak self] in
+            // Observation reports changes before the new value is stored; read it on the next main-actor turn.
+            Task { @MainActor in self?.observePresentations(generation: generation) }
+        }
+    }
+
     private func update() {
         guard isRunning, !isChoosingOwner else { return }
-        guard hasPresentation else {
+        let isVisible = presentationIsVisible
+        if hasPresentation != isVisible { hasPresentation = isVisible }
+        guard isVisible else {
             setOwner(nil)
             return
         }
@@ -77,21 +86,14 @@ final class TrackerTaskPresentationCoordinator {
 
     private func setOwner(_ windowID: UUID?) {
         guard ownerID != windowID else { return }
-        objectWillChange.send()
         ownerID = windowID
     }
 }
 
-#if compiler(>=6.2)
-    extension TrackerTaskPresentationCoordinator: @MainActor ObservableObject {}
-#else
-    extension TrackerTaskPresentationCoordinator: ObservableObject {}
-#endif
-
 @MainActor
 struct TrackerDetailPresentation: View {
-    @ObservedObject var store: TrackerStore
-    @ObservedObject var presentation: TrackerTaskPresentationCoordinator
+    let store: TrackerStore
+    let presentation: TrackerTaskPresentationCoordinator
     let windowID: UUID
 
     private var isOwner: Bool { presentation.owns(windowID) }

@@ -3,7 +3,7 @@ import TrackerClient
 
 @MainActor
 struct CurrentConnectionSection: View {
-    @ObservedObject var store: TrackerStore
+    let store: TrackerStore
 
     var body: some View {
         Section("Current connection") {

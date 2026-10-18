@@ -3,7 +3,7 @@ import TrackerClient
 
 @MainActor
 struct MenuBarSettingsSection: View {
-    @ObservedObject var store: TrackerStore
+    let store: TrackerStore
 
     var body: some View {
         Section("Menu bar") {
