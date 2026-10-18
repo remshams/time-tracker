@@ -23,6 +23,10 @@ DEFAULT_MUTER = ROOT / ".build/swift-tools/muter"
 OUTCOMES = {"passed", "failed", "runtimeError", "buildError", "timeout", "noCoverage"}
 KILLED = {"failed", "runtimeError"}
 OPERATORS = {"RelationalOperatorReplacement", "RemoveSideEffects", "ChangeLogicalConnector", "SwapTernary"}
+# A crashing mutant can crash hundreds of tests. Symbolicated backtraces make
+# that run exceed Muter's per-mutant timeout; the runtime's "Fatal error"
+# line and the test runner's signal report still identify the crash.
+CHILD_ENVIRONMENT = {"SWIFT_BACKTRACE": "enable=no"}
 
 
 class MutationError(Exception):
@@ -192,7 +196,7 @@ def run(arguments: list[str], package: Path, log, *, check: bool = True, timeout
     log.flush()
     try:
         process = subprocess.Popen(arguments, cwd=package, stdout=log, stderr=subprocess.STDOUT,
-                                   start_new_session=True)
+                                   start_new_session=True, env={**os.environ, **CHILD_ENVIRONMENT})
     except OSError as error:
         raise MutationError(f"Could not run {arguments[0]}: {error}") from None
     try:
