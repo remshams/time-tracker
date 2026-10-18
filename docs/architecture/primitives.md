@@ -188,4 +188,4 @@ Schema migration 7 deletes completed worklogs with zero duration; they cover no 
 
 ### Protocol 5 upgrade
 
-Protocol 5 adds `expected_name` to task rename and archive requests. Upgrade the server and every client together; incompatible pairs fail the health check. No database migration is needed, and saved history and preview tokens stay valid. See [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).
+Protocol 5 adds `expected_name` to task rename and archive requests. Upgrade the server and every client together; incompatible pairs fail the health check. No database migration is needed. Saved history tokens keep their format and remain usable. The server restart starts a new revision epoch, so regenerate saved remote archive previews. See [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).

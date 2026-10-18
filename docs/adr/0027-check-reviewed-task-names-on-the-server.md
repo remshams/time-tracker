@@ -25,6 +25,6 @@ Issue #94 removes the revision check from task writes, and with it the client-si
 
 The server rejects a stale rename or archive even when the request carries the current revision, so removing the revision check in #94 keeps that protection. Local and remote mode share one name check in `tracker-storage`.
 
-The server and every remote client upgrade together. Mismatched versions fail the health check before any resource loads. No database migration is needed, and saved CLI history and preview tokens stay valid.
+The server and every remote client upgrade together. Mismatched versions fail the health check before any resource loads. No database migration is needed. Saved CLI history tokens keep their format and remain usable. The server restart starts a new revision epoch, so saved remote archive previews fail with `stale_revision` and must be regenerated.
 
 Guarded archive checks the name before the active-task trigger. Archiving a running task whose name another client changed therefore reports a conflict instead of an active-task error. Either error leaves the task unchanged.
