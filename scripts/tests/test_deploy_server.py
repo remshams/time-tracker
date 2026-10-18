@@ -174,9 +174,10 @@ class DeploymentRoot:
     def manifest(self):
         return json.loads((self.root / "build/preflight-0123456.json").read_text())
 
-    def preflight(self, schema=7, migration=None, accept=False):
+    def preflight(self, schema=7, migration=None, accept=False, failure=None):
         FakeCandidate.migration = migration
-        with patch.object(DEPLOY.subprocess, "Popen", FakeCandidate), patch.object(DEPLOY, "verify"), \
+        with patch.object(DEPLOY.subprocess, "Popen", FakeCandidate), \
+                patch.object(DEPLOY, "verify", side_effect=failure), \
                 patch.object(DEPLOY, "wait_until_ready"), patch("sys.stdout", io.StringIO()) as output:
             DEPLOY.remote_preflight(self.host(schema), accept)
         return output.getvalue()
@@ -315,6 +316,30 @@ class PreflightTests(unittest.TestCase):
             with self.assertRaisesRegex(DEPLOY.DeployError, "schema version 7, newer than the candidate's 6"):
                 root.preflight(schema=6)
 
+    def test_failed_candidate_keeps_and_names_its_log_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory)
+            failure = DEPLOY.DeployError("The served task catalog differs from the database")
+            with self.assertRaisesRegex(DEPLOY.DeployError, "catalog differs from the database. "
+                                                            "The server log and database copy are in ") as raised:
+                root.preflight(failure=failure)
+            smoke = list((root.root / "build").glob("smoke-*"))
+            self.assertEqual(len(smoke), 1)
+            self.assertIn(str(smoke[0]), str(raised.exception))
+            self.assertTrue((smoke[0] / "server.log").exists())
+            self.assertTrue((smoke[0] / "tt-server.db").exists())
+            self.assertFalse((root.root / "build/preflight-0123456.json").exists())
+
+    def test_failure_before_the_candidate_starts_removes_the_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory)
+            with self.assertRaisesRegex(DEPLOY.DeployError, "newer than the candidate's 6"):
+                root.preflight(schema=6)
+            root.database.unlink()
+            with self.assertRaisesRegex(DEPLOY.DeployError, "Could not copy the database .*tt-server.db"):
+                root.preflight()
+            self.assertEqual(list((root.root / "build").glob("smoke-*")), [])
+
     def test_describes_added_removed_and_changed_rows(self):
         before = {"schema": 7, "tasks": [["task-1", "Planning"], ["task-2", "Review"]],
                   "worklogs": [["worklog-1", "task-1"]]}
@@ -418,6 +443,44 @@ class DeployTests(unittest.TestCase):
                         self.assertRaisesRegex(DEPLOY.DeployError, "must be writable"):
                     DEPLOY.remote_deploy(root.host(), keep_backup=False)
             sudo.assert_not_called()
+
+    def test_rejects_a_missing_corrupt_or_incomplete_preflight_record(self):
+        cases = [
+            (None, "preflight-0123456.json does not exist; run the preflight first"),
+            ("{", "preflight-0123456.json is not valid JSON .*; run the preflight again"),
+            ("[]", "preflight-0123456.json must contain a JSON object"),
+            (json.dumps({"sha256": "abc"}), "preflight-0123456.json is missing: commit; run the preflight again"),
+            (json.dumps({}), "is missing: commit, sha256;"),
+        ]
+        for text, message in cases:
+            with self.subTest(message=message), tempfile.TemporaryDirectory() as directory:
+                root = DeploymentRoot(directory)
+                if text is not None:
+                    (root.root / "build/preflight-0123456.json").write_text(text)
+                with patch.object(DEPLOY, "sudo") as sudo, self.assertRaisesRegex(DEPLOY.DeployError, message):
+                    DEPLOY.remote_deploy(root.host(), keep_backup=False)
+                sudo.assert_not_called()
+                self.assertFalse((root.root / "backups").exists())
+
+    def test_existing_staged_binary_stops_the_deployment_before_the_backup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory)
+            root.write_manifest()
+            Path(f"{root.live}.new-0123456").write_bytes(b"stale binary")
+            with patch.object(DEPLOY, "sudo") as sudo, \
+                    self.assertRaisesRegex(DEPLOY.DeployError, r"live-tt\.new-0123456 already exists"):
+                DEPLOY.remote_deploy(root.host(), keep_backup=False)
+            sudo.assert_not_called()
+            self.assertFalse((root.root / "backups").exists())
+
+    def test_unreadable_database_is_reported_with_its_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "tt.db"
+            database.write_bytes(b"not a database" * 100)
+            with self.assertRaisesRegex(DEPLOY.DeployError, f"Could not read the database {database}: "):
+                DEPLOY.database_state(database)
+            with self.assertRaisesRegex(DEPLOY.DeployError, f"Could not copy the database {database} to "):
+                DEPLOY.backup_database(database, Path(directory) / "copy.db")
 
     def test_successful_deployment_records_the_result_and_removes_the_backup(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -533,6 +596,30 @@ class WorkstationTests(unittest.TestCase):
                 patch("sys.stderr", io.StringIO()) as errors:
             self.assertEqual(DEPLOY.main(["--host", "server", "--root", "/srv/tt", "--revision", "missing"]), 1)
         self.assertIn("Deployment stopped: Unknown revision: missing", errors.getvalue())
+
+    def test_main_reports_database_and_json_errors_without_a_traceback(self):
+        failures = [sqlite3.OperationalError("database is locked"),
+                    json.JSONDecodeError("Expecting value", "", 0)]
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__), \
+                    patch.object(DEPLOY, "deploy_from_workstation", side_effect=failure), \
+                    patch("sys.stderr", io.StringIO()) as errors:
+                self.assertEqual(DEPLOY.main(["--host", "server", "--root", "/srv/tt"]), 1)
+            self.assertIn(f"Deployment stopped: {failure}", errors.getvalue())
+
+    def test_main_reports_host_step_failures_without_a_traceback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory)
+            (root.root / "build/preflight-0123456.json").write_text("{")
+            common = ["--root", str(root.root), "--revision", REVISION, "--archive-sha256",
+                      DEPLOY.digest(root.archive), "--protocol-version", "3", "--schema-version", "7"]
+            root.database.unlink()
+            for step, message in [("preflight", "Could not copy the database"),
+                                  ("deploy", "is not valid JSON")]:
+                with self.subTest(step=step), patch("sys.stderr", io.StringIO()) as errors:
+                    self.assertEqual(DEPLOY.main(["remote", step, *common]), 1)
+                self.assertIn("Deployment stopped: ", errors.getvalue())
+                self.assertIn(message, errors.getvalue())
 
 
 if __name__ == "__main__":
