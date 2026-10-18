@@ -7,7 +7,7 @@ use tracker_application::{
 };
 use tracker_domain::{Task, TaskId, Worklog, WorklogId};
 
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -172,13 +172,17 @@ pub struct CreateTaskRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TaskChangeRequest {
+    /// The server rejects the rename when the stored name differs from `expected_name`.
     Rename {
+        expected_name: String,
         name: String,
         occurred_at: DateTime<Utc>,
         #[serde(flatten)]
         guard: WriteGuard,
     },
+    /// The server rejects the archive when the stored name differs from `expected_name`.
     Archive {
+        expected_name: String,
         occurred_at: DateTime<Utc>,
         #[serde(flatten)]
         guard: WriteGuard,
