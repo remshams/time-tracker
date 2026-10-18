@@ -4,6 +4,32 @@ import XCTest
 
 final class ConnectionTests: XCTestCase {
     @MainActor
+    func testSuccessfulConnectionRestartsPollingAfterAProtocolFailure() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start()
+        fixture.session.refresh()
+        let incompatible = try await fixture.client.next()
+        incompatible.fail(BridgeFailure(message: "Unsupported protocol", kind: "protocol"))
+        try await fixture.settled()
+        XCTAssertNil(fixture.scheduler.poll)
+
+        let connecting = Task { await fixture.session.connect(serverSettings) }
+        let connection = try await fixture.client.next()
+        connection.succeed(emptyTaskListResources)
+        let connected = try await fixture.taskValue(connecting)
+        try await fixture.settled()
+        XCTAssertTrue(connected)
+        XCTAssertEqual(fixture.scheduler.poll?.delay, 60)
+        fixture.scheduler.poll?.fire()
+        let refresh = try await fixture.client.next()
+        XCTAssertEqual(refresh.operation, .refresh(serverSettings))
+        refresh.succeed(emptyTaskListResources)
+        try await fixture.settled()
+        XCTAssertFalse(fixture.session.isStale)
+    }
+
+    @MainActor
     func testUnarchiveFailureDialogDoesNotBlockSourceSwitch() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }

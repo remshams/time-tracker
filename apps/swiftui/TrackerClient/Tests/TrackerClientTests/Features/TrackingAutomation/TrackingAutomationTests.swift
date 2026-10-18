@@ -72,6 +72,80 @@ final class TrackingAutomationTests: XCTestCase {
         XCTAssertNil(fixture.session.autoPauseStatusText)
     }
 
+    func testUnlockDuringPauseResumesAfterConfirmationWithTheUnlockTime() async throws {
+        let fixture = Fixture(pauseOnScreenLock: true)
+        defer { fixture.cleanup() }
+        try await fixture.start(running)
+        fixture.session.screenLocked(at: fixture.clock.now)
+        let pause = try await fixture.client.next()
+        fixture.clock.now.addTimeInterval(90)
+        let unlockedAt = fixture.clock.now
+        fixture.session.screenUnlocked(at: unlockedAt)
+        fixture.session.screenUnlocked(at: unlockedAt)
+        fixture.clock.now.addTimeInterval(30)
+        pause.paused(idle)
+        let resume = try await fixture.client.next()
+        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: commandTimestamp(unlockedAt)))
+        resume.succeed(running)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.active, activeWorklog)
+        XCTAssertNil(fixture.session.trackingError)
+        XCTAssertEqual(
+            fixture.client.operations.filter {
+                if case .resume = $0 { return true }; return false
+            }.count, 1)
+    }
+
+    func testUnlockDuringUnsuccessfulPauseNeverResumes() async throws {
+        for didFail in [false, true] {
+            let fixture = Fixture(pauseOnScreenLock: true)
+            defer { fixture.cleanup() }
+            try await fixture.start(running)
+            fixture.session.screenLocked(at: fixture.clock.now)
+            let pause = try await fixture.client.next()
+            fixture.session.screenUnlocked(at: fixture.clock.now)
+            if didFail {
+                pause.fail(BridgeFailure(message: "Pause rejected"))
+                let reload = try await fixture.client.next()
+                XCTAssertEqual(reload.operation, .refresh(.local))
+                reload.succeed(running)
+            } else {
+                pause.paused(running, didStop: false)
+            }
+            try await fixture.settled()
+            XCTAssertFalse(
+                fixture.client.operations.contains {
+                    if case .resume = $0 { return true }; return false
+                })
+            XCTAssertEqual(fixture.session.trackingError, didFail ? "Pause rejected" : nil)
+        }
+    }
+
+    func testCancelledPendingPauseCannotGrantResumeAfterUnlock() {
+        let state = TrackingAutomationState(preferences: TrackingPreferences(pauseOnScreenLock: true))
+        XCTAssertTrue(state.lock())
+        XCTAssertTrue(state.beginPause())
+        XCTAssertNil(state.unlock(at: Date(timeIntervalSince1970: 90)))
+        state.cancel()
+        XCTAssertNil(state.paused(taskID: firstTask.id, didStop: true))
+        XCTAssertNil(state.statusText)
+    }
+
+    func testRelockingDuringPauseKeepsTheLatestUnlockTime() {
+        let state = TrackingAutomationState(preferences: TrackingPreferences(pauseOnScreenLock: true))
+        XCTAssertTrue(state.lock())
+        XCTAssertTrue(state.beginPause())
+        XCTAssertNil(state.unlock(at: Date(timeIntervalSince1970: 90)))
+        XCTAssertTrue(state.lock())
+        XCTAssertFalse(state.beginPause())
+        XCTAssertNil(state.paused(taskID: firstTask.id, didStop: true))
+        XCTAssertEqual(state.statusText, "Paused while screen is locked")
+        let latestUnlock = Date(timeIntervalSince1970: 180)
+        let resume = state.unlock(at: latestUnlock)
+        XCTAssertEqual(resume?.taskID, firstTask.id)
+        XCTAssertEqual(resume?.date, latestUnlock)
+    }
+
     func testNewWorklogAfterLockIsNotPaused() async throws {
         let fixture = Fixture(pauseOnScreenLock: true)
         defer { fixture.cleanup() }

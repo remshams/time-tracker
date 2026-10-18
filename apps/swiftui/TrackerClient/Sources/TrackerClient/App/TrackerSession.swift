@@ -522,16 +522,10 @@ public final class TrackerSession {
     }
 
     public func screenUnlocked(at date: Date) {
-        if let taskID = automation.unlock() {
-            tracking.error = nil
-            let occurredAt = commandTimestamp(date)
+        if let resume = automation.unlock(at: date) {
             Task { [weak self] in
                 guard let self else { return }
-                do {
-                    _ = try await client.resumeTracking(taskID: taskID, occurredAt: occurredAt)
-                } catch {
-                    tracking.error = writeFailure(error).localizedDescription
-                }
+                await resumeTracking(resume)
                 await reloadTaskList()
                 publish()
             }
@@ -582,6 +576,7 @@ public final class TrackerSession {
             return false
         }
         await loadReport()
+        schedulePolling()
         return true
     }
 
@@ -635,19 +630,32 @@ public final class TrackerSession {
     }
 
     private func pauseTracking(at date: Date) {
-        guard let worklog = active else { return }
+        guard let worklog = active, automation.beginPause() else { return }
         tracking.error = nil
         let occurredAt = commandTimestamp(date)
         Task { [weak self] in
             guard let self else { return }
             do {
                 let result = try await client.pauseTracking(worklogID: worklog.id, occurredAt: occurredAt)
-                automation.paused(taskID: worklog.taskId, didStop: result.didStop)
+                if let resume = automation.paused(taskID: worklog.taskId, didStop: result.didStop) {
+                    await resumeTracking(resume)
+                }
             } catch {
+                automation.pauseFailed()
                 tracking.error = writeFailure(error).localizedDescription
             }
             await reloadTaskList()
             publish()
+        }
+    }
+
+    private func resumeTracking(_ resume: TrackingAutomationState.Resume) async {
+        tracking.error = nil
+        do {
+            _ = try await client.resumeTracking(
+                taskID: resume.taskID, occurredAt: commandTimestamp(resume.date))
+        } catch {
+            tracking.error = writeFailure(error).localizedDescription
         }
     }
 
