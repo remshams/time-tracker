@@ -311,7 +311,7 @@ fn correction_rejects_null_invalid_and_non_utf8_inputs_without_writing() {
 }
 
 #[test]
-fn remote_correction_refreshes_revision_but_keeps_original_timestamp_guard() {
+fn remote_correction_succeeds_after_an_unrelated_write_and_keeps_original_timestamp_guard() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("remote.db");
     let mut writer = open_fixture(&path).unwrap();
@@ -413,8 +413,8 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
             false,
         ),
         (
-            ErrorCode::StaleRevision,
-            "Tracker state changed. Refresh and retry.",
+            ErrorCode::Conflict,
+            "Tracker state changed in another client",
             StatusCode::CONFLICT,
             "conflict",
             false,
@@ -485,14 +485,14 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
         assert_eq!(body["replacement_start"], timestamp(at(90)));
         assert_eq!(body["replacement_end"], timestamp(at(210)));
         assert_eq!(body["occurred_at"], timestamp(at(1000)));
-        assert_eq!(body["expected_revision"], "42");
+        assert!(body.get("expected_revision").is_none());
         assert!(body["request_id"].as_str().is_some_and(|id| !id.is_empty()));
-        assert_eq!(body.as_object().unwrap().len(), 8);
+        assert_eq!(body.as_object().unwrap().len(), 7);
     }
 }
 
 #[test]
-fn remote_correction_preflight_failure_does_not_send_a_write() {
+fn remote_correction_connection_failure_is_certain_and_does_not_write() {
     let directory = tempfile::tempdir().unwrap();
     let mut writer = open_fixture(&directory.path().join("unavailable.db")).unwrap();
     let task = writer.application.tasks(TaskOrdering::default())[0]

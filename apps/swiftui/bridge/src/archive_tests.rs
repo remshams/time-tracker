@@ -358,13 +358,13 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
                 let body = &requests.lock().unwrap()[0];
                 assert_eq!(body["action"], if archived { "archive" } else { "restore" });
                 assert_eq!(body["occurred_at"], timestamp(at(400)));
-                assert_eq!(body["expected_revision"], "42");
+                assert!(body.get("expected_revision").is_none());
                 assert!(body["request_id"].as_str().is_some());
                 if archived {
                     assert_eq!(body["expected_name"], reviewed_name.as_str());
-                    assert_eq!(body.as_object().unwrap().len(), 5);
-                } else {
                     assert_eq!(body.as_object().unwrap().len(), 4);
+                } else {
+                    assert_eq!(body.as_object().unwrap().len(), 3);
                 }
             } else {
                 assert_eq!(response["kind"], "protocol", "{index}: {response}");

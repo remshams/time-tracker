@@ -338,7 +338,8 @@ fn move_and_candidate_c_inputs_reject_null_malformed_and_non_utf8_strings() {
 }
 
 #[test]
-fn remote_moves_refresh_revision_keep_original_guards_and_candidates_never_use_http() {
+fn remote_moves_succeed_after_an_unrelated_write_keep_original_guards_and_candidates_never_use_http()
+ {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("remote.db");
     let mut writer = open_fixture(&path).unwrap();
@@ -575,12 +576,7 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
             "worklog_overlap",
             false,
         ),
-        (
-            ErrorCode::StaleRevision,
-            StatusCode::CONFLICT,
-            "conflict",
-            false,
-        ),
+        (ErrorCode::Conflict, StatusCode::CONFLICT, "conflict", false),
         (
             ErrorCode::InvalidRequest,
             StatusCode::BAD_REQUEST,
@@ -617,8 +613,8 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
                     move |axum::extract::Path(id): axum::extract::Path<String>,
                           Json(body): Json<Value>| {
                         *captured.lock().unwrap() = Some((id, body));
-                        let message = if code == ErrorCode::StaleRevision {
-                            "Tracker state changed. Refresh and retry."
+                        let message = if code == ErrorCode::Conflict {
+                            "Tracker state changed in another client"
                         } else {
                             "Move failed"
                         };
@@ -648,14 +644,14 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
         assert_eq!(body["expected_start"], timestamp(original.start()));
         assert_eq!(body["expected_end"], timestamp(original.end().unwrap()));
         assert_eq!(body["destination_task_id"], tasks[1].task.id().to_string());
-        assert_eq!(body["expected_revision"], "42");
+        assert!(body.get("expected_revision").is_none());
         assert!(body["request_id"].as_str().is_some_and(|id| !id.is_empty()));
-        assert_eq!(body.as_object().unwrap().len(), 7);
+        assert_eq!(body.as_object().unwrap().len(), 6);
     }
 }
 
 #[test]
-fn remote_move_preflight_failure_is_certain_and_does_not_write() {
+fn remote_move_connection_failure_is_certain_and_does_not_write() {
     let directory = tempfile::tempdir().unwrap();
     let mut writer = open_fixture(&directory.path().join("unavailable.db")).unwrap();
     let tasks = writer.application.tasks(TaskOrdering::default());

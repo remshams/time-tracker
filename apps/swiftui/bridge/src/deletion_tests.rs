@@ -267,8 +267,8 @@ fn remote_deletion_sends_the_expected_worklog_and_classifies_failures() {
             false,
         ),
         (
-            ErrorCode::StaleRevision,
-            "Tracker state changed. Refresh and retry.",
+            ErrorCode::Conflict,
+            "Tracker state changed in another client",
             StatusCode::CONFLICT,
             "conflict",
             false,
@@ -336,14 +336,14 @@ fn remote_deletion_sends_the_expected_worklog_and_classifies_failures() {
         assert_eq!(body["expected_task_id"], task.to_string());
         assert_eq!(body["expected_start"], timestamp(original.start()));
         assert_eq!(body["expected_end"], timestamp(original.end().unwrap()));
-        assert_eq!(body["expected_revision"], "42");
+        assert!(body.get("expected_revision").is_none());
         assert!(body["request_id"].as_str().is_some_and(|id| !id.is_empty()));
-        assert_eq!(body.as_object().unwrap().len(), 5);
+        assert_eq!(body.as_object().unwrap().len(), 4);
     }
 }
 
 #[test]
-fn remote_deletion_preflight_failure_does_not_send_a_write() {
+fn remote_deletion_connection_failure_is_certain_and_does_not_delete() {
     let directory = tempfile::tempdir().unwrap();
     let mut writer = open_fixture(&directory.path().join("unavailable.db")).unwrap();
     let task = writer.application.tasks(TaskOrdering::default())[0]

@@ -439,23 +439,20 @@ fn uncertain_creation_recovers_the_same_id_after_polling_or_retries_the_original
             assert_eq!(confirmed["data"]["task"]["id"], first["task_id"]);
             let sent = requests.lock().unwrap();
             assert_eq!(sent.len(), count + usize::from(!committed));
+            // Every attempt, including the retry after recovery, resends the
+            // original intent with the same request ID and no revision.
             for request in sent.iter() {
                 assert_eq!(request["task_id"], first["task_id"]);
                 assert_eq!(request["occurred_at"], first["occurred_at"]);
-            }
-            for request in sent.iter().take(count) {
                 assert_eq!(request["request_id"], first["request_id"]);
-            }
-            if !committed {
-                assert_eq!(sent.last().unwrap()["request_id"], first["request_id"]);
-                assert_eq!(sent.last().unwrap()["expected_revision"], "recovered");
+                assert!(request.get("expected_revision").is_none());
             }
         }
     }
 }
 
 #[test]
-fn creation_refreshes_its_task_guard_after_another_client_adds_an_unrelated_task() {
+fn creation_succeeds_after_another_client_adds_an_unrelated_task() {
     let server = Server::start();
     let mut first = Client::open(&server.endpoint());
     let mut second = Client::open(&server.endpoint());
