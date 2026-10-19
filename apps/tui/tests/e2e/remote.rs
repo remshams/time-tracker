@@ -169,3 +169,16 @@ fn server_process() {
     tracker_server::run(bind, database.into()).unwrap();
 }
 
+#[test]
+fn the_terminal_binary_redirects_removed_serve_commands() {
+    let output = Command::new(env!("CARGO_BIN_EXE_tt"))
+        .args(["serve", "--bind", "127.0.0.1:8765"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("serve moved to `tt-server --bind ADDRESS:PORT [--db PATH]`")
+    );
+}
