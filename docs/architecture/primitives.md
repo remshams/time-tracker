@@ -2,7 +2,7 @@
 
 Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. [Revisions and concurrency](#revisions-and-concurrency) explains stale-write and pagination guards. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
 
-Source scope: the Rust core, TUI, CLI, and native macOS client at `d7678a2c`, inspected on 19 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
+Source scope: the Rust core, TUI, CLI, and native macOS client at `d7678a2c`, inspected on 19 October 2026. Standalone server packaging and fixtures describe commits `a18005c7` through `c431aead`, inspected on 19 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
 
 ## Architecture primitives
 
@@ -40,11 +40,19 @@ Source: [crate](../../crates/tracker-protocol/Cargo.toml), [wire contracts](../.
 
 ### tracker-server
 
-Owns HTTP routes, server-side operation serialization, revision guards, command receipts, and its application and SQLite database. Task-list and daily-overview reads capture related resources in one transaction. Rename and archive check the reviewed task name through the shared guarded application operations, which compare and write in one SQLite transaction. `tt serve` launches this library against an explicit local or Tailscale bind address.
+Owns HTTP routes, server-side operation serialization, revision guards, command receipts, and its application and SQLite database. Task-list and daily-overview reads capture related resources in one transaction. Rename and archive check the reviewed task name through the shared guarded application operations, which compare and write in one SQLite transaction. `tt-server` launches this library against an explicit local or Tailscale bind address.
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-storage](#tracker-storage).
 
 Source: [crate](../../crates/tracker-server/Cargo.toml), [entry points](../../crates/tracker-server/src/lib.rs), [resource routes](../../crates/tracker-server/src/resources.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).
+
+### tracker-server-app
+
+The `tt-server` binary owns server argument validation, database path selection, and startup. It requires an explicit loopback or Tailscale bind address and defaults to `default_database_path()?.with_file_name("tt-server.db")`. A leading `serve` word is accepted for existing systemd units. It delegates HTTP and database ownership to `tracker-server` and has no terminal dependencies.
+
+Depends on: [tracker-server](#tracker-server), [tracker-storage](#tracker-storage).
+
+Source: [crate](../../apps/server/Cargo.toml), [startup](../../apps/server/src/main.rs), [arguments](../../apps/server/src/cli.rs). Decision: [ADR 0028](../adr/0028-ship-a-standalone-server-binary.md).
 
 ### tracker-remote
 
@@ -68,9 +76,9 @@ Source: [crate](../../crates/tracker-client/Cargo.toml), [backend](../../crates/
 
 ### tracker-tui
 
-The `tt` terminal client owns keyboard commands, screen state, rendering, terminal restoration, and a monotonic timer. One event loop handles input, redraw ticks, and request completions. Production requests use `TrackerBackend`; presentation tests can inject `TrackerApplicationService`. The same binary launches `tracker-server` through `tt serve`.
+The `tt` terminal client owns keyboard commands, screen state, rendering, terminal restoration, and a monotonic timer. One event loop handles input, redraw ticks, and request completions. Production requests use `TrackerBackend`; presentation tests can inject `TrackerApplicationService`. Server startup belongs to `tracker-server-app`.
 
-Depends on: [tracker-client](#tracker-client), [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-remote](#tracker-remote), [tracker-server](#tracker-server), [tracker-storage](#tracker-storage).
+Depends on: [tracker-client](#tracker-client), [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-remote](#tracker-remote), [tracker-storage](#tracker-storage).
 
 Source: [crate](../../apps/tui/Cargo.toml), [startup](../../apps/tui/src/main.rs), [controller](../../apps/tui/src/app.rs), [runtime](../../apps/tui/src/runtime.rs). Decisions: [ADR 0011](../adr/0011-use-one-tui-event-loop-with-a-fixed-redraw-tick.md), [ADR 0021](../adr/0021-share-concrete-client-backend.md).
 
