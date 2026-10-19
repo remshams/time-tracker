@@ -1,13 +1,12 @@
 use super::{
     ApplicationError, ApplicationFailureCategory, ArchiveInactiveTasksRequest,
     ClearActiveTaskOutcome, CreateTaskRequest, DateTime, DeleteWorklogRequest, GlobalWorklogCursor,
-    GlobalWorklogPage, InactiveTaskPreview, InactivityPeriod, MoveCandidate, MutationDto,
-    MutationScope, Recovery, RemoteError, RemoteFailureKind, RemoteSession, ReportDto,
-    ReportsClient, ResourceObservation, ResourceSelection, SetActiveTaskOutcome,
-    SetTrackingRequest, StatusCode, Task, TaskChangeRequest, TaskId, TaskListItem,
-    TaskListStateDto, TaskName, TaskOrdering, TaskResourceDto, TasksClient, TrackingClient,
-    TrackingState, Utc, Worklog, WorklogChangeRequest, WorklogCursor, WorklogId, WorklogPage,
-    WorklogPageDto, WorklogResourceDto, WorklogTimes, WorklogsClient, WriteGuard, active_id,
+    GlobalWorklogPage, InactiveTaskPreview, InactivityPeriod, MoveCandidate, MutationDto, Recovery,
+    RemoteError, RemoteFailureKind, RemoteSession, ReportDto, ReportsClient, ResourceObservation,
+    ResourceSelection, SetActiveTaskOutcome, SetTrackingRequest, Task, TaskChangeRequest, TaskId,
+    TaskListItem, TaskListStateDto, TaskName, TaskOrdering, TaskResourceDto, TasksClient,
+    TrackingClient, TrackingState, Utc, Worklog, WorklogChangeRequest, WorklogCursor, WorklogId,
+    WorklogPage, WorklogResourceDto, WorklogTimes, WorklogsClient, WriteGuard, active_id,
     app_decode_worklog, canonical, creation_needs_recovery, decode_task_list_state,
     map_application_error, original_worklog_matches, protocol_failure, reviewed_tracking_changed,
 };
@@ -29,7 +28,7 @@ impl RemoteTrackerCoordinator {
             session: RemoteSession::new(endpoint)?,
             tasks: TasksClient::default(),
             tracking: TrackingClient::default(),
-            worklogs: WorklogsClient::default(),
+            worklogs: WorklogsClient,
             reports: ReportsClient::default(),
             pending_create: None,
             coherent_task_views: false,
@@ -154,38 +153,19 @@ impl RemoteTrackerCoordinator {
     async fn recover(&mut self, recovery: Recovery) -> Result<(), RemoteError> {
         match recovery {
             Recovery::Tasks => self.refresh_task_command_view().await,
-            Recovery::Tracking | Recovery::Worklog => self.refresh_task_list().await,
+            Recovery::Tracking => self.refresh_task_list().await,
         }
-    }
-
-    async fn recover_mutation(&mut self, scope: MutationScope) -> Result<(), RemoteError> {
-        // Receipts describe a past command. Explicit reads own current caches.
-        if matches!(scope.recovery, Recovery::Worklog)
-            && let Some(id) = scope.worklog_id
-        {
-            match self.read_worklog(id).await {
-                Ok(_) => {}
-                Err(RemoteError::Http {
-                    status: StatusCode::NOT_FOUND,
-                    ..
-                }) => {
-                    self.worklogs.remove(id);
-                }
-                Err(error) => return Err(error),
-            }
-        }
-        self.recover(scope.recovery).await
     }
 
     async fn finish_mutation<T>(
         &mut self,
         result: Result<T, ApplicationError>,
-        scope: MutationScope,
+        recovery: Recovery,
     ) -> Result<T, ApplicationError> {
         if !self.session.last_write_attempted() {
             return result;
         }
-        let recovered = self.recover_mutation(scope).await;
+        let recovered = self.recover(recovery).await;
         match (result, recovered) {
             (Ok(value), Ok(())) => {
                 self.session.confirmed();
@@ -332,14 +312,6 @@ impl RemoteTrackerCoordinator {
         self.worklogs.all_worklogs(&mut self.session, after).await
     }
 
-    pub fn cached_history(&self, task_id: Option<TaskId>) -> Option<&WorklogPageDto> {
-        self.worklogs.cached_history(task_id)
-    }
-
-    pub fn cached_worklog(&self, id: WorklogId) -> Option<&WorklogResourceDto> {
-        self.worklogs.cached_worklog(id)
-    }
-
     /// Publishes validated totals only after the echoed microsecond context matches the request.
     pub async fn task_totals(
         &mut self,
@@ -417,15 +389,7 @@ impl RemoteTrackerCoordinator {
         self.pending_create = Some(body.clone());
         let result = self.tasks.create_task(&mut self.session, id, &body).await;
         let receipt_confirmed = result.is_ok();
-        let result = self
-            .finish_mutation(
-                result,
-                MutationScope {
-                    recovery: Recovery::Tasks,
-                    worklog_id: None,
-                },
-            )
-            .await;
+        let result = self.finish_mutation(result, Recovery::Tasks).await;
         if !result
             .as_ref()
             .is_err_and(|error| creation_needs_recovery(error, receipt_confirmed))
@@ -498,14 +462,7 @@ impl RemoteTrackerCoordinator {
         body: TaskChangeRequest,
     ) -> Result<Task, ApplicationError> {
         let result = self.tasks.task_mutation(&mut self.session, id, &body).await;
-        self.finish_mutation(
-            result,
-            MutationScope {
-                recovery: Recovery::Tasks,
-                worklog_id: None,
-            },
-        )
-        .await
+        self.finish_mutation(result, Recovery::Tasks).await
     }
 
     /// Confirms the captured preview under its original revision guard.
@@ -524,14 +481,7 @@ impl RemoteTrackerCoordinator {
             .tasks
             .archive_inactive_tasks(&mut self.session, &body)
             .await;
-        self.finish_mutation(
-            result,
-            MutationScope {
-                recovery: Recovery::Tasks,
-                worklog_id: None,
-            },
-        )
-        .await
+        self.finish_mutation(result, Recovery::Tasks).await
     }
 
     /// Confirms the period already retained by the preview and returns the archived count.
@@ -732,14 +682,7 @@ impl RemoteTrackerCoordinator {
                 &body,
             )
             .await;
-        self.finish_mutation(
-            result,
-            MutationScope {
-                recovery: Recovery::Tracking,
-                worklog_id: None,
-            },
-        )
-        .await
+        self.finish_mutation(result, Recovery::Tracking).await
     }
 
     pub async fn clear_active_task(
@@ -765,14 +708,7 @@ impl RemoteTrackerCoordinator {
             .tracking
             .clear_active_task(&mut self.session, expected_active, original_active, &body)
             .await;
-        self.finish_mutation(
-            result,
-            MutationScope {
-                recovery: Recovery::Tracking,
-                worklog_id: Some(expected_active),
-            },
-        )
-        .await
+        self.finish_mutation(result, Recovery::Tracking).await
     }
 
     async fn worklog_guard(
@@ -796,7 +732,7 @@ impl RemoteTrackerCoordinator {
             if !original_worklog_matches(&worklog, expected_task, expected) {
                 self.session.set_failure(RemoteFailureKind::Conflict);
                 let primary = ApplicationError::worklog_changed(id);
-                if let Err(recovery) = self.recover(Recovery::Worklog).await {
+                if let Err(recovery) = self.recover(Recovery::Tracking).await {
                     return Err(
                         primary.with_recovery_failure(map_application_error(&recovery, None, None))
                     );
@@ -848,14 +784,7 @@ impl RemoteTrackerCoordinator {
             .worklogs
             .move_worklog(&mut self.session, id, expected, destination_task_id, &body)
             .await;
-        self.finish_mutation(
-            result,
-            MutationScope {
-                recovery: Recovery::Worklog,
-                worklog_id: Some(id),
-            },
-        )
-        .await
+        self.finish_mutation(result, Recovery::Tracking).await
     }
 
     pub async fn correct_worklog(
@@ -879,14 +808,7 @@ impl RemoteTrackerCoordinator {
             .worklogs
             .correct_worklog(&mut self.session, id, expected_task_id, replacement, &body)
             .await;
-        self.finish_mutation(
-            result,
-            MutationScope {
-                recovery: Recovery::Worklog,
-                worklog_id: Some(id),
-            },
-        )
-        .await
+        self.finish_mutation(result, Recovery::Tracking).await
     }
 
     pub async fn delete_completed_worklog(
@@ -912,13 +834,6 @@ impl RemoteTrackerCoordinator {
             .worklogs
             .delete_completed_worklog(&mut self.session, id, expected_task_id, expected, &body)
             .await;
-        self.finish_mutation(
-            result,
-            MutationScope {
-                recovery: Recovery::Worklog,
-                worklog_id: Some(id),
-            },
-        )
-        .await
+        self.finish_mutation(result, Recovery::Tracking).await
     }
 }

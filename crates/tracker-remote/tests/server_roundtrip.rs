@@ -705,7 +705,7 @@ async fn remote_client_round_trips_every_application_operation() {
     assert_eq!(report.total_us, 17_000_000);
 
     let individual = client.read_worklog(started.id()).await.unwrap();
-    assert_eq!(client.cached_worklog(started.id()), Some(&individual));
+    assert_eq!(individual.worklog.id, started.id().to_string());
     let original = page.worklogs[0].times();
     let invalid = client
         .correct_worklog(
@@ -739,7 +739,13 @@ async fn remote_client_round_trips_every_application_operation() {
         .await
         .unwrap();
     assert_eq!(deleted.id(), started.id());
-    assert!(client.cached_worklog(deleted.id()).is_none());
+    assert!(matches!(
+        client.read_worklog(deleted.id()).await,
+        Err(tracker_remote::RemoteError::Http {
+            status: axum::http::StatusCode::NOT_FOUND,
+            ..
+        })
+    ));
     assert!(
         client
             .worklogs_for_task(first.id(), None)
@@ -1084,7 +1090,7 @@ async fn report_and_history_reads_never_authorize_stale_task_or_tracking_intent(
         .task_totals(at, at + Duration::seconds(10), at)
         .await
         .unwrap();
-    second.all_worklogs(None).await.unwrap();
+    assert!(second.all_worklogs(None).await.unwrap().worklogs.is_empty());
     assert_eq!(second.task_revision(), tasks_revision);
     assert_eq!(second.tracking_revision(), tracking_revision);
     assert_ne!(second.report_revision(), tasks_revision);
@@ -1092,7 +1098,6 @@ async fn report_and_history_reads_never_authorize_stale_task_or_tracking_intent(
         second.report_observation().unwrap().revision,
         second.report_revision()
     );
-    assert!(second.cached_history(None).is_some());
     assert!(
         second
             .rename_task(task.id(), name("Reviewed draft"), at + Duration::seconds(2))
@@ -1661,7 +1666,6 @@ async fn individual_resources_reject_wrong_ids_revisions_and_domain_values() {
             .await
             .unwrap();
         assert!(client.read_worklog(worklog_id).await.is_err());
-        assert!(client.cached_worklog(worklog_id).is_none());
         assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
     }
 }
@@ -2067,7 +2071,12 @@ async fn source_changed_preflight_is_certain_and_recovers_affected_caches() {
         matches!(second.current_tracking(),tracker_domain::TrackingState::Running {worklog} if worklog.task_id()==timer.id())
     );
     assert_eq!(
-        second.cached_worklog(reviewed.id()).unwrap().worklog.start,
+        second
+            .read_worklog(reviewed.id())
+            .await
+            .unwrap()
+            .worklog
+            .start,
         at + Duration::seconds(2)
     );
 }
@@ -2582,18 +2591,10 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
         "Confirmed task name"
     );
     assert!(client.active_worklog().is_none());
-    assert_eq!(
-        client.cached_worklog(id).unwrap().worklog.start,
-        at + Duration::seconds(1)
-    );
-    assert_eq!(
-        client.cached_worklog(id).unwrap().revision,
-        "committed-worklog"
-    );
 }
 
 #[tokio::test]
-async fn history_rejects_empty_revision_and_unanchored_cursor_before_caching() {
+async fn history_rejects_empty_revision_and_unanchored_cursor() {
     use tracker_protocol::{WorklogCursorDto, WorklogPageDto};
     let requested = tracker_domain::TaskId::generate();
     for revision in ["", "valid"] {
@@ -2615,14 +2616,13 @@ async fn history_rejects_empty_revision_and_unanchored_cursor_before_caching() {
             error.failure().source(),
             tracker_application::ApplicationFailureSource::RemoteProtocol
         );
-        assert!(client.cached_history(Some(requested)).is_none());
         assert!(client.task_revision().is_empty());
         assert!(client.tracking_revision().is_empty());
     }
 }
 
 #[tokio::test]
-async fn malformed_history_retains_the_previous_confirmed_page() {
+async fn history_rejects_malformed_pages_after_a_valid_read() {
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -2713,16 +2713,14 @@ async fn malformed_history_retains_the_previous_confirmed_page() {
             .await
             .unwrap();
         if global {
-            client.all_worklogs(None).await.unwrap();
+            let page = client.all_worklogs(None).await.unwrap();
+            assert_eq!(page.worklogs[0].id().to_string(), valid.worklogs[0].id);
             assert!(client.all_worklogs(None).await.is_err());
         } else {
-            client.worklogs_for_task(requested, None).await.unwrap();
+            let page = client.worklogs_for_task(requested, None).await.unwrap();
+            assert_eq!(page.worklogs[0].id().to_string(), valid.worklogs[0].id);
             assert!(client.worklogs_for_task(requested, None).await.is_err());
         }
-        assert_eq!(
-            client.cached_history((!global).then_some(requested)),
-            Some(&valid)
-        );
         assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
     }
 }
@@ -3621,4 +3619,126 @@ async fn aggregate_reads_remain_coherent_while_http_commands_switch_tracking() {
         }
     };
     tokio::join!(write, read);
+}
+
+#[tokio::test]
+async fn worklog_writes_read_the_worklog_only_for_preflight() {
+    use axum::{
+        extract::Request,
+        middleware::{self, Next},
+    };
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    let directory = TempDir::new().unwrap();
+    let reads = Arc::new(AtomicUsize::new(0));
+    let worklog_reads = reads.clone();
+    let router = tracker_server::router_for_database(&directory.path().join("requests.sqlite3"))
+        .unwrap()
+        .layer(middleware::from_fn(move |request: Request, next: Next| {
+            let reads = worklog_reads.clone();
+            async move {
+                if request.method() == axum::http::Method::GET
+                    && request.uri().path().starts_with("/v1/worklogs/")
+                {
+                    reads.fetch_add(1, Ordering::SeqCst);
+                }
+                next.run(request).await
+            }
+        }));
+    let server = StubServer::from_router(router);
+    let mut client = connected(&server.endpoint()).await.unwrap();
+    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+    let source = client.create_task(name("Source task"), at).await.unwrap();
+    let destination = client
+        .create_task(name("Destination task"), at)
+        .await
+        .unwrap();
+    let started = match client.set_active_task(source.id(), at).await.unwrap() {
+        SetActiveTaskOutcome::Started { worklog } => worklog,
+        other => panic!("expected started worklog, got {other:?}"),
+    };
+    let stopped = match client
+        .clear_active_task(started.id(), at + Duration::seconds(10))
+        .await
+        .unwrap()
+    {
+        ClearActiveTaskOutcome::Stopped { worklog } => worklog,
+        other => panic!("expected stopped worklog, got {other:?}"),
+    };
+    assert_eq!(reads.load(Ordering::SeqCst), 0);
+
+    let replacement = WorklogTimes::new(at + Duration::seconds(1), Some(at + Duration::seconds(9)));
+    let corrected = client
+        .correct_worklog(
+            stopped.id(),
+            stopped.times(),
+            replacement,
+            at + Duration::seconds(20),
+        )
+        .await
+        .unwrap();
+    assert_eq!(corrected.times(), replacement);
+    assert_eq!(
+        reads.load(Ordering::SeqCst),
+        1,
+        "correction needs only the preflight GET"
+    );
+    assert_eq!(client.last_failure(), None);
+    assert_eq!(
+        client
+            .worklogs_for_task(source.id(), None)
+            .await
+            .unwrap()
+            .worklogs,
+        vec![corrected.clone()]
+    );
+
+    let moved = client
+        .move_worklog(
+            corrected.id(),
+            source.id(),
+            corrected.times(),
+            destination.id(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(moved.task_id(), destination.id());
+    assert_eq!(
+        reads.load(Ordering::SeqCst),
+        2,
+        "move needs only the preflight GET"
+    );
+    assert_eq!(client.last_failure(), None);
+    assert!(
+        client
+            .worklogs_for_task(source.id(), None)
+            .await
+            .unwrap()
+            .worklogs
+            .is_empty()
+    );
+    assert_eq!(
+        client
+            .worklogs_for_task(destination.id(), None)
+            .await
+            .unwrap()
+            .worklogs,
+        vec![moved.clone()]
+    );
+
+    let deleted = client
+        .delete_completed_worklog(moved.id(), destination.id(), moved.times())
+        .await
+        .unwrap();
+    assert_eq!(deleted, moved);
+    assert_eq!(
+        reads.load(Ordering::SeqCst),
+        3,
+        "deletion needs only the preflight GET"
+    );
+    assert_eq!(client.last_failure(), None);
+    assert!(client.all_worklogs(None).await.unwrap().worklogs.is_empty());
 }

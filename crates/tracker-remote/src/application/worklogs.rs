@@ -1,17 +1,13 @@
 use super::{
-    ApplicationError, DeleteWorklogRequest, GlobalWorklogCursor, GlobalWorklogPage, HashMap,
-    HistoryRead, Method, MutationContext, RemoteError, RemoteSession, TaskId, Worklog,
-    WorklogChangeRequest, WorklogCursor, WorklogId, WorklogPage, WorklogPageDto,
-    WorklogResourceDto, WorklogTimes, decode_history, decode_worklog, map_application_error,
-    original_worklog_matches, protocol_failure, worklog_result,
+    ApplicationError, DeleteWorklogRequest, GlobalWorklogCursor, GlobalWorklogPage, HistoryRead,
+    Method, MutationContext, RemoteError, RemoteSession, TaskId, Worklog, WorklogChangeRequest,
+    WorklogCursor, WorklogId, WorklogPage, WorklogPageDto, WorklogResourceDto, WorklogTimes,
+    decode_history, decode_worklog, map_application_error, original_worklog_matches,
+    protocol_failure, worklog_result,
 };
 
-/// Worklog protocol operations and confirmed history and worklog responses.
-#[derive(Default)]
-pub(super) struct WorklogsClient {
-    history_cache: HashMap<Option<TaskId>, WorklogPageDto>,
-    worklog_cache: HashMap<WorklogId, WorklogResourceDto>,
-}
+/// Worklog protocol operations and response validation.
+pub(super) struct WorklogsClient;
 
 impl WorklogsClient {
     pub(super) async fn read_worklog(
@@ -27,7 +23,6 @@ impl WorklogsClient {
             );
         }
         decode_worklog(dto.worklog.clone()).map_err(|error| session.record_error(error))?;
-        self.worklog_cache.insert(id, dto.clone());
         session.confirmed();
         Ok(dto)
     }
@@ -64,7 +59,6 @@ impl WorklogsClient {
             session.record_error(error.clone());
             map_application_error(&error, None, task_id)
         })?;
-        self.history_cache.insert(task_id, dto);
         session.confirmed();
         Ok(decoded)
     }
@@ -110,18 +104,6 @@ impl WorklogsClient {
             tracking: None,
             worklogs: dto.worklogs,
         })
-    }
-
-    pub(super) fn cached_history(&self, task_id: Option<TaskId>) -> Option<&WorklogPageDto> {
-        self.history_cache.get(&task_id)
-    }
-
-    pub(super) fn cached_worklog(&self, id: WorklogId) -> Option<&WorklogResourceDto> {
-        self.worklog_cache.get(&id)
-    }
-
-    pub(super) fn remove(&mut self, id: WorklogId) {
-        self.worklog_cache.remove(&id);
     }
 
     pub(super) async fn move_worklog(
