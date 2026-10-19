@@ -49,10 +49,14 @@ final class TrackerTaskPresentationCoordinator {
         update()
     }
 
-    private var presentationIsVisible: Bool {
+    private var editorIsPresented: Bool {
         store.creation.state.isPresented || store.rename.state.isPresented || store.correction.state.isPresented
             || store.move.state.isPresented || store.deletion.state.isPresented || store.archiving.state.isPresented
-            || store.bulkArchiving.state.isPresented || store.trackingError != nil
+            || store.bulkArchiving.state.isPresented
+    }
+
+    private var presentationIsVisible: Bool {
+        editorIsPresented || store.trackingError != nil
     }
 
     /// Chooses an owner whenever a value read by `update()` changes.
@@ -77,11 +81,7 @@ final class TrackerTaskPresentationCoordinator {
         guard ownerID == nil else { return }
         isChoosingOwner = true
         defer { isChoosingOwner = false }
-        let needsEditor =
-            store.creation.state.isPresented || store.rename.state.isPresented || store.correction.state.isPresented
-            || store.move.state.isPresented || store.deletion.state.isPresented || store.archiving.state.isPresented
-            || store.bulkArchiving.state.isPresented
-        setOwner(presentingWindow(needsEditor))
+        setOwner(presentingWindow(editorIsPresented))
     }
 
     private func setOwner(_ windowID: UUID?) {

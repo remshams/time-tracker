@@ -93,7 +93,7 @@ private struct ConnectionDraftLifecycle: ViewModifier {
         content
             .onAppear { draft.reset() }
             .onDisappear { draft.invalidatePendingResults() }
-            .onChange(of: draft.settings) { _ in draft.clearResult() }
-            .onChange(of: store.connectionSettings) { settings in draft.settings = settings }
+            .onChange(of: draft.settings) { _, _ in draft.clearResult() }
+            .onChange(of: store.connectionSettings) { _, settings in draft.settings = settings }
     }
 }
