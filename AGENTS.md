@@ -47,7 +47,7 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 
 ## Validation
 
-- After completing a task or feature, run `python3 -m unittest discover -s scripts/tests -p 'test_*.py'`, `cargo test`, `cargo llvm-cov --lcov --output-path lcov.info`, and `cargo crap --workspace --lcov lcov.info` before handoff. Run mutation checks according to the scope rules below.
+- After completing a task or feature, run `python3 -m unittest discover -s scripts/tests -p 'test_*.py'`, `cargo llvm-cov --lcov --output-path lcov.info` (it runs the full test suite, so a separate `cargo test` only rebuilds and reruns the same tests), and `cargo crap --workspace --lcov lcov.info` before handoff. Run mutation checks according to the scope rules below.
 - For Swift production or portable unit-test changes, also run `python3 scripts/swift-style.py`. Install its pinned tools with `python3 scripts/install-swift-style-tools.py` if needed. Native UI E2E and layout tests remain outside the initial style scope.
 - Use cargo-mutants 27.1.0. Install it with `cargo install --locked cargo-mutants --version 27.1.0` if it is unavailable.
 - Use cargo-llvm-cov 0.9.0 and cargo-crap 0.4.3. Install them with `rustup component add llvm-tools-preview`, `cargo +stable install --locked --version 0.9.0 cargo-llvm-cov`, and `cargo +stable install --locked --version 0.4.3 cargo-crap` if they are unavailable.
