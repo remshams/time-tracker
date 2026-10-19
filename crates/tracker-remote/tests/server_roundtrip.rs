@@ -4114,7 +4114,7 @@ async fn aggregate_reads_remain_coherent_while_http_commands_switch_tracking() {
 }
 
 #[tokio::test]
-async fn worklog_writes_read_the_worklog_only_for_preflight() {
+async fn worklog_writes_send_no_individual_worklog_read() {
     use axum::{
         extract::Request,
         middleware::{self, Next},
@@ -4175,8 +4175,8 @@ async fn worklog_writes_read_the_worklog_only_for_preflight() {
     assert_eq!(corrected.times(), replacement);
     assert_eq!(
         reads.load(Ordering::SeqCst),
-        1,
-        "correction needs only the preflight GET"
+        0,
+        "correction reads no individual worklog"
     );
     assert_eq!(client.last_failure(), None);
     assert_eq!(
@@ -4200,8 +4200,8 @@ async fn worklog_writes_read_the_worklog_only_for_preflight() {
     assert_eq!(moved.task_id(), destination.id());
     assert_eq!(
         reads.load(Ordering::SeqCst),
-        2,
-        "move needs only the preflight GET"
+        0,
+        "move reads no individual worklog"
     );
     assert_eq!(client.last_failure(), None);
     assert!(
@@ -4228,8 +4228,8 @@ async fn worklog_writes_read_the_worklog_only_for_preflight() {
     assert_eq!(deleted, moved);
     assert_eq!(
         reads.load(Ordering::SeqCst),
-        3,
-        "deletion needs only the preflight GET"
+        0,
+        "deletion reads no individual worklog"
     );
     assert_eq!(client.last_failure(), None);
     assert!(client.all_worklogs(None).await.unwrap().worklogs.is_empty());
