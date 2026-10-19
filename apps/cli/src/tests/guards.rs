@@ -333,7 +333,7 @@ fn remote_preview_tokens_reject_invalid_guards_and_candidates_before_connecting(
     let id = "00000000-0000-7000-8000-000000000001";
     let valid = serde_json::json!({
         "mode":"remote", "backend":backend,
-        "preview":{"as_of":T0,"inactive_days":14,"count":1,"candidate_task_ids":[id],"revision":"revision-1"}
+        "preview":{"as_of":T0,"inactive_days":14,"count":1,"candidate_task_ids":[id]}
     });
     let now = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
     let validate = |token: &serde_json::Value, identity: &str| {
@@ -349,7 +349,6 @@ fn remote_preview_tokens_reject_invalid_guards_and_candidates_before_connecting(
     empty["preview"]["candidate_task_ids"] = serde_json::json!([]);
     validate(&empty, backend).unwrap();
     for (field, value) in [
-        ("revision", serde_json::json!("")),
         ("inactive_days", serde_json::json!(0)),
         ("as_of", serde_json::json!("2026-01-01T00:00:00.000000001Z")),
         ("candidate_task_ids", serde_json::json!(["invalid"])),

@@ -237,6 +237,34 @@ fn remote_commands_use_the_server_and_preserve_guards_and_committed_values() {
     );
 }
 
+#[test]
+fn remote_rename_and_archive_act_on_a_task_another_client_renamed() {
+    let server = Server::start();
+    let at = chrono::Utc::now().to_rfc3339();
+    let created = server
+        .command(&at, &["tasks", "create", "Original"])
+        .unwrap();
+    let id = created["id"].as_str().unwrap();
+    server
+        .command(&at, &["tasks", "rename", id, "Renamed elsewhere"])
+        .unwrap();
+
+    let renamed = server
+        .command(&at, &["tasks", "rename", id, "Renamed here"])
+        .unwrap();
+    let archived = server.command(&at, &["tasks", "archive", id]).unwrap();
+
+    assert_eq!(renamed["name"], "Renamed here");
+    assert_eq!(
+        (&archived["name"], &archived["archived"]),
+        (&renamed["name"], &serde_json::json!(true))
+    );
+    assert_eq!(
+        server.command(&at, &["tasks", "get", id]).unwrap(),
+        archived
+    );
+}
+
 #[tokio::test]
 async fn report_metadata_failure_keeps_the_existing_semantic_cli_error() {
     use crate::backend::{Backend, BackendKind};
@@ -271,7 +299,6 @@ async fn report_metadata_failure_keeps_the_existing_semantic_cli_error() {
                         duration_us: 60_000_000,
                     }],
                     total_us: 60_000_000,
-                    revision: "report-1".to_owned(),
                 })
             }),
         )
