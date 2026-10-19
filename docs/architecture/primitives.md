@@ -2,7 +2,7 @@
 
 Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. [Revisions and concurrency](#revisions-and-concurrency) explains stale-write and pagination guards. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
 
-Source scope: the Rust core, TUI, CLI, and native macOS client at `e4eb464d5b23fec9dee6c5953a2266e3bf02ed20`, inspected on 16 October 2026. Native reviewed task-name contracts additionally describe `be493ab` on 16 October 2026. The shared cursor DTO describes issue #67 at `fa3c662` on 17 October 2026. Shared cursor parsing describes issue #80 at `ae34dbf` on 18 October 2026. Native worklog deletion additionally describes `23aa8c2`, inspected on 17 October 2026. Swift Observation presentation additionally describes `72af5a3`, inspected on 17 October 2026. Guarded tracking exports describe `d4249f0`, inspected on 18 October 2026. Server-checked reviewed task names describe issue #93 at `67c2e1b`, inspected on 18 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
+Source scope: the Rust core, TUI, CLI, and native macOS client at `d7678a2c`, inspected on 19 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
 
 ## Architecture primitives
 
@@ -54,9 +54,9 @@ Depends on: [tracker-application](#tracker-application), [tracker-domain](#track
 
 Source: [crate](../../crates/tracker-remote/Cargo.toml), [remote application](../../crates/tracker-remote/src/application/mod.rs), [transport](../../crates/tracker-remote/src/transport.rs). Decisions: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
 
-Report validation scope: `ff6099d4ed2e543bf1502ad926131c00b3f18293`, inspected on 16 October 2026. [Report requests](../../crates/tracker-remote/src/application/reports.rs) fetch validated totals without publishing aggregate resources; the [coordinator](../../crates/tracker-remote/src/application/coordinator.rs) owns coherent adoption.
+Report validation scope: `d7678a2c`, inspected on 19 October 2026. [Report requests](../../crates/tracker-remote/src/application/reports.rs) fetch validated totals without publishing aggregate resources; the [coordinator](../../crates/tracker-remote/src/application/coordinator.rs) owns coherent adoption.
 
-Preview token validation scope: `9cc4e78fa6b02c5dfa835c3572ca4f94fc60e5fc`, inspected on 17 October 2026. [`InactiveTaskPreview`](../../crates/tracker-remote/src/application/mod.rs) deserializes through its protocol DTO and rejects tokens that fail [preview validation](../../crates/tracker-remote/src/application/decoding.rs).
+Preview token validation scope: `d7678a2c`, inspected on 19 October 2026. [`InactiveTaskPreview`](../../crates/tracker-remote/src/application/mod.rs) deserializes through its protocol DTO and rejects tokens that fail [preview validation](../../crates/tracker-remote/src/application/decoding.rs).
 
 ### tracker-client
 
@@ -180,7 +180,7 @@ Pagination counters do not cover stale task metadata writes. Conversely, using t
 
 Local clients have no server token. The TUI, CLI, and native macOS app can open the same local SQLite database concurrently, even if each presents one view. Database counters give all clients the same transactional pagination checks. The current split keeps task-history invalidation narrow while retaining the server's broader write and read-consistency guard.
 
-Source scope: server, protocol, and storage revision mechanisms at `e4eb464d5b23fec9dee6c5953a2266e3bf02ed20`, inspected on 16 October 2026. The server's reviewed-name check describes issue #93 at `67c2e1b`, inspected on 18 October 2026. Code: [server guards](../../crates/tracker-server/src/core.rs), [task routes](../../crates/tracker-server/src/tasks.rs), [server initialization](../../crates/tracker-server/src/bootstrap.rs), [cursor contracts](../../crates/tracker-protocol/src/lib.rs), [history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs), and [database triggers](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).
+Source scope: server, protocol, and storage revision mechanisms at `d7678a2c`, inspected on 19 October 2026. Code: [server guards](../../crates/tracker-server/src/core.rs), [task routes](../../crates/tracker-server/src/tasks.rs), [server initialization](../../crates/tracker-server/src/bootstrap.rs), [cursor contracts](../../crates/tracker-protocol/src/lib.rs), [history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs), and [database triggers](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).
 
 ### Positive-duration migration and protocol upgrade
 
