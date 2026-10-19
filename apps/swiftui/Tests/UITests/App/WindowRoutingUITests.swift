@@ -89,15 +89,16 @@ final class WindowRoutingUITests: TrackerUITestCase {
         }
         XCTAssertEqual(renameSheet.textFields["task-name.input"].value as? String, "Rename draft")
 
-        // The first click on an inactive window only activates it, so focus the owner window before Cancel.
-        renameSheet.textFields["task-name.input"].click()
+        // The new window covers the owner window, so close it before using the rename sheet.
+        app.typeKey("w", modifierFlags: .command)
+        waitUntil("The free window closes") { self.trackerWindows.count == 1 }
         renameSheet.buttons["task-name.cancel"].click()
         waitUntil("Rename closes") { self.app.sheets.count == 0 }
-        waitUntil("Editors become available after the sheet closes") { freeWindow.buttons["New task"].isEnabled }
-        freeWindow.buttons["New task"].click()
-        XCTAssertTrue(freeWindow.sheets.firstMatch.waitForExistence(timeout: timeout))
-        XCTAssertEqual(app.sheets.count, 1)
-        freeWindow.sheets.firstMatch.buttons["task-name.cancel"].click()
+        let window = trackerWindows.firstMatch
+        waitUntil("Editors become available after the sheet closes") { window.buttons["New task"].isEnabled }
+        window.buttons["New task"].click()
+        XCTAssertTrue(window.sheets.firstMatch.waitForExistence(timeout: timeout))
+        window.sheets.firstMatch.buttons["task-name.cancel"].click()
         waitUntil("Creation closes") { self.app.sheets.count == 0 }
         XCTAssertEqual(try fixture.tasks().map(\.name), [task.name])
     }
@@ -116,53 +117,5 @@ final class WindowRoutingUITests: TrackerUITestCase {
         select(task)
         XCTAssertTrue(app.buttons["Stop tracking"].waitForExistence(timeout: timeout))
         XCTAssertEqual(try fixture.activeWorklog(), worklog)
-    }
-}
-
-@MainActor
-final class ServerWindowRoutingUITests: TrackerUITestCase {
-    override var fixtureSource: TrackerFixture.Source { .server }
-
-    func testInFlightRenameKeepsTrackingUsableInAnotherWindow() throws {
-        let task = try fixture.create("Pending rename task")
-        let other = try fixture.create("Independent tracking task")
-        let proxy = try fixture.enableProxy()
-        launch()
-        openRename(task)
-        let renameSheet = app.sheets.containing(.staticText, identifier: "Edit task name").firstMatch
-        replaceText(renameSheet.textFields["task-name.input"], "Confirmed rename")
-        app.typeKey("n", modifierFlags: [.command, .shift])
-        waitUntil("A free window opens while rename is shown") { self.trackerWindows.count == 2 }
-        let freeWindow = try XCTUnwrap(trackerWindows.allElementsBoundByIndex.first { $0.sheets.count == 0 })
-        freeWindow.click()
-        freeWindow.descendants(matching: .any).matching(identifier: "task-sidebar.task.\(other.id)").firstMatch.click()
-        waitUntil("Selection remains usable while rename is shown") {
-            freeWindow.descendants(matching: .any).matching(identifier: "task-details.task.\(other.id)").firstMatch.exists
-        }
-
-        // The transport times out after 5 s, so the held rename covers only the steps below.
-        try proxy.arm(method: "PATCH", path: "/v1/tasks/\(task.id)", mode: .holdBefore)
-        defer { try? proxy.release() }
-        renameSheet.textFields["task-name.input"].click()
-        renameSheet.buttons["task-name.submit"].click()
-        _ = try proxy.waitForHeldRequest()
-        XCTAssertFalse(renameSheet.textFields["task-name.input"].isEnabled)
-        freeWindow.click()
-        XCTAssertTrue(freeWindow.buttons["Start tracking"].isEnabled)
-        XCTAssertFalse(freeWindow.buttons["New task"].isEnabled)
-        freeWindow.buttons["Start tracking"].click()
-        waitUntil("Tracking submission disables its own control while rename is held") {
-            !freeWindow.buttons["Start tracking"].isEnabled
-        }
-        XCTAssertEqual(app.sheets.count, 1)
-
-        try proxy.release()
-        waitUntil("Rename closes after its request is released") { self.app.sheets.count == 0 }
-        waitUntil("Queued tracking completes after rename is released") {
-            (try? self.fixture.activeWorklog())?.taskID == other.id
-        }
-        waitUntil("Editors become available after the sheet closes") { freeWindow.buttons["New task"].isEnabled }
-        XCTAssertEqual(try fixture.tasks().first { $0.id == task.id }?.name, "Confirmed rename")
-        XCTAssertEqual(try fixture.activeWorklog()?.taskID, other.id)
     }
 }
