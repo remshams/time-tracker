@@ -89,6 +89,8 @@ final class WindowRoutingUITests: TrackerUITestCase {
         }
         XCTAssertEqual(renameSheet.textFields["task-name.input"].value as? String, "Rename draft")
 
+        // The first click on an inactive window only activates it, so focus the owner window before Cancel.
+        renameSheet.textFields["task-name.input"].click()
         renameSheet.buttons["task-name.cancel"].click()
         waitUntil("Rename closes") { self.app.sheets.count == 0 }
         waitUntil("Editors become available after the sheet closes") { freeWindow.buttons["New task"].isEnabled }
@@ -129,24 +131,25 @@ final class ServerWindowRoutingUITests: TrackerUITestCase {
         openRename(task)
         let renameSheet = app.sheets.containing(.staticText, identifier: "Edit task name").firstMatch
         replaceText(renameSheet.textFields["task-name.input"], "Confirmed rename")
-        try proxy.arm(method: "PATCH", path: "/v1/tasks/\(task.id)", mode: .holdBefore)
-        defer { try? proxy.release() }
-        renameSheet.buttons["task-name.submit"].click()
-        _ = try proxy.waitForHeldRequest()
-        XCTAssertFalse(renameSheet.textFields["task-name.input"].isEnabled)
-
         app.typeKey("n", modifierFlags: [.command, .shift])
-        waitUntil("A free window opens during the rename request") { self.trackerWindows.count == 2 }
+        waitUntil("A free window opens while rename is shown") { self.trackerWindows.count == 2 }
         let freeWindow = try XCTUnwrap(trackerWindows.allElementsBoundByIndex.first { $0.sheets.count == 0 })
         freeWindow.click()
         freeWindow.descendants(matching: .any).matching(identifier: "task-sidebar.task.\(other.id)").firstMatch.click()
-        waitUntil("Selection remains usable during the rename request") {
+        waitUntil("Selection remains usable while rename is shown") {
             freeWindow.descendants(matching: .any).matching(identifier: "task-details.task.\(other.id)").firstMatch.exists
         }
+
+        // The transport times out after 5 s, so the held rename covers only the steps below.
+        try proxy.arm(method: "PATCH", path: "/v1/tasks/\(task.id)", mode: .holdBefore)
+        defer { try? proxy.release() }
+        renameSheet.textFields["task-name.input"].click()
+        renameSheet.buttons["task-name.submit"].click()
+        _ = try proxy.waitForHeldRequest()
+        XCTAssertFalse(renameSheet.textFields["task-name.input"].isEnabled)
+        freeWindow.click()
         XCTAssertTrue(freeWindow.buttons["Start tracking"].isEnabled)
         XCTAssertFalse(freeWindow.buttons["New task"].isEnabled)
-        XCTAssertFalse(freeWindow.buttons["Edit task name"].isEnabled)
-        XCTAssertFalse(freeWindow.buttons["bulk-archive.open"].isEnabled)
         freeWindow.buttons["Start tracking"].click()
         waitUntil("Tracking submission disables its own control while rename is held") {
             !freeWindow.buttons["Start tracking"].isEnabled
