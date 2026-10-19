@@ -2979,6 +2979,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracker-server-app"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.20",
+ "tracker-server",
+ "tracker-storage",
+]
+
+[[package]]
 name = "tracker-storage"
 version = "0.1.0"
 dependencies = [
