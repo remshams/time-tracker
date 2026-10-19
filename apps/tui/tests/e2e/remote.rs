@@ -92,20 +92,18 @@ impl RemoteTestContext {
     }
 
     fn start_server(&mut self) {
-        let child = Command::new(env!("CARGO_BIN_EXE_tt"))
-            .arg("serve")
-            .arg("--bind")
-            .arg(self.address.to_string())
-            .arg("--db")
-            .arg(&self.database_path)
+        let child = Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "--exact", "remote::server_process"])
             .env_clear()
             .env("HOME", self.local.home())
             .env("TZ", "UTC")
+            .env("TT_TEST_SERVER_BIND", self.address.to_string())
+            .env("TT_TEST_SERVER_DB", &self.database_path)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .expect("the real tt server must spawn");
+            .expect("the real test server must spawn");
         self.server = Some(child);
         self.wait_until_ready();
     }
@@ -116,14 +114,14 @@ impl RemoteTestContext {
             if let Some(server) = self.server.as_mut()
                 && let Some(status) = server.try_wait().expect("server status must be readable")
             {
-                panic!("tt server exited before readiness with {status}");
+                panic!("test server exited before readiness with {status}");
             }
             if health_check(self.address) {
                 return;
             }
             assert!(
                 Instant::now() < deadline,
-                "tt server did not answer /v1/health"
+                "test server did not answer /v1/health"
             );
             thread::sleep(Duration::from_millis(20));
         }
@@ -158,3 +156,16 @@ fn health_check(address: SocketAddr) -> bool {
     };
     response[..read].starts_with(b"HTTP/1.1 200") || response[..read].starts_with(b"HTTP/1.0 200")
 }
+
+// Run in a child process so outage tests can kill and restart the real server.
+#[test]
+#[ignore = "spawned only by the remote E2E fixture"]
+fn server_process() {
+    let bind = std::env::var("TT_TEST_SERVER_BIND")
+        .unwrap()
+        .parse()
+        .unwrap();
+    let database = std::env::var_os("TT_TEST_SERVER_DB").unwrap();
+    tracker_server::run(bind, database.into()).unwrap();
+}
+
