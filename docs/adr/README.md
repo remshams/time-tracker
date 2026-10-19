@@ -41,3 +41,4 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0026](0026-use-swift-observation-for-native-presentation.md) | Use Swift Observation for native presentation | Proposed |
 | [0027](0027-check-reviewed-task-names-on-the-server.md) | Check reviewed task names on the server | Proposed |
 | [0028](0028-ship-a-standalone-server-binary.md) | Ship a standalone server binary | Accepted |
+| [0029](0029-send-native-requests-directly.md) | Send native requests directly | Proposed |
