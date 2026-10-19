@@ -26,7 +26,6 @@ impl TrackerBackend {
                         .collect(),
                     total: totals.total,
                     now,
-                    revision: None,
                 })
             }
             Self::Remote(application) => {
@@ -86,7 +85,6 @@ impl TrackerBackend {
                         .collect(),
                     total: totals.total,
                     now,
-                    revision: None,
                 })
             }
             Self::Remote(application) => {
@@ -122,6 +120,5 @@ fn remote_report(report: tracker_protocol::ReportDto) -> Result<ClientReport, Ap
         rows,
         total: chrono::TimeDelta::microseconds(report.total_us),
         now: report.now,
-        revision: Some(report.revision),
     })
 }

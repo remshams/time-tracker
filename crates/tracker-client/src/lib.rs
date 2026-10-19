@@ -48,7 +48,6 @@ pub struct ClientReport {
     pub rows: Vec<ClientReportRow>,
     pub total: TimeDelta,
     pub now: DateTime<Utc>,
-    pub revision: Option<String>,
 }
 
 /// The original reviewed candidates and backend-specific confirmation guard.
@@ -137,27 +136,19 @@ impl TrackerBackend {
         }
     }
 
-    pub fn task_observation(&self) -> Option<(Vec<TaskListItem>, Option<String>)> {
+    /// Returns the task catalog, or `None` before a remote backend has read it.
+    pub fn task_observation(&self) -> Option<Vec<TaskListItem>> {
         match self {
-            Self::Local(application) => Some((application.tasks(TaskOrdering::default()), None)),
-            Self::Remote(application) => application.task_observation().map(|observation| {
-                (
-                    observation.value.clone(),
-                    Some(observation.revision.clone()),
-                )
-            }),
+            Self::Local(application) => Some(application.tasks(TaskOrdering::default())),
+            Self::Remote(application) => application.task_observation().map(<[_]>::to_vec),
         }
     }
 
-    pub fn tracking_observation(&self) -> Option<(TrackingState, Option<String>)> {
+    /// Returns the tracking state, or `None` before a remote backend has read it.
+    pub fn tracking_observation(&self) -> Option<TrackingState> {
         match self {
-            Self::Local(application) => Some((application.current_tracking().clone(), None)),
-            Self::Remote(application) => application.tracking_observation().map(|observation| {
-                (
-                    observation.value.clone(),
-                    Some(observation.revision.clone()),
-                )
-            }),
+            Self::Local(application) => Some(application.current_tracking().clone()),
+            Self::Remote(application) => application.tracking_observation().cloned(),
         }
     }
 
@@ -201,10 +192,7 @@ impl TrackerBackend {
             Self::Local(application) => application
                 .read_task_item(id)?
                 .ok_or_else(|| tracker_application::RepositoryError::TaskNotFound { id }.into()),
-            Self::Remote(application) => application
-                .read_task_observation(id)
-                .await
-                .map(|observation| observation.value),
+            Self::Remote(application) => application.read_task_observation(id).await,
         }
     }
 }
