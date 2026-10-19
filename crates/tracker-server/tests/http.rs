@@ -6,7 +6,8 @@ use tempfile::TempDir;
 use tower::ServiceExt;
 use tracker_domain::{Task, TaskId, TaskName};
 use tracker_protocol::{
-    InactiveTaskPreviewDto, MutationDto, MutationResultDto, TasksDto, TrackingDto,
+    InactiveTaskPreviewDto, MutationDto, MutationResultDto, TaskChangeRequest, TasksDto,
+    TrackingDto, WriteGuard,
 };
 use tracker_storage::SqliteRepository;
 use uuid::Uuid;
@@ -88,7 +89,6 @@ async fn state(router: &axum::Router) -> (TasksDto, TrackingDto) {
     let (status, body) = call(router, Method::GET, "/v1/tracking", None).await;
     assert_eq!(status, StatusCode::OK);
     let tracking: TrackingDto = serde_json::from_value(body).unwrap();
-    assert_eq!(tasks.revision, tracking.revision);
     (tasks, tracking)
 }
 
@@ -139,7 +139,10 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
 
     let (status, body) = call(&router, Method::GET, &preview_uri(as_of), None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body.as_object().unwrap().len(), 5);
+    assert_keys(
+        &body,
+        &["as_of", "inactive_days", "count", "candidate_task_ids"],
+    );
     assert!(body.get("candidate_fingerprint").is_none());
     let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
     assert_eq!(preview.count, 1);
@@ -180,7 +183,6 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(replay["result"], first["result"]);
-    assert_eq!(replay["applied_revision"], first["applied_revision"]);
     assert_eq!(replay["replayed"], true);
 
     let mut changed_request = request.clone();
@@ -194,7 +196,7 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "conflict");
-    assert_eq!(state(&router).await.0.revision, mutation.applied_revision);
+    assert!(state(&router).await.0.tasks[0].archived);
 
     let archived_id = &state(&router).await.0.tasks[0].id;
     let restore = merge(json!({"action": "restore", "occurred_at": as_of}), guard());
@@ -207,6 +209,7 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let restored: MutationDto = serde_json::from_value(body).unwrap();
+    assert!(matches!(restored.result, MutationResultDto::Task(ref task) if !task.archived));
     assert!(!state(&router).await.0.tasks[0].archived);
 
     let (status, body) = call(
@@ -219,10 +222,8 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let replay: MutationDto = serde_json::from_value(body).unwrap();
     assert_eq!(replay.result, mutation.result);
-    assert_eq!(replay.applied_revision, mutation.applied_revision);
     assert!(replay.replayed);
-    assert_ne!(replay.applied_revision, restored.applied_revision);
-    assert_eq!(state(&router).await.0.revision, restored.applied_revision);
+    assert!(!state(&router).await.0.tasks[0].archived);
 }
 
 #[tokio::test]
@@ -298,7 +299,6 @@ async fn inactive_archive_uses_current_candidates_when_database_changes_after_pr
         result.result,
         MutationResultDto::ArchivedInactive { count: 2 }
     );
-    assert_ne!(result.applied_revision, preview.revision);
     assert_eq!(state(&router).await.0.tasks.len(), 3);
     for id in candidate_ids {
         let task = outside.find_task(id).unwrap().unwrap();
@@ -395,14 +395,13 @@ async fn health_create_retry_and_create_after_another_write() {
         replay["result"],
         serde_json::to_value(&first.result).unwrap()
     );
-    assert_eq!(replay["applied_revision"], first.applied_revision);
     assert_eq!(replay["replayed"], true);
     let mut different = request.clone();
     different["name"] = json!("Different");
     let (status, error) = call(&router, Method::POST, "/v1/tasks", Some(different)).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(error["code"], "conflict");
-    // The first create changed the revision since `before` was read.
+    // A create still succeeds after another create changed the catalog.
     let later = merge(
         json!({"task_id":Uuid::now_v7().to_string(),"name":"Later","occurred_at":at(101)}),
         guard(),
@@ -410,7 +409,6 @@ async fn health_create_retry_and_create_after_another_write() {
     let (status, body) = call(&router, Method::POST, "/v1/tasks", Some(later)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let after = state(&router).await;
-    assert_ne!(after.0.revision, before.0.revision);
     assert_eq!(after.0.tasks.len(), 2);
 }
 
@@ -600,15 +598,47 @@ async fn rename_and_archive_reject_a_name_another_client_changed_after_review() 
 }
 
 #[tokio::test]
-async fn rename_and_archive_require_a_valid_expected_name() {
+async fn rename_and_archive_without_an_expected_name_apply_to_the_current_name() {
+    let temp = TempDir::new().unwrap();
+    let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
+    let id = create_fixture_task(&router, "Reviewed task").await;
+    let route = format!("/v1/tasks/{id}");
+    let other_client = merge(
+        json!({"action":"rename","expected_name":"Reviewed task","name":"Other client task","occurred_at":at(100)}),
+        guard(),
+    );
+    let (status, body) = call(&router, Method::PATCH, &route, Some(other_client)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let rename = merge(
+        json!({"action":"rename","name":"Unguarded rename","occurred_at":at(110)}),
+        guard(),
+    );
+    let (status, body) = call(&router, Method::PATCH, &route, Some(rename)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["result"]["value"]["name"], "Unguarded rename");
+    assert_eq!(body["result"]["value"]["archived"], false);
+
+    let archive = merge(json!({"action":"archive","occurred_at":at(120)}), guard());
+    let (status, body) = call(&router, Method::PATCH, &route, Some(archive)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["result"]["value"]["name"], "Unguarded rename");
+    assert_eq!(body["result"]["value"]["archived"], true);
+    let tasks = state(&router).await.0.tasks;
+    let task = tasks.iter().find(|item| item.id == id).unwrap();
+    assert_eq!(task.name, "Unguarded rename");
+    assert!(task.archived);
+}
+
+#[tokio::test]
+async fn rename_and_archive_reject_invalid_names_and_archiving_the_active_task() {
     let temp = TempDir::new().unwrap();
     let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
     let id = create_fixture_task(&router, "Reviewed task").await;
     let route = format!("/v1/tasks/{id}");
     let before = state(&router).await;
     let invalid_changes = [
-        json!({"action":"rename","name":"Renamed task","occurred_at":at(100)}),
-        json!({"action":"archive","occurred_at":at(100)}),
+        json!({"action":"rename","name":"   ","occurred_at":at(100)}),
         json!({"action":"rename","expected_name":"   ","name":"Renamed task","occurred_at":at(100)}),
         json!({"action":"archive","expected_name":"   ","occurred_at":at(100)}),
     ];
@@ -619,6 +649,59 @@ async fn rename_and_archive_require_a_valid_expected_name() {
         assert_eq!(body["code"], "invalid_request");
         assert_eq!(state(&router).await, before);
     }
+
+    let start = merge(
+        json!({"task_id":id,"worklog_id":Uuid::now_v7().to_string(),"expected_active":null,"occurred_at":at(110)}),
+        guard(),
+    );
+    let (status, body) = call(&router, Method::PUT, "/v1/tracking", Some(start)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let tracking = state(&router).await;
+    let archive = merge(json!({"action":"archive","occurred_at":at(120)}), guard());
+    let (status, body) = call(&router, Method::PATCH, &route, Some(archive)).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "active_task");
+    assert_eq!(state(&router).await, tracking);
+}
+
+#[test]
+fn task_change_requests_send_expected_name_only_when_present() {
+    let guard = WriteGuard {
+        request_id: "00000000-0000-7000-8000-000000000001".to_owned(),
+    };
+    let unguarded = TaskChangeRequest::Archive {
+        expected_name: None,
+        occurred_at: at(100),
+        guard: guard.clone(),
+    };
+    let guarded = TaskChangeRequest::Archive {
+        expected_name: Some("Reviewed task".to_owned()),
+        occurred_at: at(100),
+        guard,
+    };
+
+    assert_eq!(
+        serde_json::to_string(&unguarded).unwrap(),
+        r#"{"action":"archive","occurred_at":"1970-01-01T00:01:40Z","request_id":"00000000-0000-7000-8000-000000000001"}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&guarded).unwrap(),
+        r#"{"action":"archive","expected_name":"Reviewed task","occurred_at":"1970-01-01T00:01:40Z","request_id":"00000000-0000-7000-8000-000000000001"}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<TaskChangeRequest>(
+            r#"{"action":"rename","name":"Renamed task","occurred_at":"1970-01-01T00:01:40Z","request_id":"00000000-0000-7000-8000-000000000001"}"#
+        )
+        .unwrap(),
+        TaskChangeRequest::Rename {
+            expected_name: None,
+            name: "Renamed task".to_owned(),
+            occurred_at: at(100),
+            guard: WriteGuard {
+                request_id: "00000000-0000-7000-8000-000000000001".to_owned(),
+            },
+        }
+    );
 }
 
 #[tokio::test]
@@ -641,7 +724,6 @@ async fn concurrent_unrelated_commands_both_apply_and_a_duplicate_server_is_reje
     );
     assert_eq!(left.0, StatusCode::OK, "{}", left.1);
     assert_eq!(right.0, StatusCode::OK, "{}", right.1);
-    assert_ne!(left.1["applied_revision"], right.1["applied_revision"]);
     assert_eq!(state(&router).await.0.tasks.len(), 2);
 }
 
@@ -740,7 +822,6 @@ async fn stopping_an_already_idle_tracker_is_an_idempotent_success() {
     let (status, retry) = call(&router, Method::PUT, "/v1/tracking", Some(request)).await;
     assert_eq!(status, StatusCode::OK, "{retry}");
     assert_eq!(retry["result"], first["result"]);
-    assert_eq!(retry["applied_revision"], first["applied_revision"]);
     assert_eq!(retry["replayed"], true);
     assert!(state(&router).await.0.tasks.is_empty());
 }
@@ -799,7 +880,10 @@ async fn configurable_candidates_include_every_task_and_archive_the_chosen_perio
     outside.insert_worklog(&worklog).unwrap();
     let (status, body) = call(&router, Method::GET, &candidates_uri(as_of, 7), None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body.as_object().unwrap().len(), 5);
+    assert_keys(
+        &body,
+        &["as_of", "inactive_days", "count", "candidate_task_ids"],
+    );
     assert_eq!(body["inactive_days"], 7);
     let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
     assert_eq!(preview.as_of, as_of);
@@ -903,7 +987,6 @@ async fn configurable_archive_recomputes_candidates_and_preserves_original_recei
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let restored: MutationDto = serde_json::from_value(body).unwrap();
     let (status, body) = call(
         &router,
         Method::POST,
@@ -914,10 +997,15 @@ async fn configurable_archive_recomputes_candidates_and_preserves_original_recei
     assert_eq!(status, StatusCode::OK, "{body}");
     let replay: MutationDto = serde_json::from_value(body).unwrap();
     assert_eq!(replay.result, first.result);
-    assert_eq!(replay.applied_revision, first.applied_revision);
     assert!(replay.replayed);
-    assert_ne!(replay.applied_revision, restored.applied_revision);
-    assert_eq!(state(&router).await.0.revision, restored.applied_revision);
+    let restored = state(&router).await;
+    assert!(
+        restored
+            .0
+            .tasks
+            .iter()
+            .any(|item| item.id == added.id().to_string() && !item.archived)
+    );
     let mut changed_request = request;
     changed_request["inactive_days"] = json!(30);
     let (status, body) = call(
@@ -929,7 +1017,7 @@ async fn configurable_archive_recomputes_candidates_and_preserves_original_recei
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "conflict");
-    assert_eq!(state(&router).await.0.revision, restored.applied_revision);
+    assert_eq!(state(&router).await, restored);
 }
 
 #[tokio::test]
@@ -1029,7 +1117,7 @@ async fn resource_reads_return_only_requested_data_and_include_task_activity() {
 
     let (status, tasks) = call(&router, Method::GET, "/v1/tasks", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_keys(&tasks, &["tasks", "revision"]);
+    assert_keys(&tasks, &["tasks"]);
     assert_eq!(tasks["tasks"].as_array().unwrap().len(), 2);
     assert_eq!(tasks["tasks"][0]["id"], archived_task.id().to_string());
     assert_eq!(tasks["tasks"][1]["latest_work_start"], json!(at(100)));
@@ -1054,22 +1142,19 @@ async fn resource_reads_return_only_requested_data_and_include_task_activity() {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(filtered["revision"], tasks["revision"]);
         assert_eq!(filtered["tasks"].as_array().unwrap().len(), 1);
         assert_eq!(filtered["tasks"][0]["id"], id.to_string());
     }
     for (index, id) in [(0, archived_task.id()), (1, active_task.id())] {
         let (status, task) = call(&router, Method::GET, &format!("/v1/tasks/{id}"), None).await;
         assert_eq!(status, StatusCode::OK);
-        assert_keys(&task, &["task", "revision"]);
+        assert_keys(&task, &["task"]);
         assert_eq!(task["task"], tasks["tasks"][index]);
-        assert_eq!(task["revision"], tasks["revision"]);
     }
     let (status, tracking) = call(&router, Method::GET, "/v1/tracking", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_keys(&tracking, &["active_worklog", "revision"]);
+    assert_keys(&tracking, &["active_worklog"]);
     assert_eq!(tracking["active_worklog"]["id"], running.id().to_string());
-    assert_eq!(tracking["revision"], tasks["revision"]);
     let (status, worklog) = call(
         &router,
         Method::GET,
@@ -1078,10 +1163,9 @@ async fn resource_reads_return_only_requested_data_and_include_task_activity() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_keys(&worklog, &["worklog", "revision"]);
+    assert_keys(&worklog, &["worklog"]);
     assert_keys(&worklog["worklog"], &["id", "task_id", "start", "end"]);
     assert_eq!(worklog["worklog"], tracking["active_worklog"]);
-    assert_eq!(worklog["revision"], tasks["revision"]);
     let (status, history) = call(
         &router,
         Method::GET,
@@ -1090,9 +1174,54 @@ async fn resource_reads_return_only_requested_data_and_include_task_activity() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_keys(&history, &["worklogs", "next_cursor", "revision"]);
+    assert_keys(&history, &["worklogs", "next_cursor"]);
     assert_eq!(history["worklogs"][0], tracking["active_worklog"]);
-    assert_eq!(history["revision"], tasks["revision"]);
+}
+
+/// Reads and command receipts carry no server revision.
+#[tokio::test]
+async fn read_responses_and_receipts_carry_no_server_revision() {
+    let directory = TempDir::new().unwrap();
+    let router = tracker_server::router_for_database(&directory.path().join("plain.db")).unwrap();
+    let task_id = Uuid::now_v7().to_string();
+    let worklog_id = Uuid::now_v7().to_string();
+    let receipts = [
+        write(
+            &router,
+            Method::POST,
+            "/v1/tasks",
+            json!({"task_id":task_id,"name":"Plain project","occurred_at":at(0)}),
+        )
+        .await,
+        write(
+            &router,
+            Method::PUT,
+            "/v1/tracking",
+            json!({"task_id":task_id,"worklog_id":worklog_id,"expected_active":null,"occurred_at":at(10)}),
+        )
+        .await,
+    ];
+    for receipt in receipts {
+        let receipt = serde_json::to_value(receipt).unwrap();
+        assert!(receipt.get("applied_revision").is_none(), "{receipt}");
+    }
+    let interval = "start=1970-01-01T00:00:00Z&end=1970-01-01T00:01:00Z&now=1970-01-01T00:00:30Z";
+    for uri in [
+        "/v1/tasks".to_owned(),
+        format!("/v1/tasks/{task_id}"),
+        "/v1/tracking".to_owned(),
+        format!("/v1/worklogs/{worklog_id}"),
+        "/v1/worklogs".to_owned(),
+        format!("/v1/worklogs?task_id={task_id}"),
+        format!("/v1/reports/task-totals?{interval}"),
+        "/v1/state/task-list".to_owned(),
+        format!("/v1/state/daily-overview?{interval}"),
+        preview_uri(Utc::now()),
+    ] {
+        let (status, body) = call(&router, Method::GET, &uri, None).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+        assert!(body.get("revision").is_none(), "{uri}: {body}");
+    }
 }
 
 #[tokio::test]
@@ -1175,10 +1304,7 @@ async fn reports_echo_normalized_times_and_include_archived_and_running_work_wit
     let uri = "/v1/reports/task-totals?start=1970-01-01T01:00:10%2B01:00&end=1970-01-01T01:00:30%2B01:00&now=1970-01-01T01:00:22.123456789%2B01:00";
     let (status, report) = call(&router, Method::GET, uri, None).await;
     assert_eq!(status, StatusCode::OK, "{report}");
-    assert_keys(
-        &report,
-        &["start", "end", "now", "rows", "total_us", "revision"],
-    );
+    assert_keys(&report, &["start", "end", "now", "rows", "total_us"]);
     assert_eq!(report["start"], json!(at(10)));
     assert_eq!(report["end"], json!(at(30)));
     assert_eq!(
@@ -1235,7 +1361,6 @@ async fn reports_echo_normalized_times_and_include_archived_and_running_work_wit
             "now",
             "rows",
             "total_us",
-            "revision",
         ],
     );
     let (status, early) = call(&router, Method::GET, "/v1/reports/task-totals?start=1970-01-01T00:00:00Z&end=1970-01-01T00:00:30Z&now=1970-01-01T00:00:10Z", None).await;
@@ -1262,10 +1387,7 @@ async fn write_receipts_replay_original_resources_after_subsequent_writes_and_ex
     );
     let (status, receipt) = call(&router, Method::POST, "/v1/tasks", Some(request.clone())).await;
     assert_eq!(status, StatusCode::OK);
-    assert_keys(
-        &receipt,
-        &["request_id", "applied_revision", "replayed", "result"],
-    );
+    assert_keys(&receipt, &["request_id", "replayed", "result"]);
     assert_eq!(receipt["request_id"], request["request_id"]);
     assert_eq!(receipt["replayed"], false);
     let rename = merge(
@@ -1280,15 +1402,11 @@ async fn write_receipts_replay_original_resources_after_subsequent_writes_and_ex
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_ne!(receipt["applied_revision"], renamed["applied_revision"]);
+    assert_eq!(renamed["result"]["value"]["name"], "New project");
     let (status, replay) = call(&router, Method::POST, "/v1/tasks", Some(request.clone())).await;
     assert_eq!(status, StatusCode::OK);
-    assert_keys(
-        &replay,
-        &["request_id", "applied_revision", "replayed", "result"],
-    );
+    assert_keys(&replay, &["request_id", "replayed", "result"]);
     assert_eq!(replay["request_id"], receipt["request_id"]);
-    assert_eq!(replay["applied_revision"], receipt["applied_revision"]);
     assert_eq!(replay["result"], receipt["result"]);
     assert_eq!(replay["result"]["value"]["name"], "Original project");
     assert_eq!(replay["replayed"], true);
@@ -1351,7 +1469,7 @@ async fn history_continuations_keep_collection_scope_and_reject_invalidated_curs
     )
     .await;
     let (_, global) = call(&router, Method::GET, "/v1/worklogs", None).await;
-    assert_keys(&global, &["worklogs", "next_cursor", "revision"]);
+    assert_keys(&global, &["worklogs", "next_cursor"]);
     assert_eq!(filtered["worklogs"].as_array().unwrap().len(), 50);
     assert_eq!(global["worklogs"].as_array().unwrap().len(), 50);
     let cursor = &filtered["next_cursor"];
@@ -1461,8 +1579,7 @@ async fn aggregate_routes_load_empty_idle_state_and_validate_interval_parameters
     let state: tracker_protocol::TaskListStateDto = serde_json::from_value(body.clone()).unwrap();
     assert!(state.tasks.is_empty());
     assert!(state.active_worklog.is_none());
-    assert!(!state.revision.is_empty());
-    assert_keys(&body, &["tasks", "active_worklog", "revision"]);
+    assert_keys(&body, &["tasks", "active_worklog"]);
     for query in [
         "",
         "?start=bad&end=bad&now=bad",
@@ -1487,7 +1604,6 @@ async fn aggregate_routes_load_empty_idle_state_and_validate_interval_parameters
     assert!(overview.active_worklog.is_none());
     assert!(overview.totals.rows.is_empty());
     assert_eq!(overview.totals.total_us, 0);
-    assert_eq!(overview.totals.revision, state.revision);
 }
 
 #[tokio::test]
@@ -1617,7 +1733,7 @@ async fn write_after_unrelated_write(
         "occurred_at": at(0),
     });
     write(router, Method::POST, "/v1/tasks", other_client).await;
-    assert_ne!(state(router).await.0.revision, read.0.revision);
+    assert_eq!(state(router).await.0.tasks.len(), read.0.tasks.len() + 1);
     write(router, method, uri, request).await
 }
 
@@ -1952,7 +2068,7 @@ async fn writes_that_send_an_expected_revision_are_rejected_without_writing() {
     ];
     for (method, uri, body) in cases {
         let mut request = merge(body, guard());
-        request["expected_revision"] = json!(before.0.revision);
+        request["expected_revision"] = json!("00000000-0000-7000-8000-000000000000:3");
         let (status, response) = call(&router, method, &uri, Some(request)).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}: {response}");
         assert_eq!(response["code"], "invalid_request", "{uri}: {response}");

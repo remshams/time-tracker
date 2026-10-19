@@ -17,7 +17,6 @@ pub(super) async fn tracking(State(shared): State<Shared>) -> ApiResult<Tracking
     core.app.refresh_tracking_resource()?;
     Ok(Json(TrackingDto {
         active_worklog: core.active_worklog(),
-        revision: core.revision(),
     }))
 }
 /// Guards authoritative tracking state and preserves request worklog identity and retry receipts.
@@ -117,8 +116,6 @@ mod tracking_tests {
             _database_lock: database_lock,
             app,
             needs_refresh: false,
-            epoch: "tracking-test".to_owned(),
-            sequence: 0,
             completed: HashMap::new(),
             completion_order: VecDeque::new(),
         }))
