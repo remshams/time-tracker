@@ -81,12 +81,9 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         select(first)
         try proxy.arm(method: "GET", path: "/v1/state/daily-overview", mode: .holdAfter)
         _ = try proxy.waitForHeldRequest()
-        let start = app.buttons["Start tracking"]
-        start.click()
-        // The start waits behind the held poll in the bridge's serial worker; task creation stays available.
-        waitUntil("The start waits for its response") { !start.isEnabled }
-        XCTAssertTrue(app.buttons["New task"].isEnabled)
-        XCTAssertTrue(app.buttons["bulk-archive.open"].isEnabled)
+        // The start waits behind the held poll in the bridge's serial worker. Keep the hold shorter than the
+        // transport's 5 s timeout; testTrackingWriteInFlightDisablesOnlyTrackingControls checks the controls.
+        app.buttons["Start tracking"].click()
         select(second)
         try proxy.release()
         waitUntil("Captured task starts") { (try? self.fixture.activeWorklog())?.taskID == first.id }
@@ -163,7 +160,9 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         XCTAssertEqual(committed.name, "Committed creation")
         XCTAssertTrue(taskRow(committed).waitForExistence(timeout: timeout))
         try assertAcceptedWriteIntent(proxy, method: "POST", path: "/v1/tasks")
-        try assertWriteSentWithoutPriorRead(proxy, after: baseline, method: "POST", path: "/v1/tasks")
+        // The Rust adapter reads the task list before it creates a task.
+        try assertWriteSentWithoutPriorRead(proxy, after: baseline, method: "POST", path: "/v1/tasks",
+                                            adapterRead: "/v1/state/task-list")
         app.buttons["task-name.cancel"].click()
         waitUntil("Creation closes") { !self.element("task-name.input").exists }
         openCreation()

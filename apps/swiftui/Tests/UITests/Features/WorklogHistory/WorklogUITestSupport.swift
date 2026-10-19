@@ -22,9 +22,11 @@ extension TrackerUITestCase {
     /// Waits until the history row shows the stored duration of a completed worklog.
     /// A new duration proves that the history reloaded after another client changed the times.
     func waitForHistoryDuration(of log: FixtureWorklog, file: StaticString = #filePath, line: UInt = #line) {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let start = formatter.date(from: log.start), let end = log.end.flatMap(formatter.date(from:)) else {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        // The server omits the fraction for whole seconds.
+        let date = { (value: String) in fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value) }
+        guard let start = date(log.start), let end = log.end.flatMap(date) else {
             XCTFail("Worklog \(log.id) has no completed timestamps.", file: file, line: line)
             return
         }

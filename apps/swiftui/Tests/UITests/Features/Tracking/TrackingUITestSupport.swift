@@ -22,7 +22,8 @@ extension TrackerUITestCase {
         let message = app.staticTexts.matching(
             NSPredicate(format: "value CONTAINS[c] %@ OR label CONTAINS[c] %@", text, text)).firstMatch
         XCTAssertTrue(message.exists, "The alert shows the reported failure.", file: file, line: line)
-        app.buttons["OK"].firstMatch.click()
+        // Return activates the alert's default OK button. A button query also matches the Touch Bar copy.
+        app.typeKey(.return, modifierFlags: [])
         waitUntil("The tracking failure alert closes", file: file, line: line) { !title.exists }
     }
 }
