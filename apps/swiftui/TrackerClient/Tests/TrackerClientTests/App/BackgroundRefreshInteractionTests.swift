@@ -54,6 +54,10 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         XCTAssertFalse(fixture.session.canStopTracking)
         stop.succeed(TaskListResources(tasks: [firstTask], active: nil))
         history.succeed(emptyPage)
+        // The stopped worklog belonged to the selected task, so the reload requests its history again.
+        let reloadedHistory = try await fixture.client.next()
+        XCTAssertEqual(reloadedHistory.operation, .history(task: firstTask.id, cursor: nil))
+        reloadedHistory.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertNil(fixture.session.active)
         XCTAssertTrue(fixture.session.canStartSelectedTask)

@@ -215,7 +215,7 @@ final class HistoryTests: XCTestCase {
         let other = try await fixture.client.next()
         fixture.session.select(firstTask.id)
         let current = try await fixture.client.next()
-        current.succeed(emptyPage)
+        try await fixture.update("the current page") { current.succeed(emptyPage) }
         try await fixture.update("the earlier page for the selected task") {
             earlier.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
         }
