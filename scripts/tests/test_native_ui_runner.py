@@ -177,7 +177,7 @@ class NativeUIRunnerTests(unittest.TestCase):
         tools.mkdir()
         target = self.directory / "target/debug"
         target.mkdir(parents=True)
-        for name in ("tt", "tt-cli"):
+        for name in ("tt-server", "tt-cli"):
             binary = target / name
             binary.write_text("#!/bin/sh\nexit 0\n")
             binary.chmod(0o755)

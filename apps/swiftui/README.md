@@ -214,7 +214,7 @@ process group and write the timing report before CI cancels the step.
 The test log remains in `.build/native-ui.log`; `.build/native-ui-timings.json`
 records completed cases, their durations, and any unfinished case.
 
-The helper builds `tt-cli` and `tt`, then runs the `TimeTrackerUITests` target in the Debug app. Each test uses a fresh SQLite database and an isolated preferences suite. Server cases start a real `tt` server; an ordered fault proxy exercises delays, outages, and uncertain writes. The CLI creates fixtures and verifies stored results while UI actions call the production Swift-to-Rust bridge.
+The helper builds `tt-cli` and `tt-server`, then runs the `TimeTrackerUITests` target in the Debug app. Each test uses a fresh SQLite database and an isolated preferences suite. Server cases start a real `tt-server` process; an ordered fault proxy exercises delays, outages, and uncertain writes. The CLI creates fixtures and verifies stored results while UI actions call the production Swift-to-Rust bridge.
 
 Shared launch setup explicitly opens the tracker with its Command-0 shortcut
 and waits for the window and connection. Launching the app alone does not

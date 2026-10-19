@@ -61,7 +61,7 @@ final class TrackerFixture {
             serverEndpoint = try existingEndpoint ?? "http://127.0.0.1:\(Self.availablePort())"
             let endpoint = URL(string: serverEndpoint!)!
             let child = try ManagedProcess(executable: serverExecutable,
-                                           arguments: ["serve", "--bind", "127.0.0.1:\(endpoint.port!)", "--db", database.path],
+                                           arguments: ["--bind", "127.0.0.1:\(endpoint.port!)", "--db", database.path],
                                            log: directory.appendingPathComponent("server-\(UUID().uuidString).log"))
             server = child
             do {
