@@ -81,15 +81,15 @@ def served_routes(task_name="Planning"):
     tasks = [{"id": "task-1", "name": task_name, "archived": False,
               "created_at": "1970-01-01T00:00:01Z", "updated_at": "1970-01-01T00:00:02Z"}]
     active = {"id": "worklog-2", "task_id": "task-1", "start": "1970-01-01T00:00:05Z", "end": None}
-    totals = {"rows": [{"task_id": "task-1", "duration_us": 60}], "total_us": 60, "revision": "r1"}
+    totals = {"rows": [{"task_id": "task-1", "duration_us": 60}], "total_us": 60}
     return {
         "/v1/health": {"status": "ok", "protocol_version": 3},
-        "/v1/state/task-list": {"tasks": tasks, "active_worklog": active, "revision": "r1"},
+        "/v1/state/task-list": {"tasks": tasks, "active_worklog": active},
         "/v1/state/daily-overview": {"tasks": tasks, "active_worklog": active, **totals},
         "/v1/reports/task-totals": totals,
         "/v1/tasks": {"tasks": tasks},
         "/v1/tracking": {"active_worklog": active},
-        "/v1/worklogs": {"worklogs": [], "next_cursor": None, "revision": "r1"},
+        "/v1/worklogs": {"worklogs": [], "next_cursor": None},
     }
 
 
@@ -286,6 +286,16 @@ class VerifyTests(unittest.TestCase):
             with fake_server(served_routes()) as base:
                 with self.assertRaisesRegex(DEPLOY.DeployError, "running worklog that the database lacks"):
                     DEPLOY.verify(base, DEPLOY.database_state(idle), now=NOW)
+
+    def test_task_list_with_a_server_revision_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "tt.db"
+            create_database(database)
+            routes = served_routes()
+            routes["/v1/state/task-list"] = {**routes["/v1/state/task-list"], "revision": "r1"}
+            with fake_server(routes) as base:
+                with self.assertRaisesRegex(DEPLOY.DeployError, "task-list state has an unexpected shape"):
+                    DEPLOY.verify(base, DEPLOY.database_state(database), now=NOW)
 
     def test_wrong_protocol_version_times_out(self):
         with fake_server(served_routes()) as base:
