@@ -11,7 +11,7 @@ cargo install --path apps/cli
 
 ## Storage and output
 
-Without storage options, `tt-cli` uses the TUI's local `tt.db`. New local and server databases start with no tasks. Existing data remains intact. Use `--db PATH` for a different local database or `--server URL` for a running `tt serve` instance. These options are mutually exclusive. Remote commands never fall back to local storage. An explicit database path requires an existing parent directory. Database paths must be valid UTF-8 so backend tokens identify them without replacing filename bytes.
+Without storage options, `tt-cli` uses the TUI's local `tt.db`. New local and server databases start with no tasks. Existing data remains intact. Use `--db PATH` for a different local database or `--server URL` for a running `tt-server` instance. These options are mutually exclusive. Remote commands never fall back to local storage. An explicit database path requires an existing parent directory. Database paths must be valid UTF-8 so backend tokens identify them without replacing filename bytes.
 
 ```sh
 tt-cli tasks list
