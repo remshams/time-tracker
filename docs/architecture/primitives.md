@@ -1,8 +1,8 @@
 # Architecture and application primitives
 
-Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. [Revisions and concurrency](#revisions-and-concurrency) explains stale-write and pagination guards. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
+Start with the architecture primitives to find each crate, client, and communication boundary. The application concepts explain their shared rules. [Revisions and concurrency](#revisions-and-concurrency) explains write checks, request replay, and pagination guards. The [visual guide](primitives.html) adds diagrams; the [detailed architecture](architecture.html) covers method-level ownership. Dependency lists below name direct production dependencies within this repository; manifests list external libraries and test dependencies.
 
-Source scope: tracker-remote worklog reads and mutation recovery at `cc69c715`, inspected on 19 October 2026. The rest of the Rust core, TUI, CLI, and native macOS catalog remains at `d7678a2c`, inspected on 19 October 2026. Standalone server packaging and fixtures describe commits `a18005c7` through `c431aead`, inspected on 19 October 2026. Native direct requests describe `e2dff5da`, inspected on 18 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
+Source scope: the Rust core, TUI, CLI, and native macOS client at `cb5178c`, inspected on 19 October 2026, including protocol 6 from issue #94. This includes tracker-remote worklog reads and mutation recovery, first described at `cc69c715` on 19 October 2026. Standalone server packaging and fixtures describe commits `a18005c7` through `c431aead`, inspected on 19 October 2026. Native direct requests describe `e2dff5da`, inspected on 18 October 2026. This catalog contains no quality measurements. Code defines implementation; the linked ADRs explain decisions, including later supersessions.
 
 ## Architecture primitives
 
@@ -32,19 +32,19 @@ Source: [crate](../../crates/tracker-storage/Cargo.toml), [SQLite adapter](../..
 
 ### tracker-protocol
 
-Defines protocol-5 JSON requests, resource observations, command receipts, and conversions at the HTTP boundary. Task rename and archive requests carry the reviewed task name as `expected_name`; restore carries none. `parse_worklog_cursor` holds the one cursor validation rule: the revision is nonnegative and the ID is a `WorklogId`. Observations pair read values with revisions. Receipts describe committed writes and do not replace current read state. This crate contains no HTTP client, server, or database connection.
+Defines protocol-6 JSON requests, resource reads, command receipts, and conversions at the HTTP boundary. `WriteGuard` carries only `request_id`. Task rename and archive requests can carry the reviewed task name as `expected_name`; restore carries none. `parse_worklog_cursor` holds the one cursor validation rule: the revision is nonnegative and the ID is a `WorklogId`. Reads and receipts carry no server revision. Receipts describe committed writes and do not replace current read state. This crate contains no HTTP client, server, or database connection.
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain).
 
-Source: [crate](../../crates/tracker-protocol/Cargo.toml), [wire contracts](../../crates/tracker-protocol/src/lib.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).
+Source: [crate](../../crates/tracker-protocol/Cargo.toml), [wire contracts](../../crates/tracker-protocol/src/lib.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md), [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
 
 ### tracker-server
 
-Owns HTTP routes, server-side operation serialization, revision guards, command receipts, and its application and SQLite database. Task-list and daily-overview reads capture related resources in one transaction. Rename and archive check the reviewed task name through the shared guarded application operations, which compare and write in one SQLite transaction. `tt-server` launches this library against an explicit local or Tailscale bind address.
+Owns HTTP routes, server-side operation serialization, request-ID receipt replay, and its application and SQLite database. Writes run the shared application operations, which check the command's expected values; the server compares no revision. Task-list and daily-overview reads capture related resources in one transaction. Rename and archive with `expected_name` use the shared guarded operations, which compare and write in one SQLite transaction; without it, they act on the current task. `tt-server` launches this library against an explicit local or Tailscale bind address.
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-storage](#tracker-storage).
 
-Source: [crate](../../crates/tracker-server/Cargo.toml), [entry points](../../crates/tracker-server/src/lib.rs), [resource routes](../../crates/tracker-server/src/resources.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).
+Source: [crate](../../crates/tracker-server/Cargo.toml), [entry points](../../crates/tracker-server/src/lib.rs), [resource routes](../../crates/tracker-server/src/resources.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md), [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
 
 ### tracker-server-app
 
@@ -56,19 +56,19 @@ Source: [crate](../../apps/server/Cargo.toml), [startup](../../apps/server/src/m
 
 ### tracker-remote
 
-Used by clients in remote mode; local clients and the HTTP server use the local application and storage path. Owns asynchronous HTTP transport, response validation, confirmed task, tracking, and report observations, and guarded command recovery. History pages and individual worklogs are validated and returned without caching. Worklog edits read the individual worklog during preflight, then refresh only the coherent task list after the write. `RemoteApplication` publishes only validated observations. Failed refreshes retain confirmed values; a saved command remains saved after a display refresh fails. Unloaded tracking differs from observed idle tracking. Report requests share canonical range, query, cooldown, and echoed-context validation in `ReportsClient`; the coordinator validates the remaining daily-overview resources before publishing them together. A restored inactive-task preview token passes the same validation as a server preview while it is deserialized. It never opens the server's database.
+Used by clients in remote mode; local clients and the HTTP server use the local application and storage path. Owns asynchronous HTTP transport, response validation, confirmed task, tracking, and report observations, and command recovery. History pages and individual worklogs are validated and returned without caching. Writes send the caller's reviewed values without a pre-write read or comparison. A start without a reviewed timer reads tracking once when no tracking observation exists. A connection that fails before sending marks the write as not attempted. After an attempted worklog edit, recovery refreshes only the coherent task list. `RemoteApplication` publishes only validated observations. Failed refreshes retain confirmed values; a saved command remains saved after a display refresh fails. Unloaded tracking differs from observed idle tracking. Report requests share canonical range, query, cooldown, and echoed-context validation in `ReportsClient`; the coordinator validates the remaining daily-overview resources before publishing them together. A restored inactive-task preview token passes the same validation as a server preview while it is deserialized. It never opens the server's database.
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol).
 
-Source: [crate](../../crates/tracker-remote/Cargo.toml), [remote application](../../crates/tracker-remote/src/application/mod.rs), [transport](../../crates/tracker-remote/src/transport.rs). Decisions: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md).
+Source: [crate](../../crates/tracker-remote/Cargo.toml), [remote application](../../crates/tracker-remote/src/application/mod.rs), [transport](../../crates/tracker-remote/src/transport.rs). Decisions: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
 
-Report validation scope: `d7678a2c`, inspected on 19 October 2026. [Report requests](../../crates/tracker-remote/src/application/reports.rs) fetch validated totals without publishing aggregate resources; the [coordinator](../../crates/tracker-remote/src/application/coordinator.rs) owns coherent adoption.
+Report validation scope: `cb5178c`, inspected on 19 October 2026. [Report requests](../../crates/tracker-remote/src/application/reports.rs) fetch validated totals without publishing aggregate resources; the [coordinator](../../crates/tracker-remote/src/application/coordinator.rs) owns coherent adoption.
 
-Preview token validation scope: `d7678a2c`, inspected on 19 October 2026. [`InactiveTaskPreview`](../../crates/tracker-remote/src/application/mod.rs) deserializes through its protocol DTO and rejects tokens that fail [preview validation](../../crates/tracker-remote/src/application/decoding.rs).
+Preview token validation scope: `cb5178c`, inspected on 19 October 2026. [`InactiveTaskPreview`](../../crates/tracker-remote/src/application/mod.rs) deserializes through its protocol DTO and rejects tokens that fail [preview validation](../../crates/tracker-remote/src/application/decoding.rs).
 
 ### tracker-client
 
-Owns shared client dispatch through the concrete `TrackerBackend` enum. It selects a local application or `RemoteApplication` and shares task, tracking, history, report, and archive operations. Remote failure never selects local storage. Callers retain runtime, lifecycle, input, and output ownership.
+Owns shared client dispatch through the concrete `TrackerBackend` enum. It selects a local application or `RemoteApplication` and shares task, tracking, history, report, and archive operations. Task and tracking observations return plain values without revisions. Remote failure never selects local storage. Callers retain runtime, lifecycle, input, and output ownership.
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-remote](#tracker-remote), [tracker-storage](#tracker-storage).
 
@@ -76,7 +76,7 @@ Source: [crate](../../crates/tracker-client/Cargo.toml), [backend](../../crates/
 
 ### tracker-tui
 
-The `tt` terminal client owns keyboard commands, screen state, rendering, terminal restoration, and a monotonic timer. One event loop handles input, redraw ticks, and request completions. Production requests use `TrackerBackend`; presentation tests can inject `TrackerApplicationService`. Server startup belongs to `tracker-server-app`.
+The `tt` terminal client owns keyboard commands, screen state, rendering, terminal restoration, and a monotonic timer. One event loop handles input, redraw ticks, and request completions. Production requests use `TrackerBackend`; presentation tests can inject `TrackerApplicationService`. Remote task-list state comes from one aggregate response, so the TUI publishes tasks and tracking without comparing revisions. Server startup belongs to `tracker-server-app`.
 
 Depends on: [tracker-client](#tracker-client), [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-remote](#tracker-remote), [tracker-storage](#tracker-storage).
 
@@ -84,7 +84,7 @@ Source: [crate](../../apps/tui/Cargo.toml), [startup](../../apps/tui/src/main.rs
 
 ### tracker-cli
 
-The `tt-cli` automation client owns argument validation, command handlers, JSON output, exit codes, and local/remote selection. It dispatches through `TrackerBackend` and reuses application search and calendar policies. Invalid input fails before opening a backend. It performs no terminal rendering or raw SQL queries.
+The `tt-cli` automation client owns argument validation, command handlers, JSON output, exit codes, and local/remote selection. It dispatches through `TrackerBackend` and reuses application search and calendar policies. `tasks rename` and `tasks archive` send no expected name and act on the current task in local and server mode. Remote preview tokens carry no revision. Invalid input fails before opening a backend. It performs no terminal rendering or raw SQL queries.
 
 Depends on: [tracker-client](#tracker-client), [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-remote](#tracker-remote), [tracker-storage](#tracker-storage).
 
@@ -92,7 +92,7 @@ Source: [crate](../../apps/cli/Cargo.toml), [entry point](../../apps/cli/src/mai
 
 ### tracker-swift-bridge
 
-Owns the Rust static library's C ABI, connection handles, JSON results, and persistent current-thread Tokio runtime. It dispatches through `TrackerBackend` and maps failures for Swift. Rename and archive exports carry the reviewed task name into the shared application operation; the bridge has no unguarded rename or archive export. Restore has no name guard. Start and stop exports take the click time and check the active worklog the app last read; resume requires an idle tracker. The bridge has no unguarded tracking export. The worklog delete export requires the expected task, start, and end, so it cannot delete a running worklog. The native app's serial `TrackerWorker` owns call ordering and handle disposal; the bridge owns neither windows nor feature state.
+Owns the Rust static library's C ABI, connection handles, JSON results, and persistent current-thread Tokio runtime. It dispatches through `TrackerBackend` and maps failures for Swift. Rename and archive exports carry the reviewed task name into the shared application operation; the bridge has no unguarded rename or archive export. Restore has no name guard. Start and stop exports take the click time and check the active worklog the app last read; resume requires an idle tracker. The bridge has no unguarded tracking export. The worklog delete export requires the expected task, start, and end, so it cannot delete a running worklog. Resource, report, and receipt JSON carries no server revision. The native app's serial `TrackerWorker` owns call ordering and handle disposal; the bridge owns neither windows nor feature state.
 
 Depends on: [tracker-client](#tracker-client), [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-remote](#tracker-remote), [tracker-storage](#tracker-storage).
 
@@ -100,7 +100,7 @@ Source: [crate](../../apps/swiftui/bridge/Cargo.toml), [backend](../../apps/swif
 
 ### TrackerClient Swift package
 
-Owns portable feature state and `TrackerSession` coordination through injected client, clock, scheduler, and settings interfaces. Each user action sends its request right away; the session has no operation gate, queue, or shutdown step. Each feature state owns an in-flight flag that disables only its own submit button or control. Writes send the captured values without reading first: rename and archive carry the name the dialog started with, worklog edits and deletion carry the expected task and times, and tracking carries the click time and expected active worklog ID. Rust and the server reject outdated writes. A failure shows the server's message in the feature and keeps the draft; after success or failure the session reloads the task list, and worklog writes also reload history. A double timeout reports that the change could not be confirmed; the session does not look for the write or resubmit it. One poll runs at a time, and a history page is dropped if its task is no longer selected. It composes resource observations for features and separates command success from later refresh failures. `TrackerPresentation` copies the session values views read into an `@Observable` model and assigns only changed values. Rust continues to own domain rules and persistence.
+Owns portable feature state and `TrackerSession` coordination through injected client, clock, scheduler, and settings interfaces. Each user action sends its request right away; the session has no operation gate, queue, or shutdown step. Each feature state owns an in-flight flag that disables only its own submit button or control. Writes send the captured values without reading first: rename and archive carry the name the dialog started with, worklog edits and deletion carry the expected task and times, and tracking carries the click time and expected active worklog ID. Rust and the server reject outdated writes. A failure shows the server's message in the feature and keeps the draft; after success or failure the session reloads the task list, and worklog writes also reload history. A double timeout reports that the change could not be confirmed; the session does not look for the write or resubmit it. One poll runs at a time, and a history page is dropped if its task is no longer selected. It composes resource observations for features and separates command success from later refresh failures. `TrackerPresentation` copies the session values views read into an `@Observable` model and assigns only changed values. The package still has optional revision fields on observations and reports; protocol 6 sends no revision, so they decode as nil. Rust continues to own domain rules and persistence.
 
 Depends on: Foundation, Observation, and injected interfaces. No direct Rust, SwiftUI, AppKit, network, or database dependency.
 
@@ -154,25 +154,30 @@ Owner: [report use cases](../../crates/tracker-application/src/service/reports.r
 
 ### Inactive-task archive preview
 
-A reviewed candidate set captured at a fixed time and positive inactivity period, defaulting to 14 days. Eligibility checks task creation, metadata changes, and work in that window. Confirmation rechecks eligibility in one transaction. Local confirmation guards the candidate IDs; remote confirmation guards the revision and preview expiry. tracker-remote rejects a restored remote token whose fields fail server-preview validation. Running tasks remain protected and archiving keeps history.
+A reviewed candidate set captured at a fixed time and positive inactivity period, defaulting to 14 days. Eligibility checks task creation, metadata changes, and work in that window. Confirmation rechecks eligibility in one transaction. Local confirmation guards the candidate IDs. Remote confirmation archives the tasks that match the preview's time and period when it runs, so the result can differ from the preview; issue #108 will send the previewed IDs. The server rejects a preview time more than 15 minutes from its clock. tracker-remote rejects a restored remote token whose fields fail server-preview validation. Running tasks remain protected and archiving keeps history.
 
-Owner: [inactivity period](../../crates/tracker-domain/src/inactivity.rs) and [task use cases](../../crates/tracker-application/src/service/tasks.rs). Decisions: [ADR 0012](../adr/0012-share-client-query-and-failure-policies.md), [ADR 0016](../adr/0016-configurable-inactive-task-archiving.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md).
+Owner: [inactivity period](../../crates/tracker-domain/src/inactivity.rs) and [task use cases](../../crates/tracker-application/src/service/tasks.rs). Decisions: [ADR 0012](../adr/0012-share-client-query-and-failure-policies.md), [ADR 0016](../adr/0016-configurable-inactive-task-archiving.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
 
 ## Revisions and concurrency
 
-The server token guards remote commands and coherent resource reads. Database counters guard history pagination in both local and remote mode. These are separate version spaces, not independent general-purpose versions on every task and worklog.
+Since protocol 6, the server keeps no global revision. Commands carry the values the caller reviewed, and the shared application and storage operations compare them with stored state before writing. A request ID lets the server replay the receipt of a resent command. Database counters guard history pagination in both local and remote mode.
 
-| # | Revision | Stored in | Advances on |
+| # | Mechanism | Stored in | Protects against |
 |---|---|---|---|
-| 1 | Server token, `epoch:sequence` | Server memory | New successful commands, including accepted no-ops; also server errors where a write may have committed. Replayed receipts retain their original revision. |
-| 2 | Per-task history order | Each task's SQLite `history_order_revision`, initially 0 | A changed worklog start; a move increments both source and destination tasks. |
-| 3 | Global worklog history | One SQLite `global_worklog_revision` row, initially 0 | Every worklog insert, update, or delete, across all tasks. |
+| 1 | Command expected values | The request | A write based on an outdated worklog, active timer, or task name. |
+| 2 | Request ID | Server memory, at most 1,024 successful receipts | A resent command running twice while its receipt is cached. |
+| 3 | Per-task history order | Each task's SQLite `history_order_revision`, initially 0 | A task history continuation after a changed worklog start; a move increments both source and destination tasks. |
+| 4 | Global worklog history | One SQLite `global_worklog_revision` row, initially 0 | A global history continuation after any worklog insert, update, or delete. |
 
-### Server command and resource revision
+### Expected values and request replay
 
-The server creates a new epoch at startup and starts its sequence at 0. Reads return the token captured under the operation lock. Writes submit `expected_revision`; the server checks equality under that same lock before executing a new command. A mismatch returns HTTP 409. This prevents a stale rename from silently overwriting another client's edit and rejects stale archive previews. Rename and archive also carry `expected_name`, which SQLite compares with the stored name in the write transaction, independent of the revision. A different name returns HTTP 409 `conflict` and leaves the task unchanged. Matching read tokens also let clients check that related resource observations agree.
+Correction compares the original worklog times; move and deletion also compare the original task ID. A mismatch returns HTTP 409 `worklog_changed`. Start and switch compare `expected_active`; stop rejects a replacement timer and succeeds as already idle when no timer remains. Rename and archive compare `expected_name` when the request carries it. A changed active worklog or task name returns HTTP 409 `conflict` and leaves storage unchanged. Create, restore, rename and archive without `expected_name`, and bulk archive carry no expected values. A write by another client to an unrelated task or worklog does not reject a command.
 
-The token covers server-mediated commands, not direct SQLite writes. It is not persisted. A restart changes the epoch, so old tokens remain invalid even though the sequence resets. Identical successful request replays are checked before the revision guard and return their original receipt.
+`WriteGuard.request_id` identifies a command. The server checks its receipt cache under the operation lock before it runs a new command. While the successful receipt stays cached, an identical command returns it with `replayed: true`, and the same ID with a different command returns HTTP 409 `conflict`. The cache holds at most 1,024 successful receipts in memory. A restart or eviction forgets them, and an old command can then run again if its expected values still match. For example, if an archive response is lost and another client restores the task, retrying the archive after a restart archives the task again. This is bounded replay protection, not exactly-once execution. See [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
+
+### Coherent reads
+
+Reads carry no revision. `/v1/state/task-list` and `/v1/state/daily-overview` read tasks, tracking, and totals in one SQLite transaction under the server operation lock, so clients take related values from one response instead of comparing revisions across reads. Separate task, tracking, history, and report reads stay independent.
 
 ### History cursors and database revisions
 
@@ -184,11 +189,11 @@ SQLite triggers update these counters inside the worklog write transaction, incl
 
 ### Why the guards coexist
 
-Pagination counters do not cover stale task metadata writes. Conversely, using the server token for remote pagination would reject cursors after unrelated commands, such as renaming another task. It could work for server-mediated requests, and its new epoch would safely invalidate cursors after a restart. In-memory storage itself is not the correctness blocker.
+Pagination counters cover worklog order. Command expected values cover the worklog, timer, and task name that a command was reviewed against. A server-wide token for pagination would reject cursors after unrelated commands, such as renaming another task. The database counters also cover writes from other local processes, which never pass through the server.
 
-Local clients have no server token. The TUI, CLI, and native macOS app can open the same local SQLite database concurrently, even if each presents one view. Database counters give all clients the same transactional pagination checks. The current split keeps task-history invalidation narrow while retaining the server's broader write and read-consistency guard.
+Local clients have no server. The TUI, CLI, and native macOS app can open the same local SQLite database concurrently, even if each presents one view. Database counters give all clients the same transactional pagination checks, and the expected-value checks run in the same SQLite transactions in local and remote mode.
 
-Source scope: server, protocol, and storage revision mechanisms at `d7678a2c`, inspected on 19 October 2026. Code: [server guards](../../crates/tracker-server/src/core.rs), [task routes](../../crates/tracker-server/src/tasks.rs), [server initialization](../../crates/tracker-server/src/bootstrap.rs), [cursor contracts](../../crates/tracker-protocol/src/lib.rs), [history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs), and [database triggers](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).
+Source scope: server, protocol, remote adapter, and storage concurrency mechanisms at `cb5178c`, inspected on 19 October 2026. Code: [server command execution](../../crates/tracker-server/src/core.rs), [task routes](../../crates/tracker-server/src/tasks.rs), [server initialization](../../crates/tracker-server/src/bootstrap.rs), [wire contracts](../../crates/tracker-protocol/src/lib.rs), [remote commands](../../crates/tracker-remote/src/application/coordinator.rs), [history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs), and [database triggers](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md), [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
 
 ### Positive-duration migration and protocol upgrade
 
@@ -197,3 +202,7 @@ Schema migration 7 deletes completed worklogs with zero duration; they cover no 
 ### Protocol 5 upgrade
 
 Protocol 5 adds `expected_name` to task rename and archive requests. Upgrade the server and every client together; incompatible pairs fail the health check. No database migration is needed. Saved history tokens keep their format and remain usable. The server restart starts a new revision epoch, so regenerate saved remote archive previews. See [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md).
+
+### Protocol 6 upgrade
+
+Protocol 6 removes `expected_revision` from `WriteGuard`, the `stale_revision` error code, the `revision` field from reads and inactive previews, and `applied_revision` from receipts. `expected_name` on rename and archive becomes optional. Upgrade the server and every client together; incompatible pairs fail the health check. A protocol-5 write that still carries `expected_revision` fails with HTTP 400 `invalid_request`. No database migration is needed. Saved history tokens keep their format. Saved remote archive previews contain `revision` and fail to load, so generate a new preview. See [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
