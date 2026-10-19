@@ -171,7 +171,7 @@ WORKLOG_DELETION_CONTRACT_EDITS = (
 # helper edit needs review, including edits outside the changed methods.
 DIRECT_REQUEST_SUPPORT_BLOBS = (
     "ce69f5073ae6cc62b114506ae7d5e2b481ea8e2a",
-    "097f90ed0d2063e0ef43cfbbbd0ff46f1ab8642e",
+    "2693cfb6784787f340161609132e4ea5bc52d0ab",
 )
 DIRECT_REQUEST_CONTRACT_EDITS = (
     ("    func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources\n"
