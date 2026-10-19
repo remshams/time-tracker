@@ -309,7 +309,7 @@ The move decisions are recorded in [ADR 0008](docs/adr/0008-move-worklogs-betwee
 
 ### Milestone 3: exclusive local or remote storage
 
-- [x] Add explicit process modes to the same binary: local TUI, remote TUI with a configured endpoint, and `tt serve`.
+- [x] Add local and remote TUI modes. HTTP serving now ships separately as `tt-server`; see [ADR 0028](docs/adr/0028-ship-a-standalone-server-binary.md).
 - [x] Add a versioned resource-oriented REST API for tasks, worklogs, and the singleton active-tracking state under `/v1`.
 - [x] Keep raw repository methods and storage commands out of the public HTTP contract.
 - [x] Run the same `tracker-application` workflows behind local and server adapters.
