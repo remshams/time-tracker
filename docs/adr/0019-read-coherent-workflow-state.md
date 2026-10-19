@@ -4,6 +4,8 @@
 
 Accepted for [issue #30](https://github.com/remshams/time-tracker/issues/30). Partially supersedes ADRs [0017](0017-separate-http-resources-from-client-refreshes.md) and [0018](0018-compose-resource-state-in-client-workflows.md) for selected task-list and totals refreshes. Their independent resources, write contracts, resource observations and lifecycle decisions remain accepted.
 
+Partially superseded by [ADR 0030](0030-remove-server-revisions-from-writes-and-reads.md) for the common read revision and Rust remote command preflights; all other decisions remain accepted.
+
 ## Date
 
 2026-10-11

@@ -4,6 +4,8 @@
 
 Partially superseded by [ADR 0017](0017-separate-http-resources-from-client-refreshes.md); all other decisions remain accepted. ADR 0017 replaces the separate fixed/configurable HTTP routes, embedded candidate task metadata and protocol-2 compatibility requirement. The configurable-period domain and native-dialog decisions remain accepted.
 
+Partially superseded by [ADR 0030](0030-remove-server-revisions-from-writes-and-reads.md) for the preview revision and its check on remote confirmation; all other decisions remain accepted.
+
 ## Date
 
 2026-10-07.

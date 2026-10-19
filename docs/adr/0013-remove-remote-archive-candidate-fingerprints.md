@@ -4,6 +4,8 @@
 
 Accepted
 
+Partially superseded by [ADR 0030](0030-remove-server-revisions-from-writes-and-reads.md) for server revision checks on archive confirmation; all other decisions remain accepted.
+
 ## Date
 
 2026-10-07

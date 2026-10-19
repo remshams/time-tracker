@@ -23,23 +23,24 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0007](0007-completed-worklog-deletion.md) | Delete completed worklogs | Accepted |
 | [0008](0008-move-worklogs-between-tasks.md) | Move worklogs between tasks | Partially superseded by ADR 0017; all other decisions remain accepted. |
 | [0009](0009-task-search.md) | Search and rank tasks by recent activity | Accepted |
-| [0010](0010-share-tui-application-requests.md) | Share TUI application requests across local and remote modes | Partially superseded by ADR 0021; all other decisions remain accepted. |
+| [0010](0010-share-tui-application-requests.md) | Share TUI application requests across local and remote modes | Partially superseded by ADR 0021 and ADR 0030; all other decisions remain accepted. |
 | [0011](0011-use-one-tui-event-loop-with-a-fixed-redraw-tick.md) | Use one TUI event loop with a fixed redraw tick | Accepted |
-| [0012](0012-share-client-query-and-failure-policies.md) | Share client query and failure policies | Partially superseded by ADR 0013; all other decisions remain accepted. |
-| [0013](0013-remove-remote-archive-candidate-fingerprints.md) | Remove remote archive candidate fingerprints | Accepted |
+| [0012](0012-share-client-query-and-failure-policies.md) | Share client query and failure policies | Partially superseded by ADR 0013 and ADR 0030; all other decisions remain accepted. |
+| [0013](0013-remove-remote-archive-candidate-fingerprints.md) | Remove remote archive candidate fingerprints | Partially superseded by ADR 0030; all other decisions remain accepted. |
 | [0014](0014-scope-mutation-checks-to-task-changes.md) | Scope mutation checks to task changes | Partially superseded by ADR 0015; all other decisions remain accepted. |
 | [0015](0015-use-github-hosted-runners-for-ci.md) | Use GitHub-hosted runners for CI | Accepted |
-| [0016](0016-configurable-inactive-task-archiving.md) | Configurable inactive task archiving | Partially superseded by ADR 0017; all other decisions remain accepted. |
-| [0017](0017-separate-http-resources-from-client-refreshes.md) | Separate HTTP resources from client refreshes | Partially superseded by ADR 0019 and ADR 0024; independent resources and guarded writes remain accepted. |
-| [0018](0018-compose-resource-state-in-client-workflows.md) | Compose resource state in client workflows | Partially superseded by ADR 0019; observations, command recovery and lifecycle remain accepted. |
-| [0019](0019-read-coherent-workflow-state.md) | Read coherent workflow state | Accepted |
+| [0016](0016-configurable-inactive-task-archiving.md) | Configurable inactive task archiving | Partially superseded by ADR 0017 and ADR 0030; all other decisions remain accepted. |
+| [0017](0017-separate-http-resources-from-client-refreshes.md) | Separate HTTP resources from client refreshes | Partially superseded by ADR 0019, ADR 0024 and ADR 0030; independent resources and guarded writes remain accepted. |
+| [0018](0018-compose-resource-state-in-client-workflows.md) | Compose resource state in client workflows | Partially superseded by ADR 0019 and ADR 0030; observations, command recovery and lifecycle remain accepted. |
+| [0019](0019-read-coherent-workflow-state.md) | Read coherent workflow state | Partially superseded by ADR 0030; all other decisions remain accepted. |
 | [0021](0021-share-concrete-client-backend.md) | Share the concrete client backend | Accepted |
 | [0022](0022-consolidate-application-and-repository-contracts.md) | Consolidate application and repository contracts | Accepted |
 | [0023](0023-enforce-reviewed-intent-at-application-boundaries.md) | Enforce reviewed intent at application boundaries | Accepted |
 | [0024](0024-id-only-worklog-cursors-and-positive-durations.md) | ID-only worklog cursors and positive durations | Accepted |
 | [0025](0025-fit-native-ci-within-the-macos-runner-limit.md) | Fit native CI within the macOS runner limit | Proposed |
 | [0026](0026-use-swift-observation-for-native-presentation.md) | Use Swift Observation for native presentation | Proposed |
-| [0027](0027-check-reviewed-task-names-on-the-server.md) | Check reviewed task names on the server | Proposed |
+| [0027](0027-check-reviewed-task-names-on-the-server.md) | Check reviewed task names on the server | Proposed; partially superseded by ADR 0030. |
 | [0028](0028-ship-a-standalone-server-binary.md) | Ship a standalone server binary | Accepted |
 | [0029](0029-send-native-requests-directly.md) | Send native requests directly | Proposed |
 | [0030](0030-replace-the-session-with-feature-stores.md) | Replace the session with feature stores | Proposed |
+| [0030](0030-remove-server-revisions-from-writes-and-reads.md) | Remove server revisions from writes and reads | Proposed |
