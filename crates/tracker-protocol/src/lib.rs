@@ -53,21 +53,18 @@ impl From<&TaskListItem> for TaskDto {
 #[serde(deny_unknown_fields)]
 pub struct TasksDto {
     pub tasks: Vec<TaskDto>,
-    pub revision: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct TaskResourceDto {
     pub task: TaskDto,
-    pub revision: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct TrackingDto {
     pub active_worklog: Option<WorklogDto>,
-    pub revision: String,
 }
 
 /// Task catalog and active tracking captured in one database read transaction.
@@ -76,10 +73,9 @@ pub struct TrackingDto {
 pub struct TaskListStateDto {
     pub tasks: Vec<TaskDto>,
     pub active_worklog: Option<WorklogDto>,
-    pub revision: String,
 }
 
-/// Task-list state and interval totals sharing the report's single revision.
+/// Task-list state and interval totals captured under one server operation lock.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DailyOverviewDto {
@@ -93,7 +89,6 @@ pub struct DailyOverviewDto {
 #[serde(deny_unknown_fields)]
 pub struct WorklogResourceDto {
     pub worklog: WorklogDto,
-    pub revision: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -134,7 +129,7 @@ impl From<&TaskListItem> for TaskItemDto {
 }
 
 /// Identifies a command so the server can replay its receipt when the client resends it.
-/// Expected values in each command, not the global revision, reject writes based on outdated items.
+/// Expected values in each command reject writes based on outdated items.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct WriteGuard {
@@ -148,7 +143,6 @@ pub struct InactiveTaskPreviewDto {
     pub inactive_days: u32,
     pub count: usize,
     pub candidate_task_ids: Vec<String>,
-    pub revision: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -173,17 +167,21 @@ pub struct CreateTaskRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TaskChangeRequest {
-    /// The server rejects the rename when the stored name differs from `expected_name`.
+    /// With `expected_name`, the server rejects the rename when the stored name differs.
+    /// Without it, the server renames the task whatever its current name.
     Rename {
-        expected_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_name: Option<String>,
         name: String,
         occurred_at: DateTime<Utc>,
         #[serde(flatten)]
         guard: WriteGuard,
     },
-    /// The server rejects the archive when the stored name differs from `expected_name`.
+    /// With `expected_name`, the server rejects the archive when the stored name differs.
+    /// Without it, the server archives the task whatever its current name.
     Archive {
-        expected_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_name: Option<String>,
         occurred_at: DateTime<Utc>,
         #[serde(flatten)]
         guard: WriteGuard,
@@ -281,7 +279,6 @@ pub enum MutationResultDto {
 #[serde(deny_unknown_fields)]
 pub struct MutationDto {
     pub request_id: String,
-    pub applied_revision: String,
     pub replayed: bool,
     pub result: MutationResultDto,
 }
@@ -349,23 +346,20 @@ pub fn parse_worklog_cursor(
 pub struct WorklogPageDto {
     pub worklogs: Vec<WorklogDto>,
     pub next_cursor: Option<WorklogCursorDto>,
-    pub revision: String,
 }
 
 impl WorklogPageDto {
-    pub fn from_page(page: &WorklogPage, revision: String) -> Self {
+    pub fn from_page(page: &WorklogPage) -> Self {
         Self {
             worklogs: page.worklogs.iter().map(WorklogDto::from).collect(),
             next_cursor: page.next_cursor.map(Into::into),
-            revision,
         }
     }
 
-    pub fn from_global_page(page: &GlobalWorklogPage, revision: String) -> Self {
+    pub fn from_global_page(page: &GlobalWorklogPage) -> Self {
         Self {
             worklogs: page.worklogs.iter().map(WorklogDto::from).collect(),
             next_cursor: page.next_cursor.map(Into::into),
-            revision,
         }
     }
 }
@@ -385,7 +379,6 @@ pub struct ReportDto {
     pub now: DateTime<Utc>,
     pub rows: Vec<ReportRowDto>,
     pub total_us: i64,
-    pub revision: String,
 }
 
 impl ReportDto {
@@ -394,7 +387,6 @@ impl ReportDto {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         now: DateTime<Utc>,
-        revision: String,
     ) -> Self {
         Self {
             start,
@@ -415,7 +407,6 @@ impl ReportDto {
                 .total
                 .num_microseconds()
                 .expect("report duration validated by application"),
-            revision,
         }
     }
 }
