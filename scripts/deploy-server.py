@@ -323,8 +323,7 @@ def require(condition, message):
         raise DeployError(message)
 
 
-def verify(base, version, expected, now=None):
-    wait_until_ready(base, version)
+def verify(base, expected, now=None):
     state = get_json(base, "/v1/state/task-list")
     require(set(state) == {"tasks", "active_worklog", "revision"} and state["revision"],
             "The task-list state has an unexpected shape")
@@ -379,7 +378,7 @@ def smoke_test(host, directory, copied):
         try:
             base = f"http://127.0.0.1:{port}"
             after = started_state(base, host.version, copied)
-            verify(base, host.version, after)
+            verify(base, after)
             require(database_state(copied) == after, "Reads changed the copied database")
             return after
         finally:
@@ -446,7 +445,7 @@ def read_preflight_record(path):
         raise DeployError(f"The preflight record {path} is not valid JSON ({error}); run the preflight again") \
             from error
     require(isinstance(record, dict), f"The preflight record {path} must contain a JSON object")
-    missing = sorted({"commit", "sha256"} - set(record))
+    missing = sorted({"commit", "sha256", "database_before_sha256", "database_after_sha256"} - set(record))
     require(not missing, f"The preflight record {path} is missing: {', '.join(missing)}; run the preflight again")
     return record
 
@@ -455,8 +454,6 @@ def remote_deploy(host, keep_backup):
     manifest = read_preflight_record(host.manifest)
     require(manifest["commit"] == host.revision and manifest["sha256"] == digest(host.candidate),
             "The preflight record does not match the candidate binary; run the preflight again")
-    require("database_before_sha256" in manifest and "database_after_sha256" in manifest,
-            "The preflight record has no database fingerprints; run the preflight again")
     require(os.access(host.database, os.W_OK) and os.access(host.database.parent, os.W_OK),
             f"{host.database} and its directory must be writable to restore the database on rollback")
     service = host.config["service"]
@@ -481,7 +478,7 @@ def remote_deploy(host, keep_backup):
         after = started_state(host.config["base_url"], host.version, host.database)
         require(fingerprint(after) == manifest["database_after_sha256"],
                 "Startup changed the live database differently from the preflight")
-        verify(host.config["base_url"], host.version, after)
+        verify(host.config["base_url"], after)
         require(database_state(host.database) == after, "Reads changed the live database")
         sudo("systemctl", "is-active", "--quiet", service)
         require(digest(host.live) == manifest["sha256"], "The live binary differs from the candidate")
@@ -559,7 +556,7 @@ def main(argv=None):
                 remote_deploy(host, arguments.keep_backup)
         else:
             deploy_from_workstation(workstation_parser().parse_args(argv))
-    except (DeployError, subprocess.CalledProcessError, OSError, sqlite3.Error, json.JSONDecodeError) as error:
+    except (DeployError, subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
         print(f"Deployment stopped: {error}", file=sys.stderr)
         return 1
     return 0
