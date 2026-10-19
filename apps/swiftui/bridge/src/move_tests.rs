@@ -115,7 +115,7 @@ fn completed_and_running_moves_preserve_identity_times_and_update_history_and_to
                 .worklogs,
             vec![moved.clone()]
         );
-        let (rows, _, _) = bridge
+        let (rows, _) = bridge
             .application
             .report_rows(at(0), at(250), at(250))
             .unwrap_or_else(|error| panic!("{}", error.message));
@@ -461,8 +461,6 @@ fn mock_server(
                         {
                             resources.1.active_worklog = worklog.end.is_none().then_some(worklog);
                         }
-                        resources.0.revision = receipt.applied_revision;
-                        resources.1.revision = resources.0.revision.clone();
                     }
                     Json(reply)
                 }
@@ -486,16 +484,12 @@ fn remote_move_rejects_wrong_identity_destination_times_and_invalid_receipts() {
         let initial = report_tests::resource_dtos(
             writer.application.tasks(TaskOrdering::default()),
             end.is_none().then(|| original.clone()),
-            "42".into(),
         );
         let mut updated = initial.clone();
         updated.1.active_worklog = end.is_none().then(|| WorklogDto::from(&moved));
-        updated.0.revision = "43".into();
-        updated.1.revision = updated.0.revision.clone();
         let baseline = serde_json::to_value(MutationDto {
             result: MutationResultDto::Worklog(WorklogDto::from(&moved)),
             request_id: String::new(),
-            applied_revision: updated.0.revision,
             replayed: false,
         })
         .unwrap();
@@ -513,7 +507,9 @@ fn remote_move_rejects_wrong_identity_destination_times_and_invalid_receipts() {
                     }
                 }
                 4 => reply["request_id"] = json!(WorklogId::generate().to_string()),
-                5 => reply["applied_revision"] = json!(""),
+                5 => {
+                    reply.as_object_mut().unwrap().remove("replayed");
+                }
                 6 => reply["unexpected"] = json!(true),
                 7 => reply["result"]["kind"] = json!("tracking_already_idle"),
                 8 => reply["replayed"] = json!("invalid"),
@@ -552,11 +548,8 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
     let mut writer = open_fixture(&directory.path().join("payload.db")).unwrap();
     let tasks = writer.application.tasks(TaskOrdering::default());
     let original = record(&mut writer, tasks[0].task.id(), 100, Some(200));
-    let resources = report_tests::resource_dtos(
-        writer.application.tasks(TaskOrdering::default()),
-        None,
-        "42".into(),
-    );
+    let resources =
+        report_tests::resource_dtos(writer.application.tasks(TaskOrdering::default()), None);
     for (code, status, kind, uncertain) in [
         (
             ErrorCode::WorklogChanged,
@@ -713,11 +706,8 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
     let mut writer = open_fixture(&directory.path().join("recovery.db")).unwrap();
     let tasks = writer.application.tasks(TaskOrdering::default());
     let original = record(&mut writer, tasks[0].task.id(), 100, Some(200));
-    let resources = report_tests::resource_dtos(
-        writer.application.tasks(TaskOrdering::default()),
-        None,
-        "42".into(),
-    );
+    let resources =
+        report_tests::resource_dtos(writer.application.tasks(TaskOrdering::default()), None);
     let reads = Arc::new(AtomicUsize::new(0));
     let task_resources = resources.0.tasks.clone();
     let original_dto = tracker_protocol::WorklogDto::from(&original);
@@ -731,12 +721,7 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
                         .find(|item| item.id == id)
                         .unwrap()
                         .clone();
-                    async move {
-                        Json(tracker_protocol::TaskResourceDto {
-                            task,
-                            revision: "42".into(),
-                        })
-                    }
+                    async move { Json(tracker_protocol::TaskResourceDto { task }) }
                 },
             ),
         )
@@ -768,7 +753,6 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
                         Json(tracker_protocol::TaskListStateDto {
                             tasks: resources.0.tasks,
                             active_worklog: resources.1.active_worklog,
-                            revision: resources.0.revision,
                         })
                         .into_response()
                     }
@@ -780,7 +764,6 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
             get(|| async {
                 Json(tracker_protocol::TrackingDto {
                     active_worklog: None,
-                    revision: "42".into(),
                 })
             }),
         )
@@ -788,12 +771,7 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
             "/v1/worklogs/{id}",
             get(move || {
                 let worklog = original_dto.clone();
-                async move {
-                    Json(tracker_protocol::WorklogResourceDto {
-                        worklog,
-                        revision: "42".into(),
-                    })
-                }
+                async move { Json(tracker_protocol::WorklogResourceDto { worklog }) }
             })
             .patch(|| async {
                 (
@@ -835,7 +813,6 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
         let initial = report_tests::resource_dtos(
             writer.application.tasks(TaskOrdering::default()),
             end.is_none().then(|| original.clone()),
-            "before".into(),
         );
         let state = Arc::new(Mutex::new(initial));
         let worklogs = Arc::new(Mutex::new(vec![WorklogDto::from(&original)]));
@@ -873,8 +850,6 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
                                 .find(|item| item.id == destination.to_string())
                                 .unwrap()
                                 .archived = true;
-                            state.0.revision = "later".into();
-                            state.1.revision = state.0.revision.clone();
                         }
                         changed_worklogs.lock().unwrap()[0] = WorklogDto::from(
                             &Worklog::new(
@@ -887,7 +862,6 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
                         );
                         Json(MutationDto {
                             request_id: body["request_id"].as_str().unwrap().into(),
-                            applied_revision: "applied".into(),
                             replayed: true,
                             result: MutationResultDto::Worklog(WorklogDto::from(&applied)),
                         })
@@ -903,27 +877,11 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
             result["data"]["worklog"],
             serde_json::to_value(worklog_json(&moved)).unwrap()
         );
-        assert_eq!(result["data"]["receipt"]["appliedRevision"], "applied");
+        assert!(result["data"]["receipt"].get("appliedRevision").is_none());
         assert_eq!(result["data"]["receipt"]["replayed"], true);
         assert_eq!(
             crate::tests::test_active_value(&bridge.application)["id"],
             expected_active.id().to_string()
-        );
-        assert_eq!(
-            tasks_json(&bridge.application)
-                .unwrap()
-                .revision
-                .as_deref()
-                .unwrap(),
-            "later"
-        );
-        assert_eq!(
-            tracking_json(&bridge.application)
-                .unwrap()
-                .revision
-                .as_deref()
-                .unwrap(),
-            "later"
         );
         assert!(
             bridge

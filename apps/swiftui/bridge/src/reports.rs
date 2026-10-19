@@ -17,7 +17,6 @@ pub(super) struct ReportRowJson {
 #[derive(Serialize)]
 pub(super) struct ReportJson {
     pub(super) rows: Vec<ReportRowJson>,
-    pub(super) revision: Option<String>,
     pub(super) now: String,
 }
 
@@ -99,10 +98,9 @@ pub unsafe extern "C" fn tt_bridge_report(
         // SAFETY: The caller supplies valid C strings or null.
         let now = unsafe { read_identifier(now, "Invalid report timestamp") }
             .map_err(BridgeError::from)?;
-        let (rows, revision, cutoff) = bridge.application.report_rows(start, end, now)?;
+        let (rows, cutoff) = bridge.application.report_rows(start, end, now)?;
         serde_json::to_value(ReportJson {
             rows,
-            revision,
             now: timestamp(cutoff),
         })
         .map_err(|error| error.to_string().into())

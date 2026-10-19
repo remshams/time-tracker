@@ -94,7 +94,7 @@ fn correction_preserves_identity_precision_and_archived_task_and_updates_totals(
         .unwrap();
     assert_eq!(updated_task["archived"], true);
     assert_eq!(updated_task["latestStart"], timestamp(at(90)));
-    let (rows, _, _) = bridge
+    let (rows, _) = bridge
         .application
         .report_rows(at(0), at(1000), at(1000))
         .unwrap_or_else(|error| panic!("{}", error.message));
@@ -399,11 +399,8 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
         .task
         .id();
     let original = record(&mut writer, task, 100, Some(200));
-    let resources = report_tests::resource_dtos(
-        writer.application.tasks(TaskOrdering::default()),
-        None,
-        "42".into(),
-    );
+    let resources =
+        report_tests::resource_dtos(writer.application.tasks(TaskOrdering::default()), None);
     for (code, message, status, kind, uncertain) in [
         (
             ErrorCode::WorklogOverlap,

@@ -15,7 +15,7 @@ use tracker_remote::{RemoteApplication, RemoteError, ResourceSelection};
 use tracker_storage::SqliteRepository;
 
 pub(crate) use tracker_client::InactivePreview;
-type ReportRows = (Vec<super::ReportRowJson>, Option<String>, DateTime<Utc>);
+type ReportRows = (Vec<super::ReportRowJson>, DateTime<Utc>);
 
 pub(crate) struct Backend {
     application: TrackerBackend,
@@ -73,16 +73,15 @@ impl Backend {
             .map_err(remote_read_error)
     }
 
-    pub fn task_observation(&self) -> Option<(Vec<TaskListItem>, Option<String>)> {
+    pub fn task_observation(&self) -> Option<Vec<TaskListItem>> {
         self.application.task_observation()
     }
-    pub fn tracking_observation(&self) -> Option<(TrackingState, Option<String>)> {
+    pub fn tracking_observation(&self) -> Option<TrackingState> {
         self.application.tracking_observation()
     }
     pub fn command_receipt(&self) -> Option<serde_json::Value> {
         self.application.command_receipt().map(|receipt| {
-            serde_json::json!({ "requestId": receipt.request_id,
-            "appliedRevision": receipt.applied_revision, "replayed": receipt.replayed })
+            serde_json::json!({ "requestId": receipt.request_id, "replayed": receipt.replayed })
         })
     }
 
@@ -117,7 +116,6 @@ impl Backend {
         let report = result.map_err(refresh_error)?;
         Ok(super::ReportJson {
             rows: report_rows(&report)?,
-            revision: report.revision,
             now: super::timestamp(report.now),
         })
     }
@@ -140,7 +138,7 @@ impl Backend {
         }
     }
 
-    /// Returns report rows, their optional remote revision, and the canonical cutoff.
+    /// Returns report rows and the canonical cutoff.
     pub fn report_rows(
         &mut self,
         start: DateTime<Utc>,
@@ -151,7 +149,7 @@ impl Backend {
             .runtime
             .block_on(self.application.report(start, end, now));
         let report = result.map_err(|error| self.operation_error(error, false))?;
-        Ok((report_rows(&report)?, report.revision, report.now))
+        Ok((report_rows(&report)?, report.now))
     }
 
     #[cfg(test)]

@@ -71,16 +71,13 @@ fn completed(
 pub(super) fn resource_dtos(
     items: Vec<tracker_application::TaskListItem>,
     active: Option<tracker_domain::Worklog>,
-    revision: String,
 ) -> (tracker_protocol::TasksDto, tracker_protocol::TrackingDto) {
     (
         tracker_protocol::TasksDto {
             tasks: items.iter().map(tracker_protocol::TaskDto::from).collect(),
-            revision: revision.clone(),
         },
         tracker_protocol::TrackingDto {
             active_worklog: active.as_ref().map(tracker_protocol::WorklogDto::from),
-            revision,
         },
     )
 }
@@ -118,7 +115,6 @@ pub(super) fn resource_router_resources(
     let aggregate_resources = resources.clone();
     let task_list = resources.clone();
     let tracking_state = resources.clone();
-    let worklog_state = resources.clone();
     Router::new()
         .route(
             "/v1/state/task-list",
@@ -127,19 +123,8 @@ pub(super) fn resource_router_resources(
                 let dto = tracker_protocol::TaskListStateDto {
                     tasks: resources.0.tasks.clone(),
                     active_worklog: resources.1.active_worklog.clone(),
-                    revision: resources.0.revision.clone(),
                 };
-                let matches = resources.0.revision == resources.1.revision;
-                async move {
-                    (
-                        if matches {
-                            StatusCode::OK
-                        } else {
-                            StatusCode::CONFLICT
-                        },
-                        Json(dto),
-                    )
-                }
+                async move { Json(dto) }
             }),
         )
         .route(
@@ -163,11 +148,7 @@ pub(super) fn resource_router_resources(
                 async move {
                     use axum::response::IntoResponse;
                     match tasks.tasks.into_iter().find(|task| task.id == id) {
-                        Some(task) => Json(TaskResourceDto {
-                            task,
-                            revision: tasks.revision,
-                        })
-                        .into_response(),
+                        Some(task) => Json(TaskResourceDto { task }).into_response(),
                         None => (
                             StatusCode::NOT_FOUND,
                             Json(ErrorDto {
@@ -184,13 +165,10 @@ pub(super) fn resource_router_resources(
             "/v1/worklogs/{id}",
             get(move |Path(id): Path<String>| {
                 let worklogs = worklogs.lock().unwrap().clone();
-                let revision = worklog_state.lock().unwrap().0.revision.clone();
                 async move {
                     use axum::response::IntoResponse;
                     match worklogs.into_iter().find(|worklog| worklog.id == id) {
-                        Some(worklog) => {
-                            Json(WorklogResourceDto { worklog, revision }).into_response()
-                        }
+                        Some(worklog) => Json(WorklogResourceDto { worklog }).into_response(),
                         None => (
                             StatusCode::NOT_FOUND,
                             Json(ErrorDto {
@@ -299,12 +277,11 @@ fn local_reports_echo_the_microsecond_cutoff_used_for_totals() {
     let now = DateTime::from_timestamp(1010, 123_456_789).unwrap();
     let expected_now = DateTime::from_timestamp(1010, 123_456_000).unwrap();
 
-    let (rows, revision, cutoff) = bridge
+    let (rows, cutoff) = bridge
         .application
         .report_rows(at(1000), at(1100), now)
         .unwrap();
     assert_eq!(cutoff, expected_now);
-    assert!(revision.is_none());
     assert_eq!(rows[0].duration_microseconds, 5_123_456);
 
     for include_tasks in [false, true] {
@@ -441,10 +418,7 @@ fn report_rejects_null_malformed_and_invalid_ranges_and_returns_empty_totals() {
         assert!(value.get("data").is_none());
     }
     let value = report(&mut bridge, 1000, 1100, 1050);
-    assert_eq!(
-        value["data"],
-        json!({"rows":[], "revision":null, "now":timestamp(at(1050))})
-    );
+    assert_eq!(value["data"], json!({"rows":[], "now":timestamp(at(1050))}));
 }
 
 pub(super) struct Server {
@@ -529,11 +503,7 @@ fn remote_report_uses_server_totals_and_composes_task_and_tracking_resources() {
             {"taskId": task_id.to_string(), "durationMicroseconds": 50_000_000}
         ])
     );
-    assert!(
-        value["data"]["revision"]
-            .as_str()
-            .is_some_and(|revision| !revision.is_empty())
-    );
+    assert!(value["data"].get("revision").is_none(), "{value}");
     assert_eq!(
         crate::tests::test_resource_values(&bridge.application),
         crate::tests::test_resource_values(&writer.application)
@@ -550,7 +520,7 @@ fn remote_report_uses_server_totals_and_composes_task_and_tracking_resources() {
 }
 
 #[test]
-fn remote_selected_report_uses_one_common_revision_without_reconciliation() {
+fn remote_selected_report_reads_one_daily_overview_without_reconciliation() {
     use axum::{Json, routing::get};
     use std::sync::{
         Arc,
@@ -562,11 +532,7 @@ fn remote_selected_report_uses_one_common_revision_without_reconciliation() {
     let task = application
         .create_task(TaskName::new("Measured task").unwrap(), at(0))
         .unwrap();
-    let resources = resource_dtos(
-        application.tasks(TaskOrdering::default()),
-        None,
-        "42".into(),
-    );
+    let resources = resource_dtos(application.tasks(TaskOrdering::default()), None);
     let requests = Arc::new(AtomicUsize::new(0));
     let read_requests = requests.clone();
     let router = resource_router(resources.clone(), vec![])
@@ -595,7 +561,6 @@ fn remote_selected_report_uses_one_common_revision_without_reconciliation() {
                             duration_us: 50_000_000,
                         }],
                         total_us: 50_000_000,
-                        revision: "42".into(),
                     },
                 };
                 async move { Json(dto) }
@@ -605,11 +570,8 @@ fn remote_selected_report_uses_one_common_revision_without_reconciliation() {
     let mut bridge = server.client();
     let value = selected_report(&mut bridge, 1000, 1100, 1050);
     assert!(value.get("error").is_none(), "{value}");
-    assert_eq!(value["data"]["revision"], "42");
-    assert_eq!(
-        tracking_json(&bridge.application).unwrap().revision,
-        Some("42".into())
-    );
+    assert!(value["data"].get("revision").is_none(), "{value}");
+    assert!(tracking_json(&bridge.application).unwrap().value.is_none());
     assert_eq!(requests.load(Ordering::SeqCst), 1);
     assert_eq!(value["data"]["rows"][0]["durationMicroseconds"], 50_000_000);
 }
@@ -628,11 +590,7 @@ fn remote_report_failure_retains_resource_caches_until_an_explicit_refresh() {
     let task = application
         .create_task(TaskName::new("Changed elsewhere").unwrap(), at(0))
         .unwrap();
-    let refreshed = report_tests::resource_dtos(
-        application.tasks(TaskOrdering::default()),
-        None,
-        "42".into(),
-    );
+    let refreshed = report_tests::resource_dtos(application.tasks(TaskOrdering::default()), None);
     let task_reads = Arc::new(AtomicUsize::new(0));
     let router = Router::new()
         .route(
@@ -649,13 +607,9 @@ fn remote_report_failure_retains_resource_caches_until_an_explicit_refresh() {
             get(move || {
                 let resources = if task_reads.fetch_add(1, Ordering::SeqCst) == 0 {
                     (
-                        TasksDto {
-                            tasks: vec![],
-                            revision: "42".into(),
-                        },
+                        TasksDto { tasks: vec![] },
                         TrackingDto {
                             active_worklog: None,
-                            revision: "42".into(),
                         },
                     )
                 } else {
@@ -665,7 +619,6 @@ fn remote_report_failure_retains_resource_caches_until_an_explicit_refresh() {
                     Json(tracker_protocol::TaskListStateDto {
                         tasks: resources.0.tasks,
                         active_worklog: resources.1.active_worklog,
-                        revision: resources.0.revision,
                     })
                 }
             }),
@@ -675,7 +628,6 @@ fn remote_report_failure_retains_resource_caches_until_an_explicit_refresh() {
             get(|| async {
                 Json(TrackingDto {
                     active_worklog: None,
-                    revision: "42".into(),
                 })
             }),
         )
@@ -790,17 +742,15 @@ fn connection_check_supports_local_handles_and_rejects_null_handles() {
 #[test]
 fn separate_resource_exports_distinguish_unloaded_empty_and_idle_observations() {
     use axum::{Json, routing::get};
-    let server = Server::start(
-        resource_router(resource_dtos(vec![], None, "r1".into()), vec![]).route(
-            "/v1/health",
-            get(|| async {
-                Json(tracker_protocol::HealthDto {
-                    status: "ok".into(),
-                    protocol_version: tracker_protocol::VERSION,
-                })
-            }),
-        ),
-    );
+    let server = Server::start(resource_router(resource_dtos(vec![], None), vec![]).route(
+        "/v1/health",
+        get(|| async {
+            Json(tracker_protocol::HealthDto {
+                status: "ok".into(),
+                protocol_version: tracker_protocol::VERSION,
+            })
+        }),
+    ));
     let mut bridge = server.client();
     // SAFETY: Each call has exclusive access to the live bridge.
     unsafe {
@@ -814,7 +764,7 @@ fn separate_resource_exports_distinguish_unloaded_empty_and_idle_observations() 
         );
         assert_eq!(
             response(tt_bridge_tasks(&mut bridge))["data"],
-            json!({"value":[], "revision":"r1"})
+            json!({"value":[]})
         );
         assert!(response(tt_bridge_tracking(&mut bridge))["data"].is_null());
         assert!(
@@ -824,11 +774,11 @@ fn separate_resource_exports_distinguish_unloaded_empty_and_idle_observations() 
         );
         assert_eq!(
             response(tt_bridge_tracking(&mut bridge))["data"],
-            json!({"value":null, "revision":"r1"})
+            json!({"value":null})
         );
         assert_eq!(
             response(tt_bridge_tasks(&mut bridge))["data"],
-            json!({"value":[], "revision":"r1"})
+            json!({"value":[]})
         );
     }
 }
@@ -881,7 +831,6 @@ fn independent_remote_report_retains_totals_without_loading_task_or_tracking_met
                             duration_us: 50_000_000,
                         }],
                         total_us: 50_000_000,
-                        revision: "r1".into(),
                     })
                 }),
             ),
@@ -895,7 +844,7 @@ fn independent_remote_report_retains_totals_without_loading_task_or_tracking_met
         value["data"]["rows"],
         json!([{"taskId":task_id.to_string(),"durationMicroseconds":50_000_000}])
     );
-    assert_eq!(value["data"]["revision"], "r1");
+    assert!(value["data"].get("revision").is_none(), "{value}");
     assert!(value["data"].get("snapshot").is_none());
     assert_eq!(unrelated_reads.load(Ordering::SeqCst), 0);
     // SAFETY: Each call has exclusive access to the live bridge.
@@ -907,30 +856,34 @@ fn independent_remote_report_retains_totals_without_loading_task_or_tracking_met
 
 #[test]
 fn failed_aggregate_refresh_retains_each_confirmed_resource_observation() {
-    use axum::{Json, routing::get};
+    use axum::{Json, Router, http::StatusCode, routing::get};
+    use tracker_protocol::{ErrorCode, ErrorDto};
+    let (tasks, tracking) = resource_dtos(vec![], None);
     let server = Server::start(
-        resource_router(
-            (
-                tracker_protocol::TasksDto {
-                    tasks: vec![],
-                    revision: "tasks-r1".into(),
-                },
-                tracker_protocol::TrackingDto {
-                    active_worklog: None,
-                    revision: "tracking-r2".into(),
-                },
+        Router::new()
+            .route(
+                "/v1/health",
+                get(|| async {
+                    Json(tracker_protocol::HealthDto {
+                        status: "ok".into(),
+                        protocol_version: tracker_protocol::VERSION,
+                    })
+                }),
+            )
+            .route("/v1/tasks", get(move || async move { Json(tasks) }))
+            .route("/v1/tracking", get(move || async move { Json(tracking) }))
+            .route(
+                "/v1/state/task-list",
+                get(|| async {
+                    (
+                        StatusCode::CONFLICT,
+                        Json(ErrorDto {
+                            code: ErrorCode::Conflict,
+                            message: "Task list changed".into(),
+                        }),
+                    )
+                }),
             ),
-            vec![],
-        )
-        .route(
-            "/v1/health",
-            get(|| async {
-                Json(tracker_protocol::HealthDto {
-                    status: "ok".into(),
-                    protocol_version: tracker_protocol::VERSION,
-                })
-            }),
-        ),
     );
     let mut bridge = server.client();
     // SAFETY: Each call has exclusive access to the live bridge.
@@ -1056,7 +1009,7 @@ fn local_selected_totals_refresh_only_the_requested_catalog_and_preserve_failed_
             {"taskId": original[0].task.id().to_string(), "durationMicroseconds": 50_000_000}
         ])
     );
-    assert!(daily["data"]["revision"].is_null());
+    assert!(daily["data"].get("revision").is_none(), "{daily}");
     assert!(
         !bridge
             .application
@@ -1111,10 +1064,10 @@ fn remote_selected_daily_totals_load_tracking_without_loading_the_task_catalog()
     assert_eq!(
         tracking_json(&bridge.application)
             .unwrap()
-            .revision
-            .as_ref()
-            .unwrap(),
-        daily["data"]["revision"].as_str().unwrap()
+            .value
+            .unwrap()
+            .task_id,
+        tasks[0].task.id().to_string()
     );
     assert_eq!(daily["data"]["rows"][0]["durationMicroseconds"], 50_000_000);
 

@@ -90,7 +90,7 @@ fn completed_deletion_returns_the_worklog_and_updates_history_and_totals() {
     );
     assert!(result["data"]["receipt"].is_null());
     assert_eq!(history(&mut bridge, task), vec![kept]);
-    let (rows, _, _) = bridge
+    let (rows, _) = bridge
         .application
         .report_rows(at(0), at(500), at(500))
         .unwrap_or_else(|error| panic!("{}", error.message));
@@ -239,11 +239,8 @@ fn remote_deletion_sends_the_expected_worklog_and_classifies_failures() {
         .task
         .id();
     let original = record(&mut writer, task, 100, Some(200));
-    let resources = report_tests::resource_dtos(
-        writer.application.tasks(TaskOrdering::default()),
-        None,
-        "42".into(),
-    );
+    let resources =
+        report_tests::resource_dtos(writer.application.tasks(TaskOrdering::default()), None);
     for (code, message, status, kind, uncertain) in [
         (
             ErrorCode::WorklogChanged,

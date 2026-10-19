@@ -9,7 +9,6 @@ use crate::backend::BridgeError;
 #[derive(Serialize)]
 pub(super) struct ResourceJson<T> {
     pub(super) value: T,
-    pub(super) revision: Option<String>,
 }
 
 pub(super) fn timestamp(value: DateTime<Utc>) -> String {
