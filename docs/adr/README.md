@@ -41,6 +41,6 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0026](0026-use-swift-observation-for-native-presentation.md) | Use Swift Observation for native presentation | Proposed |
 | [0027](0027-check-reviewed-task-names-on-the-server.md) | Check reviewed task names on the server | Proposed; partially superseded by ADR 0030. |
 | [0028](0028-ship-a-standalone-server-binary.md) | Ship a standalone server binary | Accepted |
-| [0029](0029-send-native-requests-directly.md) | Send native requests directly | Proposed |
+| [0029](0029-send-native-requests-directly.md) | Send native requests directly | Proposed; partially superseded by ADR 0030. |
 | [0030](0030-replace-the-session-with-feature-stores.md) | Replace the session with feature stores | Proposed |
 | [0030](0030-remove-server-revisions-from-writes-and-reads.md) | Remove server revisions from writes and reads | Proposed |
