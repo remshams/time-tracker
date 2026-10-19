@@ -35,6 +35,14 @@ The old binary rejects a database with a newer schema version. On rollback, the 
 
 The deploy step uses `sudo -n` to install the binary and control the service, so the SSH user needs passwordless sudo for those commands. The preflight and deploy checks read the SQLite tables directly, and the script counts the entries in `MIGRATIONS` in `crates/tracker-storage/src/migrate.rs` to find the expected schema version. Update the script when the table columns, the migration list, or the checked routes change.
 
+## Protocol 6 cutover
+
+Protocol 6 removes the server revision from writes and reads. The server and every remote client must run protocol 6, so upgrade them together; mismatched versions fail the health check. A protocol-5 write that still carries `expected_revision` fails with HTTP 400 `invalid_request`. No database migration is needed.
+
+Saved CLI history cursors keep working. Saved remote archive previews contain `revision` and fail to load, so generate a new preview after the upgrade.
+
+The server keeps its receipt cache in memory, so the restart during deployment clears it. The cache holds at most 1,024 successful receipts, and eviction also ends replay protection for older requests. After that, a client that resends an old command runs it again if its expected values still match. Check current state after an uncertain outcome before retrying. [ADR 0030](adr/0030-remove-server-revisions-from-writes-and-reads.md) describes this accepted limit with an example.
+
 ## Host configuration
 
 To set up a new host, create `ROOT` and `ROOT/deploy.json`. The script creates `ROOT/build` and `ROOT/bin` on its first run. The host keeps its settings in `deploy.json`, so this repository holds no host addresses:
