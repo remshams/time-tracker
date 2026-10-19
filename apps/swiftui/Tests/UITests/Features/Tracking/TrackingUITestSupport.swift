@@ -22,8 +22,16 @@ extension TrackerUITestCase {
         let message = app.staticTexts.matching(
             NSPredicate(format: "value CONTAINS[c] %@ OR label CONTAINS[c] %@", text, text)).firstMatch
         XCTAssertTrue(message.exists, "The alert shows the reported failure.", file: file, line: line)
-        // Return activates the alert's default OK button. A button query also matches the Touch Bar copy.
-        app.typeKey(.return, modifierFlags: [])
+        // Query OK inside the alert. An app-wide button query also matches the Touch Bar copy, which cannot be
+        // clicked, and Return reaches the alert only when its window is key.
+        let buttons = [app.sheets, app.dialogs].map { $0.buttons["OK"].firstMatch }
+        waitUntil("The tracking failure alert offers OK", file: file, line: line) { buttons.contains { $0.exists } }
+        // The first click on an inactive window only activates it, so allow one more click.
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: title)
+        for _ in 0..<2 where title.exists {
+            buttons.first { $0.exists }?.click()
+            _ = XCTWaiter.wait(for: [closed], timeout: 2)
+        }
         waitUntil("The tracking failure alert closes", file: file, line: line) { !title.exists }
     }
 }
