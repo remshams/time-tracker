@@ -53,26 +53,11 @@ fn run_app() -> Result<(), Box<dyn Error>> {
     match cli::parse(std::env::args_os().skip(1))? {
         cli::Mode::Local => run_local_tui(),
         cli::Mode::Remote { server } => run_remote_tui(&server),
-        cli::Mode::Serve { bind, database } => run_server(bind, database),
         cli::Mode::Help => {
             print!("{}", cli::HELP);
             Ok(())
         }
     }
-}
-
-fn run_server(
-    bind: std::net::SocketAddr,
-    database: Option<std::path::PathBuf>,
-) -> Result<(), Box<dyn Error>> {
-    let database = match database {
-        Some(path) => path,
-        None => {
-            ensure_app_data_dir()?;
-            default_database_path()?.with_file_name("tt-server.db")
-        }
-    };
-    tracker_server::run(bind, database).map_err(|error| error as Box<dyn Error>)
 }
 
 fn run_local_tui() -> Result<(), Box<dyn Error>> {
@@ -158,13 +143,5 @@ mod tests {
     fn a_failure_prints_one_line_and_fails() {
         let error: Box<dyn Error> = "something broke".into();
         assert_eq!(report(Err(error)), ExitCode::FAILURE);
-    }
-
-    #[test]
-    fn server_startup_reports_an_invalid_database_path() {
-        let directory = tempfile::tempdir().unwrap();
-        let bind = "127.0.0.1:0".parse().unwrap();
-        let error = run_server(bind, Some(directory.path().to_owned())).unwrap_err();
-        assert!(!error.to_string().is_empty());
     }
 }
