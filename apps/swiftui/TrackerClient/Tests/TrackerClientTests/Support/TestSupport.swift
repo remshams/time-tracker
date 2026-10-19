@@ -74,8 +74,7 @@ final class FakeClient: TrackerClient, ReportClient {
                     task = TaskItem(
                         id: id, name: desiredName ?? task.name,
                         archived: desiredArchived ?? task.archived, latestStart: task.latestStart)
-                    receipt = CommandReceipt(
-                        requestId: "command-request", appliedRevision: "command-applied", replayed: false)
+                    receipt = CommandReceipt(requestId: "command-request", replayed: false)
                 } else {
                     receipt = nil
                 }
