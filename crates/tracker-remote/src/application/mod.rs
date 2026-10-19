@@ -132,19 +132,12 @@ use worklogs::WorklogsClient;
 enum Recovery {
     Tasks,
     Tracking,
-    Worklog,
 }
 
 #[derive(Clone, Copy)]
 struct MutationContext {
     worklog_id: Option<WorklogId>,
     task_id: Option<TaskId>,
-}
-
-#[derive(Clone, Copy)]
-struct MutationScope {
-    recovery: Recovery,
-    worklog_id: Option<WorklogId>,
 }
 
 struct HistoryRead {
