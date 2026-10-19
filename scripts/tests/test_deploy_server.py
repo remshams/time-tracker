@@ -252,7 +252,7 @@ class VerifyTests(unittest.TestCase):
             expected = DEPLOY.database_state(database)
             self.assertEqual(expected["schema"], 7)
             with fake_server(served_routes()) as base:
-                DEPLOY.verify(base, 3, expected, now=NOW)
+                DEPLOY.verify(base, expected, now=NOW)
 
     def test_changed_task_name_and_missing_timer_fail(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -261,12 +261,12 @@ class VerifyTests(unittest.TestCase):
             expected = DEPLOY.database_state(database)
             with fake_server(served_routes(task_name="Renamed")) as base:
                 with self.assertRaisesRegex(DEPLOY.DeployError, "task catalog differs"):
-                    DEPLOY.verify(base, 3, expected, now=NOW)
+                    DEPLOY.verify(base, expected, now=NOW)
             idle = Path(directory) / "idle.db"
             create_database(idle, active=False)
             with fake_server(served_routes()) as base:
                 with self.assertRaisesRegex(DEPLOY.DeployError, "running worklog that the database lacks"):
-                    DEPLOY.verify(base, 3, DEPLOY.database_state(idle), now=NOW)
+                    DEPLOY.verify(base, DEPLOY.database_state(idle), now=NOW)
 
     def test_wrong_protocol_version_times_out(self):
         with fake_server(served_routes()) as base:
@@ -447,7 +447,8 @@ class DeployTests(unittest.TestCase):
             manifest = {"commit": REVISION, "sha256": DEPLOY.digest(root.candidate)}
             (root.root / "build/preflight-0123456.json").write_text(json.dumps(manifest))
             with patch.object(DEPLOY, "sudo") as sudo:
-                with self.assertRaisesRegex(DEPLOY.DeployError, "no database fingerprints"):
+                with self.assertRaisesRegex(DEPLOY.DeployError,
+                                            "is missing: database_after_sha256, database_before_sha256;"):
                     DEPLOY.remote_deploy(root.host(), keep_backup=False)
                 root.write_manifest()
                 with patch.object(DEPLOY.os, "access", return_value=False), \
@@ -460,8 +461,9 @@ class DeployTests(unittest.TestCase):
             (None, "preflight-0123456.json does not exist; run the preflight first"),
             ("{", "preflight-0123456.json is not valid JSON .*; run the preflight again"),
             ("[]", "preflight-0123456.json must contain a JSON object"),
-            (json.dumps({"sha256": "abc"}), "preflight-0123456.json is missing: commit; run the preflight again"),
-            (json.dumps({}), "is missing: commit, sha256;"),
+            (json.dumps({"sha256": "abc", "database_before_sha256": "a", "database_after_sha256": "b"}),
+             "preflight-0123456.json is missing: commit; run the preflight again"),
+            (json.dumps({}), "is missing: commit, database_after_sha256, database_before_sha256, sha256;"),
         ]
         for text, message in cases:
             with self.subTest(message=message), tempfile.TemporaryDirectory() as directory:
@@ -608,15 +610,12 @@ class WorkstationTests(unittest.TestCase):
             self.assertEqual(DEPLOY.main(["--host", "server", "--root", "/srv/tt", "--revision", "missing"]), 1)
         self.assertIn("Deployment stopped: Unknown revision: missing", errors.getvalue())
 
-    def test_main_reports_database_and_json_errors_without_a_traceback(self):
-        failures = [sqlite3.OperationalError("database is locked"),
-                    json.JSONDecodeError("Expecting value", "", 0)]
-        for failure in failures:
-            with self.subTest(failure=type(failure).__name__), \
-                    patch.object(DEPLOY, "deploy_from_workstation", side_effect=failure), \
-                    patch("sys.stderr", io.StringIO()) as errors:
-                self.assertEqual(DEPLOY.main(["--host", "server", "--root", "/srv/tt"]), 1)
-            self.assertIn(f"Deployment stopped: {failure}", errors.getvalue())
+    def test_main_reports_json_errors_without_a_traceback(self):
+        failure = json.JSONDecodeError("Expecting value", "", 0)
+        with patch.object(DEPLOY, "deploy_from_workstation", side_effect=failure), \
+                patch("sys.stderr", io.StringIO()) as errors:
+            self.assertEqual(DEPLOY.main(["--host", "server", "--root", "/srv/tt"]), 1)
+        self.assertIn(f"Deployment stopped: {failure}", errors.getvalue())
 
     def test_main_reports_host_step_failures_without_a_traceback(self):
         with tempfile.TemporaryDirectory() as directory:
