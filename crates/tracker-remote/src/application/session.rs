@@ -104,7 +104,7 @@ impl RemoteSession {
         decode: impl FnOnce(MutationResultDto) -> Result<T, ApplicationError>,
     ) -> Result<T, ApplicationError> {
         match response {
-            Ok(dto) if dto.request_id == guard.request_id && !dto.applied_revision.is_empty() => {
+            Ok(dto) if dto.request_id == guard.request_id => {
                 let result = decode(dto.result.clone())?;
                 self.last_command_receipt = Some(dto);
                 Ok(result)

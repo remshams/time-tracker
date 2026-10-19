@@ -2,13 +2,12 @@ use super::{
     ApplicationError, ApplicationFailureCategory, ArchiveInactiveTasksRequest,
     ClearActiveTaskOutcome, CreateTaskRequest, DateTime, DeleteWorklogRequest, GlobalWorklogCursor,
     GlobalWorklogPage, InactiveTaskPreview, InactivityPeriod, MoveCandidate, MutationDto, Recovery,
-    RemoteError, RemoteFailureKind, RemoteSession, ReportDto, ReportsClient, ResourceObservation,
-    ResourceSelection, SetActiveTaskOutcome, SetTrackingRequest, Task, TaskChangeRequest, TaskId,
-    TaskListItem, TaskListStateDto, TaskName, TaskOrdering, TaskResourceDto, TasksClient,
-    TrackingClient, TrackingState, Utc, Worklog, WorklogChangeRequest, WorklogCursor, WorklogId,
-    WorklogPage, WorklogResourceDto, WorklogTimes, WorklogsClient, WriteGuard, active_id,
-    canonical, creation_needs_recovery, decode_task_list_state, map_application_error,
-    protocol_failure,
+    RemoteError, RemoteFailureKind, RemoteSession, ReportDto, ReportsClient, ResourceSelection,
+    SetActiveTaskOutcome, SetTrackingRequest, Task, TaskChangeRequest, TaskId, TaskListItem,
+    TaskListStateDto, TaskName, TaskOrdering, TaskResourceDto, TasksClient, TrackingClient,
+    TrackingState, Utc, Worklog, WorklogChangeRequest, WorklogCursor, WorklogId, WorklogPage,
+    WorklogResourceDto, WorklogTimes, WorklogsClient, WriteGuard, active_id, canonical,
+    creation_needs_recovery, decode_task_list_state, map_application_error, protocol_failure,
 };
 
 /// Coordinates remote tracker workflows across resource clients.
@@ -56,21 +55,16 @@ impl RemoteTrackerCoordinator {
     pub async fn refresh_task_list(&mut self) -> Result<(), RemoteError> {
         self.session.ensure_version().await?;
         let dto: TaskListStateDto = self.session.read("v1/state/task-list").await?;
-        let (items, state, revision) =
+        let (items, state) =
             decode_task_list_state(dto).map_err(|error| self.session.record_error(error))?;
-        self.adopt_task_list(items, state, revision);
+        self.adopt_task_list(items, state);
         self.session.confirmed();
         Ok(())
     }
 
-    fn adopt_task_list(
-        &mut self,
-        items: Vec<TaskListItem>,
-        state: TrackingState,
-        revision: String,
-    ) {
-        self.tasks.adopt_catalog(items, revision.clone());
-        self.tracking.adopt(state, revision);
+    fn adopt_task_list(&mut self, items: Vec<TaskListItem>, state: TrackingState) {
+        self.tasks.adopt_catalog(items);
+        self.tracking.adopt(state);
     }
 
     /// Refreshes only the selected resources. Task-list observations publish together.
@@ -103,16 +97,15 @@ impl RemoteTrackerCoordinator {
             .reports
             .fetch_daily_overview(&mut self.session, start, end, now)
             .await?;
-        let (items, state, revision) = decode_task_list_state(TaskListStateDto {
+        let (items, state) = decode_task_list_state(TaskListStateDto {
             tasks: dto.tasks,
             active_worklog: dto.active_worklog,
-            revision: dto.totals.revision.clone(),
         })
         .map_err(|error| self.session.record_error(error))?;
         if include_tasks {
-            self.adopt_task_list(items, state, revision);
+            self.adopt_task_list(items, state);
         } else {
-            self.tracking.adopt(state, revision);
+            self.tracking.adopt(state);
         }
         self.reports.adopt(dto.totals);
         self.session.confirmed();
@@ -194,11 +187,11 @@ impl RemoteTrackerCoordinator {
         self.tasks.task(id)
     }
 
-    /// Reads one task with its own revision and preserves application error categories.
+    /// Reads one task and preserves application error categories.
     pub async fn read_task_observation(
         &mut self,
         id: TaskId,
-    ) -> Result<ResourceObservation<TaskListItem>, ApplicationError> {
+    ) -> Result<TaskListItem, ApplicationError> {
         self.tasks
             .read_task_observation(&mut self.session, id)
             .await
@@ -208,7 +201,7 @@ impl RemoteTrackerCoordinator {
         self.tasks.read_task(&mut self.session, id).await
     }
 
-    /// Loads domain tasks only while every candidate matches the preview revision and remains unarchived.
+    /// Loads domain tasks only while every candidate remains unarchived.
     pub async fn resolve_preview_tasks(
         &mut self,
         preview: &InactiveTaskPreview,
@@ -218,11 +211,7 @@ impl RemoteTrackerCoordinator {
             .await
     }
 
-    pub fn cached_task_revision(&self, id: TaskId) -> Option<&str> {
-        self.tasks.cached_task_revision(id)
-    }
-
-    /// Captures candidates in the default inactivity window with their read revision.
+    /// Captures candidates in the default inactivity window.
     pub async fn preview_inactive_tasks(
         &mut self,
         as_of: DateTime<Utc>,
@@ -243,16 +232,13 @@ impl RemoteTrackerCoordinator {
             .await
     }
 
-    pub fn task_observation(&self) -> Option<&ResourceObservation<Vec<TaskListItem>>> {
+    /// Returns the confirmed task catalog, or `None` before the first catalog read.
+    pub fn task_observation(&self) -> Option<&[TaskListItem]> {
         self.tasks.task_observation()
     }
 
     pub fn task_items(&self) -> &[TaskListItem] {
         self.tasks.task_items()
-    }
-
-    pub fn task_revision(&self) -> &str {
-        self.tasks.task_revision()
     }
 
     pub async fn refresh_tracking(&mut self) -> Result<(), RemoteError> {
@@ -267,12 +253,9 @@ impl RemoteTrackerCoordinator {
         self.tracking.current_tracking()
     }
 
-    pub fn tracking_observation(&self) -> Option<&ResourceObservation<TrackingState>> {
+    /// Returns the confirmed tracking state, or `None` before the first tracking read.
+    pub fn tracking_observation(&self) -> Option<&TrackingState> {
         self.tracking.tracking_observation()
-    }
-
-    pub fn tracking_revision(&self) -> &str {
-        self.tracking.tracking_revision()
     }
 
     pub async fn read_worklog(&mut self, id: WorklogId) -> Result<WorklogResourceDto, RemoteError> {
@@ -308,21 +291,8 @@ impl RemoteTrackerCoordinator {
             .await
     }
 
-    pub fn report_revision(&self) -> &str {
-        self.reports.report_revision()
-    }
-
     pub fn report_observation(&self) -> Option<&ReportDto> {
         self.reports.report_observation()
-    }
-
-    /// Returns the cached task name, or reads the task once when it is not cached.
-    async fn current_task_name(&mut self, id: TaskId) -> Result<TaskName, ApplicationError> {
-        if let Some(task) = self.task(id) {
-            return Ok(task.name().clone());
-        }
-        let observation = self.read_task_observation(id).await?;
-        Ok(observation.value.task.name().clone())
     }
 
     pub async fn create_task(
@@ -383,6 +353,7 @@ impl RemoteTrackerCoordinator {
         result
     }
 
+    /// Renames the task whatever its current name on the server.
     pub async fn rename_task(
         &mut self,
         id: TaskId,
@@ -390,20 +361,43 @@ impl RemoteTrackerCoordinator {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.session.begin_command();
-        let expected_name = self.current_task_name(id).await?;
-        self.rename_task_with_expected_name(id, &expected_name, name, occurred_at)
+        self.task_mutation(id, Self::rename_request(None, name, occurred_at))
             .await
     }
 
+    /// Archives the task whatever its current name on the server.
     pub async fn archive_task(
         &mut self,
         id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.session.begin_command();
-        let expected_name = self.current_task_name(id).await?;
-        self.archive_task_with_expected_name(id, &expected_name, occurred_at)
+        self.task_mutation(id, Self::archive_request(None, occurred_at))
             .await
+    }
+
+    fn rename_request(
+        expected_name: Option<&TaskName>,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> TaskChangeRequest {
+        TaskChangeRequest::Rename {
+            expected_name: expected_name.map(|expected| expected.as_str().to_owned()),
+            name: name.as_str().to_owned(),
+            occurred_at: canonical(occurred_at),
+            guard: Self::guard(),
+        }
+    }
+
+    fn archive_request(
+        expected_name: Option<&TaskName>,
+        occurred_at: DateTime<Utc>,
+    ) -> TaskChangeRequest {
+        TaskChangeRequest::Archive {
+            expected_name: expected_name.map(|expected| expected.as_str().to_owned()),
+            occurred_at: canonical(occurred_at),
+            guard: Self::guard(),
+        }
     }
 
     pub async fn unarchive_task(
@@ -468,13 +462,11 @@ impl RemoteTrackerCoordinator {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.session.begin_command();
-        let body = TaskChangeRequest::Rename {
-            expected_name: expected_name.as_str().to_owned(),
-            name: name.as_str().to_owned(),
-            occurred_at: canonical(occurred_at),
-            guard: Self::guard(),
-        };
-        self.task_mutation(id, body).await
+        self.task_mutation(
+            id,
+            Self::rename_request(Some(expected_name), name, occurred_at),
+        )
+        .await
     }
 
     /// Keeps the name the user reviewed even when background reads update the cache.
@@ -485,15 +477,8 @@ impl RemoteTrackerCoordinator {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         self.session.begin_command();
-        self.task_mutation(
-            id,
-            TaskChangeRequest::Archive {
-                expected_name: expected_name.as_str().to_owned(),
-                occurred_at: canonical(occurred_at),
-                guard: Self::guard(),
-            },
-        )
-        .await
+        self.task_mutation(id, Self::archive_request(Some(expected_name), occurred_at))
+            .await
     }
 
     /// Reads tracking once so a command without a reviewed timer names the one it replaces.

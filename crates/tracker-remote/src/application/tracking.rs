@@ -1,21 +1,20 @@
 use super::{
     ApplicationError, ClearActiveTaskOutcome, Method, MutationContext, RemoteError, RemoteSession,
-    ResourceObservation, SetActiveTaskOutcome, SetTrackingRequest, TaskId, TrackingDto,
-    TrackingState, Worklog, WorklogId, clear_tracking_result, decode_tracking, protocol_failure,
-    set_tracking_result,
+    SetActiveTaskOutcome, SetTrackingRequest, TaskId, TrackingDto, TrackingState, Worklog,
+    WorklogId, clear_tracking_result, decode_tracking, protocol_failure, set_tracking_result,
 };
 
 /// Tracking protocol operations and the confirmed active worklog.
 #[derive(Default)]
 pub(super) struct TrackingClient {
-    tracking_observation: Option<ResourceObservation<TrackingState>>,
+    tracking_observation: Option<TrackingState>,
 }
 
 impl TrackingClient {
     pub(super) async fn read_tracking(
         &self,
         session: &mut RemoteSession,
-    ) -> Result<(Option<Worklog>, TrackingState, String), RemoteError> {
+    ) -> Result<(Option<Worklog>, TrackingState), RemoteError> {
         let dto: TrackingDto = session.read("v1/tracking").await?;
         decode_tracking(dto)
     }
@@ -25,11 +24,11 @@ impl TrackingClient {
         session: &mut RemoteSession,
     ) -> Result<(), RemoteError> {
         session.ensure_version().await?;
-        let (_, tracking, revision) = self
+        let (_, tracking) = self
             .read_tracking(session)
             .await
             .map_err(|error| session.record_error(error))?;
-        self.adopt(tracking, revision);
+        self.adopt(tracking);
         session.confirmed();
         Ok(())
     }
@@ -44,24 +43,15 @@ impl TrackingClient {
     pub(super) fn current_tracking(&self) -> &TrackingState {
         self.tracking_observation
             .as_ref()
-            .map_or(&TrackingState::Idle, |observation| &observation.value)
+            .unwrap_or(&TrackingState::Idle)
     }
 
-    pub(super) fn tracking_observation(&self) -> Option<&ResourceObservation<TrackingState>> {
+    pub(super) fn tracking_observation(&self) -> Option<&TrackingState> {
         self.tracking_observation.as_ref()
     }
 
-    pub(super) fn tracking_revision(&self) -> &str {
-        self.tracking_observation
-            .as_ref()
-            .map_or("", |observation| observation.revision.as_str())
-    }
-
-    pub(super) fn adopt(&mut self, state: TrackingState, revision: String) {
-        self.tracking_observation = Some(ResourceObservation {
-            value: state,
-            revision,
-        });
+    pub(super) fn adopt(&mut self, state: TrackingState) {
+        self.tracking_observation = Some(state);
     }
 
     pub(super) async fn set_active_task(

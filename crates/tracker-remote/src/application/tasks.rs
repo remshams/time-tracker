@@ -1,17 +1,17 @@
 use super::{
     ApplicationError, ArchiveInactiveTasksRequest, CreateTaskRequest, DateTime, HashMap,
     InactiveTaskPreview, InactiveTaskPreviewDto, InactivityPeriod, Method, MoveCandidate,
-    MutationContext, MutationResultDto, RemoteError, RemoteFailureKind, RemoteSession,
-    ResourceObservation, Task, TaskChangeRequest, TaskId, TaskListItem, TaskOrdering,
-    TaskResourceDto, TasksDto, Utc, canonical, decode_task, decode_task_item, decode_tasks,
-    map_application_error, protocol_failure, task_result,
+    MutationContext, MutationResultDto, RemoteError, RemoteFailureKind, RemoteSession, Task,
+    TaskChangeRequest, TaskId, TaskListItem, TaskOrdering, TaskResourceDto, TasksDto, Utc,
+    canonical, decode_task, decode_task_item, decode_tasks, map_application_error,
+    protocol_failure, task_result,
 };
 
 /// Task protocol operations and confirmed task observations.
 #[derive(Default)]
 pub(super) struct TasksClient {
-    task_observation: Option<ResourceObservation<Vec<TaskListItem>>>,
-    task_cache: HashMap<TaskId, (TaskListItem, String)>,
+    task_observation: Option<Vec<TaskListItem>>,
+    task_cache: HashMap<TaskId, TaskListItem>,
 }
 
 impl TasksClient {
@@ -20,8 +20,8 @@ impl TasksClient {
         session: &mut RemoteSession,
     ) -> Result<(), RemoteError> {
         session.ensure_version().await?;
-        let (items, revision) = self.fetch_task_catalog(session).await?;
-        self.adopt_catalog(items, revision);
+        let items = self.fetch_task_catalog(session).await?;
+        self.adopt_catalog(items);
         session.confirmed();
         Ok(())
     }
@@ -29,7 +29,7 @@ impl TasksClient {
     pub(super) async fn fetch_task_catalog(
         &mut self,
         session: &mut RemoteSession,
-    ) -> Result<(Vec<TaskListItem>, String), RemoteError> {
+    ) -> Result<Vec<TaskListItem>, RemoteError> {
         let dto: TasksDto = session.read("v1/tasks").await?;
         decode_tasks(dto).map_err(|error| session.record_error(error))
     }
@@ -51,7 +51,6 @@ impl TasksClient {
     pub(super) fn task_item(&self, id: TaskId) -> Option<&TaskListItem> {
         self.task_cache
             .get(&id)
-            .map(|(item, _)| item)
             .or_else(|| self.task_items().iter().find(|item| item.task.id() == id))
     }
 
@@ -66,7 +65,7 @@ impl TasksClient {
     ) -> Result<(TaskResourceDto, TaskListItem), RemoteError> {
         session.ensure_version().await?;
         let dto: TaskResourceDto = session.read(&format!("v1/tasks/{id}")).await?;
-        if dto.task.id != id.to_string() || dto.revision.is_empty() {
+        if dto.task.id != id.to_string() {
             return Err(session.record_error(RemoteError::Protocol("invalid task resource".into())));
         }
         let item =
@@ -74,28 +73,19 @@ impl TasksClient {
         Ok((dto, item))
     }
 
-    async fn read_task_item(
-        &mut self,
-        session: &mut RemoteSession,
-        id: TaskId,
-    ) -> Result<(TaskListItem, String), ApplicationError> {
-        let (dto, item) = self
-            .fetch_task(session, id)
-            .await
-            .map_err(|error| map_application_error(&error, None, Some(id)))?;
-        Ok((item, dto.revision))
-    }
-
-    /// Reads one task with its own revision and preserves application error categories.
+    /// Reads one task and preserves application error categories.
     pub(super) async fn read_task_observation(
         &mut self,
         session: &mut RemoteSession,
         id: TaskId,
-    ) -> Result<ResourceObservation<TaskListItem>, ApplicationError> {
-        let (value, revision) = self.read_task_item(session, id).await?;
-        self.adopt_task(value.clone(), revision.clone());
+    ) -> Result<TaskListItem, ApplicationError> {
+        let (_, item) = self
+            .fetch_task(session, id)
+            .await
+            .map_err(|error| map_application_error(&error, None, Some(id)))?;
+        self.adopt_task(item.clone());
         session.confirmed();
-        Ok(ResourceObservation { value, revision })
+        Ok(item)
     }
 
     pub(super) async fn read_task(
@@ -104,12 +94,12 @@ impl TasksClient {
         id: TaskId,
     ) -> Result<TaskResourceDto, RemoteError> {
         let (dto, item) = self.fetch_task(session, id).await?;
-        self.adopt_task(item, dto.revision.clone());
+        self.adopt_task(item);
         session.confirmed();
         Ok(dto)
     }
 
-    /// Loads domain tasks only while every candidate matches the preview revision and remains unarchived.
+    /// Loads domain tasks only while every candidate remains unarchived.
     pub(super) async fn resolve_preview_tasks(
         &mut self,
         session: &mut RemoteSession,
@@ -121,7 +111,7 @@ impl TasksClient {
                 .read_task(session, id)
                 .await
                 .map_err(|error| map_application_error(&error, None, Some(id)))?;
-            if dto.revision != preview.dto.revision || dto.task.archived {
+            if dto.task.archived {
                 return Err(session.intent_changed());
             }
             tasks.push(
@@ -132,17 +122,11 @@ impl TasksClient {
         Ok(tasks)
     }
 
-    pub(super) fn adopt_task(&mut self, item: TaskListItem, revision: String) {
-        self.task_cache.insert(item.task.id(), (item, revision));
+    pub(super) fn adopt_task(&mut self, item: TaskListItem) {
+        self.task_cache.insert(item.task.id(), item);
     }
 
-    pub(super) fn cached_task_revision(&self, id: TaskId) -> Option<&str> {
-        self.task_cache
-            .get(&id)
-            .map(|(_, revision)| revision.as_str())
-    }
-
-    /// Captures candidates in the default inactivity window with their read revision.
+    /// Captures candidates in the default inactivity window.
     pub(super) async fn preview_inactive_tasks(
         &mut self,
         session: &mut RemoteSession,
@@ -183,28 +167,17 @@ impl TasksClient {
         Ok(preview)
     }
 
-    pub(super) fn task_observation(&self) -> Option<&ResourceObservation<Vec<TaskListItem>>> {
-        self.task_observation.as_ref()
+    pub(super) fn task_observation(&self) -> Option<&[TaskListItem]> {
+        self.task_observation.as_deref()
     }
 
     pub(super) fn task_items(&self) -> &[TaskListItem] {
-        self.task_observation
-            .as_ref()
-            .map_or(&[], |observation| observation.value.as_slice())
+        self.task_observation().unwrap_or(&[])
     }
 
-    pub(super) fn task_revision(&self) -> &str {
-        self.task_observation
-            .as_ref()
-            .map_or("", |observation| observation.revision.as_str())
-    }
-
-    pub(super) fn adopt_catalog(&mut self, items: Vec<TaskListItem>, revision: String) {
+    pub(super) fn adopt_catalog(&mut self, items: Vec<TaskListItem>) {
         self.task_cache.clear();
-        self.task_observation = Some(ResourceObservation {
-            value: items,
-            revision,
-        });
+        self.task_observation = Some(items);
     }
 
     pub(super) async fn create_task(

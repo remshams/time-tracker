@@ -1,4 +1,4 @@
-//! Remote resource observations and shared command recovery.
+//! Remote resource reads and shared command recovery.
 
 mod coordinator;
 mod decoding;
@@ -44,11 +44,11 @@ pub enum RemoteFailureKind {
     Protocol,
 }
 
-/// An inactive-task preview with its read revision retained by the adapter.
+/// An inactive-task preview retained by the adapter for later confirmation.
 ///
 /// Deserializing a saved token runs the same checks as decoding a server preview. A token
-/// with an empty revision, an invalid period, a non-canonical cutoff, or candidates that disagree
-/// with the count fails to load. Serialization writes the protocol DTO unchanged.
+/// with an invalid period, a non-canonical cutoff, or candidates that disagree with the count
+/// fails to load. Serialization writes the protocol DTO unchanged.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "InactiveTaskPreviewDto", into = "InactiveTaskPreviewDto")]
 pub struct InactiveTaskPreview {
@@ -92,13 +92,6 @@ impl InactiveTaskPreview {
     pub fn count(&self) -> usize {
         self.dto.count
     }
-}
-
-/// A confirmed resource value and the opaque revision observed with it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResourceObservation<T> {
-    pub value: T,
-    pub revision: String,
 }
 
 /// Resources requested by an explicit client workflow.

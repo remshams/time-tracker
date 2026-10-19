@@ -101,12 +101,6 @@ impl ReportsClient {
         Ok(dto)
     }
 
-    pub(super) fn report_revision(&self) -> &str {
-        self.report_cache
-            .as_ref()
-            .map_or("", |report| report.revision.as_str())
-    }
-
     pub(super) fn report_observation(&self) -> Option<&ReportDto> {
         self.report_cache.as_ref()
     }

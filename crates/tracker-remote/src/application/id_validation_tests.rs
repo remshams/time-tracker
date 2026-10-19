@@ -18,7 +18,6 @@ fn report_and_preview_ids_are_unique_after_uuid_parsing() {
             },
         ],
         total_us: 2,
-        revision: "r1".into(),
     };
     assert!(validate_report(&report).is_err());
     let preview = InactiveTaskPreviewDto {
@@ -26,7 +25,6 @@ fn report_and_preview_ids_are_unique_after_uuid_parsing() {
         inactive_days: 14,
         count: 2,
         candidate_task_ids: vec![id.to_owned(), id.to_ascii_uppercase()],
-        revision: "r1".into(),
     };
     assert!(validate_inactive_preview(&preview).is_err());
 }

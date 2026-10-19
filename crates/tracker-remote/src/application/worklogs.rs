@@ -17,7 +17,7 @@ impl WorklogsClient {
     ) -> Result<WorklogResourceDto, RemoteError> {
         session.ensure_version().await?;
         let dto: WorklogResourceDto = session.read(&format!("v1/worklogs/{id}")).await?;
-        if dto.worklog.id != id.to_string() || dto.revision.is_empty() {
+        if dto.worklog.id != id.to_string() {
             return Err(
                 session.record_error(RemoteError::Protocol("invalid worklog resource".into()))
             );
