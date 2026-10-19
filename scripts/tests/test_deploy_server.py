@@ -65,6 +65,8 @@ class FakeCandidate:
     migration = None
 
     def __init__(self, command, **options):
+        if command[1:2] != ["--bind"] or not Path(command[0]).name.startswith("tt-server-"):
+            raise AssertionError(f"Expected the standalone server command, got {command}")
         if FakeCandidate.migration:
             FakeCandidate.migration(command[command.index("--db") + 1])
 
@@ -151,7 +153,7 @@ class DeploymentRoot:
         create_database(self.database, zero_duration=zero_duration)
         self.archive = self.root / "build/source-0123456.tar"
         self.archive.write_bytes(b"source archive")
-        self.candidate = self.root / "bin/tt-0123456"
+        self.candidate = self.root / "bin/tt-server-0123456"
         self.candidate.write_bytes(b"candidate binary")
 
     def host(self, schema=7):
@@ -220,13 +222,13 @@ class BuildTests(unittest.TestCase):
     def test_docker_build_mounts_caches_and_a_read_only_source(self):
         with tempfile.TemporaryDirectory() as directory:
             host = DeploymentRoot(directory).host()
-            command = DEPLOY.docker_build_command(host, Path("/work/source"), ".tt-0123456.new", 1000, 1000)
+            command = DEPLOY.docker_build_command(host, Path("/work/source"), ".tt-server-0123456.new", 1000, 1000)
         self.assertIn("/work/source:/src:ro", command)
         self.assertIn(f"{host.build / 'cargo-home'}:/cargo-home", command)
         self.assertIn(f"{host.build / 'target'}:/target", command)
         self.assertIn("rust:1-bookworm", command)
-        self.assertIn("cargo build --release --locked -p tracker-tui", command[-1])
-        self.assertIn("install -o 1000 -g 1000 -m 0755 /target/release/tt /out/.tt-0123456.new", command[-1])
+        self.assertIn("cargo build --release --locked -p tracker-server-app --bin tt-server", command[-1])
+        self.assertIn("install -o 1000 -g 1000 -m 0755 /target/release/tt-server /out/.tt-server-0123456.new", command[-1])
 
     def test_existing_candidate_is_reused_unless_rebuild_is_requested(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -234,6 +236,23 @@ class BuildTests(unittest.TestCase):
             with patch.object(DEPLOY, "run") as run, patch("sys.stdout", io.StringIO()):
                 DEPLOY.remote_build(host, rebuild=False)
             run.assert_not_called()
+
+    def test_old_tui_candidate_is_not_reused_and_build_log_names_the_server(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = DeploymentRoot(directory)
+            root.candidate.unlink()
+            (root.root / "bin/tt-0123456").write_bytes(b"old TUI candidate")
+            host = root.host()
+
+            def build(*command, **options):
+                if command[0] == "docker":
+                    (host.candidate.parent / f".{host.candidate.name}.new").write_bytes(b"server binary")
+
+            with patch.object(DEPLOY, "run", side_effect=build) as run, patch("sys.stdout", io.StringIO()):
+                DEPLOY.remote_build(host, rebuild=False)
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(host.candidate.read_bytes(), b"server binary")
+            self.assertTrue((host.build / "build-tt-server-0123456.log").is_file())
 
     def test_rejects_an_archive_that_changed_after_upload(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -326,7 +345,7 @@ class PreflightTests(unittest.TestCase):
             smoke = list((root.root / "build").glob("smoke-*"))
             self.assertEqual(len(smoke), 1)
             self.assertIn(str(smoke[0]), str(raised.exception))
-            self.assertTrue((smoke[0] / "server.log").exists())
+            self.assertTrue((smoke[0] / "tt-server.log").exists())
             self.assertTrue((smoke[0] / "tt-server.db").exists())
             self.assertFalse((root.root / "build/preflight-0123456.json").exists())
 

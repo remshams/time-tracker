@@ -31,7 +31,7 @@ Build a Rust time tracker that starts as a terminal application on Linux and mac
 
 The owner should eventually be able to run the TUI on one computer while the authoritative data store runs on another. Each TUI process selects exactly one store: local SQLite when no endpoint is configured, or the remote HTTP service when an endpoint is configured. Remote mode is online-only at first and never falls back to local writes. Switching between local and remote modes does not merge their databases automatically.
 
-The same `tt` binary will provide the TUI and server process modes, while shared application workflows remain independent of either entry point. The first deployment may assume that client and server run the same version inside a trusted Tailscale network. The API should still use a `/v1` prefix and idempotent state-setting operations where retries could otherwise duplicate or reverse a change.
+The `tt` binary provides the TUI and the standalone `tt-server` binary provides the HTTP server, while shared application workflows remain independent of either entry point. The first deployment may assume that client and server run the same version inside a trusted Tailscale network. The API should still use a `/v1` prefix and idempotent state-setting operations where retries could otherwise duplicate or reverse a change.
 
 ## Technology and target architecture
 
@@ -52,7 +52,7 @@ The domain/application split gives the future server and clients reusable use ca
 - Put a backend-neutral application service between every UI and its selected store.
 - In local mode, the application service uses `SqliteRepository` directly.
 - In remote mode, an HTTP client calls resource-oriented REST endpoints. It does not expose raw repository or SQL operations over the network.
-- Let the same `tt` binary run as a TUI or as an HTTP server through separate composition paths.
+- Let `tt` run the TUI and `tt-server` run the HTTP server through separate composition paths.
 - Start the server with SQLite. PostgreSQL remains an option only if measured server load warrants it.
 - Let clients query tasks, current tracking state, and worklogs through resource-oriented endpoints. Any batching optimization remains internal to the HTTP adapter and is not a TUI concept.
 - Represent tracking as desired state: setting an active task starts or switches atomically, and clearing the active task stops it. Retrying the same request must not toggle the state back.
@@ -309,7 +309,7 @@ The move decisions are recorded in [ADR 0008](docs/adr/0008-move-worklogs-betwee
 
 ### Milestone 3: exclusive local or remote storage
 
-- [x] Add explicit process modes to the same binary: local TUI, remote TUI with a configured endpoint, and `tt serve`.
+- [x] Add local and remote TUI modes. HTTP serving now ships separately as `tt-server`; see [ADR 0028](docs/adr/0028-ship-a-standalone-server-binary.md).
 - [x] Add a versioned resource-oriented REST API for tasks, worklogs, and the singleton active-tracking state under `/v1`.
 - [x] Keep raw repository methods and storage commands out of the public HTTP contract.
 - [x] Run the same `tracker-application` workflows behind local and server adapters.

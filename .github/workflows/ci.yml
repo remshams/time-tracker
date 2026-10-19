@@ -81,6 +81,13 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           cache-key: tests
+      - name: Verify the headless server dependencies
+        run: |
+          cargo tree --locked -p tracker-server-app --edges normal > server-dependencies.txt
+          if grep -Eq '(ratatui|crossterm|tracker-tui) v' server-dependencies.txt; then
+            cat server-dependencies.txt
+            exit 1
+          fi
       - name: Test the full Rust workspace
         run: cargo test --workspace --all-features --locked
 

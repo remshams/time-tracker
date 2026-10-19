@@ -1,19 +1,11 @@
-//! Process modes for the terminal client and HTTP server.
+//! Process modes for the terminal client.
 
 use std::ffi::OsString;
-use std::net::SocketAddr;
-use std::path::PathBuf;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Mode {
     Local,
-    Remote {
-        server: String,
-    },
-    Serve {
-        bind: SocketAddr,
-        database: Option<PathBuf>,
-    },
+    Remote { server: String },
     Help,
 }
 
@@ -21,7 +13,7 @@ pub(crate) enum Mode {
 #[error("{0}; run `tt --help` for usage")]
 pub(crate) struct CliError(&'static str);
 
-pub(crate) const HELP: &str = "Usage:\n  tt\n  tt --server http://HOST:PORT\n  tt serve --bind ADDRESS:PORT [--db PATH]\n\nThe server accepts an explicit loopback or Tailscale address.\n";
+pub(crate) const HELP: &str = "Usage:\n  tt\n  tt --server http://HOST:PORT\n  tt --help\n\nStart an HTTP server with tt-server --bind ADDRESS:PORT [--db PATH].\n";
 
 pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Mode, CliError> {
     let mut args = args.into_iter();
@@ -41,43 +33,11 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Mode, Cl
             }
             Ok(Mode::Remote { server })
         }
-        Some("serve") => parse_serve(args),
+        Some("serve") => Err(CliError(
+            "serve moved to `tt-server --bind ADDRESS:PORT [--db PATH]`",
+        )),
         _ => Err(CliError("unknown argument")),
     }
-}
-
-fn parse_serve(mut args: impl Iterator<Item = OsString>) -> Result<Mode, CliError> {
-    let mut bind = None;
-    let mut database = None;
-    while let Some(flag) = args.next() {
-        match flag.to_str() {
-            Some("--bind") if bind.is_none() => {
-                let value = args
-                    .next()
-                    .and_then(|value| value.into_string().ok())
-                    .ok_or(CliError("--bind needs an IP address and port"))?;
-                let address: SocketAddr = value
-                    .parse()
-                    .map_err(|_| CliError("--bind needs an IP address and port"))?;
-                if !tracker_server::allowed_bind_address(address.ip()) {
-                    return Err(CliError("--bind must use a loopback or Tailscale address"));
-                }
-                bind = Some(address);
-            }
-            Some("--db") if database.is_none() => {
-                let path = args.next().ok_or(CliError("--db needs a path"))?;
-                if path.is_empty() {
-                    return Err(CliError("--db needs a path"));
-                }
-                database = Some(PathBuf::from(path));
-            }
-            _ => return Err(CliError("unknown or repeated server option")),
-        }
-    }
-    Ok(Mode::Serve {
-        bind: bind.ok_or(CliError("serve needs --bind ADDRESS:PORT"))?,
-        database,
-    })
 }
 
 #[cfg(test)]
@@ -106,44 +66,6 @@ mod tests {
     }
 
     #[test]
-    fn serve_requires_a_private_explicit_bind_address() {
-        assert!(parse(args(&["serve"])).is_err());
-        assert!(parse(args(&["serve", "--bind", "0.0.0.0:8765"])).is_err());
-        assert!(parse(args(&["serve", "--bind", "192.168.1.10:8765"])).is_err());
-        assert!(parse(args(&["serve", "--bind", "127.0.0.1:8765"])).is_ok());
-        assert!(parse(args(&["serve", "--bind", "100.100.100.100:8765"])).is_ok());
-        assert!(parse(args(&["serve", "--bind", "[fd7a:115c:a1e0::1]:8765"])).is_ok());
-    }
-
-    #[test]
-    fn server_database_path_is_optional_and_repeated_flags_fail() {
-        assert_eq!(
-            parse(args(&[
-                "serve",
-                "--db",
-                "/tmp/server.db",
-                "--bind",
-                "[::1]:8765"
-            ]))
-            .unwrap(),
-            Mode::Serve {
-                bind: "[::1]:8765".parse().unwrap(),
-                database: Some("/tmp/server.db".into()),
-            }
-        );
-        assert!(
-            parse(args(&[
-                "serve",
-                "--bind",
-                "127.0.0.1:1",
-                "--bind",
-                "127.0.0.1:2"
-            ]))
-            .is_err()
-        );
-    }
-
-    #[test]
     fn help_and_remote_mode_reject_extra_or_missing_arguments() {
         assert_eq!(parse(args(&["--help"])).unwrap(), Mode::Help);
         assert_eq!(parse(args(&["-h"])).unwrap(), Mode::Help);
@@ -159,42 +81,22 @@ mod tests {
     }
 
     #[test]
-    fn serve_rejects_incomplete_and_unsafe_options() {
-        for values in [
-            vec!["serve", "--bind"],
-            vec!["serve", "--bind", "not-an-address"],
-            vec!["serve", "--bind", "100.63.0.1:8765"],
-            vec!["serve", "--bind", "100.128.0.1:8765"],
-            vec!["serve", "--bind", "[fd7a:115c:a1e1::1]:8765"],
-            vec!["serve", "--db"],
-            vec!["serve", "--db", ""],
-            vec![
-                "serve",
-                "--db",
-                "a.db",
-                "--db",
-                "b.db",
-                "--bind",
-                "127.0.0.1:1",
-            ],
-            vec!["serve", "--bind", "127.0.0.1:1", "extra"],
-        ] {
-            assert!(parse(args(&values)).is_err(), "accepted {values:?}");
-        }
+    fn serve_points_to_the_standalone_server() {
+        let error = parse(args(&["serve", "--bind", "127.0.0.1:8765"])).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "serve moved to `tt-server --bind ADDRESS:PORT [--db PATH]`; run `tt --help` for usage"
+        );
     }
 
     #[cfg(unix)]
     #[test]
-    fn non_utf8_remote_url_and_bind_address_are_rejected() {
+    fn non_utf8_remote_urls_are_rejected() {
         use std::os::unix::ffi::OsStringExt;
-
-        let invalid = OsString::from_vec(vec![0xff]);
-        assert!(parse(vec![OsString::from("--server"), invalid.clone()]).is_err());
         assert!(
             parse(vec![
-                OsString::from("serve"),
-                OsString::from("--bind"),
-                invalid
+                OsString::from("--server"),
+                OsString::from_vec(vec![0xff])
             ])
             .is_err()
         );

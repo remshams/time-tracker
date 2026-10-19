@@ -32,6 +32,7 @@ cargo run -p tracker-tui        # run in development
 cargo install --path apps/tui   # install the binary as `tt`
 cargo run -p tracker-cli -- --help
 cargo install --path apps/cli   # install the binary as `tt-cli`
+cargo install --path apps/server # install the binary as `tt-server`
 ```
 
 ### Command line interface
@@ -43,11 +44,11 @@ cargo install --path apps/cli   # install the binary as `tt-cli`
 Start a server on an explicit loopback or Tailscale address, then point one or more clients at it:
 
 ```sh
-tt serve --bind 127.0.0.1:8765
+tt-server --bind 127.0.0.1:8765
 tt --server http://127.0.0.1:8765
 ```
 
-Use `--db PATH` after `serve` to choose the server database. Without it, the server uses `tt-server.db` in the application-data directory. The local TUI continues to use `tt.db`; starting either mode does not copy or merge data. The client uses the server for every task, timer, history, and report action and never opens the server database directly. It refreshes shared state about once a second and reconnects after interruptions. If a write loses its response, check the refreshed server state before repeating it; the server keeps the timer running while clients are disconnected.
+Use `tt-server --bind ADDRESS:PORT --db PATH` to choose the server database. Without `--db`, the server uses `tt-server.db` in the application-data directory. The compatibility form `tt-server serve --bind ADDRESS:PORT [--db PATH]` supports existing systemd units; `tt serve` now directs users to `tt-server`. The local TUI continues to use `tt.db`; starting either mode does not copy or merge data. The client uses the server for every task, timer, history, and report action and never opens the server database directly. It refreshes shared state about once a second and reconnects after interruptions. If a write loses its response, check the refreshed server state before repeating it; the server keeps the timer running while clients are disconnected.
 
 Clients and servers require protocol version 5 under `/v1`. Task-list and daily overview workflows also require the aggregate state routes; upgrade the server before these clients. Update the server, CLI, TUI and macOS app together. The resource routes and command receipts replace the protocol-2 snapshot envelopes. Regenerate saved remote CLI tokens after updating; incompatible versions fail the health check before loading resources.
 
@@ -139,7 +140,7 @@ Start with the [architecture index](docs/architecture/README.md) for the [archit
 
 Open [the architecture diagrams](docs/architecture/architecture.html) in a browser for the system overview, Rust crate dependencies, Swift and AppKit structure, and Swift-to-Rust bridge call paths. The HTML works offline and includes the recorded CRAP and mutation annotations. Its date and source revision identify the snapshot it describes.
 
-The workspace has eight packages:
+The workspace has eleven packages:
 
 - `apps/cli`: the `tt-cli` binary. Command parsing and handlers are grouped by tasks, tracking, worklogs, and reports. It uses the existing application services and remote client; it does not access raw SQL or set up a terminal.
 
@@ -147,8 +148,11 @@ The workspace has eight packages:
 - `crates/tracker-application`: backend-neutral repository ports and synchronous use cases. Its source is split into `error`, `model`, `repository`, and task, tracking, and worklog service modules. The `calendar_reports` and `task_search` modules share report boundaries, fuzzy matching, and search ordering across clients. Presentation code uses semantic failure categories, failure origin, and recovery status rather than matching repository failures. Commands return the exact domain value when there is no alternative outcome.
 - `crates/tracker-storage`: SQLite persistence. Its adapter is split into `mapping`, `tasks`, `tracking`, and `worklogs`. `SqliteRepository` still owns one `Connection`; transaction-aware helpers continue to take an explicit `&Connection`. Application repository ports contain only the queries and writes used by application workflows. Direct SQLite diagnostics compile for storage tests and through the opt-in `test-support` feature used by TUI tests.
 - `crates/tracker-protocol`: versioned JSON requests and responses shared by the HTTP adapters.
+- `apps/server`: the `tt-server` binary, with argument validation and server database selection.
 - `crates/tracker-server`: REST routes that run the application service against the server's SQLite database. It serializes requests against one application instance and checks revisions on writes.
 - `crates/tracker-remote`: HTTP adapter implementing the application-service ports for the TUI. It keeps separate task, tracking, history and report caches with their observed revisions, sends client-created UTC timestamps, and refreshes affected resources after writes and reconnections. Selected task-list and totals workflows use purpose-based aggregates from one server read transaction.
+- `crates/tracker-client`: shared local and remote dispatch through `TrackerBackend`.
+- `apps/swiftui/bridge`: the Rust C bridge used by the native macOS app.
 - `apps/tui`: the `tt` binary. `app.rs` is the presentation controller. Its private `TaskCatalog`, `TrackingSession`, and `ShellState` owners live under `app/`. `TaskCatalog` owns task data, ordering, and lookup. `ScreenState` owns task-list state, and history moves that exact state in and out when users return. `ShellState` owns the startup timezone, status, lifecycle, and screen. Only the controller calls the application service. The folders under `screens` contain screen state, commands, keymaps, rendering, and tests. Each screen owns its semantic command enum. `command.rs` contains only the event-loop wrapper, which tags a task-list payload, tags a worklog-history payload, or requests global quit. `App::handle` dispatches a tagged payload only when its screen is active. Its single mismatch guard leaves dormant state untouched and makes no application-service call. `components` contains shared stateless rendering functions, while `support` contains clock, timestamp, and error helpers. `ui.rs` renders an immutable `AppView`; it never receives the controller or application service. `terminal.rs` owns setup and cleanup, and `main.rs` creates SQLite storage and the application service before starting the TUI.
 
 The architecture cleanup preserves observable behavior. The domain, application, and SQLite split remains intact. In the TUI, `TaskCatalog` keeps task data across screen transitions, history retains the exact task-list state to restore, tracking state stays paired with its monotonic clock, and shell state owns the screen, status, lifecycle, and startup timezone.

@@ -40,3 +40,4 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0025](0025-fit-native-ci-within-the-macos-runner-limit.md) | Fit native CI within the macOS runner limit | Proposed |
 | [0026](0026-use-swift-observation-for-native-presentation.md) | Use Swift Observation for native presentation | Proposed |
 | [0027](0027-check-reviewed-task-names-on-the-server.md) | Check reviewed task names on the server | Proposed |
+| [0028](0028-ship-a-standalone-server-binary.md) | Ship a standalone server binary | Accepted |

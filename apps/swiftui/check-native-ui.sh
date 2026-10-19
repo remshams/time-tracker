@@ -11,12 +11,12 @@ repo_dir=$(CDPATH= cd -- "$app_dir/../.." && pwd)
 cd "$repo_dir"
 
 cargo build --locked --package tracker-cli --bin tt-cli
-cargo build --locked --package tracker-tui --bin tt
+cargo build --locked --package tracker-server-app --bin tt-server
 target_dir=$(cargo metadata --locked --no-deps --format-version 1 \
     | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
 export TT_UI_TEST_CLI="$target_dir/debug/tt-cli"
 export TEST_RUNNER_TT_UI_TEST_CLI="$TT_UI_TEST_CLI"
-export TT_UI_TEST_SERVER="$target_dir/debug/tt"
+export TT_UI_TEST_SERVER="$target_dir/debug/tt-server"
 export TEST_RUNNER_TT_UI_TEST_SERVER="$TT_UI_TEST_SERVER"
 export TT_UI_TEST_PROXY="$app_dir/Tests/UITests/Support/controlled_proxy.py"
 export TEST_RUNNER_TT_UI_TEST_PROXY="$TT_UI_TEST_PROXY"

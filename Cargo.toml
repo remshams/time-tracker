@@ -9,6 +9,7 @@ members = [
     "crates/tracker-remote",
     "crates/tracker-client",
     "apps/tui",
+    "apps/server",
     "apps/cli",
     "apps/swiftui/bridge",
 ]

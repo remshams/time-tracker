@@ -33,8 +33,8 @@ import urllib.request
 REPOSITORY = pathlib.Path(__file__).resolve().parents[1]
 PROTOCOL_SOURCE = "crates/tracker-protocol/src/lib.rs"
 MIGRATION_SOURCE = "crates/tracker-storage/src/migrate.rs"
-PACKAGE = "tracker-tui"
-BINARY = "tt"
+PACKAGE = "tracker-server-app"
+BINARY = "tt-server"
 CONFIG_KEYS = {"service", "live_binary", "database", "base_url", "rust_image"}
 HELPER = "build/deploy-server.py"
 
@@ -195,7 +195,7 @@ class Host:
 
 
 def docker_build_command(host, source, output, uid, gid):
-    script = (f"cargo build --release --locked -p {PACKAGE} && "
+    script = (f"cargo build --release --locked -p {PACKAGE} --bin {BINARY} && "
               f"install -o {uid} -g {gid} -m 0755 /target/release/{BINARY} /out/{output}")
     return ["docker", "run", "--rm",
             "-v", f"{source}:/src:ro",
@@ -216,7 +216,7 @@ def remote_build(host, rebuild):
     source.mkdir()
     run("tar", "-xf", str(host.archive), "-C", str(source))
     staged = f".{host.candidate.name}.new"
-    log_path = host.build / f"build-{host.short}.log"
+    log_path = host.build / f"build-{BINARY}-{host.short}.log"
     print(f"Building {PACKAGE} in {host.config['rust_image']}; log: {log_path}", flush=True)
     try:
         with log_path.open("w") as log:
@@ -372,8 +372,8 @@ def started_state(base, version, database):
 
 def smoke_test(host, directory, copied):
     port = free_port()
-    with (directory / "server.log").open("w") as log:
-        server = subprocess.Popen([str(host.candidate), "serve", "--bind", f"127.0.0.1:{port}",
+    with (directory / "tt-server.log").open("w") as log:
+        server = subprocess.Popen([str(host.candidate), "--bind", f"127.0.0.1:{port}",
                                    "--db", str(copied)], stdout=log, stderr=log)
         try:
             base = f"http://127.0.0.1:{port}"

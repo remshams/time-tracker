@@ -1,6 +1,6 @@
 # Deploy a server
 
-`scripts/deploy-server.py` updates a `tt serve` instance that runs under systemd on another machine. Run it from a checkout on your workstation. It reaches the host through SSH, so the SSH destination must log in without a password prompt.
+`scripts/deploy-server.py` updates a `tt-server` instance that runs under systemd on another machine. Run it from a checkout on your workstation. It reaches the host through SSH, so the SSH destination must log in without a password prompt.
 
 ```sh
 python3 scripts/deploy-server.py --host HOST --root /path/to/deployment
@@ -12,8 +12,8 @@ The script deploys `HEAD` by default; pass `--revision REV` to choose another co
 
 1. Archives the revision and uploads it to `ROOT/build/source-<rev>.tar`. It reuses an identical archive and refuses to replace a different one.
 2. Uploads itself to `ROOT/build/deploy-server.py` and runs the remaining steps on the host.
-3. Builds the `tt` binary of `tracker-tui` in the configured Rust container. Docker is only the build tool; the service runs the binary directly. Cargo's registry and target directories are cached in `ROOT/build/cargo-home` and `ROOT/build/target`. The candidate is written to `ROOT/bin/tt-<rev>`, and the build log to `ROOT/build/build-<rev>.log`. An existing candidate is reused unless you pass `--rebuild`.
-4. Runs a preflight. The candidate serves a copy of the live database on a local port and runs its migrations on startup. The script compares the task catalog, the running worklog, the daily overview, the report totals, and the task, tracking and worklog routes against the migrated rows. It also checks that the health route reports the protocol version of the revision and that the schema version ends at the revision's last migration. If startup changed the schema version or any task or worklog row, the preflight stops and prints a summary such as `schema version 7 -> 8; worklogs: 1 removed`. See [Migrations](#migrations). The record is written to `ROOT/build/preflight-<rev>.json`, with SHA-256 fingerprints of the database before and after startup. The copy and the candidate's `server.log` live in `ROOT/build/smoke-<rev>-*`. The script removes that directory after a passed check. If the candidate fails to start or a check fails, the directory stays and the error names it, so you can read the log. Delete it once you are done.
+3. Builds the `tt-server` binary of `tracker-server-app` in the configured Rust container. Docker is only the build tool; the service runs the binary directly. Cargo's registry and target directories are cached in `ROOT/build/cargo-home` and `ROOT/build/target`. The candidate is written to `ROOT/bin/tt-server-<rev>`, and the build log to `ROOT/build/build-tt-server-<rev>.log`. An existing `tt-server-<rev>` candidate is reused unless you pass `--rebuild`. Old `tt-<rev>` candidates are never reused.
+4. Runs a preflight. The candidate starts with `tt-server --bind 127.0.0.1:PORT --db PATH`. It serves a copy of the live database on a local port and runs migrations on startup. The script compares the task catalog, the running worklog, the daily overview, the report totals, and the task, tracking and worklog routes against the migrated rows. It also checks that the health route reports the protocol version of the revision and that the schema version ends at the revision's last migration. If startup changed the schema version or any task or worklog row, the preflight stops and prints a summary such as `schema version 7 -> 8; worklogs: 1 removed`. See [Migrations](#migrations). The record is written to `ROOT/build/preflight-<rev>.json`, with SHA-256 fingerprints of the database before and after startup. The copy and the candidate's `tt-server.log` live in `ROOT/build/smoke-<rev>-*`. The script removes that directory after a passed check. If the candidate fails to start or a check fails, the directory stays and the error names it, so you can read the log. Delete it once you are done.
 5. Deploys. It refuses to continue if a staged binary from an earlier run still sits next to the live binary. It backs up the live binary, stages the candidate next to it, stops the service, backs up the database, and checks that the database still matches the preflight's "before" fingerprint. It then swaps in the candidate, starts the service, checks that the migrated database matches the "after" fingerprint, and runs the same route checks against the live server. If any step fails after the swap, it stops the service, restores the database from the backup, reinstalls the previous binary, and starts the service again. The backup stays in `ROOT/backups/deploy-<rev>-<time>`.
 6. Removes the backup after a successful deployment, unless you pass `--keep-backup`. The result is written to `ROOT/build/deployment-<rev>.json` and `ROOT/build/deployment-latest.json`.
 7. Checks the health route from your workstation.
@@ -49,8 +49,14 @@ To set up a new host, create `ROOT` and `ROOT/deploy.json`. The script creates `
 }
 ```
 
-- `service`: the systemd unit that runs `tt serve`.
+- `service`: the systemd unit that runs the HTTP server.
 - `live_binary`: the binary path in the unit's `ExecStart`.
 - `database`: the server database, relative to `ROOT`.
 - `base_url`: the address clients use. The server rejects DNS names in the Host header, so use the bind IP address.
 - `rust_image`: the container image used for the build. Pick one whose C library matches the host's.
+
+## Existing units and rollback
+
+The script installs `tt-server` at the configured `live_binary` path, even if that path is named `tt`. Existing units can keep `ExecStart=<live_binary> serve --bind ADDRESS:PORT --db PATH`. The new binary accepts the leading `serve` word as a compatibility form with the same validation and defaults. This preserves both deployment and rollback to the previous TUI binary without editing the unit.
+
+For new units, use `ExecStart=<live_binary> --bind ADDRESS:PORT --db PATH` and a path such as `/usr/local/bin/tt-server`. A rollback to an older TUI binary requires the compatibility form in the unit. Running `tt serve` from the terminal now reports that the command moved to `tt-server`.
