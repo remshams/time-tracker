@@ -16,7 +16,7 @@ final class HistoryPresentationTests: XCTestCase {
         XCTAssertTrue(harness.presentation.isHistoryLoading)
         request.succeed(emptyPage)
         try await harness.settled(fixture)
-        XCTAssertFalse(fixture.session.isBusy)
+        XCTAssertFalse(fixture.client.hasPendingRequests)
         XCTAssertFalse(harness.presentation.isHistoryLoading)
         XCTAssertGreaterThan(
             content.count, changesWhileWaiting,

@@ -34,7 +34,6 @@ struct ConnectionSummary: View {
             if !store.isChangingConnection, store.isStale {
                 Button("Retry") { store.refresh() }
                     .accessibilityIdentifier("connection-summary.retry")
-                    .disabled(store.isBlockingControls)
             }
         }
         .padding(.horizontal, 12)

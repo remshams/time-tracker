@@ -13,13 +13,10 @@ public struct TaskRenamePresentation: Equatable, Sendable {
 
 @MainActor
 final class TaskRenameState {
-    struct Intent {
+    struct Request {
         let taskID: String
         let originalName: String
         let name: String
-        let occurredAt: String
-
-        var desiredName: String { TaskNameEditingPolicy.normalized(name) }
     }
 
     private(set) var isPresented = false
@@ -27,34 +24,23 @@ final class TaskRenameState {
     private(set) var name = ""
     private(set) var isSubmitting = false
     private(set) var error: String?
-    private(set) var intent: Intent?
     private var originalName = ""
-    private var pending = false
-    private var requiresReview = false
 
     var presentation: TaskRenamePresentation {
         let desired = TaskNameEditingPolicy.normalized(name)
         return TaskRenamePresentation(
             isPresented: isPresented, taskID: taskID, originalName: originalName, name: name,
             isSubmitting: isSubmitting, error: error,
-            canEditName: !isSubmitting && intent == nil && !requiresReview,
-            canSubmit: isPresented && !isSubmitting && !requiresReview && !desired.isEmpty && desired != originalName)
+            canEditName: !isSubmitting,
+            canSubmit: isPresented && !isSubmitting && !desired.isEmpty && desired != originalName)
     }
 
-    var blocksConnectionChange: Bool { isSubmitting || intent != nil }
-    var hasPendingIntent: Bool { pending }
-
     func open(_ task: TaskItem?) {
-        if intent != nil || isPresented {
-            isPresented = true
-            return
-        }
-        guard let task else { return }
+        guard !isPresented, let task else { return }
         taskID = task.id
         originalName = task.name
         name = task.name
         error = nil
-        requiresReview = false
         isPresented = true
     }
 
@@ -66,46 +52,23 @@ final class TaskRenameState {
 
     func cancel() {
         guard !isSubmitting else { return }
-        isPresented = false
-        if intent == nil { reset() }
+        reset()
     }
 
-    func submit(at occurredAt: String) -> Bool {
-        guard presentation.canSubmit, let taskID else { return false }
+    func submit() -> Request? {
+        guard presentation.canSubmit, let taskID else { return nil }
         if let message = TaskNameEditingPolicy.transportError(name) {
             error = message
-            return false
-        }
-        if intent == nil {
-            intent = Intent(taskID: taskID, originalName: originalName, name: name, occurredAt: occurredAt)
+            return nil
         }
         isSubmitting = true
-        pending = true
         error = nil
-        return true
+        return Request(taskID: taskID, originalName: originalName, name: name)
     }
 
-    func takePendingIntent() -> Intent? {
-        guard pending, let intent else { return nil }
-        pending = false
-        return intent
-    }
-
-    func deferUntilWake() { pending = true }
-
-    func fail(_ failure: Error, retainIntent: Bool) {
+    func fail(_ failure: Error) {
         isSubmitting = false
-        pending = false
         error = failure.localizedDescription
-        if !retainIntent { intent = nil }
-    }
-
-    func requireReview(_ message: String) {
-        intent = nil
-        isSubmitting = false
-        pending = false
-        requiresReview = true
-        error = message
     }
 
     func reset() {
@@ -115,8 +78,5 @@ final class TaskRenameState {
         originalName = ""
         isSubmitting = false
         error = nil
-        intent = nil
-        pending = false
-        requiresReview = false
     }
 }

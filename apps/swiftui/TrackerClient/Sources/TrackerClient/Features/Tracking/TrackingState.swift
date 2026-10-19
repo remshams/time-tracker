@@ -4,6 +4,7 @@ import Foundation
 final class TrackingState {
     private(set) var active: WorklogItem?
     var error: String?
+    var isSubmitting = false
     private var timerBase: TimeInterval = 0
     private var timerAnchor: TimeInterval = 0
 

@@ -57,7 +57,7 @@ final class MenuLiveValuesTests: XCTestCase {
                     TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 50_000_000),
                 ]))
         let completed = Task { @MainActor in
-            while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
+            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
         }
         try await fixture.taskValue(completed)
         XCTAssertEqual(observer.content, original)
@@ -88,7 +88,7 @@ final class MenuLiveValuesTests: XCTestCase {
             let history = try await fixture.client.next()
             history.succeed(emptyPage)
             let completed = Task { @MainActor in
-                while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
+                while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
             }
             try await fixture.taskValue(completed)
             XCTAssertEqual(observer.content.activeWorklogID, activeWorklog.id)
@@ -117,8 +117,6 @@ final class MenuLiveValuesTests: XCTestCase {
         let connect = Task { await fixture.session.connect(serverSettings) }
         let request = try await fixture.client.next()
         request.succeed(resources)
-        let connected = try await fixture.taskValue(connect)
-        XCTAssertTrue(connected)
         let report = try await fixture.client.next()
         report.succeed(
             TaskListTotalsRefresh(
@@ -128,8 +126,10 @@ final class MenuLiveValuesTests: XCTestCase {
                 ]))
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
+        let connected = try await fixture.taskValue(connect)
+        XCTAssertTrue(connected)
         let completed = Task { @MainActor in
-            while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
+            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
         }
         try await fixture.taskValue(completed)
         XCTAssertEqual(observer.content.connectionSettings, .local)
@@ -158,7 +158,7 @@ final class MenuLiveValuesTests: XCTestCase {
         let poll = try await fixture.client.next()
         poll.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable"))
         let completed = Task { @MainActor in
-            while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
+            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
         }
         try await fixture.taskValue(completed)
         XCTAssertEqual(observer.content.dailyTotalsStatus, .current)

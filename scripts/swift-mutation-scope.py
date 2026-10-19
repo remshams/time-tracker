@@ -45,7 +45,7 @@ INDICATOR = "Features/TaskIndicators/TaskIndicator.swift"
 TEST_PRODUCTION = {
     "App/BackgroundRefreshInteractionTests.swift": [
         SESSION, "Features/Connection/ConnectionState.swift", TRACKING, CATALOG, HISTORY, TOTALS,
-        "Features/TrackingAutomation/TrackingAutomationState.swift",
+        "Features/TrackingAutomation/TrackingAutomationState.swift", CREATION,
     ],
     "App/HistoryPresentationTests.swift": [SESSION, PRESENTATION, HISTORY, CATALOG],
     "App/LifecycleTests.swift": [
@@ -101,7 +101,7 @@ TEST_PRODUCTION = {
     ],
     "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG],
     "Features/TaskCreation/TaskCreationTests.swift": [
-        SESSION, PRESENTATION, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION, AUTOMATION,
+        SESSION, PRESENTATION, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION, AUTOMATION, RENAME,
         "Features/TaskEditing/TaskNameEditingPolicy.swift",
     ],
     "Features/TaskEditing/TaskNameEditingPolicyTests.swift": [
@@ -114,7 +114,7 @@ TEST_PRODUCTION = {
     "Features/Tracking/TrackingStateTests.swift": [TRACKING],
     "Features/Tracking/TrackingTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, LAST_TASK, CONNECTION],
     "Features/TrackingAutomation/TrackingAutomationTests.swift": [
-        SESSION, AUTOMATION, TRACKING, CATALOG, CONNECTION, HISTORY,
+        SESSION, AUTOMATION, TRACKING, CATALOG, CONNECTION, HISTORY, CREATION,
     ],
     "Features/WindowRouting/WindowRoutingTests.swift": ["Features/WindowRouting/TrackerWindowRoutingState.swift"],
     "Features/WorklogCorrection/WorklogCorrectionTests.swift": [
@@ -129,6 +129,7 @@ TEST_PRODUCTION = {
         SESSION, PRESENTATION, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, RENAME,
         CORRECTION, ARCHIVING,
     ],
+    "Support/FixtureCleanupTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, CONNECTION],
 }
 
 
@@ -166,12 +167,59 @@ WORKLOG_DELETION_CONTRACT_EDITS = (
      "    func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult\n"
      "    func deleteWorklog(expected: WorklogItem) async throws -> WorklogDeletionResult\n"),
 )
-# Each reviewed adaptation names the exact shared fixture and contract edits it
-# accepts and the changed suites whose mappings define the resulting scope.
+# Whole-file snapshots of the reviewed issue #95 fixture adaptation. Any other
+# helper edit needs review, including edits outside the changed methods.
+DIRECT_REQUEST_SUPPORT_BLOBS = (
+    "ce69f5073ae6cc62b114506ae7d5e2b481ea8e2a",
+    "2693cfb6784787f340161609132e4ea5bc52d0ab",
+)
+DIRECT_REQUEST_CONTRACT_EDITS = (
+    ("    func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources\n"
+     "    func refreshTaskList() async throws -> TaskListResources\n",
+     "    func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources\n"),
+)
+# Require the adapted suites, and include unchanged consumers of the shared fake
+# when selecting production files. Unrelated portable helpers stay out of CI.
+DIRECT_REQUEST_REQUIRED_SUITES = (
+    "App/BackgroundRefreshInteractionTests.swift",
+    "App/HistoryPresentationTests.swift",
+    "App/LifecycleTests.swift",
+    "App/ObserverTests.swift",
+    "App/PresentationTests.swift",
+    "App/RefreshPresentationTests.swift",
+    "Features/BulkTaskArchiving/BulkTaskArchivingTests.swift",
+    "Features/Connection/ConnectionTests.swift",
+    "Features/DailyTotals/DailyTotalsTests.swift",
+    "Features/MenuBar/MenuLiveValuesTests.swift",
+    "Features/MenuBar/MenuPresentationTests.swift",
+    "Features/MenuBar/StatusItemTests.swift",
+    "Features/TaskArchiving/TaskArchivingTests.swift",
+    "Features/TaskCreation/TaskCreationTests.swift",
+    "Features/TaskEditing/TaskNameEditingPolicyTests.swift",
+    "Features/TaskRename/TaskRenameTests.swift",
+    "Features/Tracking/TrackingTests.swift",
+    "Features/TrackingAutomation/TrackingAutomationTests.swift",
+    "Features/WorklogCorrection/WorklogCorrectionTests.swift",
+    "Features/WorklogDeletion/WorklogDeletionTests.swift",
+    "Features/WorklogHistory/HistoryTests.swift",
+    "Features/WorklogMove/WorklogMoveTests.swift",
+    "Support/FixtureCleanupTests.swift",
+)
+DIRECT_REQUEST_SUPPORT_SUITES = DIRECT_REQUEST_REQUIRED_SUITES + (
+    "Features/MenuBar/MenuTaskClipboardTests.swift",
+    "Features/MenuBar/MenuTaskOrderTests.swift",
+    "Features/MenuBar/MenuTaskTrackingActionTests.swift",
+)
+# Each reviewed adaptation names exact shared fixture and contract edits, required
+# changed suites, and every suite whose production mapping the helper edits affect.
 REVIEWED_SUPPORT_ADAPTATIONS = (
     ("Shared fixture only adds the worklog deletion reply; the changed deletion suite defines scope",
-     WORKLOG_DELETION_SUPPORT_EDITS, WORKLOG_DELETION_CONTRACT_EDITS,
+     WORKLOG_DELETION_SUPPORT_EDITS, None, WORKLOG_DELETION_CONTRACT_EDITS,
+     ("Features/WorklogDeletion/WorklogDeletionTests.swift",),
      ("Features/WorklogDeletion/WorklogDeletionTests.swift",)),
+    ("Shared fixture adapts direct requests, startup, settling, and cleanup",
+     None, DIRECT_REQUEST_SUPPORT_BLOBS, DIRECT_REQUEST_CONTRACT_EDITS,
+     DIRECT_REQUEST_REQUIRED_SUITES, DIRECT_REQUEST_SUPPORT_SUITES),
 )
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
@@ -266,19 +314,33 @@ def only_reviewed_edits(root: Path, base: str, head: str, path: str, edits: tupl
     return after == before
 
 
-def reviewed_support_adaptation(root: Path, base: str, head: str, entries: list[dict]) -> str | None:
-    """Return the reason for a reviewed shared-fixture adaptation, if one applies."""
+def only_reviewed_blobs(root: Path, base: str, head: str, path: str, blobs: tuple[str, str]) -> bool:
+    """Match both reviewed whole-file snapshots and reject non-regular files."""
+    for revision, blob in zip((base, head), blobs, strict=True):
+        record = git(root, "ls-tree", "-z", revision, "--", path)
+        if not record or record.split(b"\t", 1)[0] != f"100644 blob {blob}".encode("ascii"):
+            return False
+    return True
+
+
+def reviewed_support_adaptation(
+    root: Path, base: str, head: str, entries: list[dict]
+) -> tuple[str, tuple[str, ...]] | None:
+    """Return the reason and affected sources for an exact shared-fixture adaptation."""
     modified = {entry["path"] for entry in entries if entry["status"] == "M"}
     changed_suites = {entry["path"] for entry in entries if entry["status"] in {"A", "M"}}
     if not {PACKAGE + SHARED_TEST_SUPPORT, PACKAGE + SOURCES + DEPENDENCIES}.issubset(modified):
         return None
-    for reason, support_edits, contract_edits, suites in REVIEWED_SUPPORT_ADAPTATIONS:
+    for reason, support_edits, support_blobs, contract_edits, suites, affected_suites in REVIEWED_SUPPORT_ADAPTATIONS:
         if (
             {PACKAGE + TESTS + suite for suite in suites}.issubset(changed_suites)
-            and only_reviewed_edits(root, base, head, PACKAGE + SHARED_TEST_SUPPORT, support_edits)
+            and (only_reviewed_edits(root, base, head, PACKAGE + SHARED_TEST_SUPPORT, support_edits)
+                 if support_edits is not None else
+                 only_reviewed_blobs(root, base, head, PACKAGE + SHARED_TEST_SUPPORT, support_blobs))
             and only_reviewed_edits(root, base, head, PACKAGE + SOURCES + DEPENDENCIES, contract_edits)
         ):
-            return reason
+            sources = tuple(sorted({source for suite in affected_suites for source in TEST_PRODUCTION[suite]}))
+            return reason, sources
     return None
 
 
@@ -342,7 +404,9 @@ def select_scope(root: Path, base: str, head: str) -> dict:
             elif path.startswith(PACKAGE + TESTS):
                 test = relative.removeprefix(TESTS)
                 if relative == SHARED_TEST_SUPPORT and reviewed_support:
-                    reasons.append(f"{reviewed_support}: {path}")
+                    reason, sources = reviewed_support
+                    for source in sources:
+                        add_source(SOURCES + source, f"{reason}: {path}")
                 elif test in SUPPORT_PRODUCTION:
                     for source in SUPPORT_PRODUCTION[test]:
                         add_source(SOURCES + source, f"Production asserted by changed test support: {path}")

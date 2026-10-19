@@ -59,6 +59,50 @@ final class WindowRoutingUITests: TrackerUITestCase {
         XCTAssertEqual(try fixture.tasks().map(\.id), [task.id])
     }
 
+    func testOtherWindowDisablesEditorsWhileOwnerWindowShowsASheet() throws {
+        let task = try fixture.create("Single sheet task")
+        launch()
+        openRename(task)
+        let renameSheet = app.sheets.containing(.staticText, identifier: "Edit task name").firstMatch
+        replaceText(renameSheet.textFields["task-name.input"], "Rename draft")
+
+        app.typeKey("n", modifierFlags: [.command, .shift])
+        waitUntil("New Window opens while rename is shown") { self.trackerWindows.count == 2 }
+        let freeWindow = try XCTUnwrap(trackerWindows.allElementsBoundByIndex.first { $0.sheets.count == 0 })
+        freeWindow.click()
+        XCTAssertTrue(freeWindow.buttons[XCUIIdentifierCloseWindow].isEnabled)
+        XCTAssertFalse(freeWindow.buttons["New task"].isEnabled)
+        XCTAssertFalse(freeWindow.buttons["Edit task name"].isEnabled)
+        XCTAssertFalse(freeWindow.buttons["Archive task"].isEnabled)
+        XCTAssertFalse(freeWindow.buttons["bulk-archive.open"].isEnabled)
+        freeWindow.descendants(matching: .any).matching(identifier: "task-sidebar.task.\(task.id)").firstMatch.rightClick()
+        XCTAssertFalse(app.menuItems["New task"].isEnabled)
+        XCTAssertFalse(app.menuItems["Edit name"].isEnabled)
+        XCTAssertFalse(app.menuItems["Archive task..."].isEnabled)
+        app.typeKey(.escape, modifierFlags: [])
+        app.typeKey("n", modifierFlags: .command)
+        XCTAssertEqual(app.sheets.count, 1)
+
+        freeWindow.buttons["Start tracking"].click()
+        waitUntil("Tracking starts while the other window shows rename") {
+            (try? self.fixture.activeWorklog())?.taskID == task.id
+        }
+        XCTAssertEqual(renameSheet.textFields["task-name.input"].value as? String, "Rename draft")
+
+        // The new window covers the owner window, so close it before using the rename sheet.
+        app.typeKey("w", modifierFlags: .command)
+        waitUntil("The free window closes") { self.trackerWindows.count == 1 }
+        renameSheet.buttons["task-name.cancel"].click()
+        waitUntil("Rename closes") { self.app.sheets.count == 0 }
+        let window = trackerWindows.firstMatch
+        waitUntil("Editors become available after the sheet closes") { window.buttons["New task"].isEnabled }
+        window.buttons["New task"].click()
+        XCTAssertTrue(window.sheets.firstMatch.waitForExistence(timeout: timeout))
+        window.sheets.firstMatch.buttons["task-name.cancel"].click()
+        waitUntil("Creation closes") { self.app.sheets.count == 0 }
+        XCTAssertEqual(try fixture.tasks().map(\.name), [task.name])
+    }
+
     func testQuitLeavesExactRunningWorklogAndRelaunchRestoresIt() throws {
         let task = try fixture.create("Persistent running task")
         launch()

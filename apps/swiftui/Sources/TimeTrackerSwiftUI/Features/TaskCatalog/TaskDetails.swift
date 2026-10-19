@@ -49,8 +49,7 @@ struct TaskDetails: View {
                 Divider()
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                        WorklogHistoryHeading(
-                            correction: store.correction, move: store.move, deletion: store.deletion)
+                        WorklogHistoryHeading()
                         errorView
 
                         if store.worklogs.isEmpty && store.isHistoryLoading {
@@ -87,9 +86,6 @@ struct TaskDetails: View {
                     Label("Select a task", systemImage: "checklist")
                         .font(.title3)
                         .foregroundStyle(.secondary)
-                    PendingWorklogCorrectionButton(correction: store.correction)
-                    PendingWorklogMoveButton(move: store.move)
-                    PendingWorklogDeletionButton(deletion: store.deletion)
                 }
                 .padding(24)
             }
@@ -132,6 +128,6 @@ private struct HistoryPaginationButton: View {
     var body: some View {
         Button("Load older worklogs") { store.loadOlder() }
             .accessibilityIdentifier("worklog-history.load-older")
-            .disabled(store.isBlockingControls || store.isStale || store.isHistoryLoading)
+            .disabled(store.isStale || store.isHistoryLoading)
     }
 }

@@ -13,7 +13,6 @@ final class FakeClient: TrackerClient, ReportClient {
         case test(ConnectionSettings)
         case connect(ConnectionSettings)
         case refresh(ConnectionSettings)
-        case taskList
         case tasks
         case trackingResource
         case create(name: String, at: String)
@@ -154,13 +153,16 @@ final class FakeClient: TrackerClient, ReportClient {
     }
 
     private var requests: [Request] = []
+    private var deliveringReplies = 0
+    private var closed = false
+    var hasPendingRequests: Bool { !outstanding.isEmpty || deliveringReplies > 0 }
     private var commandPublication: TaskListResources?
     private var waiters: [(id: UUID, expectation: XCTestExpectation)] = []
     private var outstanding: [UUID: CheckedContinuation<Reply, Error>] = [:]
     private(set) var operations: [Operation] = []
     private(set) var maximumOutstandingRequests = 0
 
-    func next(timeout: TimeInterval = 2, file: StaticString = #filePath, line: UInt = #line) async throws -> Request {
+    func next(timeout: TimeInterval = 0.5, file: StaticString = #filePath, line: UInt = #line) async throws -> Request {
         if !requests.isEmpty { return requests.removeFirst() }
         let description =
             "Next client request after \(operations.last.map { String(describing: $0) } ?? "startup") at \(file):\(line)"
@@ -188,8 +190,17 @@ final class FakeClient: TrackerClient, ReportClient {
         }
     }
 
+    func close() {
+        closed = true
+        commandPublication = nil
+        cancelOutstanding()
+    }
+
     private func perform(_ operation: Operation) async throws -> Reply {
+        guard !closed else { throw CancellationError() }
+        deliveringReplies += 1
         operations.append(operation)
+        defer { deliveringReplies -= 1 }
         return try await withCheckedThrowingContinuation { continuation in
             let id = UUID()
             outstanding[id] = continuation
@@ -197,10 +208,12 @@ final class FakeClient: TrackerClient, ReportClient {
             let request = Request(
                 operation: operation,
                 complete: { [weak self] result in
-                    self?.outstanding.removeValue(forKey: id)?.resume(with: result)
+                    guard let self, let continuation = outstanding.removeValue(forKey: id) else { return }
+                    continuation.resume(with: result)
                 },
                 publishAfterCommand: { [weak self] resources in
-                    self?.commandPublication = resources
+                    guard let self, !closed else { return }
+                    commandPublication = resources
                 })
             requests.append(request)
             if !waiters.isEmpty { waiters.removeFirst().expectation.fulfill() }
@@ -266,15 +279,13 @@ final class FakeClient: TrackerClient, ReportClient {
         try await taskListReply(.connect(settings))
     }
     func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources {
-        try await taskListReply(.refresh(settings))
-    }
-    func refreshTaskList() async throws -> TaskListResources {
+
         if let resources = commandPublication {
             commandPublication = nil
-            operations.append(.taskList)
+            operations.append(.refresh(settings))
             return resources
         }
-        return try await taskListReply(.taskList)
+        return try await taskListReply(.refresh(settings))
     }
     func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) async throws
         -> TrackingCommandResult
@@ -464,8 +475,8 @@ final class Fixture {
 
     func cleanup() {
         session.onChange = nil
-        session.shutdown()
-        client.cancelOutstanding()
+        session.sleep()
+        client.close()
     }
 
     func start(_ resources: TaskListResources = emptyTaskListResources, rows: [TaskReportTotal] = []) async throws {
@@ -473,31 +484,34 @@ final class Fixture {
         let open = try await client.next()
         XCTAssertEqual(open.operation, .open(settings.saved ?? .local))
         open.succeed(resources)
-        if reportsEnabled {
-            let report = try await client.next()
-            guard case .report = report.operation else {
-                throw TestTimeout(description: "Expected startup report before history.")
+        let needsHistory = resources.catalog.value.contains { !$0.archived }
+        for _ in 0..<(Int(needsHistory ? 1 : 0) + Int(reportsEnabled ? 1 : 0)) {
+            let request = try await client.next()
+            switch request.operation {
+            case .history(let taskID, nil):
+                XCTAssertEqual(taskID, session.selectedTaskID)
+                request.succeed(emptyPage)
+            case .report where reportsEnabled:
+                request.succeed(TaskListTotalsRefresh(taskList: resources, rows: rows))
+            default:
+                XCTFail("Unexpected startup request: \(request.operation)")
+                throw TestTimeout(description: "Unexpected startup request.")
             }
-            report.succeed(TaskListTotalsRefresh(taskList: resources, rows: rows))
-        }
-        if let task = resources.catalog.value.first(where: { !$0.archived }) {
-            let history = try await client.next()
-            XCTAssertEqual(history.operation, .history(task: task.id, cursor: nil))
-            guard session.isBusy else {
-                XCTFail("Startup history must use the session operation gate.")
-                throw TestTimeout(description: "Startup history ran outside the session operation gate.")
-            }
-            history.succeed(emptyPage)
         }
         try await settled()
     }
 
     func settled() async throws {
-        try await waitUntil("session to finish its current operation") { !self.session.isBusy }
+        let finished = Task { @MainActor in
+            while (self.client.hasPendingRequests || self.session.isHistoryLoading) && !Task.isCancelled {
+                await Task.yield()
+            }
+        }
+        try await taskValue(finished)
     }
 
     func taskValue<Value, Failure>(
-        _ task: Task<Value, Failure>, timeout: TimeInterval = 2,
+        _ task: Task<Value, Failure>, timeout: TimeInterval = 0.5,
         file: StaticString = #filePath, line: UInt = #line
     ) async throws -> Value {
         let expectation = XCTestExpectation(description: "Asynchronous test task at \(file):\(line)")
@@ -516,8 +530,30 @@ final class Fixture {
         return try completedResult.get()
     }
 
+    /// Runs `action`, then waits for the next session update that satisfies `condition`.
+    func update(
+        _ description: String, timeout: TimeInterval = 0.5,
+        file: StaticString = #filePath, line: UInt = #line,
+        after action: () -> Void, until condition: @escaping @MainActor () -> Bool = { true }
+    ) async throws {
+        let expectation = XCTestExpectation(description: description)
+        session.onChange = { [weak session] in
+            if condition() {
+                session?.onChange = nil
+                expectation.fulfill()
+            }
+        }
+        action()
+        let result = await XCTWaiter.fulfillment(of: [expectation], timeout: timeout)
+        session.onChange = nil
+        guard result == .completed else {
+            cleanup()
+            throw TestTimeout(description: "Timed out waiting for \(description) at \(file):\(line)")
+        }
+    }
+
     func waitUntil(
-        _ description: String, timeout: TimeInterval = 2,
+        _ description: String, timeout: TimeInterval = 0.5,
         file: StaticString = #filePath, line: UInt = #line,
         _ condition: @escaping @MainActor () -> Bool
     ) async throws {

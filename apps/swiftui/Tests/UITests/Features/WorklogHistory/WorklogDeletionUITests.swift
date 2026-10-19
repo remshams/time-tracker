@@ -50,7 +50,7 @@ class WorklogDeletionUITests: TrackerUITestCase {
         XCTAssertEqual(try fixture.activeWorklog(), log)
     }
 
-    func testExternallyCorrectedWorklogRequiresReviewBeforeDeletion() throws {
+    func testExternallyCorrectedWorklogShowsConflictOnConfirmAndReopenedDeletionSucceeds() throws {
         let task = try fixture.create("Conflicting deletion")
         let start = Date().addingTimeInterval(-3600)
         let end = start.addingTimeInterval(600)
@@ -58,14 +58,18 @@ class WorklogDeletionUITests: TrackerUITestCase {
         launch()
         select(task)
         openDeletion(log)
-        try fixture.correct(log, start: start.addingTimeInterval(60), end: end)
+        let external = try fixture.correct(log, start: start.addingTimeInterval(60), end: end)
         app.buttons["worklog-deletion.confirm"].click()
-        XCTAssertTrue(app.buttons["worklog-deletion.review"].waitForExistence(timeout: timeout))
-        XCTAssertFalse(app.buttons["worklog-deletion.confirm"].isEnabled)
-        XCTAssertEqual(try fixture.worklogs(task).map(\.id), [log.id])
-        app.buttons["worklog-deletion.review"].click()
+        waitForText("worklog-deletion.error", containing: "changed")
+        XCTAssertTrue(app.buttons["worklog-deletion.confirm"].isEnabled)
+        XCTAssertFalse(app.buttons["worklog-deletion.review"].exists)
+        XCTAssertEqual(try fixture.worklogs(task), [external])
+        app.buttons["worklog-deletion.cancel"].click()
+        waitUntil("Deletion closes") { !self.element("worklog-deletion.summary").exists }
+        waitForHistoryDuration(of: external)
+        openDeletion(external)
         app.buttons["worklog-deletion.confirm"].click()
-        waitUntil("Reviewed deletion closes") { !self.element("worklog-deletion.summary").exists }
+        waitUntil("Reopened deletion closes") { !self.element("worklog-deletion.summary").exists }
         XCTAssertTrue(try fixture.worklogs(task).isEmpty)
     }
 }

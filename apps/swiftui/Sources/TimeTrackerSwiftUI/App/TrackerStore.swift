@@ -89,7 +89,6 @@ final class TrackerStore {
     var pauseOnScreenLock: Bool { presentation.pauseOnScreenLock }
     var autoPauseStatusText: String? { presentation.autoPauseStatusText }
     var dailyTotalsStatus: DailyTotalsStatus { presentation.dailyTotalsStatus }
-    var isBlockingControls: Bool { presentation.isBlockingControls }
     var canStopTracking: Bool { presentation.canStopTracking }
     var timerText: String { presentation.timerDisplayText }
     func canStartTracking(taskID: String) -> Bool { presentation.canStartTracking(taskID: taskID) }

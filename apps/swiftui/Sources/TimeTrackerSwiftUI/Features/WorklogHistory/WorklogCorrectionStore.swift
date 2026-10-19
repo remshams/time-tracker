@@ -20,5 +20,4 @@ final class WorklogCorrectionStore {
     func setEnd(_ date: Date) { session.setWorklogCorrectionEnd(date) }
     func cancel() { session.cancelWorklogCorrection() }
     func submit() { session.submitWorklogCorrection() }
-    func reviewLatest() { session.reviewLatestWorklogCorrection() }
 }

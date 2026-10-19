@@ -117,19 +117,6 @@ private struct WorklogMoveSheet: View {
                 }
             }
 
-            if state.requiresReview, let latest = state.latest {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Latest saved times").font(.subheadline.weight(.semibold))
-                    Text("Start: \(localTimestamp(latest.start))")
-                    Text(latest.end.map { "End: \(localTimestamp($0))" } ?? "Still running")
-                    Button("Review latest entry") { move.reviewLatest() }
-                        .accessibilityIdentifier("worklog-move.review")
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-            }
-
             HStack(spacing: 12) {
                 DelayedProgressIndicator(
                     isBusy: state.isSubmitting, title: "Moving worklog...",
@@ -139,7 +126,7 @@ private struct WorklogMoveSheet: View {
                     .accessibilityIdentifier("worklog-move.cancel")
                     .keyboardShortcut(.cancelAction)
                     .disabled(state.isSubmitting)
-                Button(state.error != nil && !state.canEdit && state.canSubmit ? "Retry" : "Move") {
+                Button("Move") {
                     move.submit()
                 }
                 .accessibilityIdentifier("worklog-move.confirm")
@@ -152,17 +139,5 @@ private struct WorklogMoveSheet: View {
         .frame(width: 560)
         .interactiveDismissDisabled(state.isSubmitting)
         .onAppear { searchFocused = true }
-    }
-}
-
-@MainActor
-struct PendingWorklogMoveButton: View {
-    let move: WorklogMoveStore
-
-    var body: some View {
-        if !move.state.isPresented, let original = move.state.original {
-            Button("Retry worklog move") { move.open(worklogID: original.id) }
-                .disabled(!move.canOpen)
-        }
     }
 }

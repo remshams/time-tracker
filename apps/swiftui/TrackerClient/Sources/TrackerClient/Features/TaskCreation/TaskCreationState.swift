@@ -11,30 +11,17 @@ public struct TaskCreationPresentation: Equatable, Sendable {
 
 @MainActor
 final class TaskCreationState {
-    struct Intent {
-        let name: String
-        let occurredAt: String
-    }
-
     private(set) var isPresented = false
     private(set) var name = ""
     private(set) var isSubmitting = false
     private(set) var error: String?
-    private(set) var intent: Intent?
-    var pending = false
 
     var presentation: TaskCreationPresentation {
         TaskCreationPresentation(
             isPresented: isPresented, name: name,
             isSubmitting: isSubmitting, error: error,
-            canEditName: !isSubmitting && intent == nil,
+            canEditName: !isSubmitting,
             canSubmit: isPresented && !isSubmitting && !TaskNameEditingPolicy.normalized(name).isEmpty)
-    }
-
-    var blocksConnectionChange: Bool { isSubmitting || intent != nil }
-
-    static func requiresRecovery(_ error: Error) -> Bool {
-        TaskNameEditingPolicy.requiresRecovery(error)
     }
 
     func open() {
@@ -49,28 +36,24 @@ final class TaskCreationState {
 
     func cancel() {
         guard !isSubmitting else { return }
-        isPresented = false
-        if intent == nil { reset() }
+        reset()
     }
 
-    func submit(at occurredAt: String) -> Bool {
-        guard presentation.canSubmit else { return false }
+    /// Returns the name to send, or nil when the draft cannot be submitted.
+    func submit() -> String? {
+        guard presentation.canSubmit else { return nil }
         if let message = TaskNameEditingPolicy.transportError(name) {
             error = message
-            return false
+            return nil
         }
-        if intent == nil { intent = Intent(name: name, occurredAt: occurredAt) }
         isSubmitting = true
-        pending = true
         error = nil
-        return true
+        return name
     }
 
-    func fail(_ failure: Error, retainIntent: Bool) {
+    func fail(_ failure: Error) {
         isSubmitting = false
-        pending = false
         error = failure.localizedDescription
-        if !retainIntent { intent = nil }
     }
 
     func reset() {
@@ -78,7 +61,5 @@ final class TaskCreationState {
         name = ""
         isSubmitting = false
         error = nil
-        intent = nil
-        pending = false
     }
 }

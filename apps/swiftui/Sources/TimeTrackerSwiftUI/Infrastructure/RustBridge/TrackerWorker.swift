@@ -399,10 +399,6 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         }
     }
 
-    func refreshTaskList() async throws -> TaskListResources {
-        try await perform { try $0.currentBridge().refreshTaskList() }
-    }
-
     func readTaskCatalog() async throws -> TaskCatalogObservation {
         try await perform { try $0.currentBridge().readTaskCatalog() }
     }

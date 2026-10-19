@@ -22,7 +22,6 @@ final class DailyTotalsState {
     private(set) var day: DateInterval?
     private(set) var status: DailyTotalsStatus = .unavailable
     private(set) var error: String?
-    var pending = false
 
     init(calendar: Calendar) { self.calendar = calendar }
 
@@ -37,7 +36,6 @@ final class DailyTotalsState {
         anchorDate = nil
         status = .unavailable
         error = nil
-        pending = true
         return true
     }
 
@@ -48,12 +46,10 @@ final class DailyTotalsState {
 
     func invalidate() {
         if request != nil { status = .cached }
-        pending = true
     }
 
     func begin(clock: any TrackerClock) -> Request? {
         updateDay(at: clock.now)
-        pending = false
         guard let day else { return nil }
         if request == nil { status = .loading }
         let cutoff = timestamp(commandTimestamp(clock.now)) ?? clock.now
@@ -62,7 +58,7 @@ final class DailyTotalsState {
 
     func accept(_ report: TrackerReport, tracking: TrackingObservation?, requested: Request, clock: any TrackerClock) {
         updateDay(at: clock.now)
-        guard day == requested.day else { pending = true; return }
+        guard day == requested.day else { return }
         rows = report.rows.reduce(into: [:]) { totals, row in
             totals[row.taskId] = max(0, row.durationMicroseconds)
         }

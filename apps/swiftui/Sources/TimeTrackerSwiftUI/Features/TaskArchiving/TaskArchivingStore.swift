@@ -19,6 +19,4 @@ final class TaskArchivingStore {
     func unarchive(taskID: String) { session.unarchiveTask(taskID: taskID) }
     func cancel() { session.cancelTaskArchiving() }
     func submit() { session.submitTaskArchiving() }
-    func reopen() { session.reopenTaskArchiving() }
-    func reviewLatest() { session.reviewLatestTaskArchiving() }
 }

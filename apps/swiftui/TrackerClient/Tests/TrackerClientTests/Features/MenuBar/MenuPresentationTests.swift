@@ -40,7 +40,7 @@ final class MenuPresentationTests: XCTestCase {
                 fixture.session.dailyDurationText(taskID: firstTask.id))
             fixture.scheduler.poll?.fire()
             let poll = try await fixture.client.next()
-            XCTAssertTrue(fixture.session.isBusy)
+            XCTAssertTrue(fixture.client.hasPendingRequests)
             XCTAssertEqual(observer.content, originalContent)
             let updatedRows = [
                 TaskReportTotal(
@@ -49,7 +49,7 @@ final class MenuPresentationTests: XCTestCase {
             ]
             poll.succeed(TaskListTotalsRefresh(taskList: resources, rows: updatedRows))
             let finished = Task { @MainActor in
-                while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
+                while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
             }
             try await fixture.taskValue(finished)
         }
@@ -185,7 +185,7 @@ final class MenuPresentationTests: XCTestCase {
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         let finished = Task { @MainActor in
-            while fixture.session.isBusy && !Task.isCancelled { await Task.yield() }
+            while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
         }
         try await fixture.taskValue(finished)
         let count = fixture.client.operations.count

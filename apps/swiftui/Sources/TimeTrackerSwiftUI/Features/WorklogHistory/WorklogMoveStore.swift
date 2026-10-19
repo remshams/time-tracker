@@ -22,5 +22,4 @@ final class WorklogMoveStore {
     func retryCandidates() { session.retryWorklogMoveCandidates() }
     func cancel() { session.cancelWorklogMove() }
     func submit() { session.submitWorklogMove() }
-    func reviewLatest() { session.reviewLatestWorklogMove() }
 }

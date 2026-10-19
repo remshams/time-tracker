@@ -66,7 +66,7 @@ class BulkTaskArchivingExtendedUITests: TrackerUITestCase {
 final class ServerBulkTaskArchivingUITests: BulkTaskArchivingExtendedUITests {
     override var fixtureSource: TrackerFixture.Source { .server }
 
-    func testLostBulkArchiveResponseRefreshesAuthoritativeStateWithoutResubmission() throws {
+    func testUnconfirmedBulkArchiveReportsFailureAndReloadsTaskListWithoutResubmission() throws {
         let old = try fixture.create("Committed bulk archive", at: Date().addingTimeInterval(-40 * 86400))
         let running = try fixture.create("Protected running task")
         let timer = try fixture.start(running)
@@ -75,12 +75,15 @@ final class ServerBulkTaskArchivingUITests: BulkTaskArchivingExtendedUITests {
         openBulkPreview()
         XCTAssertTrue(element("bulk-archive.candidate.\(old.id)").waitForExistence(timeout: timeout))
         try proxy.dropWriteResponses(method: "POST", path: "/v1/tasks/archive-inactive")
+        let baseline = try proxy.requests().count
         app.buttons["bulk-archive.confirm"].click()
-        XCTAssertTrue(element("bulk-archive.error").waitForExistence(timeout: timeout))
+        waitForText("bulk-archive.error", containing: unconfirmedChangeMessage)
         XCTAssertFalse(app.buttons["bulk-archive.confirm"].isEnabled)
+        waitUntil("The reload removes the archived task from Active") { !self.taskRow(old).exists }
         XCTAssertTrue(try XCTUnwrap(fixture.tasks().first { $0.id == old.id }).archived)
         XCTAssertEqual(try fixture.activeWorklog(), timer)
         try assertAcceptedWriteIntent(proxy, method: "POST", path: "/v1/tasks/archive-inactive")
+        try assertWriteSentWithoutPriorRead(proxy, after: baseline, method: "POST", path: "/v1/tasks/archive-inactive")
         app.buttons["bulk-archive.refresh"].click()
         XCTAssertTrue(element("bulk-archive.empty").waitForExistence(timeout: timeout))
         try assertAcceptedWriteIntent(proxy, method: "POST", path: "/v1/tasks/archive-inactive")

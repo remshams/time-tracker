@@ -20,11 +20,6 @@ final class BulkTaskArchivingState {
         let asOf: String
     }
 
-    struct Submission {
-        let generation: Int
-        let preview: InactiveTaskPreview
-    }
-
     private(set) var isPresented = false
     private(set) var daysText = "14"
     private(set) var preview: InactiveTaskPreview?
@@ -32,12 +27,8 @@ final class BulkTaskArchivingState {
     private(set) var archivedCount: Int?
     private(set) var isLoading = false
     private(set) var isSubmitting = false
-    private(set) var pendingSearch = false
-    private(set) var pendingSubmit = false
     private var generation = 0
-    private var preparedSubmission = false
 
-    var ownsPresentation: Bool { isPresented || isSubmitting }
     var days: Int? {
         guard !daysText.isEmpty, daysText.allSatisfy(isDayDigit),
             let value = UInt32(daysText), value > 0
@@ -56,24 +47,25 @@ final class BulkTaskArchivingState {
                 && preview?.inactiveDays == days && !(preview?.tasks.isEmpty ?? true))
     }
 
-    func open() { isPresented = true; requestPreview() }
-    func updateDays(_ text: String) {
-        guard isPresented, !isSubmitting, text != daysText else { return }
-        daysText = text
-        requestPreview()
+    func open(asOf: String) -> Search? {
+        guard !isPresented else { return nil }
+        isPresented = true
+        return requestPreview(asOf: asOf)
     }
-    func requestPreview() {
-        guard isPresented, !isSubmitting else { return }
+    func updateDays(_ text: String, asOf: String) -> Search? {
+        guard isPresented, !isSubmitting, text != daysText else { return nil }
+        daysText = text
+        return requestPreview(asOf: asOf)
+    }
+    /// Starts a new preview generation. Responses for older generations are ignored.
+    func requestPreview(asOf: String) -> Search? {
+        guard isPresented, !isSubmitting else { return nil }
         generation += 1
         if preview?.inactiveDays != days { preview = nil }
         archivedCount = nil
         error = days == nil ? "Enter a positive whole number of days." : nil
-        pendingSearch = days != nil
-        isLoading = pendingSearch
-    }
-    func takeSearch(asOf: String) -> Search? {
-        guard pendingSearch, let days else { return nil }
-        pendingSearch = false
+        isLoading = days != nil
+        guard let days else { return nil }
         return Search(generation: generation, days: days, asOf: asOf)
     }
     func matches(_ search: Search) -> Bool { isPresented && generation == search.generation }
@@ -97,25 +89,11 @@ final class BulkTaskArchivingState {
         preview = nil
         error = failure.localizedDescription
     }
-    func submit() -> Bool {
-        guard presentation.canSubmit else { return false }
-        pendingSubmit = true
+    func submit() -> InactiveTaskPreview? {
+        guard presentation.canSubmit, let preview else { return nil }
         isSubmitting = true
         error = nil
-        return true
-    }
-    func takeSubmission() -> Submission? {
-        guard pendingSubmit, let preview else { return nil }
-        pendingSubmit = false
-        preparedSubmission = true
-        return Submission(generation: generation, preview: preview)
-    }
-    func beginSubmission(_ submission: Submission) -> Bool {
-        guard isPresented, isSubmitting, preparedSubmission,
-            submission.generation == generation
-        else { return false }
-        preparedSubmission = false
-        return true
+        return preview
     }
     func complete(count: Int) {
         isSubmitting = false
@@ -125,20 +103,8 @@ final class BulkTaskArchivingState {
     }
     func failSubmission(_ failure: Error) {
         isSubmitting = false
-        pendingSubmit = false
         preview = nil
         error = "\(failure.localizedDescription) Refresh the preview before trying again."
-    }
-    func sleep() {
-        guard isPresented, archivedCount == nil else { return }
-        if pendingSubmit || preparedSubmission {
-            pendingSubmit = false
-            preparedSubmission = false
-            isSubmitting = false
-        }
-        guard !isSubmitting else { return }
-        preview = nil
-        requestPreview()
     }
     func cancel() { guard !isSubmitting else { return }; reset() }
     func reset() {
@@ -150,8 +116,5 @@ final class BulkTaskArchivingState {
         archivedCount = nil
         isLoading = false
         isSubmitting = false
-        pendingSearch = false
-        pendingSubmit = false
-        preparedSubmission = false
     }
 }

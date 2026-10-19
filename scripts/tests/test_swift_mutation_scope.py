@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path, PurePosixPath
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "swift-mutation-scope.py"
@@ -43,6 +45,37 @@ DELETION_CONTRACT_BEFORE = (
     + "}\n"
 )
 DELETION_CONTRACT_AFTER = apply_edits(DELETION_CONTRACT_BEFORE, scope.WORKLOG_DELETION_CONTRACT_EDITS)
+DIRECT_REQUEST_SUPPORT_BEFORE = "final class Fixture { func cleanup() { session.shutdown() } }\n"
+DIRECT_REQUEST_SUPPORT_AFTER = """final class Fixture {
+    var hasPendingRequests: Bool { !outstanding.isEmpty || deliveringReplies > 0 }
+    func cleanup() {
+        session.sleep()
+        client.close()
+    }
+    func refreshTaskList(settings: ConnectionSettings) {
+        operations.append(.refresh(settings))
+    }
+    func start() {
+        switch request.operation {
+        case .report where reportsEnabled: request.succeed(resources)
+        default: break
+        }
+    }
+    func settled() async {
+        while (self.client.hasPendingRequests || self.session.isHistoryLoading) { await Task.yield() }
+    }
+    func update(after action: () -> Void) {
+        action()
+    }
+}
+"""
+DIRECT_REQUEST_CONTRACT_BEFORE = (
+    "public protocol TrackerClient: Sendable {\n"
+    "    func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources\n"
+    "    func refreshTaskList() async throws -> TaskListResources\n"
+    "}\n"
+)
+DIRECT_REQUEST_CONTRACT_AFTER = apply_edits(DIRECT_REQUEST_CONTRACT_BEFORE, scope.DIRECT_REQUEST_CONTRACT_EDITS)
 
 
 class SwiftMutationScopeTests(unittest.TestCase):
@@ -179,6 +212,141 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "focused")
         self.assertEqual(result["files"], [TRACKING])
+
+    def direct_request_baseline(self):
+        self.write(scope.PACKAGE + SUPPORT, DIRECT_REQUEST_SUPPORT_BEFORE)
+        self.write(scope.PACKAGE + CONTRACT, DIRECT_REQUEST_CONTRACT_BEFORE)
+        for suite in scope.DIRECT_REQUEST_SUPPORT_SUITES:
+            self.write(scope.PACKAGE + scope.TESTS + suite, "func testExistingBehavior() {}\n")
+        self.base = self.commit("Add shared fixture consumers")
+        blobs = []
+        for contents in (DIRECT_REQUEST_SUPPORT_BEFORE, DIRECT_REQUEST_SUPPORT_AFTER):
+            self.write(scope.PACKAGE + SUPPORT, contents)
+            blobs.append(self.git("hash-object", scope.PACKAGE + SUPPORT))
+        self.git("restore", scope.PACKAGE + SUPPORT)
+        adaptations = tuple(
+            (reason, edits, tuple(blobs) if snapshots is not None else None, contract, required, affected)
+            for reason, edits, snapshots, contract, required, affected in scope.REVIEWED_SUPPORT_ADAPTATIONS)
+        replacement = patch.object(scope, "REVIEWED_SUPPORT_ADAPTATIONS", adaptations)
+        replacement.start()
+        self.addCleanup(replacement.stop)
+
+    def direct_request_changes(self):
+        self.write(scope.PACKAGE + SUPPORT, DIRECT_REQUEST_SUPPORT_AFTER)
+        self.write(scope.PACKAGE + CONTRACT, DIRECT_REQUEST_CONTRACT_AFTER)
+        for suite in scope.DIRECT_REQUEST_REQUIRED_SUITES:
+            self.write(scope.PACKAGE + scope.TESTS + suite, "func testDirectRequests() {}\n")
+
+    def test_direct_request_fixture_selects_all_consumers_including_unchanged_menu_suites(self):
+        self.direct_request_baseline()
+        self.direct_request_changes()
+        self.commit("Adapt fixture to direct requests")
+
+        result = self.select()
+
+        expected = {CONTRACT}
+        expected.update(scope.SOURCES + source for suite in scope.DIRECT_REQUEST_SUPPORT_SUITES
+                        for source in scope.TEST_PRODUCTION[suite])
+        self.assertEqual(result["status"], "focused", result["review_reasons"])
+        self.assertEqual(result["files"], sorted(expected))
+        for source in (scope.CREATION, scope.RENAME, scope.AUTOMATION, scope.DELETION,
+                       "Features/MenuBar/MenuTaskClipboard.swift",
+                       "Features/MenuBar/MenuTaskTrackingAction.swift"):
+            self.assertIn(scope.SOURCES + source, result["files"])
+        self.assertNotIn(scope.SOURCES + "Features/WindowRouting/TrackerWindowRoutingState.swift", result["files"])
+        self.assertNotIn(scope.SOURCES + "Features/ProgressPresentation/DelayedProgressPresentation.swift", result["files"])
+        self.assertFalse(any("MenuTaskClipboardTests.swift" in change["path"] for change in result["changes"]))
+        self.assertTrue(any("Shared fixture adapts direct requests" in reason for reason in result["reasons"]))
+
+    def test_direct_request_fixture_requires_every_adapted_suite_and_contract(self):
+        self.direct_request_baseline()
+        for missing in (CONTRACT, *(scope.TESTS + suite for suite in scope.DIRECT_REQUEST_REQUIRED_SUITES)):
+            with self.subTest(missing=missing):
+                self.git("reset", "--hard", self.base)
+                self.direct_request_changes()
+                self.git("restore", scope.PACKAGE + missing)
+                self.commit("Omit a required direct request change")
+                self.assertEqual(self.select()["status"], "review-required")
+
+    def test_direct_request_fixture_rejects_unreviewed_before_snapshots(self):
+        self.direct_request_baseline()
+        self.write(scope.PACKAGE + SUPPORT, DIRECT_REQUEST_SUPPORT_BEFORE + "// Unreviewed baseline helper\n")
+        self.base = self.commit("Change the fixture before the task")
+        self.direct_request_changes()
+        self.commit("Adapt fixture from an unreviewed baseline")
+
+        self.assertEqual(self.select()["status"], "review-required")
+
+    def test_direct_request_fixture_rejects_missing_and_nonregular_snapshots(self):
+        self.direct_request_baseline()
+        for label in ("missing", "symlink", "executable"):
+            with self.subTest(change=label):
+                self.git("reset", "--hard", self.base)
+                self.direct_request_changes()
+                support = self.root / scope.PACKAGE / SUPPORT
+                if label == "executable":
+                    support.chmod(0o755)
+                else:
+                    support.unlink()
+                    if label == "symlink":
+                        support.symlink_to("../README.md")
+                self.commit("Change the fixture file type")
+                self.assertEqual(self.select()["status"], "review-required")
+
+    def test_direct_request_fixture_rejects_unexpected_helper_and_contract_edits(self):
+        self.direct_request_baseline()
+        variants = {
+            SUPPORT: {
+                "settling": DIRECT_REQUEST_SUPPORT_AFTER.replace(" || self.session.isHistoryLoading", ""),
+                "startup": DIRECT_REQUEST_SUPPORT_AFTER.replace("case .report where reportsEnabled:", "case .report:"),
+                "reply delivery": DIRECT_REQUEST_SUPPORT_AFTER.replace("deliveringReplies > 0", "deliveringReplies > 1"),
+                "refresh": DIRECT_REQUEST_SUPPORT_AFTER.replace("operations.append(.refresh(settings))", "operations.append(.tasks)"),
+                "cleanup": DIRECT_REQUEST_SUPPORT_AFTER.replace("        client.close()", "        client.cancelOutstanding()"),
+                "observer": DIRECT_REQUEST_SUPPORT_AFTER.replace("        action()", "        action()\n        action()"),
+                "extra helper": DIRECT_REQUEST_SUPPORT_AFTER + "func unexpectedHelper() {}\n",
+            },
+            CONTRACT: {
+                "signature": DIRECT_REQUEST_CONTRACT_AFTER.replace("settings: ConnectionSettings", "settings: String"),
+                "extra method": DIRECT_REQUEST_CONTRACT_AFTER.replace("}\n", "    func extraRequest() async throws\n}\n"),
+            },
+        }
+        for path, contents in variants.items():
+            for label, content in contents.items():
+                with self.subTest(path=path, change=label):
+                    self.git("reset", "--hard", self.base)
+                    self.direct_request_changes()
+                    self.write(scope.PACKAGE + path, content)
+                    self.commit("Change an unreviewed helper behavior")
+                    self.assertEqual(self.select()["status"], "review-required")
+
+    def test_direct_request_shared_scope_rejects_stale_sources_from_unchanged_consumers(self):
+        self.direct_request_baseline()
+        self.git("rm", scope.PACKAGE + scope.SOURCES + "Features/MenuBar/MenuTaskClipboard.swift")
+        self.base = self.commit("Remove a production file before the task")
+        self.direct_request_changes()
+        self.commit("Adapt fixture to direct requests")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "review-required")
+        self.assertTrue(any("MenuTaskClipboard.swift" in reason for reason in result["review_reasons"]))
+
+    def test_updated_suite_mappings_include_cross_feature_commands_and_cleanup(self):
+        cases = {
+            "App/BackgroundRefreshInteractionTests.swift": scope.CREATION,
+            "Features/TaskCreation/TaskCreationTests.swift": scope.RENAME,
+            "Features/TrackingAutomation/TrackingAutomationTests.swift": scope.CREATION,
+            "Support/FixtureCleanupTests.swift": scope.TRACKING,
+        }
+        for suite, production in cases.items():
+            with self.subTest(suite=suite):
+                self.git("reset", "--hard", self.base)
+                self.git("clean", "-fd")
+                self.write(scope.PACKAGE + scope.TESTS + suite, "func testIndependentCommand() {}\n")
+                self.commit("Change cross feature assertions")
+                result = self.select()
+                self.assertEqual(result["status"], "focused", result["review_reasons"])
+                self.assertIn(scope.SOURCES + production, result["files"])
 
     def test_integration_suite_selects_feature_coordinator_and_presentation(self):
         test = scope.TESTS + "Features/WorklogMove/WorklogMoveTests.swift"
@@ -520,11 +688,18 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
 
 class SwiftMutationScopeMapTests(unittest.TestCase):
+    def test_direct_request_support_scope_covers_every_current_fixture_consumer(self):
+        test_root = SCRIPT.parents[1] / scope.PACKAGE / scope.TESTS
+        consumers = {path.relative_to(test_root).as_posix() for path in test_root.rglob("*Tests.swift")
+                     if re.search(r"\b(?:Fixture|FakeClient)\(", path.read_text(encoding="utf-8"))}
+
+        self.assertEqual(set(scope.DIRECT_REQUEST_SUPPORT_SUITES), consumers)
+        self.assertTrue(set(scope.DIRECT_REQUEST_REQUIRED_SUITES).issubset(consumers))
+
     def test_every_current_suite_has_a_mapping_to_existing_production_files(self):
         package = SCRIPT.parents[1] / scope.PACKAGE
         test_root = package / scope.TESTS
-        tests = {path.relative_to(test_root).as_posix() for path in test_root.rglob("*.swift")
-                 if "Support" not in path.relative_to(test_root).parts}
+        tests = {path.relative_to(test_root).as_posix() for path in test_root.rglob("*Tests.swift")}
         self.assertEqual(set(scope.TEST_PRODUCTION), tests)
         for support in scope.SUPPORT_PRODUCTION:
             with self.subTest(support=support):

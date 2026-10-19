@@ -8,7 +8,7 @@ Native suites follow the application's `App`, `Features`, and `Infrastructure` f
 
 `Support` owns the shared test base, database fixtures, process management, proxy controls, and assertions used across features. Local and server variants remain together, and the four CI groups select the same test classes independently of their file paths. Portable `TrackerClientTests` follow that package's `App`, `Contracts`, and `Features` folders, with shared fakes in `Support`.
 
-Implementation checkpoint `72b2154`, 9 October 2026, builds on `360430c`. There are 159 native test executions, including inherited local and server cases. This count includes the seven retained bulk archive scenarios. Native execution and final acceptance evidence are recorded with the implementation PR.
+The issue #95 change, 18 October 2026, builds on `bda4a3b`. It replaces the native client's request scheduling with direct requests. The current sources declare 171 native test executions, including inherited local and server cases. This is a source count, not a completed macOS run. Native execution and final acceptance evidence belong in the implementation PR.
 
 ## Run the tests
 
@@ -31,14 +31,14 @@ The CI workflow has an opt-in `native_benchmark` dispatch. Supply the full SHA o
 | --- | --- | --- |
 | 1 | `core` | Smoke, catalog, creation, tracking, history, daily totals, worklog move, and their server variants |
 | 2 | `editing` | Rename, individual archive, existing and extended bulk archive, worklog correction and deletion, and server variants |
-| 3 | `server` | Connection, outages, concurrency, pagination races, uncertain-write recovery, settings, per-source remembered tasks, and appearance |
+| 3 | `server` | Connection, outages, concurrency, pagination races, unconfirmed-write reporting, rejected tracking conflicts, settings, per-source remembered tasks, and appearance |
 | 4 | `mac` | Menu actions, clipboard, shortcuts, window routing, and lifecycle, with server variants; this group's job also runs the Swift package and Rust workspace tests, the universal Release build, and the layout check |
 
 ## Fixtures and failure evidence
 
 Each test has a private temporary directory and UUID preferences suite. The app keeps the isolated launch contract `-tt-ui-testing`, `TT_UI_TEST_DATABASE_PATH`, and `TT_UI_TEST_DEFAULTS_SUITE`. Relaunch uses the same fixture; an independent test gets a new fixture. Cleanup stops server/proxy processes, removes preferences, and deletes the whole directory, including SQLite sidecars.
 
-`TrackerFixture` uses direct CLI commands for local or real server state. `ControlledProxy` forwards UI traffic to that server while fixture writes bypass the proxy. Fault rules match in order, once per rule, using a method and path substring. A new plan releases gates from its previous plan. Gates can hold before a write, hold a committed response, drop a committed response, fail a read, or return incompatible protocol data. Native cases assert backend identity and proxy request counts after recovery.
+`TrackerFixture` uses direct CLI commands for local or real server state. `ControlledProxy` forwards UI traffic to that server while fixture writes bypass the proxy. Fault rules match in order, once per rule, using a method and path substring. A new plan releases gates from its previous plan, and waits ignore released gates. Gates can hold before a write, hold a committed response, drop a committed response, fail a read, or return incompatible protocol data. The bridge runs calls one at a time on a serial worker, so a held request also delays every later call. Native cases assert backend identity and proxy request counts after a rejected or unconfirmed write. Write assertions exclude native task-list and history preflights while allowing background overview polls and the Rust adapter's item reads. Tracking conflict cases change server state after the adapter's read so the server receives and rejects the stale write.
 
 Child processes, health checks, gates, and UI waits have deadlines. Failure attachments include every app window, the accessibility hierarchy, CLI output, and server/proxy logs. Clipboard contents are restored on normal exit and test teardown. Shortcut changes live in the fixture preferences suite; a temporary Carbon registration exercises a real conflict and is released immediately.
 
@@ -55,20 +55,20 @@ Paths below are relative to this directory. Local feature suites also have real-
 | 3 | Creation entry points, validation, cancellation, timer preservation | [TaskCreationUITests](Tests/UITests/Features/TaskCreation/TaskCreationUITests.swift) |
 | 4 | Start, switch, stop, exact running identity after relaunch | [TrackingUITests](Tests/UITests/Features/Tracking/TrackingUITests.swift) |
 | 5 | History order, 50-row pagination, empty/running states, selection and response ownership | [WorklogHistoryUITests](Tests/UITests/Features/WorklogHistory/WorklogHistoryUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
-| 6 | Rename, clicked target, preserved history/timer, conflicts | [TaskRenameUITests](Tests/UITests/Features/TaskRename/TaskRenameUITests.swift) |
-| 7 | Archive/unarchive, cancellation, fallback selection, running guard | [TaskArchivingUITests](Tests/UITests/Features/TaskArchiving/TaskArchivingUITests.swift) |
-| 8 | Bulk preview, period, geometry, confirmation, concurrent candidates and lost response | [retained cases](Tests/UITests/Features/BulkTaskArchiving/BulkTaskArchivingUITests.swift), [extended cases](Tests/UITests/Features/BulkTaskArchiving/BulkTaskArchivingExtendedUITests.swift) |
-| 9 | Completed/running correction, precision, validation, conflicts | [WorklogCorrectionUITests](Tests/UITests/Features/WorklogHistory/WorklogCorrectionUITests.swift) |
-| 10 | Completed/running moves, search, archived source, overlap, conflict | [WorklogMoveUITests](Tests/UITests/Features/WorklogHistory/WorklogMoveUITests.swift) |
-| 11 | Completed deletion, cancellation, running guard, conflict review | [WorklogDeletionUITests](Tests/UITests/Features/WorklogHistory/WorklogDeletionUITests.swift) |
+| 6 | Rename, clicked target, preserved history/timer, conflict on save and reload | [TaskRenameUITests](Tests/UITests/Features/TaskRename/TaskRenameUITests.swift) |
+| 7 | Archive/unarchive, cancellation, fallback selection, running guard, rename conflict on confirm | [TaskArchivingUITests](Tests/UITests/Features/TaskArchiving/TaskArchivingUITests.swift) |
+| 8 | Bulk preview, period, geometry, confirmation, concurrent candidates, no second sheet while the preview is open, unconfirmed response after a double timeout | [retained cases](Tests/UITests/Features/BulkTaskArchiving/BulkTaskArchivingUITests.swift), [extended cases](Tests/UITests/Features/BulkTaskArchiving/BulkTaskArchivingExtendedUITests.swift) |
+| 9 | Completed/running correction, precision, validation, conflict on save and reload | [WorklogCorrectionUITests](Tests/UITests/Features/WorklogHistory/WorklogCorrectionUITests.swift) |
+| 10 | Completed/running moves, search, archived source, overlap, conflict on confirm and reload | [WorklogMoveUITests](Tests/UITests/Features/WorklogHistory/WorklogMoveUITests.swift) |
+| 11 | Completed deletion, cancellation, running guard, conflict on confirm and reload | [WorklogDeletionUITests](Tests/UITests/Features/WorklogHistory/WorklogDeletionUITests.swift) |
 | 12 | Test/adopt connection, distinct sources, rollback, saved settings | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
 | 13 | Initial/later outage, cached state, disabled writes, Retry, incompatible endpoint | [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift), [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
-| 14 | Captured commands, other-client replacement, uncertain writes and retained editor intent | [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift) |
+| 14 | Commands during background reads, server-rejected tracking conflicts, unconfirmed creation/rename/archive/correction/move/deletion after a double timeout, no native read before writing or automatic resubmission, per-feature in-flight state, connection change after an unconfirmed write | [ServerRecoveryUITests](Tests/UITests/Features/Connection/ServerRecoveryUITests.swift), [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
 | 15 | Native menu opening, navigation, Return and dismissal | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
 | 16 | Menu tracking, primary clicks, remembered task per source, saved task order | `MenuBarUITests`, `ServerMenuBarUITests`, and `MenuSourceUITests` in the same file |
 | 17 | Clipboard, zero/archived/cached values, menu identity during refresh and ticks | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
 | 18 | Saved toggles, shortcut recording/cancellation/defaults, registration conflict | [SettingsUITests](Tests/UITests/Features/Connection/SettingsUITests.swift) |
-| 19 | Windows, editor ownership, reopening, quit with running timer | [WindowRoutingUITests](Tests/UITests/App/WindowRoutingUITests.swift) |
+| 19 | Windows, one owner window for editor sheets, editor actions disabled in other windows while that sheet is open, tracking from another window, reopening, quit with running timer | [WindowRoutingUITests](Tests/UITests/App/WindowRoutingUITests.swift) |
 | 20 | Daily totals against CLI reports, overnight/live totals, source clearing | [DailyTotalsUITests](Tests/UITests/Features/DailyTotals/DailyTotalsUITests.swift), [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
 | 21 | Visibility, controlled lock/unlock/sleep/wake, display ticks without requests | [LifecycleUITests](Tests/UITests/Infrastructure/MacLifecycle/LifecycleUITests.swift); real-event checks below remain open |
 | 22 | Light/Dark identity, size, sidebar, text status, task color identity | [AppearanceUITests](Tests/UITests/App/AppearanceUITests.swift); platform checks below remain open |
@@ -81,7 +81,7 @@ Record the macOS/Xcode version, application revision, backend, steps, result, an
 | --- | --- | --- |
 | 1 | Real lock/unlock with pause enabled and disabled; prove the locked interval is excluded | Open |
 | 2 | Lock followed by sleep, wake while locked, and a competing remote timer before unlock | Open |
-| 3 | Real sleep/wake with pause disabled and shutdown during a pending command | Open |
+| 3 | Real sleep/wake with pause disabled | Open |
 | 4 | Multiple displays and menu-bar auto-hiding | Open |
 | 5 | Keyboard-layout changes while the saved global shortcut is registered | Open |
 | 6 | Real day rollover and DST transition, alongside portable calendar tests | Open |

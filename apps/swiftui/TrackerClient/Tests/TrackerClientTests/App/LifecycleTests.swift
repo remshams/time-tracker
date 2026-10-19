@@ -4,35 +4,6 @@ import XCTest
 
 final class LifecycleTests: XCTestCase {
     @MainActor
-    func testShutdownFromStartupNotificationPreventsOpeningClient() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        fixture.session.onChange = {
-            if fixture.session.isBusy {
-                fixture.session.onChange = nil
-                fixture.session.shutdown()
-            }
-        }
-        let opened = XCTestExpectation(description: "Stopped session must not open the client")
-        opened.isInverted = true
-        let observer = Task {
-            do {
-                _ = try await fixture.client.next(timeout: 4)
-                opened.fulfill()
-            } catch {}
-        }
-
-        fixture.session.start()
-        let result = await XCTWaiter.fulfillment(of: [opened], timeout: 2)
-        XCTAssertEqual(result, .completed, "The client was opened after a startup observer stopped the session.")
-        XCTAssertTrue(fixture.client.operations.isEmpty)
-        XCTAssertFalse(fixture.session.isBusy)
-        XCTAssertTrue(fixture.scheduler.active.isEmpty)
-        fixture.cleanup()
-        try await fixture.taskValue(observer)
-    }
-
-    @MainActor
     func testPollingUsesVisibleBackoffAndProtocolFailureBlocksUntilExplicitRefresh() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
@@ -113,7 +84,7 @@ final class LifecycleTests: XCTestCase {
         let count = fixture.client.operations.count
         oldPoll?.deliverQueuedAction()
         oldDisplay?.deliverQueuedAction()
-        XCTAssertFalse(fixture.session.isBusy)
+        XCTAssertFalse(fixture.client.hasPendingRequests)
         XCTAssertEqual(fixture.client.operations.count, count)
         XCTAssertEqual(fixture.session.now, previousNow)
         XCTAssertEqual(fixture.scheduler.poll?.delay, 60)
@@ -150,7 +121,7 @@ final class LifecycleTests: XCTestCase {
         replacedTimers.forEach { $0.deliverQueuedAction() }
         XCTAssertEqual(changes, 0, "Callbacks from replaced timers must not publish into the resumed session.")
         XCTAssertEqual(fixture.session.now, publishedNow)
-        XCTAssertFalse(fixture.session.isBusy)
+        XCTAssertFalse(fixture.client.hasPendingRequests)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
         XCTAssertEqual(fixture.scheduler.scheduled.count, scheduledCount)
 
@@ -219,38 +190,6 @@ final class LifecycleTests: XCTestCase {
         try await fixture.settled()
         XCTAssertNotNil(fixture.scheduler.display)
         XCTAssertEqual(fixture.scheduler.poll?.delay, 5)
-    }
-
-    @MainActor
-    func testShutdownCancelsTimersAndIgnoresLateConnectionResult() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.session.setWindowVisible(true)
-        let refresh = try await fixture.client.next()
-        refresh.succeed(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        try await fixture.settled()
-        let tokens = fixture.scheduler.active
-        let connecting = Task { await fixture.session.connect(serverSettings) }
-        let candidate = try await fixture.client.next()
-        fixture.session.shutdown()
-        XCTAssertTrue(tokens.allSatisfy { $0.cancelled })
-        XCTAssertTrue(fixture.scheduler.active.isEmpty)
-        candidate.succeed(TaskListResources(tasks: [secondTask], active: nil))
-        let connected = try await fixture.taskValue(connecting)
-        XCTAssertFalse(connected)
-        XCTAssertEqual(fixture.session.connectionSettings, .local)
-        XCTAssertEqual(fixture.session.tasks, [firstTask])
-        XCTAssertEqual(fixture.session.active, activeWorklog)
-        XCTAssertTrue(fixture.settings.writes.isEmpty)
-        let operationCount = fixture.client.operations.count
-        fixture.session.start()
-        fixture.session.refresh()
-        fixture.session.wake()
-        fixture.session.menuOpened()
-        tokens.forEach { $0.deliverQueuedAction() }
-        XCTAssertEqual(fixture.client.operations.count, operationCount)
-        XCTAssertTrue(fixture.scheduler.active.isEmpty)
     }
 
     func testPollingPolicyClampsFailureCountAndNeverPollsHiddenWindowFasterThanMinute() {

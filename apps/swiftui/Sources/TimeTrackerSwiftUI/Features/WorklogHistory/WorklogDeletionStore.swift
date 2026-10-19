@@ -18,5 +18,4 @@ final class WorklogDeletionStore {
     func open(worklogID: String) { session.openWorklogDeletion(worklogID: worklogID) }
     func cancel() { session.cancelWorklogDeletion() }
     func submit() { session.submitWorklogDeletion() }
-    func reviewLatest() { session.reviewLatestWorklogDeletion() }
 }

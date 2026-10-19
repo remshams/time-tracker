@@ -39,37 +39,25 @@ final class TaskNameEditingPolicyTests: XCTestCase {
     }
 
     @MainActor
-    func testRenameSuccessAndLostResponsePreserveZeroWidthNameEdges() async throws {
-        for losesResponse in [false, true] {
-            let fixture = Fixture()
-            defer { fixture.cleanup() }
-            let original = TaskListResources(tasks: [firstTask], active: nil)
-            try await fixture.start(original)
-            fixture.session.openTaskRename()
-            let rawName = " \u{200b}Renamed task\u{200b}\u{00a0}"
-            fixture.session.setTaskRenameName(rawName)
-            fixture.session.submitTaskRename()
-            let preflight = try await fixture.client.next()
-            preflight.succeed(original)
-            let rename = try await fixture.client.next()
-            XCTAssertEqual(
-                rename.operation,
-                .rename(task: firstTask.id, expectedName: firstTask.name, name: rawName, at: "2025-01-01T00:00:00.000Z")
-            )
-            let task = TaskItem(
-                id: firstTask.id, name: "\u{200b}Renamed task\u{200b}", archived: false, latestStart: nil)
-            let updated = TaskListResources(tasks: [task], active: nil)
-            if losesResponse {
-                rename.fail(BridgeFailure(message: "Response lost", uncertain: true))
-                let reconciliation = try await fixture.client.next()
-                reconciliation.succeed(updated)
-            } else {
-                rename.succeed(updated)
-            }
-            try await fixture.settled()
-            XCTAssertFalse(fixture.session.taskRename.isPresented)
-            XCTAssertNil(fixture.session.taskRename.error)
-            XCTAssertEqual(fixture.session.selectedTask?.name, task.name)
+    func testRenamePreservesZeroWidthNameEdges() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        fixture.session.openTaskRename()
+        let rawName = " \u{200b}Renamed task\u{200b}\u{00a0}"
+        fixture.session.setTaskRenameName(rawName)
+        fixture.session.submitTaskRename()
+        let rename = try await fixture.client.next()
+        XCTAssertEqual(
+            rename.operation,
+            .rename(task: firstTask.id, expectedName: firstTask.name, name: rawName, at: "2025-01-01T00:00:00.000Z")
+        )
+        let task = TaskItem(id: firstTask.id, name: "\u{200b}Renamed task\u{200b}", archived: false, latestStart: nil)
+        try await fixture.update("the renamed task") {
+            rename.succeed(TaskListResources(tasks: [task], active: nil))
         }
+        XCTAssertFalse(fixture.session.taskRename.isPresented)
+        XCTAssertNil(fixture.session.taskRename.error)
+        XCTAssertEqual(fixture.session.selectedTask?.name, task.name)
     }
 }

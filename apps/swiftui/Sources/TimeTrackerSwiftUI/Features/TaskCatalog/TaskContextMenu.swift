@@ -8,31 +8,32 @@ struct TaskContextMenu: View {
     let taskID: String?
     var taskIsArchived = false
     var taskIsRunning = false
+    @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
 
-    private var hasTaskEditor: Bool {
-        creation.state.isPresented || rename.state.isPresented || archiving.state.isPresented
-    }
+    // macOS shows one sheet per window, so another editor waits until the owner window's sheet closes.
+    private var canCreate: Bool { creation.canOpen && !presentation.hasPresentation }
+    private var canRename: Bool { rename.canOpen && !presentation.hasPresentation }
 
     var body: some View {
         Button("New task") {
-            guard creation.canOpen, !hasTaskEditor else { return }
+            guard canCreate else { return }
             creation.open()
         }
-        .disabled(!creation.canOpen || hasTaskEditor)
+        .disabled(!canCreate)
         if let taskID {
             Button("Edit name") {
-                guard rename.canOpen, !hasTaskEditor else { return }
+                guard canRename else { return }
                 rename.open(taskID: taskID)
             }
-            .disabled(!rename.canOpen || hasTaskEditor)
+            .disabled(!canRename)
 
             Divider()
             if taskIsArchived {
                 Button("Unarchive task") { archiving.unarchive(taskID: taskID) }
-                    .disabled(!archiving.canUnarchive(taskID: taskID))
+                    .disabled(!archiving.canUnarchive(taskID: taskID) || presentation.hasPresentation)
             } else {
                 Button("Archive task...") { archiving.openArchive(taskID: taskID) }
-                    .disabled(!archiving.canArchive(taskID: taskID))
+                    .disabled(!archiving.canArchive(taskID: taskID) || presentation.hasPresentation)
                     .help(taskIsRunning ? "Stop tracking before archiving this task" : "Archive this task")
             }
         }

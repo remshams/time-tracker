@@ -4,529 +4,113 @@ import XCTest
 
 final class BackgroundRefreshInteractionTests: XCTestCase {
     @MainActor
-    func testQueuedStartCapturesTaskExpectedWorklogAndClickTimeWithoutOverlappingRequests() async throws {
+    func testTrackingSendsImmediatelyWhileAPollRunsAndDisablesOnlyTracking() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         try await fixture.start(resources)
         fixture.session.refresh()
         let poll = try await fixture.client.next()
-        XCTAssertTrue(fixture.session.isBusy)
-        XCTAssertFalse(fixture.session.isBlockingControls)
-        XCTAssertTrue(fixture.session.canStartTracking(taskID: secondTask.id))
-        XCTAssertTrue(fixture.session.canStopTracking)
-        let count = fixture.client.operations.count
-
         fixture.session.startTracking(taskID: secondTask.id)
-        XCTAssertTrue(fixture.session.isBlockingControls)
-        XCTAssertFalse(fixture.session.canStopTracking)
         fixture.clock.now.addTimeInterval(120)
-        fixture.session.startTracking(taskID: firstTask.id)
-        XCTAssertEqual(fixture.client.operations.count, count)
-        poll.succeed(resources)
-
+        fixture.session.stopTracking(worklogID: activeWorklog.id)
         let start = try await fixture.client.next()
         XCTAssertEqual(
             start.operation,
-            .start(
-                task: secondTask.id, expected: activeWorklog.id,
-                at: "2025-01-01T00:00:00.000Z"))
+            .start(task: secondTask.id, expected: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
+        XCTAssertFalse(fixture.session.canStartTracking(taskID: secondTask.id))
+        XCTAssertFalse(fixture.session.canStopTracking)
+        XCTAssertTrue(fixture.session.canOpenTaskCreation)
+        fixture.session.openTaskCreation()
+        fixture.session.setTaskCreationName("Independent task")
+        fixture.session.submitTaskCreation()
+        let create = try await fixture.client.next()
+        XCTAssertEqual(create.operation, .create(name: "Independent task", at: "2025-01-01T00:02:00.000Z"))
+        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 3)
+        create.fail(BridgeFailure(message: "Name rejected"))
+        let createReload = try await fixture.client.next()
+        createReload.succeed(resources)
+        poll.succeed(resources)
         start.succeed(resources)
         try await fixture.settled()
-        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
-        XCTAssertEqual(fixture.client.operations.count, count + 2)
-        XCTAssertFalse(fixture.session.isBlockingControls)
+        XCTAssertTrue(fixture.session.canStartTracking(taskID: secondTask.id))
+        XCTAssertTrue(fixture.session.canStopTracking)
+        XCTAssertEqual(fixture.session.taskCreation.error, "Name rejected")
     }
 
     @MainActor
-    func testQueuedStopCapturesWorklogAndClickTimeAndIgnoresDoubleClick() async throws {
+    func testStopSendsImmediatelyWhileHistoryLoadsAndKeepsClickTime() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources)
-        fixture.session.refresh()
-        let poll = try await fixture.client.next()
-        let count = fixture.client.operations.count
-        XCTAssertTrue(fixture.session.canStopTracking)
+        fixture.session.retryHistory()
+        let history = try await fixture.client.next()
         fixture.session.stopTracking(worklogID: activeWorklog.id)
         fixture.clock.now.addTimeInterval(90)
         fixture.session.stopTracking(worklogID: activeWorklog.id)
-        XCTAssertEqual(fixture.client.operations.count, count)
-        poll.succeed(resources)
-
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
+        XCTAssertFalse(fixture.session.canStopTracking)
         stop.succeed(TaskListResources(tasks: [firstTask], active: nil))
-        let history = try await fixture.client.next()
         history.succeed(emptyPage)
+        // The stopped worklog belonged to the selected task, so the reload requests its history again.
+        let reloadedHistory = try await fixture.client.next()
+        XCTAssertEqual(reloadedHistory.operation, .history(task: firstTask.id, cursor: nil))
+        reloadedHistory.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
-        XCTAssertEqual(fixture.client.operations.count, count + 3)
         XCTAssertNil(fixture.session.active)
-    }
-
-    @MainActor
-    func testQueuedStartKeepsClickedTaskAndRunsBeforeCoalescedRefreshAndSelectionHistory() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        let resources = TaskListResources(tasks: [firstTask, secondTask], active: nil)
-        try await fixture.start(resources)
-        fixture.session.refresh()
-        let poll = try await fixture.client.next()
-        fixture.session.startTracking(taskID: try XCTUnwrap(fixture.session.selectedTaskID))
-        fixture.session.select(secondTask.id)
-        fixture.session.refresh()
-        fixture.session.refresh()
-        poll.succeed(resources)
-        let start = try await fixture.client.next()
+        XCTAssertTrue(fixture.session.canStartSelectedTask)
         XCTAssertEqual(
-            start.operation,
-            .start(
-                task: firstTask.id, expected: nil,
-                at: "2025-01-01T00:00:00.000Z"))
-        start.succeed(resources)
-        let coalesced = try await fixture.client.next()
-        XCTAssertEqual(coalesced.operation, .refresh(.local))
-        coalesced.succeed(resources)
-        let history = try await fixture.client.next()
-        XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
-        history.succeed(emptyPage)
-        try await fixture.settled()
-        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
-        XCTAssertEqual(fixture.session.selectedTaskID, secondTask.id)
-    }
-
-    @MainActor
-    func testQueuedStartRejectsRemovedOrArchivedTargetAfterPoll() async throws {
-        for target in [
-            TaskItem?.none,
-            TaskItem(
-                id: secondTask.id, name: secondTask.name,
-                archived: true, latestStart: nil),
-        ] {
-            let fixture = Fixture()
-            defer { fixture.cleanup() }
-            try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
-            fixture.session.refresh()
-            let poll = try await fixture.client.next()
-            fixture.session.startTracking(taskID: secondTask.id)
-            let count = fixture.client.operations.count
-            poll.succeed(TaskListResources(tasks: [firstTask] + (target.map { [$0] } ?? []), active: nil))
-            try await fixture.settled()
-            XCTAssertEqual(fixture.client.operations.count, count)
-            XCTAssertNotNil(fixture.session.trackingError, "A rejected queued click must explain why it did not run.")
-            XCTAssertFalse(fixture.session.isBlockingControls)
-        }
-    }
-
-    @MainActor
-    func testQueuedStartRejectsChangedActiveWorklogAfterPoll() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        let tasks = [firstTask, secondTask]
-        try await fixture.start(TaskListResources(tasks: tasks, active: activeWorklog))
-        fixture.session.refresh()
-        let poll = try await fixture.client.next()
-        fixture.session.startTracking(taskID: secondTask.id)
-        let replacement = WorklogItem(
-            id: "replacement-worklog", taskId: firstTask.id,
-            start: "2025-01-01T00:00:10.000Z", end: nil)
-        poll.succeed(TaskListResources(tasks: tasks, active: replacement))
-        let history = try await fixture.client.next()
-        XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
-        history.succeed(emptyPage)
-        try await fixture.settled()
-        XCTAssertEqual(fixture.session.active, replacement)
-        XCTAssertNotNil(fixture.session.trackingError)
-        XCTAssertFalse(
-            fixture.client.operations.contains {
-                if case .start = $0 { return true }; return false
-            })
-    }
-
-    @MainActor
-    func testQueuedStopNeverStopsReplacementWorklogAfterPoll() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.session.refresh()
-        let poll = try await fixture.client.next()
-        fixture.session.stopTracking(worklogID: activeWorklog.id)
-        let replacement = WorklogItem(
-            id: "replacement-worklog", taskId: firstTask.id,
-            start: "2025-01-01T00:00:10.000Z", end: nil)
-        poll.succeed(TaskListResources(tasks: [firstTask], active: replacement))
-        let history = try await fixture.client.next()
-        XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
-        history.succeed(emptyPage)
-        try await fixture.settled()
-        XCTAssertEqual(fixture.session.active, replacement)
-        XCTAssertNotNil(fixture.session.trackingError)
-        XCTAssertFalse(
-            fixture.client.operations.contains {
+            fixture.client.operations.filter {
                 if case .stop = $0 { return true }; return false
-            })
+            }.count, 1)
     }
 
     @MainActor
-    func testQueuedTrackingAllowsClickAtWorklogStart() async throws {
-        for stop in [false, true] {
-            let fixture = Fixture()
-            defer { fixture.cleanup() }
-            let tasks = [firstTask, secondTask]
-            let current = WorklogItem(
-                id: activeWorklog.id, taskId: firstTask.id,
-                start: "2025-01-01T00:00:00.000Z", end: nil)
-            let resources = TaskListResources(tasks: tasks, active: current)
-            try await fixture.start(resources)
-            fixture.session.refresh()
-            let poll = try await fixture.client.next()
-            if stop {
-                fixture.session.stopTracking(worklogID: current.id)
-            } else {
-                fixture.session.startTracking(taskID: secondTask.id)
-            }
-            poll.succeed(resources)
-            let command = try await fixture.client.next()
-            let expected: FakeClient.Operation =
-                stop
-                ? .stop(worklog: current.id, at: "2025-01-01T00:00:00.000Z")
-                : .start(task: secondTask.id, expected: current.id, at: "2025-01-01T00:00:00.000Z")
-            XCTAssertEqual(command.operation, expected)
-            let started = WorklogItem(
-                id: "started-second", taskId: secondTask.id,
-                start: current.start, end: nil)
-            command.succeed(TaskListResources(tasks: tasks, active: stop ? nil : started))
-            let history = try await fixture.client.next()
-            history.succeed(emptyPage)
-            try await fixture.settled()
-            XCTAssertNil(fixture.session.trackingError)
-            XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
-        }
-    }
-
-    @MainActor
-    func testQueuedTrackingRejectsCorrectedStartAfterClickAndInvalidStart() async throws {
-        for start in ["2025-01-01T00:00:01.000Z", "invalid start"] {
-            for stop in [false, true] {
-                let fixture = Fixture()
-                defer { fixture.cleanup() }
-                let tasks = [firstTask, secondTask]
-                try await fixture.start(TaskListResources(tasks: tasks, active: activeWorklog))
-                fixture.session.refresh()
-                let poll = try await fixture.client.next()
-                if stop {
-                    fixture.session.stopTracking(worklogID: activeWorklog.id)
-                } else {
-                    fixture.session.startTracking(taskID: secondTask.id)
-                }
-                let corrected = WorklogItem(id: activeWorklog.id, taskId: firstTask.id, start: start, end: nil)
-                poll.succeed(TaskListResources(tasks: tasks, active: corrected))
-                let history = try await fixture.client.next()
-                XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
-                history.succeed(emptyPage)
-                try await fixture.settled()
-                XCTAssertNotNil(fixture.session.trackingError)
-                XCTAssertFalse(
-                    fixture.client.operations.contains {
-                        switch $0 {
-                        case .start, .stop: return true;
-                        default: return false
-                        }
-                    })
-                XCTAssertEqual(fixture.session.active, corrected)
-                XCTAssertFalse(fixture.session.isBlockingControls)
-            }
-        }
-    }
-
-    @MainActor
-    func testFailedPollRejectsQueuedTrackingWithoutWriting() async throws {
-        for stop in [false, true] {
-            let fixture = Fixture()
-            defer { fixture.cleanup() }
-            try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
-            fixture.session.refresh()
-            let poll = try await fixture.client.next()
-            if stop {
-                fixture.session.stopTracking(worklogID: activeWorklog.id)
-            } else {
-                fixture.session.startTracking(taskID: secondTask.id)
-            }
-            let count = fixture.client.operations.count
-            poll.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable"))
-            try await fixture.settled()
-            XCTAssertEqual(fixture.client.operations.count, count)
-            XCTAssertTrue(fixture.session.isStale)
-            XCTAssertNotNil(fixture.session.trackingError)
-            XCTAssertFalse(fixture.session.canStopTracking)
-            XCTAssertFalse(fixture.session.isBlockingControls)
-        }
-    }
-
-    @MainActor
-    func testReportReadKeepsControlsEnabledAndQueuesTracking() async throws {
-        let fixture = Fixture(reports: true)
-        defer { fixture.cleanup() }
-        let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
-        try await fixture.start(resources)
-        fixture.scheduler.poll?.fire()
-        let report = try await fixture.client.next()
-        XCTAssertFalse(fixture.session.isBlockingControls)
-        XCTAssertTrue(fixture.session.canStartTracking(taskID: secondTask.id))
-        XCTAssertTrue(fixture.session.canStopTracking)
-        let count = fixture.client.operations.count
-        fixture.session.startTracking(taskID: secondTask.id)
-        XCTAssertEqual(fixture.client.operations.count, count)
-        report.succeed(TaskListTotalsRefresh(taskList: resources, rows: []))
-        let start = try await fixture.client.next()
-        XCTAssertEqual(
-            start.operation,
-            .start(
-                task: secondTask.id, expected: activeWorklog.id,
-                at: "2025-01-01T00:00:00.000Z"))
-        start.succeed(resources)
-        let totals = try await fixture.client.next()
-        totals.succeed(TaskListTotalsRefresh(taskList: resources, rows: []))
-        try await fixture.settled()
-        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
-    }
-
-    @MainActor
-    func testHistoryReadKeepsControlsEnabledAndConfirmsStateBeforeQueuedWrite() async throws {
+    func testRefreshAndQueuedTimerCallbacksDoNotOverlapAnInflightPoll() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
-        try await fixture.start(resources)
-        fixture.session.retryHistory()
-        let history = try await fixture.client.next()
-        XCTAssertFalse(fixture.session.isBlockingControls)
-        XCTAssertTrue(fixture.session.canStopTracking)
+        try await fixture.start()
+        let timer = try XCTUnwrap(fixture.scheduler.poll)
+        timer.fire()
+        let poll = try await fixture.client.next()
+        XCTAssertEqual(poll.operation, .refresh(.local))
+        XCTAssertNil(fixture.scheduler.poll)
         let count = fixture.client.operations.count
-        fixture.session.stopTracking(worklogID: activeWorklog.id)
+        fixture.session.refresh()
+        fixture.session.refresh()
+        timer.deliverQueuedAction()
+        fixture.session.setWindowVisible(true)
+        XCTAssertNil(fixture.scheduler.poll)
         XCTAssertEqual(fixture.client.operations.count, count)
-        history.succeed(emptyPage)
-        let confirmation = try await fixture.client.next()
-        XCTAssertEqual(confirmation.operation, .taskList)
-        confirmation.succeed(resources)
-        let stop = try await fixture.client.next()
-        XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
-        stop.succeed(resources)
+        poll.succeed(emptyTaskListResources)
         try await fixture.settled()
+        XCTAssertEqual(fixture.client.operations.count, count)
+        XCTAssertEqual(fixture.scheduler.poll?.delay, 5)
         XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
+        fixture.scheduler.poll?.fire()
+        let next = try await fixture.client.next()
+        XCTAssertNil(fixture.scheduler.poll)
+        next.succeed(emptyTaskListResources)
+        try await fixture.settled()
+        XCTAssertEqual(fixture.scheduler.poll?.delay, 5)
     }
 
     @MainActor
-    func testSettingsTestWaitsForPollWithoutDroppingClickOrOverlappingRequests() async throws {
+    func testConnectionTestSendsImmediatelyWhileAPollRuns() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
         fixture.session.refresh()
         let poll = try await fixture.client.next()
-        let count = fixture.client.operations.count
-        XCTAssertFalse(fixture.session.isBlockingControls)
         let testing = Task { try await fixture.session.testConnection(serverSettings) }
-        try await fixture.waitUntil("connection test to queue") { fixture.session.isBlockingControls }
-        XCTAssertEqual(fixture.client.operations.count, count)
-        poll.succeed(emptyTaskListResources)
         let test = try await fixture.client.next()
         XCTAssertEqual(test.operation, .test(serverSettings))
         test.tested()
         try await fixture.taskValue(testing)
-        try await fixture.settled()
-        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
-        XCTAssertTrue(fixture.settings.writes.isEmpty)
-    }
-
-    @MainActor
-    func testSettingsConnectWaitsForPollAndSavesOnlySuccessfulCandidate() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start()
-        fixture.session.refresh()
-        let poll = try await fixture.client.next()
-        let count = fixture.client.operations.count
-        let connecting = Task { await fixture.session.connect(serverSettings) }
-        try await fixture.waitUntil("connection change to queue") { fixture.session.isBlockingControls }
-        XCTAssertEqual(fixture.client.operations.count, count)
         XCTAssertTrue(fixture.settings.writes.isEmpty)
         poll.succeed(emptyTaskListResources)
-        let connect = try await fixture.client.next()
-        XCTAssertEqual(connect.operation, .connect(serverSettings))
-        connect.succeed(emptyTaskListResources)
-        let connected = try await fixture.taskValue(connecting)
-        XCTAssertTrue(connected)
         try await fixture.settled()
-        XCTAssertEqual(fixture.settings.writes, [serverSettings])
-        XCTAssertEqual(fixture.client.maximumOutstandingRequests, 1)
-    }
-
-    @MainActor
-    func testCancelledQueuedConnectionTestCompletesWithoutClientCall() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start()
-        fixture.session.refresh()
-        let poll = try await fixture.client.next()
-        let count = fixture.client.operations.count
-        let testing = Task { try await fixture.session.testConnection(serverSettings) }
-        try await fixture.waitUntil("connection test to queue") { fixture.session.isBlockingControls }
-        testing.cancel()
-        do {
-            try await fixture.taskValue(testing)
-            XCTFail("Cancelling a queued test must throw cancellation.")
-        } catch is CancellationError {}
-        XCTAssertFalse(fixture.session.isBlockingControls)
-        poll.succeed(emptyTaskListResources)
-        try await fixture.settled()
-        XCTAssertEqual(fixture.client.operations.count, count)
-        XCTAssertTrue(fixture.settings.writes.isEmpty)
-    }
-
-    @MainActor
-    func testCancelledQueuedConnectionChangeCompletesWithoutSavingOrClientCall() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start()
-        fixture.session.refresh()
-        let poll = try await fixture.client.next()
-        let count = fixture.client.operations.count
-        let connecting = Task { await fixture.session.connect(serverSettings) }
-        try await fixture.waitUntil("connection change to queue") { fixture.session.isBlockingControls }
-        connecting.cancel()
-        let connected = try await fixture.taskValue(connecting)
-        XCTAssertFalse(connected)
-        XCTAssertFalse(fixture.session.isBlockingControls)
-        poll.succeed(emptyTaskListResources)
-        try await fixture.settled()
-        XCTAssertEqual(fixture.client.operations.count, count)
-        XCTAssertTrue(fixture.settings.writes.isEmpty)
-        XCTAssertEqual(fixture.session.connectionSettings, .local)
-    }
-
-    @MainActor
-    func testSleepAndShutdownCompleteQueuedConnectionTestWithoutClientCall() async throws {
-        for sleeping in [false, true] {
-            let fixture = Fixture()
-            defer { fixture.cleanup() }
-            try await fixture.start()
-            fixture.session.refresh()
-            let poll = try await fixture.client.next()
-            let count = fixture.client.operations.count
-            let testing = Task { try await fixture.session.testConnection(serverSettings) }
-            try await fixture.waitUntil("connection test to queue") { fixture.session.isBlockingControls }
-            if sleeping { fixture.session.sleep() } else { fixture.session.shutdown() }
-            do {
-                try await fixture.taskValue(testing)
-                XCTFail("Stopping queued work must cancel the connection test.")
-            } catch is CancellationError {}
-            poll.succeed(emptyTaskListResources)
-            try await fixture.settled()
-            XCTAssertEqual(fixture.client.operations.count, count)
-            XCTAssertTrue(fixture.settings.writes.isEmpty)
-        }
-    }
-
-    @MainActor
-    func testSleepAndShutdownCompleteQueuedConnectionChangeWithoutSaving() async throws {
-        for sleeping in [false, true] {
-            let fixture = Fixture()
-            defer { fixture.cleanup() }
-            try await fixture.start()
-            fixture.session.refresh()
-            let poll = try await fixture.client.next()
-            let count = fixture.client.operations.count
-            let connecting = Task { await fixture.session.connect(serverSettings) }
-            try await fixture.waitUntil("connection change to queue") { fixture.session.isBlockingControls }
-            if sleeping { fixture.session.sleep() } else { fixture.session.shutdown() }
-            let connected = try await fixture.taskValue(connecting)
-            XCTAssertFalse(connected)
-            poll.succeed(emptyTaskListResources)
-            try await fixture.settled()
-            XCTAssertEqual(fixture.client.operations.count, count)
-            XCTAssertTrue(fixture.settings.writes.isEmpty)
-            XCTAssertEqual(fixture.session.connectionSettings, .local)
-        }
-    }
-
-    @MainActor
-    func testSleepAndShutdownDiscardQueuedTrackingBeforePollCompletes() async throws {
-        for sleeping in [false, true] {
-            let fixture = Fixture()
-            defer { fixture.cleanup() }
-            let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
-            try await fixture.start(resources)
-            fixture.session.refresh()
-            let poll = try await fixture.client.next()
-            fixture.session.stopTracking(worklogID: activeWorklog.id)
-            let count = fixture.client.operations.count
-            if sleeping { fixture.session.sleep() } else { fixture.session.shutdown() }
-            poll.succeed(resources)
-            try await fixture.settled()
-            XCTAssertEqual(fixture.client.operations.count, count)
-            XCTAssertEqual(fixture.session.active, activeWorklog)
-            XCTAssertNotNil(fixture.session.trackingError)
-            XCTAssertFalse(fixture.session.canStopTracking)
-        }
-    }
-
-    @MainActor
-    func testScreenLockDuringSettingsHandoffCancelsUnsentRequests() async throws {
-        for changingConnection in [false, true] {
-            let fixture = Fixture(pauseOnScreenLock: true)
-            defer { fixture.cleanup() }
-            try await fixture.start()
-            fixture.session.refresh()
-            let poll = try await fixture.client.next()
-            let count = fixture.client.operations.count
-            let action = Task { () throws -> Bool in
-                if changingConnection { return await fixture.session.connect(serverSettings) }
-                try await fixture.session.testConnection(serverSettings)
-                return true
-            }
-            try await fixture.waitUntil("settings action to queue") { fixture.session.isBlockingControls }
-            var publications = 0
-            fixture.session.onChange = {
-                guard fixture.session.isBusy, fixture.session.isBlockingControls else { return }
-                publications += 1
-                // The resources publish before the reservation transfers to the next operation.
-                if publications == 2 {
-                    fixture.session.onChange = nil
-                    fixture.session.screenLocked(at: fixture.clock.now)
-                }
-            }
-            poll.succeed(emptyTaskListResources)
-            do {
-                let succeeded = try await fixture.taskValue(action)
-                XCTAssertTrue(changingConnection)
-                XCTAssertFalse(succeeded)
-            } catch is CancellationError {
-                XCTAssertFalse(changingConnection)
-            }
-            try await fixture.settled()
-            XCTAssertEqual(publications, 2)
-            XCTAssertEqual(fixture.client.operations.count, count)
-            XCTAssertTrue(fixture.settings.writes.isEmpty)
-            XCTAssertFalse(fixture.session.isBlockingControls)
-        }
-    }
-
-    @MainActor
-    func testShutdownDuringConnectionNotificationPreventsUnsentRequest() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start()
-        let count = fixture.client.operations.count
-        fixture.session.onChange = {
-            guard fixture.session.isChangingConnection else { return }
-            fixture.session.onChange = nil
-            fixture.session.shutdown()
-        }
-        let connecting = Task { await fixture.session.connect(serverSettings) }
-        let connected = try await fixture.taskValue(connecting)
-        XCTAssertFalse(connected)
-        XCTAssertEqual(fixture.client.operations.count, count)
-        XCTAssertTrue(fixture.settings.writes.isEmpty)
-        XCTAssertEqual(fixture.session.connectionSettings, .local)
     }
 }

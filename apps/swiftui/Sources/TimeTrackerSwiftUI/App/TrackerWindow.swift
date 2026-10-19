@@ -57,6 +57,7 @@ struct TrackerWindow: View {
                     }
                 }
         }
+        .environment(presentation)
         .navigationTitle(store.selectedTask?.name ?? "Time Tracker")
         .frame(minWidth: 760, minHeight: 480)
         .windowDismissBehavior(presentation.canClose(windowID) ? .enabled : .disabled)
@@ -157,20 +158,19 @@ struct TrackerWindow: View {
 private struct TrackerSidebarToolbar: View {
     let preferWindow: () -> Void
     private let creation: TaskCreationStore
-    private let rename: TaskRenameStore
     private let bulkArchiving: BulkTaskArchivingStore
     @Environment(\.openWindow) private var openWindow
+    @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
 
     init(store: TrackerStore, preferWindow: @escaping () -> Void) {
         self.preferWindow = preferWindow
         creation = store.creation
-        rename = store.rename
         bulkArchiving = store.bulkArchiving
     }
 
-    private var canCreate: Bool {
-        creation.canOpen && !creation.state.isPresented && !rename.state.isPresented
-    }
+    // macOS shows one sheet per window, so another editor waits until the owner window's sheet closes.
+    private var canCreate: Bool { creation.canOpen && !presentation.hasPresentation }
+    private var canOpenBulkArchiving: Bool { bulkArchiving.canOpen && !presentation.hasPresentation }
 
     var body: some View {
         Button {
@@ -191,13 +191,13 @@ private struct TrackerSidebarToolbar: View {
         .help("New task")
 
         Button {
-            guard bulkArchiving.canOpen else { return }
+            guard canOpenBulkArchiving else { return }
             preferWindow()
             bulkArchiving.open()
         } label: {
             Label("Archive inactive tasks", systemImage: "archivebox")
         }
-        .disabled(!bulkArchiving.canOpen)
+        .disabled(!canOpenBulkArchiving)
         .help("Archive inactive tasks")
         .accessibilityIdentifier("bulk-archive.open")
     }
@@ -207,39 +207,35 @@ private struct TrackerSidebarToolbar: View {
 private struct TrackerTaskToolbar: View {
     let preferWindow: () -> Void
     let store: TrackerStore
-    private let creation: TaskCreationStore
     private let rename: TaskRenameStore
     private let archiving: TaskArchivingStore
+    @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
 
     init(store: TrackerStore, preferWindow: @escaping () -> Void) {
         self.preferWindow = preferWindow
         self.store = store
-        creation = store.creation
         rename = store.rename
         archiving = store.archiving
     }
 
-    private var hasTaskEditor: Bool {
-        creation.state.isPresented || rename.state.isPresented || archiving.state.isPresented
-    }
-
     var body: some View {
-        PendingTaskArchivingButton(archiving: archiving)
         if let task = store.selectedTask {
+            let canRename = rename.canOpen && !presentation.hasPresentation
             Button {
-                guard rename.canOpen, !hasTaskEditor else { return }
+                guard canRename else { return }
                 preferWindow()
                 rename.open(taskID: task.id)
             } label: {
                 Label("Edit task name", systemImage: "pencil")
             }
-            .disabled(!rename.canOpen || hasTaskEditor)
+            .disabled(!canRename)
             .help("Edit task name")
 
             let canChangeArchive =
-                task.archived
-                ? archiving.canUnarchive(taskID: task.id)
-                : archiving.canArchive(taskID: task.id)
+                !presentation.hasPresentation
+                && (task.archived
+                    ? archiving.canUnarchive(taskID: task.id)
+                    : archiving.canArchive(taskID: task.id))
             Button {
                 guard canChangeArchive else { return }
                 preferWindow()
