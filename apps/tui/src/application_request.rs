@@ -1173,13 +1173,13 @@ pub(crate) mod remote_resource_tests {
         metadata_available: bool,
     ) -> (String, thread::JoinHandle<Vec<String>>) {
         let report = format!(
-            r#"{{"start":"{}","end":"{}","now":"{}","rows":[{{"task_id":"{task_id}","duration_us":60000000}}],"total_us":60000000,"revision":"report-1"}}"#,
+            r#"{{"start":"{}","end":"{}","now":"{}","rows":[{{"task_id":"{task_id}","duration_us":60000000}}],"total_us":60000000}}"#,
             at(100).to_rfc3339(),
             at(300).to_rfc3339(),
             at(200).to_rfc3339(),
         );
         let metadata = format!(
-            r#"{{"task":{{"id":"{task_id}","name":"Report task","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":null}},"revision":"task-2"}}"#,
+            r#"{{"task":{{"id":"{task_id}","name":"Report task","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":null}}}}"#,
             at(100).to_rfc3339(),
             at(100).to_rfc3339(),
         );
@@ -1344,19 +1344,19 @@ pub(crate) mod remote_resource_tests {
         let second_id = worklog_id(2);
         let third_id = worklog_id(3);
         let first_page = format!(
-            r#"{{"worklogs":[{{"id":"{first_id}","task_id":"{task_id}","start":"{}","end":"{}"}},{{"id":"{second_id}","task_id":"{task_id}","start":"{}","end":"{}"}}],"next_cursor":{{"id":"{second_id}","revision":42}},"revision":"history-1"}}"#,
+            r#"{{"worklogs":[{{"id":"{first_id}","task_id":"{task_id}","start":"{}","end":"{}"}},{{"id":"{second_id}","task_id":"{task_id}","start":"{}","end":"{}"}}],"next_cursor":{{"id":"{second_id}","revision":42}}}}"#,
             at(200).to_rfc3339(),
             at(250).to_rfc3339(),
             at(100).to_rfc3339(),
             at(150).to_rfc3339(),
         );
         let second_page = format!(
-            r#"{{"worklogs":[{{"id":"{third_id}","task_id":"{task_id}","start":"{}","end":"{}"}}],"next_cursor":null,"revision":"history-2"}}"#,
+            r#"{{"worklogs":[{{"id":"{third_id}","task_id":"{task_id}","start":"{}","end":"{}"}}],"next_cursor":null}}"#,
             at(50).to_rfc3339(),
             at(75).to_rfc3339(),
         );
         let metadata = format!(
-            r#"{{"task":{{"id":"{task_id}","name":"History task","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":"{}"}},"revision":"task-3"}}"#,
+            r#"{{"task":{{"id":"{task_id}","name":"History task","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":"{}"}}}}"#,
             at(0).to_rfc3339(),
             at(0).to_rfc3339(),
             at(200).to_rfc3339(),
@@ -1498,16 +1498,13 @@ pub(crate) mod remote_resource_tests {
         );
         let task_id = history_task.id();
         let metadata = format!(
-            r#"{{"task":{{"id":"{task_id}","name":"Resolved history name","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":null}},"revision":"task-2"}}"#,
+            r#"{{"task":{{"id":"{task_id}","name":"Resolved history name","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":null}}}}"#,
             at(0).to_rfc3339(),
             at(200).to_rfc3339(),
         );
         let (endpoint, worker) = resource_server(vec![
             (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
-            (
-                200,
-                r#"{"worklogs":[],"next_cursor":null,"revision":"history-1"}"#.to_owned(),
-            ),
+            (200, r#"{"worklogs":[],"next_cursor":null}"#.to_owned()),
             (200, metadata),
         ]);
         let mut application = TrackerBackend::Remote(Box::new(
