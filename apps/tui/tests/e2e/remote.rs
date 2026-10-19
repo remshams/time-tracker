@@ -158,14 +158,17 @@ fn health_check(address: SocketAddr) -> bool {
 }
 
 // Run in a child process so outage tests can kill and restart the real server.
+// Without the fixture environment, for example under `--include-ignored`, it does nothing.
 #[test]
 #[ignore = "spawned only by the remote E2E fixture"]
 fn server_process() {
-    let bind = std::env::var("TT_TEST_SERVER_BIND")
-        .unwrap()
+    let Ok(bind) = std::env::var("TT_TEST_SERVER_BIND") else {
+        return;
+    };
+    let bind = bind
         .parse()
-        .unwrap();
-    let database = std::env::var_os("TT_TEST_SERVER_DB").unwrap();
+        .expect("TT_TEST_SERVER_BIND must be ADDRESS:PORT");
+    let database = std::env::var_os("TT_TEST_SERVER_DB").expect("TT_TEST_SERVER_DB must be set");
     tracker_server::run(bind, database.into()).unwrap();
 }
 
