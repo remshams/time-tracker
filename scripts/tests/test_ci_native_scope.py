@@ -61,7 +61,8 @@ class NativeScopeTests(unittest.TestCase):
 
     def test_any_other_change_requires_native_checks(self):
         for name in ("apps/swiftui/App.swift", "crates/tracker-domain/src/lib.rs", "Cargo.lock",
-                     ".github/workflows/ci.yml", ".github/actions/setup-rust/action.yml",
+                     "apps/server/src/main.rs", "apps/server/Cargo.toml", ".github/workflows/ci.yml",
+                     ".github/actions/setup-rust/action.yml",
                      "scripts/run-native-ui.py", "scripts/ci-native-scope.py", ".cargo/config.toml"):
             with self.subTest(name=name):
                 self.write("README.md", f"Changed with {name}\n")
