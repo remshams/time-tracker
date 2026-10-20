@@ -269,7 +269,7 @@ fn switch_stops_the_old_worklog_and_starts_the_new_one_atomically() {
     repository.insert_worklog(&started).unwrap();
 
     let switched = tracker
-        .switch(&rest, WorklogId::generate(), at(150), at(160))
+        .switch(&rest, WorklogId::generate(), at(150))
         .unwrap();
     repository
         .switch_worklog(
@@ -284,7 +284,7 @@ fn switch_stops_the_old_worklog_and_starts_the_new_one_atomically() {
     let active = repository.active_worklog().unwrap().unwrap();
     assert_eq!(active.id(), switched.started.id());
     assert_eq!(active.task_id(), task_id(2));
-    assert_eq!(active.start(), at(160));
+    assert_eq!(active.start(), at(150));
     assert_eq!(active.end(), None);
     // The old worklog is stopped at the switch instant.
     let old = repository.list_worklogs(task_id(1)).unwrap();
