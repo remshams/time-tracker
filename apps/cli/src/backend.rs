@@ -71,8 +71,12 @@ impl Backend {
             .map_err(CliError::application)
     }
 
-    pub async fn open(database: Option<PathBuf>, server: Option<String>) -> Result<Self, CliError> {
-        let identity = identity(database.as_deref(), server.as_deref())?;
+    /// Opens the selected backend. `identity` must come from [`identity`] for the same arguments.
+    pub async fn open(
+        identity: String,
+        database: Option<PathBuf>,
+        server: Option<String>,
+    ) -> Result<Self, CliError> {
         let kind = if let Some(server) = server {
             BackendKind::Remote(Box::new(
                 RemoteApplication::connect(&server)

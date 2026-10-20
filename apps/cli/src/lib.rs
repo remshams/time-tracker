@@ -17,12 +17,9 @@ use serde_json::Value;
 
 pub async fn run(mut cli: Cli) -> Result<Value, CliError> {
     let now = cli.at.unwrap_or_else(chrono::Utc::now);
-    if cli.db.is_some() && cli.server.is_some() {
-        return Err(CliError::input("--db and --server are mutually exclusive"));
-    }
     let identity = backend::identity(cli.db.as_deref(), cli.server.as_deref())?;
     validate(&mut cli.command, &identity, now)?;
-    let mut backend = backend::Backend::open(cli.db, cli.server).await?;
+    let mut backend = backend::Backend::open(identity, cli.db, cli.server).await?;
     match cli.command {
         args::Command::Tasks { command } => tasks::execute(&mut backend, command, now).await,
         args::Command::Tracking { command } => tracking::execute(&mut backend, command, now).await,
