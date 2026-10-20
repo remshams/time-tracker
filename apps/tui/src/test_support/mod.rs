@@ -1,6 +1,7 @@
 // Shared fixtures and service spies for TUI unit tests.
 
 pub(crate) mod keymap;
+pub(crate) mod render;
 
 use std::cell::RefCell;
 use std::rc::Rc;

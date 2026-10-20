@@ -89,33 +89,12 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: AppView<'_>, state: &Al
 #[cfg(test)]
 mod tests {
     use ratatui::style::{Color, Modifier};
-    use ratatui::{Terminal, backend::TestBackend};
     use tracker_domain::{Worklog, WorklogId};
 
     use crate::command::Command;
     use crate::screens::{AllWorklogsCommand, TaskListCommand};
+    use crate::test_support::render::{draw, row};
     use crate::test_support::{TestService, app_in_timezone, at, task};
-
-    fn draw(app: &crate::app::App<TestService>) -> Terminal<TestBackend> {
-        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
-        terminal
-            .draw(|frame| crate::ui::render(frame, app.app_view()))
-            .unwrap();
-        terminal
-    }
-
-    fn row(terminal: &Terminal<TestBackend>, y: u16) -> String {
-        terminal
-            .backend()
-            .buffer()
-            .content
-            .chunks(80)
-            .nth(y as usize)
-            .unwrap()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect()
-    }
 
     #[test]
     fn an_empty_feed_has_the_global_tab_and_empty_hint() {
