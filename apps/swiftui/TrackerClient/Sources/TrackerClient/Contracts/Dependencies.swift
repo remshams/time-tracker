@@ -1,16 +1,11 @@
 import Foundation
 
 public protocol ReportClient: Sendable {
-    func refreshDailyTotals(settings: ConnectionSettings, start: String, end: String, now: String)
-        async throws -> DailyTotalsResources
-    func report(settings: ConnectionSettings, start: String, end: String, now: String) async throws -> TrackerReport
     func refreshTaskListWithTotals(settings: ConnectionSettings, start: String, end: String, now: String)
         async throws -> TaskListTotalsRefresh
 }
 
 public protocol TrackerClient: Sendable {
-    func readTaskCatalog() async throws -> TaskCatalogObservation
-    func readTracking() async throws -> TrackingObservation
     func openConfigured(_ settings: ConnectionSettings) async throws -> TaskListResources
     func test(_ settings: ConnectionSettings) async throws
     func connect(_ settings: ConnectionSettings) async throws -> TaskListResources

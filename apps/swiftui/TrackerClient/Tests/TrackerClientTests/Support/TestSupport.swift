@@ -13,8 +13,6 @@ final class FakeClient: TrackerClient, ReportClient {
         case test(ConnectionSettings)
         case connect(ConnectionSettings)
         case refresh(ConnectionSettings)
-        case tasks
-        case trackingResource
         case create(name: String, at: String)
         case inactivePreview(days: Int, at: String)
         case archiveInactive(InactiveTaskPreview)
@@ -46,10 +44,6 @@ final class FakeClient: TrackerClient, ReportClient {
         case deleted(WorklogDeletionResult)
         case paused(TrackingPauseResult)
         case report(TaskListTotalsRefresh)
-        case reportResource(TrackerReport)
-        case catalog(TaskCatalogObservation)
-        case trackingResource(TrackingObservation)
-        case dailyTotals(DailyTotalsResources)
         case task(TaskCommandResult)
         case tracking(TrackingCommandResult)
     }
@@ -99,7 +93,6 @@ final class FakeClient: TrackerClient, ReportClient {
         }
         func succeed(_ page: HistoryPage) { complete(.success(.history(page))) }
         func succeed(_ report: TaskListTotalsRefresh) { complete(.success(.report(report))) }
-        func succeed(_ report: TrackerReport) { complete(.success(.reportResource(report))) }
         func paused(_ resources: TaskListResources, didStop: Bool = true) {
             publishAfterCommand(resources)
             complete(.success(.paused(TrackingPauseResult(active: resources.tracking.value, didStop: didStop))))
@@ -233,30 +226,6 @@ final class FakeClient: TrackerClient, ReportClient {
         return value
     }
 
-    func readTaskCatalog() async throws -> TaskCatalogObservation {
-        guard case .catalog(let value) = try await perform(.tasks) else {
-            throw wrongReply("task resource", operation: .tasks)
-        }
-        return value
-    }
-
-    func readTracking() async throws -> TrackingObservation {
-        guard case .trackingResource(let value) = try await perform(.trackingResource) else {
-            throw wrongReply("tracking resource", operation: .trackingResource)
-        }
-        return value
-    }
-
-    func refreshDailyTotals(settings: ConnectionSettings, start: String, end: String, now: String)
-        async throws -> DailyTotalsResources
-    {
-        let operation = Operation.report(settings: settings, start: start, end: end, now: now)
-        guard case .dailyTotals(let value) = try await perform(operation) else {
-            throw wrongReply("daily totals", operation: operation)
-        }
-        return value
-    }
-
     private func taskReply(_ operation: Operation) async throws -> TaskCommandResult {
         guard case .task(let value) = try await perform(operation) else {
             throw wrongReply("task command", operation: operation)
@@ -371,13 +340,6 @@ final class FakeClient: TrackerClient, ReportClient {
     func history(taskID: String, cursor: String?) async throws -> HistoryPage {
         guard case .history(let value) = try await perform(.history(task: taskID, cursor: cursor)) else {
             throw wrongReply("history", operation: .history(task: taskID, cursor: cursor))
-        }
-        return value
-    }
-    func report(settings: ConnectionSettings, start: String, end: String, now: String) async throws -> TrackerReport {
-        let operation = Operation.report(settings: settings, start: start, end: end, now: now)
-        guard case .reportResource(let value) = try await perform(operation) else {
-            throw wrongReply("report", operation: operation)
         }
         return value
     }
