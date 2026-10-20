@@ -14,6 +14,7 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 
 - Follow domain-driven design. Model code around the domain concepts, such as tasks, tracking, and worklogs, and use their names for types, functions, and modules.
 - Inside a crate or app, split code by feature, not by technical layer. Keep a feature's state, logic, and views together, as `crates/tracker-domain/src/` and `apps/swiftui/Sources/TimeTrackerSwiftUI/Features/` do. Don't add folders such as `models/`, `services/`, or `views/` that collect one technical role across all features.
+- Features may depend on other features, but their dependencies must not form a cycle. The compiler doesn't catch cycles between folders in one target, so check them in review. In the Swift app and package, only `App/` composes features at runtime, `Shared/` holds helpers that no feature owns, and `Contracts/` holds protocols and wire models ([ADR 0030](docs/adr/0030-replace-the-session-with-feature-stores.md)).
 - Keep the crate boundaries described in `docs/architecture/primitives.md`. This rule covers the code inside each crate and app, not the crate split.
 
 ## General
