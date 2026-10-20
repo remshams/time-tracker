@@ -70,7 +70,6 @@ private struct WorklogActionsMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        // macOS shows one sheet per window, so another editor waits until the owner window's sheet closes.
         .disabled(presentation.hasPresentation || (!correction.canOpen && !move.canOpen && !deletion.canOpen))
         .help("Worklog actions")
         .accessibilityIdentifier("worklog-history.actions.\(worklog.id)")

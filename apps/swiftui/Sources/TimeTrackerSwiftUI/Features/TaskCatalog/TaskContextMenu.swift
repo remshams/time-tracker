@@ -10,7 +10,6 @@ struct TaskContextMenu: View {
     var taskIsRunning = false
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
 
-    // macOS shows one sheet per window, so another editor waits until the owner window's sheet closes.
     private var canCreate: Bool { creation.canOpen && !presentation.hasPresentation }
     private var canRename: Bool { rename.canOpen && !presentation.hasPresentation }
 
