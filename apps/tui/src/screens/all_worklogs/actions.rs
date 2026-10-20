@@ -17,10 +17,7 @@ impl AppState {
         let screen_generation = self.shell().screen_generation();
         let task_view_generation =
             (source_screen == Screen::TaskList).then(|| self.shell().task_list().view_generation());
-        let source_report_context = self
-            .shell()
-            .report()
-            .map(|report| (report.session_id, report.period_generation));
+        let source_report_period = self.shell().report().map(|report| (report.from, report.to));
         self.enqueue(
             ApplicationRequest::AllWorklogs { after: None },
             move |app, completed| {
@@ -29,11 +26,8 @@ impl AppState {
                     || (source_screen == Screen::TaskList
                         && Some(app.shell().task_list().view_generation()) != task_view_generation)
                     || (source_screen == Screen::Reports
-                        && app
-                            .shell()
-                            .report()
-                            .map(|report| (report.session_id, report.period_generation))
-                            != source_report_context)
+                        && app.shell().report().map(|report| (report.from, report.to))
+                            != source_report_period)
                 {
                     return;
                 }
@@ -673,10 +667,8 @@ mod tests {
         state.open_all_worklogs();
         let effect = state.take_effect().expect("global open request");
         let screen_generation = state.shell().screen_generation();
-        let report_session = state.shell().report().unwrap().session_id;
         assert!(state.shell_mut().report_mut().unwrap().step(-1));
         assert_eq!(state.shell().screen_generation(), screen_generation);
-        assert_eq!(state.shell().report().unwrap().session_id, report_session);
         complete_global(&mut state, effect, page(Vec::new()));
         assert_eq!(state.shell().screen(), Screen::Reports);
     }
