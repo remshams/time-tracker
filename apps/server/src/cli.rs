@@ -83,70 +83,56 @@ mod tests {
     }
 
     #[test]
-    fn serve_requires_a_private_explicit_bind_address() {
-        assert!(parse(args(&["serve"])).is_err());
-        assert!(parse(args(&["serve", "--bind", "0.0.0.0:8765"])).is_err());
-        assert!(parse(args(&["serve", "--bind", "192.168.1.10:8765"])).is_err());
-        assert!(parse(args(&["serve", "--bind", "127.0.0.1:8765"])).is_ok());
-        assert!(parse(args(&["serve", "--bind", "100.100.100.100:8765"])).is_ok());
-        assert!(parse(args(&["serve", "--bind", "[fd7a:115c:a1e0::1]:8765"])).is_ok());
+    fn bind_requires_a_private_explicit_address() {
+        assert!(parse(args(&[])).is_err());
+        assert!(parse(args(&["--bind", "0.0.0.0:8765"])).is_err());
+        assert!(parse(args(&["--bind", "192.168.1.10:8765"])).is_err());
+        assert!(parse(args(&["--bind", "127.0.0.1:8765"])).is_ok());
+        assert!(parse(args(&["--bind", "100.100.100.100:8765"])).is_ok());
+        assert!(parse(args(&["--bind", "[fd7a:115c:a1e0::1]:8765"])).is_ok());
     }
 
     #[test]
-    fn server_database_path_is_optional_and_repeated_flags_fail() {
+    fn database_path_is_optional_and_repeated_flags_fail() {
         assert_eq!(
-            parse(args(&[
-                "serve",
-                "--db",
-                "/tmp/server.db",
-                "--bind",
-                "[::1]:8765"
-            ]))
-            .unwrap(),
+            parse(args(&["--db", "/tmp/server.db", "--bind", "[::1]:8765"])).unwrap(),
             Mode::Serve {
                 bind: "[::1]:8765".parse().unwrap(),
                 database: Some("/tmp/server.db".into()),
             }
         );
-        assert!(
-            parse(args(&[
-                "serve",
-                "--bind",
-                "127.0.0.1:1",
-                "--bind",
-                "127.0.0.1:2"
-            ]))
-            .is_err()
-        );
+        assert!(parse(args(&["--bind", "127.0.0.1:1", "--bind", "127.0.0.1:2"])).is_err());
     }
 
     #[test]
-    fn serve_rejects_incomplete_and_unsafe_options() {
+    fn rejects_incomplete_and_unsafe_options() {
         for values in [
-            vec!["serve", "--bind"],
-            vec!["serve", "--bind", "not-an-address"],
-            vec!["serve", "--bind", "100.63.0.1:8765"],
-            vec!["serve", "--bind", "100.128.0.1:8765"],
-            vec!["serve", "--bind", "[fd7a:115c:a1e1::1]:8765"],
-            vec!["serve", "--db"],
-            vec!["serve", "--db", ""],
-            vec![
-                "serve",
-                "--db",
-                "a.db",
-                "--db",
-                "b.db",
-                "--bind",
-                "127.0.0.1:1",
-            ],
-            vec!["serve", "--bind", "127.0.0.1:1", "extra"],
+            vec!["--bind"],
+            vec!["--bind", "not-an-address"],
+            vec!["--bind", "100.63.0.1:8765"],
+            vec!["--bind", "100.128.0.1:8765"],
+            vec!["--bind", "[fd7a:115c:a1e1::1]:8765"],
+            vec!["--db"],
+            vec!["--db", ""],
+            vec!["--db", "a.db", "--db", "b.db", "--bind", "127.0.0.1:1"],
+            vec!["--bind", "127.0.0.1:1", "extra"],
         ] {
             assert!(parse(args(&values)).is_err(), "accepted {values:?}");
         }
     }
 
     #[test]
-    fn canonical_and_compatibility_forms_match() {
+    fn help_accepts_no_further_arguments() {
+        assert_eq!(parse(args(&["--help"])), Ok(Mode::Help));
+        assert_eq!(parse(args(&["-h"])), Ok(Mode::Help));
+        assert_eq!(
+            parse(args(&["--help", "extra"])).unwrap_err().to_string(),
+            "unexpected argument after help; run `tt-server --help` for usage"
+        );
+    }
+
+    #[test]
+    fn compatibility_form_matches_the_canonical_form() {
         for values in [
             vec![],
             vec!["--help"],
@@ -164,12 +150,6 @@ mod tests {
             assert_eq!(canonical, parse(args(&compatibility)));
         }
         assert!(parse(args(&["serve", "serve", "--bind", "127.0.0.1:8765"])).is_err());
-        assert_eq!(parse(args(&["--help"])), Ok(Mode::Help));
-        assert_eq!(parse(args(&["-h"])), Ok(Mode::Help));
-        assert_eq!(
-            parse(args(&["--help", "extra"])).unwrap_err().to_string(),
-            "unexpected argument after help; run `tt-server --help` for usage"
-        );
     }
 
     #[cfg(unix)]
