@@ -41,7 +41,7 @@ Protocol 6 removes the server revision from writes and reads. The server and eve
 
 Saved CLI history cursors keep working. Saved remote archive previews contain `revision` and fail to load, so generate a new preview after the upgrade.
 
-The server keeps its receipt cache in memory, so the restart during deployment clears it. The cache holds at most 1,024 successful receipts, and eviction also ends replay protection for older requests. After that, a client that resends an old command runs it again if its expected values still match. Check current state after an uncertain outcome before retrying. [ADR 0030](adr/0030-remove-server-revisions-from-writes-and-reads.md) describes this accepted limit with an example.
+The server keeps its receipt cache in memory, so the restart during deployment clears it. The cache holds at most 1,024 successful receipts, and eviction also ends replay protection for older requests. After that, a client that resends an old command runs it again if its expected values still match. Check current state after an uncertain outcome before retrying. [ADR 0031](adr/0031-remove-server-revisions-from-writes-and-reads.md) describes this accepted limit with an example.
 
 ## Host configuration
 
