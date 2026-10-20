@@ -58,4 +58,4 @@ A command can also commit before a server error and leave no receipt. Clients ke
 
 [Issue #109](https://github.com/remshams/time-tracker/issues/109) and [issue #110](https://github.com/remshams/time-tracker/issues/110) simplify the remote coordinator further and stay separate.
 
-Source scope: protocol, server, remote adapter, shared client, TUI, CLI and bridge behavior for issue #94 at `cb5178c`, inspected on 19 October 2026.
+Source scope: protocol, server, remote adapter, shared client, TUI, CLI and bridge behavior for issue #94 at `bbb35071`, inspected on 19 October 2026.
