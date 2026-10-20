@@ -207,15 +207,14 @@ action revisions, dependency and build caches, and seven-day report retention.
 
 | # | Workflow | Checks | Trigger |
 |---|---|---|---|
-| 1 | [CI](.github/workflows/ci.yml) | Rust formatting, Clippy with warnings denied, Python script tests, and actionlint | Every PR, push to `main`, and manual run |
-| 2 | CI | Full Rust workspace tests on Linux, including existing integration and TUI E2E tests | Every PR, push to `main`, and manual run |
-| 3 | CI | Rust coverage and the configured CRAP threshold of 12 | Every PR, push to `main`, and manual run |
-| 4 | CI | Pinned Swift formatting and linting, portable Swift tests, and at least 95% executable line coverage on Linux | Every PR, push to `main`, and manual run |
-| 5 | CI, `swift-mutations` job | Focused portable Swift mutation checks for changed production files and mapped tests; reports are uploaded as `swift-pr-mutations` | Every pull request only |
-| 6 | CI | Four required native UI E2E groups, full Rust workspace tests and Swift package tests on macOS, native Debug and universal Release builds, and scene layout checks | Every manual run, and every PR or push to `main` with changes outside the native scope's skip list |
-| 7 | CI | `CI passed` requires every regular job to succeed. It accepts skipped native jobs only when the native scope found no change that affects them | Every PR, push to `main`, and manual run |
-| 8 | [Mutation tests](.github/workflows/mutations.yml) | Full Rust and portable Swift mutation suites on Linux; missed, timed-out, and unresolved mutants fail their jobs | Manual only |
-| 9 | [Dependency audit](.github/workflows/dependencies.yml) | `cargo audit` checks `Cargo.lock` against RustSec advisories | Monday at 06:23 UTC and manual runs |
+| 1 | [CI](.github/workflows/ci.yml) | Rust formatting, Clippy with warnings denied, a check that `tt-server` has no terminal UI dependencies, Python script tests, and actionlint | Every PR, push to `main`, and manual run |
+| 2 | CI | Full Rust workspace tests on Linux under coverage, including existing integration and TUI E2E tests, and the configured CRAP threshold of 12 | Every PR, push to `main`, and manual run |
+| 3 | CI | Pinned Swift formatting and linting, portable Swift tests, and at least 95% executable line coverage on Linux | Every PR, push to `main`, and manual run |
+| 4 | CI, `swift-mutations` job | Focused portable Swift mutation checks for changed production files and mapped tests; reports are uploaded as `swift-pr-mutations` | Every pull request only |
+| 5 | CI | Four required native UI E2E groups, full Rust workspace tests and Swift package tests on macOS, native Debug and universal Release builds, and scene layout checks | Every manual run, and every PR or push to `main` with changes outside the native scope's skip list |
+| 6 | CI | `CI passed` requires every regular job to succeed. It accepts skipped native jobs only when the native scope found no change that affects them | Every PR, push to `main`, and manual run |
+| 7 | [Mutation tests](.github/workflows/mutations.yml) | Full Rust and portable Swift mutation suites on Linux; missed, timed-out, and unresolved mutants fail their jobs | Manual only |
+| 8 | [Dependency audit](.github/workflows/dependencies.yml) | `cargo audit` checks `Cargo.lock` against RustSec advisories | Monday at 06:23 UTC and manual runs |
 
 The focused Swift job always runs `python3 scripts/swift-muter-regressions.py`, then selects mutation scope from the full pull request diff:
 

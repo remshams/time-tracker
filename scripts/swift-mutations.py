@@ -9,7 +9,6 @@ import math
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -17,6 +16,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts.swift_muter_tools import terminate_group
+
 PACKAGE = ROOT / "apps/swiftui/TrackerClient"
 OUTPUT = ROOT / ".build/swift-mutations"
 DEFAULT_MUTER = ROOT / ".build/swift-tools/muter"
@@ -170,24 +172,6 @@ def positive_timeout(value: float) -> float:
     if not math.isfinite(value) or value <= 0:
         raise MutationError("Process timeout must be a positive, finite number of seconds")
     return value
-
-
-def terminate_group(process: subprocess.Popen) -> None:
-    """Stop compiler and test descendants before removing their working directory."""
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        process.wait()
-        return
-    try:
-        process.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-        pass
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    process.wait()
 
 
 def run(arguments: list[str], package: Path, log, *, check: bool = True, timeout: float = 180) -> int:

@@ -144,18 +144,15 @@ REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [PRESENTATION, SESSION],
 }
-# A reviewed deleted file whose successor is added in the same diff. The
-# successor's own scope covers the deleted file's role.
-REVIEWED_REPLACEMENTS = {
-    SOURCES + "App/TrackerPresentationObserver.swift": SOURCES + PRESENTATION,
-    TESTS + "App/PresentationObserverTests.swift": TESTS + "App/PresentationTests.swift",
-}
-# Each reviewed package manifest edit names its exact text changes and the
-# production files whose behavior depends on it.
-REVIEWED_PACKAGE_EDITS = (
-    ("Package raises the macOS platform for Swift Observation",
-     (("platforms: [.macOS(.v13)],", "platforms: [.macOS(.v14)],"),), (PRESENTATION,)),
-)
+# A PR that deletes a file and adds its successor in the same diff can map the
+# deleted path to the successor here. The successor's own scope covers the
+# deleted file's role. Remove the entry once its PR has merged, since main no
+# longer has the deleted file.
+REVIEWED_REPLACEMENTS: dict[str, str] = {}
+# A PR that edits the package manifest can add a reviewed entry here: (reason,
+# exact text edits, production files whose behavior depends on the edit). Remove
+# the entry once its PR has merged, since its base text no longer matches main.
+REVIEWED_PACKAGE_EDITS: tuple = ()
 
 
 class ScopeError(Exception):

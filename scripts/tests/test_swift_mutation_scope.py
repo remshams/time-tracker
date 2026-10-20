@@ -245,26 +245,35 @@ class SwiftMutationScopeTests(unittest.TestCase):
                 self.commit("Change an unreviewed helper or contract")
                 self.assertEqual(self.select()["status"], "review-required")
 
-    def test_reviewed_platform_raise_selects_the_observable_presentation(self):
+    def reviewed_package_edit(self):
+        edits = (
+            ("Reviewed platform raise",
+             (("platforms: [.macOS(.v14)],", "platforms: [.macOS(.v15)],"),), (scope.PRESENTATION,)),
+        )
+        replacement = mock.patch.object(scope, "REVIEWED_PACKAGE_EDITS", edits)
+        replacement.start()
+        self.addCleanup(replacement.stop)
         manifest = scope.PACKAGE + "Package.swift"
-        self.write(manifest, "let package = Package(\n    platforms: [.macOS(.v13)],\n)\n")
-        self.base = self.commit("Add package manifest")
         self.write(manifest, "let package = Package(\n    platforms: [.macOS(.v14)],\n)\n")
+        self.base = self.commit("Add package manifest")
+        return manifest
+
+    def test_reviewed_package_edit_selects_its_production_files(self):
+        manifest = self.reviewed_package_edit()
+        self.write(manifest, "let package = Package(\n    platforms: [.macOS(.v15)],\n)\n")
         self.commit("Raise the package platform")
 
         result = self.select()
 
         self.assertEqual(result["status"], "focused", result["review_reasons"])
         self.assertEqual(result["files"], [scope.SOURCES + scope.PRESENTATION])
-        self.assertTrue(any("Swift Observation" in reason for reason in result["reasons"]))
+        self.assertTrue(any("Reviewed platform raise" in reason for reason in result["reasons"]))
 
     def test_other_package_manifest_edits_still_require_review(self):
-        manifest = scope.PACKAGE + "Package.swift"
-        self.write(manifest, "let package = Package(\n    platforms: [.macOS(.v13)],\n)\n")
-        self.base = self.commit("Add package manifest")
+        manifest = self.reviewed_package_edit()
         for label, content in {
-            "other platform": "let package = Package(\n    platforms: [.macOS(.v15)],\n)\n",
-            "extra change": "let package = Package(\n    platforms: [.macOS(.v14)],\n    products: [],\n)\n",
+            "other platform": "let package = Package(\n    platforms: [.macOS(.v26)],\n)\n",
+            "extra change": "let package = Package(\n    platforms: [.macOS(.v15)],\n    products: [],\n)\n",
         }.items():
             with self.subTest(change=label):
                 self.git("reset", "--hard", self.base)
@@ -272,9 +281,21 @@ class SwiftMutationScopeTests(unittest.TestCase):
                 self.commit("Change the package manifest")
                 self.assertEqual(self.select()["status"], "review-required")
 
+    def reviewed_replacements(self):
+        retired_source = scope.SOURCES + "App/RetiredPresentation.swift"
+        retired_suite = scope.TESTS + "App/RetiredPresentationTests.swift"
+        replacements = {
+            retired_source: scope.SOURCES + scope.PRESENTATION,
+            retired_suite: scope.TESTS + "App/PresentationTests.swift",
+        }
+        replacement = mock.patch.object(scope, "REVIEWED_REPLACEMENTS", replacements)
+        replacement.start()
+        self.addCleanup(replacement.stop)
+        return retired_source, retired_suite
+
     def test_reviewed_replacement_accepts_a_deleted_file_with_its_added_successor(self):
-        retired_source, successor_source = next(iter(scope.REVIEWED_REPLACEMENTS.items()))
-        retired_suite = scope.TESTS + "App/PresentationObserverTests.swift"
+        retired_source, retired_suite = self.reviewed_replacements()
+        successor_source = scope.REVIEWED_REPLACEMENTS[retired_source]
         self.write(scope.PACKAGE + retired_source, "final class Retired {}\n")
         self.write(scope.PACKAGE + retired_suite, "func testRetired() {}\n")
         self.git("rm", "--cached", "-q", scope.PACKAGE + successor_source)
@@ -292,8 +313,8 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.assertTrue(any("Reviewed replacement" in reason for reason in result["reasons"]))
 
     def test_reviewed_replacement_reported_as_a_rename_selects_the_successor_scope(self):
-        retired_suite = scope.TESTS + "App/PresentationObserverTests.swift"
-        successor_suite = scope.TESTS + "App/PresentationTests.swift"
+        _, retired_suite = self.reviewed_replacements()
+        successor_suite = scope.REVIEWED_REPLACEMENTS[retired_suite]
         body = "".join(f"func testPresentation{index}() {{ XCTAssertTrue(true) }}\n" for index in range(20))
         self.write(scope.PACKAGE + retired_suite, body)
         self.base = self.commit("Add the retired suite")
@@ -322,7 +343,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.assertEqual(self.select()["status"], "review-required")
 
     def test_reviewed_replacement_requires_its_successor_in_the_same_diff(self):
-        retired_source = next(iter(scope.REVIEWED_REPLACEMENTS))
+        retired_source, _ = self.reviewed_replacements()
         self.write(scope.PACKAGE + retired_source, "final class Retired {}\n")
         self.base = self.commit("Add the retired source")
         self.git("rm", "-q", scope.PACKAGE + retired_source)
