@@ -100,8 +100,8 @@ public final class TrackerPresentation {
         canOpenTaskRename = session.canOpenTaskRename
         taskArchiving = session.taskArchiving
         taskArchivingSheetContent = session.taskArchiving
-        archivableTaskIDs = Self.archiveTaskIDs(session, archived: false)
-        unarchivableTaskIDs = Self.archiveTaskIDs(session, archived: true)
+        archivableTaskIDs = Self.archivableTaskIDs(session)
+        unarchivableTaskIDs = Self.unarchivableTaskIDs(session)
         bulkTaskArchiving = session.bulkTaskArchiving
         bulkTaskArchivingSheetContent = session.bulkTaskArchiving
         canOpenBulkTaskArchiving = session.canOpenBulkTaskArchiving
@@ -145,8 +145,8 @@ public final class TrackerPresentation {
         set(\.taskRename, session.taskRename)
         set(\.canOpenTaskRename, session.canOpenTaskRename)
         set(\.taskArchiving, session.taskArchiving)
-        set(\.archivableTaskIDs, Self.archiveTaskIDs(session, archived: false))
-        set(\.unarchivableTaskIDs, Self.archiveTaskIDs(session, archived: true))
+        set(\.archivableTaskIDs, Self.archivableTaskIDs(session))
+        set(\.unarchivableTaskIDs, Self.unarchivableTaskIDs(session))
         set(\.bulkTaskArchiving, session.bulkTaskArchiving)
         set(\.canOpenBulkTaskArchiving, session.canOpenBulkTaskArchiving)
         set(\.worklogCorrection, session.worklogCorrection)
@@ -197,9 +197,12 @@ public final class TrackerPresentation {
         Set(session.tasks.map(\.id).filter { session.canStartTracking(taskID: $0) })
     }
 
-    private static func archiveTaskIDs(_ session: TrackerSession, archived: Bool) -> Set<String> {
-        let availability = session.taskArchivingAvailability
-        return Set(session.tasks.filter { $0.archived == archived && availability[$0.id] == true }.map(\.id))
+    private static func archivableTaskIDs(_ session: TrackerSession) -> Set<String> {
+        Set(session.tasks.map(\.id).filter { session.canArchiveTask(taskID: $0) })
+    }
+
+    private static func unarchivableTaskIDs(_ session: TrackerSession) -> Set<String> {
+        Set(session.tasks.map(\.id).filter { session.canUnarchiveTask(taskID: $0) })
     }
 
     private static func taskDailyTotals(_ session: TrackerSession) -> [String: TaskDailyTotalPresentation] {

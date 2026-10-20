@@ -269,15 +269,6 @@ public final class TrackerSession {
 
     private var canBeginTaskArchiving: Bool { connection.confirmed && !archiving.isOpen }
 
-    var taskArchivingAvailability: [String: Bool] {
-        let available = canBeginTaskArchiving
-        let runningTaskID = active?.taskId
-        return Dictionary(
-            uniqueKeysWithValues: tasks.map { task in
-                (task.id, available && (task.archived || task.id != runningTaskID))
-            })
-    }
-
     public func canArchiveTask(taskID: String) -> Bool {
         canBeginTaskArchiving && active?.taskId != taskID && task(withID: taskID)?.archived == false
     }
