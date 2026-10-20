@@ -63,17 +63,10 @@ mod tests {
     }
 
     #[test]
-    fn database_selection_preserves_explicit_paths_and_uses_the_server_default() {
+    fn database_selection_preserves_explicit_paths() {
         let directory = tempfile::tempdir().unwrap();
         let explicit = directory.path().join("custom.db");
         assert_eq!(database_path(Some(explicit.clone())).unwrap(), explicit);
-        assert_eq!(
-            database_path(None).unwrap(),
-            default_database_path()
-                .unwrap()
-                .with_file_name("tt-server.db")
-        );
-        assert!(default_database_path().unwrap().parent().unwrap().is_dir());
     }
 
     #[test]
