@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path, PurePosixPath
-from unittest.mock import patch
+from unittest import mock
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "swift-mutation-scope.py"
@@ -22,67 +21,6 @@ SPEC.loader.exec_module(scope)
 TRACKING = scope.SOURCES + scope.TRACKING
 CATALOG = scope.SOURCES + scope.CATALOG
 TRACKING_TEST = scope.TESTS + "Features/Tracking/TrackingStateTests.swift"
-SUPPORT = scope.TESTS + "Support/TestSupport.swift"
-CONTRACT = scope.SOURCES + scope.DEPENDENCIES
-DELETION_TEST = scope.TESTS + "Features/WorklogDeletion/WorklogDeletionTests.swift"
-
-
-def apply_edits(text, edits):
-    for old, new in edits:
-        text = text.replace(old, new)
-    return text
-
-
-DELETION_SUPPORT_BEFORE = (
-    "import Foundation\n@MainActor\nfinal class FakeClient: TrackerClient {\n    enum Operation: Equatable {\n"
-    + "".join(old if old.endswith("\n") else old + "\n" for old, _ in scope.WORKLOG_DELETION_SUPPORT_EDITS)
-    + "    }\n}\n"
-)
-DELETION_SUPPORT_AFTER = apply_edits(DELETION_SUPPORT_BEFORE, scope.WORKLOG_DELETION_SUPPORT_EDITS)
-DELETION_CONTRACT_BEFORE = (
-    "public protocol TrackerClient: Sendable {\n"
-    + "".join(old for old, _ in scope.WORKLOG_DELETION_CONTRACT_EDITS)
-    + "}\n"
-)
-DELETION_CONTRACT_AFTER = apply_edits(DELETION_CONTRACT_BEFORE, scope.WORKLOG_DELETION_CONTRACT_EDITS)
-DIRECT_REQUEST_SUPPORT_BEFORE = "final class Fixture { func cleanup() { session.shutdown() } }\n"
-DIRECT_REQUEST_SUPPORT_AFTER = """final class Fixture {
-    var hasPendingRequests: Bool { !outstanding.isEmpty || deliveringReplies > 0 }
-    func cleanup() {
-        session.sleep()
-        client.close()
-    }
-    func refreshTaskList(settings: ConnectionSettings) {
-        operations.append(.refresh(settings))
-    }
-    func start() {
-        switch request.operation {
-        case .report where reportsEnabled: request.succeed(resources)
-        default: break
-        }
-    }
-    func settled() async {
-        while (self.client.hasPendingRequests || self.session.isHistoryLoading) { await Task.yield() }
-    }
-    func update(after action: () -> Void) {
-        action()
-    }
-}
-"""
-DIRECT_REQUEST_CONTRACT_BEFORE = (
-    "public protocol TrackerClient: Sendable {\n"
-    "    func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources\n"
-    "    func refreshTaskList() async throws -> TaskListResources\n"
-    "}\n"
-)
-DIRECT_REQUEST_CONTRACT_AFTER = apply_edits(DIRECT_REQUEST_CONTRACT_BEFORE, scope.DIRECT_REQUEST_CONTRACT_EDITS)
-UNUSED_REQUEST_SUPPORT_BEFORE = "final class FakeClient { func readTracking() {} }\n"
-UNUSED_REQUEST_SUPPORT_AFTER = "final class FakeClient {}\nfunc sameWorklogTimestamp() -> Bool { true }\n"
-UNUSED_REQUEST_CONTRACT_BEFORE = "".join(
-    old + "settings: ConnectionSettings) async throws -> TaskListResources\n}\n"
-    for old, _ in scope.UNUSED_REQUEST_CONTRACT_EDITS
-)
-UNUSED_REQUEST_CONTRACT_AFTER = apply_edits(UNUSED_REQUEST_CONTRACT_BEFORE, scope.UNUSED_REQUEST_CONTRACT_EDITS)
 
 
 class SwiftMutationScopeTests(unittest.TestCase):
@@ -144,73 +82,6 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.assertEqual(result["files"], [TRACKING])
         self.assertEqual(result["merge_base"], self.base)
 
-    def deletion_baseline(self):
-        self.write(scope.PACKAGE + SUPPORT, DELETION_SUPPORT_BEFORE)
-        self.write(scope.PACKAGE + CONTRACT, DELETION_CONTRACT_BEFORE)
-        self.base = self.commit("Add shared client fixture")
-
-    def deletion_changes(self):
-        self.write(scope.PACKAGE + SUPPORT, DELETION_SUPPORT_AFTER)
-        self.write(scope.PACKAGE + CONTRACT, DELETION_CONTRACT_AFTER)
-        self.write(scope.PACKAGE + DELETION_TEST, "func testDeletion() {}\n")
-
-    def test_worklog_deletion_fixture_addition_keeps_the_complete_focused_scope(self):
-        self.deletion_baseline()
-        self.deletion_changes()
-        self.commit("Add worklog deletion to the client contract and fixture")
-
-        result = self.select()
-
-        expected = {CONTRACT}
-        expected.update(
-            scope.SOURCES + source for source in scope.TEST_PRODUCTION[DELETION_TEST.removeprefix(scope.TESTS)])
-        self.assertEqual(result["status"], "focused", result["review_reasons"])
-        self.assertEqual(result["files"], sorted(expected))
-        self.assertIn(scope.SOURCES + scope.DELETION, result["files"])
-        self.assertTrue(any("Shared fixture only adds the worklog deletion reply" in reason
-                            for reason in result["reasons"]))
-
-    def test_worklog_deletion_fixture_addition_requires_the_contract_and_suite(self):
-        self.deletion_baseline()
-        for missing in (CONTRACT, DELETION_TEST):
-            with self.subTest(missing=missing):
-                self.git("reset", "--hard", self.base)
-                self.git("clean", "-fd")
-                self.deletion_changes()
-                if missing == DELETION_TEST:
-                    (self.root / scope.PACKAGE / DELETION_TEST).unlink()
-                else:
-                    self.git("restore", scope.PACKAGE + missing)
-                self.commit("Omit a required deletion change")
-                self.assertEqual(self.select()["status"], "review-required")
-
-    def test_worklog_deletion_fixture_rejects_other_shared_fixture_and_contract_changes(self):
-        self.deletion_baseline()
-        variants = {
-            SUPPORT: {
-                "reply": DELETION_SUPPORT_AFTER.replace("worklog == expected", "worklog.id == expected.id"),
-                "operation": DELETION_SUPPORT_AFTER.replace(
-                    "case delete(expected: WorklogItem)", "case delete(expected: WorklogItem, at: String)"),
-                "extra line": DELETION_SUPPORT_AFTER.replace("    }\n}\n", "    }\n    var extra = 0\n}\n"),
-                "missing reply": DELETION_SUPPORT_AFTER.replace("        case deleted(WorklogDeletionResult)\n", ""),
-            },
-            CONTRACT: {
-                "signature": DELETION_CONTRACT_AFTER.replace(
-                    "func deleteWorklog(expected: WorklogItem)", "func deleteWorklog(id: String)"),
-                "extra requirement": DELETION_CONTRACT_AFTER.replace(
-                    "}\n", "    func purgeWorklogs() async throws\n}\n"),
-            },
-        }
-        for path, contents in variants.items():
-            for label, content in contents.items():
-                with self.subTest(path=path, change=label):
-                    self.git("reset", "--hard", self.base)
-                    self.git("clean", "-fd")
-                    self.deletion_changes()
-                    self.write(scope.PACKAGE + path, content)
-                    self.commit("Change the deletion fixture shape")
-                    self.assertEqual(self.select()["status"], "review-required")
-
     def test_test_only_change_mutates_the_exercised_production_file(self):
         self.write(scope.PACKAGE + TRACKING_TEST, "func testTrackingElapsedAfterStopping() {}\n")
         self.commit("Change tracking assertions")
@@ -219,177 +90,6 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "focused")
         self.assertEqual(result["files"], [TRACKING])
-
-    def direct_request_baseline(self):
-        self.write(scope.PACKAGE + SUPPORT, DIRECT_REQUEST_SUPPORT_BEFORE)
-        self.write(scope.PACKAGE + CONTRACT, DIRECT_REQUEST_CONTRACT_BEFORE)
-        for suite in scope.DIRECT_REQUEST_SUPPORT_SUITES:
-            self.write(scope.PACKAGE + scope.TESTS + suite, "func testExistingBehavior() {}\n")
-        self.base = self.commit("Add shared fixture consumers")
-        blobs = []
-        for contents in (DIRECT_REQUEST_SUPPORT_BEFORE, DIRECT_REQUEST_SUPPORT_AFTER):
-            self.write(scope.PACKAGE + SUPPORT, contents)
-            blobs.append(self.git("hash-object", scope.PACKAGE + SUPPORT))
-        self.git("restore", scope.PACKAGE + SUPPORT)
-        adaptations = tuple(
-            (reason, edits, tuple(blobs) if snapshots is not None else None, contract, required, affected)
-            for reason, edits, snapshots, contract, required, affected in scope.REVIEWED_SUPPORT_ADAPTATIONS)
-        replacement = patch.object(scope, "REVIEWED_SUPPORT_ADAPTATIONS", adaptations)
-        replacement.start()
-        self.addCleanup(replacement.stop)
-
-    def direct_request_changes(self):
-        self.write(scope.PACKAGE + SUPPORT, DIRECT_REQUEST_SUPPORT_AFTER)
-        self.write(scope.PACKAGE + CONTRACT, DIRECT_REQUEST_CONTRACT_AFTER)
-        for suite in scope.DIRECT_REQUEST_REQUIRED_SUITES:
-            self.write(scope.PACKAGE + scope.TESTS + suite, "func testDirectRequests() {}\n")
-
-    def test_direct_request_fixture_selects_all_consumers_including_unchanged_menu_suites(self):
-        self.direct_request_baseline()
-        self.direct_request_changes()
-        self.commit("Adapt fixture to direct requests")
-
-        result = self.select()
-
-        expected = {CONTRACT}
-        expected.update(scope.SOURCES + source for suite in scope.DIRECT_REQUEST_SUPPORT_SUITES
-                        for source in scope.TEST_PRODUCTION[suite])
-        self.assertEqual(result["status"], "focused", result["review_reasons"])
-        self.assertEqual(result["files"], sorted(expected))
-        for source in (scope.CREATION, scope.RENAME, scope.AUTOMATION, scope.DELETION,
-                       "Features/MenuBar/MenuTaskClipboard.swift",
-                       "Features/MenuBar/MenuTaskTrackingAction.swift"):
-            self.assertIn(scope.SOURCES + source, result["files"])
-        self.assertNotIn(scope.SOURCES + "Features/WindowRouting/TrackerWindowRoutingState.swift", result["files"])
-        self.assertNotIn(scope.SOURCES + "Features/ProgressPresentation/DelayedProgressPresentation.swift", result["files"])
-        self.assertFalse(any("MenuTaskClipboardTests.swift" in change["path"] for change in result["changes"]))
-        self.assertTrue(any("Shared fixture adapts direct requests" in reason for reason in result["reasons"]))
-
-    def test_direct_request_fixture_requires_every_adapted_suite_and_contract(self):
-        self.direct_request_baseline()
-        for missing in (CONTRACT, *(scope.TESTS + suite for suite in scope.DIRECT_REQUEST_REQUIRED_SUITES)):
-            with self.subTest(missing=missing):
-                self.git("reset", "--hard", self.base)
-                self.direct_request_changes()
-                self.git("restore", scope.PACKAGE + missing)
-                self.commit("Omit a required direct request change")
-                self.assertEqual(self.select()["status"], "review-required")
-
-    def test_direct_request_fixture_rejects_unreviewed_before_snapshots(self):
-        self.direct_request_baseline()
-        self.write(scope.PACKAGE + SUPPORT, DIRECT_REQUEST_SUPPORT_BEFORE + "// Unreviewed baseline helper\n")
-        self.base = self.commit("Change the fixture before the task")
-        self.direct_request_changes()
-        self.commit("Adapt fixture from an unreviewed baseline")
-
-        self.assertEqual(self.select()["status"], "review-required")
-
-    def test_direct_request_fixture_rejects_missing_and_nonregular_snapshots(self):
-        self.direct_request_baseline()
-        for label in ("missing", "symlink", "executable"):
-            with self.subTest(change=label):
-                self.git("reset", "--hard", self.base)
-                self.direct_request_changes()
-                support = self.root / scope.PACKAGE / SUPPORT
-                if label == "executable":
-                    support.chmod(0o755)
-                else:
-                    support.unlink()
-                    if label == "symlink":
-                        support.symlink_to("../README.md")
-                self.commit("Change the fixture file type")
-                self.assertEqual(self.select()["status"], "review-required")
-
-    def test_direct_request_fixture_rejects_unexpected_helper_and_contract_edits(self):
-        self.direct_request_baseline()
-        variants = {
-            SUPPORT: {
-                "settling": DIRECT_REQUEST_SUPPORT_AFTER.replace(" || self.session.isHistoryLoading", ""),
-                "startup": DIRECT_REQUEST_SUPPORT_AFTER.replace("case .report where reportsEnabled:", "case .report:"),
-                "reply delivery": DIRECT_REQUEST_SUPPORT_AFTER.replace("deliveringReplies > 0", "deliveringReplies > 1"),
-                "refresh": DIRECT_REQUEST_SUPPORT_AFTER.replace("operations.append(.refresh(settings))", "operations.append(.tasks)"),
-                "cleanup": DIRECT_REQUEST_SUPPORT_AFTER.replace("        client.close()", "        client.cancelOutstanding()"),
-                "observer": DIRECT_REQUEST_SUPPORT_AFTER.replace("        action()", "        action()\n        action()"),
-                "extra helper": DIRECT_REQUEST_SUPPORT_AFTER + "func unexpectedHelper() {}\n",
-            },
-            CONTRACT: {
-                "signature": DIRECT_REQUEST_CONTRACT_AFTER.replace("settings: ConnectionSettings", "settings: String"),
-                "extra method": DIRECT_REQUEST_CONTRACT_AFTER.replace("}\n", "    func extraRequest() async throws\n}\n"),
-            },
-        }
-        for path, contents in variants.items():
-            for label, content in contents.items():
-                with self.subTest(path=path, change=label):
-                    self.git("reset", "--hard", self.base)
-                    self.direct_request_changes()
-                    self.write(scope.PACKAGE + path, content)
-                    self.commit("Change an unreviewed helper behavior")
-                    self.assertEqual(self.select()["status"], "review-required")
-
-    def test_direct_request_shared_scope_rejects_stale_sources_from_unchanged_consumers(self):
-        self.direct_request_baseline()
-        self.git("rm", scope.PACKAGE + scope.SOURCES + "Features/MenuBar/MenuTaskClipboard.swift")
-        self.base = self.commit("Remove a production file before the task")
-        self.direct_request_changes()
-        self.commit("Adapt fixture to direct requests")
-
-        result = self.select()
-
-        self.assertEqual(result["status"], "review-required")
-        self.assertTrue(any("MenuTaskClipboard.swift" in reason for reason in result["review_reasons"]))
-
-    def unused_request_baseline(self):
-        self.write(scope.PACKAGE + SUPPORT, UNUSED_REQUEST_SUPPORT_BEFORE)
-        self.write(scope.PACKAGE + CONTRACT, UNUSED_REQUEST_CONTRACT_BEFORE)
-        self.base = self.commit("Add the fake client and contract")
-        blobs = []
-        for contents in (UNUSED_REQUEST_SUPPORT_BEFORE, UNUSED_REQUEST_SUPPORT_AFTER):
-            self.write(scope.PACKAGE + SUPPORT, contents)
-            blobs.append(self.git("hash-object", scope.PACKAGE + SUPPORT))
-        self.git("restore", scope.PACKAGE + SUPPORT)
-        adaptations = tuple(
-            (reason, edits, tuple(blobs) if contract is scope.UNUSED_REQUEST_CONTRACT_EDITS else snapshots,
-             contract, required, affected)
-            for reason, edits, snapshots, contract, required, affected in scope.REVIEWED_SUPPORT_ADAPTATIONS)
-        replacement = patch.object(scope, "REVIEWED_SUPPORT_ADAPTATIONS", adaptations)
-        replacement.start()
-        self.addCleanup(replacement.stop)
-
-    def test_unused_request_cleanup_selects_the_timestamp_comparison_consumers(self):
-        self.unused_request_baseline()
-        self.write(scope.PACKAGE + SUPPORT, UNUSED_REQUEST_SUPPORT_AFTER)
-        self.write(scope.PACKAGE + CONTRACT, UNUSED_REQUEST_CONTRACT_AFTER)
-        self.commit("Drop unused requests")
-
-        result = self.select()
-
-        expected = {CONTRACT}
-        expected.update(scope.SOURCES + source for suite in scope.UNUSED_REQUEST_SUPPORT_SUITES
-                        for source in scope.TEST_PRODUCTION[suite])
-        self.assertEqual(result["status"], "focused", result["review_reasons"])
-        self.assertEqual(result["files"], sorted(expected))
-        self.assertIn(scope.SOURCES + scope.TIMESTAMP, result["files"])
-        self.assertTrue(any("Shared fixture drops unused client requests" in reason for reason in result["reasons"]))
-
-    def test_unused_request_cleanup_rejects_other_fixture_and_contract_edits(self):
-        self.unused_request_baseline()
-        variants = {
-            SUPPORT: {"extra helper": UNUSED_REQUEST_SUPPORT_AFTER + "func unexpectedHelper() {}\n"},
-            CONTRACT: {
-                "kept request": UNUSED_REQUEST_CONTRACT_BEFORE.replace(
-                    "    func readTaskCatalog() async throws -> TaskCatalogObservation\n", ""),
-                "extra method": UNUSED_REQUEST_CONTRACT_AFTER.replace("}\n", "    func extraRequest() async throws\n}\n", 1),
-            },
-        }
-        for path, contents in variants.items():
-            for label, content in contents.items():
-                with self.subTest(path=path, change=label):
-                    self.git("reset", "--hard", self.base)
-                    self.write(scope.PACKAGE + SUPPORT, UNUSED_REQUEST_SUPPORT_AFTER)
-                    self.write(scope.PACKAGE + CONTRACT, UNUSED_REQUEST_CONTRACT_AFTER)
-                    self.write(scope.PACKAGE + path, content)
-                    self.commit("Change an unreviewed helper or contract")
-                    self.assertEqual(self.select()["status"], "review-required")
 
     def test_updated_suite_mappings_include_cross_feature_commands_and_cleanup(self):
         cases = {
@@ -493,6 +193,56 @@ class SwiftMutationScopeTests(unittest.TestCase):
                 self.git("reset", "--hard", self.base)
                 self.write(scope.PACKAGE + name, "Updated shared input\n")
                 self.commit("Change shared input")
+                self.assertEqual(self.select()["status"], "review-required")
+
+    def reviewed_support_baseline(self):
+        support = scope.PACKAGE + scope.SHARED_TEST_SUPPORT
+        contract = scope.PACKAGE + scope.SOURCES + scope.DEPENDENCIES
+        self.write(support, "final class FakeClient {}\n")
+        self.write(contract, "protocol TrackerClient {}\n")
+        self.base = self.commit("Add the fake client and contract")
+        blobs = []
+        for text in ("final class FakeClient {}\n", "final class FakeClient { func track() {} }\n"):
+            self.write(support, text)
+            blobs.append(self.git("hash-object", support))
+        adaptations = (
+            ("Reviewed blob adaptation", None, tuple(blobs),
+             (("protocol TrackerClient {}\n", "protocol TrackerClient { func track() }\n"),),
+             ("Features/Tracking/TrackingStateTests.swift",), ("Features/Tracking/TrackingStateTests.swift",)),
+        )
+        replacement = mock.patch.object(scope, "REVIEWED_SUPPORT_ADAPTATIONS", adaptations)
+        replacement.start()
+        self.addCleanup(replacement.stop)
+        return support, contract
+
+    def test_reviewed_support_adaptation_selects_its_affected_suites(self):
+        support, contract = self.reviewed_support_baseline()
+        self.write(support, "final class FakeClient { func track() {} }\n")
+        self.write(contract, "protocol TrackerClient { func track() }\n")
+        self.write(scope.PACKAGE + TRACKING_TEST, "func testTracking() { track() }\n")
+        self.commit("Adapt the fake client")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "focused", result["review_reasons"])
+        self.assertEqual(result["files"], [scope.SOURCES + scope.DEPENDENCIES, TRACKING])
+        self.assertTrue(any("Reviewed blob adaptation" in reason for reason in result["reasons"]))
+
+    def test_reviewed_support_adaptation_rejects_other_edits(self):
+        support, contract = self.reviewed_support_baseline()
+        variants = {
+            "fixture": (support, "final class FakeClient { func other() {} }\n"),
+            "contract": (contract, "protocol TrackerClient { func other() }\n"),
+            "missing suite": (scope.PACKAGE + TRACKING_TEST, "func testTracking() {}\n"),
+        }
+        for label, (path, text) in variants.items():
+            with self.subTest(change=label):
+                self.git("reset", "--hard", self.base)
+                self.write(support, "final class FakeClient { func track() {} }\n")
+                self.write(contract, "protocol TrackerClient { func track() }\n")
+                self.write(scope.PACKAGE + TRACKING_TEST, "func testTracking() { track() }\n")
+                self.write(path, text)
+                self.commit("Change an unreviewed helper or contract")
                 self.assertEqual(self.select()["status"], "review-required")
 
     def test_reviewed_platform_raise_selects_the_observable_presentation(self):
@@ -748,14 +498,6 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
 
 class SwiftMutationScopeMapTests(unittest.TestCase):
-    def test_direct_request_support_scope_covers_every_current_fixture_consumer(self):
-        test_root = SCRIPT.parents[1] / scope.PACKAGE / scope.TESTS
-        consumers = {path.relative_to(test_root).as_posix() for path in test_root.rglob("*Tests.swift")
-                     if re.search(r"\b(?:Fixture|FakeClient)\(", path.read_text(encoding="utf-8"))}
-
-        self.assertEqual(set(scope.DIRECT_REQUEST_SUPPORT_SUITES), consumers)
-        self.assertTrue(set(scope.DIRECT_REQUEST_REQUIRED_SUITES).issubset(consumers))
-
     def test_every_current_suite_has_a_mapping_to_existing_production_files(self):
         package = SCRIPT.parents[1] / scope.PACKAGE
         test_root = package / scope.TESTS
