@@ -63,17 +63,6 @@ pub struct SwitchedWorklogs {
     pub started: Worklog,
 }
 
-/// What a successful toggle did.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TrackingOutcome {
-    /// Tracking started on the given task.
-    Started { worklog: Worklog },
-    /// The active worklog, which belonged to the given task, was stopped.
-    Stopped { worklog: Worklog },
-    /// One task's worklog was stopped and another task's worklog started.
-    Switched { stopped: Worklog, started: Worklog },
-}
-
 /// Whether the tracker is idle or running a worklog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrackingState {
@@ -203,38 +192,6 @@ impl Tracker {
             stopped,
             started: started.to_worklog(),
         })
-    }
-
-    /// Starts or stops tracking for the given task.
-    ///
-    /// Toggling the active task stops it. Toggling another task while a
-    /// worklog runs switches to it, stopping the old worklog and starting the new
-    /// one at the same instant. Toggling while idle starts the task. The supplied
-    /// identifier is used only when a worklog starts.
-    pub fn toggle(
-        &mut self,
-        task: &Task,
-        worklog_id: WorklogId,
-        at: DateTime<Utc>,
-    ) -> Result<TrackingOutcome, TrackingError> {
-        let active = match &self.state {
-            TrackingState::Idle => {
-                return self
-                    .start(task, worklog_id, at)
-                    .map(|worklog| TrackingOutcome::Started { worklog });
-            }
-            TrackingState::Running { worklog } => worklog.clone(),
-        };
-        if active.task_id() == task.id() {
-            return self
-                .stop(at)
-                .map(|worklog| TrackingOutcome::Stopped { worklog });
-        }
-        self.switch(task, worklog_id, at, at)
-            .map(|switched| TrackingOutcome::Switched {
-                stopped: switched.stopped,
-                started: switched.started,
-            })
     }
 
     /// Checks that the task may be archived.
@@ -468,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_duration_switches_and_toggles_preserve_the_active_worklog() {
+    fn zero_duration_switches_preserve_the_active_worklog() {
         let mut tracker = Tracker::idle();
         let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
         let state = tracker.state().clone();
@@ -479,13 +436,6 @@ mod tests {
         for next_start in [at(100), at(150)] {
             assert_eq!(
                 tracker.switch(&task(2), worklog_id(2), at(100), next_start),
-                Err(expected.clone())
-            );
-            assert_eq!(tracker.state(), &state);
-        }
-        for target in [task(1), task(2)] {
-            assert_eq!(
-                tracker.toggle(&target, worklog_id(2), at(100)),
                 Err(expected.clone())
             );
             assert_eq!(tracker.state(), &state);
@@ -528,68 +478,6 @@ mod tests {
         );
         assert_eq!(tracker.active().map(|e| e.id()), Some(started.id()));
         assert_eq!(tracker.active().map(|e| e.task_id()), Some(task_id(1)));
-    }
-
-    /// An idle toggle uses the caller identity for its newly active worklog.
-    #[test]
-    fn toggle_while_idle_starts_the_task() {
-        let mut tracker = Tracker::idle();
-        let outcome = tracker.toggle(&task(1), worklog_id(2), at(100)).unwrap();
-        match outcome {
-            TrackingOutcome::Started { worklog } => {
-                assert_eq!(worklog.id(), worklog_id(2));
-                assert_eq!(worklog.task_id(), task_id(1));
-                assert_eq!(worklog.start(), at(100));
-                assert_eq!(worklog.end(), None);
-            }
-            other => panic!("expected Started, got {other:?}"),
-        }
-        assert!(tracker.active().is_some());
-    }
-
-    /// Stopping through toggle ignores the prospective new identity and completes existing work.
-    #[test]
-    fn toggling_the_active_task_stops_it() {
-        let mut tracker = Tracker::idle();
-        let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
-        let outcome = tracker.toggle(&task(1), worklog_id(2), at(150)).unwrap();
-        match outcome {
-            TrackingOutcome::Stopped { worklog } => {
-                assert_eq!(worklog.id(), started.id());
-                assert_eq!(worklog.end(), Some(at(150)));
-            }
-            other => panic!("expected Stopped, got {other:?}"),
-        }
-        assert_eq!(tracker.state(), &TrackingState::Idle);
-    }
-
-    /// A toggle shares one stop/start boundary and applies the caller identity to new work.
-    #[test]
-    fn toggling_another_task_switches_at_one_instant() {
-        let mut tracker = Tracker::idle();
-        let started = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
-        let outcome = tracker.toggle(&task(2), worklog_id(2), at(150)).unwrap();
-        match outcome {
-            TrackingOutcome::Switched { stopped, started } => {
-                assert_eq!(started.id(), worklog_id(2));
-                assert_eq!(stopped.end(), Some(at(150)));
-                assert_eq!(started.start(), at(150));
-                assert_eq!(started.end(), None);
-            }
-            other => panic!("expected Switched, got {other:?}"),
-        }
-        assert_eq!(tracker.active().map(|e| e.task_id()), Some(task_id(2)));
-        assert_ne!(tracker.active().map(|e| e.id()), Some(started.id()));
-    }
-
-    /// Toggle must respect the archived-task guard used by explicit starts.
-    #[test]
-    fn toggling_an_archived_task_while_idle_is_rejected() {
-        let mut tracker = Tracker::idle();
-        let error = tracker
-            .toggle(&archived_task(1), worklog_id(2), at(100))
-            .expect_err("archived task must not start");
-        assert_eq!(error, TrackingError::TaskArchived { id: task_id(1) });
     }
 
     /// Only the task that owns the active timer receives tracking-based archive protection.
