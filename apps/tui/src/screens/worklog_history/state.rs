@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tracker_application::WorklogCursor;
 use tracker_domain::{TaskId, Worklog, WorklogId};
@@ -22,7 +21,6 @@ pub struct History {
     availability: HistoryAvailability,
     worklogs: Vec<Worklog>,
     next_cursor: Option<WorklogCursor>,
-    active_worklog_baseline: Option<(WorklogId, DateTime<Utc>)>,
     selected: Option<WorklogId>,
 }
 
@@ -31,7 +29,6 @@ impl History {
         task_id: TaskId,
         worklogs: Vec<Worklog>,
         next_cursor: Option<WorklogCursor>,
-        active_worklog_baseline: Option<(WorklogId, DateTime<Utc>)>,
     ) -> Self {
         let selected = worklogs.first().map(Worklog::id);
         Self {
@@ -39,7 +36,6 @@ impl History {
             availability: HistoryAvailability::Available,
             worklogs,
             next_cursor,
-            active_worklog_baseline,
             selected,
         }
     }
@@ -73,10 +69,6 @@ impl History {
 
     pub(crate) fn selected_id(&self) -> Option<WorklogId> {
         self.selected
-    }
-
-    pub(crate) fn active_worklog_baseline(&self) -> Option<(WorklogId, DateTime<Utc>)> {
-        self.active_worklog_baseline
     }
 
     pub(crate) fn selected_worklog(&self) -> Option<&Worklog> {
@@ -133,7 +125,6 @@ impl History {
         task_id: TaskId,
         worklogs: Vec<Worklog>,
         next_cursor: Option<WorklogCursor>,
-        active_worklog_baseline: Option<(WorklogId, DateTime<Utc>)>,
         preferred: Option<WorklogId>,
     ) {
         let selected = preferred
@@ -144,7 +135,6 @@ impl History {
             availability: HistoryAvailability::Available,
             worklogs,
             next_cursor,
-            active_worklog_baseline,
             selected,
         };
     }
@@ -190,15 +180,6 @@ pub struct WorklogHistoryState {
     mode: WorklogHistoryMode,
     from_reports: bool,
     g_prefix: bool,
-}
-
-pub(crate) fn active_worklog_for_task(
-    active_worklog: Option<&Worklog>,
-    task_id: TaskId,
-) -> Option<(WorklogId, DateTime<Utc>)> {
-    active_worklog
-        .filter(|worklog| worklog.task_id() == task_id)
-        .map(|worklog| (worklog.id(), worklog.start()))
 }
 
 impl WorklogHistoryState {

@@ -384,17 +384,10 @@ impl AppState {
                 };
                 match result {
                     Ok(page) => {
-                        let baseline = crate::screens::worklog_history::active_worklog_for_task(
-                            page.adoption
-                                .as_ref()
-                                .and_then(|adoption| adoption.active_worklog.as_ref()),
-                            task_id,
-                        );
                         app.shell_mut().open_report_history(History::new(
                             task_id,
                             page.worklogs,
                             page.next_cursor,
-                            baseline,
                         ));
 
                         app.shell_mut().info("Task history");

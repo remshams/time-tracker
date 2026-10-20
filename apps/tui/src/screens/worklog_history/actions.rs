@@ -4,7 +4,6 @@ use tracker_domain::{TaskId, WorklogId};
 
 use crate::app::AppState;
 use crate::application_request::{ApplicationOutcome, ApplicationRequest};
-use crate::screens::worklog_history::active_worklog_for_task;
 use crate::screens::{History, Screen, WorklogHistoryCommand, WorklogHistoryMode};
 use crate::support::errors::application_error_text;
 
@@ -195,17 +194,10 @@ impl AppState {
                 }
                 match result {
                     Ok(page) => {
-                        let baseline = active_worklog_for_task(
-                            page.adoption
-                                .as_ref()
-                                .and_then(|adoption| adoption.active_worklog.as_ref()),
-                            task_id,
-                        );
                         state.shell_mut().open_history(History::new(
                             task_id,
                             page.worklogs,
                             page.next_cursor,
-                            baseline,
                         ));
                         state
                             .shell_mut()
@@ -312,7 +304,6 @@ impl AppState {
             self.shell_mut().info("No older worklogs");
             return;
         };
-        let baseline = self.history().and_then(History::active_worklog_baseline);
         let session = self.history_state().expect("history is open").session_id();
         self.enqueue(
             ApplicationRequest::WorklogsForTask {
@@ -332,16 +323,6 @@ impl AppState {
                 }
                 match result {
                     Ok(page) => {
-                        let active = active_worklog_for_task(
-                            page.adoption
-                                .as_ref()
-                                .and_then(|adoption| adoption.active_worklog.as_ref()),
-                            task_id,
-                        );
-                        if page.adoption.is_some() && active != baseline {
-                            state.reload_newest_history_after_change(task_id);
-                            return;
-                        }
                         let loaded = page.worklogs.len();
                         state
                             .history_mut()
@@ -445,16 +426,10 @@ impl AppState {
         keep: Option<WorklogId>,
         page: WorklogPage,
     ) {
-        let baseline = active_worklog_for_task(
-            page.adoption
-                .as_ref()
-                .and_then(|adoption| adoption.active_worklog.as_ref()),
-            task_id,
-        );
         let Some(history) = self.history_mut() else {
             return;
         };
-        history.replace(task_id, page.worklogs, page.next_cursor, baseline, keep);
+        history.replace(task_id, page.worklogs, page.next_cursor, keep);
     }
 
     pub(super) fn mark_history_unavailable(&mut self) {
@@ -622,7 +597,7 @@ mod navigation_tests {
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state
             .shell_mut()
-            .open_history(History::new(worklog.task_id(), vec![worklog], None, None));
+            .open_history(History::new(worklog.task_id(), vec![worklog], None));
         state
     }
 
@@ -636,12 +611,9 @@ mod navigation_tests {
             revision: 1,
         };
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
-        state.shell_mut().open_history(History::new(
-            task_id,
-            vec![first.clone()],
-            Some(cursor),
-            None,
-        ));
+        state
+            .shell_mut()
+            .open_history(History::new(task_id, vec![first.clone()], Some(cursor)));
         state.handle_command(Command::WorklogHistory(
             WorklogHistoryCommand::LoadOlderWorklogs,
         ));
@@ -672,12 +644,9 @@ mod navigation_tests {
             ..cursor
         };
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
-        state.shell_mut().open_history(History::new(
-            task_id,
-            vec![first.clone()],
-            Some(cursor),
-            None,
-        ));
+        state
+            .shell_mut()
+            .open_history(History::new(task_id, vec![first.clone()], Some(cursor)));
         state.handle_command(Command::WorklogHistory(
             WorklogHistoryCommand::LoadOlderWorklogs,
         ));
@@ -698,7 +667,7 @@ mod navigation_tests {
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state
             .shell_mut()
-            .open_history(History::new(task_id, vec![first.clone()], None, None));
+            .open_history(History::new(task_id, vec![first.clone()], None));
         state.handle_command(Command::WorklogHistory(
             WorklogHistoryCommand::RefreshWorklogs,
         ));
@@ -719,7 +688,7 @@ mod navigation_tests {
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state
             .shell_mut()
-            .open_history(History::new(task_id, vec![first.clone()], None, None));
+            .open_history(History::new(task_id, vec![first.clone()], None));
         state.reload_newest_history_after_change(task_id);
         state
             .shell_mut()
@@ -737,14 +706,14 @@ mod navigation_tests {
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state
             .shell_mut()
-            .open_history(History::new(task_id, Vec::new(), None, None));
+            .open_history(History::new(task_id, Vec::new(), None));
         let session = state.history_state().unwrap().session_id();
         assert!(state.history_session_matches(session, task_id));
         assert!(!state.history_session_matches(session, other_task));
         state.shell_mut().back_to_task_list();
         state
             .shell_mut()
-            .open_history(History::new(task_id, Vec::new(), None, None));
+            .open_history(History::new(task_id, Vec::new(), None));
         assert!(!state.history_session_matches(session, task_id));
     }
 
@@ -760,7 +729,7 @@ mod navigation_tests {
         state.shell_mut().back_to_task_list();
         state
             .shell_mut()
-            .open_history(History::new(task_id, vec![original.clone()], None, None));
+            .open_history(History::new(task_id, vec![original.clone()], None));
         state.open_correction();
         let new_session = state.history_state().unwrap().session_id();
         state.complete_effect_with_resources(
@@ -804,7 +773,7 @@ mod navigation_tests {
         state.shell_mut().back_to_task_list();
         state
             .shell_mut()
-            .open_history(History::new(task_id, vec![original.clone()], None, None));
+            .open_history(History::new(task_id, vec![original.clone()], None));
         state.open_deletion();
         state.complete_effect_with_resources(
             effect,
@@ -859,7 +828,7 @@ mod navigation_tests {
         let mut state = AppState::load_task_list(items, TrackingState::Idle);
         state
             .shell_mut()
-            .open_history(History::new(worklog.task_id(), vec![worklog], None, None));
+            .open_history(History::new(worklog.task_id(), vec![worklog], None));
         state
     }
 
@@ -874,12 +843,9 @@ mod navigation_tests {
         let effect = state.take_effect().expect("move request");
         let request = effect.request.clone();
         state.shell_mut().back_to_task_list();
-        state.shell_mut().open_history(History::new(
-            source.id(),
-            vec![original.clone()],
-            None,
-            None,
-        ));
+        state
+            .shell_mut()
+            .open_history(History::new(source.id(), vec![original.clone()], None));
         state.open_move();
         state.complete_effect_with_resources(
             effect,
