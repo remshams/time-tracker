@@ -1,8 +1,9 @@
 //! Commands crossing from key handling into the event loop.
 //!
 //! The wrapper carries one screen-owned payload or the global quit request.
-//! [`crate::app::App`] dispatches a payload only when its screen is active, so
-//! the single mismatch guard is the boundary between active and dormant state.
+//! [`crate::app::AppState::handle_command`] dispatches a payload only when its
+//! screen is active, so the single mismatch guard is the boundary between
+//! active and dormant state.
 
 use crate::screens::{AllWorklogsCommand, ReportCommand, TaskListCommand, WorklogHistoryCommand};
 
