@@ -38,8 +38,8 @@ public final class TrackerSession {
     private var refreshing = false
     private var sleeping = false
     private var windowVisible = false
-    private var menuDepth = 0
-    private var uiVisible: Bool { windowVisible || menuDepth > 0 }
+    private var menuOpen = false
+    private var uiVisible: Bool { windowVisible || menuOpen }
 
     public init(
         client: any TrackerClient, clock: any TrackerClock,
@@ -202,13 +202,13 @@ public final class TrackerSession {
 
     public func menuOpened() {
         let previouslyVisible = uiVisible
-        menuDepth += 1
+        menuOpen = true
         visibilityChanged(previouslyVisible: previouslyVisible)
     }
 
     public func menuClosed() {
         let previouslyVisible = uiVisible
-        menuDepth = max(0, menuDepth - 1)
+        menuOpen = false
         visibilityChanged(previouslyVisible: previouslyVisible)
     }
 
@@ -268,15 +268,6 @@ public final class TrackerSession {
     public var taskArchiving: TaskArchivingPresentation { archiving.presentation }
 
     private var canBeginTaskArchiving: Bool { connection.confirmed && !archiving.isOpen }
-
-    var taskArchivingAvailability: [String: Bool] {
-        let available = canBeginTaskArchiving
-        let runningTaskID = active?.taskId
-        return Dictionary(
-            uniqueKeysWithValues: tasks.map { task in
-                (task.id, available && (task.archived || task.id != runningTaskID))
-            })
-    }
 
     public func canArchiveTask(taskID: String) -> Bool {
         canBeginTaskArchiving && active?.taskId != taskID && task(withID: taskID)?.archived == false
@@ -694,10 +685,10 @@ public final class TrackerSession {
         tracking.error = writeFailure(error).localizedDescription
     }
 
+    /// Callers pass read failures, which the bridge never marks as uncertain.
     private func requiresConnectionRecovery(_ error: Error) -> Bool {
         guard let failure = error as? BridgeFailure else { return false }
-        if failure.requiresRefresh || failure.uncertain { return true }
-        return failure.kind == "unavailable" || failure.kind == "protocol"
+        return failure.requiresRefresh || failure.kind == "unavailable" || failure.kind == "protocol"
     }
 
     /// Reloads the task list and, with a report client, today's totals.
@@ -832,9 +823,7 @@ public final class TrackerSession {
             } catch {
                 guard taskID == selectedTaskID else { return }
                 history.fail(error)
-                if let failure = error as? BridgeFailure, historyFailureRequiresRecovery(failure) {
-                    recordConnectionFailure(error)
-                }
+                if requiresConnectionRecovery(error) { recordConnectionFailure(error) }
             }
             publish()
         }
@@ -939,10 +928,6 @@ public final class TrackerSession {
         history.request(selectedTaskID: nil)
         tracking.error = nil
         acceptTaskList(resources)
-    }
-
-    private func historyFailureRequiresRecovery(_ failure: BridgeFailure) -> Bool {
-        failure.kind == "unavailable" || failure.kind == "protocol" || failure.requiresRefresh
     }
 
     private func displayTickIsCurrent(_ token: Int) -> Bool {

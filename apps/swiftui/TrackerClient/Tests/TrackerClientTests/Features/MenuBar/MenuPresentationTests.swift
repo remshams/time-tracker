@@ -25,7 +25,6 @@ final class MenuPresentationTests: XCTestCase {
             window.update()
         }
         observer.menuOpened(from: fixture.session, showDailyTotal: true)
-        observer.menuOpened(from: fixture.session, showDailyTotal: true)
         let originalContent = observer.content
         let originalLabel = observer.label
         let display = try XCTUnwrap(fixture.scheduler.display)
@@ -59,10 +58,6 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertEqual(windowTicks.count, 3, "Freezing a menu must not freeze the window's clock.")
         XCTAssertEqual(windowControls.count, 0, "Background polls must keep the window's controls stable.")
         XCTAssertEqual(observer.label, originalLabel)
-        observer.menuClosed(from: fixture.session, showDailyTotal: true)
-        XCTAssertEqual(
-            observer.content, originalContent, "Closing a submenu must not release the root menu's snapshot.")
-        XCTAssertEqual(observer.values.elapsedText, fixture.session.timerDisplayText)
         observer.menuClosed(from: fixture.session, showDailyTotal: true)
         XCTAssertEqual(contentChanges, 1)
         XCTAssertEqual(labelChanges, 1)
@@ -109,7 +104,7 @@ final class MenuPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testOpeningCapturesFreshTimeAndNestedNotificationsKeepTheSnapshotUntilFinalClose() async throws {
+    func testOpeningCapturesFreshTimeAndUpdatesKeepTheSnapshotUntilClose() async throws {
         let fixture = Fixture(reports: true)
         defer { fixture.cleanup() }
         try await fixture.start(
@@ -123,10 +118,7 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertEqual(observer.label.totalText, "00:01")
         fixture.clock.now.addTimeInterval(60)
         fixture.clock.uptime += 60
-        observer.menuOpened(from: fixture.session, showDailyTotal: false)
-        XCTAssertEqual(observer.content.totalText, "00:01:05")
-        XCTAssertEqual(observer.label.totalText, "00:01")
-        observer.menuClosed(from: fixture.session, showDailyTotal: false)
+        observer.update(from: fixture.session, showDailyTotal: false)
         XCTAssertEqual(observer.content.totalText, "00:01:05")
         XCTAssertEqual(observer.label.totalText, "00:01")
         observer.menuClosed(from: fixture.session, showDailyTotal: false)

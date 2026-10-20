@@ -145,25 +145,6 @@ final class LifecycleTests: XCTestCase {
     }
 
     @MainActor
-    func testNestedMenusKeepVisibilityUntilLastMenuCloses() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start()
-        fixture.session.menuOpened()
-        let refresh = try await fixture.client.next()
-        refresh.succeed(emptyTaskListResources)
-        try await fixture.settled()
-        let operationCount = fixture.client.operations.count
-        fixture.session.menuOpened()
-        fixture.session.menuClosed()
-        XCTAssertEqual(fixture.scheduler.poll?.delay, 5)
-        XCTAssertEqual(fixture.client.operations.count, operationCount)
-        fixture.session.menuClosed()
-        fixture.session.menuClosed()
-        XCTAssertEqual(fixture.scheduler.poll?.delay, 60)
-    }
-
-    @MainActor
     func testElapsedUsesMonotonicClockUntilWakeResetsWallTimeAnchor() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }

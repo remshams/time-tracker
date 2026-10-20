@@ -191,12 +191,9 @@ private final class RustBridge {
     func startTracking(taskID: String, expectedActiveID: String?, occurredAt: String) throws -> TrackingCommandResult {
         try taskID.withCString { task in
             try occurredAt.withCString { instant in
-                if let expectedActiveID {
-                    return try expectedActiveID.withCString {
-                        try decode(tt_bridge_start_tracking_if_active_at(handle, task, $0, instant))
-                    }
+                try withOptionalCString(expectedActiveID) { active in
+                    try decode(tt_bridge_start_tracking_if_active_at(handle, task, active, instant))
                 }
-                return try decode(tt_bridge_start_tracking_if_active_at(handle, task, nil, instant))
             }
         }
     }
@@ -256,10 +253,7 @@ private final class RustBridge {
 
     func history(taskID: String, cursor: String?) throws -> HistoryPage {
         try taskID.withCString { task in
-            if let cursor {
-                return try cursor.withCString { try decode(tt_bridge_history(handle, task, $0)) }
-            }
-            return try decode(tt_bridge_history(handle, task, nil))
+            try withOptionalCString(cursor) { try decode(tt_bridge_history(handle, task, $0)) }
         }
     }
 

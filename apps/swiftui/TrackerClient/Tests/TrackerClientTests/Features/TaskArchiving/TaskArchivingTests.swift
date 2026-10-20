@@ -13,9 +13,9 @@ final class TaskArchivingTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
 
-        XCTAssertEqual(fixture.session.taskArchivingAvailability[firstTask.id], false)
-        XCTAssertEqual(fixture.session.taskArchivingAvailability[secondTask.id], true)
-        XCTAssertEqual(fixture.session.taskArchivingAvailability[archivedTask.id], true)
+        XCTAssertFalse(fixture.session.canArchiveTask(taskID: firstTask.id))
+        XCTAssertTrue(fixture.session.canArchiveTask(taskID: secondTask.id))
+        XCTAssertTrue(fixture.session.canUnarchiveTask(taskID: archivedTask.id))
     }
 
     @MainActor

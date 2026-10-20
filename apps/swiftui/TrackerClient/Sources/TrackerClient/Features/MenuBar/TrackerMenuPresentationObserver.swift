@@ -9,7 +9,7 @@ public final class TrackerMenuPresentationObserver {
     public private(set) var label: TrackerMenuLabelContent
     public private(set) var values: TrackerMenuValues
     public private(set) var taskOrder: MenuTaskOrder
-    private var trackingDepth = 0
+    private var menuOpen = false
 
     public init(session: TrackerSession, showDailyTotal: Bool, taskOrder: MenuTaskOrder = .newestFirst) {
         self.taskOrder = taskOrder
@@ -20,10 +20,8 @@ public final class TrackerMenuPresentationObserver {
 
     public func update(from session: TrackerSession, showDailyTotal: Bool) {
         // Keep navigation stable while time values continue to update.
-        let nextContent = trackingDepth == 0 ? TrackerMenuContent(session, taskOrder: taskOrder) : content
-        let nextLabel =
-            trackingDepth == 0
-            ? TrackerMenuLabelContent(session, showDailyTotal: showDailyTotal) : label
+        let nextContent = menuOpen ? content : TrackerMenuContent(session, taskOrder: taskOrder)
+        let nextLabel = menuOpen ? label : TrackerMenuLabelContent(session, showDailyTotal: showDailyTotal)
         let nextValues = TrackerMenuValues(session, content: nextContent)
         let contentChanged = content != nextContent
         let labelChanged = label != nextLabel
@@ -44,11 +42,11 @@ public final class TrackerMenuPresentationObserver {
 
     public func menuOpened(from session: TrackerSession, showDailyTotal: Bool) {
         update(from: session, showDailyTotal: showDailyTotal)
-        trackingDepth += 1
+        menuOpen = true
     }
 
     public func menuClosed(from session: TrackerSession, showDailyTotal: Bool) {
-        trackingDepth = max(0, trackingDepth - 1)
+        menuOpen = false
         update(from: session, showDailyTotal: showDailyTotal)
     }
 }
