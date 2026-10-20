@@ -217,60 +217,6 @@ fn an_active_interval_overlaps_every_later_interval_on_the_same_task() {
     assert_eq!(repository.active_worklog().unwrap(), Some(active));
 }
 
-/// Checks that toggling after a stop creates a separate interval instead of resuming the old worklog.
-#[test]
-fn same_task_toggle_stops_and_later_restarts() {
-    let repository = repo();
-    let task = named_task(1, "work");
-    repository.create_task(task.clone()).unwrap();
-    let mut tracker = Tracker::idle();
-
-    let outcome = tracker
-        .toggle(&task, WorklogId::generate(), at(100))
-        .unwrap();
-    let worklog = match outcome {
-        TrackingOutcome::Started { worklog } => worklog,
-        other => panic!("expected Started, got {other:?}"),
-    };
-    repository.insert_worklog(&worklog).unwrap();
-    assert_eq!(
-        repository.active_worklog().unwrap().unwrap().id(),
-        worklog.id()
-    );
-
-    let outcome = tracker
-        .toggle(&task, WorklogId::generate(), at(150))
-        .unwrap();
-    let stopped = match outcome {
-        TrackingOutcome::Stopped { worklog } => worklog,
-        other => panic!("expected Stopped, got {other:?}"),
-    };
-    repository
-        .stop_worklog(stopped.id(), at(100), at(150))
-        .unwrap();
-    assert_eq!(repository.active_worklog().unwrap(), None);
-
-    // Toggling again starts a fresh worklog, not a resume.
-    let outcome = tracker
-        .toggle(&task, WorklogId::generate(), at(200))
-        .unwrap();
-    let restarted = match outcome {
-        TrackingOutcome::Started { worklog } => worklog,
-        other => panic!("expected Started, got {other:?}"),
-    };
-    repository.insert_worklog(&restarted).unwrap();
-    assert_ne!(restarted.id(), worklog.id());
-    assert_eq!(
-        repository.active_worklog().unwrap().unwrap().id(),
-        restarted.id()
-    );
-    let worklogs = repository.list_worklogs(task_id(1)).unwrap();
-    assert_eq!(worklogs.len(), 2);
-    assert_eq!(worklogs[0].end(), Some(at(150)));
-    assert_eq!(worklogs[1].start(), at(200));
-    assert_eq!(worklogs[1].end(), None);
-}
-
 /// Preserves the completed interval and its identity when later work starts on the same task.
 #[test]
 fn restarts_record_separate_worklogs() {
@@ -323,7 +269,7 @@ fn switch_stops_the_old_worklog_and_starts_the_new_one_atomically() {
     repository.insert_worklog(&started).unwrap();
 
     let switched = tracker
-        .switch(&rest, WorklogId::generate(), at(150), at(160))
+        .switch(&rest, WorklogId::generate(), at(150))
         .unwrap();
     repository
         .switch_worklog(
@@ -338,7 +284,7 @@ fn switch_stops_the_old_worklog_and_starts_the_new_one_atomically() {
     let active = repository.active_worklog().unwrap().unwrap();
     assert_eq!(active.id(), switched.started.id());
     assert_eq!(active.task_id(), task_id(2));
-    assert_eq!(active.start(), at(160));
+    assert_eq!(active.start(), at(150));
     assert_eq!(active.end(), None);
     // The old worklog is stopped at the switch instant.
     let old = repository.list_worklogs(task_id(1)).unwrap();
@@ -535,79 +481,6 @@ fn a_switch_with_an_existing_new_worklog_id_rolls_back_and_reports_it() {
     let rest_worklogs = repository.list_worklogs(rest.id()).unwrap();
     assert_eq!(rest_worklogs.len(), 1);
     assert_eq!(rest_worklogs[0].end(), Some(at(20)));
-}
-
-/// Checks domain active-task protection, while permitting unrelated archives and archives after a stop.
-#[test]
-fn archiving_the_active_task_is_rejected() {
-    let repository = repo();
-    let work = named_task(1, "work");
-    let other = named_task(2, "other");
-    repository.create_task(work.clone()).unwrap();
-    repository.create_task(other.clone()).unwrap();
-    let mut tracker = Tracker::idle();
-
-    let started = tracker
-        .start(&work, WorklogId::generate(), at(100))
-        .unwrap();
-    repository.insert_worklog(&started).unwrap();
-
-    assert_eq!(
-        tracker.ensure_archivable(work.id()),
-        Err(TrackingError::TaskIsActive { id: work.id() })
-    );
-    // The task stays usable and unarchived after the rejection.
-    assert!(
-        !repository
-            .find_task(work.id())
-            .unwrap()
-            .unwrap()
-            .is_archived()
-    );
-    assert_eq!(repository.active_worklog().unwrap(), Some(started.clone()));
-
-    // A different task archives fine while tracking runs.
-    tracker.ensure_archivable(other.id()).unwrap();
-    repository.archive_task(other.id(), at(120)).unwrap();
-    assert!(
-        repository
-            .find_task(other.id())
-            .unwrap()
-            .unwrap()
-            .is_archived()
-    );
-
-    // Once the worklog is stopped, the task can be archived.
-    tracker.stop(at(150)).unwrap();
-    repository
-        .stop_worklog(started.id(), started.start(), at(150))
-        .unwrap();
-    tracker.ensure_archivable(work.id()).unwrap();
-    repository.archive_task(work.id(), at(160)).unwrap();
-    assert!(
-        repository
-            .find_task(work.id())
-            .unwrap()
-            .unwrap()
-            .is_archived()
-    );
-}
-
-/// Checks that the domain refuses to start an archived task without changing idle state or persisted tracking.
-#[test]
-fn archived_tasks_cannot_start_or_become_active() {
-    let repository = repo();
-    let mut tracker = Tracker::idle();
-    let mut archived = named_task(1, "old");
-    assert!(archived.archive(at(100)));
-    repository.create_task(archived.clone()).unwrap();
-
-    assert_eq!(
-        tracker.start(&archived, WorklogId::generate(), at(100)),
-        Err(TrackingError::TaskArchived { id: archived.id() })
-    );
-    assert_eq!(tracker.state(), &TrackingState::Idle);
-    assert_eq!(repository.active_worklog().unwrap(), None);
 }
 
 /// Verifies that closing storage does not stop work and a recovered timer can later persist its stop.

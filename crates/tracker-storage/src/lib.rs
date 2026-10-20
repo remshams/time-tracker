@@ -15,6 +15,6 @@ mod paths;
 mod sqlite;
 
 pub use error::StorageError;
-pub use paths::{app_data_dir, default_database_path, ensure_app_data_dir};
+pub use paths::{default_database_path, ensure_app_data_dir};
 pub use sqlite::SqliteRepository;
 pub(crate) use sqlite::timestamp_to_us;

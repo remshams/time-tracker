@@ -360,12 +360,7 @@ impl SqliteRepository {
             Ok(0) => {
                 let current = worklog_by_id_on(&transaction, id)?
                     .ok_or(StorageError::WorklogNotFound { id })?;
-                if current.times()
-                    != WorklogTimes::new(
-                        us_to_timestamp(expected_start_us)?,
-                        expected_end_us.map(us_to_timestamp).transpose()?,
-                    )
-                {
+                if current.times() != stored_worklog_times(expected_start_us, expected_end_us)? {
                     return Err(StorageError::WorklogChanged { id });
                 }
                 Err(error::constraint(

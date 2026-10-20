@@ -9,7 +9,7 @@ pub use worklogs::move_candidates_for_tasks;
 
 use chrono::{DateTime, Utc};
 use tracker_domain::{
-    Task, TaskId, TaskName, Tracker, TrackingState, Worklog, WorklogId, WorklogTimes,
+    Task, TaskId, TaskName, Tracker, TrackingError, TrackingState, Worklog, WorklogId, WorklogTimes,
 };
 
 use crate::{
@@ -395,16 +395,13 @@ impl<R: TrackerRepository> TrackerApplication<R> {
 
     /// Refreshes active tracking without reading task metadata.
     pub fn refresh_tracking_resource(&mut self) -> Result<(), ApplicationError> {
-        self.tracker = match self.repository.active_worklog()? {
-            Some(worklog) => Tracker::resume(worklog)?,
-            None => Tracker::idle(),
-        };
+        self.tracker = Self::tracker_from_active_worklog(self.repository.active_worklog()?)?;
         Ok(())
     }
 
     /// Replaces task and tracking caches together for a coherent workflow.
     pub fn refresh_authoritative_state(&mut self) -> Result<(), ApplicationError> {
-        self.refresh_tracking()
+        self.reload_tasks_and_tracking()
     }
 
     pub(crate) fn state_from_resources(
@@ -412,12 +409,19 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         active_worklog: Option<Worklog>,
     ) -> Result<(Vec<TaskListItem>, Tracker), ApplicationError> {
         tasks.sort_by_key(|item| item.task.id());
-        let tracker = match active_worklog {
-            Some(worklog) => Tracker::resume(worklog)?,
-            None => Tracker::idle(),
-        };
+        let tracker = Self::tracker_from_active_worklog(active_worklog)?;
         Self::align_active_work(&mut tasks, &tracker);
         Ok((tasks, tracker))
+    }
+
+    /// Resumes the stored active worklog, or returns an idle tracker when none runs.
+    fn tracker_from_active_worklog(
+        active_worklog: Option<Worklog>,
+    ) -> Result<Tracker, TrackingError> {
+        match active_worklog {
+            Some(worklog) => Tracker::resume(worklog),
+            None => Ok(Tracker::idle()),
+        }
     }
 
     fn align_active_work(items: &mut [TaskListItem], tracker: &Tracker) {
@@ -444,10 +448,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         active_worklog: Option<Worklog>,
         active_task_latest_work_start: Option<DateTime<Utc>>,
     ) -> Result<(), ApplicationError> {
-        self.tracker = match active_worklog {
-            Some(worklog) => Tracker::resume(worklog)?,
-            None => Tracker::idle(),
-        };
+        self.tracker = Self::tracker_from_active_worklog(active_worklog)?;
         if let Some(active) = self.tracker.active() {
             self.set_latest_work_start(active.task_id(), active_task_latest_work_start);
         }
@@ -478,10 +479,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
     }
 
     fn adopt_tracking_read(&mut self, read: ActiveTrackingRead) -> Result<(), ApplicationError> {
-        let tracker = match read.active_worklog {
-            Some(worklog) => Tracker::resume(worklog)?,
-            None => Tracker::idle(),
-        };
+        let tracker = Self::tracker_from_active_worklog(read.active_worklog)?;
         if let Some(item) = read.active_task_item {
             self.adopt_task_item(item);
         }
@@ -495,16 +493,20 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         self.set_latest_work_start(id, item.latest_work_start);
     }
 
-    fn refresh_tracking(&mut self) -> Result<(), ApplicationError> {
+    fn reload_tasks_and_tracking(&mut self) -> Result<(), ApplicationError> {
         let (tasks, active_worklog) = self.repository.load_task_tracking_resources()?;
         self.adopt_task_tracking_resources(tasks, active_worklog)
     }
 
+    /// Reloads like `reload_tasks_and_tracking`, but reports a stored active
+    /// worklog that cannot resume as corrupt data.
     fn reload_authoritative_state(&mut self) -> Result<(), RepositoryError> {
-        let (tasks, active_worklog) = self.repository.load_task_tracking_resources()?;
-        self.adopt_task_tracking_resources(tasks, active_worklog)
-            .map_err(|_| RepositoryError::CorruptData {
-                field: "active worklog",
+        self.reload_tasks_and_tracking()
+            .map_err(|error| match error {
+                ApplicationError::Repository(error) => error,
+                _ => RepositoryError::CorruptData {
+                    field: "active worklog",
+                },
             })
     }
 
@@ -579,7 +581,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
     }
 
     fn refresh_after_task_operation(&mut self) -> Result<(), ApplicationError> {
-        match self.refresh_tracking() {
+        match self.reload_tasks_and_tracking() {
             Err(ApplicationError::Repository(error)) => Err(ApplicationError::TaskRecovery(error)),
             result => result,
         }

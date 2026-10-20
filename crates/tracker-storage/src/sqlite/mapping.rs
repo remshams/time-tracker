@@ -97,6 +97,11 @@ pub(crate) fn raw_worklog(row: &Row<'_>) -> rusqlite::Result<RawWorklog> {
     ))
 }
 
+/// Builds a task from raw stored columns, rejecting domain-rule breaks.
+pub(crate) fn task_from_raw(raw: RawTask) -> Result<Task, StorageError> {
+    task_from_stored(raw.0, raw.1, raw.2, raw.3, raw.4)
+}
+
 /// Builds a worklog from raw stored columns, rejecting domain-rule breaks.
 pub(crate) fn worklog_from_raw(raw: RawWorklog) -> Result<Worklog, StorageError> {
     worklog_from_stored(raw.0, raw.1, raw.2, raw.3)

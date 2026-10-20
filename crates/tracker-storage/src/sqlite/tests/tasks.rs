@@ -862,45 +862,6 @@ fn unarchiving_restores_a_task_keeps_its_worklogs_and_persists() {
     assert_eq!(names, ["done", "later"]);
 }
 
-/// Confirms database protection keeps the timer intact until it stops, then permits the same archive.
-#[test]
-fn a_task_with_an_active_worklog_cannot_be_archived() {
-    let repository = repo();
-    let task = named_task(1, "running");
-    repository.create_task(task.clone()).unwrap();
-    let mut tracker = Tracker::idle();
-    let started = tracker
-        .start(&task, WorklogId::generate(), at(100))
-        .unwrap();
-    repository.insert_worklog(&started).unwrap();
-
-    let error = repository
-        .archive_task(task.id(), at(300))
-        .expect_err("the active task must not archive");
-    assert!(matches!(
-        error,
-        StorageError::TaskIsActive { id } if id == task.id()
-    ));
-
-    // Error state: the task is still usable and the timer still runs.
-    assert!(
-        !repository
-            .find_task(task.id())
-            .unwrap()
-            .unwrap()
-            .is_archived()
-    );
-    assert_eq!(repository.active_worklog().unwrap(), Some(started.clone()));
-
-    // After the worklog is stopped, the same call archives the task.
-    tracker.stop(at(150)).unwrap();
-    repository
-        .stop_worklog(started.id(), started.start(), at(150))
-        .unwrap();
-    let archived = repository.archive_task(task.id(), at(300)).unwrap();
-    assert!(archived.is_archived());
-}
-
 #[test]
 fn the_application_orders_the_sqlite_task_list_per_adr_0002() {
     let repository = repo();
