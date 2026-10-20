@@ -54,7 +54,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         let occurred_at = canonical_timestamp(occurred_at);
-        self.refresh_tracking()?;
+        self.reload_tasks_and_tracking()?;
         self.tracker.ensure_archivable(id)?;
         // The operation preserves unrelated metadata, so a concurrent rename
         // survives the archive.
@@ -107,7 +107,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         expected_name: &TaskName,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
-        self.refresh_tracking()?;
+        self.reload_tasks_and_tracking()?;
         match self.repository.compare_and_archive_task(
             id,
             expected_name,
@@ -140,7 +140,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         // since our last load. Refresh before the write so a read failure
         // prevents the unarchive and Idle is never reported over an active
         // worklog that survived the call.
-        self.refresh_tracking()?;
+        self.reload_tasks_and_tracking()?;
         match self.repository.unarchive_task(id, occurred_at) {
             Ok(task) => {
                 self.replace_task(task.clone());
@@ -155,14 +155,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         &mut self,
         as_of: DateTime<Utc>,
     ) -> Result<Vec<Task>, ApplicationError> {
-        let preview = self
-            .repository
-            .preview_inactive_tasks(canonical_timestamp(as_of))?;
-        self.adopt_tracking_read(preview.tracking)?;
-        for task in &preview.tasks {
-            self.replace_task(task.clone());
-        }
-        Ok(preview.tasks)
+        self.preview_inactive_tasks_with_period(as_of, InactivityPeriod::default())
     }
 
     pub fn archive_inactive_tasks(
@@ -170,19 +163,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         expected_ids: &[TaskId],
         as_of: DateTime<Utc>,
     ) -> Result<Vec<Task>, ApplicationError> {
-        let result = self
-            .repository
-            .archive_inactive_tasks(expected_ids, canonical_timestamp(as_of));
-        match result {
-            Ok(archive) => {
-                self.adopt_tracking_read(archive.tracking)?;
-                for task in &archive.tasks {
-                    self.replace_task(task.clone());
-                }
-                Ok(archive.tasks)
-            }
-            Err(error) => Err(self.task_failure_with_recovery(error.into())),
-        }
+        self.archive_inactive_tasks_with_period(expected_ids, as_of, InactivityPeriod::default())
     }
 
     pub fn preview_inactive_tasks_with_period(
