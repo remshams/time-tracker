@@ -26,12 +26,12 @@ pub(crate) fn render(
 #[cfg(test)]
 mod tests {
     use chrono::{DateTime, Utc};
-    use ratatui::{Terminal, backend::TestBackend};
     use tracker_application::TrackerApplication;
     use tracker_domain::{Task, TaskId, TaskName};
     use tracker_storage::SqliteRepository;
 
     use crate::app::App;
+    use crate::test_support::render::{draw, row};
 
     fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
         let repository = SqliteRepository::open_in_memory().unwrap();
@@ -47,19 +47,10 @@ mod tests {
         App::load(TrackerApplication::load(repository).unwrap())
     }
 
-    fn row(terminal: &Terminal<TestBackend>, y: u16) -> String {
-        (0..terminal.backend().buffer().area.width)
-            .map(|x| terminal.backend().buffer()[(x, y)].symbol())
-            .collect()
-    }
-
     #[test]
     fn an_idle_header_shows_only_the_title() {
         let app = app_with(&["alpha"]);
-        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-        terminal
-            .draw(|frame| crate::ui::render(frame, app.app_view()))
-            .unwrap();
+        let terminal = draw(&app);
         let header = row(&terminal, 0);
         assert!(header.contains("Time Tracker"));
         assert!(!header.contains("▶"));

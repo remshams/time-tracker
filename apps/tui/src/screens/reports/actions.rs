@@ -64,8 +64,6 @@ impl AppState {
         let Some(state) = self.shell().report() else {
             return;
         };
-        let session_id = state.session_id;
-        let period_generation = state.period_generation;
         let Some((start, end)) = state.range(timezone) else {
             let report = self.shell_mut().report_mut().expect("report is open");
             report.clear_totals();
@@ -85,9 +83,7 @@ impl AppState {
                     return;
                 }
                 let current_period = app.shell().report().is_some_and(|report| {
-                    report.session_id == session_id
-                        && report.period_generation == period_generation
-                        && report.range(app.shell().timezone()) == Some((start, end))
+                    report.range(app.shell().timezone()) == Some((start, end))
                 });
                 if !current_period {
                     app.refresh_reports_now();
@@ -370,30 +366,17 @@ impl AppState {
         let Some(task_id) = self.shell().report().and_then(|report| report.selected) else {
             return;
         };
-        let report_context = self.shell().report().map(|report| {
-            (
-                report.session_id,
-                report.period_generation,
-                report.from,
-                report.to,
-            )
-        });
+        let report_period = self.shell().report().map(|report| (report.from, report.to));
+        let screen_generation = self.shell().screen_generation();
         self.enqueue(
             ApplicationRequest::WorklogsForTask {
                 task_id,
                 after: None,
             },
             move |app, completed| {
-                if app.shell().screen() != Screen::Reports
+                if app.shell().screen_generation() != screen_generation
                     || app.shell().report().and_then(|report| report.selected) != Some(task_id)
-                    || app.shell().report().map(|report| {
-                        (
-                            report.session_id,
-                            report.period_generation,
-                            report.from,
-                            report.to,
-                        )
-                    }) != report_context
+                    || app.shell().report().map(|report| (report.from, report.to)) != report_period
                 {
                     return;
                 }
@@ -402,17 +385,10 @@ impl AppState {
                 };
                 match result {
                     Ok(page) => {
-                        let baseline = crate::screens::worklog_history::active_worklog_for_task(
-                            page.adoption
-                                .as_ref()
-                                .and_then(|adoption| adoption.active_worklog.as_ref()),
-                            task_id,
-                        );
                         app.shell_mut().open_report_history(History::new(
                             task_id,
                             page.worklogs,
                             page.next_cursor,
-                            baseline,
                         ));
 
                         app.shell_mut().info("Task history");
@@ -566,28 +542,6 @@ mod tests {
     }
 
     #[test]
-    fn reopening_reports_during_a_read_ignores_the_old_result() {
-        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
-        state.open_reports();
-        let effect = state.take_effect().expect("first report request");
-        state.handle_report_command(ReportCommand::ShowActive);
-        state.open_reports();
-        finish_empty_report(&mut state, effect);
-        assert!(state.shell().report().unwrap().totals.is_none());
-        let task_list = state.take_effect().expect("return-to-tasks refresh");
-        state.complete_effect(
-            task_list,
-            CompletedRequest {
-                request: ApplicationRequest::RefreshTaskList,
-                outcome: ApplicationOutcome::TaskListRefresh(Ok(())),
-            },
-        );
-        let replacement = state.take_effect().expect("reopened report request");
-        finish_empty_report(&mut state, replacement);
-        assert!(state.shell().report().unwrap().totals.is_some());
-    }
-
-    #[test]
     fn report_refresh_does_not_discard_pending_history() {
         let selected = task(1, "selected task");
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
@@ -640,7 +594,48 @@ mod tests {
     }
 
     #[test]
-    fn history_read_does_not_open_after_stepping_away_and_back() {
+    fn history_read_does_not_open_after_reopening_reports() {
+        let selected = task(1, "selected task");
+        let totals = ReportTotals {
+            rows: vec![ReportRow {
+                task: selected,
+                duration: TimeDelta::seconds(1),
+            }],
+            total: TimeDelta::seconds(1),
+        };
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
+        state.open_reports();
+        let first = state.take_effect().expect("report request");
+        finish_empty_report(&mut state, first);
+        state
+            .shell_mut()
+            .report_mut()
+            .unwrap()
+            .set_totals(totals.clone());
+        state.handle_report_command(ReportCommand::OpenHistory);
+        let history = state.take_effect().expect("history request");
+        state.handle_report_command(ReportCommand::ShowActive);
+        state.open_reports();
+        state.shell_mut().report_mut().unwrap().set_totals(totals);
+        let request = history.request.clone();
+        state.complete_effect_with_resources(
+            history,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
+                    worklogs: Vec::new(),
+                    adoption: None,
+                    next_cursor: None,
+                })),
+            },
+            Vec::new(),
+            TrackingState::Idle,
+        );
+        assert_eq!(state.shell().screen(), Screen::Reports);
+    }
+
+    #[test]
+    fn history_read_does_not_open_after_changing_the_period() {
         let selected = task(1, "selected task");
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         state.open_reports();
@@ -660,7 +655,6 @@ mod tests {
         state.handle_report_command(ReportCommand::OpenHistory);
         let history = state.take_effect().expect("history request");
         state.handle_report_command(ReportCommand::PreviousPeriod);
-        state.handle_report_command(ReportCommand::NextPeriod);
         let request = history.request.clone();
         state.complete_effect_with_resources(
             history,

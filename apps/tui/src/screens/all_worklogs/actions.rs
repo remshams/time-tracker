@@ -17,10 +17,7 @@ impl AppState {
         let screen_generation = self.shell().screen_generation();
         let task_view_generation =
             (source_screen == Screen::TaskList).then(|| self.shell().task_list().view_generation());
-        let source_report_context = self
-            .shell()
-            .report()
-            .map(|report| (report.session_id, report.period_generation));
+        let source_report_period = self.shell().report().map(|report| (report.from, report.to));
         self.enqueue(
             ApplicationRequest::AllWorklogs { after: None },
             move |app, completed| {
@@ -29,11 +26,8 @@ impl AppState {
                     || (source_screen == Screen::TaskList
                         && Some(app.shell().task_list().view_generation()) != task_view_generation)
                     || (source_screen == Screen::Reports
-                        && app
-                            .shell()
-                            .report()
-                            .map(|report| (report.session_id, report.period_generation))
-                            != source_report_context)
+                        && app.shell().report().map(|report| (report.from, report.to))
+                            != source_report_period)
                 {
                     return;
                 }
@@ -180,14 +174,6 @@ impl AppState {
     }
 
     fn load_older_global(&mut self) {
-        if self
-            .shell()
-            .all_worklogs()
-            .is_some_and(|state| state.pagination_invalidated)
-        {
-            self.shell_mut().info("Refresh to load older worklogs");
-            return;
-        }
         let Some(cursor) = self
             .shell()
             .all_worklogs()
@@ -196,32 +182,23 @@ impl AppState {
             self.shell_mut().info("No older worklogs");
             return;
         };
-        let state = self.shell().all_worklogs().expect("worklogs are open");
-        if state.loading_cursor == Some(cursor) {
-            return;
-        }
-        let session = state.session_id();
-        let page_generation = state.page_generation;
-        if self.enqueue(
+        let session = self.global_mut().session_id();
+        self.enqueue(
             ApplicationRequest::AllWorklogs {
                 after: Some(cursor),
             },
             move |app, completed| {
-                let current = app.global_session_matches(session);
+                let current = app.global_session_matches(session)
+                    && app
+                        .shell()
+                        .all_worklogs()
+                        .and_then(AllWorklogsState::next_cursor)
+                        == Some(cursor);
                 let ApplicationOutcome::GlobalWorklogPage(result) = completed.outcome else {
                     unreachable!("global history request returns a page")
                 };
 
                 if !current {
-                    return;
-                }
-                let current_page = app.shell().all_worklogs().is_some_and(|state| {
-                    state.page_generation == page_generation && state.next_cursor() == Some(cursor)
-                });
-                if app.global_mut().loading_cursor == Some(cursor) {
-                    app.global_mut().loading_cursor = None;
-                }
-                if !current_page {
                     return;
                 }
                 match result {
@@ -245,9 +222,7 @@ impl AppState {
                     }
                 }
             },
-        ) {
-            self.global_mut().loading_cursor = Some(cursor);
-        }
+        );
     }
 
     fn refresh_global(&mut self) {
@@ -476,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_load_older_queues_one_cursor_and_appends_one_page() {
+    fn repeated_load_older_appends_one_page() {
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
         let task_id = tracker_domain::TaskId::generate();
         let first = worklog(task_id, 1);
@@ -488,36 +463,16 @@ mod tests {
             .shell_mut()
             .open_all_worklogs(AllWorklogsState::new(page_with_cursor(vec![first], cursor)));
         state.load_older_global();
-        let effect = state.take_effect().expect("older page request");
         state.load_older_global();
-        complete_global(&mut state, effect, page(vec![worklog(task_id, 2)]));
+        let first_request = state.take_effect().expect("older page request");
+        complete_global(&mut state, first_request, page(vec![worklog(task_id, 2)]));
+        let repeated_request = state.take_effect().expect("repeated older page request");
+        complete_global(
+            &mut state,
+            repeated_request,
+            page(vec![worklog(task_id, 3)]),
+        );
         assert_eq!(state.shell().all_worklogs().unwrap().worklogs().len(), 2);
-        assert_eq!(state.shell().all_worklogs().unwrap().loading_cursor, None);
-        assert!(state.take_effect().is_none());
-    }
-
-    #[test]
-    fn replaced_page_with_the_same_cursor_discards_a_pending_older_page() {
-        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
-        let task_id = tracker_domain::TaskId::generate();
-        let first = worklog(task_id, 1);
-        let cursor = GlobalWorklogCursor {
-            id: first.id(),
-            revision: 1,
-        };
-        state
-            .shell_mut()
-            .open_all_worklogs(AllWorklogsState::new(page_with_cursor(vec![first], cursor)));
-        state.load_older_global();
-        let effect = state.take_effect().expect("older page request");
-        let replacement = worklog(task_id, 2);
-        state
-            .global_mut()
-            .replace(page_with_cursor(vec![replacement.clone()], cursor), None);
-        complete_global(&mut state, effect, page(vec![worklog(task_id, 3)]));
-        let rows = state.shell().all_worklogs().unwrap().worklogs();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].id(), replacement.id());
     }
 
     #[test]
@@ -673,10 +628,8 @@ mod tests {
         state.open_all_worklogs();
         let effect = state.take_effect().expect("global open request");
         let screen_generation = state.shell().screen_generation();
-        let report_session = state.shell().report().unwrap().session_id;
         assert!(state.shell_mut().report_mut().unwrap().step(-1));
         assert_eq!(state.shell().screen_generation(), screen_generation);
-        assert_eq!(state.shell().report().unwrap().session_id, report_session);
         complete_global(&mut state, effect, page(Vec::new()));
         assert_eq!(state.shell().screen(), Screen::Reports);
     }
@@ -876,6 +829,27 @@ mod tests {
     }
 
     #[test]
+    fn refresh_replaces_loaded_older_rows_with_the_newest_page() {
+        let source = task(1, "source");
+        let mut service = TestService::with_tasks(vec![source.clone()]);
+        service.authoritative_worklogs = (0..51).map(|start| worklog(source.id(), start)).collect();
+        let spy = service.spy();
+        let mut app = app_in_timezone(service, chrono_tz::UTC);
+        app.handle(Command::TaskList(TaskListCommand::ShowAllWorklogs));
+        app.handle(Command::AllWorklogs(C::LoadOlder));
+        assert_eq!(app.shell().all_worklogs().unwrap().worklogs().len(), 51);
+
+        app.handle(Command::AllWorklogs(C::Refresh));
+
+        assert_eq!(spy.global_worklog_reads(), 3);
+        assert_eq!(app.shell().all_worklogs().unwrap().worklogs().len(), 50);
+        assert_eq!(
+            crate::test_support::text(app.app_view().status()),
+            "Refreshed"
+        );
+    }
+
+    #[test]
     fn older_page_refreshes_after_history_changes_and_other_errors_leave_rows_visible() {
         let source = task(1, "source");
         let mut service = TestService::with_tasks(vec![source.clone()]);
@@ -1026,7 +1000,7 @@ mod tests {
     }
 
     #[test]
-    fn moving_a_loaded_older_worklog_preserves_selection_without_using_a_stale_cursor() {
+    fn moving_a_loaded_older_worklog_preserves_selection_until_older_rows_reload() {
         let source = task(1, "source");
         let destination = task(2, "destination");
         let mut service = TestService::with_tasks(vec![source.clone(), destination.clone()]);
@@ -1055,17 +1029,16 @@ mod tests {
             state.selected_worklog().unwrap().task_id(),
             destination.id()
         );
-        assert!(state.next_cursor().is_none());
-        assert!(state.pagination_invalidated);
+        assert!(state.next_cursor().is_some());
+        spy.set_global_worklog_error(
+            tracker_application::ApplicationError::worklog_history_changed(source.id()),
+        );
         app.handle(Command::AllWorklogs(C::LoadOlder));
-        assert_eq!(spy.global_worklog_reads(), before);
-        assert_eq!(app.shell().all_worklogs().unwrap().worklogs().len(), 150);
+        assert_eq!(spy.global_worklog_reads(), before + 2);
         assert_eq!(
             crate::test_support::text(app.app_view().status()),
-            "Refresh to load older worklogs"
+            "Worklogs changed and were refreshed"
         );
-        app.handle(Command::AllWorklogs(C::Refresh));
-        assert_eq!(spy.global_worklog_reads(), before + 1);
         assert_eq!(app.shell().all_worklogs().unwrap().worklogs().len(), 50);
         assert!(app.shell().all_worklogs().unwrap().next_cursor().is_some());
     }

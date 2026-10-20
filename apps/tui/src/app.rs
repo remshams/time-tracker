@@ -5,14 +5,15 @@ mod task_catalog;
 mod tracking_session;
 mod view;
 
-use std::{
-    collections::VecDeque,
-    ops::{Deref, DerefMut},
-};
+use std::collections::VecDeque;
+#[cfg(test)]
+use std::ops::{Deref, DerefMut};
 
 use chrono_tz::Tz;
 use crossterm::event::KeyEvent;
-use tracker_application::{TaskListItem, TaskOrdering, TrackerApplicationService};
+#[cfg(test)]
+use tracker_application::TrackerApplicationService;
+use tracker_application::{TaskListItem, TaskOrdering};
 use tracker_domain::TrackingState;
 
 #[cfg(test)]
@@ -38,7 +39,9 @@ pub enum Status {
     Error(String),
 }
 
-/// Coordinates service calls and the presentation state owners.
+/// Test controller that runs requests against an application service in place
+/// of the runtime.
+#[cfg(test)]
 pub(crate) struct App<S: TrackerApplicationService> {
     application: S,
     state: AppState,
@@ -63,6 +66,7 @@ pub(crate) struct AppEffect {
 type EffectCompletion = Box<dyn FnOnce(&mut AppState, CompletedRequest)>;
 const MAX_PENDING_EFFECTS: usize = 32;
 
+#[cfg(test)]
 impl<S: TrackerApplicationService> App<S> {
     /// Builds presentation state from an already loaded application service.
     pub fn load(application: S) -> Self {
@@ -73,7 +77,6 @@ impl<S: TrackerApplicationService> App<S> {
         Self { application, state }
     }
 
-    #[cfg(test)]
     fn load_with_timezone(application: S, timezone: Tz, timezone_status: Option<&str>) -> Self {
         let items = application.tasks(TaskOrdering::default());
         let state = AppState::assemble(
@@ -85,16 +88,10 @@ impl<S: TrackerApplicationService> App<S> {
         Self { application, state }
     }
 
-    pub(crate) fn into_parts(self) -> (S, AppState) {
-        (self.application, self.state)
-    }
-
-    #[cfg(test)]
     pub(crate) fn load_in_timezone(application: S, timezone: Tz) -> Self {
         Self::load_with_timezone(application, timezone, None)
     }
 
-    #[cfg(test)]
     pub(crate) fn load_with_test_clock(
         application: S,
         timezone: Tz,
@@ -112,13 +109,11 @@ impl<S: TrackerApplicationService> App<S> {
         )
     }
 
-    #[cfg(test)]
     pub(crate) fn handle(&mut self, command: Command) {
         self.state.handle_command(command);
         self.drain_effects();
     }
 
-    #[cfg(test)]
     fn drain_effects(&mut self) {
         for _ in 0..32 {
             let Some(effect) = self.state.take_effect() else {
@@ -140,51 +135,44 @@ impl<S: TrackerApplicationService> App<S> {
         panic!("application effects did not settle after 32 completions");
     }
 
-    #[cfg(test)]
     pub(crate) fn refresh_reports(&mut self) {
         self.state.refresh_reports();
         self.drain_effects();
     }
 
-    #[cfg(test)]
     pub(crate) fn refresh_reports_now(&mut self) {
         self.state.refresh_reports_now();
         self.drain_effects();
     }
 
-    #[cfg(test)]
     pub(crate) fn refresh_reports_if_needed(&mut self, now: chrono::DateTime<chrono::Utc>) {
         self.state.refresh_reports_if_needed(now);
         self.drain_effects();
     }
 
-    #[cfg(test)]
     pub(crate) fn tick_reports_at(&mut self, now: chrono::DateTime<chrono::Utc>) {
         self.state.tick_reports_at(now);
         self.drain_effects();
     }
 
-    #[cfg(test)]
     pub fn is_running(&self) -> bool {
         self.state.is_running()
     }
 
-    #[cfg(test)]
     pub(crate) fn app_view(&self) -> AppView<'_> {
         self.state.app_view()
     }
 
-    #[cfg(test)]
     pub(crate) fn command_for(&self, key: KeyEvent) -> Option<Command> {
         self.state.command_for(key)
     }
 
-    #[cfg(test)]
     pub(crate) fn application_mut(&mut self) -> &mut S {
         &mut self.application
     }
 }
 
+#[cfg(test)]
 impl<S: TrackerApplicationService> Deref for App<S> {
     type Target = AppState;
 
@@ -193,6 +181,7 @@ impl<S: TrackerApplicationService> Deref for App<S> {
     }
 }
 
+#[cfg(test)]
 impl<S: TrackerApplicationService> DerefMut for App<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.state

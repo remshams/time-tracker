@@ -27,7 +27,7 @@ use std::process::ExitCode;
 use tracker_application::TrackerApplication;
 use tracker_storage::{SqliteRepository, default_database_path, ensure_app_data_dir};
 
-use crate::app::{App, AppState};
+use crate::app::AppState;
 use crate::command::Command;
 use crate::runtime::Backend;
 #[cfg(test)]
@@ -64,8 +64,10 @@ fn run_local_tui() -> Result<(), Box<dyn Error>> {
     ensure_app_data_dir()?;
     let repository = SqliteRepository::open(default_database_path()?)?;
     let application = TrackerApplication::load(repository)?;
-    let app = App::load(application);
-    let (application, state) = app.into_parts();
+    let state = AppState::load_task_list(
+        application.tasks(tracker_application::TaskOrdering::default()),
+        application.current_tracking().clone(),
+    );
     let mut guard = terminal_guard()?;
     runtime::run(&mut guard, Backend::Local(application), state).map_err(Into::into)
 }

@@ -1,12 +1,10 @@
 use chrono::{DateTime, Utc};
-use ratatui::{Terminal, backend::TestBackend};
 use tracker_application::TrackerApplication;
 use tracker_domain::{Task, TaskId, TaskName};
 use tracker_storage::SqliteRepository;
 
 use crate::app::App;
-
-const HEIGHT: u16 = 24;
+use crate::test_support::render::{HEIGHT, draw_at, row};
 
 fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
     let repository = SqliteRepository::open_in_memory().unwrap();
@@ -20,24 +18,6 @@ fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
             .unwrap();
     }
     App::load(TrackerApplication::load(repository).unwrap())
-}
-
-fn draw_at(
-    app: &App<TrackerApplication<SqliteRepository>>,
-    width: u16,
-    height: u16,
-) -> Terminal<TestBackend> {
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-    terminal
-        .draw(|frame| crate::ui::render(frame, app.app_view()))
-        .unwrap();
-    terminal
-}
-
-fn row(terminal: &Terminal<TestBackend>, y: u16) -> String {
-    (0..terminal.backend().buffer().area.width)
-        .map(|x| terminal.backend().buffer()[(x, y)].symbol())
-        .collect()
 }
 
 #[test]

@@ -116,7 +116,7 @@ fn task_list_state(mode: TaskListMode, view: TaskView) -> TaskListState {
 }
 
 fn history_state(mode: WorklogHistoryMode, available: bool) -> WorklogHistoryState {
-    let history = crate::screens::History::new(TaskId::generate(), Vec::new(), None, None);
+    let history = crate::screens::History::new(TaskId::generate(), Vec::new(), None);
     let mut state = WorklogHistoryState::new(TaskListState::new(None), history);
     match mode {
         WorklogHistoryMode::Normal => {}

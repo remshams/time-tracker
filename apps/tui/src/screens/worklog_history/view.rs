@@ -295,8 +295,7 @@ mod tests {
     use std::time::Duration;
 
     use chrono::{DateTime, Utc};
-    use ratatui::style::{Modifier, Style};
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::style::Modifier;
     use tracker_application::TrackerApplication;
     use tracker_domain::{Task, TaskId, TaskName, Worklog, WorklogId};
     use tracker_storage::SqliteRepository;
@@ -304,10 +303,8 @@ mod tests {
     use crate::app::App;
     use crate::command::Command;
     use crate::screens::{TaskListCommand, WorklogHistoryCommand};
+    use crate::test_support::render::{cell, draw, draw_at, row, rows};
     use crate::test_support::{app_in_timezone, app_with_test_clock};
-
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
 
     fn history_app(entries: &[(i64, i64)]) -> App<TrackerApplication<SqliteRepository>> {
         let repository = SqliteRepository::open_in_memory().unwrap();
@@ -412,41 +409,6 @@ mod tests {
             chrono_tz::UTC,
             Utc::now(),
         )
-    }
-
-    fn draw(app: &App<TrackerApplication<SqliteRepository>>) -> Terminal<TestBackend> {
-        draw_at(app, WIDTH, HEIGHT)
-    }
-
-    fn draw_at(
-        app: &App<TrackerApplication<SqliteRepository>>,
-        width: u16,
-        height: u16,
-    ) -> Terminal<TestBackend> {
-        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-        terminal
-            .draw(|frame| crate::ui::render(frame, app.app_view()))
-            .unwrap();
-        terminal
-    }
-
-    fn rows(terminal: &Terminal<TestBackend>) -> Vec<String> {
-        let buffer = terminal.backend().buffer();
-        (0..buffer.area.height)
-            .map(|y| {
-                (0..buffer.area.width)
-                    .map(|x| buffer[(x, y)].symbol())
-                    .collect::<String>()
-            })
-            .collect()
-    }
-
-    fn row(terminal: &Terminal<TestBackend>, y: u16) -> String {
-        rows(terminal).remove(y as usize)
-    }
-
-    fn cell(terminal: &Terminal<TestBackend>, x: u16, y: u16) -> Style {
-        terminal.backend().buffer()[(x, y)].style()
     }
 
     #[test]
