@@ -12,6 +12,9 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.swift_muter_tools import terminate_group
+
 
 DIAGNOSTICS_TIMEOUT = 20
 
@@ -21,23 +24,6 @@ def positive_seconds(value):
     if not math.isfinite(seconds) or seconds <= 0:
         raise ValueError("Native UI deadlines must be positive, finite numbers")
     return seconds
-
-
-def terminate_group(process):
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        process.wait()
-        return
-    try:
-        process.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-        pass
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    process.wait()
 
 
 def collect_diagnostics(directory, process_id):

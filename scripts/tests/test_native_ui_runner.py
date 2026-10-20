@@ -171,6 +171,7 @@ class NativeUIRunnerTests(unittest.TestCase):
         (application / "Tests/UITests/Support").mkdir(parents=True)
         (application / "Tests/UITests/Support/controlled_proxy.py").touch()
         shutil.copy(SCRIPT, scripts)
+        shutil.copy(SCRIPT.parent / "swift_muter_tools.py", scripts)
         shell = SCRIPT.parents[1] / "apps/swiftui/check-native-ui.sh"
         shutil.copy(shell, application)
         tools = self.directory / "tools"
