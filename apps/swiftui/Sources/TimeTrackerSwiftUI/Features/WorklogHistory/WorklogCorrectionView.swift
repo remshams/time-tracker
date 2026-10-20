@@ -127,18 +127,4 @@ private struct WorklogCorrectionSheet: View {
         .environment(\.timeZone, timezone)
         .interactiveDismissDisabled(state.isSubmitting)
     }
-
-    private func formatted(_ value: String) -> String {
-        guard let date = timestamp(value) else { return value }
-        return date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, timeZone: timezone))
-    }
-}
-
-@MainActor
-struct WorklogHistoryHeading: View {
-    var body: some View {
-        Text("Worklogs").font(.title3.weight(.semibold))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, 4)
-    }
 }

@@ -11,7 +11,6 @@ struct TrackerApplicationMenus: Commands {
         creation = runtime.store.creation
     }
 
-    // macOS shows one sheet per window, so another editor waits until the owner window's sheet closes.
     private var canCreateTask: Bool { creation.canOpen && !runtime.presentation.hasPresentation }
 
     var body: some Commands {

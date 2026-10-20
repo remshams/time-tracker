@@ -76,6 +76,13 @@ DIRECT_REQUEST_CONTRACT_BEFORE = (
     "}\n"
 )
 DIRECT_REQUEST_CONTRACT_AFTER = apply_edits(DIRECT_REQUEST_CONTRACT_BEFORE, scope.DIRECT_REQUEST_CONTRACT_EDITS)
+UNUSED_REQUEST_SUPPORT_BEFORE = "final class FakeClient { func readTracking() {} }\n"
+UNUSED_REQUEST_SUPPORT_AFTER = "final class FakeClient {}\nfunc sameWorklogTimestamp() -> Bool { true }\n"
+UNUSED_REQUEST_CONTRACT_BEFORE = "".join(
+    old + "settings: ConnectionSettings) async throws -> TaskListResources\n}\n"
+    for old, _ in scope.UNUSED_REQUEST_CONTRACT_EDITS
+)
+UNUSED_REQUEST_CONTRACT_AFTER = apply_edits(UNUSED_REQUEST_CONTRACT_BEFORE, scope.UNUSED_REQUEST_CONTRACT_EDITS)
 
 
 class SwiftMutationScopeTests(unittest.TestCase):
@@ -330,6 +337,59 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "review-required")
         self.assertTrue(any("MenuTaskClipboard.swift" in reason for reason in result["review_reasons"]))
+
+    def unused_request_baseline(self):
+        self.write(scope.PACKAGE + SUPPORT, UNUSED_REQUEST_SUPPORT_BEFORE)
+        self.write(scope.PACKAGE + CONTRACT, UNUSED_REQUEST_CONTRACT_BEFORE)
+        self.base = self.commit("Add the fake client and contract")
+        blobs = []
+        for contents in (UNUSED_REQUEST_SUPPORT_BEFORE, UNUSED_REQUEST_SUPPORT_AFTER):
+            self.write(scope.PACKAGE + SUPPORT, contents)
+            blobs.append(self.git("hash-object", scope.PACKAGE + SUPPORT))
+        self.git("restore", scope.PACKAGE + SUPPORT)
+        adaptations = tuple(
+            (reason, edits, tuple(blobs) if contract is scope.UNUSED_REQUEST_CONTRACT_EDITS else snapshots,
+             contract, required, affected)
+            for reason, edits, snapshots, contract, required, affected in scope.REVIEWED_SUPPORT_ADAPTATIONS)
+        replacement = patch.object(scope, "REVIEWED_SUPPORT_ADAPTATIONS", adaptations)
+        replacement.start()
+        self.addCleanup(replacement.stop)
+
+    def test_unused_request_cleanup_selects_the_timestamp_comparison_consumers(self):
+        self.unused_request_baseline()
+        self.write(scope.PACKAGE + SUPPORT, UNUSED_REQUEST_SUPPORT_AFTER)
+        self.write(scope.PACKAGE + CONTRACT, UNUSED_REQUEST_CONTRACT_AFTER)
+        self.commit("Drop unused requests")
+
+        result = self.select()
+
+        expected = {CONTRACT}
+        expected.update(scope.SOURCES + source for suite in scope.UNUSED_REQUEST_SUPPORT_SUITES
+                        for source in scope.TEST_PRODUCTION[suite])
+        self.assertEqual(result["status"], "focused", result["review_reasons"])
+        self.assertEqual(result["files"], sorted(expected))
+        self.assertIn(scope.SOURCES + scope.TIMESTAMP, result["files"])
+        self.assertTrue(any("Shared fixture drops unused client requests" in reason for reason in result["reasons"]))
+
+    def test_unused_request_cleanup_rejects_other_fixture_and_contract_edits(self):
+        self.unused_request_baseline()
+        variants = {
+            SUPPORT: {"extra helper": UNUSED_REQUEST_SUPPORT_AFTER + "func unexpectedHelper() {}\n"},
+            CONTRACT: {
+                "kept request": UNUSED_REQUEST_CONTRACT_BEFORE.replace(
+                    "    func readTaskCatalog() async throws -> TaskCatalogObservation\n", ""),
+                "extra method": UNUSED_REQUEST_CONTRACT_AFTER.replace("}\n", "    func extraRequest() async throws\n}\n", 1),
+            },
+        }
+        for path, contents in variants.items():
+            for label, content in contents.items():
+                with self.subTest(path=path, change=label):
+                    self.git("reset", "--hard", self.base)
+                    self.write(scope.PACKAGE + SUPPORT, UNUSED_REQUEST_SUPPORT_AFTER)
+                    self.write(scope.PACKAGE + CONTRACT, UNUSED_REQUEST_CONTRACT_AFTER)
+                    self.write(scope.PACKAGE + path, content)
+                    self.commit("Change an unreviewed helper or contract")
+                    self.assertEqual(self.select()["status"], "review-required")
 
     def test_updated_suite_mappings_include_cross_feature_commands_and_cleanup(self):
         cases = {

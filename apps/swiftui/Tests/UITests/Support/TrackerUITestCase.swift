@@ -100,7 +100,6 @@ class TrackerUITestCase: XCTestCase {
             self.element("task-details.task.\(task.id)").exists
         }
     }
-    func selectTask(_ task: FixtureTask) { select(task) }
     func showTab(_ name: String) {
         let tab = element("task-sidebar.tab.\(name)")
         XCTAssertTrue(tab.waitForExistence(timeout: timeout))

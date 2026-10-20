@@ -168,7 +168,6 @@ private struct TrackerSidebarToolbar: View {
         bulkArchiving = store.bulkArchiving
     }
 
-    // macOS shows one sheet per window, so another editor waits until the owner window's sheet closes.
     private var canCreate: Bool { creation.canOpen && !presentation.hasPresentation }
     private var canOpenBulkArchiving: Bool { bulkArchiving.canOpen && !presentation.hasPresentation }
 

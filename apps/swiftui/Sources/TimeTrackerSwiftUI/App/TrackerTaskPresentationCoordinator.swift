@@ -7,6 +7,8 @@ import SwiftUI
 final class TrackerTaskPresentationCoordinator {
     private(set) var ownerID: UUID?
     // Windows read this flag instead of the feature states, so draft edits do not redraw them.
+    // macOS shows one sheet per window, so another editor waits until the owner window's sheet closes.
+    // Menus and buttons that open an editor stay disabled while this is true.
     private(set) var hasPresentation = false
     private let store: TrackerStore
     private let presentingWindow: (Bool) -> UUID?
