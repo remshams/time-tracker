@@ -1,19 +1,12 @@
 import Foundation
 
-func sameWorklogTimestamp(_ lhs: String?, _ rhs: String?) -> Bool {
-    if lhs == rhs { return true }
-    guard let lhs, let rhs else { return false }
-    guard let left = worklogTimestampParts(lhs), let right = worklogTimestampParts(rhs) else { return false }
-    return left == right
-}
-
 func hasPositiveWorklogDuration(start: String, end: String) -> Bool {
     guard let start = worklogTimestampParts(start), let end = worklogTimestampParts(end) else { return false }
     if start.0 != end.0 { return end.0 > start.0 }
     return end.1.prefix(6) > start.1.prefix(6)
 }
 
-private func worklogTimestampParts(_ value: String) -> (Int64, String)? {
+func worklogTimestampParts(_ value: String) -> (Int64, String)? {
     guard let separator = value.firstIndex(of: "T") else { return nil }
     let suffix = value[value.index(after: separator)...]
     let point = suffix.firstIndex(of: ".")

@@ -546,6 +546,13 @@ let oldWorklog = WorklogItem(
     id: "worklog-old", taskId: "task-one", start: "2024-12-30T09:00:00.000Z", end: "2024-12-30T10:00:00.000Z")
 let serverSettings = ConnectionSettings(mode: .server, serverURL: "https://tracker.example")
 
+func sameWorklogTimestamp(_ lhs: String?, _ rhs: String?) -> Bool {
+    if lhs == rhs { return true }
+    guard let lhs, let rhs else { return false }
+    guard let left = worklogTimestampParts(lhs), let right = worklogTimestampParts(rhs) else { return false }
+    return left == right
+}
+
 @MainActor
 final class MemoryTrackingPreferences: TrackingPreferencesRepository {
     var saved: TrackingPreferences
