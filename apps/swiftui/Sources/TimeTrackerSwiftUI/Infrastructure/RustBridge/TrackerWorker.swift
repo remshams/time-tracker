@@ -93,16 +93,6 @@ private final class RustBridge {
         guard result.refreshed else { throw BridgeFailure(message: "The resource refresh did not complete.") }
     }
 
-    func readTaskCatalog() throws -> TaskCatalogObservation {
-        try refreshResources(1)
-        return try decode(tt_bridge_tasks(handle))
-    }
-
-    func readTracking() throws -> TrackingObservation {
-        try refreshResources(2)
-        return try decode(tt_bridge_tracking(handle))
-    }
-
     private func taskListResources() throws -> TaskListResources {
         let catalog: TaskCatalogObservation = try decode(tt_bridge_tasks(handle))
         let tracking: TrackingObservation = try decode(tt_bridge_tracking(handle))
@@ -126,13 +116,6 @@ private final class RustBridge {
         let taskList = try taskListResources()
         let report: TrackerReport = try decode(tt_bridge_report_observation(handle))
         return TaskListTotalsRefresh(taskList: taskList, report: report)
-    }
-
-    func refreshDailyTotals(start: String, end: String, now: String) throws -> DailyTotalsResources {
-        try refreshTotals(includeTasks: false, start: start, end: end, now: now)
-        let tracking: TrackingObservation = try decode(tt_bridge_tracking(handle))
-        let report: TrackerReport = try decode(tt_bridge_report_observation(handle))
-        return DailyTotalsResources(report: report, tracking: tracking)
     }
 
     func createTask(name: String, occurredAt: String) throws -> TaskCreationResult {
@@ -201,16 +184,6 @@ private final class RustBridge {
         try taskID.withCString { task in
             try occurredAt.withCString { instant in
                 try decode(tt_bridge_unarchive_task_at(handle, task, instant), requiresRefreshOnMalformed: true)
-            }
-        }
-    }
-
-    func report(start: String, end: String, now: String) throws -> TrackerReport {
-        try start.withCString { start in
-            try end.withCString { end in
-                try now.withCString { now in
-                    try decode(tt_bridge_report(handle, start, end, now), requiresRefreshOnMalformed: true)
-                }
             }
         }
     }
@@ -399,25 +372,6 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         }
     }
 
-    func readTaskCatalog() async throws -> TaskCatalogObservation {
-        try await perform { try $0.currentBridge().readTaskCatalog() }
-    }
-
-    func readTracking() async throws -> TrackingObservation {
-        try await perform { try $0.currentBridge().readTracking() }
-    }
-
-    func refreshDailyTotals(settings: ConnectionSettings, start: String, end: String, now: String)
-        async throws -> DailyTotalsResources
-    {
-        try await perform { worker in
-            if worker.bridge == nil {
-                worker.bridge = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
-            }
-            return try worker.currentBridge().refreshDailyTotals(start: start, end: end, now: now)
-        }
-    }
-
     func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult {
         try await perform { try $0.currentBridge().createTask(name: name, occurredAt: occurredAt) }
     }
@@ -447,15 +401,6 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
 
     func unarchiveTask(taskID: String, occurredAt: String) async throws -> TaskCommandResult {
         try await perform { try $0.currentBridge().unarchiveTask(taskID: taskID, occurredAt: occurredAt) }
-    }
-
-    func report(settings: ConnectionSettings, start: String, end: String, now: String) async throws -> TrackerReport {
-        try await perform { worker in
-            if worker.bridge == nil {
-                worker.bridge = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
-            }
-            return try worker.currentBridge().report(start: start, end: end, now: now)
-        }
     }
 
     func refreshTaskListWithTotals(settings: ConnectionSettings, start: String, end: String, now: String)
