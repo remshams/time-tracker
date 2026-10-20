@@ -236,8 +236,8 @@ async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, C
     }
 }
 
+/// Archives the candidates of a preview that `validate` already matched to this backend.
 async fn archive(backend: &mut Backend, token: PreviewToken) -> Result<Value, CliError> {
-    validate_preview(&token, &backend.identity)?;
     let count = match (&mut backend.kind, token) {
         (
             BackendKind::Local(app),
@@ -258,7 +258,7 @@ async fn archive(backend: &mut Backend, token: PreviewToken) -> Result<Value, Cl
             .archive_inactive_tasks(&preview)
             .await
             .map_err(CliError::application)?,
-        _ => return Err(CliError::input("preview mode does not match backend")),
+        _ => unreachable!("validate rejects previews for the other backend kind"),
     };
     Ok(json!({"archived_count": count}))
 }
