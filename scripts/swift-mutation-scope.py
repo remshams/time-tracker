@@ -210,6 +210,33 @@ DIRECT_REQUEST_SUPPORT_SUITES = DIRECT_REQUEST_REQUIRED_SUITES + (
     "Features/MenuBar/MenuTaskOrderTests.swift",
     "Features/MenuBar/MenuTaskTrackingActionTests.swift",
 )
+# Whole-file snapshots of the reviewed issue #113 cleanup. The fake client drops
+# the requests removed from the contract and gains sameWorklogTimestamp, which
+# only its correction and move replies and those two suites call.
+UNUSED_REQUEST_SUPPORT_BLOBS = (
+    "2693cfb6784787f340161609132e4ea5bc52d0ab",
+    "8130ecab58650402650be76db1167bf4fee2b676",
+)
+UNUSED_REQUEST_CONTRACT_EDITS = (
+    ("public protocol ReportClient: Sendable {\n"
+     "    func refreshDailyTotals(settings: ConnectionSettings, start: String, end: String, now: String)\n"
+     "        async throws -> DailyTotalsResources\n"
+     "    func report(settings: ConnectionSettings, start: String, end: String, now: String)"
+     " async throws -> TrackerReport\n"
+     "    func refreshTaskListWithTotals(",
+     "public protocol ReportClient: Sendable {\n"
+     "    func refreshTaskListWithTotals("),
+    ("public protocol TrackerClient: Sendable {\n"
+     "    func readTaskCatalog() async throws -> TaskCatalogObservation\n"
+     "    func readTracking() async throws -> TrackingObservation\n"
+     "    func openConfigured(",
+     "public protocol TrackerClient: Sendable {\n"
+     "    func openConfigured("),
+)
+UNUSED_REQUEST_SUPPORT_SUITES = (
+    "Features/WorklogCorrection/WorklogCorrectionTests.swift",
+    "Features/WorklogMove/WorklogMoveTests.swift",
+)
 # Each reviewed adaptation names exact shared fixture and contract edits, required
 # changed suites, and every suite whose production mapping the helper edits affect.
 REVIEWED_SUPPORT_ADAPTATIONS = (
@@ -220,6 +247,9 @@ REVIEWED_SUPPORT_ADAPTATIONS = (
     ("Shared fixture adapts direct requests, startup, settling, and cleanup",
      None, DIRECT_REQUEST_SUPPORT_BLOBS, DIRECT_REQUEST_CONTRACT_EDITS,
      DIRECT_REQUEST_REQUIRED_SUITES, DIRECT_REQUEST_SUPPORT_SUITES),
+    ("Shared fixture drops unused client requests and gains the worklog timestamp comparison",
+     None, UNUSED_REQUEST_SUPPORT_BLOBS, UNUSED_REQUEST_CONTRACT_EDITS,
+     (), UNUSED_REQUEST_SUPPORT_SUITES),
 )
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
