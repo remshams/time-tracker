@@ -134,123 +134,12 @@ TEST_PRODUCTION = {
 
 
 SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
-# These exact additions only give the shared fake client a worklog deletion
-# request and reply. They leave every existing operation unchanged.
-WORKLOG_DELETION_SUPPORT_EDITS = (
-    ("        case move(expected: WorklogItem, destination: String)\n",
-     "        case move(expected: WorklogItem, destination: String)\n"
-     "        case delete(expected: WorklogItem)\n"),
-    ("        case moved(WorklogMoveResult)\n",
-     "        case moved(WorklogMoveResult)\n"
-     "        case deleted(WorklogDeletionResult)\n"),
-    ("        func inactivePreview(_ preview: InactiveTaskPreview) {",
-     "        func deleted(worklog: WorklogItem) {\n"
-     "            complete(.success(.deleted(WorklogDeletionResult(worklog: worklog))))\n"
-     "        }\n"
-     "        func deleted(worklog: WorklogItem, resources: TaskListResources) {\n"
-     "            if case .delete(let expected) = operation, worklog == expected { publishAfterCommand(resources) }\n"
-     "            complete(.success(.deleted(WorklogDeletionResult(worklog: worklog))))\n"
-     "        }\n"
-     "        func inactivePreview(_ preview: InactiveTaskPreview) {"),
-    ("    func history(taskID: String, cursor: String?) async throws -> HistoryPage {\n",
-     "    func deleteWorklog(expected: WorklogItem) async throws -> WorklogDeletionResult {\n"
-     "        let operation = Operation.delete(expected: expected)\n"
-     "        guard case .deleted(let value) = try await perform(operation) else {\n"
-     "            throw wrongReply(\"deletion\", operation: operation)\n"
-     "        }\n"
-     "        return value\n"
-     "    }\n"
-     "    func history(taskID: String, cursor: String?) async throws -> HistoryPage {\n"),
-)
-WORKLOG_DELETION_CONTRACT_EDITS = (
-    ("    func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult\n",
-     "    func moveWorklog(expected: WorklogItem, destinationTaskID: String) async throws -> WorklogMoveResult\n"
-     "    func deleteWorklog(expected: WorklogItem) async throws -> WorklogDeletionResult\n"),
-)
-# Whole-file snapshots of the reviewed issue #95 fixture adaptation. Any other
-# helper edit needs review, including edits outside the changed methods.
-DIRECT_REQUEST_SUPPORT_BLOBS = (
-    "ce69f5073ae6cc62b114506ae7d5e2b481ea8e2a",
-    "2693cfb6784787f340161609132e4ea5bc52d0ab",
-)
-DIRECT_REQUEST_CONTRACT_EDITS = (
-    ("    func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources\n"
-     "    func refreshTaskList() async throws -> TaskListResources\n",
-     "    func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources\n"),
-)
-# Require the adapted suites, and include unchanged consumers of the shared fake
-# when selecting production files. Unrelated portable helpers stay out of CI.
-DIRECT_REQUEST_REQUIRED_SUITES = (
-    "App/BackgroundRefreshInteractionTests.swift",
-    "App/HistoryPresentationTests.swift",
-    "App/LifecycleTests.swift",
-    "App/ObserverTests.swift",
-    "App/PresentationTests.swift",
-    "App/RefreshPresentationTests.swift",
-    "Features/BulkTaskArchiving/BulkTaskArchivingTests.swift",
-    "Features/Connection/ConnectionTests.swift",
-    "Features/DailyTotals/DailyTotalsTests.swift",
-    "Features/MenuBar/MenuLiveValuesTests.swift",
-    "Features/MenuBar/MenuPresentationTests.swift",
-    "Features/MenuBar/StatusItemTests.swift",
-    "Features/TaskArchiving/TaskArchivingTests.swift",
-    "Features/TaskCreation/TaskCreationTests.swift",
-    "Features/TaskEditing/TaskNameEditingPolicyTests.swift",
-    "Features/TaskRename/TaskRenameTests.swift",
-    "Features/Tracking/TrackingTests.swift",
-    "Features/TrackingAutomation/TrackingAutomationTests.swift",
-    "Features/WorklogCorrection/WorklogCorrectionTests.swift",
-    "Features/WorklogDeletion/WorklogDeletionTests.swift",
-    "Features/WorklogHistory/HistoryTests.swift",
-    "Features/WorklogMove/WorklogMoveTests.swift",
-    "Support/FixtureCleanupTests.swift",
-)
-DIRECT_REQUEST_SUPPORT_SUITES = DIRECT_REQUEST_REQUIRED_SUITES + (
-    "Features/MenuBar/MenuTaskClipboardTests.swift",
-    "Features/MenuBar/MenuTaskOrderTests.swift",
-    "Features/MenuBar/MenuTaskTrackingActionTests.swift",
-)
-# Whole-file snapshots of the reviewed issue #113 cleanup. The fake client drops
-# the requests removed from the contract and gains sameWorklogTimestamp, which
-# only its correction and move replies and those two suites call.
-UNUSED_REQUEST_SUPPORT_BLOBS = (
-    "2693cfb6784787f340161609132e4ea5bc52d0ab",
-    "8130ecab58650402650be76db1167bf4fee2b676",
-)
-UNUSED_REQUEST_CONTRACT_EDITS = (
-    ("public protocol ReportClient: Sendable {\n"
-     "    func refreshDailyTotals(settings: ConnectionSettings, start: String, end: String, now: String)\n"
-     "        async throws -> DailyTotalsResources\n"
-     "    func report(settings: ConnectionSettings, start: String, end: String, now: String)"
-     " async throws -> TrackerReport\n"
-     "    func refreshTaskListWithTotals(",
-     "public protocol ReportClient: Sendable {\n"
-     "    func refreshTaskListWithTotals("),
-    ("public protocol TrackerClient: Sendable {\n"
-     "    func readTaskCatalog() async throws -> TaskCatalogObservation\n"
-     "    func readTracking() async throws -> TrackingObservation\n"
-     "    func openConfigured(",
-     "public protocol TrackerClient: Sendable {\n"
-     "    func openConfigured("),
-)
-UNUSED_REQUEST_SUPPORT_SUITES = (
-    "Features/WorklogCorrection/WorklogCorrectionTests.swift",
-    "Features/WorklogMove/WorklogMoveTests.swift",
-)
-# Each reviewed adaptation names exact shared fixture and contract edits, required
-# changed suites, and every suite whose production mapping the helper edits affect.
-REVIEWED_SUPPORT_ADAPTATIONS = (
-    ("Shared fixture only adds the worklog deletion reply; the changed deletion suite defines scope",
-     WORKLOG_DELETION_SUPPORT_EDITS, None, WORKLOG_DELETION_CONTRACT_EDITS,
-     ("Features/WorklogDeletion/WorklogDeletionTests.swift",),
-     ("Features/WorklogDeletion/WorklogDeletionTests.swift",)),
-    ("Shared fixture adapts direct requests, startup, settling, and cleanup",
-     None, DIRECT_REQUEST_SUPPORT_BLOBS, DIRECT_REQUEST_CONTRACT_EDITS,
-     DIRECT_REQUEST_REQUIRED_SUITES, DIRECT_REQUEST_SUPPORT_SUITES),
-    ("Shared fixture drops unused client requests and gains the worklog timestamp comparison",
-     None, UNUSED_REQUEST_SUPPORT_BLOBS, UNUSED_REQUEST_CONTRACT_EDITS,
-     (), UNUSED_REQUEST_SUPPORT_SUITES),
-)
+# A PR that edits the shared fake client and the client contract can add a
+# reviewed entry here: (reason, exact fixture edits or None, (base blob, head blob)
+# or None, exact contract edits, required changed suites, suites whose production
+# files the fixture edits affect). Remove the entry once its PR has merged, since
+# its base snapshot no longer matches main.
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [PRESENTATION, SESSION],
