@@ -30,21 +30,27 @@ The app targets macOS 15 and Swift 5 mode, the portable package declares macOS 1
 
 ### Who writes the stores
 
-Stores are passive. A store doesn't fetch data or call other stores. A new `TrackerSync` class and the orchestration code in `App/` write into stores through methods such as `apply(...)`. Views read store properties, and SwiftUI redraws a view when a value it read changes. Views call store methods only for user actions, such as submitting a rename. They don't start loads.
+Stores are passive. A store doesn't fetch data or call other stores, with one exception: `WorklogHistoryStore` sends its own page requests, described below. A new `TrackerSync` class and the orchestration code in `App/` write into stores through methods such as `apply(...)`. Views read store properties, and SwiftUI redraws a view when a value it read changes. Views call store methods only for user actions, such as submitting a rename. They don't start loads.
 
 - One refresh response holds tasks, the active worklog and daily totals. `TrackerSync` writes them into the catalog, tracking and totals stores in one pass. If views fetched their own parts, the task list, the timer and the menu bar would each send requests on every poll and could show results from different points in time.
 - Polling, auto-pause and the menu bar keep running while the window is closed. Loading tied to a view's lifetime would stop with the view.
 - Follow-up loads have a fixed order. History reloads after the catalog applied a refresh, and only when the selection, the task's `latestStart` or the active worklog changed. `TaskCatalogState.apply(_:previousActive:active:)` already reports that as a `Bool`. The code in `App/` checks it and then asks `WorklogHistoryStore` to reload; the catalog store never calls the history store.
 - Stores and `TrackerSync` live in the portable package, where `swift test` on Linux and the Swift mutation check cover them. View code in the app target is covered only by E2E tests.
 
-`WorklogHistoryStore` sends its own page requests when asked to reload or load more, and drops a page whose task is no longer selected. `TrackerSync` owns polling, the display and rollover timers, sleep and wake, auto-pause and the connection change flow.
+`WorklogHistoryStore` is the exception because its requests depend only on its own state: the selected task and the next cursor. It sends a page request when `App/` asks it to reload or the user loads more. It keeps today's behavior:
+
+- Nothing is cancelled. A page that arrives after its task is no longer selected is dropped, and so is its failure.
+- A failure keeps the pages already loaded, marks the history unavailable and shows the error message.
+- When the failure means the connection needs recovery, the store reports it to its caller in `App/`, which updates `ConnectionStore`. The history store doesn't call the connection store.
+
+`TrackerSync` owns polling, the display and rollover timers, sleep and wake, auto-pause and the connection change flow.
 
 A view may load data with `.task(id:)` only when the data is needed just while that view is visible. No current view needs that.
 
 ### Coordination
 
 - Cross-feature follow-ups are explicit calls in `App/` in a fixed order (orchestration). Stores don't observe each other (choreography), because the order of follow-ups and the place to debug them would then depend on observation timing.
-- Code outside SwiftUI that reacts to store changes uses `Observations`: the AppKit status menu observer and `TrackerTaskPresentationCoordinator`. `Observations` delivers the value after a change, merges changes made in one synchronous run, and keeps tracking without re-registration. That removes the coordinator's re-registration loop and its read on the next main-actor turn.
+- Code outside SwiftUI that reacts to store changes uses `Observations`: the AppKit status menu observer and `TrackerTaskPresentationCoordinator`. `Observations` delivers the current value when iteration starts, then the new value after each change. It merges changes made in one synchronous run, and keeps tracking without re-registration. The first value replaces the startup reads that the menu observer and the coordinator make today. That removes the coordinator's re-registration loop and its read on the next main-actor turn.
 
 ### Injection
 
