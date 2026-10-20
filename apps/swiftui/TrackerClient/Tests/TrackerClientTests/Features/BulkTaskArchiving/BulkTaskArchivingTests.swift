@@ -83,7 +83,6 @@ final class BulkTaskArchivingTests: XCTestCase {
         let failures = [
             BridgeFailure(message: "Preview unavailable", kind: "unavailable"),
             BridgeFailure(message: "Preview protocol error", kind: "protocol"),
-            BridgeFailure(message: "Preview uncertain", uncertain: true),
             BridgeFailure(message: "Preview requires refresh", requiresRefresh: true),
         ]
         for failure in failures {

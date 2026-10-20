@@ -685,10 +685,10 @@ public final class TrackerSession {
         tracking.error = writeFailure(error).localizedDescription
     }
 
+    /// Callers pass read failures, which the bridge never marks as uncertain.
     private func requiresConnectionRecovery(_ error: Error) -> Bool {
         guard let failure = error as? BridgeFailure else { return false }
-        if failure.requiresRefresh || failure.uncertain { return true }
-        return failure.kind == "unavailable" || failure.kind == "protocol"
+        return failure.requiresRefresh || failure.kind == "unavailable" || failure.kind == "protocol"
     }
 
     /// Reloads the task list and, with a report client, today's totals.
@@ -823,9 +823,7 @@ public final class TrackerSession {
             } catch {
                 guard taskID == selectedTaskID else { return }
                 history.fail(error)
-                if let failure = error as? BridgeFailure, historyFailureRequiresRecovery(failure) {
-                    recordConnectionFailure(error)
-                }
+                if requiresConnectionRecovery(error) { recordConnectionFailure(error) }
             }
             publish()
         }
@@ -930,10 +928,6 @@ public final class TrackerSession {
         history.request(selectedTaskID: nil)
         tracking.error = nil
         acceptTaskList(resources)
-    }
-
-    private func historyFailureRequiresRecovery(_ failure: BridgeFailure) -> Bool {
-        failure.kind == "unavailable" || failure.kind == "protocol" || failure.requiresRefresh
     }
 
     private func displayTickIsCurrent(_ token: Int) -> Bool {

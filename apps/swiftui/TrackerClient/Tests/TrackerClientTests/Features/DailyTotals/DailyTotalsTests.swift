@@ -711,11 +711,10 @@ final class DailyTotalsSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testUnavailableProtocolAndUncertainReportFailuresRequireResourceRecovery() async throws {
+    func testUnavailableAndProtocolReportFailuresRequireResourceRecovery() async throws {
         let failures = [
             BridgeFailure(message: "Report offline", kind: "unavailable"),
             BridgeFailure(message: "Report incompatible", kind: "protocol"),
-            BridgeFailure(message: "Report state uncertain", uncertain: true),
         ]
         for failure in failures {
             let fixture = Fixture(reports: true, calendar: dailyCalendar())
