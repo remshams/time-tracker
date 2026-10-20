@@ -367,13 +367,14 @@ impl AppState {
             return;
         };
         let report_period = self.shell().report().map(|report| (report.from, report.to));
+        let screen_generation = self.shell().screen_generation();
         self.enqueue(
             ApplicationRequest::WorklogsForTask {
                 task_id,
                 after: None,
             },
             move |app, completed| {
-                if app.shell().screen() != Screen::Reports
+                if app.shell().screen_generation() != screen_generation
                     || app.shell().report().and_then(|report| report.selected) != Some(task_id)
                     || app.shell().report().map(|report| (report.from, report.to)) != report_period
                 {
@@ -590,6 +591,47 @@ mod tests {
             TrackingState::Idle,
         );
         assert_eq!(state.shell().screen(), Screen::WorklogHistory);
+    }
+
+    #[test]
+    fn history_read_does_not_open_after_reopening_reports() {
+        let selected = task(1, "selected task");
+        let totals = ReportTotals {
+            rows: vec![ReportRow {
+                task: selected,
+                duration: TimeDelta::seconds(1),
+            }],
+            total: TimeDelta::seconds(1),
+        };
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
+        state.open_reports();
+        let first = state.take_effect().expect("report request");
+        finish_empty_report(&mut state, first);
+        state
+            .shell_mut()
+            .report_mut()
+            .unwrap()
+            .set_totals(totals.clone());
+        state.handle_report_command(ReportCommand::OpenHistory);
+        let history = state.take_effect().expect("history request");
+        state.handle_report_command(ReportCommand::ShowActive);
+        state.open_reports();
+        state.shell_mut().report_mut().unwrap().set_totals(totals);
+        let request = history.request.clone();
+        state.complete_effect_with_resources(
+            history,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::WorklogPage(Ok(WorklogPage {
+                    worklogs: Vec::new(),
+                    adoption: None,
+                    next_cursor: None,
+                })),
+            },
+            Vec::new(),
+            TrackingState::Idle,
+        );
+        assert_eq!(state.shell().screen(), Screen::Reports);
     }
 
     #[test]
