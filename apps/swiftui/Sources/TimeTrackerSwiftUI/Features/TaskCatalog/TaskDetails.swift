@@ -122,6 +122,14 @@ struct TaskDetails: View {
     }
 }
 
+private struct WorklogHistoryHeading: View {
+    var body: some View {
+        Text("Worklogs").font(.title3.weight(.semibold))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 4)
+    }
+}
+
 private struct HistoryPaginationButton: View {
     let store: TrackerStore
 
