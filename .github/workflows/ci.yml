@@ -57,6 +57,13 @@ jobs:
         run: cargo fmt --all --check
       - name: Check Rust lint
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Verify the headless server dependencies
+        run: |
+          cargo tree --locked -p tracker-server-app --edges normal > server-dependencies.txt
+          if grep -Eq '(ratatui|crossterm|tracker-tui) v' server-dependencies.txt; then
+            cat server-dependencies.txt
+            exit 1
+          fi
       - name: Test Python scripts
         run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
       - name: Validate GitHub Actions workflows
@@ -69,31 +76,9 @@ jobs:
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" -color
 
-  rust-tests:
-    if: ${{ !inputs.native_benchmark }}
-    name: Rust tests on Linux
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-rust
-        with:
-          cache-key: tests
-      - name: Verify the headless server dependencies
-        run: |
-          cargo tree --locked -p tracker-server-app --edges normal > server-dependencies.txt
-          if grep -Eq '(ratatui|crossterm|tracker-tui) v' server-dependencies.txt; then
-            cat server-dependencies.txt
-            exit 1
-          fi
-      - name: Test the full Rust workspace
-        run: cargo test --workspace --all-features --locked
-
   rust-quality:
     if: ${{ !inputs.native_benchmark }}
-    name: Rust coverage and CRAP
+    name: Rust tests, coverage, and CRAP
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -117,7 +102,7 @@ jobs:
           cargo install --locked --root .build/coverage-tools --version 0.4.3 cargo-crap
       - name: Add coverage tools to PATH
         run: echo "$GITHUB_WORKSPACE/.build/coverage-tools/bin" >> "$GITHUB_PATH"
-      - name: Collect Rust coverage
+      - name: Test the full Rust workspace with coverage
         run: cargo llvm-cov --workspace --all-features --locked --lcov --output-path lcov.info
       - name: Export readable coverage
         run: cargo llvm-cov report --html --output-dir .build/rust-coverage
@@ -422,7 +407,7 @@ jobs:
 
   ci-passed:
     name: CI passed
-    needs: [lint, rust-tests, rust-quality, swift-quality, swift-mutations, native-scope, native-macos]
+    needs: [lint, rust-quality, swift-quality, swift-mutations, native-scope, native-macos]
     if: ${{ always() && !inputs.native_benchmark }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
