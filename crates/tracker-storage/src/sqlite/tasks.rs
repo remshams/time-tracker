@@ -7,7 +7,7 @@ use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName};
 
 use super::{
     SqliteRepository, error,
-    mapping::{raw_task, raw_task_item, task_from_stored, timestamp_to_us, us_to_timestamp},
+    mapping::{raw_task, raw_task_item, task_from_raw, timestamp_to_us, us_to_timestamp},
     tracking::active_tracking_read_on,
 };
 use crate::StorageError;
@@ -19,9 +19,7 @@ pub(crate) fn task_by_id_on(conn: &Connection, id: TaskId) -> Result<Option<Task
     statement
         .query_row([id.to_string()], raw_task)
         .optional()?
-        .map(|(id, name, archived, created_us, updated_us)| {
-            task_from_stored(id, name, archived, created_us, updated_us)
-        })
+        .map(task_from_raw)
         .transpose()
 }
 
@@ -38,9 +36,9 @@ pub(crate) fn list_task_items_on(conn: &Connection) -> Result<Vec<TaskListItem>,
     let mut rows = statement.query([])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
-        let ((id, name, archived, created_us, updated_us), latest_us) = raw_task_item(row)?;
+        let (raw, latest_us) = raw_task_item(row)?;
         items.push(TaskListItem {
-            task: task_from_stored(id, name, archived, created_us, updated_us)?,
+            task: task_from_raw(raw)?,
             latest_work_start: latest_us.map(us_to_timestamp).transpose()?,
         });
     }
@@ -60,14 +58,12 @@ pub(crate) fn task_item_by_id_on(
     statement
         .query_row([id.to_string()], raw_task_item)
         .optional()?
-        .map(
-            |((id, name, archived, created_us, updated_us), latest_us)| {
-                Ok(TaskListItem {
-                    task: task_from_stored(id, name, archived, created_us, updated_us)?,
-                    latest_work_start: latest_us.map(us_to_timestamp).transpose()?,
-                })
-            },
-        )
+        .map(|(raw, latest_us)| {
+            Ok(TaskListItem {
+                task: task_from_raw(raw)?,
+                latest_work_start: latest_us.map(us_to_timestamp).transpose()?,
+            })
+        })
         .transpose()
 }
 
@@ -108,10 +104,7 @@ fn inactive_tasks_on(
     let mut rows = statement.query([cutoff_us])?;
     let mut tasks = Vec::new();
     while let Some(row) = rows.next()? {
-        let (id, name, archived, created_us, updated_us) = raw_task(row)?;
-        tasks.push(task_from_stored(
-            id, name, archived, created_us, updated_us,
-        )?);
+        tasks.push(task_from_raw(raw_task(row)?)?);
     }
     Ok(tasks)
 }
@@ -152,10 +145,7 @@ impl SqliteRepository {
         let mut rows = statement.query([])?;
         let mut tasks = Vec::new();
         while let Some(row) = rows.next()? {
-            let (id, name, archived, created_us, updated_us) = raw_task(row)?;
-            tasks.push(task_from_stored(
-                id, name, archived, created_us, updated_us,
-            )?);
+            tasks.push(task_from_raw(raw_task(row)?)?);
         }
         Ok(tasks)
     }
