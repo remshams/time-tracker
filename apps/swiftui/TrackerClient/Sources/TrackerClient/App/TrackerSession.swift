@@ -7,7 +7,6 @@ public final class TrackerSession {
 
     public private(set) var taskCatalogResource: TaskCatalogObservation?
     public private(set) var trackingResource: TrackingObservation?
-    public private(set) var reportResource: TrackerReport?
     private let client: any TrackerClient
     private let reports: (any ReportClient)?
     private let clock: any TrackerClock
@@ -106,13 +105,13 @@ public final class TrackerSession {
         return canStartTracking(taskID: selectedTaskID)
     }
     public func canStartTracking(taskID: String) -> Bool {
-        guard canSendTracking, let task = task(withID: taskID, in: tasks) else { return false }
+        guard canSendTracking, let task = task(withID: taskID) else { return false }
         return !task.archived && active?.taskId != task.id
     }
     public var canStopTracking: Bool { canSendTracking && active != nil }
     private var canSendTracking: Bool { connection.confirmed && !connection.stale && !tracking.isSubmitting }
     public var lastTrackedTaskID: String? { lastTracked.taskID }
-    public var lastTrackedTask: TaskItem? { tasks.first { $0.id == lastTrackedTaskID } }
+    public var lastTrackedTask: TaskItem? { lastTrackedTaskID.flatMap { task(withID: $0) } }
     public var menuPrimaryAction: MenuPrimaryAction {
         guard !automation.locked, canSendTracking else { return .disabled }
         if let active { return .stop(worklogID: active.id) }
@@ -134,7 +133,7 @@ public final class TrackerSession {
     public var runningTaskName: String {
         guard connection.confirmed else { return "Waiting for tracker state" }
         guard let active else { return "No timer running" }
-        return tasks.first { $0.id == active.taskId }?.name ?? "Unknown task"
+        return taskName(active.taskId)
     }
     public var timerDisplayText: String {
         guard connection.confirmed else { return "Unavailable" }
@@ -164,7 +163,7 @@ public final class TrackerSession {
     public var todayTasks: [TaskItem] {
         tasks.filter { (dailyDuration(taskID: $0.id) ?? 0) > 0 }
             .sorted {
-                if $0.name == $1.name { return taskIDComesBefore($0.id, $1.id) }
+                if $0.name == $1.name { return $0.id < $1.id }
                 return $0.name < $1.name
             }
     }
@@ -262,9 +261,7 @@ public final class TrackerSession {
             } catch {
                 bulkArchiving.failSubmission(writeFailure(error))
             }
-            publish()
-            await reloadTaskList()
-            publish()
+            await reloadAfterTaskWrite()
         }
     }
 
@@ -282,23 +279,23 @@ public final class TrackerSession {
     }
 
     public func canArchiveTask(taskID: String) -> Bool {
-        canBeginTaskArchiving && active?.taskId != taskID && hasTask(withID: taskID, archived: false, in: tasks)
+        canBeginTaskArchiving && active?.taskId != taskID && task(withID: taskID)?.archived == false
     }
 
     public func canUnarchiveTask(taskID: String) -> Bool {
-        canBeginTaskArchiving && hasTask(withID: taskID, archived: true, in: tasks)
+        canBeginTaskArchiving && task(withID: taskID)?.archived == true
     }
 
     public func openTaskArchive(taskID: String) {
-        guard canArchiveTask(taskID: taskID), let task = tasks.first(where: { $0.id == taskID }) else { return }
+        guard canArchiveTask(taskID: taskID), let task = task(withID: taskID) else { return }
         archiving.open(task, action: .archive)
         publish()
     }
 
     public func unarchiveTask(taskID: String) {
-        guard canUnarchiveTask(taskID: taskID), let task = tasks.first(where: { $0.id == taskID }) else { return }
+        guard canUnarchiveTask(taskID: taskID), let task = task(withID: taskID) else { return }
         archiving.open(task, action: .unarchive)
-        sendTaskArchiving()
+        submitTaskArchiving()
     }
 
     public func cancelTaskArchiving() {
@@ -307,7 +304,28 @@ public final class TrackerSession {
     }
 
     public func submitTaskArchiving() {
-        sendTaskArchiving()
+        guard let request = archiving.submit() else { return }
+        let occurredAt = commandTimestamp(clock.now)
+        publish()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                switch request.action {
+                case .archive:
+                    _ = try await client.archiveTask(
+                        taskID: request.taskID, expectedName: request.taskName, occurredAt: occurredAt)
+                case .unarchive:
+                    _ = try await client.unarchiveTask(taskID: request.taskID, occurredAt: occurredAt)
+                }
+                archiving.reset()
+                await reloadAfterTaskWrite {
+                    if request.action == .unarchive { self.catalog.rememberRestoredTask(request.taskID) }
+                }
+            } catch {
+                archiving.fail(writeFailure(error))
+                await reloadAfterTaskWrite()
+            }
+        }
     }
 
     public func openTaskCreation() {
@@ -338,24 +356,17 @@ public final class TrackerSession {
             do {
                 let created = try await client.createTask(name: name, occurredAt: occurredAt).task
                 creation.reset()
-                publish()
-                await reloadTaskList()
-                let confirmed = task(withID: created.id, in: tasks) ?? created
-                let changedTab = catalog.changeTab(confirmed.archived ? .archived : .active)
-                let changedSelection = catalog.select(created.id)
-                if changedTab || changedSelection { requestHistory() }
+                await reloadAfterTaskWrite { self.showCreatedTask(created) }
             } catch {
                 creation.fail(writeFailure(error))
-                publish()
-                await reloadTaskList()
+                await reloadAfterTaskWrite()
             }
-            publish()
         }
     }
 
     public func openTaskRename(taskID: String? = nil) {
         guard canOpenTaskRename else { return }
-        let target = taskID.flatMap { task(withID: $0, in: tasks) } ?? (taskID == nil ? selectedTask : nil)
+        let target = taskID.flatMap { task(withID: $0) } ?? (taskID == nil ? selectedTask : nil)
         rename.open(target)
         publish()
     }
@@ -387,22 +398,19 @@ public final class TrackerSession {
             } catch {
                 rename.fail(writeFailure(error))
             }
-            publish()
-            await reloadTaskList()
-            publish()
+            await reloadAfterTaskWrite()
         }
     }
 
     public func openWorklogCorrection(worklogID: String) {
         guard canOpenWorklogCorrection, let worklog = worklogForEditor(worklogID) else { return }
-        correction.open(worklog, taskName: task(withID: worklog.taskId, in: tasks)?.name ?? "Unknown task")
+        correction.open(worklog, taskName: taskName(worklog.taskId))
         publish()
     }
 
     public func openWorklogMove(worklogID: String) {
         guard canOpenWorklogMove, let worklog = worklogForEditor(worklogID) else { return }
-        loadMoveCandidates(
-            move.open(worklog, sourceTaskName: task(withID: worklog.taskId, in: tasks)?.name ?? "Unknown task"))
+        loadMoveCandidates(move.open(worklog, sourceTaskName: taskName(worklog.taskId)))
         publish()
     }
 
@@ -483,8 +491,8 @@ public final class TrackerSession {
     }
 
     public func openWorklogDeletion(worklogID: String) {
-        guard canOpenWorklogDeletion, let worklog = worklog(withID: worklogID, in: worklogs) else { return }
-        deletion.open(worklog, taskName: task(withID: worklog.taskId, in: tasks)?.name ?? "Unknown task")
+        guard canOpenWorklogDeletion, let worklog = worklog(withID: worklogID) else { return }
+        deletion.open(worklog, taskName: taskName(worklog.taskId))
         publish()
     }
 
@@ -621,7 +629,7 @@ public final class TrackerSession {
             do {
                 try await request(client)
             } catch {
-                tracking.error = writeFailure(error).localizedDescription
+                recordTrackingFailure(error)
             }
             await reloadTaskList()
             tracking.isSubmitting = false
@@ -642,7 +650,7 @@ public final class TrackerSession {
                 }
             } catch {
                 automation.pauseFailed()
-                tracking.error = writeFailure(error).localizedDescription
+                recordTrackingFailure(error)
             }
             await reloadTaskList()
             publish()
@@ -655,7 +663,7 @@ public final class TrackerSession {
             _ = try await client.resumeTracking(
                 taskID: resume.taskID, occurredAt: commandTimestamp(resume.date))
         } catch {
-            tracking.error = writeFailure(error).localizedDescription
+            recordTrackingFailure(error)
         }
     }
 
@@ -669,12 +677,7 @@ public final class TrackerSession {
             } catch {
                 guard bulkArchiving.matches(search) else { return }
                 bulkArchiving.failSearch(error, search: search)
-                if let failure = error as? BridgeFailure,
-                    failure.requiresRefresh || failure.uncertain || failure.kind == "unavailable"
-                        || failure.kind == "protocol"
-                {
-                    recordConnectionFailure(error)
-                }
+                if requiresConnectionRecovery(error) { recordConnectionFailure(error) }
             }
             publish()
         }
@@ -685,6 +688,16 @@ public final class TrackerSession {
         return BridgeFailure(
             message: "Could not confirm the change. Check the reloaded data before trying again. \(failure.message)",
             kind: failure.kind, uncertain: true, requiresRefresh: failure.requiresRefresh)
+    }
+
+    private func recordTrackingFailure(_ error: Error) {
+        tracking.error = writeFailure(error).localizedDescription
+    }
+
+    private func requiresConnectionRecovery(_ error: Error) -> Bool {
+        guard let failure = error as? BridgeFailure else { return false }
+        if failure.requiresRefresh || failure.uncertain { return true }
+        return failure.kind == "unavailable" || failure.kind == "protocol"
     }
 
     /// Reloads the task list and, with a report client, today's totals.
@@ -717,6 +730,21 @@ public final class TrackerSession {
         schedulePolling()
     }
 
+    /// Publishes the write result, reloads the task list, runs `afterReload`, and publishes again.
+    private func reloadAfterTaskWrite(afterReload: () -> Void = {}) async {
+        publish()
+        await reloadTaskList()
+        afterReload()
+        publish()
+    }
+
+    private func showCreatedTask(_ created: TaskItem) {
+        let confirmed = task(withID: created.id) ?? created
+        let changedTab = catalog.changeTab(confirmed.archived ? .archived : .active)
+        let changedSelection = catalog.select(created.id)
+        if changedTab || changedSelection { requestHistory() }
+    }
+
     private func reloadAfterWorklogWrite() async {
         publish()
         await reloadTaskList()
@@ -734,33 +762,6 @@ public final class TrackerSession {
                     search: search)
             } catch {
                 move.failSearch(error, search: search)
-            }
-            publish()
-        }
-    }
-
-    private func sendTaskArchiving() {
-        guard let request = archiving.submit() else { return }
-        let occurredAt = commandTimestamp(clock.now)
-        publish()
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                switch request.action {
-                case .archive:
-                    _ = try await client.archiveTask(
-                        taskID: request.taskID, expectedName: request.taskName, occurredAt: occurredAt)
-                case .unarchive:
-                    _ = try await client.unarchiveTask(taskID: request.taskID, occurredAt: occurredAt)
-                }
-                archiving.reset()
-                publish()
-                await reloadTaskList()
-                if request.action == .unarchive { catalog.rememberRestoredTask(request.taskID) }
-            } catch {
-                archiving.fail(writeFailure(error))
-                publish()
-                await reloadTaskList()
             }
             publish()
         }
@@ -795,19 +796,13 @@ public final class TrackerSession {
                 settings: connection.settings, start: requested.start,
                 end: requested.end, now: requested.now)
             try dailyTotals.validate(refreshed.report, tracking: refreshed.taskList.tracking)
-            reportResource = refreshed.report
             dailyTotals.accept(
                 refreshed.report, tracking: refreshed.taskList.tracking,
                 requested: requested, clock: clock)
             acceptTaskList(refreshed.taskList, requestReport: false)
         } catch {
             dailyTotals.fail(error, clock: clock)
-            if let failure = error as? BridgeFailure,
-                failure.requiresRefresh || failure.uncertain || failure.kind == "unavailable"
-                    || failure.kind == "protocol"
-            {
-                recordConnectionFailure(error)
-            }
+            if requiresConnectionRecovery(error) { recordConnectionFailure(error) }
             publish()
         }
     }
@@ -869,7 +864,7 @@ public final class TrackerSession {
         displayTimer = scheduler.schedule(after: 1, repeating: true, tolerance: 0.2) { [weak self] in
             guard let self, displayTickIsCurrent(token) else { return }
             now = clock.now
-            if hasReportClient(), dailyTotals.updateDay(at: clock.now) {
+            if reports != nil, dailyTotals.updateDay(at: clock.now) {
                 updateRolloverTimer()
                 if !connection.protocolBlocked { refresh() }
             }
@@ -925,38 +920,20 @@ public final class TrackerSession {
         publish()
     }
 
-    private func task(withID id: String, in tasks: [TaskItem]) -> TaskItem? {
-        for task in tasks {
-            if task.id == id { return task }
-        }
-        return nil
-    }
+    private func task(withID id: String) -> TaskItem? { tasks.first { $0.id == id } }
 
-    private func hasTask(withID id: String, archived: Bool, in tasks: [TaskItem]) -> Bool {
-        for task in tasks {
-            if task.id == id && task.archived == archived { return true }
-        }
-        return false
-    }
+    private func taskName(_ id: String) -> String { task(withID: id)?.name ?? "Unknown task" }
 
     private func worklogForEditor(_ id: String) -> WorklogItem? {
-        worklog(withID: id, in: worklogs) ?? (active?.id == id ? active : nil)
+        worklog(withID: id) ?? (active?.id == id ? active : nil)
     }
 
-    private func worklog(withID id: String, in worklogs: [WorklogItem]) -> WorklogItem? {
-        for worklog in worklogs {
-            if worklog.id == id { return worklog }
-        }
-        return nil
-    }
-
-    private func taskIDComesBefore(_ left: String, _ right: String) -> Bool { left < right }
+    private func worklog(withID id: String) -> WorklogItem? { worklogs.first { $0.id == id } }
 
     private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) {
         automation.cancel()
         connection.settings = settings
         dailyTotals.clear(at: clock.now)
-        reportResource = nil
         settingsRepository.save(settings)
         catalog.resetSelections()
         history.request(selectedTaskID: nil)
@@ -973,8 +950,6 @@ public final class TrackerSession {
     }
 
     private func rolloverTickIsCurrent(_ token: Int) -> Bool { token == rolloverGeneration && started && !sleeping }
-
-    private func hasReportClient() -> Bool { reports != nil }
 
     private func publish() { onChange?() }
 }
