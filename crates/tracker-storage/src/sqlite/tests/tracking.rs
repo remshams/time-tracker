@@ -217,60 +217,6 @@ fn an_active_interval_overlaps_every_later_interval_on_the_same_task() {
     assert_eq!(repository.active_worklog().unwrap(), Some(active));
 }
 
-/// Checks that toggling after a stop creates a separate interval instead of resuming the old worklog.
-#[test]
-fn same_task_toggle_stops_and_later_restarts() {
-    let repository = repo();
-    let task = named_task(1, "work");
-    repository.create_task(task.clone()).unwrap();
-    let mut tracker = Tracker::idle();
-
-    let outcome = tracker
-        .toggle(&task, WorklogId::generate(), at(100))
-        .unwrap();
-    let worklog = match outcome {
-        TrackingOutcome::Started { worklog } => worklog,
-        other => panic!("expected Started, got {other:?}"),
-    };
-    repository.insert_worklog(&worklog).unwrap();
-    assert_eq!(
-        repository.active_worklog().unwrap().unwrap().id(),
-        worklog.id()
-    );
-
-    let outcome = tracker
-        .toggle(&task, WorklogId::generate(), at(150))
-        .unwrap();
-    let stopped = match outcome {
-        TrackingOutcome::Stopped { worklog } => worklog,
-        other => panic!("expected Stopped, got {other:?}"),
-    };
-    repository
-        .stop_worklog(stopped.id(), at(100), at(150))
-        .unwrap();
-    assert_eq!(repository.active_worklog().unwrap(), None);
-
-    // Toggling again starts a fresh worklog, not a resume.
-    let outcome = tracker
-        .toggle(&task, WorklogId::generate(), at(200))
-        .unwrap();
-    let restarted = match outcome {
-        TrackingOutcome::Started { worklog } => worklog,
-        other => panic!("expected Started, got {other:?}"),
-    };
-    repository.insert_worklog(&restarted).unwrap();
-    assert_ne!(restarted.id(), worklog.id());
-    assert_eq!(
-        repository.active_worklog().unwrap().unwrap().id(),
-        restarted.id()
-    );
-    let worklogs = repository.list_worklogs(task_id(1)).unwrap();
-    assert_eq!(worklogs.len(), 2);
-    assert_eq!(worklogs[0].end(), Some(at(150)));
-    assert_eq!(worklogs[1].start(), at(200));
-    assert_eq!(worklogs[1].end(), None);
-}
-
 /// Preserves the completed interval and its identity when later work starts on the same task.
 #[test]
 fn restarts_record_separate_worklogs() {

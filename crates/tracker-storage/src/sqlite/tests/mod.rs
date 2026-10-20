@@ -24,8 +24,8 @@ use tracker_application::{
     TaskListItem, TaskOrdering, TrackerApplication, WORKLOG_PAGE_SIZE, WorklogCursor, WorklogPage,
 };
 use tracker_domain::{
-    ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingError, TrackingOutcome, TrackingState,
-    Worklog, WorklogId, WorklogTimes,
+    ActiveWorklog, Task, TaskId, TaskName, Tracker, TrackingError, TrackingState, Worklog,
+    WorklogId, WorklogTimes,
 };
 
 fn at(seconds: i64) -> DateTime<Utc> {
