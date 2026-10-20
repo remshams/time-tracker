@@ -4,7 +4,7 @@
 
 Partially superseded by [ADR 0021](0021-share-concrete-client-backend.md) for separate production local and remote executors; all request, outcome and lifecycle decisions remain accepted.
 
-Partially superseded by [ADR 0030](0030-remove-server-revisions-from-writes-and-reads.md) for the remote revision checks on writes; all other decisions remain accepted.
+Partially superseded by [ADR 0031](0031-remove-server-revisions-from-writes-and-reads.md) for the remote revision checks on writes; all other decisions remain accepted.
 
 ## Date
 

@@ -8,7 +8,7 @@ Accepted and implemented on 9 October 2026. The server, CLI, TUI and macOS clien
 
 [ADR 0024](0024-id-only-worklog-cursors-and-positive-durations.md) also partially supersedes the cursor representation. All other decisions remain accepted.
 
-Partially superseded by [ADR 0030](0030-remove-server-revisions-from-writes-and-reads.md) for server revisions on reads, receipts and writes, including the preview revision on archive confirmation; all other decisions remain accepted.
+Partially superseded by [ADR 0031](0031-remove-server-revisions-from-writes-and-reads.md) for server revisions on reads, receipts and writes, including the preview revision on archive confirmation; all other decisions remain accepted.
 
 ## Date
 

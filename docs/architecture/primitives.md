@@ -36,7 +36,7 @@ Defines protocol-6 JSON requests, resource reads, command receipts, and conversi
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain).
 
-Source: [crate](../../crates/tracker-protocol/Cargo.toml), [wire contracts](../../crates/tracker-protocol/src/lib.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md), [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
+Source: [crate](../../crates/tracker-protocol/Cargo.toml), [wire contracts](../../crates/tracker-protocol/src/lib.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md), [ADR 0031](../adr/0031-remove-server-revisions-from-writes-and-reads.md).
 
 ### tracker-server
 
@@ -44,7 +44,7 @@ Owns HTTP routes, server-side operation serialization, request-ID receipt replay
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol), [tracker-storage](#tracker-storage).
 
-Source: [crate](../../crates/tracker-server/Cargo.toml), [entry points](../../crates/tracker-server/src/lib.rs), [resource routes](../../crates/tracker-server/src/resources.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md), [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
+Source: [crate](../../crates/tracker-server/Cargo.toml), [entry points](../../crates/tracker-server/src/lib.rs), [resource routes](../../crates/tracker-server/src/resources.rs). Decisions: [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md), [ADR 0031](../adr/0031-remove-server-revisions-from-writes-and-reads.md).
 
 ### tracker-server-app
 
@@ -60,7 +60,7 @@ Used by clients in remote mode; local clients and the HTTP server use the local 
 
 Depends on: [tracker-application](#tracker-application), [tracker-domain](#tracker-domain), [tracker-protocol](#tracker-protocol).
 
-Source: [crate](../../crates/tracker-remote/Cargo.toml), [remote application](../../crates/tracker-remote/src/application/mod.rs), [transport](../../crates/tracker-remote/src/transport.rs). Decisions: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
+Source: [crate](../../crates/tracker-remote/Cargo.toml), [remote application](../../crates/tracker-remote/src/application/mod.rs), [transport](../../crates/tracker-remote/src/transport.rs). Decisions: [ADR 0018](../adr/0018-compose-resource-state-in-client-workflows.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0031](../adr/0031-remove-server-revisions-from-writes-and-reads.md).
 
 Report validation scope: `cb5178c`, inspected on 19 October 2026. [Report requests](../../crates/tracker-remote/src/application/reports.rs) fetch validated totals without publishing aggregate resources; the [coordinator](../../crates/tracker-remote/src/application/coordinator.rs) owns coherent adoption.
 
@@ -156,7 +156,7 @@ Owner: [report use cases](../../crates/tracker-application/src/service/reports.r
 
 A reviewed candidate set captured at a fixed time and positive inactivity period, defaulting to 14 days. Eligibility checks task creation, metadata changes, and work in that window. Confirmation rechecks eligibility in one transaction. Local confirmation guards the candidate IDs. Remote confirmation archives the tasks that match the preview's time and period when it runs, so the result can differ from the preview. That needs another client to change tasks in between, and the trade-off is accepted. The server rejects a preview time more than 15 minutes from its clock. tracker-remote rejects a restored remote token whose fields fail server-preview validation. Running tasks remain protected and archiving keeps history.
 
-Owner: [inactivity period](../../crates/tracker-domain/src/inactivity.rs) and [task use cases](../../crates/tracker-application/src/service/tasks.rs). Decisions: [ADR 0012](../adr/0012-share-client-query-and-failure-policies.md), [ADR 0016](../adr/0016-configurable-inactive-task-archiving.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
+Owner: [inactivity period](../../crates/tracker-domain/src/inactivity.rs) and [task use cases](../../crates/tracker-application/src/service/tasks.rs). Decisions: [ADR 0012](../adr/0012-share-client-query-and-failure-policies.md), [ADR 0016](../adr/0016-configurable-inactive-task-archiving.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0031](../adr/0031-remove-server-revisions-from-writes-and-reads.md).
 
 ## Revisions and concurrency
 
@@ -173,7 +173,7 @@ Since protocol 6, the server keeps no global revision. Commands carry the values
 
 Correction compares the original worklog times; move and deletion also compare the original task ID. A mismatch returns HTTP 409 `worklog_changed`. Start and switch compare `expected_active`; stop rejects a replacement timer and succeeds as already idle when no timer remains. Rename and archive compare `expected_name` when the request carries it. A changed active worklog or task name returns HTTP 409 `conflict` and leaves storage unchanged. Create, restore, rename and archive without `expected_name`, and bulk archive carry no expected values. A write by another client to an unrelated task or worklog does not reject a command.
 
-`WriteGuard.request_id` identifies a command. The server checks its receipt cache under the operation lock before it runs a new command. While the successful receipt stays cached, an identical command returns it with `replayed: true`, and the same ID with a different command returns HTTP 409 `conflict`. The cache holds at most 1,024 successful receipts in memory. A restart or eviction forgets them, and an old command can then run again if its expected values still match. For example, if an archive response is lost and another client restores the task, retrying the archive after a restart archives the task again. This is bounded replay protection, not exactly-once execution. See [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
+`WriteGuard.request_id` identifies a command. The server checks its receipt cache under the operation lock before it runs a new command. While the successful receipt stays cached, an identical command returns it with `replayed: true`, and the same ID with a different command returns HTTP 409 `conflict`. The cache holds at most 1,024 successful receipts in memory. A restart or eviction forgets them, and an old command can then run again if its expected values still match. For example, if an archive response is lost and another client restores the task, retrying the archive after a restart archives the task again. This is bounded replay protection, not exactly-once execution. See [ADR 0031](../adr/0031-remove-server-revisions-from-writes-and-reads.md).
 
 ### Coherent reads
 
@@ -193,7 +193,7 @@ Pagination counters cover worklog order. Command expected values cover the workl
 
 Local clients have no server. The TUI, CLI, and native macOS app can open the same local SQLite database concurrently, even if each presents one view. Database counters give all clients the same transactional pagination checks, and the expected-value checks run in the same SQLite transactions in local and remote mode.
 
-Source scope: server, protocol, remote adapter, and storage concurrency mechanisms at `cb5178c`, inspected on 19 October 2026. Code: [server command execution](../../crates/tracker-server/src/core.rs), [task routes](../../crates/tracker-server/src/tasks.rs), [server initialization](../../crates/tracker-server/src/bootstrap.rs), [wire contracts](../../crates/tracker-protocol/src/lib.rs), [remote commands](../../crates/tracker-remote/src/application/coordinator.rs), [history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs), and [database triggers](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md), [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
+Source scope: server, protocol, remote adapter, and storage concurrency mechanisms at `cb5178c`, inspected on 19 October 2026. Code: [server command execution](../../crates/tracker-server/src/core.rs), [task routes](../../crates/tracker-server/src/tasks.rs), [server initialization](../../crates/tracker-server/src/bootstrap.rs), [wire contracts](../../crates/tracker-protocol/src/lib.rs), [remote commands](../../crates/tracker-remote/src/application/coordinator.rs), [history reads](../../crates/tracker-storage/src/sqlite/worklogs.rs), and [database triggers](../../crates/tracker-storage/src/migrate.rs). Decisions: [ADR 0005](../adr/0005-worklog-correction.md), [ADR 0008](../adr/0008-move-worklogs-between-tasks.md), [ADR 0017](../adr/0017-separate-http-resources-from-client-refreshes.md), [ADR 0019](../adr/0019-read-coherent-workflow-state.md), [ADR 0027](../adr/0027-check-reviewed-task-names-on-the-server.md), [ADR 0031](../adr/0031-remove-server-revisions-from-writes-and-reads.md).
 
 ### Positive-duration migration and protocol upgrade
 
@@ -205,4 +205,4 @@ Protocol 5 adds `expected_name` to task rename and archive requests. Upgrade the
 
 ### Protocol 6 upgrade
 
-Protocol 6 removes `expected_revision` from `WriteGuard`, the `stale_revision` error code, the `revision` field from reads and inactive previews, and `applied_revision` from receipts. `expected_name` on rename and archive becomes optional. Upgrade the server and every client together; incompatible pairs fail the health check. A protocol-5 write that still carries `expected_revision` fails with HTTP 400 `invalid_request`. No database migration is needed. Saved history tokens keep their format. Saved remote archive previews contain `revision` and fail to load, so generate a new preview. See [ADR 0030](../adr/0030-remove-server-revisions-from-writes-and-reads.md).
+Protocol 6 removes `expected_revision` from `WriteGuard`, the `stale_revision` error code, the `revision` field from reads and inactive previews, and `applied_revision` from receipts. `expected_name` on rename and archive becomes optional. Upgrade the server and every client together; incompatible pairs fail the health check. A protocol-5 write that still carries `expected_revision` fails with HTTP 400 `invalid_request`. No database migration is needed. Saved history tokens keep their format. Saved remote archive previews contain `revision` and fail to load, so generate a new preview. See [ADR 0031](../adr/0031-remove-server-revisions-from-writes-and-reads.md).
