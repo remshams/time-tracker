@@ -20,9 +20,6 @@ pub(crate) struct AllWorklogsState {
     pub(crate) move_draft: Option<MoveDraft>,
     pub(crate) g_prefix: bool,
     pub(crate) available: bool,
-    pub(crate) pagination_invalidated: bool,
-    pub(crate) page_generation: u64,
-    pub(crate) loading_cursor: Option<GlobalWorklogCursor>,
     pub(crate) move_draft_generation: u64,
 }
 
@@ -38,9 +35,6 @@ impl AllWorklogsState {
             move_draft: None,
             g_prefix: false,
             available: true,
-            pagination_invalidated: false,
-            page_generation: 0,
-            loading_cursor: None,
             move_draft_generation: 0,
         }
     }
@@ -91,11 +85,9 @@ impl AllWorklogsState {
     }
 
     pub(crate) fn append(&mut self, page: GlobalWorklogPage) {
-        self.page_generation = self.page_generation.wrapping_add(1);
         let empty = self.worklogs.is_empty();
         self.worklogs.extend(page.worklogs);
         self.next_cursor = page.next_cursor;
-        self.pagination_invalidated = false;
         if empty {
             self.selected = self.worklogs.first().map(Worklog::id);
         }
@@ -111,35 +103,29 @@ impl AllWorklogsState {
         next_cursor: Option<GlobalWorklogCursor>,
         preferred: Option<WorklogId>,
     ) {
-        self.page_generation = self.page_generation.wrapping_add(1);
-        self.loading_cursor = None;
         self.worklogs = worklogs;
         self.next_cursor = next_cursor;
         self.selected = preferred
             .filter(|id| self.worklogs.iter().any(|row| row.id() == *id))
             .or_else(|| self.worklogs.first().map(Worklog::id));
         self.available = true;
-        self.pagination_invalidated = false;
     }
 
-    /// Keeps the loaded position after a move and discards its stale cursor.
+    /// Keeps the loaded position after a move.
+    ///
+    /// The move changes the history revision, so the next older-page read
+    /// fails with `WorklogHistoryChanged` and reloads the newest page.
     pub(crate) fn apply_move(&mut self, moved: Worklog) {
-        self.page_generation = self.page_generation.wrapping_add(1);
         if let Some(row) = self.worklogs.iter_mut().find(|row| row.id() == moved.id()) {
             *row = moved;
         }
-        self.pagination_invalidated = self.next_cursor.is_some();
-        self.next_cursor = None;
     }
 
     pub(crate) fn mark_unavailable(&mut self) {
-        self.page_generation = self.page_generation.wrapping_add(1);
-        self.loading_cursor = None;
         self.available = false;
         self.worklogs.clear();
         self.next_cursor = None;
         self.selected = None;
-        self.pagination_invalidated = false;
     }
 }
 

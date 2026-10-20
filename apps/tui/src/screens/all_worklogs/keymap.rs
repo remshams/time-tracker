@@ -111,9 +111,6 @@ pub(crate) fn footer_hints(state: &AllWorklogsState, width: u16) -> &'static str
     match state.focus {
         AllWorklogsFocus::Tabs => "Tab/⇧Tab switch tabs · Enter rows · q quit",
         AllWorklogsFocus::Rows if !state.available => "r retry · Esc tabs · q quit",
-        AllWorklogsFocus::Rows if state.pagination_invalidated => {
-            "j/k rows · m move · r refresh for older · Esc tabs · q quit"
-        }
         AllWorklogsFocus::Rows if width < 80 => {
             "j/k rows · m move · o older · r refresh · Esc tabs · q quit"
         }
@@ -383,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn footer_hints_match_focus_availability_pagination_and_width() {
+    fn footer_hints_match_focus_availability_and_width() {
         let mut state = state();
         assert_eq!(
             footer_hints(&state, 80),
@@ -398,12 +395,6 @@ mod tests {
         assert_eq!(
             footer_hints(&state, 80),
             "j/k · gg/G · Ctrl+d/u · m move · o older · r refresh · Esc tabs · q quit"
-        );
-
-        state.pagination_invalidated = true;
-        assert_eq!(
-            footer_hints(&state, 80),
-            "j/k rows · m move · r refresh for older · Esc tabs · q quit"
         );
 
         state.available = false;
