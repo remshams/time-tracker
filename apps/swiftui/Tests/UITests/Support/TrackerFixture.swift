@@ -95,9 +95,6 @@ final class TrackerFixture {
     func archive(_ task: FixtureTask, at date: Date = Date()) throws -> FixtureTask {
         try command(["tasks", "archive", task.id], at: date)
     }
-    func restore(_ task: FixtureTask, at date: Date = Date()) throws -> FixtureTask {
-        try command(["tasks", "restore", task.id], at: date)
-    }
     func start(_ task: FixtureTask, at date: Date = Date()) throws -> FixtureWorklog {
         let result: Started = try command(["tracking", "start", task.id], at: date)
         guard result.worklog.taskID == task.id, result.worklog.end == nil else {
@@ -121,10 +118,6 @@ final class TrackerFixture {
         try command(["worklogs", "correct", worklog.id, "--expected-start", worklog.start,
                      "--expected-end", worklog.end ?? "running", "--start", Self.timestamp(start),
                      "--end", end.map(Self.timestamp) ?? "running"])
-    }
-    func move(_ worklog: FixtureWorklog, to task: FixtureTask) throws -> FixtureWorklog {
-        try command(["worklogs", "move", worklog.id, task.id, "--expected-task", worklog.taskID,
-                     "--expected-start", worklog.start, "--expected-end", worklog.end ?? "running"])
     }
     func tasks() throws -> [FixtureTask] {
         let result: TaskList = try command(["tasks", "list", "--state", "all"])
