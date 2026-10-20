@@ -62,11 +62,11 @@ final class DailyTotalsState {
         rows = report.rows.reduce(into: [:]) { totals, row in
             totals[row.taskId] = max(0, row.durationMicroseconds)
         }
+        let cutoff = report.now.flatMap(timestamp) ?? requested.cutoff
         request = Request(
-            day: requested.day, cutoff: report.now.flatMap(timestamp) ?? requested.cutoff,
+            day: requested.day, cutoff: cutoff,
             uptime: requested.uptime, anchorGeneration: requested.anchorGeneration)
         reportedActive = report.revision == tracking?.revision ? tracking?.value : nil
-        let cutoff = report.now.flatMap(timestamp) ?? requested.cutoff
         if requested.anchorGeneration == anchorGeneration {
             anchorDate = cutoff
             anchorUptime = requested.uptime
