@@ -153,7 +153,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             }
             Some(_) => {
                 let SwitchedWorklogs { stopped, started } =
-                    candidate.switch(task, worklog_id, occurred_at, occurred_at)?;
+                    candidate.switch(task, worklog_id, occurred_at)?;
                 match self.repository.switch_worklog(
                     stopped.id(),
                     stopped.start(),
