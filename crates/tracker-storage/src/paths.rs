@@ -198,7 +198,7 @@ fn permission_bits(metadata: &fs::Metadata) -> u32 {
 }
 
 /// Returns the tracker's application data directory.
-pub(crate) fn app_data_dir() -> Result<PathBuf, StorageError> {
+fn app_data_dir() -> Result<PathBuf, StorageError> {
     let data_dir = dirs::data_dir().ok_or(StorageError::NoDataDir)?;
     Ok(data_dir.join(APP_DIR_NAME))
 }

@@ -110,10 +110,6 @@ fn inactive_tasks_on(
 }
 
 impl SqliteRepository {
-    fn task_by_id(&self, id: TaskId) -> Result<Option<Task>, StorageError> {
-        task_by_id_on(&self.conn, id)
-    }
-
     pub fn create_task(&self, task: Task) -> Result<(), StorageError> {
         self.conn
             .execute(
@@ -132,7 +128,7 @@ impl SqliteRepository {
     }
 
     pub fn find_task(&self, id: TaskId) -> Result<Option<Task>, StorageError> {
-        self.task_by_id(id)
+        task_by_id_on(&self.conn, id)
     }
 
     /// Lists every task, ordered by identifier. This plain listing is not
