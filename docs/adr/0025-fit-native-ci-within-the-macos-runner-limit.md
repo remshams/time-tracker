@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Once accepted, it partially supersedes ADR 0015's macOS Rust test runner, native time limits, and rule against changed-file filters. All other ADR 0015 decisions remain accepted.
+Accepted. Partially supersedes ADR 0015's macOS Rust test runner, native time limits, and rule against changed-file filters. All other ADR 0015 decisions remain accepted.
 
 ## Date
 

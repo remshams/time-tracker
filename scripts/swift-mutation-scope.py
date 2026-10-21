@@ -44,13 +44,11 @@ INDICATOR = "Features/TaskIndicators/TaskIndicator.swift"
 # Update this map when a suite gains assertions about another production component.
 TEST_PRODUCTION = {
     "App/BackgroundRefreshInteractionTests.swift": [
-        SESSION, "Features/Connection/ConnectionState.swift", TRACKING, CATALOG, HISTORY, TOTALS,
-        "Features/TrackingAutomation/TrackingAutomationState.swift", CREATION,
+        SESSION, CONNECTION, TRACKING, CATALOG, HISTORY, TOTALS, AUTOMATION, CREATION,
     ],
     "App/HistoryPresentationTests.swift": [SESSION, PRESENTATION, HISTORY, CATALOG],
     "App/LifecycleTests.swift": [
-        SESSION, "Features/Connection/ConnectionState.swift", TRACKING, CATALOG, HISTORY, TOTALS,
-        "Features/TrackingAutomation/TrackingAutomationState.swift", LAST_TASK,
+        SESSION, CONNECTION, TRACKING, CATALOG, HISTORY, TOTALS, AUTOMATION, LAST_TASK,
     ],
     "App/ObserverTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION],
     "App/PresentationTests.swift": [
@@ -90,7 +88,7 @@ TEST_PRODUCTION = {
         CATALOG, CONNECTION, LAST_TASK, INDICATOR,
     ],
     "Features/MenuBar/StatusItemTests.swift": [
-        SESSION, LAST_TASK, "Features/TaskIndicators/TaskIndicator.swift", MENU_OBSERVER, MENU, MENU_VALUES,
+        SESSION, LAST_TASK, INDICATOR, MENU_OBSERVER, MENU, MENU_VALUES,
         TRACKING, CATALOG, CONNECTION, AUTOMATION,
     ],
     "Features/ProgressPresentation/DelayedProgressPresentationTests.swift": [
