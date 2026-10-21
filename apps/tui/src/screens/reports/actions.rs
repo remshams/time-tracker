@@ -61,21 +61,14 @@ impl AppState {
         let today = now.with_timezone(&timezone).date_naive();
         let report = self.shell_mut().report_mut().expect("report is open");
         report.follow_calendar_date(today);
-        let Some(state) = self.shell().report() else {
-            return;
-        };
-        let Some((start, end)) = state.range(timezone) else {
-            let report = self.shell_mut().report_mut().expect("report is open");
+        let Some((start, end)) = report.range(timezone) else {
             report.clear_totals();
             report.report_error = true;
             self.shell_mut()
                 .error("Report dates are outside the supported range");
             return;
         };
-        self.shell_mut()
-            .report_mut()
-            .expect("report is open")
-            .last_refresh_second = Some(now.timestamp());
+        report.last_refresh_second = Some(now.timestamp());
         self.enqueue(
             ApplicationRequest::ReportTotals { start, end, now },
             move |app, completed| {
