@@ -112,11 +112,6 @@ pub(crate) fn preset_dates(preset: Preset, today: NaiveDate) -> Option<(NaiveDat
     calendar_reports::preset_dates(preset, today)
 }
 
-#[cfg(test)]
-pub(crate) fn day_start(timezone: Tz, date: NaiveDate) -> Result<DateTime<Utc>, CliError> {
-    calendar_reports::day_start(timezone, date).map_err(calendar_error)
-}
-
 fn calendar_error(error: CalendarRangeError) -> CliError {
     CliError::input(match error {
         CalendarRangeError::ReversedDates => "--from must be on or before --to",

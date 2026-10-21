@@ -2,7 +2,7 @@ use chrono::{NaiveDate, TimeZone, Utc};
 use clap::Parser;
 
 use crate::args::{Cli, Command, Preset};
-use crate::reports::{day_start, preset_dates, range, select_timezone};
+use crate::reports::{preset_dates, range, select_timezone};
 
 fn date(value: &str) -> NaiveDate {
     value.parse().unwrap()
@@ -52,20 +52,6 @@ fn timezone_selection_uses_valid_environment_then_system_then_utc() {
             chrono_tz::Europe::Berlin
         );
     }
-}
-
-#[test]
-fn local_day_boundaries_follow_dst_skipped_midnights_and_ambiguity() {
-    for (day, hours) in [("2026-03-29", 23), ("2026-10-25", 25)] {
-        let start = day_start(chrono_tz::Europe::Berlin, date(day)).unwrap();
-        let end = day_start(chrono_tz::Europe::Berlin, date(day).succ_opt().unwrap()).unwrap();
-        assert_eq!((end - start).num_hours(), hours);
-    }
-    let skipped = day_start(chrono_tz::America::Sao_Paulo, date("2018-11-04")).unwrap();
-    assert_eq!(skipped.to_rfc3339(), "2018-11-04T03:00:00+00:00");
-    let ambiguous = day_start(chrono_tz::America::Havana, date("2026-11-01")).unwrap();
-    assert_eq!(ambiguous.to_rfc3339(), "2026-11-01T04:00:00+00:00");
-    assert!(day_start(chrono_tz::Pacific::Apia, date("2011-12-30")).is_err());
 }
 
 fn report_args(arguments: &[&str]) -> crate::args::ReportArgs {

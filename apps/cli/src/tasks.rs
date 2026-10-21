@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracker_application::TaskOrdering;
 use tracker_application::task_search::SearchRank;
-pub(crate) use tracker_application::task_search::fuzzy_match;
+use tracker_application::task_search::fuzzy_match;
 use tracker_domain::{TaskId, TaskName};
 use tracker_protocol::{TaskDto, TaskItemDto};
 use tracker_remote::InactiveTaskPreview;
