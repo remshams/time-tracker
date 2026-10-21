@@ -60,7 +60,6 @@ public struct TrackerMenuContent: Equatable {
 
 public struct TrackerMenuLabelContent: Equatable {
     public let indicator: TaskIndicator
-    public var taskColor: TaskColor? { indicator.color }
     public var symbol: String { indicator.symbol }
     public let status: String
     public let totalText: String?
