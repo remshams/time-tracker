@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Partially superseded by [ADR 0025](0025-fit-native-ci-within-the-macos-runner-limit.md) for the macOS Rust test runner, native time limits and the rule against changed-file filters; all other decisions remain accepted.
 
 ## Date
 
