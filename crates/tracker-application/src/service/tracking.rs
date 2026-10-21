@@ -46,7 +46,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
     ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
         let occurred_at = canonical_timestamp(occurred_at);
         let cached_active = self.tracker.active().cloned();
-        self.reload_tasks_and_tracking()?;
+        self.refresh_authoritative_state()?;
         if cached_active.as_ref().is_some_and(|cached| {
             self.tracker.active().is_some_and(|active| {
                 active.id() == cached.id() && active.start() != cached.start()
@@ -97,7 +97,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
         let occurred_at = canonical_timestamp(occurred_at);
         let cached_active = self.tracker.active().cloned();
-        self.reload_tasks_and_tracking()?;
+        self.refresh_authoritative_state()?;
         if expected_active
             .is_some_and(|expected| self.tracker.active().map(|active| active.id()) != expected)
         {
