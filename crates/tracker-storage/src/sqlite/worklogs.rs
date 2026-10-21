@@ -256,12 +256,8 @@ impl SqliteRepository {
         })
     }
 
-    pub(crate) fn worklog_by_id(&self, id: WorklogId) -> Result<Option<Worklog>, StorageError> {
-        worklog_by_id_on(&self.conn, id)
-    }
-
     pub fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, StorageError> {
-        self.worklog_by_id(id)
+        worklog_by_id_on(&self.conn, id)
     }
 
     /// Moves a worklog when its stored task and timestamps still match the
