@@ -416,13 +416,6 @@ impl AppState {
         };
         self.copy_text(&value);
     }
-
-    pub(crate) fn copy_text(&mut self, value: &str) {
-        match crate::support::clipboard::copy(value) {
-            Ok(()) => self.shell_mut().copied_to_clipboard(),
-            Err(error) => self.shell_mut().error(format!("Clipboard: {error}")),
-        }
-    }
 }
 
 pub(crate) fn format_exact(duration: TimeDelta) -> String {

@@ -356,6 +356,13 @@ impl AppState {
         self.shell.is_running()
     }
 
+    pub(crate) fn copy_text(&mut self, value: &str) {
+        match crate::support::clipboard::copy(value) {
+            Ok(()) => self.shell.copied_to_clipboard(),
+            Err(error) => self.shell.error(format!("Clipboard: {error}")),
+        }
+    }
+
     pub(crate) fn expire_copy_confirmation(&mut self) {
         self.shell.expire_copy_confirmation();
     }
