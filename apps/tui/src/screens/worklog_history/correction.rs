@@ -263,7 +263,6 @@ impl AppState {
                                 match result {
                                     Ok(page) => {
                                         state.replace_history_with_newest_page(
-                                            task_id,
                                             Some(worklog.id()),
                                             page,
                                         );

@@ -122,7 +122,6 @@ impl History {
 
     pub(crate) fn replace(
         &mut self,
-        task_id: TaskId,
         worklogs: Vec<Worklog>,
         next_cursor: Option<WorklogCursor>,
         preferred: Option<WorklogId>,
@@ -130,13 +129,10 @@ impl History {
         let selected = preferred
             .filter(|id| worklogs.iter().any(|worklog| worklog.id() == *id))
             .or_else(|| worklogs.first().map(Worklog::id));
-        *self = Self {
-            task_id,
-            availability: HistoryAvailability::Available,
-            worklogs,
-            next_cursor,
-            selected,
-        };
+        self.availability = HistoryAvailability::Available;
+        self.worklogs = worklogs;
+        self.next_cursor = next_cursor;
+        self.selected = selected;
     }
 
     pub(crate) fn mark_unavailable(&mut self) {
