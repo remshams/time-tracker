@@ -374,7 +374,7 @@ impl AppState {
                 }
                 match result {
                     Ok(page) => {
-                        state.replace_history_with_newest_page(task_id, keep, page);
+                        state.replace_history_with_newest_page(keep, page);
                         state.shell_mut().info("Refreshed");
                     }
                     Err(error) => state.shell_mut().error(application_error_text(&error)),
@@ -405,7 +405,7 @@ impl AppState {
                 }
                 match result {
                     Ok(page) => {
-                        state.replace_history_with_newest_page(task_id, keep, page);
+                        state.replace_history_with_newest_page(keep, page);
                         state.shell_mut().info("History changed and was refreshed");
                     }
                     Err(error) => {
@@ -422,14 +422,13 @@ impl AppState {
 
     pub(super) fn replace_history_with_newest_page(
         &mut self,
-        task_id: TaskId,
         keep: Option<WorklogId>,
         page: WorklogPage,
     ) {
         let Some(history) = self.history_mut() else {
             return;
         };
-        history.replace(task_id, page.worklogs, page.next_cursor, keep);
+        history.replace(page.worklogs, page.next_cursor, keep);
     }
 
     pub(super) fn mark_history_unavailable(&mut self) {

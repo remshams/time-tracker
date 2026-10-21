@@ -304,7 +304,7 @@ mod tests {
     use crate::command::Command;
     use crate::screens::{TaskListCommand, WorklogHistoryCommand};
     use crate::test_support::render::{cell, draw, draw_at, row, rows};
-    use crate::test_support::{app_in_timezone, app_with_test_clock};
+    use crate::test_support::{app_in_timezone, app_with, app_with_test_clock_for_view};
 
     fn history_app(entries: &[(i64, i64)]) -> App<TrackerApplication<SqliteRepository>> {
         let repository = SqliteRepository::open_in_memory().unwrap();
@@ -373,42 +373,6 @@ mod tests {
         app.handle(Command::TaskList(TaskListCommand::OpenHistory));
         app.handle(Command::WorklogHistory(WorklogHistoryCommand::OpenMove));
         app
-    }
-
-    fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
-        let repository = SqliteRepository::open_in_memory().unwrap();
-        for name in names {
-            let task = Task::create(
-                TaskId::generate(),
-                TaskName::new(name).unwrap(),
-                DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
-            );
-            repository.create_task(task).unwrap();
-        }
-        App::load(TrackerApplication::load(repository).unwrap())
-    }
-
-    fn app_with_test_clock_for_view(
-        names: &[&str],
-    ) -> (
-        App<TrackerApplication<SqliteRepository>>,
-        crate::app::TestClock,
-    ) {
-        let repository = SqliteRepository::open_in_memory().unwrap();
-        for name in names {
-            repository
-                .create_task(Task::create(
-                    TaskId::generate(),
-                    TaskName::new(name).unwrap(),
-                    DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
-                ))
-                .unwrap();
-        }
-        app_with_test_clock(
-            TrackerApplication::load(repository).unwrap(),
-            chrono_tz::UTC,
-            Utc::now(),
-        )
     }
 
     #[test]

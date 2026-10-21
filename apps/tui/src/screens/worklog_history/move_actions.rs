@@ -140,7 +140,6 @@ impl AppState {
                                 match result {
                                     Ok(page) => {
                                         state.replace_history_with_newest_page(
-                                            source_task_id,
                                             preferred_selection,
                                             page,
                                         );

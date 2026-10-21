@@ -37,7 +37,7 @@ pub(crate) fn at(seconds: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(seconds, 0).unwrap()
 }
 
-pub(crate) fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
+fn repository_with(names: &[&str]) -> SqliteRepository {
     let repository = SqliteRepository::open_in_memory().unwrap();
     for name in names {
         repository
@@ -48,7 +48,21 @@ pub(crate) fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepositor
             ))
             .unwrap();
     }
-    App::load(TrackerApplication::load(repository).unwrap())
+    repository
+}
+
+pub(crate) fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
+    App::load(TrackerApplication::load(repository_with(names)).unwrap())
+}
+
+pub(crate) fn app_with_test_clock_for_view(
+    names: &[&str],
+) -> (App<TrackerApplication<SqliteRepository>>, TestClock) {
+    app_with_test_clock(
+        TrackerApplication::load(repository_with(names)).unwrap(),
+        chrono_tz::UTC,
+        Utc::now(),
+    )
 }
 
 pub(crate) fn app_in_timezone<S: TrackerApplicationService>(

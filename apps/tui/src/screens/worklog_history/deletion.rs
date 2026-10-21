@@ -84,7 +84,7 @@ impl AppState {
                             .worklogs
                             .iter()
                             .any(|worklog| worklog.id() == target_id);
-                        state.replace_history_with_newest_page(task_id, Some(target_id), page);
+                        state.replace_history_with_newest_page(Some(target_id), page);
                         if matches_worklog_active(&error) {
                             state.shell_mut().error(ACTIVE_WORKLOG_DELETE_MESSAGE);
                         } else if matches_worklog_not_found(&error) {
