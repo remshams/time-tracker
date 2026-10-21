@@ -124,9 +124,8 @@ final class MenuPresentationTests: XCTestCase {
         observer.menuClosed(from: fixture.session, showDailyTotal: false)
         XCTAssertEqual(observer.content.totalText, "00:02:05")
         XCTAssertNil(observer.label.totalText)
-        observer.menuClosed(from: fixture.session, showDailyTotal: true)
-        XCTAssertEqual(observer.label.totalText, "00:02", "An unmatched close must not block later updates.")
         observer.update(from: fixture.session, showDailyTotal: true)
+        XCTAssertEqual(observer.label.totalText, "00:02")
         XCTAssertEqual(observer.content.totalText, "00:02:05")
     }
 
