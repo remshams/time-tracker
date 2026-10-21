@@ -113,10 +113,6 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         if let Some(active) = self.tracker.active().cloned()
             && active.task_id() == task_id
         {
-            // Another client may have started this worklog after our task
-            // catalog was loaded. Keep the derived latest-work value current
-            // even though the desired tracking state already exists.
-            self.note_work_start(task_id, active.start());
             return Ok(SetActiveTaskOutcome::AlreadyActive { worklog: active });
         }
 

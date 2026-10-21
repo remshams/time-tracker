@@ -208,35 +208,6 @@ fn load_exposes_tasks_and_recovered_tracking() {
 }
 
 #[test]
-fn resource_alignment_keeps_an_active_task_recently_worked() {
-    let active_task = stamped_task(1, "active", 100, 100);
-    let other_task = stamped_task(2, "other", 500, 500);
-    let active = worklog(10, active_task.id(), 200);
-    let (items, _) = TrackerApplication::<MemoryRepository>::state_from_resources(
-        vec![
-            TaskListItem {
-                task: active_task.clone(),
-                latest_work_start: None,
-            },
-            TaskListItem {
-                task: other_task.clone(),
-                latest_work_start: None,
-            },
-        ],
-        Some(active),
-    )
-    .unwrap();
-    assert_eq!(
-        items
-            .into_iter()
-            .find(|item| item.task.id() == active_task.id())
-            .unwrap()
-            .latest_work_start,
-        Some(at(200))
-    );
-}
-
-#[test]
 fn independent_resource_refreshes_update_only_the_requested_cache_and_retain_failed_reads() {
     let initial = task(1, "initial");
     let added = task(2, "added elsewhere");

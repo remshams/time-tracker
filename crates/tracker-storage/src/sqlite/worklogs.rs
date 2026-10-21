@@ -42,6 +42,20 @@ fn latest_work_start_on(
     .transpose()
 }
 
+/// Reads the active worklog and its task's latest work start for clients
+/// that adopt both after a worklog read or write.
+fn active_adoption_on(
+    conn: &Connection,
+) -> Result<(Option<Worklog>, Option<DateTime<Utc>>), StorageError> {
+    let active_worklog = active_worklog_on(conn)?;
+    let active_task_latest_work_start = active_worklog
+        .as_ref()
+        .map(|active| latest_work_start_on(conn, active.task_id()))
+        .transpose()?
+        .flatten();
+    Ok((active_worklog, active_task_latest_work_start))
+}
+
 fn moved_worklog_result(
     transaction: Transaction<'_>,
     id: WorklogId,
@@ -53,12 +67,7 @@ fn moved_worklog_result(
     let source_task_latest_work_start = latest_work_start_on(&transaction, source_task_id)?;
     let destination_task_latest_work_start =
         latest_work_start_on(&transaction, destination_task_id)?;
-    let active_worklog = active_worklog_on(&transaction)?;
-    let active_task_latest_work_start = active_worklog
-        .as_ref()
-        .map(|active| latest_work_start_on(&transaction, active.task_id()))
-        .transpose()?
-        .flatten();
+    let (active_worklog, active_task_latest_work_start) = active_adoption_on(&transaction)?;
     transaction.commit()?;
     Ok(WorklogMove {
         worklog,
@@ -76,12 +85,7 @@ fn corrected_worklog_result(
     let worklog =
         worklog_by_id_on(&transaction, id)?.ok_or(StorageError::WorklogNotFound { id })?;
     let task_latest_work_start = latest_work_start_on(&transaction, worklog.task_id())?;
-    let active_worklog = active_worklog_on(&transaction)?;
-    let active_task_latest_work_start = match active_worklog.as_ref() {
-        Some(active) if active.task_id() == worklog.task_id() => task_latest_work_start,
-        Some(active) => latest_work_start_on(&transaction, active.task_id())?,
-        None => None,
-    };
+    let (active_worklog, active_task_latest_work_start) = active_adoption_on(&transaction)?;
     transaction.commit()?;
     Ok(WorklogCorrection {
         worklog,
@@ -252,12 +256,8 @@ impl SqliteRepository {
         })
     }
 
-    pub(crate) fn worklog_by_id(&self, id: WorklogId) -> Result<Option<Worklog>, StorageError> {
-        worklog_by_id_on(&self.conn, id)
-    }
-
     pub fn find_worklog(&self, id: WorklogId) -> Result<Option<Worklog>, StorageError> {
-        self.worklog_by_id(id)
+        worklog_by_id_on(&self.conn, id)
     }
 
     /// Moves a worklog when its stored task and timestamps still match the
@@ -466,12 +466,7 @@ impl SqliteRepository {
             }
         });
         let requested_task_latest_work_start = latest_work_start_on(&transaction, task_id)?;
-        let active_worklog = active_worklog_on(&transaction)?;
-        let active_task_latest_work_start = active_worklog
-            .as_ref()
-            .map(|active| latest_work_start_on(&transaction, active.task_id()))
-            .transpose()?
-            .flatten();
+        let (active_worklog, active_task_latest_work_start) = active_adoption_on(&transaction)?;
         transaction.commit()?;
         Ok(WorklogPage {
             worklogs,

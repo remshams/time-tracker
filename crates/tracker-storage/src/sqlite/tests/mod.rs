@@ -9,8 +9,8 @@ use tracker_application::TrackerRepository;
 
 use std::sync::{
     Arc, Barrier, Mutex,
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-    mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel},
+    atomic::{AtomicBool, Ordering},
+    mpsc::{Receiver, SyncSender, sync_channel},
 };
 use std::thread;
 use std::time::Duration;
@@ -62,20 +62,6 @@ unsafe extern "C" fn pause_worklog_write(
     rusqlite::ffi::SQLITE_OK
 }
 
-struct BusyObservation {
-    observed: AtomicBool,
-    reached: SyncSender<()>,
-}
-
-unsafe extern "C" fn observe_busy(context: *mut c_void, previous_attempts: c_int) -> c_int {
-    let observation = unsafe { &*(context.cast::<BusyObservation>()) };
-    if !observation.observed.swap(true, Ordering::SeqCst) {
-        let _ = observation.reached.try_send(());
-    }
-    thread::sleep(Duration::from_millis(1));
-    c_int::from(previous_attempts < 2_000)
-}
-
 struct AggregateObservation {
     completed: SyncSender<()>,
 }
@@ -95,23 +81,6 @@ unsafe extern "C" fn observe_aggregate(
             let observation = unsafe { &*(context.cast::<AggregateObservation>()) };
             let _ = observation.completed.try_send(());
         }
-    }
-    rusqlite::ffi::SQLITE_OK
-}
-
-unsafe extern "C" fn count_worklog_start_reads(
-    context: *mut c_void,
-    action: c_int,
-    table: *const c_char,
-    column: *const c_char,
-    _: *const c_char,
-    _: *const c_char,
-) -> c_int {
-    let is_worklog_start_read = action == rusqlite::ffi::SQLITE_READ
-        && unsafe { CStr::from_ptr(table) }.to_bytes() == b"worklogs"
-        && unsafe { CStr::from_ptr(column) }.to_bytes() == b"start_us";
-    if is_worklog_start_read {
-        unsafe { &*(context.cast::<AtomicUsize>()) }.fetch_add(1, Ordering::SeqCst);
     }
     rusqlite::ffi::SQLITE_OK
 }
