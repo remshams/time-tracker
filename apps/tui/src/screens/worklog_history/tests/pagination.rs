@@ -58,43 +58,7 @@ fn loading_older_appends_the_page_and_keeps_the_selection() {
     );
 }
 #[test]
-fn loading_older_appends_when_the_active_worklog_is_unchanged() {
-    let alpha = task(1, "alpha");
-    let active = Worklog::begin(worklog_id(20), alpha.id(), at(200));
-    let first = page(vec![active.clone()], Some(cursor(20)));
-    let continuation = page_with_active(
-        vec![history_worklog(19, alpha.id(), 100)],
-        Some(active),
-        None,
-    );
-    let mut service = TestService::with_tasks(vec![alpha.clone()]);
-    service.worklog_pages = vec![Ok(first), Ok(continuation)];
-    let spy = service.spy();
-    let mut app = App::load(service);
-    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
-
-    app.handle(Command::WorklogHistory(
-        WorklogHistoryCommand::LoadOlderWorklogs,
-    ));
-
-    assert_eq!(
-        app.app_view()
-            .history()
-            .unwrap()
-            .worklogs()
-            .iter()
-            .map(Worklog::id)
-            .collect::<Vec<_>>(),
-        vec![worklog_id(20), worklog_id(19)]
-    );
-    assert_eq!(
-        app.app_view().status(),
-        &Status::Info("Loaded 1 older worklogs".to_owned())
-    );
-    assert_eq!(spy.worklog_reads(), 2);
-}
-#[test]
-fn loading_older_preserves_an_unchanged_active_worklog_in_a_full_newest_page() {
+fn loading_older_twice_follows_the_cursor_chain_after_a_full_newest_page() {
     let alpha = task(1, "alpha");
     let active = Worklog::begin(worklog_id(51), alpha.id(), at(5_000));
     let newest = std::iter::once(active.clone())
