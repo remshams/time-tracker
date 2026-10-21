@@ -2,7 +2,9 @@
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
-use tracker_application::{InactiveTaskArchive, InactiveTaskPreviewRead, TaskListItem};
+use tracker_application::{
+    InactiveTaskArchive, InactiveTaskPreviewRead, TaskListItem, timestamps::canonical_timestamp,
+};
 use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName};
 
 use super::{
@@ -190,7 +192,7 @@ impl SqliteRepository {
         if expected_name.is_some_and(|expected| task.name() != expected) {
             return Err(StorageError::TaskChanged { id });
         }
-        let occurred_at = us_to_timestamp(timestamp_to_us(occurred_at))?;
+        let occurred_at = canonical_timestamp(occurred_at);
         if task.rename(name, occurred_at) {
             transaction
                 .execute(
@@ -239,7 +241,7 @@ impl SqliteRepository {
         if expected_name.is_some_and(|expected| task.name() != expected) {
             return Err(StorageError::TaskChanged { id });
         }
-        let occurred_at = us_to_timestamp(timestamp_to_us(occurred_at))?;
+        let occurred_at = canonical_timestamp(occurred_at);
         if task.archive(occurred_at)
             && let Err(error) = transaction.execute(
                 "UPDATE tasks SET archived = TRUE, updated_at_us = ?1 WHERE id = ?2",
@@ -260,7 +262,7 @@ impl SqliteRepository {
     ) -> Result<Task, StorageError> {
         let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let mut task = task_by_id_on(&transaction, id)?.ok_or(StorageError::TaskNotFound { id })?;
-        let occurred_at = us_to_timestamp(timestamp_to_us(occurred_at))?;
+        let occurred_at = canonical_timestamp(occurred_at);
         if task.restore(occurred_at) {
             transaction
                 .execute(
@@ -313,7 +315,7 @@ impl SqliteRepository {
         if tasks.iter().map(Task::id).collect::<Vec<_>>() != expected_ids {
             return Err(StorageError::InactiveTaskCandidatesChanged);
         }
-        let as_of = us_to_timestamp(timestamp_to_us(as_of))?;
+        let as_of = canonical_timestamp(as_of);
         for task in &mut tasks {
             task.archive(as_of);
             transaction
