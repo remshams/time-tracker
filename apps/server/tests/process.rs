@@ -49,11 +49,14 @@ fn check_server(compatibility: bool, explicit_database: bool) {
                 "GET /v1/health HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
             )
             .unwrap();
+            // CI has seen this read reset by the peer while the server was
+            // starting, so a failed read counts as not ready yet.
             let mut response = String::new();
-            stream.read_to_string(&mut response).unwrap();
-            assert!(response.starts_with("HTTP/1.1 200"), "{response}");
-            assert!(response.contains("\"status\":\"ok\""), "{response}");
-            break;
+            if stream.read_to_string(&mut response).is_ok() {
+                assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+                assert!(response.contains("\"status\":\"ok\""), "{response}");
+                break;
+            }
         }
         assert!(Instant::now() < deadline, "server did not become healthy");
         std::thread::sleep(Duration::from_millis(20));
