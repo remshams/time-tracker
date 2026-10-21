@@ -37,7 +37,6 @@ final class TaskRenameTests: XCTestCase {
         fixture.session.submitTaskRename()
         XCTAssertTrue(fixture.session.taskRename.isSubmitting)
         XCTAssertFalse(fixture.session.taskRename.canSubmit)
-        XCTAssertFalse(fixture.session.taskRename.canEditName)
         let rename = try await fixture.client.next()
         XCTAssertEqual(
             rename.operation,
@@ -196,7 +195,7 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertEqual(fixture.session.taskRename.originalName, firstTask.name)
         XCTAssertEqual(fixture.session.taskRename.name, "Invalid\u{0001}name")
         XCTAssertEqual(fixture.session.taskRename.error, "Invalid name")
-        XCTAssertTrue(fixture.session.taskRename.canEditName)
+        XCTAssertFalse(fixture.session.taskRename.isSubmitting)
         XCTAssertTrue(fixture.session.taskRename.canSubmit)
         XCTAssertFalse(fixture.session.isStale)
         fixture.session.setTaskRenameName("Corrected name")
@@ -241,7 +240,7 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertEqual(fixture.session.taskRename.error, "Name rejected")
         XCTAssertEqual(fixture.session.connectionMessage, "Cannot confirm server state")
         XCTAssertEqual(fixture.session.taskRename.name, "Desired name")
-        XCTAssertTrue(fixture.session.taskRename.canEditName)
+        XCTAssertFalse(fixture.session.taskRename.isSubmitting)
         XCTAssertTrue(fixture.session.taskRename.canSubmit)
         XCTAssertFalse(fixture.session.canStopTracking)
         XCTAssertEqual(fixture.session.active, activeWorklog)

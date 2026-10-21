@@ -7,7 +7,6 @@ public struct TaskRenamePresentation: Equatable, Sendable {
     public let name: String
     public let isSubmitting: Bool
     public let error: String?
-    public let canEditName: Bool
     public let canSubmit: Bool
 }
 
@@ -31,7 +30,6 @@ final class TaskRenameState {
         return TaskRenamePresentation(
             isPresented: isPresented, taskID: taskID, originalName: originalName, name: name,
             isSubmitting: isSubmitting, error: error,
-            canEditName: !isSubmitting,
             canSubmit: isPresented && !isSubmitting && !desired.isEmpty && desired != originalName)
     }
 
@@ -45,7 +43,7 @@ final class TaskRenameState {
     }
 
     func updateName(_ value: String) {
-        guard isPresented, presentation.canEditName, value != name else { return }
+        guard isPresented, !isSubmitting, value != name else { return }
         name = value
         error = nil
     }
