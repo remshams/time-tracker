@@ -2,14 +2,17 @@ name: Set up Rust
 description: Install the CI toolchain and cache Cargo dependencies and build output.
 inputs:
   cache-key:
-    description: Separate build caches for tests, coverage, lint, and installed tools.
-    required: true
+    description: Separate build caches for tests, coverage, lint, and installed tools. Unused when cache-build is false.
+    default: ''
+  cache-build:
+    description: Restore and save the target directory. Set to false for jobs that never build the workspace.
+    default: 'true'
   toolchain:
     description: Rust version used by every CI workflow.
     default: '1.98.1'
   components:
-    description: Additional rustup components.
-    default: rustfmt,clippy
+    description: Additional rustup components, such as rustfmt,clippy for jobs that format or lint.
+    default: ''
   targets:
     description: Additional Rust compilation targets.
     default: ''
@@ -35,6 +38,7 @@ runs:
           ~/.cargo/git
         key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ inputs.toolchain }}-${{ hashFiles('Cargo.lock') }}
     - name: Cache Rust build output
+      if: inputs.cache-build == 'true'
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: target
