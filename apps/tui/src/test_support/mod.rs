@@ -51,6 +51,26 @@ pub(crate) fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepositor
     App::load(TrackerApplication::load(repository).unwrap())
 }
 
+pub(crate) fn app_with_test_clock_for_view(
+    names: &[&str],
+) -> (App<TrackerApplication<SqliteRepository>>, TestClock) {
+    let repository = SqliteRepository::open_in_memory().unwrap();
+    for name in names {
+        repository
+            .create_task(Task::create(
+                TaskId::generate(),
+                TaskName::new(name).unwrap(),
+                at(100),
+            ))
+            .unwrap();
+    }
+    app_with_test_clock(
+        TrackerApplication::load(repository).unwrap(),
+        chrono_tz::UTC,
+        Utc::now(),
+    )
+}
+
 pub(crate) fn app_in_timezone<S: TrackerApplicationService>(
     application: S,
     timezone: chrono_tz::Tz,

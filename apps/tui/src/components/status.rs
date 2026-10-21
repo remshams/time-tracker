@@ -21,30 +21,12 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, status: &Status, busy_label:
 
 #[cfg(test)]
 mod tests {
-    use chrono::{DateTime, Utc};
     use ratatui::style::{Color, Modifier};
-    use tracker_application::TrackerApplication;
-    use tracker_domain::{Task, TaskId, TaskName};
-    use tracker_storage::SqliteRepository;
 
-    use crate::app::App;
     use crate::command::Command;
     use crate::screens::TaskListCommand;
+    use crate::test_support::app_with;
     use crate::test_support::render::{cell, draw, row};
-
-    fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepository>> {
-        let repository = SqliteRepository::open_in_memory().unwrap();
-        for name in names {
-            repository
-                .create_task(Task::create(
-                    TaskId::generate(),
-                    TaskName::new(name).unwrap(),
-                    DateTime::<Utc>::from_timestamp(100, 0).unwrap(),
-                ))
-                .unwrap();
-        }
-        App::load(TrackerApplication::load(repository).unwrap())
-    }
 
     #[test]
     fn the_status_line_labels_errors_and_uses_default_colors() {
