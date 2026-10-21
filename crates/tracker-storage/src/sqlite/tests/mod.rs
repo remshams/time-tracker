@@ -10,7 +10,7 @@ use tracker_application::TrackerRepository;
 use std::sync::{
     Arc, Barrier, Mutex,
     atomic::{AtomicBool, Ordering},
-    mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel},
+    mpsc::{Receiver, SyncSender, sync_channel},
 };
 use std::thread;
 use std::time::Duration;
@@ -60,20 +60,6 @@ unsafe extern "C" fn pause_worklog_write(
         return rusqlite::ffi::SQLITE_DENY;
     }
     rusqlite::ffi::SQLITE_OK
-}
-
-struct BusyObservation {
-    observed: AtomicBool,
-    reached: SyncSender<()>,
-}
-
-unsafe extern "C" fn observe_busy(context: *mut c_void, previous_attempts: c_int) -> c_int {
-    let observation = unsafe { &*(context.cast::<BusyObservation>()) };
-    if !observation.observed.swap(true, Ordering::SeqCst) {
-        let _ = observation.reached.try_send(());
-    }
-    thread::sleep(Duration::from_millis(1));
-    c_int::from(previous_attempts < 2_000)
 }
 
 struct AggregateObservation {
