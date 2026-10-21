@@ -15,7 +15,7 @@ use crate::worklog::{ActiveWorklog, Worklog};
 /// Why a tracking command was rejected.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TrackingError {
-    /// A start or switch command ran while another worklog is already active.
+    /// A start command ran while another worklog is already active.
     #[error("another worklog is already active")]
     AlreadyRunning { active: ActiveWorklog },
     /// A stop or switch command ran while no worklog is active.
