@@ -1,6 +1,9 @@
 //! Tests for opening, navigating, and rendering history.
 
+use ratatui::style::Color;
+
 use super::*;
+use crate::test_support::render::{cell, draw, rows};
 
 #[test]
 fn enter_opens_the_selected_tasks_history_and_escape_returns_to_it() {
@@ -200,10 +203,6 @@ fn history_row_durations_use_the_monotonic_clock_for_the_running_worklog() {
 }
 #[test]
 fn unavailable_history_renders_its_retry_message_with_the_focused_border() {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-    use ratatui::style::Color;
-
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let worklog = history_worklog(10, task_id, 100);
     let mut service = TestService::with_tasks(vec![task(1, "alpha")]);
@@ -214,15 +213,12 @@ fn unavailable_history_renders_its_retry_message_with_the_focused_border() {
         WorklogHistoryCommand::OpenCorrection,
     ));
     app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
-    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-    terminal
-        .draw(|frame| crate::ui::render(frame, app.app_view()))
-        .unwrap();
-    let buffer = terminal.backend().buffer();
-    let text = (0..buffer.area.height)
-        .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol()))
-        .collect::<String>();
+    let terminal = draw(&app);
+    let screen = rows(&terminal).join("\n");
 
-    assert!(text.contains("History unavailable. Press r to retry."));
-    assert_eq!(buffer[(0, 1)].fg, Color::Blue);
+    assert!(
+        screen.contains("History unavailable. Press r to retry."),
+        "got {screen:?}"
+    );
+    assert_eq!(cell(&terminal, 0, 1).fg, Some(Color::Blue));
 }
