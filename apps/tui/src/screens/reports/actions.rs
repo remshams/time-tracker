@@ -78,8 +78,8 @@ impl AppState {
                 let current_period = app.shell().report().is_some_and(|report| {
                     report.range(app.shell().timezone()) == Some((start, end))
                 });
+                // Every period change queues a read for its new range.
                 if !current_period {
-                    app.refresh_reports_now();
                     return;
                 }
                 let result = match completed.outcome {
@@ -415,13 +415,6 @@ impl AppState {
             _ => return,
         };
         self.copy_text(&value);
-    }
-
-    pub(crate) fn copy_text(&mut self, value: &str) {
-        match crate::support::clipboard::copy(value) {
-            Ok(()) => self.shell_mut().copied_to_clipboard(),
-            Err(error) => self.shell_mut().error(format!("Clipboard: {error}")),
-        }
     }
 }
 

@@ -356,6 +356,13 @@ impl AppState {
         self.shell.is_running()
     }
 
+    pub(crate) fn copy_text(&mut self, value: &str) {
+        match crate::support::clipboard::copy(value) {
+            Ok(()) => self.shell.copied_to_clipboard(),
+            Err(error) => self.shell.error(format!("Clipboard: {error}")),
+        }
+    }
+
     pub(crate) fn expire_copy_confirmation(&mut self) {
         self.shell.expire_copy_confirmation();
     }
@@ -470,11 +477,7 @@ impl AppState {
         };
         let fresh_active = started.is_some_and(|started| matches!(&tracking,
             TrackingState::Running { worklog } if worklog.id() == started.id() && worklog.start() == started.start()));
-        if matches!(outcome, ApplicationOutcome::Worklog(Ok(_))) {
-            self.tracking.sync_after_history_reload(tracking);
-        } else {
-            self.tracking.sync(tracking, fresh_active);
-        }
+        self.tracking.sync(tracking, fresh_active);
     }
 
     pub(crate) fn merge_task_items(&mut self, items: Vec<TaskListItem>) {

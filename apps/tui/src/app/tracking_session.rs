@@ -74,7 +74,6 @@ impl TrackingSession {
     }
 
     pub(crate) fn sync(&mut self, tracking: TrackingState, fresh_active: bool) {
-        let unchanged = tracking == self.tracking;
         if fresh_active {
             self.elapsed_clock = match &tracking {
                 TrackingState::Idle => None,
@@ -83,7 +82,7 @@ impl TrackingSession {
                     self.clock.monotonic_clock(),
                 )),
             };
-        } else if !unchanged {
+        } else if !self.runs_same_worklog_as(&tracking) {
             self.elapsed_clock = match &tracking {
                 TrackingState::Idle => None,
                 TrackingState::Running { worklog } => Some(ElapsedClock::at_anchor(
@@ -95,24 +94,14 @@ impl TrackingSession {
         self.tracking = tracking;
     }
 
-    pub(crate) fn sync_after_history_reload(&mut self, tracking: TrackingState) {
-        match (&self.tracking, &tracking) {
-            (
-                TrackingState::Running { worklog: current },
-                TrackingState::Running {
-                    worklog: final_worklog,
-                },
-            ) if current.id() == final_worklog.id() && current.start() == final_worklog.start() => {
-            }
-            (_, TrackingState::Idle) => self.elapsed_clock = None,
-            (_, TrackingState::Running { worklog }) => {
-                self.elapsed_clock = Some(ElapsedClock::at_anchor(
-                    ElapsedClock::base_since(worklog.start(), self.clock.wall_clock()),
-                    self.clock.monotonic_clock(),
-                ));
-            }
-        }
-        self.tracking = tracking;
+    /// Moving the active worklog to another task keeps its id and start, so the
+    /// elapsed anchor stays valid.
+    fn runs_same_worklog_as(&self, tracking: &TrackingState) -> bool {
+        matches!(
+            (&self.tracking, tracking),
+            (TrackingState::Running { worklog: current }, TrackingState::Running { worklog })
+                if current.id() == worklog.id() && current.start() == worklog.start()
+        )
     }
 }
 
