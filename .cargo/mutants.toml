@@ -5,8 +5,8 @@ minimum_test_timeout = 30.0
 
 # Ratatui's Terminal::drop re-shows the cursor after our restore, so removing
 # the crossterm Show call in RealEffects::show_cursor is not observable by any
-# test: the same bytes reach the terminal either way. Excluded per the AGENTS.md
-# rule for meaningless Ratatui/Crossterm glue mutants.
+# test: the same bytes reach the terminal either way. AGENTS.md documents this
+# exclusion under "Validation".
 exclude_re = [
   "<impl TerminalEffects for RealEffects>::show_cursor with",
 ]
