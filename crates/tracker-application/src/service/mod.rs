@@ -405,13 +405,12 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         self.adopt_task_tracking_resources(tasks, active_worklog)
     }
 
-    pub(crate) fn state_from_resources(
+    fn state_from_resources(
         mut tasks: Vec<TaskListItem>,
         active_worklog: Option<Worklog>,
     ) -> Result<(Vec<TaskListItem>, Tracker), ApplicationError> {
         tasks.sort_by_key(|item| item.task.id());
         let tracker = Self::tracker_from_active_worklog(active_worklog)?;
-        Self::align_active_work(&mut tasks, &tracker);
         Ok((tasks, tracker))
     }
 
@@ -422,19 +421,6 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         match active_worklog {
             Some(worklog) => Tracker::resume(worklog),
             None => Ok(Tracker::idle()),
-        }
-    }
-
-    fn align_active_work(items: &mut [TaskListItem], tracker: &Tracker) {
-        if let Some(active) = tracker.active()
-            && let Some(item) = items
-                .iter_mut()
-                .find(|item| item.task.id() == active.task_id())
-        {
-            item.latest_work_start = Some(
-                item.latest_work_start
-                    .map_or(active.start(), |old| old.max(active.start())),
-            );
         }
     }
 
