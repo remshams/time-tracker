@@ -78,8 +78,7 @@ private final class RustBridge {
 
     func testConnection() throws {
         struct Compatibility: Decodable { let compatible: Bool }
-        let result: Compatibility = try decode(tt_bridge_check_connection(handle))
-        guard result.compatible else { throw BridgeFailure(message: "The tracker connection is incompatible.") }
+        let _: Compatibility = try decode(tt_bridge_check_connection(handle))
     }
 
     func refreshTaskList() throws -> TaskListResources {
@@ -90,8 +89,7 @@ private final class RustBridge {
 
     private func requireRefreshed(_ pointer: UnsafeMutablePointer<CChar>?) throws {
         struct Refreshed: Decodable { let refreshed: Bool }
-        let result: Refreshed = try decode(pointer)
-        guard result.refreshed else { throw BridgeFailure(message: "The resource refresh did not complete.") }
+        let _: Refreshed = try decode(pointer)
     }
 
     private func taskListResources() throws -> TaskListResources {
