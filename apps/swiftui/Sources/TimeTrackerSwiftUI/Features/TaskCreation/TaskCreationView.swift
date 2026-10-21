@@ -32,7 +32,7 @@ private struct TaskCreationSheet: View {
                 get: { creation.state.name }, set: { creation.setName($0) }
             ), actionTitle: "Create",
             progressTitle: "Creating task...", isSubmitting: state.isSubmitting,
-            canEditName: state.canEditName, canSubmit: state.canSubmit, error: state.error,
+            canSubmit: state.canSubmit, error: state.error,
             cancel: creation.cancel, submit: creation.submit)
     }
 }
