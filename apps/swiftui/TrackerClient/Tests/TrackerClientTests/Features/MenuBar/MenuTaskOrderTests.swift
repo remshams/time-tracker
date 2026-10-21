@@ -62,8 +62,6 @@ final class MenuTaskOrderTests: XCTestCase {
                 TaskReportTotal(taskId: earlierToday.id, durationMicroseconds: 20_000_000),
             ])
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
-        var contentChanges = 0
-        observer.onContentChange = { contentChanges += 1 }
         XCTAssertEqual(observer.taskOrder, .newestFirst)
         XCTAssertEqual(observer.content.todayTasks.map(\.id), [running.id, earlierToday.id])
         XCTAssertEqual(observer.content.otherTasks.map(\.id), [recentIdle.id, staleIdle.id, secondTask.id])
@@ -73,14 +71,14 @@ final class MenuTaskOrderTests: XCTestCase {
         observer.setTaskOrder(.name, session: fixture.session, showDailyTotal: true)
         XCTAssertEqual(observer.taskOrder, .name)
         XCTAssertEqual(observer.content, captured, "An open menu must keep its rows in place.")
-        XCTAssertEqual(contentChanges, 0)
         observer.menuClosed(from: fixture.session, showDailyTotal: true)
-        XCTAssertEqual(contentChanges, 1)
+        XCTAssertNotEqual(observer.content, captured)
         XCTAssertEqual(observer.content.todayTasks.map(\.id), [earlierToday.id, running.id])
         XCTAssertEqual(observer.content.otherTasks.map(\.id), [recentIdle.id, secondTask.id, staleIdle.id])
 
+        let byName = observer.content
         observer.setTaskOrder(.oldestFirst, session: fixture.session, showDailyTotal: true)
-        XCTAssertEqual(contentChanges, 2)
+        XCTAssertNotEqual(observer.content, byName)
         XCTAssertEqual(observer.content.todayTasks.map(\.id), [earlierToday.id, running.id])
         XCTAssertEqual(observer.content.otherTasks.map(\.id), [staleIdle.id, recentIdle.id, secondTask.id])
 

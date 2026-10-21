@@ -11,10 +11,8 @@ final class MenuPresentationTests: XCTestCase {
         let rows = [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)]
         try await fixture.start(resources, rows: rows)
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
-        var contentChanges = 0
         var labelChanges = 0
         var valueChanges = 0
-        observer.onContentChange = { contentChanges += 1 }
         observer.onLabelChange = { labelChanges += 1 }
         observer.onValuesChange = { valueChanges += 1 }
         let window = PresentationHarness(session: fixture.session)
@@ -52,14 +50,14 @@ final class MenuPresentationTests: XCTestCase {
             }
             try await fixture.taskValue(finished)
         }
-        XCTAssertEqual(contentChanges, 0)
+        XCTAssertEqual(observer.content, originalContent)
         XCTAssertEqual(labelChanges, 0)
         XCTAssertGreaterThanOrEqual(valueChanges, 3)
         XCTAssertEqual(windowTicks.count, 3, "Freezing a menu must not freeze the window's clock.")
         XCTAssertEqual(windowControls.count, 0, "Background polls must keep the window's controls stable.")
         XCTAssertEqual(observer.label, originalLabel)
         observer.menuClosed(from: fixture.session, showDailyTotal: true)
-        XCTAssertEqual(contentChanges, 1)
+        XCTAssertNotEqual(observer.content, originalContent)
         XCTAssertEqual(labelChanges, 1)
         XCTAssertEqual(observer.content.elapsedText, fixture.session.timerDisplayText)
         XCTAssertTrue(observer.content.canStopTracking)
@@ -208,12 +206,11 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertEqual(observer.label.symbol, "circle")
         XCTAssertEqual(observer.label.status, "No task tracked yet")
         XCTAssertEqual(observer.content.otherTasks.first?.durationText, "-")
-        var contentChanges = 0
+        let content = observer.content
         var labelChanges = 0
-        observer.onContentChange = { contentChanges += 1 }
         observer.onLabelChange = { labelChanges += 1 }
         observer.update(from: fixture.session, showDailyTotal: true)
-        XCTAssertEqual(contentChanges, 0)
+        XCTAssertEqual(observer.content, content)
         XCTAssertEqual(labelChanges, 0)
     }
 

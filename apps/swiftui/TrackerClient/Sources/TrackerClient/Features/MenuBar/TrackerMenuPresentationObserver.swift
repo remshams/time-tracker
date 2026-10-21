@@ -2,7 +2,6 @@ import Foundation
 
 @MainActor
 public final class TrackerMenuPresentationObserver {
-    public var onContentChange: (() -> Void)?
     public var onLabelChange: (() -> Void)?
     public var onValuesChange: (() -> Void)?
     public private(set) var content: TrackerMenuContent
@@ -23,13 +22,11 @@ public final class TrackerMenuPresentationObserver {
         let nextContent = menuOpen ? content : TrackerMenuContent(session, taskOrder: taskOrder)
         let nextLabel = menuOpen ? label : TrackerMenuLabelContent(session, showDailyTotal: showDailyTotal)
         let nextValues = TrackerMenuValues(session, content: nextContent)
-        let contentChanged = content != nextContent
         let labelChanged = label != nextLabel
         let valuesChanged = values != nextValues
         content = nextContent
         label = nextLabel
         values = nextValues
-        if contentChanged { onContentChange?() }
         if labelChanged { onLabelChange?() }
         if valuesChanged { onValuesChange?() }
     }

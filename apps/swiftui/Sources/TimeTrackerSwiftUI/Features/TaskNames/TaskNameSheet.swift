@@ -8,7 +8,6 @@ struct TaskNameSheet: View {
     let actionTitle: String
     let progressTitle: String
     let isSubmitting: Bool
-    let canEditName: Bool
     let canSubmit: Bool
     let error: String?
     let cancel: () -> Void
@@ -30,7 +29,7 @@ struct TaskNameSheet: View {
                 .disableAutocorrection(true)
                 .focused($nameFocused)
                 .accessibilityIdentifier("task-name.input")
-                .disabled(!canEditName)
+                .disabled(isSubmitting)
 
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle")

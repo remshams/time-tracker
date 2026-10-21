@@ -169,7 +169,7 @@ final class StatusItemTests: XCTestCase {
         try await fixture.start(TaskListResources(tasks: [renamed], active: nil))
         let label = TrackerMenuLabelContent(fixture.session, showDailyTotal: false)
         XCTAssertEqual(label.help, "Stopped. Last tracked: Renamed task")
-        XCTAssertEqual(label.taskColor, TaskColor.forTaskID(firstTask.id))
+        XCTAssertEqual(label.indicator.color, TaskColor.forTaskID(firstTask.id))
         XCTAssertEqual(fixture.session.menuPrimaryAction, .start(taskID: firstTask.id))
     }
 

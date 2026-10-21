@@ -13,7 +13,6 @@ final class TaskCreationTests: XCTestCase {
         fixture.session.submitTaskCreation()
         XCTAssertTrue(fixture.session.taskCreation.isSubmitting)
         XCTAssertFalse(fixture.session.taskCreation.canSubmit)
-        XCTAssertFalse(fixture.session.taskCreation.canEditName)
         let creation = try await fixture.client.next()
         XCTAssertEqual(creation.operation, .create(name: secondTask.name, at: "2025-01-01T00:00:00.000Z"))
         let harness = PresentationHarness(session: fixture.session)
@@ -216,7 +215,7 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertTrue(fixture.session.taskCreation.isPresented)
         XCTAssertEqual(fixture.session.taskCreation.name, "Task\u{0001}")
         XCTAssertEqual(fixture.session.taskCreation.error, "Invalid task name")
-        XCTAssertTrue(fixture.session.taskCreation.canEditName)
+        XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
         XCTAssertTrue(fixture.session.taskCreation.canSubmit)
         XCTAssertFalse(fixture.session.isStale)
         fixture.clock.now.addTimeInterval(30)
@@ -255,7 +254,7 @@ final class TaskCreationTests: XCTestCase {
             fixture.session.taskCreation.error,
             "Could not confirm the change. Check the reloaded data before trying again. Response lost")
         XCTAssertEqual(fixture.session.taskCreation.name, "New task")
-        XCTAssertTrue(fixture.session.taskCreation.canEditName)
+        XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
         XCTAssertTrue(fixture.session.taskCreation.canSubmit)
         XCTAssertEqual(fixture.client.operations.count, 3)
     }
@@ -435,7 +434,6 @@ final class TaskCreationTests: XCTestCase {
         fixture.session.submitTaskCreation()
         XCTAssertEqual(fixture.session.taskCreation.error, "Task names must not contain control characters.")
         XCTAssertEqual(fixture.session.taskCreation.name, "Valid\u{0000}suffix")
-        XCTAssertTrue(fixture.session.taskCreation.canEditName)
         XCTAssertFalse(fixture.session.taskCreation.isSubmitting)
         XCTAssertEqual(fixture.client.operations.count, 1)
         XCTAssertEqual(displayedErrors.values, ["Task names must not contain control characters."])
