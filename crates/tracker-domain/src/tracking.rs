@@ -15,7 +15,7 @@ use crate::worklog::{ActiveWorklog, Worklog};
 /// Why a tracking command was rejected.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TrackingError {
-    /// A start or switch command ran while another worklog is already active.
+    /// A start command ran while another worklog is already active.
     #[error("another worklog is already active")]
     AlreadyRunning { active: ActiveWorklog },
     /// A stop or switch command ran while no worklog is active.
@@ -399,9 +399,9 @@ mod tests {
         assert_eq!(tracker.active().map(|e| e.task_id()), Some(task_id(2)));
     }
 
-    /// A switch permits adjacent half-open intervals with positive completed duration.
+    /// A switch one second after start completes the smallest positive worklog.
     #[test]
-    fn switch_accepts_matching_boundaries() {
+    fn switch_accepts_the_smallest_positive_duration() {
         let mut tracker = Tracker::idle();
         tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
         let switched = tracker.switch(&task(2), worklog_id(2), at(101)).unwrap();

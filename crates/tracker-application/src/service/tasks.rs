@@ -54,7 +54,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         let occurred_at = canonical_timestamp(occurred_at);
-        self.reload_tasks_and_tracking()?;
+        self.refresh_authoritative_state()?;
         self.tracker.ensure_archivable(id)?;
         // The operation preserves unrelated metadata, so a concurrent rename
         // survives the archive.
@@ -107,7 +107,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         expected_name: &TaskName,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
-        self.reload_tasks_and_tracking()?;
+        self.refresh_authoritative_state()?;
         match self.repository.compare_and_archive_task(
             id,
             expected_name,
@@ -140,7 +140,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         // since our last load. Refresh before the write so a read failure
         // prevents the unarchive and Idle is never reported over an active
         // worklog that survived the call.
-        self.reload_tasks_and_tracking()?;
+        self.refresh_authoritative_state()?;
         match self.repository.unarchive_task(id, occurred_at) {
             Ok(task) => {
                 self.replace_task(task.clone());

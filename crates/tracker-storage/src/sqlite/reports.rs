@@ -7,7 +7,7 @@ use tracker_application::{ReportRead, ReportRow, TaskListItem};
 
 use super::{
     SqliteRepository,
-    mapping::{task_from_stored, timestamp_to_us},
+    mapping::{raw_task, task_from_raw, timestamp_to_us},
     tasks::list_task_items_on,
     tracking::active_tracking_read_on,
 };
@@ -82,13 +82,7 @@ fn report_row(row: &rusqlite::Row<'_>) -> Result<ReportRow, StorageError> {
         _ => return Err(StorageError::ReportDurationOverflow),
     };
     Ok(ReportRow {
-        task: task_from_stored(
-            row.get("id")?,
-            row.get("name")?,
-            row.get("archived")?,
-            row.get("created_at_us")?,
-            row.get("updated_at_us")?,
-        )?,
+        task: task_from_raw(raw_task(row)?)?,
         duration: TimeDelta::microseconds(duration_us),
     })
 }
