@@ -83,13 +83,14 @@ private final class RustBridge {
     }
 
     func refreshTaskList() throws -> TaskListResources {
-        try refreshResources(3)
+        // Selection 3 refreshes tasks and tracking together.
+        try requireRefreshed(tt_bridge_refresh_resources(handle, 3))
         return try taskListResources()
     }
 
-    private func refreshResources(_ selection: UInt32) throws {
+    private func requireRefreshed(_ pointer: UnsafeMutablePointer<CChar>?) throws {
         struct Refreshed: Decodable { let refreshed: Bool }
-        let result: Refreshed = try decode(tt_bridge_refresh_resources(handle, selection))
+        let result: Refreshed = try decode(pointer)
         guard result.refreshed else { throw BridgeFailure(message: "The resource refresh did not complete.") }
     }
 
@@ -99,20 +100,14 @@ private final class RustBridge {
         return TaskListResources(catalog: catalog, tracking: tracking)
     }
 
-    private func refreshTotals(includeTasks: Bool, start: String, end: String, now: String) throws {
-        struct Refreshed: Decodable { let refreshed: Bool }
-        let result: Refreshed = try start.withCString { start in
+    func refreshTaskListWithTotals(start: String, end: String, now: String) throws -> TaskListTotalsRefresh {
+        try start.withCString { start in
             try end.withCString { end in
                 try now.withCString { now in
-                    try decode(tt_bridge_refresh_totals(handle, includeTasks, start, end, now))
+                    try requireRefreshed(tt_bridge_refresh_totals(handle, true, start, end, now))
                 }
             }
         }
-        guard result.refreshed else { throw BridgeFailure(message: "The resource refresh did not complete.") }
-    }
-
-    func refreshTaskListWithTotals(start: String, end: String, now: String) throws -> TaskListTotalsRefresh {
-        try refreshTotals(includeTasks: true, start: start, end: end, now: now)
         let taskList = try taskListResources()
         let report: TrackerReport = try decode(tt_bridge_report_observation(handle))
         return TaskListTotalsRefresh(taskList: taskList, report: report)
@@ -333,6 +328,13 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
         return bridge
     }
 
+    private func ensureBridge(_ settings: ConnectionSettings) throws -> RustBridge {
+        if let bridge { return bridge }
+        let opened = try RustBridge(settings: settings, localDatabasePath: localDatabasePath)
+        bridge = opened
+        return opened
+    }
+
     func openConfigured(_ settings: ConnectionSettings) async throws -> TaskListResources {
         try await perform { worker in
             // Keep a saved server handle when its first refresh fails. Never fall back to SQLite.
@@ -358,12 +360,7 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
     }
 
     func refreshTaskList(settings: ConnectionSettings) async throws -> TaskListResources {
-        try await perform { worker in
-            if worker.bridge == nil {
-                worker.bridge = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
-            }
-            return try worker.currentBridge().refreshTaskList()
-        }
+        try await perform { try $0.ensureBridge(settings).refreshTaskList() }
     }
 
     func createTask(name: String, occurredAt: String) async throws -> TaskCreationResult {
@@ -400,11 +397,8 @@ final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
     func refreshTaskListWithTotals(settings: ConnectionSettings, start: String, end: String, now: String)
         async throws -> TaskListTotalsRefresh
     {
-        try await perform { worker in
-            if worker.bridge == nil {
-                worker.bridge = try RustBridge(settings: settings, localDatabasePath: worker.localDatabasePath)
-            }
-            return try worker.currentBridge().refreshTaskListWithTotals(start: start, end: end, now: now)
+        try await perform {
+            try $0.ensureBridge(settings).refreshTaskListWithTotals(start: start, end: end, now: now)
         }
     }
 
