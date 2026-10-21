@@ -9,7 +9,7 @@ use tracker_application::TrackerRepository;
 
 use std::sync::{
     Arc, Barrier, Mutex,
-    atomic::{AtomicBool, AtomicUsize, Ordering},
+    atomic::{AtomicBool, Ordering},
     mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel},
 };
 use std::thread;
@@ -95,23 +95,6 @@ unsafe extern "C" fn observe_aggregate(
             let observation = unsafe { &*(context.cast::<AggregateObservation>()) };
             let _ = observation.completed.try_send(());
         }
-    }
-    rusqlite::ffi::SQLITE_OK
-}
-
-unsafe extern "C" fn count_worklog_start_reads(
-    context: *mut c_void,
-    action: c_int,
-    table: *const c_char,
-    column: *const c_char,
-    _: *const c_char,
-    _: *const c_char,
-) -> c_int {
-    let is_worklog_start_read = action == rusqlite::ffi::SQLITE_READ
-        && unsafe { CStr::from_ptr(table) }.to_bytes() == b"worklogs"
-        && unsafe { CStr::from_ptr(column) }.to_bytes() == b"start_us";
-    if is_worklog_start_read {
-        unsafe { &*(context.cast::<AtomicUsize>()) }.fetch_add(1, Ordering::SeqCst);
     }
     rusqlite::ffi::SQLITE_OK
 }

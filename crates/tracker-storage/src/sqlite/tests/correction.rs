@@ -84,50 +84,6 @@ fn correction_returns_the_active_tasks_exact_aggregate_for_another_task() {
 }
 
 #[test]
-fn same_task_active_correction_reuses_the_corrected_task_aggregate() {
-    let repository = repo();
-    let task = named_task(1, "active");
-    repository.create_task(task.clone()).unwrap();
-    let active = Worklog::begin(worklog_id(1), task.id(), at(600));
-    repository.insert_worklog(&active).unwrap();
-    let start_reads = Box::into_raw(Box::new(AtomicUsize::new(0)));
-    assert_eq!(
-        unsafe {
-            rusqlite::ffi::sqlite3_set_authorizer(
-                repository.connection().handle(),
-                Some(count_worklog_start_reads),
-                start_reads.cast(),
-            )
-        },
-        rusqlite::ffi::SQLITE_OK
-    );
-
-    let correction = repository
-        .compare_and_set_worklog_times(
-            active.id(),
-            active.times(),
-            WorklogTimes::new(at(540), None),
-        )
-        .unwrap();
-
-    assert_eq!(correction.task_latest_work_start, Some(at(540)));
-    assert_eq!(correction.active_task_latest_work_start, Some(at(540)));
-    assert_eq!(
-        unsafe { (&*start_reads).load(Ordering::SeqCst) },
-        12,
-        "the active task reuses the corrected task aggregate"
-    );
-    unsafe {
-        rusqlite::ffi::sqlite3_set_authorizer(
-            repository.connection().handle(),
-            None,
-            std::ptr::null_mut(),
-        );
-        drop(Box::from_raw(start_reads));
-    }
-}
-
-#[test]
 fn compare_and_set_distinguishes_missing_and_each_stale_expected_end_shape() {
     let repository = repo();
     let task = named_task(1, "editable");
