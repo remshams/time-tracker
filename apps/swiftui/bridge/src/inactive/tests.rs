@@ -229,7 +229,7 @@ fn local_confirmation_rechecks_candidates_and_consumes_failed_preview() {
 }
 
 #[test]
-fn remote_preview_and_archive_use_server_candidates_and_captured_revision() {
+fn remote_preview_and_archive_use_server_candidates_and_keep_the_running_task() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("remote.db");
     let mut writer = open_fixture(&path).unwrap();
@@ -255,7 +255,7 @@ fn remote_preview_and_archive_use_server_candidates_and_captured_revision() {
             .iter()
             .all(|task| task["id"] != id.to_string())
     );
-    // Polling resources does not replace the retained preview's revision.
+    // Polling resources between preview and confirmation keeps the retained preview.
     bridge.application.refresh_resources(3).unwrap();
     let result = archive(&mut bridge, 7, as_of);
     assert_eq!(result["data"]["archivedCount"], 2, "{result}");
@@ -270,10 +270,13 @@ fn remote_preview_and_archive_use_server_candidates_and_captured_revision() {
 }
 
 #[test]
-fn remote_revision_conflict_is_not_hidden_by_polling_and_blocks_another_write() {
+fn remote_archive_after_other_clients_writes_archives_what_matches_when_it_runs() {
     let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("conflict.db");
-    let _writer = open_fixture(&path).unwrap();
+    let path = directory.path().join("concurrent.db");
+    let writer = open_fixture(&path).unwrap();
+    let archived_elsewhere = writer.application.tasks(TaskOrdering::default())[0]
+        .task
+        .clone();
     let server = super::super::report_tests::Server::start(
         tracker_server::router_for_database(&path).unwrap(),
     );
@@ -282,23 +285,43 @@ fn remote_revision_conflict_is_not_hidden_by_polling_and_blocks_another_write() 
     first.application.refresh_resources(3).unwrap();
     second.application.refresh_resources(3).unwrap();
     let as_of = Utc::now();
-    assert!(preview(&mut first, 14, as_of).get("error").is_none());
-    second
+    let selected = preview(&mut first, 14, as_of);
+    assert_eq!(selected["data"]["tasks"].as_array().unwrap().len(), 3);
+    let created = second
         .application
         .create_task(TaskName::new("Concurrent task").unwrap(), as_of)
         .unwrap();
+    second
+        .application
+        .archive_task_with_expected_name(
+            archived_elsewhere.id(),
+            archived_elsewhere.name().clone(),
+            as_of,
+        )
+        .unwrap();
     first.application.refresh_resources(3).unwrap();
-    let failure = archive(&mut first, 14, as_of);
-    assert_eq!(failure["kind"], "conflict", "{failure}");
-    assert_eq!(failure["uncertain"], false);
-    assert_eq!(failure["requiresRefresh"], true);
-    assert!(preview(&mut first, 14, as_of).get("error").is_none());
-    let blocked = archive(&mut first, 14, as_of);
-    assert_eq!(blocked["kind"], "unavailable");
-    assert_eq!(blocked["uncertain"], false);
+    // The server archives the tasks that match the period when confirmation runs, not the
+    // previewed list.
+    let result = archive(&mut first, 14, as_of);
+    assert_eq!(result["data"]["archivedCount"], 2, "{result}");
     first.application.refresh_resources(3).unwrap();
-    assert!(preview(&mut first, 14, as_of).get("error").is_none());
-    assert_eq!(archive(&mut first, 14, as_of)["data"]["archivedCount"], 3);
+    let tasks = first.application.tasks(TaskOrdering::default());
+    assert_eq!(tasks.len(), 4);
+    assert!(
+        tasks
+            .iter()
+            .filter(|item| item.task.id() != created.id())
+            .all(|item| item.task.is_archived())
+    );
+    assert!(
+        tasks
+            .iter()
+            .any(|item| item.task.id() == created.id() && !item.task.is_archived())
+    );
+    assert_eq!(
+        archive(&mut first, 14, as_of)["error"],
+        "Load an archive preview before confirming"
+    );
 }
 
 #[test]
@@ -322,7 +345,8 @@ fn unavailable_preview_and_confirmation_invalidate_context_and_preserve_confirme
             archive(&mut bridge, 14, as_of)
         };
         assert_eq!(failure["kind"], "unavailable");
-        assert_eq!(failure["uncertain"], !fail_preview);
+        // A refused connection never delivers the confirmation, so it stays certain.
+        assert_eq!(failure["uncertain"], false);
         assert_eq!(failure["requiresRefresh"], true);
         assert_eq!(
             crate::tests::test_resource_values(&bridge.application),

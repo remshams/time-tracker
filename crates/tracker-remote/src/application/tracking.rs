@@ -1,21 +1,20 @@
 use super::{
     ApplicationError, ClearActiveTaskOutcome, Method, MutationContext, RemoteError, RemoteSession,
-    ResourceObservation, SetActiveTaskOutcome, SetTrackingRequest, TaskId, TrackingDto,
-    TrackingState, Worklog, WorklogId, clear_tracking_result, decode_tracking, protocol_failure,
-    set_tracking_result,
+    SetActiveTaskOutcome, SetTrackingRequest, TaskId, TrackingDto, TrackingState, Worklog,
+    WorklogId, clear_tracking_result, decode_tracking, protocol_failure, set_tracking_result,
 };
 
 /// Tracking protocol operations and the confirmed active worklog.
 #[derive(Default)]
 pub(super) struct TrackingClient {
-    tracking_observation: Option<ResourceObservation<TrackingState>>,
+    tracking_observation: Option<TrackingState>,
 }
 
 impl TrackingClient {
     pub(super) async fn read_tracking(
         &self,
         session: &mut RemoteSession,
-    ) -> Result<(Option<Worklog>, TrackingState, String), RemoteError> {
+    ) -> Result<(Option<Worklog>, TrackingState), RemoteError> {
         let dto: TrackingDto = session.read("v1/tracking").await?;
         decode_tracking(dto)
     }
@@ -25,11 +24,11 @@ impl TrackingClient {
         session: &mut RemoteSession,
     ) -> Result<(), RemoteError> {
         session.ensure_version().await?;
-        let (_, tracking, revision) = self
+        let (_, tracking) = self
             .read_tracking(session)
             .await
             .map_err(|error| session.record_error(error))?;
-        self.adopt(tracking, revision);
+        self.adopt(tracking);
         session.confirmed();
         Ok(())
     }
@@ -44,33 +43,23 @@ impl TrackingClient {
     pub(super) fn current_tracking(&self) -> &TrackingState {
         self.tracking_observation
             .as_ref()
-            .map_or(&TrackingState::Idle, |observation| &observation.value)
+            .unwrap_or(&TrackingState::Idle)
     }
 
-    pub(super) fn tracking_observation(&self) -> Option<&ResourceObservation<TrackingState>> {
+    pub(super) fn tracking_observation(&self) -> Option<&TrackingState> {
         self.tracking_observation.as_ref()
     }
 
-    pub(super) fn tracking_revision(&self) -> &str {
-        self.tracking_observation
-            .as_ref()
-            .map_or("", |observation| observation.revision.as_str())
+    pub(super) fn adopt(&mut self, state: TrackingState) {
+        self.tracking_observation = Some(state);
     }
 
-    pub(super) fn adopt(&mut self, state: TrackingState, revision: String) {
-        self.tracking_observation = Some(ResourceObservation {
-            value: state,
-            revision,
-        });
-    }
-
-    pub(super) async fn set_active_task_guarded(
+    pub(super) async fn set_active_task(
         &mut self,
         session: &mut RemoteSession,
         task_id: TaskId,
         new_id: WorklogId,
-        old_active: Option<WorklogId>,
-        original_active: Option<Worklog>,
+        expected_active: Option<WorklogId>,
         body: &SetTrackingRequest,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
         session
@@ -84,7 +73,7 @@ impl TrackingClient {
                     task_id: Some(task_id),
                 },
                 |result| {
-                    let outcome = set_tracking_result(result, task_id, new_id, old_active)?;
+                    let outcome = set_tracking_result(result, task_id, new_id, expected_active)?;
                     let valid = match &outcome {
                         SetActiveTaskOutcome::Started { worklog } => {
                             worklog.start() == body.occurred_at
@@ -92,14 +81,9 @@ impl TrackingClient {
                         SetActiveTaskOutcome::Switched { stopped, started } => {
                             stopped.end() == Some(body.occurred_at)
                                 && started.start() == body.occurred_at
-                                && original_active.as_ref().is_some_and(|original| {
-                                    stopped.task_id() == original.task_id()
-                                        && stopped.start() == original.start()
-                                })
                         }
                         SetActiveTaskOutcome::AlreadyActive { worklog } => {
-                            old_active == Some(worklog.id())
-                                && original_active.as_ref() == Some(&worklog.to_worklog())
+                            expected_active == Some(worklog.id())
                         }
                     };
                     if !valid {
@@ -115,7 +99,6 @@ impl TrackingClient {
         &mut self,
         session: &mut RemoteSession,
         expected_active: WorklogId,
-        original_active: Option<Worklog>,
         body: &SetTrackingRequest,
     ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
         session
@@ -133,12 +116,9 @@ impl TrackingClient {
                     let valid = match &outcome {
                         ClearActiveTaskOutcome::Stopped { worklog } => {
                             worklog.end() == Some(body.occurred_at)
-                                && original_active.as_ref().is_some_and(|original| {
-                                    worklog.task_id() == original.task_id()
-                                        && worklog.start() == original.start()
-                                })
                         }
-                        ClearActiveTaskOutcome::AlreadyIdle => original_active.is_none(),
+                        // Another client may have stopped the timer first.
+                        ClearActiveTaskOutcome::AlreadyIdle => true,
                     };
                     if !valid {
                         return Err(protocol_failure("stopped worklog contradicts command"));

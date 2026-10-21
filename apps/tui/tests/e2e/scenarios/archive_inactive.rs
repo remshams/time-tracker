@@ -341,7 +341,7 @@ fn remote_bulk_archive_cannot_be_cancelled_after_confirmation() {
 }
 
 #[test]
-fn remote_bulk_archive_rejects_a_stale_preview() {
+fn remote_bulk_archive_applies_after_an_unrelated_write_by_another_client() {
     let mut context = RemoteTestContext::new_without_server();
     let now = Utc::now();
     context.server_database().create_task_at(
@@ -350,14 +350,14 @@ fn remote_bulk_archive_rejects_a_stale_preview() {
         now - TimeDelta::days(30),
     );
     context.start();
-    let mut stale = context.launch();
-    stale.wait_for_first_frame("the old server task", |screen| {
+    let mut archiver = context.launch();
+    archiver.wait_for_first_frame("the old server task", |screen| {
         TimeTrackerPage::new(screen.clone())
             .task_panel()
             .task_names()
             == ["Old shared task".to_owned()]
     });
-    stale.press_and_wait(Key::Char('D'), "the stale client's preview", |screen| {
+    archiver.press_and_wait(Key::Char('D'), "the archive preview", |screen| {
         TimeTrackerPage::new(screen.clone())
             .visible_text()
             .contains("1 active task inactive")
@@ -384,43 +384,25 @@ fn remote_bulk_archive_rejects_a_stale_preview() {
             .contains(&"Another client wrote".to_owned())
     });
 
-    let rejected = stale.press_and_wait(Key::Enter, "the stale archive rejection", |screen| {
+    // The unrelated task is new, so the preview's period still selects only the old task.
+    archiver.press_and_wait(Key::Enter, "the completed archive", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
-        page.status_bar().is_error() && !page.visible_text().contains("Archive inactive tasks")
+        page.status_bar().text() == "Archived 1 inactive task"
+            && !page.visible_text().contains("Archive inactive tasks")
     });
+    writer.quit().assert_clean_exit();
+    archiver.quit().assert_clean_exit();
     assert!(
-        rejected
-            .status_bar()
-            .text()
-            .contains("press D to preview again"),
-        "the status asks for a fresh preview:\n{}",
-        rejected.screen()
-    );
-    assert!(
-        !context
+        context
             .server_database()
             .task_by_name("Old shared task")
             .unwrap()
             .archived
     );
-
-    stale.press_and_wait(Key::Char('D'), "the fresh preview", |screen| {
-        TimeTrackerPage::new(screen.clone())
-            .visible_text()
-            .contains("1 active task inactive")
-    });
-    stale.press_and_wait(Key::Char('y'), "the successful retry", |screen| {
-        TimeTrackerPage::new(screen.clone())
-            .status_bar()
-            .text()
-            .contains("1")
-    });
-    writer.quit().assert_clean_exit();
-    stale.quit().assert_clean_exit();
     assert!(
-        context
+        !context
             .server_database()
-            .task_by_name("Old shared task")
+            .task_by_name("Another client wrote")
             .unwrap()
             .archived
     );

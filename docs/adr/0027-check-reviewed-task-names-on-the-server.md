@@ -4,6 +4,8 @@
 
 Proposed
 
+Partially superseded by [ADR 0031](0031-remove-server-revisions-from-writes-and-reads.md) for the required `expected_name`, the remote pre-write name read and `task_guard` comparison, and restart invalidation of saved previews through `stale_revision`; all other decisions remain proposed. The decision and consequences below keep the protocol-5 account.
+
 ## Date
 
 2026-10-18

@@ -119,14 +119,14 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         select(first)
         try proxy.arm([
             .init(method: "GET", path: "/v1/state/daily-overview", mode: .holdAfter),
-            .init(method: "GET", path: "/v1/tracking", mode: .holdAfter),
+            .init(method: "PUT", path: "/v1/tracking", mode: .holdBefore),
         ])
         _ = try proxy.waitForHeldRequest()
         app.buttons["Stop tracking"].click()
         try proxy.release()
-        // Let the adapter finish its read before the competing client changes tracking.
-        let preflight = try proxy.waitForHeldRequest()
-        XCTAssertTrue(preflight.path.contains("/v1/tracking"))
+        // Hold the stop before the server sees it while the competing client changes tracking.
+        let stop = try proxy.waitForHeldRequest()
+        XCTAssertTrue(stop.path.contains("/v1/tracking"))
         let replacement = try fixture.start(second)
         try proxy.release()
         dismissTrackingFailure(containing: "changed")
@@ -136,9 +136,14 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         XCTAssertEqual(try fixture.activeWorklog(), replacement)
         XCTAssertNotEqual(replacement.id, original.id)
         XCTAssertNotNil(try fixture.worklogs(first).first?.end)
+        // The stop goes straight to the server, which rejects it because another timer is active.
         let writes = try proxy.requests(method: "PUT", path: "/v1/tracking")
         XCTAssertEqual(writes.count, 1)
-        XCTAssertEqual(try XCTUnwrap(writes.first?.status), 409)
+        let write = try XCTUnwrap(writes.first)
+        XCTAssertEqual(write.status, 409)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(write.body.utf8)) as? [String: Any])
+        XCTAssertEqual(body["expected_active"] as? String, original.id)
+        XCTAssertNil(body["expected_revision"])
     }
 
     func testUnconfirmedCreationReportsFailureAndReloadShowsCommittedTask() throws {
@@ -160,9 +165,7 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         XCTAssertEqual(committed.name, "Committed creation")
         XCTAssertTrue(taskRow(committed).waitForExistence(timeout: timeout))
         try assertAcceptedWriteIntent(proxy, method: "POST", path: "/v1/tasks")
-        // The Rust adapter reads the task list before it creates a task.
-        try assertWriteSentWithoutPriorRead(proxy, after: baseline, method: "POST", path: "/v1/tasks",
-                                            adapterRead: "/v1/state/task-list")
+        try assertWriteSentWithoutPriorRead(proxy, after: baseline, method: "POST", path: "/v1/tasks")
         app.buttons["task-name.cancel"].click()
         waitUntil("Creation closes") { !self.element("task-name.input").exists }
         openCreation()
@@ -345,13 +348,14 @@ final class ServerRecoveryUITests: ConnectionUITestCase {
         select(selected)
         try proxy.arm([
             .init(method: "GET", path: "/v1/state/daily-overview", mode: .holdAfter),
-            .init(method: "GET", path: "/v1/tasks/\(selected.id)", mode: .holdAfter),
+            .init(method: "PUT", path: "/v1/tracking", mode: .holdBefore),
         ])
         _ = try proxy.waitForHeldRequest()
         app.buttons["Start tracking"].click()
         try proxy.release()
-        let preflight = try proxy.waitForHeldRequest()
-        XCTAssertTrue(preflight.path.contains("/v1/tasks/\(selected.id)"))
+        // Hold the start before the server sees it while the competing client starts a timer.
+        let start = try proxy.waitForHeldRequest()
+        XCTAssertTrue(start.path.contains("/v1/tracking"))
         let timer = try fixture.start(competing)
         try proxy.release()
         dismissTrackingFailure(containing: "changed")

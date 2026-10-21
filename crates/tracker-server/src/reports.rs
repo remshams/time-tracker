@@ -30,11 +30,5 @@ pub(super) async fn report(
     let now = canonical_timestamp(query.now);
     let mut core = lock(&shared)?;
     let totals = core.app.report_totals(start, end, now)?;
-    Ok(Json(ReportDto::from_totals(
-        &totals,
-        start,
-        end,
-        now,
-        core.revision(),
-    )))
+    Ok(Json(ReportDto::from_totals(&totals, start, end, now)))
 }

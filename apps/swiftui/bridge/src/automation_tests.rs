@@ -385,7 +385,7 @@ fn remote_pause_reports_ownership_and_resume_commits_the_captured_timestamp() {
 }
 
 #[test]
-fn remote_resume_revision_guard_preserves_a_competing_clients_timer() {
+fn remote_resume_from_a_stale_idle_cache_preserves_a_competing_clients_timer() {
     let server = Server::start();
     let mut first = server.client();
     let tasks = first.application.tasks(TaskOrdering::default());
@@ -409,32 +409,47 @@ fn remote_resume_revision_guard_preserves_a_competing_clients_timer() {
 }
 
 #[test]
-fn remote_pause_conflict_does_not_claim_another_clients_stop() {
+fn remote_pause_after_another_clients_stop_reports_idle_without_claiming_the_stop() {
     let server = Server::start();
     let mut first = server.client();
-    let task_id = first.application.tasks(TaskOrdering::default())[0]
-        .task
-        .id();
-    let started = resume(&mut first, task_id, "2026-10-04T10:00:00Z");
+    let tasks = first.application.tasks(TaskOrdering::default());
+    let started = resume(&mut first, tasks[0].task.id(), "2026-10-04T10:00:00Z");
     let worklog_id = started["data"]["active"]["id"].as_str().unwrap();
     let mut second = server.client();
     assert_eq!(
         pause(&mut second, worklog_id, "2026-10-04T10:10:00Z")["data"]["didStop"],
         true
     );
-    let rejected = pause(&mut first, worklog_id, "2026-10-04T10:20:00Z");
-    assert_eq!(rejected["kind"], "conflict");
-    assert_eq!(rejected["uncertain"], false);
-    assert!(rejected.get("data").is_none());
+    let idle = pause(&mut first, worklog_id, "2026-10-04T10:20:00Z");
+    assert!(idle.get("error").is_none(), "{idle}");
+    assert_eq!(idle["data"]["didStop"], false);
+    assert!(idle["data"]["active"].is_null());
     assert!(refresh(&mut first)["data"]["value"].is_null());
+    let repository = SqliteRepository::open(server.directory.path().join("server.db")).unwrap();
+    let stopped = repository
+        .find_worklog(worklog_id.parse().unwrap())
+        .unwrap()
+        .unwrap();
     assert_eq!(
-        pause(&mut first, worklog_id, "2026-10-04T10:30:00Z")["data"]["didStop"],
-        false
+        timestamp(stopped.end().unwrap()),
+        "2026-10-04T10:10:00.000000Z"
+    );
+
+    // A timer started after the stop belongs to the other client and stays running.
+    let foreign = resume(&mut second, tasks[1].task.id(), "2026-10-04T10:30:00Z");
+    let rejected = pause(&mut first, worklog_id, "2026-10-04T10:40:00Z");
+    assert_eq!(rejected["kind"], "conflict", "{rejected}");
+    assert_eq!(rejected["uncertain"], false);
+    assert_eq!(rejected["requiresRefresh"], true);
+    assert!(rejected.get("data").is_none());
+    assert_eq!(
+        refresh(&mut second)["data"]["value"],
+        foreign["data"]["active"]
     );
 }
 
 #[test]
-fn remote_pause_preflight_connection_failure_is_certain_and_requires_refresh() {
+fn remote_pause_connection_failure_is_certain_and_requires_refresh() {
     let mut server = Server::start();
     let mut bridge = server.client();
     let task_id = bridge.application.tasks(TaskOrdering::default())[0]

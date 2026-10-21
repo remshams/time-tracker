@@ -9,7 +9,28 @@ const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 
 pub(crate) struct Transport {
     client: Client,
+    write_client: Client,
     base: Url,
+}
+
+/// A response and whether the request may have reached the server.
+pub(crate) struct Delivery<T> {
+    pub(crate) result: Result<T, RemoteError>,
+    pub(crate) may_have_reached_server: bool,
+}
+
+struct SendFailure {
+    error: RemoteError,
+    may_have_reached_server: bool,
+}
+
+impl SendFailure {
+    fn after_response(error: RemoteError) -> Self {
+        Self {
+            error,
+            may_have_reached_server: true,
+        }
+    }
 }
 
 impl Transport {
@@ -29,14 +50,28 @@ impl Transport {
             ));
         }
 
-        let client = Client::builder()
-            .connect_timeout(Duration::from_secs(2))
-            .timeout(Duration::from_secs(5))
-            .redirect(reqwest::redirect::Policy::none())
-            .no_proxy()
+        let builder = || {
+            Client::builder()
+                .connect_timeout(Duration::from_secs(2))
+                .timeout(Duration::from_secs(5))
+                .redirect(reqwest::redirect::Policy::none())
+                .no_proxy()
+        };
+        let client = builder()
             .build()
             .map_err(|error| RemoteError::Unavailable(error.to_string()))?;
-        Ok(Self { client, base })
+        // Writes open a new connection each time. A server that closed an idle pooled
+        // connection would otherwise fail the write after sending it, which hides whether
+        // the server was already gone.
+        let write_client = builder()
+            .pool_max_idle_per_host(0)
+            .build()
+            .map_err(|error| RemoteError::Unavailable(error.to_string()))?;
+        Ok(Self {
+            client,
+            write_client,
+            base,
+        })
     }
 
     pub(crate) fn url(&self, path: &str) -> Url {
@@ -51,56 +86,101 @@ impl Transport {
         url: Url,
         body: Option<&B>,
     ) -> Result<T, RemoteError> {
+        self.send_with_delivery(method, url, body).await.result
+    }
+
+    /// Sends a request and reports whether any attempt may have reached the server.
+    pub(crate) async fn send_with_delivery<T: DeserializeOwned, B: Serialize>(
+        &self,
+        method: Method,
+        url: Url,
+        body: Option<&B>,
+    ) -> Delivery<T> {
         let retry_write = method != Method::GET && method != Method::HEAD;
-        let encoded = body
-            .map(serde_json::to_vec)
-            .transpose()
-            .map_err(|error| RemoteError::Protocol(format!("invalid request body: {error}")))?;
-        let attempts = if retry_write { 2 } else { 1 };
-        for attempt in 0..attempts {
-            let (status, bytes) = match self.send_once(&method, &url, encoded.as_deref()).await {
-                Ok(response) => response,
-                Err(RemoteError::Unavailable(_)) if attempt + 1 < attempts => continue,
-                Err(error) => return Err(error),
-            };
-            if !status.is_success() {
-                return Err(RemoteError::Http {
-                    status,
-                    body: bytes,
-                });
+        let encoded = match body.map(serde_json::to_vec).transpose() {
+            Ok(encoded) => encoded,
+            Err(error) => {
+                return Delivery {
+                    result: Err(RemoteError::Protocol(format!(
+                        "invalid request body: {error}"
+                    ))),
+                    may_have_reached_server: false,
+                };
             }
-            return serde_json::from_slice(&bytes).map_err(|error| {
-                RemoteError::Protocol(format!("invalid server response: {error}"))
-            });
+        };
+        let attempts = if retry_write { 2 } else { 1 };
+        let mut may_have_reached_server = false;
+        for attempt in 0..attempts {
+            let client = if retry_write {
+                &self.write_client
+            } else {
+                &self.client
+            };
+            let (status, bytes) =
+                match Self::send_once(client, &method, &url, encoded.as_deref()).await {
+                    Ok(response) => response,
+                    Err(failure) => {
+                        may_have_reached_server |= failure.may_have_reached_server;
+                        if matches!(failure.error, RemoteError::Unavailable(_))
+                            && attempt + 1 < attempts
+                        {
+                            continue;
+                        }
+                        return Delivery {
+                            result: Err(failure.error),
+                            may_have_reached_server,
+                        };
+                    }
+                };
+            return Delivery {
+                result: Self::decode_response(status, bytes),
+                may_have_reached_server: true,
+            };
         }
         unreachable!("the loop returns after its last attempt")
     }
 
+    fn decode_response<T: DeserializeOwned>(
+        status: StatusCode,
+        bytes: Vec<u8>,
+    ) -> Result<T, RemoteError> {
+        if status.is_success() {
+            serde_json::from_slice(&bytes)
+                .map_err(|error| RemoteError::Protocol(format!("invalid server response: {error}")))
+        } else {
+            Err(RemoteError::Http {
+                status,
+                body: bytes,
+            })
+        }
+    }
+
     async fn send_once(
-        &self,
+        client: &Client,
         method: &Method,
         url: &Url,
         body: Option<&[u8]>,
-    ) -> Result<(StatusCode, Vec<u8>), RemoteError> {
-        let mut request = self.client.request(method.clone(), url.clone());
+    ) -> Result<(StatusCode, Vec<u8>), SendFailure> {
+        let mut request = client.request(method.clone(), url.clone());
         if let Some(body) = body {
             request = request
                 .header(CONTENT_TYPE, "application/json")
                 .body(body.to_vec());
         }
-        let mut response = request
-            .send()
-            .await
-            .map_err(|error| RemoteError::Unavailable(error.to_string()))?;
+        // A failed connection never delivers the request. Any later failure may follow delivery.
+        let mut response = request.send().await.map_err(|error| SendFailure {
+            may_have_reached_server: !error.is_connect(),
+            error: RemoteError::Unavailable(error.to_string()),
+        })?;
         let status = response.status();
         let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|error| RemoteError::Unavailable(error.to_string()))?
-        {
+        while let Some(chunk) = response.chunk().await.map_err(|error| {
+            SendFailure::after_response(RemoteError::Unavailable(error.to_string()))
+        })? {
             if chunk.len() as u64 > MAX_RESPONSE_BYTES - bytes.len() as u64 {
-                return Err(RemoteError::Protocol("server response is too large".into()));
+                return Err(SendFailure::after_response(RemoteError::Protocol(
+                    "server response is too large".into(),
+                )));
             }
             bytes.extend_from_slice(&chunk);
         }
@@ -116,6 +196,7 @@ pub(crate) fn is_unavailable_status(status: StatusCode) -> bool {
 mod tests {
     use super::*;
     use std::{
+        collections::HashMap,
         io::{Read, Write},
         net::{TcpListener, TcpStream},
         thread,
@@ -270,17 +351,110 @@ mod tests {
         });
         let transport = Transport::new(&endpoint).unwrap();
         let body = serde_json::json!({"request_id": "same-request"});
-        let result: Result<serde_json::Value, _> = transport
-            .send(
+        let delivery: Delivery<serde_json::Value> = transport
+            .send_with_delivery(
                 Method::POST,
                 transport.url("v1/tasks/archive-inactive"),
                 Some(&body),
             )
             .await;
-        assert!(matches!(result, Err(RemoteError::Unavailable(_))));
+        assert!(matches!(delivery.result, Err(RemoteError::Unavailable(_))));
+        assert!(delivery.may_have_reached_server);
         let requests = server.join().unwrap();
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0], requests[1]);
+    }
+
+    fn closed_endpoint() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        format!("http://{}/", listener.local_addr().unwrap())
+    }
+
+    #[tokio::test]
+    async fn a_write_refused_on_both_attempts_never_reached_the_server() {
+        let endpoint = closed_endpoint();
+        let transport = Transport::new(&endpoint).unwrap();
+        let delivery: Delivery<serde_json::Value> = transport
+            .send_with_delivery(
+                Method::POST,
+                transport.url("v1/tasks"),
+                Some(&serde_json::json!({"request_id": "refused"})),
+            )
+            .await;
+        assert!(matches!(delivery.result, Err(RemoteError::Unavailable(_))));
+        assert!(!delivery.may_have_reached_server);
+    }
+
+    #[tokio::test]
+    async fn a_write_that_fails_before_encoding_never_reached_the_server() {
+        let transport = Transport::new(&closed_endpoint()).unwrap();
+        let body = HashMap::from([((1, 2), 3)]);
+        let delivery: Delivery<serde_json::Value> = transport
+            .send_with_delivery(Method::POST, transport.url("v1/tasks"), Some(&body))
+            .await;
+        assert!(
+            matches!(delivery.result, Err(RemoteError::Protocol(message)) if message.starts_with("invalid request body"))
+        );
+        assert!(!delivery.may_have_reached_server);
+    }
+
+    #[tokio::test]
+    async fn a_write_with_an_error_response_may_have_reached_the_server() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let mut stream = accept_with_deadline(&listener).expect("expected one request");
+            let mut request = [0_u8; 1024];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            stream
+                .write_all(
+                    b"HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+        });
+        let transport = Transport::new(&endpoint).unwrap();
+        let delivery: Delivery<serde_json::Value> = transport
+            .send_with_delivery(
+                Method::POST,
+                transport.url("v1/tasks"),
+                Some(&serde_json::json!({"request_id": "answered"})),
+            )
+            .await;
+        assert!(matches!(
+            delivery.result,
+            Err(RemoteError::Http {
+                status: StatusCode::CONFLICT,
+                ..
+            })
+        ));
+        assert!(delivery.may_have_reached_server);
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_write_dropped_mid_request_may_have_reached_the_server_even_if_the_resend_is_refused()
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let mut stream = accept_with_deadline(&listener).expect("expected one request");
+            let mut request = [0_u8; 1024];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            // Closing the listener first makes the resend fail to connect.
+            drop(listener);
+            drop(stream);
+        });
+        let transport = Transport::new(&endpoint).unwrap();
+        let delivery: Delivery<serde_json::Value> = transport
+            .send_with_delivery(
+                Method::POST,
+                transport.url("v1/tasks"),
+                Some(&serde_json::json!({"request_id": "dropped"})),
+            )
+            .await;
+        server.join().unwrap();
+        assert!(matches!(delivery.result, Err(RemoteError::Unavailable(_))));
+        assert!(delivery.may_have_reached_server);
     }
 
     #[tokio::test]

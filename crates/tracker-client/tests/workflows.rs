@@ -191,7 +191,6 @@ async fn selected_backends_preserve_task_tracking_history_and_report_workflows()
         assert_eq!(report.rows.len(), 1);
         assert_eq!(report.rows[0].task_id, second.id());
         assert_eq!(report.rows[0].duration, TimeDelta::seconds(16));
-        assert_eq!(report.revision.is_some(), remote);
         let totals = backend.report_totals(at(0), at(40), at(35)).await.unwrap();
         assert_eq!(totals.rows[0].task.id(), second.id());
         assert_eq!(totals.rows[0].duration, report.rows[0].duration);
@@ -240,12 +239,11 @@ async fn selected_backends_preserve_task_tracking_history_and_report_workflows()
             .await
             .unwrap();
         assert_eq!(backend.tasks(TaskOrdering::RecentlyCreated).len(), 2);
-        let (items, revision) = backend.task_observation().unwrap();
-        assert_eq!(items.len(), 2);
-        assert_eq!(revision.is_some(), remote);
-        let (tracking, revision) = backend.tracking_observation().unwrap();
-        assert!(matches!(tracking, tracker_domain::TrackingState::Idle));
-        assert_eq!(revision.is_some(), remote);
+        assert_eq!(backend.task_observation().unwrap().len(), 2);
+        assert!(matches!(
+            backend.tracking_observation().unwrap(),
+            tracker_domain::TrackingState::Idle
+        ));
     }
 }
 

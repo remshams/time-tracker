@@ -26,7 +26,6 @@ pub(super) async fn worklog(
     })?;
     Ok(Json(WorklogResourceDto {
         worklog: WorklogDto::from(&worklog),
-        revision: core.revision(),
     }))
 }
 
@@ -72,11 +71,11 @@ pub(super) async fn all_worklogs(
                 revision: cursor.revision,
             });
             let page = core.app.worklogs_for_task(id, task_cursor.as_ref())?;
-            WorklogPageDto::from_page(&page, core.revision())
+            WorklogPageDto::from_page(&page)
         }
         None => {
             let page = core.app.all_worklogs(cursor.as_ref())?;
-            WorklogPageDto::from_global_page(&page, core.revision())
+            WorklogPageDto::from_global_page(&page)
         }
     };
     Ok(Json(page))

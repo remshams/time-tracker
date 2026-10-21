@@ -17,7 +17,6 @@ use axum::{Json, Router};
 use tracker_application::TrackerApplication;
 use tracker_protocol::HealthDto;
 use tracker_storage::SqliteRepository;
-use uuid::Uuid;
 
 use crate::core::Core;
 use crate::reports::report;
@@ -47,8 +46,6 @@ pub fn router_for_database(path: &Path) -> Result<Router, Box<dyn Error + Send +
         _database_lock: database_lock,
         app,
         needs_refresh: false,
-        epoch: Uuid::now_v7().to_string(),
-        sequence: 0,
         completed: HashMap::new(),
         completion_order: VecDeque::new(),
     };

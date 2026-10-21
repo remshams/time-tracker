@@ -4,6 +4,8 @@
 
 Proposed. Once accepted, it partially supersedes the Swift session clauses listed under [Superseded clauses](#superseded-clauses) in ADR 0016, ADR 0018 and ADR 0023. Their Rust, bridge and server decisions remain accepted.
 
+Partially superseded by [ADR 0031](0031-remove-server-revisions-from-writes-and-reads.md) for the Rust adapter's preflights, which ADR 0031 removes; all other decisions remain proposed.
+
 ## Date
 
 2026-10-18

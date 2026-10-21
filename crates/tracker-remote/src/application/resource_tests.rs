@@ -13,30 +13,33 @@ fn task(id: TaskId) -> TaskDto {
     }
 }
 #[test]
-fn task_catalog_rejects_duplicates_invalid_tasks_and_empty_revisions() {
+fn task_catalog_rejects_duplicates_and_invalid_tasks() {
     let item = task(TaskId::generate());
+    let other = task(TaskId::generate());
+    assert_eq!(
+        decode_tasks(TasksDto {
+            tasks: vec![item.clone(), other.clone()],
+        })
+        .unwrap()
+        .len(),
+        2
+    );
+    assert!(decode_tasks(TasksDto { tasks: vec![] }).unwrap().is_empty());
     for dto in [
         TasksDto {
             tasks: vec![item.clone(), item.clone()],
-            revision: "r1".into(),
-        },
-        TasksDto {
-            tasks: vec![],
-            revision: String::new(),
         },
         TasksDto {
             tasks: vec![TaskDto {
                 id: "invalid".into(),
                 ..item.clone()
             }],
-            revision: "r1".into(),
         },
         TasksDto {
             tasks: vec![TaskDto {
                 name: "Bad\u{1b}name".into(),
                 ..item
             }],
-            revision: "r1".into(),
         },
     ] {
         assert!(decode_tasks(dto).is_err());
@@ -53,7 +56,6 @@ fn tracking_accepts_a_task_absent_from_the_catalog_and_rejects_completed_entries
     assert!(
         decode_tracking(TrackingDto {
             active_worklog: Some(active.clone()),
-            revision: "r1".into()
         })
         .is_ok()
     );
@@ -63,20 +65,19 @@ fn tracking_accepts_a_task_absent_from_the_catalog_and_rejects_completed_entries
                 end: Some(at()),
                 ..active
             }),
-            revision: "r1".into()
         })
         .is_err()
     );
-    assert!(
+    assert_eq!(
         decode_tracking(TrackingDto {
             active_worklog: None,
-            revision: String::new()
         })
-        .is_err()
+        .unwrap(),
+        (None, TrackingState::Idle)
     );
 }
 #[test]
-fn reports_validate_ids_durations_totals_and_revision_without_task_cache_membership() {
+fn reports_validate_ids_durations_totals_and_range_without_task_cache_membership() {
     let row = tracker_protocol::ReportRowDto {
         task_id: TaskId::generate().to_string(),
         duration_us: 2,
@@ -87,7 +88,6 @@ fn reports_validate_ids_durations_totals_and_revision_without_task_cache_members
         now: at(),
         rows: vec![row.clone()],
         total_us: 2,
-        revision: "r1".into(),
     };
     assert!(validate_report(&valid).is_ok());
     for invalid in [
@@ -101,7 +101,7 @@ fn reports_validate_ids_durations_totals_and_revision_without_task_cache_members
             ..valid.clone()
         },
         ReportDto {
-            revision: String::new(),
+            end: at(),
             ..valid.clone()
         },
         ReportDto {
@@ -136,9 +136,9 @@ fn reports_validate_ids_durations_totals_and_revision_without_task_cache_members
         assert!(validate_report(&invalid).is_err());
     }
 }
-/// Checks that persisted confirmation tokens retain exact metadata and reject missing guards.
+/// Checks that persisted confirmation tokens retain exact metadata and reject protocol 5 tokens.
 #[test]
-fn persisted_preview_tokens_preserve_period_candidates_and_confirmation_guard() {
+fn persisted_preview_tokens_preserve_period_and_candidates() {
     let parsed_ids = vec![TaskId::generate(), TaskId::generate()];
     let candidate_ids: Vec<String> = parsed_ids.iter().map(ToString::to_string).collect();
     let token = serde_json::json!({
@@ -146,7 +146,6 @@ fn persisted_preview_tokens_preserve_period_candidates_and_confirmation_guard() 
         "inactive_days": 21,
         "count": 2,
         "candidate_task_ids": candidate_ids,
-        "revision": "captured-revision",
     });
     let preview: InactiveTaskPreview = serde_json::from_value(token.clone()).unwrap();
     assert_eq!(preview.as_of(), at());
@@ -154,25 +153,19 @@ fn persisted_preview_tokens_preserve_period_candidates_and_confirmation_guard() 
     assert_eq!(preview.count(), 2);
     assert_eq!(preview.dto.candidate_task_ids, candidate_ids);
     assert_eq!(preview.candidate_ids, parsed_ids);
-    assert_eq!(preview.dto.revision, "captured-revision");
     assert_eq!(serde_json::to_value(&preview).unwrap(), token);
 
-    let mut missing_guard = token.clone();
-    missing_guard.as_object_mut().unwrap().remove("revision");
-    assert!(serde_json::from_value::<InactiveTaskPreview>(missing_guard).is_err());
-    let mut empty_guard = token;
-    empty_guard["revision"] = serde_json::json!("");
-    assert!(serde_json::from_value::<InactiveTaskPreview>(empty_guard).is_err());
+    let mut protocol_5_token = token;
+    protocol_5_token["revision"] = serde_json::json!("captured-revision");
+    assert!(serde_json::from_value::<InactiveTaskPreview>(protocol_5_token).is_err());
 }
 
-/// Pins the saved token text so previews written before validation moved into
-/// deserialization still load and serialize to the same bytes.
+/// Pins the saved token text so a loaded preview serializes to the same bytes.
 #[test]
 fn persisted_preview_token_text_is_unchanged() {
     let token = concat!(
         r#"{"as_of":"2027-01-15T08:00:00Z","inactive_days":14,"count":1,"#,
-        r#""candidate_task_ids":["00000000-0000-7000-8000-000000000001"],"#,
-        r#""revision":"revision-1"}"#
+        r#""candidate_task_ids":["00000000-0000-7000-8000-000000000001"]}"#
     );
     let preview: InactiveTaskPreview = serde_json::from_str(token).unwrap();
     assert_eq!(serde_json::to_string(&preview).unwrap(), token);
@@ -186,7 +179,6 @@ fn restored_preview_tokens_reject_tampered_cutoffs_and_counts() {
         "inactive_days": 14,
         "count": 1,
         "candidate_task_ids": ["00000000-0000-7000-8000-000000000001"],
-        "revision": "revision-1",
     });
     assert!(serde_json::from_value::<InactiveTaskPreview>(token.clone()).is_ok());
     for (field, value) in [
@@ -201,48 +193,39 @@ fn restored_preview_tokens_reject_tampered_cutoffs_and_counts() {
     }
 }
 
-/// Checks receipt identity and revision independently before retaining a successful command result.
+/// Checks receipt identity before retaining a successful command result.
 #[test]
-fn command_receipts_require_both_the_matching_request_and_an_applied_revision() {
+fn command_receipts_require_the_matching_request() {
     let guard = WriteGuard {
         request_id: "expected-command".into(),
-        expected_revision: "reviewed-revision".into(),
     };
     let receipt = MutationDto {
         request_id: guard.request_id.clone(),
-        applied_revision: "committed-revision".into(),
         replayed: false,
         result: MutationResultDto::ArchivedInactive { count: 2 },
     };
-    for invalid in [
-        MutationDto {
-            request_id: "different-command".into(),
-            ..receipt.clone()
+    let invalid = MutationDto {
+        request_id: "different-command".into(),
+        ..receipt.clone()
+    };
+    let mut client = RemoteSession::new("http://127.0.0.1:1").unwrap();
+    let result = client.decode_receipt(
+        Ok(invalid),
+        &guard,
+        MutationContext {
+            worklog_id: None,
+            task_id: None,
         },
-        MutationDto {
-            applied_revision: String::new(),
-            ..receipt.clone()
+        |result| match result {
+            MutationResultDto::ArchivedInactive { count } => Ok(count),
+            _ => panic!("fixture must return the archived count"),
         },
-    ] {
-        let mut client = RemoteSession::new("http://127.0.0.1:1").unwrap();
-        let result = client.decode_receipt(
-            Ok(invalid),
-            &guard,
-            MutationContext {
-                worklog_id: None,
-                task_id: None,
-            },
-            |result| match result {
-                MutationResultDto::ArchivedInactive { count } => Ok(count),
-                _ => panic!("fixture must return the archived count"),
-            },
-        );
-        assert_eq!(
-            result.unwrap_err().failure().source(),
-            ApplicationFailureSource::RemoteProtocol
-        );
-        assert!(client.last_command_receipt().is_none());
-    }
+    );
+    assert_eq!(
+        result.unwrap_err().failure().source(),
+        ApplicationFailureSource::RemoteProtocol
+    );
+    assert!(client.last_command_receipt().is_none());
     let mut client = RemoteSession::new("http://127.0.0.1:1").unwrap();
     let count = client
         .decode_receipt(
@@ -264,13 +247,12 @@ fn command_receipts_require_both_the_matching_request_and_an_applied_revision() 
 
 /// Rejects preview metadata that cannot identify an exact, valid candidate set for confirmation.
 #[test]
-fn previews_require_complete_unique_ids_a_period_and_a_revision() {
+fn previews_require_complete_unique_ids_and_a_period() {
     let valid = InactiveTaskPreviewDto {
         as_of: at(),
         inactive_days: 7,
         count: 1,
         candidate_task_ids: vec![TaskId::generate().to_string()],
-        revision: "r1".into(),
     };
     assert_eq!(
         validate_inactive_preview(&valid).unwrap(),
@@ -292,10 +274,6 @@ fn previews_require_complete_unique_ids_a_period_and_a_revision() {
         },
         InactiveTaskPreviewDto {
             inactive_days: 0,
-            ..valid.clone()
-        },
-        InactiveTaskPreviewDto {
-            revision: String::new(),
             ..valid.clone()
         },
         InactiveTaskPreviewDto {
@@ -327,7 +305,6 @@ fn move_candidates_use_only_the_confirmed_task_cache() {
         .into_iter()
         .map(|dto| decode_task_item(dto).unwrap())
         .collect(),
-        "confirmed".into(),
     );
     let candidates = client.move_candidates(source, "pW");
     assert_eq!(candidates.len(), 1);

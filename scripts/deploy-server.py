@@ -325,8 +325,7 @@ def require(condition, message):
 
 def verify(base, expected, now=None):
     state = get_json(base, "/v1/state/task-list")
-    require(set(state) == {"tasks", "active_worklog", "revision"} and state["revision"],
-            "The task-list state has an unexpected shape")
+    require(set(state) == {"tasks", "active_worklog"}, "The task-list state has an unexpected shape")
     catalog = sorted([task["id"], task["name"], int(task["archived"]),
                       timestamp_us(task["created_at"]), timestamp_us(task["updated_at"])]
                      for task in state["tasks"])
@@ -350,12 +349,11 @@ def verify(base, expected, now=None):
     require(overview["active_worklog"] == active, "The daily overview timer differs from the task list")
     require({key: value for key, value in overview.items() if key not in {"tasks", "active_worklog"}} == report,
             "The daily overview totals differ from the report route")
-    require(overview["revision"] == state["revision"], "The daily overview revision differs from the task list")
     require(overview["total_us"] == sum(row["duration_us"] for row in overview["rows"]),
             "The daily overview total differs from its rows")
     require(get_json(base, "/v1/tasks")["tasks"] == state["tasks"], "The task route differs from the task list")
     require(get_json(base, "/v1/tracking")["active_worklog"] == active, "The tracking route differs from the task list")
-    require(set(get_json(base, "/v1/worklogs")) == {"worklogs", "next_cursor", "revision"},
+    require(set(get_json(base, "/v1/worklogs")) == {"worklogs", "next_cursor"},
             "The worklog route has an unexpected shape")
 
 

@@ -17,7 +17,7 @@ impl WorklogsClient {
     ) -> Result<WorklogResourceDto, RemoteError> {
         session.ensure_version().await?;
         let dto: WorklogResourceDto = session.read(&format!("v1/worklogs/{id}")).await?;
-        if dto.worklog.id != id.to_string() || dto.revision.is_empty() {
+        if dto.worklog.id != id.to_string() {
             return Err(
                 session.record_error(RemoteError::Protocol("invalid worklog resource".into()))
             );
@@ -139,7 +139,6 @@ impl WorklogsClient {
         &mut self,
         session: &mut RemoteSession,
         id: WorklogId,
-        expected_task_id: TaskId,
         replacement: WorklogTimes,
         body: &WorklogChangeRequest,
     ) -> Result<Worklog, ApplicationError> {
@@ -155,7 +154,8 @@ impl WorklogsClient {
                 },
                 |result| {
                     let worklog = worklog_result(result, id)?;
-                    if !original_worklog_matches(&worklog, Some(expected_task_id), replacement) {
+                    // The request names no task, so only the identity and new times are checked.
+                    if !original_worklog_matches(&worklog, None, replacement) {
                         return Err(protocol_failure("corrected worklog contradicts command"));
                     }
                     Ok(worklog)

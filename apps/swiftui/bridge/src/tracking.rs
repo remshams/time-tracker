@@ -11,7 +11,7 @@ use crate::worklogs::{WorklogJson, worklog_json};
 pub(super) fn tracking_json(application: &Backend) -> Option<ResourceJson<Option<WorklogJson>>> {
     application
         .tracking_observation()
-        .map(|(tracking, revision)| ResourceJson {
+        .map(|tracking| ResourceJson {
             value: match tracking {
                 TrackingState::Idle => None,
                 TrackingState::Running { worklog } => Some(WorklogJson {
@@ -21,7 +21,6 @@ pub(super) fn tracking_json(application: &Backend) -> Option<ResourceJson<Option
                     end: None,
                 }),
             },
-            revision,
         })
 }
 

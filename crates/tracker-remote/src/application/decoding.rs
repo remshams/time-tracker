@@ -11,8 +11,7 @@ use tracker_protocol::{WorklogCursorError, parse_worklog_cursor};
 pub(super) fn validate_inactive_preview(
     preview: &InactiveTaskPreviewDto,
 ) -> Result<Vec<TaskId>, ApplicationError> {
-    if preview.revision.is_empty()
-        || InactivityPeriod::new(preview.inactive_days).is_err()
+    if InactivityPeriod::new(preview.inactive_days).is_err()
         || preview.as_of != canonical(preview.as_of)
         || preview.count != preview.candidate_task_ids.len()
     {
@@ -35,7 +34,7 @@ pub(super) fn validate_inactive_preview(
 pub(super) fn validate_report(dto: &ReportDto) -> Result<(), ApplicationError> {
     let mut ids = HashSet::new();
     let mut sum = 0_i64;
-    if dto.revision.is_empty() || dto.end <= dto.start {
+    if dto.end <= dto.start {
         return Err(protocol_failure("invalid report context"));
     }
     for row in &dto.rows {
@@ -72,13 +71,9 @@ pub(super) fn validate_active_task(
     Ok(())
 }
 
-pub(super) fn decode_tasks(dto: TasksDto) -> Result<(Vec<TaskListItem>, String), RemoteError> {
-    if dto.revision.is_empty() {
-        return Err(RemoteError::Protocol("empty task revision".into()));
-    }
+pub(super) fn decode_tasks(dto: TasksDto) -> Result<Vec<TaskListItem>, RemoteError> {
     let mut ids = HashSet::new();
-    let items = dto
-        .tasks
+    dto.tasks
         .into_iter()
         .map(|dto| {
             let item = decode_task_item(dto)?;
@@ -87,8 +82,7 @@ pub(super) fn decode_tasks(dto: TasksDto) -> Result<(Vec<TaskListItem>, String),
             }
             Ok(item)
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok((items, dto.revision))
+        .collect()
 }
 
 pub(super) fn decode_task_item(dto: TaskDto) -> Result<TaskListItem, RemoteError> {
@@ -101,12 +95,8 @@ pub(super) fn decode_task_item(dto: TaskDto) -> Result<TaskListItem, RemoteError
 
 pub(super) fn decode_tracking(
     dto: TrackingDto,
-) -> Result<(Option<Worklog>, TrackingState, String), RemoteError> {
-    if dto.revision.is_empty() {
-        return Err(RemoteError::Protocol("empty tracking revision".into()));
-    }
-    let (active, tracking) = decode_active(dto.active_worklog)?;
-    Ok((active, tracking, dto.revision))
+) -> Result<(Option<Worklog>, TrackingState), RemoteError> {
+    decode_active(dto.active_worklog)
 }
 
 pub(super) fn decode_task(dto: TaskDto) -> Result<Task, RemoteError> {
@@ -151,9 +141,6 @@ pub(super) fn decode_history(
     dto: &WorklogPageDto,
     task_id: Option<TaskId>,
 ) -> Result<HistoryRead, RemoteError> {
-    if dto.revision.is_empty() {
-        return Err(RemoteError::Protocol("invalid history revision".into()));
-    }
     let worklogs = dto
         .worklogs
         .iter()
@@ -195,7 +182,7 @@ pub(super) fn app_decode_task(dto: TaskDto) -> Result<Task, ApplicationError> {
     decode_task(dto).map_err(|error| protocol_failure(&error.to_string()))
 }
 
-pub(super) fn app_decode_worklog(dto: WorklogDto) -> Result<Worklog, ApplicationError> {
+fn app_decode_worklog(dto: WorklogDto) -> Result<Worklog, ApplicationError> {
     decode_worklog(dto).map_err(|error| protocol_failure(&error.to_string()))
 }
 
@@ -313,15 +300,9 @@ pub(super) fn clear_tracking_result(
 
 pub(super) fn decode_task_list_state(
     dto: TaskListStateDto,
-) -> Result<(Vec<TaskListItem>, TrackingState, String), RemoteError> {
-    let (items, revision) = decode_tasks(TasksDto {
-        tasks: dto.tasks,
-        revision: dto.revision.clone(),
-    })?;
-    let (active, state, _) = decode_tracking(TrackingDto {
-        active_worklog: dto.active_worklog,
-        revision: dto.revision,
-    })?;
+) -> Result<(Vec<TaskListItem>, TrackingState), RemoteError> {
+    let items = decode_tasks(TasksDto { tasks: dto.tasks })?;
+    let (active, state) = decode_active(dto.active_worklog)?;
     validate_active_task(&items, active.as_ref())?;
-    Ok((items, state, revision))
+    Ok((items, state))
 }

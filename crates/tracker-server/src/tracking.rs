@@ -17,7 +17,6 @@ pub(super) async fn tracking(State(shared): State<Shared>) -> ApiResult<Tracking
     core.app.refresh_tracking_resource()?;
     Ok(Json(TrackingDto {
         active_worklog: core.active_worklog(),
-        revision: core.revision(),
     }))
 }
 /// Guards authoritative tracking state and preserves request worklog identity and retry receipts.
@@ -117,8 +116,6 @@ mod tracking_tests {
             _database_lock: database_lock,
             app,
             needs_refresh: false,
-            epoch: "tracking-test".to_owned(),
-            sequence: 0,
             completed: HashMap::new(),
             completion_order: VecDeque::new(),
         }))
@@ -129,7 +126,6 @@ mod tracking_tests {
     }
 
     fn request(
-        shared: &Shared,
         task_id: TaskId,
         worklog_id: WorklogId,
         expected: Option<WorklogId>,
@@ -141,7 +137,6 @@ mod tracking_tests {
             expected_active: expected.map(|id| id.to_string()),
             occurred_at: at(seconds),
             guard: WriteGuard {
-                expected_revision: shared.lock().unwrap().revision(),
                 request_id: Uuid::now_v7().to_string(),
             },
         }
@@ -157,7 +152,7 @@ mod tracking_tests {
         other.set_active_task(tasks[1].task.id(), at(100)).unwrap();
         let foreign = other.current_tracking().clone();
         let new_id = WorklogId::generate();
-        let request = request(&shared, tasks[0].task.id(), new_id, None, 200);
+        let request = request(tasks[0].task.id(), new_id, None, 200);
         let rejected = set_tracking(State(shared.clone()), Ok(Json(request)))
             .await
             .unwrap_err();
@@ -177,7 +172,7 @@ mod tracking_tests {
         let shared = core(&directory.path().join("tracker.db"));
         let tasks = shared.lock().unwrap().app.tasks(TaskOrdering::default());
         let first_id = WorklogId::generate();
-        let first_request = request(&shared, tasks[0].task.id(), first_id, None, 100);
+        let first_request = request(tasks[0].task.id(), first_id, None, 100);
         let first = set_tracking(State(shared.clone()), Ok(Json(first_request.clone())))
             .await
             .unwrap()
@@ -196,7 +191,7 @@ mod tracking_tests {
             .0;
         assert_eq!(repeated.result, first.result);
         let next_id = WorklogId::generate();
-        let next_request = request(&shared, tasks[1].task.id(), next_id, Some(first_id), 200);
+        let next_request = request(tasks[1].task.id(), next_id, Some(first_id), 200);
         let switched = set_tracking(State(shared.clone()), Ok(Json(next_request)))
             .await
             .unwrap()
@@ -219,7 +214,7 @@ mod tracking_tests {
         let shared = core(&path);
         let tasks = shared.lock().unwrap().app.tasks(TaskOrdering::default());
         let original_id = WorklogId::generate();
-        let initial = request(&shared, tasks[0].task.id(), original_id, None, 100);
+        let initial = request(tasks[0].task.id(), original_id, None, 100);
         let initial = set_tracking(State(shared.clone()), Ok(Json(initial)))
             .await
             .unwrap()
@@ -233,7 +228,7 @@ mod tracking_tests {
         other.set_active_task(tasks[0].task.id(), at(160)).unwrap();
         let replacement = other.current_tracking().clone();
         let new_id = WorklogId::generate();
-        let stale = request(&shared, tasks[1].task.id(), new_id, Some(original_id), 200);
+        let stale = request(tasks[1].task.id(), new_id, Some(original_id), 200);
 
         let rejected = set_tracking(State(shared.clone()), Ok(Json(stale)))
             .await
@@ -272,7 +267,6 @@ mod tracking_tests {
             expected_active: None,
             occurred_at: at(200),
             guard: WriteGuard {
-                expected_revision: shared.lock().unwrap().revision(),
                 request_id: Uuid::now_v7().to_string(),
             },
         };

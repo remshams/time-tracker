@@ -347,10 +347,8 @@ fn remote_creation_persists_client_ids_timestamps_and_preserves_tracking() {
             .any(|task| task["id"] == created["data"]["task"]["id"])
     );
     assert_eq!(refreshed.1["data"]["value"], active["data"]["active"]);
-    assert_eq!(
-        refreshed.0["data"]["revision"],
-        refreshed.1["data"]["revision"]
-    );
+    assert!(refreshed.0["data"].get("revision").is_none());
+    assert!(refreshed.1["data"].get("revision").is_none());
     let stored = TrackerApplication::load(SqliteRepository::open(server.path()).unwrap()).unwrap();
     let task = stored.task(id).unwrap();
     assert_eq!(task.name().as_str(), "Server project 🛠");
@@ -369,7 +367,7 @@ fn uncertain_creation_recovers_the_same_id_after_polling_or_retries_the_original
             "malformed",
             "wrong-result",
             "server-error",
-            "empty-revision",
+            "missing-replayed",
         ] {
             let requests = Arc::new(Mutex::new(Vec::<Value>::new()));
             let task = Arc::new(Mutex::new(None::<Value>));
@@ -388,13 +386,13 @@ fn uncertain_creation_recovers_the_same_id_after_polling_or_retries_the_original
                     .route("/v1/health", get(|| async { Json(json!({"status":"ok","protocol_version":tracker_protocol::VERSION})) }))
                     .route("/v1/state/task-list", get(move || {
                         let state = Arc::clone(&aggregate_state);
-                        async move { Json(json!({"tasks":state.lock().unwrap().clone().into_iter().collect::<Vec<_>>(),"active_worklog":null,"revision":"recovered"})) }
+                        async move { Json(json!({"tasks":state.lock().unwrap().clone().into_iter().collect::<Vec<_>>(),"active_worklog":null})) }
                     }))
                     .route("/v1/tasks", get(move || {
                         let task = Arc::clone(&task_list_state);
                         async move {
                             let tasks = task.lock().unwrap().clone().map(|task| vec![task]).unwrap_or_default();
-                            Json(json!({"tasks":tasks,"revision":"recovered"}))
+                            Json(json!({"tasks":tasks}))
                         }
                     }).post(move |Json(body): Json<Value>| {
                         let requests = Arc::clone(&request_state);
@@ -405,22 +403,22 @@ fn uncertain_creation_recovers_the_same_id_after_polling_or_retries_the_original
                             let healthy = *recovered.lock().unwrap();
                             let created = json!({"id":body["task_id"],"name":body["name"],"archived":false,"created_at":body["occurred_at"],"updated_at":body["occurred_at"],"latest_work_start":null});
                             if committed || healthy { *task.lock().unwrap() = Some(created.clone()); }
-                            let receipt = json!({"request_id":body["request_id"],"applied_revision":"created","replayed":false,"result":{"kind":"task","value":created}});
+                            let receipt = json!({"request_id":body["request_id"],"replayed":false,"result":{"kind":"task","value":created}});
                             if healthy {
                                 (StatusCode::OK, Json(receipt.clone()))
-                            } else if failure == "empty-revision" {
-                                (StatusCode::OK, Json(json!({"request_id":body["request_id"],"applied_revision":"","replayed":false,"result":{"kind":"task","value":created}})))
+                            } else if failure == "missing-replayed" {
+                                (StatusCode::OK, Json(json!({"request_id":body["request_id"],"result":{"kind":"task","value":created}})))
                             } else if failure == "wrong-result" {
-                                (StatusCode::OK, Json(json!({"request_id":body["request_id"],"applied_revision":"created","replayed":false,"result":{"kind":"tracking_already_idle"}})))
+                                (StatusCode::OK, Json(json!({"request_id":body["request_id"],"replayed":false,"result":{"kind":"tracking_already_idle"}})))
                             } else {
                                 (if failure == "server-error" { StatusCode::INTERNAL_SERVER_ERROR } else { StatusCode::OK }, Json(json!({"unexpected":true})))
                             }
                         }
                     }))
-                    .route("/v1/tracking", get(|| async { Json(json!({"active_worklog":null,"revision":"recovered"})) }))
+                    .route("/v1/tracking", get(|| async { Json(json!({"active_worklog":null})) }))
                     .route("/v1/tasks/{id}", get(move || {
                         let task = task_for_get.lock().unwrap().clone().unwrap();
-                        async move { Json(json!({"task":task,"revision":"recovered"})) }
+                        async move { Json(json!({"task":task})) }
                     }))
                 },
             );
@@ -439,23 +437,20 @@ fn uncertain_creation_recovers_the_same_id_after_polling_or_retries_the_original
             assert_eq!(confirmed["data"]["task"]["id"], first["task_id"]);
             let sent = requests.lock().unwrap();
             assert_eq!(sent.len(), count + usize::from(!committed));
+            // Every attempt, including the retry after recovery, resends the
+            // original intent with the same request ID and no revision.
             for request in sent.iter() {
                 assert_eq!(request["task_id"], first["task_id"]);
                 assert_eq!(request["occurred_at"], first["occurred_at"]);
-            }
-            for request in sent.iter().take(count) {
                 assert_eq!(request["request_id"], first["request_id"]);
-            }
-            if !committed {
-                assert_eq!(sent.last().unwrap()["request_id"], first["request_id"]);
-                assert_eq!(sent.last().unwrap()["expected_revision"], "recovered");
+                assert!(request.get("expected_revision").is_none());
             }
         }
     }
 }
 
 #[test]
-fn creation_refreshes_its_task_guard_after_another_client_adds_an_unrelated_task() {
+fn creation_succeeds_after_another_client_adds_an_unrelated_task() {
     let server = Server::start();
     let mut first = Client::open(&server.endpoint());
     let mut second = Client::open(&server.endpoint());
@@ -564,7 +559,7 @@ fn remote_rename_conflicts_and_outages_require_reconciliation_without_changing_c
 
 #[test]
 fn remote_rename_rejects_inconsistent_result_names_and_invalid_receipts() {
-    for failure in ["empty-revision", "wrong-request", "result-name"] {
+    for failure in ["missing-replayed", "wrong-request", "result-name"] {
         let id = tracker_domain::TaskId::generate().to_string();
         let id_for_post = id.clone();
         let initial_task = json!({"id":id,"name":"Original","archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null});
@@ -577,17 +572,21 @@ fn remote_rename_rejects_inconsistent_result_names_and_invalid_receipts() {
                 .route("/v1/health", get(|| async { Json(json!({"status":"ok","protocol_version":tracker_protocol::VERSION})) }))
                 .route("/v1/state/task-list", get(move || {
                     let task = initial_task.clone();
-                    async move { Json(json!({"tasks":[task],"active_worklog":null,"revision":"initial"})) }
+                    async move { Json(json!({"tasks":[task],"active_worklog":null})) }
                 }))
-                .route("/v1/tracking", get(|| async { Json(json!({"active_worklog":null,"revision":"initial"})) }))
+                .route("/v1/tracking", get(|| async { Json(json!({"active_worklog":null})) }))
                 .route("/v1/tasks/{id}", get(move || {
                     let task = task_for_get.clone();
-                    async move { Json(json!({"task":task,"revision":"initial"})) }
+                    async move { Json(json!({"task":task})) }
                 }).patch(move |Json(body): Json<Value>| {
                     let id = id_for_post.clone();
                     async move {
                         let task = json!({"id":id,"name":if failure == "result-name" {"Wrong name"} else {"Updated"},"archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null});
-                        Json(json!({"request_id":if failure == "wrong-request" {json!(tracker_domain::WorklogId::generate().to_string())} else {body["request_id"].clone()},"applied_revision":if failure == "empty-revision" {""} else {"renamed"},"replayed":false,"result":{"kind":"task","value":task}}))
+                        let mut receipt = json!({"request_id":if failure == "wrong-request" {json!(tracker_domain::WorklogId::generate().to_string())} else {body["request_id"].clone()},"replayed":false,"result":{"kind":"task","value":task}});
+                        if failure == "missing-replayed" {
+                            receipt.as_object_mut().unwrap().remove("replayed");
+                        }
+                        Json(receipt)
                     }
                 }))
             },
@@ -735,9 +734,9 @@ fn failed_write_response_remains_uncertain_after_a_successful_recovery_read() {
         || {
             Router::new()
             .route("/v1/health", get(|| async { Json(json!({"status": "ok", "protocol_version": tracker_protocol::VERSION})) }))
-            .route("/v1/state/task-list", get(|| async { Json(json!({"active_worklog":null,"tasks": [{"id":"00000000-0000-0000-0000-000000000001","name":"Tracking project","archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null}], "revision": "confirmed"})) }))
-            .route("/v1/tasks/{id}", get(|| async { Json(json!({"task":{"id":"00000000-0000-0000-0000-000000000001","name":"Tracking project","archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null},"revision":"confirmed"})) }))
-            .route("/v1/tracking", get(|| async { Json(json!({"active_worklog":null,"revision":"confirmed"})) }).put(|| async { (StatusCode::INTERNAL_SERVER_ERROR, "Unconfirmed write") }))
+            .route("/v1/state/task-list", get(|| async { Json(json!({"active_worklog":null,"tasks": [{"id":"00000000-0000-0000-0000-000000000001","name":"Tracking project","archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null}]})) }))
+            .route("/v1/tasks/{id}", get(|| async { Json(json!({"task":{"id":"00000000-0000-0000-0000-000000000001","name":"Tracking project","archived":false,"created_at":at(),"updated_at":at(),"latest_work_start":null}})) }))
+            .route("/v1/tracking", get(|| async { Json(json!({"active_worklog":null})) }).put(|| async { (StatusCode::INTERNAL_SERVER_ERROR, "Unconfirmed write") }))
         },
     );
     let mut client = Client::open(&server.endpoint());
@@ -986,13 +985,13 @@ fn rejected_reviewed_task_commands_remain_conflicts_when_recovery_reads_fail() {
                             if after_rejection {
                                 (if unavailable { StatusCode::SERVICE_UNAVAILABLE } else { StatusCode::OK }, Json(json!({"invalid":"recovery response"})))
                             } else {
-                                (StatusCode::OK, Json(json!({"tasks":[task],"active_worklog":null,"revision":"reviewed"})))
+                                (StatusCode::OK, Json(json!({"tasks":[task],"active_worklog":null})))
                             }
                         }
                     }))
                     .route("/v1/tasks/{id}", get(move || {
                         let task = task_for_read.clone();
-                        async move { Json(json!({"task":task,"revision":"reviewed"})) }
+                        async move { Json(json!({"task":task})) }
                     }).patch(move |Json(body): Json<Value>| {
                         rejected.store(true, Ordering::SeqCst);
                         write_requests.lock().unwrap().push(body);

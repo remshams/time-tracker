@@ -23,7 +23,6 @@ pub(super) async fn task_list_state(State(shared): State<Shared>) -> ApiResult<T
             .map(TaskDto::from)
             .collect(),
         active_worklog: core.active_worklog(),
-        revision: core.revision(),
     }))
 }
 
@@ -46,6 +45,6 @@ pub(super) async fn daily_overview(
             .map(TaskDto::from)
             .collect(),
         active_worklog: core.active_worklog(),
-        totals: ReportDto::from_totals(&totals, start, end, now, core.revision()),
+        totals: ReportDto::from_totals(&totals, start, end, now),
     }))
 }

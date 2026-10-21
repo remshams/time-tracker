@@ -1,4 +1,4 @@
-//! Shared application state, revisions and command receipts under one operation lock.
+//! Shared application state and command receipts under one operation lock.
 
 use std::collections::{HashMap, VecDeque};
 use std::fs::File;
@@ -19,17 +19,11 @@ pub(super) struct Core {
     pub(super) _database_lock: File,
     pub(super) app: TrackerApplication<SqliteRepository>,
     pub(super) needs_refresh: bool,
-    pub(super) epoch: String,
-    pub(super) sequence: u64,
     pub(super) completed: HashMap<String, (String, MutationDto)>,
     pub(super) completion_order: VecDeque<String>,
 }
 
 impl Core {
-    pub(super) fn revision(&self) -> String {
-        format!("{}:{}", self.epoch, self.sequence)
-    }
-
     pub(super) fn active_worklog(&self) -> Option<WorklogDto> {
         match self.app.current_tracking() {
             TrackingState::Idle => None,
@@ -60,28 +54,19 @@ impl Core {
                 ))
             };
         }
-        if guard.expected_revision != self.revision() {
-            return Err(ApiError::stale());
-        }
         let result = match operation(&mut self.app) {
             Ok(result) => result,
             Err(error) => {
                 if error.status.is_server_error() {
                     // A command may commit before its follow-up read fails.
-                    // The old revision must never authorize another write.
-                    self.sequence = self.sequence.saturating_add(1);
+                    // Reload the caches so later reads report the stored state.
                     self.needs_refresh = self.app.refresh_authoritative_state().is_err();
                 }
                 return Err(error);
             }
         };
-        self.sequence = self
-            .sequence
-            .checked_add(1)
-            .ok_or_else(ApiError::internal)?;
         let response = MutationDto {
             request_id: guard.request_id.clone(),
-            applied_revision: self.revision(),
             replayed: false,
             result,
         };
@@ -123,8 +108,6 @@ mod tests {
             _database_lock: database_lock,
             app,
             needs_refresh: false,
-            epoch: "test-epoch".to_owned(),
-            sequence: 0,
             completed: HashMap::new(),
             completion_order: VecDeque::new(),
         };
@@ -136,7 +119,6 @@ mod tests {
                     "fingerprint".to_owned(),
                     tracker_protocol::MutationDto {
                         request_id: request_id.clone(),
-                        applied_revision: core.revision(),
                         replayed: false,
                         result: MutationResultDto::TrackingAlreadyIdle,
                     },
@@ -145,7 +127,6 @@ mod tests {
             core.completion_order.push_back(request_id);
         }
         let guard = WriteGuard {
-            expected_revision: core.revision(),
             request_id: Uuid::now_v7().to_string(),
         };
         let boundary_request_id = guard.request_id.clone();

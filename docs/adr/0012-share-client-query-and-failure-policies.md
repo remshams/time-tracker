@@ -4,6 +4,8 @@
 
 Partially superseded by [ADR 0013](0013-remove-remote-archive-candidate-fingerprints.md) for remote bulk archive candidate-set checks; all other decisions remain accepted.
 
+Partially superseded by [ADR 0031](0031-remove-server-revisions-from-writes-and-reads.md) for the server revision on remote archive confirmation; all other decisions remain accepted.
+
 ## Date
 
 2026-10-04

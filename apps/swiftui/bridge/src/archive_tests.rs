@@ -269,10 +269,6 @@ fn mock_server(
                             {
                                 *item = task;
                             }
-                            if !receipt.applied_revision.is_empty() {
-                                resources.0.revision = receipt.applied_revision;
-                                resources.1.revision = resources.0.revision.clone();
-                            }
                         }
                         Json(reply)
                     }
@@ -309,11 +305,8 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
                 worklog.task_id(),
                 worklog.start(),
             )),
-            "42".into(),
         );
         let mut updated = initial.clone();
-        updated.0.revision = "43".into();
-        updated.1.revision = updated.0.revision.clone();
         let task = updated
             .0
             .tasks
@@ -326,7 +319,6 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
         let baseline = serde_json::to_value(MutationDto {
             result: MutationResultDto::Task(result_task),
             request_id: String::new(),
-            applied_revision: updated.0.revision,
             replayed: false,
         })
         .unwrap();
@@ -337,7 +329,9 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
                 1 => reply["result"]["value"]["id"] = json!(TaskId::generate().to_string()),
                 2 => reply["result"]["value"]["archived"] = json!(!archived),
                 3 => reply["request_id"] = json!(WorklogId::generate().to_string()),
-                4 => reply["applied_revision"] = json!(""),
+                4 => {
+                    reply.as_object_mut().unwrap().remove("replayed");
+                }
                 5 => reply["unexpected"] = json!(true),
                 6 => reply["replayed"] = json!("invalid"),
                 7 => reply["result"]["kind"] = json!("tracking_already_idle"),
@@ -358,13 +352,13 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
                 let body = &requests.lock().unwrap()[0];
                 assert_eq!(body["action"], if archived { "archive" } else { "restore" });
                 assert_eq!(body["occurred_at"], timestamp(at(400)));
-                assert_eq!(body["expected_revision"], "42");
+                assert!(body.get("expected_revision").is_none());
                 assert!(body["request_id"].as_str().is_some());
                 if archived {
                     assert_eq!(body["expected_name"], reviewed_name.as_str());
-                    assert_eq!(body.as_object().unwrap().len(), 5);
-                } else {
                     assert_eq!(body.as_object().unwrap().len(), 4);
+                } else {
+                    assert_eq!(body.as_object().unwrap().len(), 3);
                 }
             } else {
                 assert_eq!(response["kind"], "protocol", "{index}: {response}");
@@ -475,7 +469,6 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
                             original_task.clone()
                         }],
                         active_worklog: after.then(|| active.clone()),
-                        revision: if after { "after" } else { "before" }.into(),
                     };
                     async move {
                         (
@@ -493,12 +486,7 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
                 "/v1/tasks/{id}",
                 get(move || {
                     let task = initial.clone();
-                    async move {
-                        Json(TaskResourceDto {
-                            task,
-                            revision: "before".into(),
-                        })
-                    }
+                    async move { Json(TaskResourceDto { task }) }
                 })
                 .patch(move |Json(body): Json<Value>| {
                     write_written.store(true, Ordering::SeqCst);
@@ -506,7 +494,6 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
                     async move {
                         Json(MutationDto {
                             request_id: body["request_id"].as_str().unwrap().into(),
-                            applied_revision: "applied".into(),
                             replayed: false,
                             result: MutationResultDto::Task(task),
                         })
@@ -527,13 +514,6 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
         if settles {
             assert!(result.is_ok());
             assert_eq!(
-                (
-                    tasks_json(&bridge.application).and_then(|resource| resource.revision),
-                    tracking_json(&bridge.application).and_then(|resource| resource.revision)
-                ),
-                (Some("after".into()), Some("after".into()))
-            );
-            assert_eq!(
                 bridge.application.tasks(TaskOrdering::default())[0]
                     .task
                     .name()
@@ -552,13 +532,6 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
             assert_eq!(
                 crate::tests::test_resource_values(&bridge.application),
                 before
-            );
-            assert_eq!(
-                (
-                    tasks_json(&bridge.application).and_then(|resource| resource.revision),
-                    tracking_json(&bridge.application).and_then(|resource| resource.revision)
-                ),
-                (Some("before".into()), Some("before".into()))
             );
         }
     }
@@ -583,11 +556,8 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
             if action == "restore" {
                 application.archive_task(task.id(), at(2)).unwrap();
             }
-            let initial = report_tests::resource_dtos(
-                application.tasks(TaskOrdering::default()),
-                None,
-                "before".into(),
-            );
+            let initial =
+                report_tests::resource_dtos(application.tasks(TaskOrdering::default()), None);
             let state = Arc::new(Mutex::new(initial));
             let changed = state.clone();
             let mut committed_task = state.lock().unwrap().0.tasks[0].clone();
@@ -625,12 +595,9 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
                             {
                                 let mut state = changed.lock().unwrap();
                                 state.0.tasks[0] = latest;
-                                state.0.revision = "later".into();
-                                state.1.revision = state.0.revision.clone();
                             }
                             Json(MutationDto {
                                 request_id: body["request_id"].as_str().unwrap().into(),
-                                applied_revision: "applied".into(),
                                 replayed,
                                 result: MutationResultDto::Task(committed_task),
                             })
@@ -673,19 +640,11 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
             if action != "rename" {
                 assert_eq!(value["data"]["task"]["archived"], action == "archive");
             }
-            assert_eq!(value["data"]["receipt"]["appliedRevision"], "applied");
+            assert!(value["data"]["receipt"].get("appliedRevision").is_none());
             assert_eq!(value["data"]["receipt"]["replayed"], replayed);
             assert_eq!(
                 crate::tests::test_task_values(&bridge.application)[0]["name"],
                 "Later writer name"
-            );
-            assert_eq!(
-                tasks_json(&bridge.application).unwrap().revision,
-                Some("later".into())
-            );
-            assert_eq!(
-                tracking_json(&bridge.application).unwrap().revision,
-                Some("later".into())
             );
             if action != "rename" {
                 assert_eq!(
@@ -716,7 +675,6 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
     let state = Arc::new(Mutex::new(report_tests::resource_dtos(
         application.tasks(TaskOrdering::default()),
         None,
-        "before".into(),
     )));
     let tasks_state = state.clone();
     let tracking_state = state.clone();
@@ -753,7 +711,6 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
                         let dto = tracker_protocol::TaskListStateDto {
                             tasks: state.0.tasks.clone(),
                             active_worklog: state.1.active_worklog.clone(),
-                            revision: state.0.revision.clone(),
                         };
                         let fail = failures.load(Ordering::SeqCst);
                         async move {
@@ -806,21 +763,17 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
                     async move {
                         Json(TaskResourceDto {
                             task: tasks.tasks[0].clone(),
-                            revision: tasks.revision,
                         })
                     }
                 })
                 .patch(move |Json(body): Json<Value>| {
-                    let count = write_count.fetch_add(1, Ordering::SeqCst) + 1;
+                    write_count.fetch_add(1, Ordering::SeqCst);
                     let mut state = write_state.lock().unwrap();
                     state.0.tasks[0].name = body["name"].as_str().unwrap().to_owned();
                     state.0.tasks[0].updated_at =
                         body["occurred_at"].as_str().unwrap().parse().unwrap();
-                    state.0.revision = format!("after-{count}");
-                    state.1.revision = state.0.revision.clone();
                     let result = MutationDto {
                         request_id: body["request_id"].as_str().unwrap().into(),
-                        applied_revision: state.0.revision.clone(),
                         replayed: false,
                         result: MutationResultDto::Task(state.0.tasks[0].clone()),
                     };
@@ -849,7 +802,8 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
 
     assert!(result.get("error").is_none(), "{result}");
     assert_eq!(result["data"]["task"]["name"], "Committed name");
-    assert_eq!(result["data"]["receipt"]["appliedRevision"], "after-1");
+    assert_eq!(result["data"]["receipt"]["replayed"], false);
+    assert!(result["data"]["receipt"].get("appliedRevision").is_none());
     assert_eq!(
         crate::tests::test_resource_values(&bridge.application),
         confirmed_before

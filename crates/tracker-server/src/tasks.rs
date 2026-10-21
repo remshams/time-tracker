@@ -39,10 +39,7 @@ pub(super) async fn tasks(
         })
         .map(TaskDto::from)
         .collect();
-    Ok(Json(TasksDto {
-        tasks,
-        revision: core.revision(),
-    }))
+    Ok(Json(TasksDto { tasks }))
 }
 
 pub(super) fn task_resource(core: &mut Core, id: TaskId) -> Result<TaskDto, ApiError> {
@@ -63,7 +60,6 @@ pub(super) async fn task(
     let mut core = lock(&shared)?;
     Ok(Json(TaskResourceDto {
         task: task_resource(&mut core, id)?,
-        revision: core.revision(),
     }))
 }
 const INACTIVE_AS_OF_TOLERANCE: TimeDelta = TimeDelta::minutes(15);
@@ -108,7 +104,6 @@ pub(super) async fn preview_inactive_tasks(
         inactive_days: period.days(),
         count: tasks.len(),
         candidate_task_ids: tasks.iter().map(|task| task.id().to_string()).collect(),
-        revision: core.revision(),
     }))
 }
 
@@ -170,19 +165,27 @@ pub(super) async fn change_task(
                 name,
                 occurred_at,
                 ..
-            } => app.rename_task_with_expected_name(
-                id,
-                &task_name(&expected_name)?,
-                task_name(&name)?,
-                occurred_at,
-            )?,
+            } => match expected_name {
+                Some(expected_name) => app.rename_task_with_expected_name(
+                    id,
+                    &task_name(&expected_name)?,
+                    task_name(&name)?,
+                    occurred_at,
+                )?,
+                None => app.rename_task(id, task_name(&name)?, occurred_at)?,
+            },
             TaskChangeRequest::Archive {
                 expected_name,
                 occurred_at,
                 ..
-            } => {
-                app.archive_task_with_expected_name(id, &task_name(&expected_name)?, occurred_at)?
-            }
+            } => match expected_name {
+                Some(expected_name) => app.archive_task_with_expected_name(
+                    id,
+                    &task_name(&expected_name)?,
+                    occurred_at,
+                )?,
+                None => app.archive_task(id, occurred_at)?,
+            },
             TaskChangeRequest::Restore { occurred_at, .. } => {
                 app.unarchive_task(id, occurred_at)?
             }

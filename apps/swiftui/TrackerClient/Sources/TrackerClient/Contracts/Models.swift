@@ -75,10 +75,11 @@ public struct TaskListTotalsRefresh: Equatable, Sendable {
 
 public struct CommandReceipt: Decodable, Equatable, Sendable {
     public let requestId: String
-    public let appliedRevision: String
+    /// Protocol 6 bridges omit this value, so it decodes as nil.
+    public let appliedRevision: String?
     public let replayed: Bool
 
-    public init(requestId: String, appliedRevision: String, replayed: Bool) {
+    public init(requestId: String, appliedRevision: String? = nil, replayed: Bool) {
         self.requestId = requestId
         self.appliedRevision = appliedRevision
         self.replayed = replayed

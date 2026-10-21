@@ -222,12 +222,11 @@ fn publish_request_resources(
                 if let (Some(tasks), Some(tracking)) = (
                     application.task_observation(),
                     application.tracking_observation(),
-                ) && tasks.revision == tracking.revision
-                {
+                ) {
                     state.publish_request_resources(
                         completed,
-                        tasks.value.clone(),
-                        Some(tracking.value.clone()),
+                        tasks.to_vec(),
+                        Some(tracking.clone()),
                     );
                 }
             } else {
@@ -235,9 +234,7 @@ fn publish_request_resources(
                 state.publish_request_resources(
                     completed,
                     items,
-                    application
-                        .tracking_observation()
-                        .map(|tracking| tracking.value.clone()),
+                    application.tracking_observation().cloned(),
                 );
             }
         }
@@ -263,9 +260,8 @@ fn apply_refresh(
         Ok(()) => {
             if let (Some(tasks), Some(tracking)) =
                 (remote.task_observation(), remote.tracking_observation())
-                && tasks.revision == tracking.revision
             {
-                state.sync_task_list(tasks.value.clone(), tracking.value.clone(), false);
+                state.sync_task_list(tasks.to_vec(), tracking.clone(), false);
             }
             if matches!(state.shell().status(), Status::Info(message) if [
                 "Connecting to server...",
@@ -360,11 +356,8 @@ mod tests {
         (state, cached, running)
     }
 
-    fn task_list_responses(revision: &str) -> Vec<(u16, String)> {
-        vec![(
-            200,
-            format!(r#"{{"tasks":[],"active_worklog":null,"revision":"{revision}"}}"#),
-        )]
+    fn task_list_responses() -> Vec<(u16, String)> {
+        vec![(200, r#"{"tasks":[],"active_worklog":null}"#.to_owned())]
     }
 
     #[derive(Clone, Copy)]
@@ -408,25 +401,13 @@ mod tests {
             alpha.id(),
             at(100).to_rfc3339()
         );
-        let aggregate = |active: &str, revision: &str| {
-            format!(
-                r#"{{"tasks":[{alpha_json},{beta_json}],"active_worklog":{active},"revision":"{revision}"}}"#
-            )
-        };
-        let tracking = |active: &str, revision: &str| {
-            format!(r#"{{"active_worklog":{active},"revision":"{revision}"}}"#)
+        let aggregate = |active: &str| {
+            format!(r#"{{"tasks":[{alpha_json},{beta_json}],"active_worklog":{active}}}"#)
         };
         let mut replies = vec![
-            (200, r#"{"status":"ok","protocol_version":5}"#.to_owned()),
-            (200, aggregate(&old_worklog, "before")),
-            (200, tracking(&old_worklog, "before")),
+            (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
+            (200, aggregate(&old_worklog)),
         ];
-        if !stopping {
-            replies.push((
-                200,
-                format!(r#"{{"task":{beta_json},"revision":"before"}}"#),
-            ));
-        }
         let stopped = old_worklog.replace("\"end\":null", "\"end\":\"$occurred_at\"");
         let started = format!(
             r#"{{"id":"$worklog_id","task_id":"{}","start":"$occurred_at","end":null}}"#,
@@ -440,9 +421,10 @@ mod tests {
                     r#"{{"kind":"tracking_switched","value":{{"stopped":{stopped},"started":{started}}}}}"#
                 )
             };
-            replies.push((200, format!(
-                r#"{{"request_id":"$request_id","applied_revision":"saved","replayed":false,"result":{result}}}"#
-            )));
+            replies.push((
+                200,
+                format!(r#"{{"request_id":"$request_id","replayed":false,"result":{result}}}"#),
+            ));
         } else {
             replies.push((
                 400,
@@ -470,11 +452,11 @@ mod tests {
                     _ if stopping => "null".to_owned(),
                     _ => started,
                 };
-                replies.push((200, aggregate(&active, "newer")));
+                replies.push((200, aggregate(&active)));
                 if matches!(refresh, TrackingRefresh::NewerThenFailed) {
                     replies.push((200, "{}".to_owned()));
                 } else {
-                    replies.push((200, aggregate(&active, "newer")));
+                    replies.push((200, aggregate(&active)));
                 }
             }
         }
@@ -574,6 +556,15 @@ mod tests {
         )
         .await;
         let paths = worker.join().unwrap();
+        // The write follows the initial load without reading tracking or the task first.
+        assert_eq!(
+            paths[..3],
+            [
+                "GET /v1/health",
+                "GET /v1/state/task-list",
+                "PUT /v1/tracking"
+            ]
+        );
         let ResultKind::Request(completed) = result else {
             panic!("tracking completion")
         };
@@ -733,9 +724,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_coherent_refresh_clears_saved_tracking_warnings_and_preserves_other_messages() {
-        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":5}"#.to_owned())];
-        responses.extend(task_list_responses("fresh"));
+    async fn a_successful_refresh_clears_saved_tracking_warnings_and_preserves_other_messages() {
+        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":6}"#.to_owned())];
+        responses.extend(task_list_responses());
         let (endpoint, worker, _) = stoppable_resource_server(responses);
         let mut remote = RemoteApplication::disconnected(&endpoint).unwrap();
         remote.refresh_task_list().await.unwrap();
@@ -814,11 +805,11 @@ mod tests {
         let task_id = history_task.id();
         let log_id = worklog_id(1);
         let mut responses = vec![
-            (200, r#"{"status":"ok","protocol_version":5}"#.to_owned()),
+            (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
             (
                 200,
                 format!(
-                    r#"{{"worklogs":[{{"id":"{log_id}","task_id":"{task_id}","start":"{}","end":"{}"}}],"next_cursor":null,"revision":"history-1"}}"#,
+                    r#"{{"worklogs":[{{"id":"{log_id}","task_id":"{task_id}","start":"{}","end":"{}"}}],"next_cursor":null}}"#,
                     at(100).to_rfc3339(),
                     at(150).to_rfc3339(),
                 ),
@@ -826,13 +817,13 @@ mod tests {
             (
                 200,
                 format!(
-                    r#"{{"task":{{"id":"{task_id}","name":"History task","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":null}},"revision":"task-2"}}"#,
+                    r#"{{"task":{{"id":"{task_id}","name":"History task","archived":false,"created_at":"{}","updated_at":"{}","latest_work_start":null}}}}"#,
                     at(100).to_rfc3339(),
                     at(100).to_rfc3339(),
                 ),
             ),
         ];
-        responses.extend(task_list_responses("state-1"));
+        responses.extend(task_list_responses());
         let (endpoint, worker, stop) = stoppable_resource_server(responses);
         let application = RemoteApplication::disconnected(&endpoint).unwrap();
         let (backend, result) = start_request(
@@ -874,9 +865,9 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_remote_refresh_reads_one_aggregate_and_publishes_a_coherent_pair() {
-        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":5}"#.to_owned())];
-        responses.extend(task_list_responses("state-1"));
-        responses.extend(task_list_responses("state-1"));
+        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":6}"#.to_owned())];
+        responses.extend(task_list_responses());
+        responses.extend(task_list_responses());
         let (endpoint, worker, stop) = stoppable_resource_server(responses);
         let application = RemoteApplication::disconnected(&endpoint).unwrap();
         let (backend, result) = start_request(
@@ -900,56 +891,6 @@ mod tests {
         assert!(state.catalog().task(cached.id()).is_none());
         assert!(state.tracking().active_worklog().is_none());
         assert_eq!(paths, vec!["/v1/health", "/v1/state/task-list"]);
-    }
-
-    #[tokio::test]
-    async fn failed_remote_refresh_does_not_publish_independently_loaded_mismatched_resources() {
-        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":5}"#.to_owned())];
-        responses.extend([
-            (200, r#"{"tasks":[],"revision":"tasks-1"}"#.to_owned()),
-            (
-                200,
-                r#"{"active_worklog":null,"revision":"tracking-2"}"#.to_owned(),
-            ),
-            (409, "".to_owned()),
-        ]);
-        let (endpoint, worker, stop) = stoppable_resource_server(responses);
-        let mut application = RemoteApplication::disconnected(&endpoint).unwrap();
-        application.refresh_tasks().await.unwrap();
-        application.refresh_tracking().await.unwrap();
-        let (backend, result) = start_request(
-            Backend::Remote(Box::new(application)),
-            ApplicationRequest::RefreshTaskList,
-        )
-        .await;
-        let _ = stop.send(());
-        let paths = worker.join().unwrap();
-        let ResultKind::Request(completed) = result else {
-            panic!("a failed refresh returns its request completion");
-        };
-        assert!(matches!(
-            completed.outcome,
-            ApplicationOutcome::TaskListRefresh(Err(_))
-        ));
-        let Backend::Remote(application) = &backend else {
-            panic!("a failed remote refresh retains its backend");
-        };
-        assert_ne!(application.task_revision(), application.tracking_revision());
-        let (mut state, cached, running) = confirmed_state();
-
-        publish_request_resources(&mut state, &backend, &completed);
-
-        assert_eq!(state.catalog().task(cached.id()), Some(&cached));
-        assert_eq!(state.tracking().active_worklog(), Some(&running));
-        assert_eq!(
-            paths,
-            vec![
-                "/v1/health",
-                "/v1/tasks",
-                "/v1/tracking",
-                "/v1/state/task-list"
-            ]
-        );
     }
 
     #[test]

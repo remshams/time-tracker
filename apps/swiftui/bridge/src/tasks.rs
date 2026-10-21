@@ -28,15 +28,12 @@ fn task_json(task: &tracker_domain::Task, latest_start: Option<DateTime<Utc>>) -
 }
 
 pub(super) fn tasks_json(application: &Backend) -> Option<ResourceJson<Vec<TaskJson>>> {
-    application
-        .task_observation()
-        .map(|(items, revision)| ResourceJson {
-            value: items
-                .iter()
-                .map(|item| task_json(&item.task, item.latest_work_start))
-                .collect(),
-            revision,
-        })
+    application.task_observation().map(|items| ResourceJson {
+        value: items
+            .iter()
+            .map(|item| task_json(&item.task, item.latest_work_start))
+            .collect(),
+    })
 }
 
 fn task_result(application: &Backend, task: &tracker_domain::Task) -> Value {

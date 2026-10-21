@@ -37,10 +37,10 @@ final class ModelsTests: XCTestCase {
 
     func testFocusedCommandAndReportPayloadsDecodeWithoutTaskLists() throws {
         let taskJSON =
-            #"{"task":{"id":"created","name":"Created task","archived":false,"latestStart":null},"receipt":{"requestId":"request","appliedRevision":"applied","replayed":true}}"#
+            #"{"task":{"id":"created","name":"Created task","archived":false,"latestStart":null},"receipt":{"requestId":"request","replayed":true}}"#
         let task = try JSONDecoder().decode(TaskCommandResult.self, from: Data(taskJSON.utf8))
         XCTAssertEqual(task.task.id, "created")
-        XCTAssertEqual(task.receipt, CommandReceipt(requestId: "request", appliedRevision: "applied", replayed: true))
+        XCTAssertEqual(task.receipt, CommandReceipt(requestId: "request", replayed: true))
         let trackingJSON = #"{"active":null,"stopped":null,"didStop":false,"receipt":null}"#
         let tracking = try JSONDecoder().decode(TrackingCommandResult.self, from: Data(trackingJSON.utf8))
         XCTAssertEqual(tracking, TrackingCommandResult(active: nil))
