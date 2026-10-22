@@ -49,7 +49,7 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertTrue(fixture.session.taskRename.isPresented)
         XCTAssertEqual(fixture.session.taskRename.name, "Renamed task")
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
-        rename.complete(.success(.task(TaskCommandResult(task: renamed, receipt: nil))))
+        rename.complete(.success(.task(TaskCommandResult(task: renamed))))
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings))
         XCTAssertFalse(fixture.session.taskRename.isPresented)
