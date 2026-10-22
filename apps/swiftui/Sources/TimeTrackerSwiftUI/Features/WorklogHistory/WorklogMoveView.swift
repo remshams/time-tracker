@@ -2,26 +2,7 @@ import SwiftUI
 import TrackerClient
 
 @MainActor
-struct WorklogMoveDialog: View {
-    let move: WorklogMoveStore
-    let isPresentationOwner: Bool
-
-    var body: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .sheet(
-                isPresented: Binding(
-                    get: { isPresentationOwner && move.state.isPresented },
-                    set: { if isPresentationOwner && !$0 { move.cancel() } }
-                )
-            ) {
-                WorklogMoveSheet(move: move)
-            }
-    }
-}
-
-@MainActor
-private struct WorklogMoveSheet: View {
+struct WorklogMoveSheet: View {
     let move: WorklogMoveStore
     @FocusState private var searchFocused: Bool
 

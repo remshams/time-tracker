@@ -2,26 +2,7 @@ import SwiftUI
 import TrackerClient
 
 @MainActor
-struct WorklogCorrectionDialog: View {
-    let correction: WorklogCorrectionStore
-    let isPresentationOwner: Bool
-
-    var body: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .sheet(
-                isPresented: Binding(
-                    get: { isPresentationOwner && correction.state.isPresented },
-                    set: { if isPresentationOwner && !$0 { correction.cancel() } }
-                )
-            ) {
-                WorklogCorrectionSheet(correction: correction)
-            }
-    }
-}
-
-@MainActor
-private struct WorklogCorrectionSheet: View {
+struct WorklogCorrectionSheet: View {
     let correction: WorklogCorrectionStore
 
     private var timezone: TimeZone {

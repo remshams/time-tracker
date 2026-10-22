@@ -110,18 +110,76 @@ struct TrackerDetailPresentation: View {
     var body: some View {
         TaskDetails(store: store)
             .background {
-                TaskCreationDialog(creation: store.creation, isPresentationOwner: isOwner)
-                TaskRenameDialog(rename: store.rename, isPresentationOwner: isOwner)
-                WorklogCorrectionDialog(correction: store.correction, isPresentationOwner: isOwner)
-                WorklogMoveDialog(move: store.move, isPresentationOwner: isOwner)
-                WorklogDeletionDialog(deletion: store.deletion, isPresentationOwner: isOwner)
-                BulkTaskArchivingDialog(archiving: store.bulkArchiving, isPresentationOwner: isOwner)
-                TaskArchivingDialog(archiving: store.archiving, isPresentationOwner: isOwner)
+                OwnedSheet(
+                    isPresentationOwner: isOwner, isPresented: { store.creation.state.isPresented },
+                    cancel: store.creation.cancel
+                ) {
+                    TaskCreationSheet(creation: store.creation)
+                }
+                OwnedSheet(
+                    isPresentationOwner: isOwner, isPresented: { store.rename.state.isPresented },
+                    cancel: store.rename.cancel
+                ) {
+                    TaskRenameSheet(rename: store.rename)
+                }
+                OwnedSheet(
+                    isPresentationOwner: isOwner, isPresented: { store.correction.state.isPresented },
+                    cancel: store.correction.cancel
+                ) {
+                    WorklogCorrectionSheet(correction: store.correction)
+                }
+                OwnedSheet(
+                    isPresentationOwner: isOwner, isPresented: { store.move.state.isPresented },
+                    cancel: store.move.cancel
+                ) {
+                    WorklogMoveSheet(move: store.move)
+                }
+                OwnedSheet(
+                    isPresentationOwner: isOwner, isPresented: { store.deletion.state.isPresented },
+                    cancel: store.deletion.cancel
+                ) {
+                    WorklogDeletionSheet(deletion: store.deletion)
+                }
+                OwnedSheet(
+                    isPresentationOwner: isOwner, isPresented: { store.bulkArchiving.state.isPresented },
+                    cancel: store.bulkArchiving.cancel
+                ) {
+                    BulkTaskArchivingSheet(archiving: store.bulkArchiving)
+                }
+                OwnedSheet(
+                    isPresentationOwner: isOwner, isPresented: { store.archiving.state.isPresented },
+                    cancel: store.archiving.cancel
+                ) {
+                    TaskArchivingSheet(archiving: store.archiving)
+                }
             }
             .alert("Could not change tracking", isPresented: trackingFailurePresented) {
                 Button("OK", role: .cancel) { store.dismissTrackingError() }
             } message: {
                 Text(store.trackingError ?? "Please try again.")
+            }
+    }
+}
+
+/// Presents an editor sheet only in the window that owns task presentations.
+/// `isPresented` is a closure, so the sheet binding reads the editor state and the window body doesn't.
+@MainActor
+private struct OwnedSheet<Content: View>: View {
+    let isPresentationOwner: Bool
+    let isPresented: () -> Bool
+    let cancel: () -> Void
+    let content: () -> Content
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .sheet(
+                isPresented: Binding(
+                    get: { isPresentationOwner && isPresented() },
+                    set: { if isPresentationOwner && !$0 { cancel() } }
+                )
+            ) {
+                content()
             }
     }
 }
