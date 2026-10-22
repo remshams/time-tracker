@@ -2,7 +2,6 @@ use crate::{ClientReport, ClientReportRow, RefreshError, TrackerBackend};
 use chrono::{DateTime, Utc};
 use tracker_application::timestamps::canonical_timestamp;
 use tracker_application::{ApplicationError, ReportRow, ReportTotals};
-use tracker_remote::ResourceSelection;
 
 impl TrackerBackend {
     pub async fn report(
@@ -66,24 +65,10 @@ impl TrackerBackend {
         end: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<ClientReport, RefreshError> {
-        self.refresh_totals(true, start, end, now).await
-    }
-
-    pub async fn refresh_totals(
-        &mut self,
-        include_tasks: bool,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-        now: DateTime<Utc>,
-    ) -> Result<ClientReport, RefreshError> {
         let now = canonical_timestamp(now);
         match self {
             Self::Local(application) => {
-                let totals = if include_tasks {
-                    application.task_list_report_totals(start, end, now)
-                } else {
-                    application.report_totals(start, end, now)
-                }?;
+                let totals = application.task_list_report_totals(start, end, now)?;
                 Ok(ClientReport {
                     rows: totals
                         .rows
@@ -98,12 +83,9 @@ impl TrackerBackend {
                 })
             }
             Self::Remote(application) => {
-                let selection = if include_tasks {
-                    ResourceSelection::TaskListWithTotals { start, end, now }
-                } else {
-                    ResourceSelection::DailyTotals { start, end, now }
-                };
-                application.refresh_resources(selection).await?;
+                application
+                    .refresh_task_list_with_totals(start, end, now)
+                    .await?;
                 let report = application.report_observation().cloned().ok_or_else(|| {
                     ApplicationError::RemoteProtocol("Report resource was not loaded".into())
                 })?;

@@ -6,7 +6,7 @@ use tracker_application::{
 };
 use tracker_domain::{Task, TaskId, TrackingState};
 use tracker_protocol::MutationDto;
-use tracker_remote::{InactiveTaskPreview, RemoteApplication, RemoteError, ResourceSelection};
+use tracker_remote::{InactiveTaskPreview, RemoteApplication, RemoteError};
 use tracker_storage::SqliteRepository;
 
 /// The backend selected by a client. Remote failures never select local storage.
@@ -159,32 +159,16 @@ impl TrackerBackend {
         }
     }
 
-    pub async fn refresh_resources(
-        &mut self,
-        selection: ResourceSelection,
-    ) -> Result<(), RefreshError> {
+    pub async fn refresh_task_list(&mut self) -> Result<(), RefreshError> {
         match self {
-            Self::Local(application) => match selection {
-                ResourceSelection::Tasks => application.refresh_task_catalog(),
-                ResourceSelection::Tracking => application.refresh_tracking_resource(),
-                ResourceSelection::TaskList => application.refresh_task_list(),
-                ResourceSelection::DailyTotals { start, end, now } => {
-                    application.report_totals(start, end, now).map(|_| ())
-                }
-                ResourceSelection::TaskListWithTotals { start, end, now } => application
-                    .task_list_report_totals(start, end, now)
-                    .map(|_| ()),
+            Self::Local(application) => {
+                application.refresh_task_list().map_err(RefreshError::Local)
             }
-            .map_err(RefreshError::Local),
             Self::Remote(application) => application
-                .refresh_resources(selection)
+                .refresh_task_list()
                 .await
                 .map_err(RefreshError::Remote),
         }
-    }
-
-    pub async fn refresh_task_list(&mut self) -> Result<(), RefreshError> {
-        self.refresh_resources(ResourceSelection::TaskList).await
     }
 
     pub async fn read_task(&mut self, id: TaskId) -> Result<TaskListItem, ApplicationError> {
