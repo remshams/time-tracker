@@ -1,10 +1,9 @@
-use std::ffi::{CString, c_char};
+use std::ffi::c_char;
 use std::path::Path;
-use std::ptr;
 
 use crate::Bridge;
 use crate::ffi::read_identifier;
-use crate::lifecycle::open_at;
+use crate::lifecycle::{open_at, open_bridge};
 
 #[cfg(test)]
 use crate::*;
@@ -21,29 +20,17 @@ pub unsafe extern "C" fn tt_bridge_open_path(
     path: *const c_char,
     error: *mut *mut c_char,
 ) -> *mut Bridge {
-    if error.is_null() {
-        return ptr::null_mut();
-    }
-    // SAFETY: The caller supplies writable storage under this contract.
-    unsafe { *error = ptr::null_mut() };
-    // SAFETY: The caller supplies a live C string or null.
-    let result =
+    let opener = || {
+        // SAFETY: The caller supplies a live C string or null.
         unsafe { read_identifier::<String>(path, "Invalid database path") }.and_then(|path| {
             if path.is_empty() {
                 return Err("Invalid database path".to_owned());
             }
             open_at(Path::new(&path))
-        });
-    match result {
-        Ok(bridge) => Box::into_raw(Box::new(bridge)),
-        Err(message) => {
-            let message =
-                CString::new(message).unwrap_or_else(|_| c"Could not open database".to_owned());
-            // SAFETY: The caller supplies writable storage under this contract.
-            unsafe { *error = message.into_raw() };
-            ptr::null_mut()
-        }
-    }
+        })
+    };
+    // SAFETY: The caller supplies writable error storage under this function's contract.
+    unsafe { open_bridge(error, opener, c"Could not open database") }
 }
 
 #[cfg(test)]
