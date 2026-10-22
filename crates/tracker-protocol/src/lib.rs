@@ -111,23 +111,6 @@ impl From<&Worklog> for WorklogDto {
     }
 }
 
-/// Task activity paired for local presentation and CLI output.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct TaskItemDto {
-    pub task: TaskDto,
-    pub latest_work_start: Option<DateTime<Utc>>,
-}
-
-impl From<&TaskListItem> for TaskItemDto {
-    fn from(item: &TaskListItem) -> Self {
-        Self {
-            task: TaskDto::from(&item.task),
-            latest_work_start: item.latest_work_start,
-        }
-    }
-}
-
 /// Identifies a command so the server can replay its receipt when the client resends it.
 /// Expected values in each command reject writes based on outdated items.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
