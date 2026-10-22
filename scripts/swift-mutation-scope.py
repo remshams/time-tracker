@@ -140,7 +140,21 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
+# Whole-file snapshots of the reviewed issue #142 cleanup. The fake client drops
+# the revision helper parameters and applies rename and archive commands on an
+# explicit flag that only the archiving and rename suites set.
+REVISION_FIELD_SUPPORT_BLOBS = (
+    "8130ecab58650402650be76db1167bf4fee2b676",
+    "c3d3bb43daace0dc30de82303db291ccf961c8db",
+)
+REVISION_FIELD_SUPPORT_SUITES = (
+    "Features/TaskArchiving/TaskArchivingTests.swift",
+    "Features/TaskRename/TaskRenameTests.swift",
+)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
+    ("Shared fixture drops revision parameters and applies task commands on an explicit flag",
+     None, REVISION_FIELD_SUPPORT_BLOBS, None, REVISION_FIELD_SUPPORT_SUITES, REVISION_FIELD_SUPPORT_SUITES),
+)
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [PRESENTATION, SESSION],
