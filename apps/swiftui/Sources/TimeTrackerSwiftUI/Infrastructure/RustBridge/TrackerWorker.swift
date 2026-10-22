@@ -82,8 +82,7 @@ private final class RustBridge {
     }
 
     func refreshTaskList() throws -> TaskListResources {
-        // Selection 3 refreshes tasks and tracking together.
-        try requireRefreshed(tt_bridge_refresh_resources(handle, 3))
+        try requireRefreshed(tt_bridge_refresh_resources(handle))
         return try taskListResources()
     }
 
@@ -102,7 +101,7 @@ private final class RustBridge {
         try start.withCString { start in
             try end.withCString { end in
                 try now.withCString { now in
-                    try requireRefreshed(tt_bridge_refresh_totals(handle, true, start, end, now))
+                    try requireRefreshed(tt_bridge_refresh_totals(handle, start, end, now))
                 }
             }
         }
