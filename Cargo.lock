@@ -3040,6 +3040,7 @@ dependencies = [
  "tracker-application",
  "tracker-client",
  "tracker-domain",
+ "tracker-protocol",
  "tracker-remote",
  "tracker-server",
  "tracker-storage",

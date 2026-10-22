@@ -335,7 +335,9 @@ mod tests {
         render_frame, should_exit, start_request, visible_busy_label, wait_until,
     };
     use crate::app::{AppState, Status};
-    use crate::application_request::remote_resource_tests::stoppable_resource_server;
+    use crate::application_request::remote_resource_tests::{
+        health_reply, stoppable_resource_server,
+    };
     use crate::application_request::{ApplicationOutcome, ApplicationRequest, CompletedRequest};
     use crate::command::Command;
     use crate::screens::task_list::TaskListCommand;
@@ -404,10 +406,7 @@ mod tests {
         let aggregate = |active: &str| {
             format!(r#"{{"tasks":[{alpha_json},{beta_json}],"active_worklog":{active}}}"#)
         };
-        let mut replies = vec![
-            (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
-            (200, aggregate(&old_worklog)),
-        ];
+        let mut replies = vec![health_reply(), (200, aggregate(&old_worklog))];
         let stopped = old_worklog.replace("\"end\":null", "\"end\":\"$occurred_at\"");
         let started = format!(
             r#"{{"id":"$worklog_id","task_id":"{}","start":"$occurred_at","end":null}}"#,
@@ -725,7 +724,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_successful_refresh_clears_saved_tracking_warnings_and_preserves_other_messages() {
-        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":6}"#.to_owned())];
+        let mut responses = vec![health_reply()];
         responses.extend(task_list_responses());
         let (endpoint, worker, _) = stoppable_resource_server(responses);
         let mut remote = RemoteApplication::disconnected(&endpoint).unwrap();
@@ -805,7 +804,7 @@ mod tests {
         let task_id = history_task.id();
         let log_id = worklog_id(1);
         let mut responses = vec![
-            (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
+            health_reply(),
             (
                 200,
                 format!(
@@ -865,7 +864,7 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_remote_refresh_reads_one_aggregate_and_publishes_a_coherent_pair() {
-        let mut responses = vec![(200, r#"{"status":"ok","protocol_version":6}"#.to_owned())];
+        let mut responses = vec![health_reply()];
         responses.extend(task_list_responses());
         responses.extend(task_list_responses());
         let (endpoint, worker, stop) = stoppable_resource_server(responses);
