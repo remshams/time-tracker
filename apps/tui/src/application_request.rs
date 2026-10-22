@@ -309,6 +309,13 @@ impl ApplicationRequest {
                 Self::PreviewInactiveTasks { .. } | Self::RefreshTaskList
             )
     }
+
+    /// Whether the client re-reads the task list after this request.
+    ///
+    /// `RefreshTaskList` is that read, so it is not repeated.
+    pub(crate) fn needs_follow_up_refresh(&self) -> bool {
+        self.needs_task_list() && *self != Self::RefreshTaskList
+    }
 }
 
 /// Executes one local request while preserving its captured command expectations.
@@ -453,7 +460,7 @@ async fn execute_backend_tracking(
                 .clear_active_task(*expected_active, *occurred_at)
                 .await,
         ),
-        _ => unreachable!("remote tracking dispatch receives its own requests"),
+        _ => unreachable!("tracking dispatch receives its own requests"),
     }
 }
 
@@ -478,7 +485,7 @@ async fn execute_backend_history(
             }
             ApplicationOutcome::GlobalWorklogPage(result)
         }
-        _ => unreachable!("remote history dispatch receives its own requests"),
+        _ => unreachable!("history dispatch receives its own requests"),
     }
 }
 
@@ -521,7 +528,7 @@ async fn execute_backend_worklog(
                 .delete_completed_worklog(*id, *expected_task_id, *expected)
                 .await,
         ),
-        _ => unreachable!("remote worklog dispatch receives its own requests"),
+        _ => unreachable!("worklog dispatch receives its own requests"),
     }
 }
 
@@ -722,6 +729,17 @@ mod intent_tests {
     use crate::screens::task_list::InactiveTaskPreview;
 
     use super::ApplicationRequest as Request;
+
+    #[test]
+    fn task_list_requests_other_than_the_refresh_need_a_follow_up_refresh() {
+        let write = Request::CreateTask {
+            name: TaskName::new("New task").unwrap(),
+            occurred_at: DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap(),
+        };
+        assert!(write.needs_follow_up_refresh());
+        assert!(!Request::RefreshTaskList.needs_follow_up_refresh());
+        assert!(!Request::AllWorklogs { after: None }.needs_follow_up_refresh());
+    }
 
     #[test]
     fn local_bulk_archive_uses_the_preview_and_updates_the_task_list() {

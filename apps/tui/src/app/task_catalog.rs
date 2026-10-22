@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
+use tracker_application::task_search::{SearchRank, fuzzy_match};
 use tracker_application::{TaskListItem, TaskOrdering};
 use tracker_domain::{Task, TaskId};
 
 use crate::screens::TaskView;
-use crate::support::task_search::{SearchRank, fuzzy_match};
 
 /// The authoritative in-memory task collections and their ordering.
 pub(crate) struct TaskCatalog {

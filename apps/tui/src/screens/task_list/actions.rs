@@ -380,20 +380,15 @@ impl AppState {
     }
 
     fn confirm_inactive_archive(&mut self) {
-        let mode_at_request = self.shell().task_list().mode().clone();
-        let TaskListMode::ConfirmInactiveArchive { preview } = mode_at_request.clone() else {
+        let TaskListMode::ConfirmInactiveArchive { preview } =
+            self.shell().task_list().mode().clone()
+        else {
             return;
         };
-        if preview.count() == 0 {
-            self.shell_mut().task_list_mut().close_mode();
-            self.shell_mut().info("No inactive tasks to archive");
-            return;
-        }
         self.shell_mut()
             .task_list_mut()
             .begin_inactive_archive(preview.clone());
-        let mode_at_request = self.shell().task_list().mode().clone();
-        let completion_mode = mode_at_request.clone();
+        let completion_mode = self.shell().task_list().mode().clone();
         let accepted = self.enqueue(
             ApplicationRequest::ArchiveInactiveTasks {
                 preview: preview.clone(),
