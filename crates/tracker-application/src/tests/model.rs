@@ -266,6 +266,7 @@ fn single_task_reads_adopt_only_requested_metadata_and_remove_confirmed_absence(
 
     assert_eq!(read.task.name().as_str(), "first changed");
     assert_eq!(read.latest_work_start, Some(at(200)));
+    assert_eq!(application.task_item(first.id()), Some(&read));
     assert_eq!(application.task(first.id()), Some(&read.task));
     assert_eq!(application.task(second.id()), Some(&second));
     assert_eq!(application.current_tracking(), &TrackingState::Idle);
@@ -276,6 +277,7 @@ fn single_task_reads_adopt_only_requested_metadata_and_remove_confirmed_absence(
         .retain(|item| item.task.id() != second.id());
     assert_eq!(application.read_task_item(second.id()).unwrap(), None);
     assert_eq!(application.task(second.id()), None);
+    assert_eq!(application.task_item(second.id()), None);
     repository.0.borrow_mut().fail_reads = true;
     assert!(application.read_task_item(first.id()).is_err());
     assert_eq!(application.task(first.id()), Some(&read.task));

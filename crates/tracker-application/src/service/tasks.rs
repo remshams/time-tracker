@@ -18,10 +18,11 @@ impl<R: TrackerRepository> TrackerApplication<R> {
     }
 
     pub fn task(&self, id: TaskId) -> Option<&Task> {
-        self.tasks
-            .iter()
-            .find(|item| item.task.id() == id)
-            .map(|TaskListItem { task, .. }| task)
+        self.task_item(id).map(|TaskListItem { task, .. }| task)
+    }
+
+    pub fn task_item(&self, id: TaskId) -> Option<&TaskListItem> {
+        self.tasks.iter().find(|item| item.task.id() == id)
     }
 
     pub fn create_task(
