@@ -21,6 +21,8 @@ use crate::terminal::TerminalGuard;
 const TICK: Duration = Duration::from_millis(250);
 const REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 const BUSY_DELAY: Duration = Duration::from_millis(100);
+pub(crate) const CONNECTING_STATUS: &str = "Connecting to server...";
+const SERVER_UNAVAILABLE_STATUS: &str = "Server unavailable";
 const TRACKING_STALE_STATUS: &str = "Tracking saved; refresh failed. Timer may be stale.";
 const TRACKING_UNAVAILABLE_STATUS: &str =
     "Tracking saved; refresh failed. Server unavailable. Timer may be stale.";
@@ -187,7 +189,7 @@ fn complete_request(
             state.shell_mut().info(TRACKING_UNAVAILABLE_STATUS)
         }
         Some(_) if saved_tracking => state.shell_mut().info(TRACKING_STALE_STATUS),
-        Some(RemoteFailureKind::Unavailable) => state.shell_mut().error("Server unavailable"),
+        Some(RemoteFailureKind::Unavailable) => state.shell_mut().error(SERVER_UNAVAILABLE_STATUS),
         _ => {}
     }
 }
@@ -261,17 +263,21 @@ fn apply_refresh(
             {
                 state.sync_task_list(tasks.to_vec(), tracking.clone());
             }
-            if matches!(state.shell().status(), Status::Info(message) if [
-                "Connecting to server...",
-                TRACKING_STALE_STATUS,
-                TRACKING_UNAVAILABLE_STATUS,
-            ].contains(&message.as_str()))
-                || matches!(state.shell().status(), Status::Error(message) if message == "Server unavailable")
-            {
+            let connection_status = match state.shell().status() {
+                Status::Info(message) => [
+                    CONNECTING_STATUS,
+                    TRACKING_STALE_STATUS,
+                    TRACKING_UNAVAILABLE_STATUS,
+                ]
+                .contains(&message.as_str()),
+                Status::Error(message) => message == SERVER_UNAVAILABLE_STATUS,
+                Status::Empty => false,
+            };
+            if connection_status {
                 state.shell_mut().clear_status();
             }
         }
-        Err(error) if error.is_unavailable() => state.shell_mut().error("Server unavailable"),
+        Err(error) if error.is_unavailable() => state.shell_mut().error(SERVER_UNAVAILABLE_STATUS),
         Err(_) => state.shell_mut().error("Server protocol error"),
     }
 }
@@ -1005,7 +1011,7 @@ mod tests {
     fn refresh_clears_connection_status_and_reports_wire_failures() {
         let remote = RemoteApplication::disconnected("http://127.0.0.1:1/").unwrap();
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
-        state.shell_mut().info("Connecting to server...");
+        state.shell_mut().info(super::CONNECTING_STATUS);
 
         apply_refresh(&mut state, &remote, Ok(()));
         assert_eq!(state.shell().status(), &Status::Empty);
