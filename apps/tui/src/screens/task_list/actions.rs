@@ -852,6 +852,39 @@ mod navigation_tests {
     }
 
     #[test]
+    fn added_result_keeps_a_hidden_input_open() {
+        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
+        state.handle_task_list_command(TaskListCommand::OpenAdd);
+        state.handle_task_list_command(TaskListCommand::Insert('a'));
+        state.handle_task_list_command(TaskListCommand::Confirm);
+        let effect = state.take_effect().expect("add request");
+        state.shell_mut().open_reports(chrono::Utc::now());
+
+        let added = task(1, "a");
+        let request = effect.request.clone();
+        state.complete_effect_with_resources(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::Task(Ok(added.clone())),
+            },
+            vec![TaskListItem {
+                task: added,
+                latest_work_start: None,
+            }],
+            TrackingState::Idle,
+        );
+        assert!(matches!(
+            state.shell().task_list().mode(),
+            TaskListMode::Input { .. }
+        ));
+        assert_eq!(
+            state.shell().status(),
+            &Status::Info("Added \"a\"".to_owned())
+        );
+    }
+
+    #[test]
     fn page_motion_uses_the_selected_task_as_its_start() {
         let tasks = (1..=25).map(|id| task(id, &format!("task {id}"))).collect();
         let service = TestService::with_tasks(tasks);
