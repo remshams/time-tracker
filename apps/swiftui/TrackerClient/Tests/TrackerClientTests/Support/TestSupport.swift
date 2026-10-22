@@ -69,21 +69,17 @@ final class FakeClient: TrackerClient, ReportClient {
                 case .unarchive: desiredName = nil; desiredArchived = false
                 default: desiredName = nil; desiredArchived = nil
                 }
-                let receipt: CommandReceipt?
                 if applyingTaskCommand {
                     task = TaskItem(
                         id: id, name: desiredName ?? task.name,
                         archived: desiredArchived ?? task.archived, latestStart: task.latestStart)
-                    receipt = CommandReceipt(requestId: "command-request", replayed: false)
-                } else {
-                    receipt = nil
                 }
                 if task.id == id, desiredName.map({ $0 == task.name }) ?? true,
                     desiredArchived.map({ $0 == task.archived }) ?? true
                 {
                     publishAfterCommand(resources)
                 }
-                complete(.success(.task(TaskCommandResult(task: task, receipt: receipt))))
+                complete(.success(.task(TaskCommandResult(task: task))))
             case .start, .stop, .resume:
                 publishAfterCommand(resources)
                 complete(.success(.tracking(TrackingCommandResult(active: resources.tracking.value))))
@@ -96,8 +92,8 @@ final class FakeClient: TrackerClient, ReportClient {
             publishAfterCommand(resources)
             complete(.success(.paused(TrackingPauseResult(active: resources.tracking.value, didStop: didStop))))
         }
-        func created(task: TaskItem, receipt: CommandReceipt? = nil) {
-            complete(.success(.created(TaskCreationResult(task: task, receipt: receipt))))
+        func created(task: TaskItem) {
+            complete(.success(.created(TaskCreationResult(task: task))))
         }
         func created(taskID: String, resources: TaskListResources) {
             let task =
