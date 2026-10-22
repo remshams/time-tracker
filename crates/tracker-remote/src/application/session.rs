@@ -1,7 +1,8 @@
+use super::error::state_changed;
 use super::{
-    ApplicationError, ApplicationFailureCategory, HealthDto, Instant, Method, MutationContext,
-    MutationDto, MutationResultDto, RemoteError, RemoteFailureKind, Transport, WriteGuard,
-    classify_error, map_application_error, protocol_failure,
+    ApplicationError, HealthDto, Instant, Method, MutationContext, MutationDto, MutationResultDto,
+    RemoteError, RemoteFailureKind, Transport, WriteGuard, classify_error, map_application_error,
+    protocol_failure,
 };
 
 /// Shared connection state, HTTP transport and validated command receipts.
@@ -46,10 +47,7 @@ impl RemoteSession {
     }
     pub(super) fn intent_changed(&mut self) -> ApplicationError {
         self.set_failure(RemoteFailureKind::Conflict);
-        ApplicationError::semantic_failure(
-            ApplicationFailureCategory::General,
-            "Tracker state changed. Refresh and retry.",
-        )
+        state_changed()
     }
     pub(super) fn set_failure(&mut self, failure: RemoteFailureKind) {
         self.last_failure = Some(failure);

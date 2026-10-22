@@ -8,18 +8,23 @@ pub(super) fn protocol_failure(message: &str) -> ApplicationError {
 }
 
 pub(super) fn classify_error(error: &RemoteError) -> RemoteFailureKind {
+    if error.is_unavailable() {
+        return RemoteFailureKind::Unavailable;
+    }
     match error {
-        RemoteError::Unavailable(_) => RemoteFailureKind::Unavailable,
-        RemoteError::Http { status, .. }
-            if status.is_server_error() || *status == StatusCode::REQUEST_TIMEOUT =>
-        {
-            RemoteFailureKind::Unavailable
-        }
         RemoteError::Http { status, .. } if *status == StatusCode::CONFLICT => {
             RemoteFailureKind::Conflict
         }
         _ => RemoteFailureKind::Protocol,
     }
+}
+
+/// The error for a server state that no longer matches what the user reviewed.
+pub(super) fn state_changed() -> ApplicationError {
+    ApplicationError::semantic_failure(
+        ApplicationFailureCategory::General,
+        "Tracker state changed. Refresh and retry.",
+    )
 }
 
 pub(super) fn map_application_error(
@@ -35,10 +40,7 @@ pub(super) fn map_application_error(
             return map_server_error(dto, worklog_id);
         }
         if *status == StatusCode::CONFLICT {
-            return ApplicationError::semantic_failure(
-                ApplicationFailureCategory::General,
-                "Tracker state changed. Refresh and retry.",
-            );
+            return state_changed();
         }
     }
     ApplicationError::RemoteProtocol(error.to_string())
