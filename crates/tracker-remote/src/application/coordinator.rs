@@ -2,12 +2,12 @@ use super::{
     ApplicationError, ApplicationFailureCategory, ArchiveInactiveTasksRequest,
     ClearActiveTaskOutcome, CreateTaskRequest, DateTime, DeleteWorklogRequest, GlobalWorklogCursor,
     GlobalWorklogPage, InactiveTaskPreview, InactivityPeriod, MoveCandidate, MutationDto, Recovery,
-    RemoteError, RemoteFailureKind, RemoteSession, ReportDto, ReportsClient, ResourceSelection,
-    SetActiveTaskOutcome, SetTrackingRequest, Task, TaskChangeRequest, TaskId, TaskListItem,
-    TaskListStateDto, TaskName, TaskOrdering, TaskResourceDto, TasksClient, TrackingClient,
-    TrackingState, Utc, Worklog, WorklogChangeRequest, WorklogCursor, WorklogId, WorklogPage,
-    WorklogTimes, WorklogsClient, WriteGuard, active_id, canonical, creation_needs_recovery,
-    decode_task_list_state, map_application_error, protocol_failure,
+    RemoteError, RemoteFailureKind, RemoteSession, ReportDto, ReportsClient, SetActiveTaskOutcome,
+    SetTrackingRequest, Task, TaskChangeRequest, TaskId, TaskListItem, TaskListStateDto, TaskName,
+    TaskOrdering, TaskResourceDto, TasksClient, TrackingClient, TrackingState, Utc, Worklog,
+    WorklogChangeRequest, WorklogCursor, WorklogId, WorklogPage, WorklogTimes, WorklogsClient,
+    WriteGuard, active_id, canonical, creation_needs_recovery, decode_task_list_state,
+    map_application_error, protocol_failure,
 };
 
 /// Coordinates remote tracker workflows across resource clients.
@@ -67,41 +67,12 @@ impl RemoteTrackerCoordinator {
         self.tracking.adopt(state);
     }
 
-    /// Refreshes only the selected resources. Task-list observations publish together.
-    pub async fn refresh_resources(
-        &mut self,
-        selection: ResourceSelection,
-    ) -> Result<(), RemoteError> {
-        match selection {
-            ResourceSelection::Tasks => self.refresh_tasks().await,
-            ResourceSelection::Tracking => self.refresh_tracking().await,
-            ResourceSelection::TaskList => self.refresh_task_list().await,
-            ResourceSelection::DailyTotals { start, end, now } => {
-                self.refresh_totals_resources(start, end, now, false).await
-            }
-            ResourceSelection::TaskListWithTotals { start, end, now } => {
-                self.refresh_totals_resources(start, end, now, true).await
-            }
-        }
-    }
-
     /// Validates a daily overview before publishing its task list, tracking and totals together.
     pub async fn refresh_task_list_with_totals(
         &mut self,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         now: DateTime<Utc>,
-    ) -> Result<(), RemoteError> {
-        self.refresh_totals_resources(start, end, now, true).await
-    }
-
-    /// Validates a daily overview before publishing its selected resources together.
-    async fn refresh_totals_resources(
-        &mut self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-        now: DateTime<Utc>,
-        include_tasks: bool,
     ) -> Result<(), RemoteError> {
         let dto = self
             .reports
@@ -112,11 +83,7 @@ impl RemoteTrackerCoordinator {
             active_worklog: dto.active_worklog,
         })
         .map_err(|error| self.session.record_error(error))?;
-        if include_tasks {
-            self.adopt_task_list(items, state);
-        } else {
-            self.tracking.adopt(state);
-        }
+        self.adopt_task_list(items, state);
         self.reports.adopt(dto.totals);
         self.session.confirmed();
         Ok(())
