@@ -50,7 +50,7 @@ pub struct ClientReport {
     pub now: DateTime<Utc>,
 }
 
-/// The original reviewed candidates and backend-specific confirmation guard.
+/// The reviewed inactive candidates, retained for later confirmation.
 pub enum InactivePreview {
     Local {
         as_of: DateTime<Utc>,
@@ -192,7 +192,7 @@ impl TrackerBackend {
             Self::Local(application) => application
                 .read_task_item(id)?
                 .ok_or_else(|| tracker_application::RepositoryError::TaskNotFound { id }.into()),
-            Self::Remote(application) => application.read_task_observation(id).await,
+            Self::Remote(application) => application.read_task_item(id).await,
         }
     }
 }
