@@ -85,6 +85,16 @@ impl RemoteTrackerCoordinator {
         }
     }
 
+    /// Validates a daily overview before publishing its task list, tracking and totals together.
+    pub async fn refresh_task_list_with_totals(
+        &mut self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<(), RemoteError> {
+        self.refresh_totals_resources(start, end, now, true).await
+    }
+
     /// Validates a daily overview before publishing its selected resources together.
     async fn refresh_totals_resources(
         &mut self,
