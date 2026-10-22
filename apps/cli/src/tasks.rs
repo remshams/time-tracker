@@ -3,15 +3,31 @@ use std::collections::HashSet;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tracker_application::TaskOrdering;
 use tracker_application::task_search::{SearchRank, fuzzy_match};
+use tracker_application::{TaskListItem, TaskOrdering};
 use tracker_domain::{TaskId, TaskName};
-use tracker_protocol::{TaskDto, TaskItemDto};
+use tracker_protocol::TaskDto;
 use tracker_remote::InactiveTaskPreview;
 
 use crate::args::{TaskSort, TaskState, Tasks};
 use crate::backend::{Backend, BackendKind};
 use crate::{CliError, read_json};
+
+/// One task with its latest work start, as `tasks list` prints it.
+#[derive(Serialize)]
+struct TaskItemOutput {
+    task: TaskDto,
+    latest_work_start: Option<DateTime<Utc>>,
+}
+
+impl From<&TaskListItem> for TaskItemOutput {
+    fn from(item: &TaskListItem) -> Self {
+        Self {
+            task: TaskDto::from(&item.task),
+            latest_work_start: item.latest_work_start,
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
@@ -198,7 +214,7 @@ fn list(
             )
         });
     }
-    Ok(json!({"tasks": items.iter().map(TaskItemDto::from).collect::<Vec<_>>()}))
+    Ok(json!({"tasks": items.iter().map(TaskItemOutput::from).collect::<Vec<_>>()}))
 }
 
 /// Captures the eligible candidate set and backend identity for later confirmation.

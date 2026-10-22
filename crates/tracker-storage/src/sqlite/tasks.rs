@@ -129,6 +129,7 @@ impl SqliteRepository {
             .map_err(|error| error::create_task_error(error, task.id()))
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn find_task(&self, id: TaskId) -> Result<Option<Task>, StorageError> {
         task_by_id_on(&self.conn, id)
     }
@@ -136,6 +137,7 @@ impl SqliteRepository {
     /// Lists every task, ordered by identifier. This plain listing is not
     /// part of the application ports; the port's task-list read model is
     /// [`SqliteRepository::list_task_items`].
+    #[cfg(any(test, feature = "test-support"))]
     pub fn list_tasks(&self) -> Result<Vec<Task>, StorageError> {
         let mut statement = self.conn.prepare(
             "SELECT id, name, archived, created_at_us, updated_at_us FROM tasks ORDER BY id",

@@ -111,23 +111,6 @@ impl From<&Worklog> for WorklogDto {
     }
 }
 
-/// Task activity paired for local presentation and CLI output.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct TaskItemDto {
-    pub task: TaskDto,
-    pub latest_work_start: Option<DateTime<Utc>>,
-}
-
-impl From<&TaskListItem> for TaskItemDto {
-    fn from(item: &TaskListItem) -> Self {
-        Self {
-            task: TaskDto::from(&item.task),
-            latest_work_start: item.latest_work_start,
-        }
-    }
-}
-
 /// Identifies a command so the server can replay its receipt when the client resends it.
 /// Expected values in each command reject writes based on outdated items.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -308,7 +291,7 @@ impl From<GlobalWorklogCursor> for WorklogCursorDto {
     }
 }
 
-/// Reason a protocol-4 worklog cursor position is invalid.
+/// Reason a worklog cursor position from the wire is invalid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorklogCursorError {
     InvalidId,
@@ -350,16 +333,17 @@ pub struct WorklogPageDto {
 
 impl WorklogPageDto {
     pub fn from_page(page: &WorklogPage) -> Self {
-        Self {
-            worklogs: page.worklogs.iter().map(WorklogDto::from).collect(),
-            next_cursor: page.next_cursor.map(Into::into),
-        }
+        Self::from_parts(&page.worklogs, page.next_cursor.map(Into::into))
     }
 
     pub fn from_global_page(page: &GlobalWorklogPage) -> Self {
+        Self::from_parts(&page.worklogs, page.next_cursor.map(Into::into))
+    }
+
+    fn from_parts(worklogs: &[Worklog], next_cursor: Option<WorklogCursorDto>) -> Self {
         Self {
-            worklogs: page.worklogs.iter().map(WorklogDto::from).collect(),
-            next_cursor: page.next_cursor.map(Into::into),
+            worklogs: worklogs.iter().map(WorklogDto::from).collect(),
+            next_cursor,
         }
     }
 }
