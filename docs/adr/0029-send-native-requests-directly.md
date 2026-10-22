@@ -55,7 +55,7 @@ Once accepted, this record replaces these clauses. Everything else in those reco
 - [ADR 0023](0023-enforce-reviewed-intent-at-application-boundaries.md), Consequences: "Swift preflight remains a presentation and reconciliation check". Swift no longer reads or compares before rename and archive. The name guard at the write stays.
 - [ADR 0016](0016-configurable-inactive-task-archiving.md), Decision: "serializes its reads and writes through the existing session". The session sends preview and archive requests directly, and the serial worker orders them. Dropping late preview responses, requiring a fresh preview after failure and never resubmitting an uncertain archive stay.
 
-[ADR 0026](0026-use-swift-observation-for-native-presentation.md) is still Proposed and lists request controls among the `TrackerPresentation` values. This record removes the shared request-control value; each feature presentation carries its own flag.
+[ADR 0026](0026-use-swift-observation-for-native-presentation.md) lists request controls among the `TrackerPresentation` values. This record removes the shared request-control value; each feature presentation carries its own flag.
 
 ## Consequences
 

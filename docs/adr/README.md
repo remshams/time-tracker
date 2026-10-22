@@ -28,7 +28,7 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0012](0012-share-client-query-and-failure-policies.md) | Share client query and failure policies | Partially superseded by ADR 0013 and ADR 0031; all other decisions remain accepted. |
 | [0013](0013-remove-remote-archive-candidate-fingerprints.md) | Remove remote archive candidate fingerprints | Partially superseded by ADR 0031; all other decisions remain accepted. |
 | [0014](0014-scope-mutation-checks-to-task-changes.md) | Scope mutation checks to task changes | Partially superseded by ADR 0015; all other decisions remain accepted. |
-| [0015](0015-use-github-hosted-runners-for-ci.md) | Use GitHub-hosted runners for CI | Accepted |
+| [0015](0015-use-github-hosted-runners-for-ci.md) | Use GitHub-hosted runners for CI | Partially superseded by ADR 0025; all other decisions remain accepted. |
 | [0016](0016-configurable-inactive-task-archiving.md) | Configurable inactive task archiving | Partially superseded by ADR 0017, ADR 0029 and ADR 0031; all other decisions remain accepted. |
 | [0017](0017-separate-http-resources-from-client-refreshes.md) | Separate HTTP resources from client refreshes | Partially superseded by ADR 0019, ADR 0024 and ADR 0031; independent resources and guarded writes remain accepted. |
 | [0018](0018-compose-resource-state-in-client-workflows.md) | Compose resource state in client workflows | Partially superseded by ADR 0019, ADR 0029 and ADR 0031; observations, command recovery and lifecycle remain accepted. |
@@ -37,8 +37,8 @@ This directory holds the architecture decisions for Time Tracker. Each record is
 | [0022](0022-consolidate-application-and-repository-contracts.md) | Consolidate application and repository contracts | Accepted |
 | [0023](0023-enforce-reviewed-intent-at-application-boundaries.md) | Enforce reviewed intent at application boundaries | Partially superseded by ADR 0029; all other decisions remain accepted. |
 | [0024](0024-id-only-worklog-cursors-and-positive-durations.md) | ID-only worklog cursors and positive durations | Accepted |
-| [0025](0025-fit-native-ci-within-the-macos-runner-limit.md) | Fit native CI within the macOS runner limit | Proposed |
-| [0026](0026-use-swift-observation-for-native-presentation.md) | Use Swift Observation for native presentation | Proposed |
+| [0025](0025-fit-native-ci-within-the-macos-runner-limit.md) | Fit native CI within the macOS runner limit | Accepted |
+| [0026](0026-use-swift-observation-for-native-presentation.md) | Use Swift Observation for native presentation | Accepted |
 | [0027](0027-check-reviewed-task-names-on-the-server.md) | Check reviewed task names on the server | Proposed; partially superseded by ADR 0031. |
 | [0028](0028-ship-a-standalone-server-binary.md) | Ship a standalone server binary | Accepted |
 | [0029](0029-send-native-requests-directly.md) | Send native requests directly | Proposed; partially superseded by ADR 0031. |
