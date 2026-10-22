@@ -16,10 +16,7 @@ impl TrackingClient {
         session: &mut RemoteSession,
     ) -> Result<(), RemoteError> {
         session.ensure_version().await?;
-        let dto: TrackingDto = session
-            .read("v1/tracking")
-            .await
-            .map_err(|error| session.record_error(error))?;
+        let dto: TrackingDto = session.read("v1/tracking").await?;
         let (_, tracking) =
             decode_active(dto.active_worklog).map_err(|error| session.record_error(error))?;
         self.adopt(tracking);
