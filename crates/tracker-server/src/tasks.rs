@@ -5,12 +5,13 @@ use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::{Path as RoutePath, Query, State};
 use chrono::{DateTime, TimeDelta, Utc};
 use serde::Deserialize;
-use tracker_application::{ApplicationError, TaskOrdering};
+use tracker_application::{ApplicationError, TaskOrdering, TrackerApplication};
 use tracker_domain::{InactivityPeriod, Task, TaskId};
 use tracker_protocol::{
     ArchiveInactiveTasksRequest, CreateTaskRequest, InactiveTaskPreviewDto, MutationDto,
     MutationResultDto, TaskChangeRequest, TaskDto, TaskResourceDto, TasksDto,
 };
+use tracker_storage::SqliteRepository;
 
 use crate::core::{Core, Shared, lock};
 use crate::error::{ApiError, ApiResult, fingerprint, payload, query_payload, task_id, task_name};
@@ -73,7 +74,7 @@ pub(super) struct InactivePreviewQuery {
 }
 
 fn default_inactive_days() -> u32 {
-    14
+    InactivityPeriod::default().days()
 }
 
 fn validate_inactive_as_of(as_of: DateTime<Utc>, now: DateTime<Utc>) -> Result<(), ApiError> {
@@ -127,6 +128,16 @@ pub(super) async fn archive_inactive_tasks(
     })?;
     Ok(Json(response))
 }
+/// Returns the cached list item that the preceding command just adopted.
+fn changed_task(
+    app: &TrackerApplication<SqliteRepository>,
+    id: TaskId,
+) -> Result<MutationResultDto, ApiError> {
+    app.task_item(id)
+        .map(|item| MutationResultDto::Task(TaskDto::from(item)))
+        .ok_or_else(ApiError::internal)
+}
+
 pub(super) async fn create_task(
     State(shared): State<Shared>,
     input: Result<Json<CreateTaskRequest>, JsonRejection>,
@@ -138,12 +149,7 @@ pub(super) async fn create_task(
     let mut core = lock(&shared)?;
     let response = core.execute(&request.guard, key, |app| {
         app.create_task_with_id(id, name, request.occurred_at)?;
-        let item = app
-            .tasks(TaskOrdering::RecentlyCreated)
-            .into_iter()
-            .find(|item| item.task.id() == id)
-            .ok_or_else(ApiError::internal)?;
-        Ok(MutationResultDto::Task(TaskDto::from(&item)))
+        changed_task(app, id)
     })?;
     Ok(Json(response))
 }
@@ -190,12 +196,7 @@ pub(super) async fn change_task(
                 app.unarchive_task(id, occurred_at)?
             }
         };
-        let item = app
-            .tasks(TaskOrdering::RecentlyCreated)
-            .into_iter()
-            .find(|item| item.task.id() == task.id())
-            .ok_or_else(ApiError::internal)?;
-        Ok(MutationResultDto::Task(TaskDto::from(&item)))
+        changed_task(app, task.id())
     })?;
     Ok(Json(response))
 }
