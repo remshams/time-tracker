@@ -73,7 +73,7 @@ final class MenuPresentationTests: XCTestCase {
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
         var changes = 0
         observer.onLabelChange = { changes += 1 }
-        XCTAssertEqual(observer.label.symbol, "circle.fill")
+        XCTAssertEqual(observer.label.indicator.symbol, "circle.fill")
         XCTAssertEqual(observer.label.status, "Tracking: First task")
         XCTAssertEqual(observer.label.totalText, "00:00")
         XCTAssertEqual(
@@ -193,7 +193,7 @@ final class MenuPresentationTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
-        XCTAssertEqual(observer.label.symbol, "circle")
+        XCTAssertEqual(observer.label.indicator.symbol, "circle")
         XCTAssertEqual(observer.label.status, "Tracking status unavailable. No task tracked yet")
         XCTAssertEqual(observer.label.totalText, "-")
         XCTAssertEqual(observer.content.totalText, "Unavailable")
@@ -203,7 +203,7 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertTrue(observer.content.todayTasks.isEmpty)
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
         observer.update(from: fixture.session, showDailyTotal: true)
-        XCTAssertEqual(observer.label.symbol, "circle")
+        XCTAssertEqual(observer.label.indicator.symbol, "circle")
         XCTAssertEqual(observer.label.status, "No task tracked yet")
         XCTAssertEqual(observer.content.otherTasks.first?.durationText, "-")
         let content = observer.content
@@ -247,7 +247,7 @@ final class MenuPresentationTests: XCTestCase {
         try await fixture.settled()
         observer.update(from: fixture.session, showDailyTotal: true)
         XCTAssertTrue(observer.content.isStale)
-        XCTAssertEqual(observer.label.symbol, "circle")
+        XCTAssertEqual(observer.label.indicator.symbol, "circle")
         XCTAssertEqual(observer.label.status, "Tracking status unavailable. Last confirmed task: First task")
         XCTAssertEqual(observer.label.totalText, "~00:01")
         XCTAssertEqual(observer.content.dailyTotalsStatus, .cached)
