@@ -6,6 +6,8 @@ Partially superseded on 11 October 2026 by [ADR 0019](0019-read-coherent-workflo
 
 Partially superseded by [ADR 0031](0031-remove-server-revisions-from-writes-and-reads.md) for revisions paired with observations, Rust remote command preflights and move-destination guards, and revision matching for running projection; all other decisions remain accepted.
 
+Partially superseded by [ADR 0029](0029-send-native-requests-directly.md) for the Swift session's preflight reads, operation states and generation checks; all other decisions remain accepted.
+
 Accepted and implemented on 9 October 2026. This implements [issue #18](https://github.com/remshams/time-tracker/issues/18) on top of the validated protocol-3 route refactoring in [PR #17](https://github.com/remshams/time-tracker/pull/17). The implementation request authorizes this stack before the base PR merges.
 
 ## Context

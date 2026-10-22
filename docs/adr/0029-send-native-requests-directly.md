@@ -63,6 +63,6 @@ Once accepted, this record replaces these clauses. Everything else in those reco
 
 Conflicts surface on save instead of while editing. After a double timeout, the app may report a write that actually landed; the reload shows the current state, and resubmitting creates a new request. A change made while the Mac sleeps fails and must be repeated after wake.
 
-Native E2E tests check that one window owns the open sheet, that other windows disable editor actions until it closes, and that tracking still works from another window during an editor request. Portable tests check the independent feature states.
+Native E2E tests check that one window owns the open sheet, that other windows disable editor actions until it closes, and that tracking still works from another window while the owner window shows a sheet. Portable tests check the independent feature states.
 
 The bridge still marks a failed remote write as requiring a refresh and rejects later writes until a task-list refresh succeeds. The reload after each failure clears that state.
