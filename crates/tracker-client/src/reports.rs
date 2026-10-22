@@ -59,6 +59,16 @@ impl TrackerBackend {
         })
     }
 
+    /// Refreshes the task list together with the totals for one interval.
+    pub async fn refresh_task_list_with_totals(
+        &mut self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Result<ClientReport, RefreshError> {
+        self.refresh_totals(true, start, end, now).await
+    }
+
     pub async fn refresh_totals(
         &mut self,
         include_tasks: bool,
