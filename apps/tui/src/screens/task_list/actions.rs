@@ -121,12 +121,6 @@ impl AppState {
     fn cancel_task_list_mode(&mut self) {
         if matches!(self.shell().task_list().mode(), TaskListMode::Search) {
             self.cancel_task_search();
-        } else if let TaskListMode::PreviewingInactiveTasks { as_of } =
-            self.shell().task_list().mode()
-        {
-            let as_of = *as_of;
-            self.discard_queued_inactive_preview(as_of);
-            self.shell_mut().task_list_mut().close_mode();
         } else if matches!(
             self.shell().task_list().mode(),
             TaskListMode::ArchivingInactiveTasks { .. }
