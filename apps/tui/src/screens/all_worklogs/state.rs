@@ -20,7 +20,6 @@ pub(crate) struct AllWorklogsState {
     pub(crate) move_draft: Option<MoveDraft>,
     pub(crate) g_prefix: bool,
     pub(crate) available: bool,
-    pub(crate) move_draft_generation: u64,
 }
 
 impl AllWorklogsState {
@@ -35,7 +34,6 @@ impl AllWorklogsState {
             move_draft: None,
             g_prefix: false,
             available: true,
-            move_draft_generation: 0,
         }
     }
 

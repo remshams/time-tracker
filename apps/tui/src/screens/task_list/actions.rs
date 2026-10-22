@@ -353,12 +353,10 @@ impl AppState {
         self.shell_mut()
             .task_list_mut()
             .open_inactive_archive_preview(as_of);
-        let dialog_generation = self.shell().task_list().dialog_generation();
         let accepted = self.enqueue(
             ApplicationRequest::PreviewInactiveTasks { as_of },
             move |app, completed| {
                 let same_dialog = app.shell().task_list().view() == TaskView::Active
-                    && app.shell().task_list().dialog_generation() == dialog_generation
                     && app.shell().task_list().mode()
                         == &TaskListMode::PreviewingInactiveTasks { as_of };
                 let ApplicationOutcome::InactiveTaskPreview(result) = completed.outcome else {
@@ -404,14 +402,12 @@ impl AppState {
             .begin_inactive_archive(preview.clone());
         let mode_at_request = self.shell().task_list().mode().clone();
         let completion_mode = mode_at_request.clone();
-        let dialog_generation = self.shell().task_list().dialog_generation();
         let accepted = self.enqueue(
             ApplicationRequest::ArchiveInactiveTasks {
                 preview: preview.clone(),
             },
             move |app, completed| {
-                let same_dialog = app.shell().task_list().dialog_generation() == dialog_generation
-                    && app.shell().task_list().mode() == &completion_mode;
+                let same_dialog = app.shell().task_list().mode() == &completion_mode;
                 let ApplicationOutcome::ArchivedInactiveTasks(result) = completed.outcome else {
                     unreachable!("inactive task archive returns a count")
                 };
@@ -455,7 +451,6 @@ impl AppState {
 
     fn confirm_input(&mut self) {
         let mode_at_request = self.shell().task_list().mode().clone();
-        let dialog_generation = self.shell().task_list().dialog_generation();
         let TaskListMode::Input { purpose, buffer } = mode_at_request.clone() else {
             return;
         };
@@ -485,7 +480,6 @@ impl AppState {
         };
         self.enqueue(request, move |app, completed| {
             let same_dialog = app.shell().screen() == crate::screens::Screen::TaskList
-                && app.shell().task_list().dialog_generation() == dialog_generation
                 && app.shell().task_list().mode() == &mode_at_request;
             let ApplicationOutcome::Task(result) = completed.outcome else {
                 unreachable!("task mutation returns a task")
@@ -514,7 +508,6 @@ impl AppState {
 
     fn confirm_archive(&mut self) {
         let mode_at_request = self.shell().task_list().mode().clone();
-        let dialog_generation = self.shell().task_list().dialog_generation();
         let TaskListMode::ConfirmArchive { task_id, name } = mode_at_request.clone() else {
             return;
         };
@@ -527,7 +520,6 @@ impl AppState {
             },
             move |app, completed| {
                 let same_dialog = app.shell().screen() == crate::screens::Screen::TaskList
-                    && app.shell().task_list().dialog_generation() == dialog_generation
                     && app.shell().task_list().mode() == &mode_at_request;
                 let ApplicationOutcome::Task(result) = completed.outcome else {
                     unreachable!("archive returns a task")
@@ -874,18 +866,6 @@ mod navigation_tests {
     }
 
     #[test]
-    fn archived_result_keeps_a_newer_confirmation_open() {
-        let (mut state, effect, selected) = pending_archive();
-        state.handle_task_list_command(TaskListCommand::Cancel);
-        state.handle_task_list_command(TaskListCommand::OpenArchiveConfirm);
-        finish_archive(&mut state, effect, selected);
-        assert!(matches!(
-            state.shell().task_list().mode(),
-            TaskListMode::ConfirmArchive { .. }
-        ));
-    }
-
-    #[test]
     fn archived_result_keeps_a_search_started_after_confirmation() {
         let (mut state, effect, selected) = pending_archive();
         state.handle_task_list_command(TaskListCommand::Cancel);
@@ -910,37 +890,5 @@ mod navigation_tests {
         assert_eq!(app.shell().task_list().selection(), Some(ids[2]));
         app.handle(Command::TaskList(TaskListCommand::PageDown));
         assert_eq!(app.shell().task_list().selection(), Some(ids[12]));
-    }
-
-    #[test]
-    fn completed_add_keeps_a_newer_dialog_open() {
-        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
-        state.handle_task_list_command(TaskListCommand::OpenAdd);
-        state.handle_task_list_command(TaskListCommand::Insert('a'));
-        state.handle_task_list_command(TaskListCommand::Confirm);
-        let effect = state.take_effect().expect("add request");
-        state.handle_task_list_command(TaskListCommand::Cancel);
-        state.handle_task_list_command(TaskListCommand::OpenAdd);
-        state.handle_task_list_command(TaskListCommand::Insert('a'));
-
-        let added = task(1, "a");
-        let request = effect.request.clone();
-        state.complete_effect_with_resources(
-            effect,
-            CompletedRequest {
-                request,
-                outcome: ApplicationOutcome::Task(Ok(added.clone())),
-            },
-            vec![TaskListItem {
-                task: added,
-                latest_work_start: None,
-            }],
-            TrackingState::Idle,
-        );
-        assert!(matches!(
-            state.shell().task_list().mode(),
-            TaskListMode::Input { .. }
-        ));
-        assert_eq!(state.catalog().tasks(TaskView::Active).len(), 1);
     }
 }
