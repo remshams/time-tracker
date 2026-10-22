@@ -817,6 +817,22 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
     assert_eq!(writes.load(Ordering::SeqCst), 1);
 
     failed_reads.store(false, Ordering::SeqCst);
+    // A health check clears the remote failure but does not refresh the task list.
+    bridge.application.check_connection().unwrap();
+    let blocked = bridge
+        .application
+        .rename_task_with_expected_name(
+            task.id(),
+            TaskName::new("Committed name").unwrap(),
+            TaskName::new("Next name").unwrap(),
+            at(500),
+        )
+        .unwrap_err();
+    assert_eq!(
+        blocked.message,
+        "Refresh server state before changing tracker state"
+    );
+    assert!(blocked.requires_refresh);
     assert_eq!(writes.load(Ordering::SeqCst), 1);
     bridge.application.refresh_resources().unwrap();
     let next = bridge
