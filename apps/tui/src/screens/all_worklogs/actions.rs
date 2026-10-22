@@ -10,9 +10,6 @@ use super::{AllWorklogsCommand as C, AllWorklogsFocus, AllWorklogsState};
 
 impl AppState {
     pub(crate) fn open_all_worklogs(&mut self) {
-        if !matches!(self.shell().screen(), Screen::TaskList | Screen::Reports) {
-            return;
-        }
         let source_screen = self.shell().screen();
         let screen_generation = self.shell().screen_generation();
         let task_view_generation =

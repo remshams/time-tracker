@@ -8,9 +8,6 @@ use crate::support::errors::application_error_text;
 
 impl AppState {
     pub(crate) fn open_reports(&mut self) {
-        if self.shell().screen() != Screen::TaskList {
-            return;
-        }
         let now = report_now();
         self.shell_mut().open_reports(now);
         self.refresh_reports_at(now);
@@ -113,9 +110,6 @@ impl AppState {
     }
 
     pub(crate) fn handle_report_command(&mut self, command: ReportCommand) {
-        if self.shell().screen() != Screen::Reports {
-            return;
-        }
         match command {
             ReportCommand::ShowActive
             | ReportCommand::ShowAllWorklogs
