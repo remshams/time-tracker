@@ -304,7 +304,7 @@ mod tests {
     use crate::command::Command;
     use crate::screens::{TaskListCommand, WorklogHistoryCommand};
     use crate::test_support::render::{cell, draw, draw_at, row, rows};
-    use crate::test_support::{app_in_timezone, app_with, app_with_test_clock_for_view};
+    use crate::test_support::{app_in_timezone, app_with, app_with_tasks_and_clock};
 
     fn history_app(entries: &[(i64, i64)]) -> App<TrackerApplication<SqliteRepository>> {
         let repository = SqliteRepository::open_in_memory().unwrap();
@@ -491,7 +491,7 @@ mod tests {
 
     #[test]
     fn the_running_row_shows_running_and_the_headers_elapsed_time() {
-        let (mut app, clock) = app_with_test_clock_for_view(&["alpha"]);
+        let (mut app, clock) = app_with_tasks_and_clock(&["alpha"]);
         app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
         clock.advance_monotonic(Duration::from_secs(125));
         app.handle(Command::TaskList(TaskListCommand::OpenHistory));
