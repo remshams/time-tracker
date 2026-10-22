@@ -41,6 +41,12 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 
 - Follow the [pull request description guide](docs/pull-request-descriptions.md) when creating or updating a PR description. Apply the `unslop` skill to the description before publishing it.
 
+## CodeRabbit
+
+- CodeRabbit does not review pull requests automatically.
+- When the work on a PR is finished and pushed, trigger one review with `gh pr comment <number> --body "@coderabbitai review"`. Don't trigger a review after every push. Batch the fixes and trigger once per round.
+- If CodeRabbit replies that the rate limit is exceeded, wait the stated time, then trigger the review again.
+
 ## End-to-end tests
 
 - Keep E2E tests unchanged when a task does not change requirements or externally observable behavior.
