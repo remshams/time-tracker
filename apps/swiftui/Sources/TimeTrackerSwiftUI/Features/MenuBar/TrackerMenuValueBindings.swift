@@ -27,20 +27,15 @@ struct MenuTaskRow {
     let isStale: Bool
 
     var reservedWidth: CGFloat {
-        styledTitle(title(duration: "000000:00:00"), duration: "000000:00:00").size().width + 70
+        styledTitle(Self.title(entry, duration: "000000:00:00"), duration: "000000:00:00").size().width + 70
     }
 
     func update(duration: String, help: String) {
-        let nextTitle = title(duration: duration)
+        let nextTitle = Self.title(entry, duration: duration)
         if item.title != nextTitle {
             item.title = nextTitle
             setDurationFont(duration)
-            let status =
-                isStale
-                ? (entry.isRunning
-                    ? "last confirmed tracking, current status unavailable"
-                    : "current tracking status unavailable")
-                : (entry.isRunning ? "tracking" : "not tracking")
+            let status = Self.accessibilityStatus(isRunning: entry.isRunning, isStale: isStale)
             item.setAccessibilityLabel("\(nextTitle), \(status)")
         }
         if item.representedObject != nil, item.toolTip != help { item.toolTip = help }
@@ -50,9 +45,18 @@ struct MenuTaskRow {
         item.attributedTitle = styledTitle(item.title, duration: duration)
     }
 
-    private func title(duration: String) -> String {
+    static func title(_ entry: TrackerMenuTask, duration: String) -> String {
         let archived = entry.task.archived ? "  Archived" : ""
         return "\(entry.task.name)  \(duration)\(archived)"
+    }
+
+    static func accessibilityStatus(isRunning: Bool, isStale: Bool) -> String {
+        switch (isStale, isRunning) {
+        case (true, true): return "last confirmed tracking, current status unavailable"
+        case (true, false): return "current tracking status unavailable"
+        case (false, true): return "tracking"
+        case (false, false): return "not tracking"
+        }
     }
 
     private func styledTitle(_ title: String, duration: String) -> NSAttributedString {
