@@ -291,7 +291,7 @@ impl From<GlobalWorklogCursor> for WorklogCursorDto {
     }
 }
 
-/// Reason a protocol-4 worklog cursor position is invalid.
+/// Reason a worklog cursor position from the wire is invalid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorklogCursorError {
     InvalidId,
@@ -333,16 +333,17 @@ pub struct WorklogPageDto {
 
 impl WorklogPageDto {
     pub fn from_page(page: &WorklogPage) -> Self {
-        Self {
-            worklogs: page.worklogs.iter().map(WorklogDto::from).collect(),
-            next_cursor: page.next_cursor.map(Into::into),
-        }
+        Self::from_parts(&page.worklogs, page.next_cursor.map(Into::into))
     }
 
     pub fn from_global_page(page: &GlobalWorklogPage) -> Self {
+        Self::from_parts(&page.worklogs, page.next_cursor.map(Into::into))
+    }
+
+    fn from_parts(worklogs: &[Worklog], next_cursor: Option<WorklogCursorDto>) -> Self {
         Self {
-            worklogs: page.worklogs.iter().map(WorklogDto::from).collect(),
-            next_cursor: page.next_cursor.map(Into::into),
+            worklogs: worklogs.iter().map(WorklogDto::from).collect(),
+            next_cursor,
         }
     }
 }
