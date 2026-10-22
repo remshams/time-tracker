@@ -135,12 +135,26 @@ TEST_PRODUCTION = {
 
 
 SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
-# A PR that edits the shared fake client and the client contract can add a
-# reviewed entry here: (reason, exact fixture edits or None, (base blob, head blob)
-# or None, exact contract edits, required changed suites, suites whose production
-# files the fixture edits affect). Remove the entry once its PR has merged, since
-# its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
+# A PR that edits the shared fake client can add a reviewed entry here: (reason,
+# exact fixture edits or None, (base blob, head blob) or None, exact contract
+# edits or None when the client contract must stay unchanged, required changed
+# suites, suites whose production files the fixture edits affect). Remove the
+# entry once its PR has merged, since its base snapshot no longer matches main.
+# Whole-file snapshots of the reviewed issue #142 cleanup. The fake client drops
+# the revision helper parameters and applies rename and archive commands on an
+# explicit flag that only the archiving and rename suites set.
+REVISION_FIELD_SUPPORT_BLOBS = (
+    "8130ecab58650402650be76db1167bf4fee2b676",
+    "c3d3bb43daace0dc30de82303db291ccf961c8db",
+)
+REVISION_FIELD_SUPPORT_SUITES = (
+    "Features/TaskArchiving/TaskArchivingTests.swift",
+    "Features/TaskRename/TaskRenameTests.swift",
+)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
+    ("Shared fixture drops revision parameters and applies task commands on an explicit flag",
+     None, REVISION_FIELD_SUPPORT_BLOBS, None, REVISION_FIELD_SUPPORT_SUITES, REVISION_FIELD_SUPPORT_SUITES),
+)
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [PRESENTATION, SESSION],
@@ -246,15 +260,18 @@ def reviewed_support_adaptation(
     """Return the reason and affected sources for an exact shared-fixture adaptation."""
     modified = {entry["path"] for entry in entries if entry["status"] == "M"}
     changed_suites = {entry["path"] for entry in entries if entry["status"] in {"A", "M"}}
-    if not {PACKAGE + SHARED_TEST_SUPPORT, PACKAGE + SOURCES + DEPENDENCIES}.issubset(modified):
+    if PACKAGE + SHARED_TEST_SUPPORT not in modified:
         return None
+    contract_changed = PACKAGE + SOURCES + DEPENDENCIES in modified
     for reason, support_edits, support_blobs, contract_edits, suites, affected_suites in REVIEWED_SUPPORT_ADAPTATIONS:
         if (
             {PACKAGE + TESTS + suite for suite in suites}.issubset(changed_suites)
             and (only_reviewed_edits(root, base, head, PACKAGE + SHARED_TEST_SUPPORT, support_edits)
                  if support_edits is not None else
                  only_reviewed_blobs(root, base, head, PACKAGE + SHARED_TEST_SUPPORT, support_blobs))
-            and only_reviewed_edits(root, base, head, PACKAGE + SOURCES + DEPENDENCIES, contract_edits)
+            and (not contract_changed if contract_edits is None else
+                 contract_changed
+                 and only_reviewed_edits(root, base, head, PACKAGE + SOURCES + DEPENDENCIES, contract_edits))
         ):
             sources = tuple(sorted({source for suite in affected_suites for source in TEST_PRODUCTION[suite]}))
             return reason, sources

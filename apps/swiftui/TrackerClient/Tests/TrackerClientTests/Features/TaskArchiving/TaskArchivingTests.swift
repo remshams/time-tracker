@@ -315,9 +315,7 @@ final class TaskArchivingTests: XCTestCase {
         let command = try await fixture.client.next()
         try await fixture.update("the reloaded task list") {
             command.succeed(
-                TaskListResources(
-                    tasks: [firstTask, secondTask], active: nil,
-                    tasksRevision: "epoch:3", trackingRevision: "epoch:3"))
+                TaskListResources(tasks: [firstTask, secondTask], active: nil), applyingTaskCommand: true)
         } until: {
             !fixture.session.taskArchiving.isSubmitting
         }

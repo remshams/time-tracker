@@ -52,7 +52,7 @@ final class TaskCreationTests: XCTestCase {
         let command = try await fixture.client.next()
         command.created(
             task: TaskItem(id: archivedTask.id, name: archivedTask.name, archived: false, latestStart: nil),
-            receipt: CommandReceipt(requestId: "original", appliedRevision: "committed", replayed: true))
+            receipt: CommandReceipt(requestId: "original", replayed: true))
         let refresh = try await fixture.client.next()
         XCTAssertEqual(refresh.operation, .refresh(fixture.session.connectionSettings))
         refresh.succeed(TaskListResources(tasks: [archivedTask], active: nil))
@@ -80,7 +80,7 @@ final class TaskCreationTests: XCTestCase {
         let command = try await fixture.client.next()
         command.created(
             task: secondTask,
-            receipt: CommandReceipt(requestId: "original", appliedRevision: "committed", replayed: true))
+            receipt: CommandReceipt(requestId: "original", replayed: true))
         let refresh = try await fixture.client.next()
         XCTAssertEqual(refresh.operation, .refresh(fixture.session.connectionSettings))
         try await fixture.update("the failed reload") {

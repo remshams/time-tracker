@@ -245,6 +245,27 @@ class SwiftMutationScopeTests(unittest.TestCase):
                 self.commit("Change an unreviewed helper or contract")
                 self.assertEqual(self.select()["status"], "review-required")
 
+    def test_reviewed_support_adaptation_without_contract_edits_requires_an_unchanged_contract(self):
+        support, contract = self.reviewed_support_baseline()
+        _, support_edits, blobs, _, suites, affected = scope.REVIEWED_SUPPORT_ADAPTATIONS[0]
+        reviewed = (("Reviewed fixture-only adaptation", support_edits, blobs, None, suites, affected),)
+        replacement = mock.patch.object(scope, "REVIEWED_SUPPORT_ADAPTATIONS", reviewed)
+        replacement.start()
+        self.addCleanup(replacement.stop)
+        self.write(support, "final class FakeClient { func track() {} }\n")
+        self.write(scope.PACKAGE + TRACKING_TEST, "func testTracking() { track() }\n")
+        self.commit("Adapt only the fake client")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "focused", result["review_reasons"])
+        self.assertEqual(result["files"], [TRACKING])
+        self.assertTrue(any("Reviewed fixture-only adaptation" in reason for reason in result["reasons"]))
+
+        self.write(contract, "protocol TrackerClient { func track() }\n")
+        self.commit("Also change the contract")
+        self.assertEqual(self.select()["status"], "review-required")
+
     def reviewed_package_edit(self):
         edits = (
             ("Reviewed platform raise",

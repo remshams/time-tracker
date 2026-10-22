@@ -16,19 +16,6 @@ private func total(_ task: TaskItem, _ seconds: Int64) -> TaskReportTotal {
 
 final class DailyTotalsTests: XCTestCase {
     @MainActor
-    func testIndependentReportKeepsTotalsWithoutTrackingOrTaskMetadata() throws {
-        let clock = FakeClock()
-        let state = DailyTotalsState(calendar: dailyCalendar())
-        let requested = try XCTUnwrap(state.begin(clock: clock))
-        let report = TrackerReport(rows: [total(secondTask, 14)], revision: "report", now: requested.now)
-        XCTAssertNoThrow(try state.validate(report))
-        state.accept(report, tracking: nil, requested: requested, clock: clock)
-        clock.uptime += 8
-        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 14)
-        XCTAssertEqual(state.status, .cached)
-    }
-
-    @MainActor
     func testAggregateHandlesMicrosecondSumAboveInt64WithoutOverflow() async throws {
         let clock = FakeClock()
         let state = DailyTotalsState(calendar: dailyCalendar())
@@ -233,34 +220,29 @@ final class DailyTotalsTests: XCTestCase {
     }
 
     @MainActor
-    func testTotalsRemainValidWhenMetadataIsMissingAndRevisionMismatchFreezesProjection() async throws {
+    func testTotalsRemainValidAndProjectRunningTimeWhenTaskMetadataIsMissing() async throws {
         let clock = FakeClock()
         let state = DailyTotalsState(calendar: dailyCalendar())
         let requested = try XCTUnwrap(state.begin(clock: clock))
-        let resources = TaskListResources(
-            tasks: [], active: activeWorklog, tasksRevision: "epoch:1", trackingRevision: "epoch:1")
         let report = TaskListTotalsRefresh(
-            taskList: resources, rows: [total(secondTask, 12)], revision: "epoch:2", now: requested.now)
+            taskList: TaskListResources(tasks: [], active: activeWorklog), rows: [total(secondTask, 12)],
+            now: requested.now)
         try state.validate(report)
         state.accept(report, requested: requested, clock: clock)
         clock.uptime += 8
         clock.now.addTimeInterval(8)
-        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 12)
-        XCTAssertEqual(state.status, .cached)
-        let taskList = TaskListResources(tasks: [], active: nil, tasksRevision: "epoch:1", trackingRevision: "epoch:2")
-        XCTAssertNotEqual(taskList.catalog.revision, taskList.tracking.revision)
+        XCTAssertEqual(state.totalDuration(active: activeWorklog, clock: clock), 20)
+        XCTAssertEqual(state.status, .current)
     }
 
     @MainActor
-    func testProjectionUsesEchoedCutoffOnlyAfterMatchingTrackingRevision() async throws {
+    func testProjectionUsesEchoedCutoff() async throws {
         let clock = FakeClock()
         let state = DailyTotalsState(calendar: dailyCalendar())
         let requested = try XCTUnwrap(state.begin(clock: clock))
-        let resources = TaskListResources(
-            tasks: [], active: activeWorklog, tasksRevision: "epoch:2", trackingRevision: "epoch:2")
+        let resources = TaskListResources(tasks: [], active: activeWorklog)
         let cutoff = commandTimestamp(clock.now.addingTimeInterval(2))
-        let report = TaskListTotalsRefresh(
-            taskList: resources, rows: [total(firstTask, 5)], revision: "epoch:2", now: cutoff)
+        let report = TaskListTotalsRefresh(taskList: resources, rows: [total(firstTask, 5)], now: cutoff)
         try state.validate(report)
         state.accept(report, requested: requested, clock: clock)
         clock.uptime += 3
@@ -269,7 +251,7 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(state.status, .current)
         XCTAssertThrowsError(
             try state.validate(
-                TaskListTotalsRefresh(taskList: resources, rows: [], revision: "epoch:2", now: "invalid"))
+                TaskListTotalsRefresh(taskList: resources, rows: [], now: "invalid"))
         )
     }
 

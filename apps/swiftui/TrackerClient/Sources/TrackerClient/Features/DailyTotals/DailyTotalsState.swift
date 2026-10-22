@@ -56,7 +56,7 @@ final class DailyTotalsState {
         return Request(day: day, cutoff: cutoff, uptime: clock.uptime, anchorGeneration: anchorGeneration)
     }
 
-    func accept(_ report: TrackerReport, tracking: TrackingObservation?, requested: Request, clock: any TrackerClock) {
+    func accept(_ report: TrackerReport, tracking: TrackingObservation, requested: Request, clock: any TrackerClock) {
         updateDay(at: clock.now)
         guard day == requested.day else { return }
         rows = report.rows.reduce(into: [:]) { totals, row in
@@ -66,7 +66,7 @@ final class DailyTotalsState {
         request = Request(
             day: requested.day, cutoff: cutoff,
             uptime: requested.uptime, anchorGeneration: requested.anchorGeneration)
-        reportedActive = report.revision == tracking?.revision ? tracking?.value : nil
+        reportedActive = tracking.value
         if requested.anchorGeneration == anchorGeneration {
             anchorDate = cutoff
             anchorUptime = requested.uptime
@@ -74,11 +74,11 @@ final class DailyTotalsState {
             anchorDate = clock.now
             anchorUptime = clock.uptime
         }
-        status = tracking != nil && report.revision == tracking?.revision ? .current : .cached
+        status = .current
         error = nil
     }
 
-    func validate(_ report: TrackerReport, tracking: TrackingObservation? = nil) throws {
+    func validate(_ report: TrackerReport, tracking: TrackingObservation) throws {
         if let now = report.now, timestamp(now) == nil {
             throw BridgeFailure(
                 message: "The report contains an invalid cutoff.", kind: "protocol", requiresRefresh: true)
@@ -91,7 +91,7 @@ final class DailyTotalsState {
                     message: "The report contains invalid task totals.", kind: "protocol", requiresRefresh: true)
             }
         }
-        if let active = tracking?.value {
+        if let active = tracking.value {
             guard validRunningWorklog(active) else {
                 throw BridgeFailure(
                     message: "The report contains invalid running worklog data.", kind: "protocol",
