@@ -24,3 +24,4 @@ tracker-storage = { path = "../../../crates/tracker-storage" }
 tempfile = { workspace = true }
 axum = { workspace = true }
 tracker-server = { path = "../../../crates/tracker-server" }
+tracker-storage = { path = "../../../crates/tracker-storage", features = ["test-support"] }
