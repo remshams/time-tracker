@@ -50,7 +50,8 @@ impl SqliteRepository {
         Self::prepare(conn)
     }
 
-    /// Opens a private in-memory database, mainly for tests.
+    /// Opens a private in-memory database for tests.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn open_in_memory() -> Result<Self, StorageError> {
         let conn = Connection::open_in_memory()?;
         Self::prepare(conn)
