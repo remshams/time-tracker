@@ -54,7 +54,7 @@ final class FakeClient: TrackerClient, ReportClient {
         let complete: (Result<Reply, Error>) -> Void
         let publishAfterCommand: (TaskListResources) -> Void
 
-        func succeed(_ resources: TaskListResources) {
+        func succeed(_ resources: TaskListResources, applyingTaskCommand: Bool = false) {
             switch operation {
             case .rename(let id, _, _, _), .archive(let id, _, _), .unarchive(let id, _):
                 var task =
@@ -70,12 +70,11 @@ final class FakeClient: TrackerClient, ReportClient {
                 default: desiredName = nil; desiredArchived = nil
                 }
                 let receipt: CommandReceipt?
-                if resources.catalog.revision != nil {
+                if applyingTaskCommand {
                     task = TaskItem(
                         id: id, name: desiredName ?? task.name,
                         archived: desiredArchived ?? task.archived, latestStart: task.latestStart)
-                    receipt = CommandReceipt(
-                        requestId: "command-request", appliedRevision: "command-applied", replayed: false)
+                    receipt = CommandReceipt(requestId: "command-request", replayed: false)
                 } else {
                     receipt = nil
                 }
@@ -563,19 +562,14 @@ final class MemoryTrackingPreferences: TrackingPreferencesRepository {
 }
 
 extension TaskListResources {
-    init(
-        tasks: [TaskItem], active: WorklogItem?, tasksRevision: String? = nil,
-        trackingRevision: String? = nil
-    ) {
-        self.init(
-            catalog: TaskCatalogObservation(value: tasks, revision: tasksRevision),
-            tracking: TrackingObservation(value: active, revision: trackingRevision))
+    init(tasks: [TaskItem], active: WorklogItem?) {
+        self.init(catalog: TaskCatalogObservation(value: tasks), tracking: TrackingObservation(value: active))
     }
 }
 
 extension TaskListTotalsRefresh {
-    init(taskList: TaskListResources, rows: [TaskReportTotal], revision: String? = nil, now: String? = nil) {
-        self.init(taskList: taskList, report: TrackerReport(rows: rows, revision: revision, now: now))
+    init(taskList: TaskListResources, rows: [TaskReportTotal], now: String? = nil) {
+        self.init(taskList: taskList, report: TrackerReport(rows: rows, now: now))
     }
 }
 

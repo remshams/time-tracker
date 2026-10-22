@@ -582,9 +582,7 @@ final class WorklogMoveTests: XCTestCase {
         let archived = TaskItem(id: secondTask.id, name: secondTask.name, archived: true, latestStart: nil)
         command.moved(
             worklog: moved,
-            resources: TaskListResources(
-                tasks: [firstTask, archived], active: nil,
-                tasksRevision: "epoch:3", trackingRevision: "epoch:3"))
+            resources: TaskListResources(tasks: [firstTask, archived], active: nil))
         try await fixture.waitUntil("the reloaded task list") { fixture.session.active == nil }
         XCTAssertNil(fixture.session.active)
         XCTAssertEqual(fixture.session.tasks, [firstTask, archived])

@@ -12,31 +12,19 @@ public struct TaskReportTotal: Decodable, Equatable, Sendable {
 
 public struct TrackerReport: Decodable, Equatable, Sendable {
     public let rows: [TaskReportTotal]
-    public let revision: String?
     public let now: String?
 
-    public init(rows: [TaskReportTotal], revision: String? = nil, now: String? = nil) {
+    public init(rows: [TaskReportTotal], now: String? = nil) {
         self.rows = rows
-        self.revision = revision
         self.now = now
     }
 }
 
 public struct ResourceObservation<Value: Decodable & Equatable & Sendable>: Decodable, Equatable, Sendable {
     public let value: Value
-    public let revision: String?
 
-    public init(value: Value, revision: String? = nil) {
+    public init(value: Value) {
         self.value = value
-        self.revision = revision
-    }
-
-    private enum CodingKeys: String, CodingKey { case value, revision }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        value = try container.decode(Value.self, forKey: .value)
-        revision = try container.decodeIfPresent(String.self, forKey: .revision)
     }
 }
 
@@ -75,13 +63,10 @@ public struct TaskListTotalsRefresh: Equatable, Sendable {
 
 public struct CommandReceipt: Decodable, Equatable, Sendable {
     public let requestId: String
-    /// Protocol 6 bridges omit this value, so it decodes as nil.
-    public let appliedRevision: String?
     public let replayed: Bool
 
-    public init(requestId: String, appliedRevision: String? = nil, replayed: Bool) {
+    public init(requestId: String, replayed: Bool) {
         self.requestId = requestId
-        self.appliedRevision = appliedRevision
         self.replayed = replayed
     }
 }

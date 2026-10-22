@@ -8,24 +8,22 @@ final class RefreshPresentationTests: XCTestCase {
         defer { fixture.cleanup() }
         XCTAssertNil(fixture.session.taskCatalogResource)
         XCTAssertNil(fixture.session.trackingResource)
-        try await fixture.start()
-        XCTAssertEqual(fixture.session.taskCatalogResource?.value, [])
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        XCTAssertEqual(fixture.session.taskCatalogResource?.value, [firstTask])
         XCTAssertNotNil(fixture.session.trackingResource)
         XCTAssertNil(fixture.session.trackingResource?.value)
-        var observations: [(String?, String?)] = []
+        var observations: [(TaskCatalogObservation?, TrackingObservation?)] = []
         fixture.session.onChange = {
-            observations.append(
-                (
-                    fixture.session.taskCatalogResource?.revision,
-                    fixture.session.trackingResource?.revision
-                ))
+            observations.append((fixture.session.taskCatalogResource, fixture.session.trackingResource))
         }
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
-        refresh.succeed(TaskListResources(tasks: [], active: nil, tasksRevision: "next", trackingRevision: "next"))
+        let running = WorklogItem(id: "worklog-second", taskId: secondTask.id, start: activeWorklog.start, end: nil)
+        let next = TaskListResources(tasks: [firstTask, secondTask], active: running)
+        refresh.succeed(next)
         try await settleWithoutReplacingObserver(fixture)
-        XCTAssertTrue(observations.contains { $0.0 == "next" })
-        XCTAssertTrue(observations.allSatisfy { $0.0 == $0.1 })
+        XCTAssertTrue(observations.contains { $0.0 == next.catalog })
+        XCTAssertTrue(observations.allSatisfy { ($0.0 == next.catalog) == ($0.1 == next.tracking) })
     }
 
     @MainActor

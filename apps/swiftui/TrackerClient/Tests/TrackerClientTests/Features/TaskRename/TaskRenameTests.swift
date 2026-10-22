@@ -351,8 +351,7 @@ final class TaskRenameTests: XCTestCase {
         let rename = try await fixture.client.next()
         let newer = TaskItem(id: firstTask.id, name: "Another client renamed later", archived: false, latestStart: nil)
         try await fixture.update("the reloaded task list") {
-            rename.succeed(
-                TaskListResources(tasks: [newer], active: nil, tasksRevision: "epoch:3", trackingRevision: "epoch:3"))
+            rename.succeed(TaskListResources(tasks: [newer], active: nil), applyingTaskCommand: true)
         }
         XCTAssertEqual(fixture.session.tasks, [newer])
         XCTAssertFalse(fixture.session.taskRename.isPresented)
