@@ -212,16 +212,13 @@ mod tests {
 
     use chrono::{DateTime, Utc};
     use ratatui::style::{Color, Modifier};
-    use tracker_application::TrackerApplication;
     use tracker_domain::TaskId;
-    use tracker_storage::SqliteRepository;
 
-    use crate::app::App;
     use crate::command::Command;
     use crate::screens::TaskListCommand;
     use crate::screens::task_list::InactiveTaskPreview;
     use crate::test_support::render::{cell, draw, draw_at, row, rows};
-    use crate::test_support::{app_with, app_with_test_clock_for_view};
+    use crate::test_support::{app_with, app_with_tasks_and_clock};
 
     #[test]
     fn the_seeded_list_renders_with_title_selection_and_help() {
@@ -297,7 +294,7 @@ mod tests {
 
     #[test]
     fn the_active_task_shows_a_marker_and_the_live_elapsed_time() {
-        let (mut app, clock) = app_with_test_clock_for_view(&["alpha", "beta"]);
+        let (mut app, clock) = app_with_tasks_and_clock(&["alpha", "beta"]);
         app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
         clock.advance_monotonic(Duration::from_secs(125));
         app.handle(Command::TaskList(TaskListCommand::MoveDown));
@@ -422,9 +419,7 @@ mod tests {
 
     #[test]
     fn an_empty_active_list_renders_a_hint_and_stays_selectable() {
-        let app = App::load(
-            TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap(),
-        );
+        let app = app_with(&[]);
         let terminal = draw(&app);
         assert!(row(&terminal, 2).contains("No active tasks. Press a to add one."));
         assert!(row(&terminal, 1).contains(" Active │ Archived "));
@@ -462,7 +457,7 @@ mod tests {
 
     #[test]
     fn the_archived_view_keeps_the_timer_header_and_selection() {
-        let (mut app, clock) = app_with_test_clock_for_view(&["alpha", "beta"]);
+        let (mut app, clock) = app_with_tasks_and_clock(&["alpha", "beta"]);
         app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
         app.handle(Command::TaskList(TaskListCommand::MoveDown));
         app.handle(Command::TaskList(TaskListCommand::OpenArchiveConfirm));

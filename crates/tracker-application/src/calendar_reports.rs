@@ -66,7 +66,7 @@ pub fn inclusive_range(
 ///
 /// Gaps advance in minutes, then backtrack in seconds to retain historical
 /// timezone transitions that did not happen on minute boundaries.
-pub fn day_start(timezone: Tz, date: NaiveDate) -> Result<DateTime<Utc>, CalendarRangeError> {
+fn day_start(timezone: Tz, date: NaiveDate) -> Result<DateTime<Utc>, CalendarRangeError> {
     let mut local = date
         .and_hms_opt(0, 0, 0)
         .ok_or(CalendarRangeError::BoundaryOutOfRange)?;

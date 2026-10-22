@@ -55,7 +55,7 @@ pub(crate) fn app_with(names: &[&str]) -> App<TrackerApplication<SqliteRepositor
     App::load(TrackerApplication::load(repository_with(names)).unwrap())
 }
 
-pub(crate) fn app_with_test_clock_for_view(
+pub(crate) fn app_with_tasks_and_clock(
     names: &[&str],
 ) -> (App<TrackerApplication<SqliteRepository>>, TestClock) {
     app_with_test_clock(

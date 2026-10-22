@@ -18,13 +18,7 @@ impl TrackingSession {
     }
 
     fn with_clock(tracking: TrackingState, clock: Clock) -> Self {
-        let elapsed_clock = match &tracking {
-            TrackingState::Idle => None,
-            TrackingState::Running { worklog } => Some(ElapsedClock::at_anchor(
-                ElapsedClock::base_since(worklog.start(), clock.wall_clock()),
-                clock.monotonic_clock(),
-            )),
-        };
+        let elapsed_clock = clock.elapsed_since_start(&tracking);
         Self {
             tracking,
             elapsed_clock,
@@ -83,13 +77,7 @@ impl TrackingSession {
                 )),
             };
         } else if !self.runs_same_worklog_as(&tracking) {
-            self.elapsed_clock = match &tracking {
-                TrackingState::Idle => None,
-                TrackingState::Running { worklog } => Some(ElapsedClock::at_anchor(
-                    ElapsedClock::base_since(worklog.start(), self.clock.wall_clock()),
-                    self.clock.monotonic_clock(),
-                )),
-            };
+            self.elapsed_clock = self.clock.elapsed_since_start(&tracking);
         }
         self.tracking = tracking;
     }
@@ -129,6 +117,17 @@ impl Clock {
             Self::System => Instant::now(),
             #[cfg(test)]
             Self::Controlled(clock) => clock.lock().expect("test clock lock").monotonic_clock,
+        }
+    }
+
+    /// Anchors the elapsed time to the running worklog's start.
+    fn elapsed_since_start(&self, tracking: &TrackingState) -> Option<ElapsedClock> {
+        match tracking {
+            TrackingState::Idle => None,
+            TrackingState::Running { worklog } => Some(ElapsedClock::at_anchor(
+                ElapsedClock::base_since(worklog.start(), self.wall_clock()),
+                self.monotonic_clock(),
+            )),
         }
     }
 

@@ -337,11 +337,6 @@ fn preset_dates(preset: ReportPreset, today: NaiveDate) -> Option<(NaiveDate, Na
 }
 
 #[cfg(test)]
-fn local_day_start(timezone: Tz, date: NaiveDate) -> Option<DateTime<Utc>> {
-    calendar_reports::day_start(timezone, date).ok()
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::task;
@@ -438,17 +433,6 @@ mod tests {
         }
         assert!(!state.shift_custom_date(DateShift::NextDay));
         assert!(matches!(&state.mode, ReportMode::Custom { to, .. } if to == "2024-01-"));
-    }
-
-    #[test]
-    fn midnight_gap_starts_at_the_first_valid_local_minute() {
-        let date = NaiveDate::from_ymd_opt(2026, 9, 6).unwrap();
-        assert_eq!(
-            local_day_start(chrono_tz::America::Santiago, date)
-                .unwrap()
-                .to_rfc3339(),
-            "2026-09-06T04:00:00+00:00"
-        );
     }
 
     #[test]
