@@ -136,16 +136,12 @@ pub unsafe extern "C" fn tt_bridge_check_connection(bridge: *mut Bridge) -> *mut
     )
 }
 
-/// Refreshes the resources selected by a client workflow.
-/// Selection 1 reads tasks, 2 reads tracking, and 3 reads a coherent task list.
+/// Refreshes the task catalog and tracking state as one coherent task list.
 ///
 /// # Safety
 /// `bridge` must be live and uniquely accessed. Free the returned owned string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tt_bridge_refresh_resources(
-    bridge: *mut Bridge,
-    selection: u32,
-) -> *mut c_char {
+pub unsafe extern "C" fn tt_bridge_refresh_resources(bridge: *mut Bridge) -> *mut c_char {
     // SAFETY: The caller supplies exclusive access to a live bridge or null.
     let Some(bridge) = (unsafe { bridge.as_mut() }) else {
         return encode(Err("Database is not open".to_owned().into()));
@@ -153,7 +149,7 @@ pub unsafe extern "C" fn tt_bridge_refresh_resources(
     encode(
         bridge
             .application
-            .refresh_resources(selection)
+            .refresh_resources()
             .map(|_| json!({ "refreshed": true })),
     )
 }

@@ -94,10 +94,11 @@ fn correction_preserves_identity_precision_and_archived_task_and_updates_totals(
         .unwrap();
     assert_eq!(updated_task["archived"], true);
     assert_eq!(updated_task["latestStart"], timestamp(at(90)));
-    let (rows, _) = bridge
+    let rows = bridge
         .application
-        .report_rows(at(0), at(1000), at(1000))
-        .unwrap_or_else(|error| panic!("{}", error.message));
+        .refresh_totals(at(0), at(1000), at(1000))
+        .unwrap_or_else(|error| panic!("{}", error.message))
+        .rows;
     assert_eq!(rows[0].duration_microseconds, 130_000_000);
     drop(bridge);
     let mut reopened = open_at(&path).unwrap();
@@ -324,11 +325,11 @@ fn remote_correction_succeeds_after_an_unrelated_write_and_keeps_original_timest
     let mut second = server.client();
     first
         .application
-        .refresh_resources(3)
+        .refresh_resources()
         .unwrap_or_else(|error| panic!("{}", error.message));
     second
         .application
-        .refresh_resources(3)
+        .refresh_resources()
         .unwrap_or_else(|error| panic!("{}", error.message));
     second
         .application

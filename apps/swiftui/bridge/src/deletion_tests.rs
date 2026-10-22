@@ -90,10 +90,11 @@ fn completed_deletion_returns_the_worklog_and_updates_history_and_totals() {
     );
     assert!(result["data"]["receipt"].is_null());
     assert_eq!(history(&mut bridge, task), vec![kept]);
-    let (rows, _) = bridge
+    let rows = bridge
         .application
-        .report_rows(at(0), at(500), at(500))
-        .unwrap_or_else(|error| panic!("{}", error.message));
+        .refresh_totals(at(0), at(500), at(500))
+        .unwrap_or_else(|error| panic!("{}", error.message))
+        .rows;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].task_id, task.to_string());
     assert_eq!(rows[0].duration_microseconds, 100_000_000);
@@ -204,7 +205,7 @@ fn remote_deletion_removes_the_worklog_and_rejects_stale_clients() {
     for client in [&mut first, &mut second] {
         client
             .application
-            .refresh_resources(3)
+            .refresh_resources()
             .unwrap_or_else(|error| panic!("{}", error.message));
     }
 

@@ -82,7 +82,7 @@ fn resume(bridge: &mut Bridge, task_id: TaskId, at: &str) -> Value {
 
 fn refresh(bridge: &mut Bridge) -> Value {
     // SAFETY: The bridge is live and uniquely accessed.
-    let result = response(unsafe { tt_bridge_refresh_resources(bridge, 3) });
+    let result = response(unsafe { tt_bridge_refresh_resources(bridge) });
     if result.get("error").is_some() {
         return result;
     }

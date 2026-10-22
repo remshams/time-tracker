@@ -115,10 +115,11 @@ fn completed_and_running_moves_preserve_identity_times_and_update_history_and_to
                 .worklogs,
             vec![moved.clone()]
         );
-        let (rows, _) = bridge
+        let rows = bridge
             .application
-            .report_rows(at(0), at(250), at(250))
-            .unwrap_or_else(|error| panic!("{}", error.message));
+            .refresh_totals(at(0), at(250), at(250))
+            .unwrap_or_else(|error| panic!("{}", error.message))
+            .rows;
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].task_id, destination.to_string());
         assert_eq!(
@@ -172,7 +173,7 @@ fn candidates_use_cached_tasks_filter_search_and_exclude_source_and_archived_row
     assert_eq!(candidates(&mut bridge, source, "")["data"], first["data"]);
     bridge
         .application
-        .refresh_resources(3)
+        .refresh_resources()
         .unwrap_or_else(|error| panic!("{}", error.message));
     assert_eq!(
         candidates(&mut bridge, source, "fresh")["data"][0]["name"],
@@ -352,11 +353,11 @@ fn remote_moves_succeed_after_an_unrelated_write_keep_original_guards_and_candid
     let mut second = server.client();
     first
         .application
-        .refresh_resources(3)
+        .refresh_resources()
         .unwrap_or_else(|error| panic!("{}", error.message));
     second
         .application
-        .refresh_resources(3)
+        .refresh_resources()
         .unwrap_or_else(|error| panic!("{}", error.message));
     second
         .application
@@ -785,7 +786,7 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
         );
     let server = report_tests::Server::start(router);
     let mut bridge = server.client();
-    bridge.application.refresh_resources(3).unwrap();
+    bridge.application.refresh_resources().unwrap();
     let failure = move_to(&mut bridge, &original, tasks[1].task.id());
     assert_eq!(failure["kind"], "unavailable");
     assert_eq!(failure["uncertain"], true);

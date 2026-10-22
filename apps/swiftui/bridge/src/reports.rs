@@ -4,8 +4,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::Bridge;
-use crate::backend::BridgeError;
-use crate::ffi::{encode, read_identifier, timestamp};
+use crate::ffi::{encode, read_identifier};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,8 +19,8 @@ pub(super) struct ReportJson {
     pub(super) now: String,
 }
 
-/// Refreshes totals with tracking and, when requested, the task list.
-/// The coordinator publishes the requested remote observations together.
+/// Refreshes totals together with the task list and tracking state.
+/// The coordinator publishes the remote observations together.
 ///
 /// # Safety
 /// `bridge` must be live and uniquely accessed. Strings must be valid C strings
@@ -29,7 +28,6 @@ pub(super) struct ReportJson {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tt_bridge_refresh_totals(
     bridge: *mut Bridge,
-    include_tasks: bool,
     start: *const c_char,
     end: *const c_char,
     now: *const c_char,
@@ -47,9 +45,7 @@ pub unsafe extern "C" fn tt_bridge_refresh_totals(
                 read_identifier(now, "Invalid report timestamp")?,
             )
         };
-        let report = bridge
-            .application
-            .refresh_totals(include_tasks, start, end, now)?;
+        let report = bridge.application.refresh_totals(start, end, now)?;
         bridge.report_observation = Some(report);
         Ok(json!({ "refreshed": true }))
     })();
@@ -69,41 +65,4 @@ pub unsafe extern "C" fn tt_bridge_report_observation(bridge: *mut Bridge) -> *m
     encode(
         serde_json::to_value(&bridge.report_observation).map_err(|error| error.to_string().into()),
     )
-}
-
-/// Returns task totals without reading task or tracking resources.
-/// The caller supplies the UTC interval and the instant used to cap active work.
-///
-/// # Safety
-/// `bridge` must be live and uniquely accessed. Strings must be null or valid
-/// C strings. Free the result with `tt_bridge_string_free`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tt_bridge_report(
-    bridge: *mut Bridge,
-    start: *const c_char,
-    end: *const c_char,
-    now: *const c_char,
-) -> *mut c_char {
-    // SAFETY: The caller guarantees exclusive access to the live bridge.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    let result = (|| {
-        // SAFETY: The caller supplies valid C strings or null.
-        let start =
-            unsafe { read_identifier(start, "Invalid report start") }.map_err(BridgeError::from)?;
-        // SAFETY: The caller supplies valid C strings or null.
-        let end =
-            unsafe { read_identifier(end, "Invalid report end") }.map_err(BridgeError::from)?;
-        // SAFETY: The caller supplies valid C strings or null.
-        let now = unsafe { read_identifier(now, "Invalid report timestamp") }
-            .map_err(BridgeError::from)?;
-        let (rows, cutoff) = bridge.application.report_rows(start, end, now)?;
-        serde_json::to_value(ReportJson {
-            rows,
-            now: timestamp(cutoff),
-        })
-        .map_err(|error| error.to_string().into())
-    })();
-    encode(result)
 }
