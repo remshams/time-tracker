@@ -32,7 +32,7 @@ The CI workflow has an opt-in `native_benchmark` dispatch. Supply the full SHA o
 | 1 | `core` | Smoke, catalog, creation, tracking, history, daily totals, worklog move, and their server variants |
 | 2 | `editing` | Rename, individual archive, existing and extended bulk archive, worklog correction and deletion, and server variants |
 | 3 | `server` | Connection, outages, concurrency, pagination races, unconfirmed-write reporting, rejected tracking conflicts, settings, per-source remembered tasks, and appearance |
-| 4 | `mac` | Menu actions, clipboard, shortcuts, window routing, and lifecycle, with server variants; this group's job also runs the Swift package and Rust workspace tests, the universal Release build, and the layout check |
+| 4 | `mac` | Menu actions, clipboard, shortcuts, window routing, and lifecycle; the menu bar and lifecycle suites have server variants; this group's job also runs the Swift package and Rust workspace tests, the universal Release build, and the layout check |
 
 ## Fixtures and failure evidence
 

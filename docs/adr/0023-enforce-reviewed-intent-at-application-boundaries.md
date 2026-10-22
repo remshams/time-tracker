@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Partially superseded by [ADR 0029](0029-send-native-requests-directly.md) for Swift preflight as a presentation and reconciliation check; all other decisions remain accepted.
 
 ## Date
 

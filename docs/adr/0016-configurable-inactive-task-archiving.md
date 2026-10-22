@@ -6,6 +6,8 @@ Partially superseded by [ADR 0017](0017-separate-http-resources-from-client-refr
 
 Partially superseded by [ADR 0031](0031-remove-server-revisions-from-writes-and-reads.md) for the preview revision and its check on remote confirmation; all other decisions remain accepted.
 
+Partially superseded by [ADR 0029](0029-send-native-requests-directly.md) for serializing archive reads and writes through the Swift session; all other decisions remain accepted.
+
 ## Date
 
 2026-10-07.
