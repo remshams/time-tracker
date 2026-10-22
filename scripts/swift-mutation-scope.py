@@ -29,10 +29,13 @@ MENU_VALUES = "Features/MenuBar/TrackerMenuValues.swift"
 MENU_OBSERVER = "Features/MenuBar/TrackerMenuPresentationObserver.swift"
 LAST_TASK = "Features/MenuBar/LastTrackedTaskState.swift"
 MENU_ORDER = "Features/MenuBar/MenuTaskOrder.swift"
+MENU_SHORTCUTS = "Features/MenuBar/MenuKeyboardShortcuts.swift"
+MENU_CLIPBOARD = "Features/MenuBar/MenuTaskClipboard.swift"
 CONNECTION = "Features/Connection/ConnectionState.swift"
 AUTOMATION = "Features/TrackingAutomation/TrackingAutomationState.swift"
 CREATION = "Features/TaskCreation/TaskCreationState.swift"
 RENAME = "Features/TaskRename/TaskRenameState.swift"
+NAME_POLICY = "Features/TaskEditing/TaskNameEditingPolicy.swift"
 ARCHIVING = "Features/TaskArchiving/TaskArchivingState.swift"
 BULK_ARCHIVING = "Features/BulkTaskArchiving/BulkTaskArchivingState.swift"
 CORRECTION = "Features/WorklogCorrection/WorklogCorrectionState.swift"
@@ -65,7 +68,7 @@ TEST_PRODUCTION = {
         SESSION, PRESENTATION, TOTALS, TRACKING, MODELS, CONNECTION, CATALOG, HISTORY,
     ],
     "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
-        "Features/MenuBar/MenuKeyboardShortcuts.swift", DEPENDENCIES,
+        MENU_SHORTCUTS, DEPENDENCIES,
     ],
     "Features/MenuBar/MenuLiveValuesTests.swift": [
         SESSION, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CONNECTION, CATALOG, LAST_TASK, INDICATOR,
@@ -79,12 +82,12 @@ TEST_PRODUCTION = {
         LAST_TASK, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskClipboardTests.swift": [
-        SESSION, "Features/MenuBar/MenuTaskClipboard.swift", "Features/MenuBar/MenuKeyboardShortcuts.swift",
+        SESSION, MENU_CLIPBOARD, MENU_SHORTCUTS,
         MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION, LAST_TASK, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskTrackingActionTests.swift": [
         SESSION, "Features/MenuBar/MenuTaskTrackingAction.swift", MENU_OBSERVER, MENU, MENU_VALUES, TRACKING,
-        "Features/MenuBar/MenuTaskClipboard.swift", "Features/MenuBar/MenuKeyboardShortcuts.swift",
+        MENU_CLIPBOARD, MENU_SHORTCUTS,
         CATALOG, CONNECTION, LAST_TASK, INDICATOR,
     ],
     "Features/MenuBar/StatusItemTests.swift": [
@@ -100,14 +103,14 @@ TEST_PRODUCTION = {
     "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG],
     "Features/TaskCreation/TaskCreationTests.swift": [
         SESSION, PRESENTATION, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION, AUTOMATION, RENAME,
-        "Features/TaskEditing/TaskNameEditingPolicy.swift",
+        NAME_POLICY,
     ],
     "Features/TaskEditing/TaskNameEditingPolicyTests.swift": [
-        SESSION, "Features/TaskEditing/TaskNameEditingPolicy.swift", CREATION, RENAME, CATALOG,
+        SESSION, NAME_POLICY, CREATION, RENAME, CATALOG,
     ],
     "Features/TaskRename/TaskRenameTests.swift": [
         SESSION, PRESENTATION, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION, CONNECTION,
-        "Features/TaskEditing/TaskNameEditingPolicy.swift",
+        NAME_POLICY,
     ],
     "Features/Tracking/TrackingStateTests.swift": [TRACKING],
     "Features/Tracking/TrackingTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, LAST_TASK, CONNECTION],
