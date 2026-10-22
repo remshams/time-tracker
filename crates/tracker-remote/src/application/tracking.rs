@@ -1,7 +1,7 @@
 use super::{
     ApplicationError, ClearActiveTaskOutcome, Method, MutationContext, RemoteError, RemoteSession,
-    SetActiveTaskOutcome, SetTrackingRequest, TaskId, TrackingDto, TrackingState, Worklog,
-    WorklogId, clear_tracking_result, decode_tracking, protocol_failure, set_tracking_result,
+    SetActiveTaskOutcome, SetTrackingRequest, TaskId, TrackingDto, TrackingState, WorklogId,
+    clear_tracking_result, decode_active, protocol_failure, set_tracking_result,
 };
 
 /// Tracking protocol operations and the confirmed active worklog.
@@ -11,33 +11,20 @@ pub(super) struct TrackingClient {
 }
 
 impl TrackingClient {
-    pub(super) async fn read_tracking(
-        &self,
-        session: &mut RemoteSession,
-    ) -> Result<(Option<Worklog>, TrackingState), RemoteError> {
-        let dto: TrackingDto = session.read("v1/tracking").await?;
-        decode_tracking(dto)
-    }
-
     pub(super) async fn refresh_tracking(
         &mut self,
         session: &mut RemoteSession,
     ) -> Result<(), RemoteError> {
         session.ensure_version().await?;
-        let (_, tracking) = self
-            .read_tracking(session)
+        let dto: TrackingDto = session
+            .read("v1/tracking")
             .await
             .map_err(|error| session.record_error(error))?;
+        let (_, tracking) =
+            decode_active(dto.active_worklog).map_err(|error| session.record_error(error))?;
         self.adopt(tracking);
         session.confirmed();
         Ok(())
-    }
-
-    pub(super) fn active_worklog(&self) -> Option<Worklog> {
-        match self.current_tracking() {
-            TrackingState::Idle => None,
-            TrackingState::Running { worklog } => Some(worklog.to_worklog()),
-        }
     }
 
     pub(super) fn current_tracking(&self) -> &TrackingState {

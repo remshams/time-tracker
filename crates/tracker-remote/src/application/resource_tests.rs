@@ -53,28 +53,15 @@ fn tracking_accepts_a_task_absent_from_the_catalog_and_rejects_completed_entries
         start: at(),
         end: None,
     };
+    assert!(decode_active(Some(active.clone())).is_ok());
     assert!(
-        decode_tracking(TrackingDto {
-            active_worklog: Some(active.clone()),
-        })
-        .is_ok()
-    );
-    assert!(
-        decode_tracking(TrackingDto {
-            active_worklog: Some(WorklogDto {
-                end: Some(at()),
-                ..active
-            }),
-        })
+        decode_active(Some(WorklogDto {
+            end: Some(at()),
+            ..active
+        }))
         .is_err()
     );
-    assert_eq!(
-        decode_tracking(TrackingDto {
-            active_worklog: None,
-        })
-        .unwrap(),
-        (None, TrackingState::Idle)
-    );
+    assert_eq!(decode_active(None).unwrap(), (None, TrackingState::Idle));
 }
 #[test]
 fn reports_validate_ids_durations_totals_and_range_without_task_cache_membership() {

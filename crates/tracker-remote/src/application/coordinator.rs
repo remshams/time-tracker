@@ -6,8 +6,8 @@ use super::{
     SetActiveTaskOutcome, SetTrackingRequest, Task, TaskChangeRequest, TaskId, TaskListItem,
     TaskListStateDto, TaskName, TaskOrdering, TaskResourceDto, TasksClient, TrackingClient,
     TrackingState, Utc, Worklog, WorklogChangeRequest, WorklogCursor, WorklogId, WorklogPage,
-    WorklogResourceDto, WorklogTimes, WorklogsClient, WriteGuard, active_id, canonical,
-    creation_needs_recovery, decode_task_list_state, map_application_error, protocol_failure,
+    WorklogTimes, WorklogsClient, WriteGuard, active_id, canonical, creation_needs_recovery,
+    decode_task_list_state, map_application_error, protocol_failure,
 };
 
 /// Coordinates remote tracker workflows across resource clients.
@@ -188,13 +188,8 @@ impl RemoteTrackerCoordinator {
     }
 
     /// Reads one task and preserves application error categories.
-    pub async fn read_task_observation(
-        &mut self,
-        id: TaskId,
-    ) -> Result<TaskListItem, ApplicationError> {
-        self.tasks
-            .read_task_observation(&mut self.session, id)
-            .await
+    pub async fn read_task_item(&mut self, id: TaskId) -> Result<TaskListItem, ApplicationError> {
+        self.tasks.read_task_item(&mut self.session, id).await
     }
 
     pub async fn read_task(&mut self, id: TaskId) -> Result<TaskResourceDto, RemoteError> {
@@ -245,10 +240,6 @@ impl RemoteTrackerCoordinator {
         self.tracking.refresh_tracking(&mut self.session).await
     }
 
-    pub fn active_worklog(&self) -> Option<Worklog> {
-        self.tracking.active_worklog()
-    }
-
     pub fn current_tracking(&self) -> &TrackingState {
         self.tracking.current_tracking()
     }
@@ -256,10 +247,6 @@ impl RemoteTrackerCoordinator {
     /// Returns the confirmed tracking state, or `None` before the first tracking read.
     pub fn tracking_observation(&self) -> Option<&TrackingState> {
         self.tracking.tracking_observation()
-    }
-
-    pub async fn read_worklog(&mut self, id: WorklogId) -> Result<WorklogResourceDto, RemoteError> {
-        self.worklogs.read_worklog(&mut self.session, id).await
     }
 
     pub async fn worklogs_for_task(
@@ -482,16 +469,13 @@ impl RemoteTrackerCoordinator {
     }
 
     /// Reads tracking once so a command without a reviewed timer names the one it replaces.
-    async fn establish_tracking_baseline(
-        &mut self,
-        task_id: TaskId,
-    ) -> Result<(), ApplicationError> {
+    async fn establish_tracking_baseline(&mut self) -> Result<(), ApplicationError> {
         let refreshed = if self.coherent_task_views {
             self.refresh_task_list().await
         } else {
             self.refresh_tracking().await
         };
-        refreshed.map_err(|error| map_application_error(&error, None, Some(task_id)))
+        refreshed.map_err(|error| map_application_error(&error, None, None))
     }
 
     pub async fn set_active_task(
@@ -501,7 +485,7 @@ impl RemoteTrackerCoordinator {
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
         self.session.begin_command();
         if self.tracking_observation().is_none() {
-            self.establish_tracking_baseline(task_id).await?;
+            self.establish_tracking_baseline().await?;
         }
         self.set_active_task_with_expected_active(
             task_id,

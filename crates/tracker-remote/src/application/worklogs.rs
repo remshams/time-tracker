@@ -1,32 +1,14 @@
 use super::{
     ApplicationError, DeleteWorklogRequest, GlobalWorklogCursor, GlobalWorklogPage, HistoryRead,
-    Method, MutationContext, RemoteError, RemoteSession, TaskId, Worklog, WorklogChangeRequest,
-    WorklogCursor, WorklogId, WorklogPage, WorklogPageDto, WorklogResourceDto, WorklogTimes,
-    decode_history, decode_worklog, map_application_error, original_worklog_matches,
-    protocol_failure, worklog_result,
+    Method, MutationContext, RemoteSession, TaskId, Worklog, WorklogChangeRequest, WorklogCursor,
+    WorklogId, WorklogPage, WorklogPageDto, WorklogTimes, decode_history, map_application_error,
+    original_worklog_matches, protocol_failure, worklog_result,
 };
 
 /// Worklog protocol operations and response validation.
 pub(super) struct WorklogsClient;
 
 impl WorklogsClient {
-    pub(super) async fn read_worklog(
-        &mut self,
-        session: &mut RemoteSession,
-        id: WorklogId,
-    ) -> Result<WorklogResourceDto, RemoteError> {
-        session.ensure_version().await?;
-        let dto: WorklogResourceDto = session.read(&format!("v1/worklogs/{id}")).await?;
-        if dto.worklog.id != id.to_string() {
-            return Err(
-                session.record_error(RemoteError::Protocol("invalid worklog resource".into()))
-            );
-        }
-        decode_worklog(dto.worklog.clone()).map_err(|error| session.record_error(error))?;
-        session.confirmed();
-        Ok(dto)
-    }
-
     pub(super) async fn history(
         &mut self,
         session: &mut RemoteSession,
