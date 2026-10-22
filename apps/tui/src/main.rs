@@ -79,7 +79,7 @@ fn run_remote_tui(server: &str) -> Result<(), Box<dyn Error>> {
         application.tasks(tracker_application::TaskOrdering::default()),
         application.current_tracking().clone(),
     );
-    state.shell_mut().info("Connecting to server...");
+    state.shell_mut().info(runtime::CONNECTING_STATUS);
     let mut guard = terminal_guard()?;
     runtime::run(&mut guard, Backend::Remote(Box::new(application)), state).map_err(Into::into)
 }

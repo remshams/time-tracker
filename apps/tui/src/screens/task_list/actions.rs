@@ -600,35 +600,27 @@ impl AppState {
             }
         };
         self.enqueue(request, move |app, completed| {
+            let name = task.name();
+            let started = format!("Started \"{name}\"");
+            let switched = format!("Switched to \"{name}\"");
             let result = match completed.outcome {
                 ApplicationOutcome::ClearActiveTask(result) => {
                     result.map(|outcome| match outcome {
                         ClearActiveTaskOutcome::Stopped { .. }
-                        | ClearActiveTaskOutcome::AlreadyIdle => "stopped",
+                        | ClearActiveTaskOutcome::AlreadyIdle => format!("Stopped \"{name}\""),
                     })
                 }
                 ApplicationOutcome::SetActiveTask(result) => result.map(|outcome| match outcome {
-                    SetActiveTaskOutcome::Started { .. } => "started",
-                    SetActiveTaskOutcome::Switched { .. } => "switched",
-                    SetActiveTaskOutcome::AlreadyActive { .. } if was_active.is_some() => {
-                        "switched"
-                    }
-                    SetActiveTaskOutcome::AlreadyActive { .. } => "started",
+                    SetActiveTaskOutcome::Started { .. } => started,
+                    SetActiveTaskOutcome::Switched { .. } => switched,
+                    SetActiveTaskOutcome::AlreadyActive { .. } if was_active.is_some() => switched,
+                    SetActiveTaskOutcome::AlreadyActive { .. } => started,
                 }),
                 _ => unreachable!("tracking request returns a tracking outcome"),
             };
             match result {
-                Ok(action) => {
-                    let message = match action {
-                        "started" => format!("Started \"{}\"", task.name()),
-                        "switched" => format!("Switched to \"{}\"", task.name()),
-                        _ => format!("Stopped \"{}\"", task.name()),
-                    };
-                    app.shell_mut().info(message);
-                }
-                Err(error) => {
-                    app.shell_mut().error(application_error_text(&error));
-                }
+                Ok(message) => app.shell_mut().info(message),
+                Err(error) => app.shell_mut().error(application_error_text(&error)),
             }
         });
     }
