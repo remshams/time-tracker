@@ -75,8 +75,16 @@ impl RemoteSession {
         &mut self,
         path: &str,
     ) -> Result<T, RemoteError> {
+        self.get(self.transport.url(path)).await
+    }
+
+    /// Sends a GET request and records any failure.
+    pub(super) async fn get<T: serde::de::DeserializeOwned>(
+        &mut self,
+        url: reqwest::Url,
+    ) -> Result<T, RemoteError> {
         self.transport
-            .send(Method::GET, self.transport.url(path), None::<&()>)
+            .send(Method::GET, url, None::<&()>)
             .await
             .map_err(|error| self.record_error(error))
     }
@@ -117,15 +125,6 @@ impl RemoteSession {
                 ))
             }
         }
-    }
-
-    pub(super) async fn send<T: serde::de::DeserializeOwned, B: serde::Serialize>(
-        &mut self,
-        method: Method,
-        url: reqwest::Url,
-        body: Option<&B>,
-    ) -> Result<T, RemoteError> {
-        self.transport.send(method, url, body).await
     }
 
     pub(super) async fn mutation<B: serde::Serialize, T>(
