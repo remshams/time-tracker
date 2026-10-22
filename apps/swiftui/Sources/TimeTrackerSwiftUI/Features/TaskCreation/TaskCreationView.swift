@@ -2,26 +2,7 @@ import SwiftUI
 import TrackerClient
 
 @MainActor
-struct TaskCreationDialog: View {
-    let creation: TaskCreationStore
-    let isPresentationOwner: Bool
-
-    var body: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .sheet(
-                isPresented: Binding(
-                    get: { isPresentationOwner && creation.state.isPresented },
-                    set: { if isPresentationOwner && !$0 { creation.cancel() } }
-                )
-            ) {
-                TaskCreationSheet(creation: creation)
-            }
-    }
-}
-
-@MainActor
-private struct TaskCreationSheet: View {
+struct TaskCreationSheet: View {
     let creation: TaskCreationStore
 
     var body: some View {

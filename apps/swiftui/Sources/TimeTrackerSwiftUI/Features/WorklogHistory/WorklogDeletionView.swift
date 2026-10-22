@@ -2,26 +2,7 @@ import SwiftUI
 import TrackerClient
 
 @MainActor
-struct WorklogDeletionDialog: View {
-    let deletion: WorklogDeletionStore
-    let isPresentationOwner: Bool
-
-    var body: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .sheet(
-                isPresented: Binding(
-                    get: { isPresentationOwner && deletion.state.isPresented },
-                    set: { if isPresentationOwner && !$0 { deletion.cancel() } }
-                )
-            ) {
-                WorklogDeletionSheet(deletion: deletion)
-            }
-    }
-}
-
-@MainActor
-private struct WorklogDeletionSheet: View {
+struct WorklogDeletionSheet: View {
     let deletion: WorklogDeletionStore
 
     var body: some View {
