@@ -160,16 +160,14 @@ impl AppState {
     }
 
     fn task_list_is_normal(&self) -> bool {
-        self.shell().screen() == crate::screens::Screen::TaskList
-            && matches!(self.shell().task_list().mode(), TaskListMode::Normal)
+        matches!(self.shell().task_list().mode(), TaskListMode::Normal)
     }
 
     fn task_list_is_navigable(&self) -> bool {
-        self.shell().screen() == crate::screens::Screen::TaskList
-            && matches!(
-                self.shell().task_list().mode(),
-                TaskListMode::Normal | TaskListMode::Search
-            )
+        matches!(
+            self.shell().task_list().mode(),
+            TaskListMode::Normal | TaskListMode::Search
+        )
     }
 
     fn open_task_search(&mut self) {
@@ -547,9 +545,7 @@ impl AppState {
     }
 
     fn unarchive_selected(&mut self) {
-        if self.shell().screen() != crate::screens::Screen::TaskList
-            || !self.shell().task_list().accepts_unarchiving()
-        {
+        if !self.shell().task_list().accepts_unarchiving() {
             return;
         }
         let Some(task) = self.selected_task().cloned() else {
