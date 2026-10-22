@@ -627,21 +627,21 @@ impl AppState {
                 ApplicationOutcome::ClearActiveTask(result) => {
                     result.map(|outcome| match outcome {
                         ClearActiveTaskOutcome::Stopped { .. }
-                        | ClearActiveTaskOutcome::AlreadyIdle => ("stopped", false),
+                        | ClearActiveTaskOutcome::AlreadyIdle => "stopped",
                     })
                 }
                 ApplicationOutcome::SetActiveTask(result) => result.map(|outcome| match outcome {
-                    SetActiveTaskOutcome::Started { .. } => ("started", true),
-                    SetActiveTaskOutcome::Switched { .. } => ("switched", true),
+                    SetActiveTaskOutcome::Started { .. } => "started",
+                    SetActiveTaskOutcome::Switched { .. } => "switched",
                     SetActiveTaskOutcome::AlreadyActive { .. } if was_active.is_some() => {
-                        ("switched", false)
+                        "switched"
                     }
-                    SetActiveTaskOutcome::AlreadyActive { .. } => ("started", false),
+                    SetActiveTaskOutcome::AlreadyActive { .. } => "started",
                 }),
                 _ => unreachable!("tracking request returns a tracking outcome"),
             };
             match result {
-                Ok((action, _fresh_active)) => {
+                Ok(action) => {
                     let message = match action {
                         "started" => format!("Started \"{}\"", task.name()),
                         "switched" => format!("Switched to \"{}\"", task.name()),
