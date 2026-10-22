@@ -1168,6 +1168,17 @@ pub(crate) mod remote_resource_tests {
     use tracker_domain::{ActiveWorklog, TrackingState};
     use tracker_remote::RemoteApplication;
 
+    /// Answers the health check with the current protocol version.
+    pub(crate) fn health_reply() -> (u16, String) {
+        (
+            200,
+            format!(
+                r#"{{"status":"ok","protocol_version":{}}}"#,
+                tracker_protocol::VERSION
+            ),
+        )
+    }
+
     fn report_server(
         task_id: tracker_domain::TaskId,
         metadata_available: bool,
@@ -1184,7 +1195,7 @@ pub(crate) mod remote_resource_tests {
             at(100).to_rfc3339(),
         );
         let mut responses = vec![
-            (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
+            health_reply(),
             (200, report.clone()),
             if metadata_available {
                 (200, metadata)
@@ -1362,7 +1373,7 @@ pub(crate) mod remote_resource_tests {
             at(200).to_rfc3339(),
         );
         let (endpoint, worker) = resource_server(vec![
-            (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
+            health_reply(),
             (200, first_page),
             (200, metadata),
             (200, second_page),
@@ -1503,7 +1514,7 @@ pub(crate) mod remote_resource_tests {
             at(200).to_rfc3339(),
         );
         let (endpoint, worker) = resource_server(vec![
-            (200, r#"{"status":"ok","protocol_version":6}"#.to_owned()),
+            health_reply(),
             (200, r#"{"worklogs":[],"next_cursor":null}"#.to_owned()),
             (200, metadata),
         ]);

@@ -74,7 +74,7 @@ impl TasksClient {
     }
 
     /// Reads one task and preserves application error categories.
-    pub(super) async fn read_task_observation(
+    pub(super) async fn read_task_item(
         &mut self,
         session: &mut RemoteSession,
         id: TaskId,

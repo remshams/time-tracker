@@ -775,8 +775,6 @@ async fn remote_client_round_trips_every_application_operation() {
         .unwrap();
     assert_eq!(report.total_us, 17_000_000);
 
-    let individual = client.read_worklog(started.id()).await.unwrap();
-    assert_eq!(individual.worklog.id, started.id().to_string());
     let original = page.worklogs[0].times();
     let invalid = client
         .correct_worklog(
@@ -810,13 +808,11 @@ async fn remote_client_round_trips_every_application_operation() {
         .await
         .unwrap();
     assert_eq!(deleted.id(), started.id());
-    assert!(matches!(
-        client.read_worklog(deleted.id()).await,
-        Err(tracker_remote::RemoteError::Http {
-            status: axum::http::StatusCode::NOT_FOUND,
-            ..
-        })
-    ));
+    assert!(
+        task_worklog(&mut client, second.id(), deleted.id())
+            .await
+            .is_none()
+    );
     assert!(
         client
             .worklogs_for_task(first.id(), None)
@@ -1433,7 +1429,7 @@ async fn coherent_refresh_rejects_missing_or_archived_active_tasks_without_adopt
         ));
         assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
         assert!(client.task_items().is_empty());
-        assert!(client.active_worklog().is_none());
+        assert!(active_worklog(&client).is_none());
         assert!(client.task_observation().is_none());
         assert!(client.tracking_observation().is_none());
     }
@@ -1748,8 +1744,31 @@ async fn independent_task_totals_keep_valid_rows_without_metadata_or_tracking_re
     assert!(client.task(id).is_none());
     assert!(client.task_observation().is_none());
     assert!(client.tracking_observation().is_none());
-    assert!(client.read_task_observation(id).await.is_err());
+    assert!(client.read_task_item(id).await.is_err());
     assert_eq!(client.report_observation(), Some(&expected));
+}
+
+/// Returns the active worklog in the client's confirmed tracking state.
+fn active_worklog(client: &RemoteApplication) -> Option<tracker_domain::Worklog> {
+    match client.current_tracking() {
+        tracker_domain::TrackingState::Idle => None,
+        tracker_domain::TrackingState::Running { worklog } => Some(worklog.to_worklog()),
+    }
+}
+
+/// Finds one worklog in the first history page of its task.
+async fn task_worklog(
+    client: &mut RemoteApplication,
+    task_id: tracker_domain::TaskId,
+    id: WorklogId,
+) -> Option<tracker_domain::Worklog> {
+    client
+        .worklogs_for_task(task_id, None)
+        .await
+        .unwrap()
+        .worklogs
+        .into_iter()
+        .find(|worklog| worklog.id() == id)
 }
 
 fn with_json_resource(path: &str, response: serde_json::Value) -> StubServer {
@@ -1776,10 +1795,9 @@ fn with_json_resource(path: &str, response: serde_json::Value) -> StubServer {
 
 #[tokio::test]
 async fn individual_resources_reject_wrong_ids_and_domain_values() {
-    use tracker_protocol::{TaskDto, TaskResourceDto, WorklogDto, WorklogResourceDto};
+    use tracker_protocol::{TaskDto, TaskResourceDto};
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
     let task_id = tracker_domain::TaskId::generate();
-    let worklog_id = WorklogId::generate();
     let task = TaskDto {
         id: task_id.to_string(),
         name: "Individual task".into(),
@@ -1811,36 +1829,6 @@ async fn individual_resources_reject_wrong_ids_and_domain_values() {
             .unwrap();
         assert!(client.read_task(task_id).await.is_err());
         assert!(client.task(task_id).is_none());
-        assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
-    }
-    let worklog = WorklogDto {
-        id: worklog_id.to_string(),
-        task_id: task_id.to_string(),
-        start: at,
-        end: Some(at + Duration::seconds(10)),
-    };
-    for dto in [
-        WorklogResourceDto {
-            worklog: WorklogDto {
-                id: WorklogId::generate().to_string(),
-                ..worklog.clone()
-            },
-        },
-        WorklogResourceDto {
-            worklog: WorklogDto {
-                end: Some(at - Duration::seconds(1)),
-                ..worklog
-            },
-        },
-    ] {
-        let server = with_json_resource(
-            &format!("/v1/worklogs/{worklog_id}"),
-            serde_json::to_value(dto).unwrap(),
-        );
-        let mut client = RemoteApplication::connect(&server.endpoint())
-            .await
-            .unwrap();
-        assert!(client.read_worklog(worklog_id).await.is_err());
         assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
     }
 }
@@ -2228,7 +2216,7 @@ async fn queued_switch_preserves_the_active_worklog_seen_at_click_time() {
     assert!(
         matches!(first.current_tracking(),tracker_domain::TrackingState::Running {worklog} if worklog.task_id()==concurrent.id())
     );
-    let current = first.active_worklog().as_ref().unwrap().id();
+    let current = active_worklog(&first).as_ref().unwrap().id();
     second
         .set_active_task_with_expected_active(
             destination.id(),
@@ -2390,12 +2378,10 @@ async fn outdated_correction_is_rejected_by_the_server_and_recovers_affected_cac
         matches!(second.current_tracking(),tracker_domain::TrackingState::Running {worklog} if worklog.task_id()==timer.id())
     );
     assert_eq!(
-        second
-            .read_worklog(reviewed.id())
+        task_worklog(&mut second, source.id(), reviewed.id())
             .await
             .unwrap()
-            .worklog
-            .start,
+            .start(),
         at + Duration::seconds(2)
     );
 }
@@ -2462,9 +2448,11 @@ async fn outdated_worklog_moves_and_deletions_are_rejected_by_the_server() {
     );
     assert!(second.last_write_attempted());
 
-    let stored = first.read_worklog(reviewed.id()).await.unwrap().worklog;
-    assert_eq!(stored.task_id, source.id().to_string());
-    assert_eq!(stored.start, corrected.start());
+    let stored = task_worklog(&mut first, source.id(), reviewed.id())
+        .await
+        .unwrap();
+    assert_eq!(stored.task_id(), source.id());
+    assert_eq!(stored.start(), corrected.start());
 }
 
 /// Another client's write to an unrelated task between this client's read and write does not reject it.
@@ -2596,7 +2584,7 @@ async fn stopping_a_timer_another_client_stopped_reports_already_idle() {
 
     assert!(matches!(outcome, ClearActiveTaskOutcome::AlreadyIdle));
     assert!(client.last_write_attempted());
-    assert!(client.active_worklog().is_none());
+    assert!(active_worklog(&client).is_none());
 }
 
 /// A write to a server that stopped after connecting fails before delivery, so its failure is certain.
@@ -3108,7 +3096,7 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
         client.task(task_id).unwrap().name().as_str(),
         "Confirmed task name"
     );
-    assert!(client.active_worklog().is_none());
+    assert!(active_worklog(&client).is_none());
 }
 
 #[tokio::test]
@@ -3506,7 +3494,7 @@ async fn coherent_stop_of_a_replaced_timer_is_rejected_and_adopts_the_new_pair()
     );
     assert!(second.last_write_attempted());
     assert_eq!(
-        second.active_worklog().as_ref().unwrap().task_id(),
+        active_worklog(&second).as_ref().unwrap().task_id(),
         new_task.id()
     );
     assert!(
@@ -3558,8 +3546,8 @@ async fn coherent_rejected_tracking_command_initializes_a_pair_during_recovery()
         );
         assert!(client.last_write_attempted());
         assert!(client.task_observation().is_some());
-        assert_eq!(client.active_worklog().as_ref().unwrap().id(), running.id());
-        let active_task_id = client.active_worklog().as_ref().unwrap().task_id();
+        assert_eq!(active_worklog(&client).as_ref().unwrap().id(), running.id());
+        let active_task_id = active_worklog(&client).as_ref().unwrap().task_id();
         assert!(
             client
                 .task_items()
@@ -3580,7 +3568,7 @@ async fn coherent_rejected_tracking_command_initializes_a_pair_during_recovery()
     ));
     assert!(initial.task_observation().is_some());
     assert_eq!(
-        initial.active_worklog().as_ref().unwrap().task_id(),
+        active_worklog(&initial).as_ref().unwrap().task_id(),
         target.id()
     );
 }
@@ -3695,7 +3683,7 @@ async fn selected_totals_refreshes_publish_together_and_keep_confirmed_resources
     }
     mode.store(4, Ordering::SeqCst);
     client.refresh_resources(task_list).await.unwrap();
-    assert_eq!(client.active_worklog().unwrap().task_id(), task_id);
+    assert_eq!(active_worklog(&client).unwrap().task_id(), task_id);
     assert_eq!(client.task_items()[0].task.id(), task_id);
     assert!(client.report_observation().is_some());
     let tasks = client.task_observation().map(<[_]>::to_vec);
@@ -3718,7 +3706,7 @@ async fn selected_empty_resources_are_loaded_independently() {
         .unwrap();
     assert!(client.task_observation().is_none());
     assert!(client.tracking_observation().is_some());
-    assert!(client.active_worklog().is_none());
+    assert!(active_worklog(&client).is_none());
     let tracking = client.tracking_observation().cloned();
     client
         .refresh_resources(ResourceSelection::Tasks)
@@ -3888,7 +3876,7 @@ async fn coherent_tracking_only_stop_is_not_rejected_by_another_clients_correcti
         .with_coherent_task_views();
     client.refresh_tracking().await.unwrap();
     assert!(client.task_observation().is_none());
-    assert_eq!(client.active_worklog(), Some(started.clone()));
+    assert_eq!(active_worklog(&client), Some(started.clone()));
     let corrected = other
         .correct_worklog(
             started.id(),
@@ -3910,10 +3898,10 @@ async fn coherent_tracking_only_stop_is_not_rejected_by_another_clients_correcti
     assert_eq!(worklog.start(), corrected.start());
     assert_eq!(worklog.end(), Some(at + Duration::seconds(4)));
     assert!(client.last_write_attempted());
-    assert!(client.active_worklog().is_none());
+    assert!(active_worklog(&client).is_none());
     assert!(client.task_observation().is_some());
     other.refresh_tracking().await.unwrap();
-    assert!(other.active_worklog().is_none());
+    assert!(active_worklog(&other).is_none());
 }
 
 /// Another client's rename of the target task does not reject a start.
@@ -3946,7 +3934,7 @@ async fn coherent_catalog_only_start_is_not_rejected_by_another_clients_rename()
     assert!(client.tracking_observation().is_some());
     other.refresh_tracking().await.unwrap();
     assert_eq!(
-        other.active_worklog().as_ref().unwrap().task_id(),
+        active_worklog(&other).as_ref().unwrap().task_id(),
         task.id()
     );
 }
@@ -4101,7 +4089,7 @@ async fn aggregate_reads_remain_coherent_while_http_commands_switch_tracking() {
                 }
             };
             reader.refresh_resources(selection).await.unwrap();
-            let active = reader.active_worklog().unwrap();
+            let active = active_worklog(&reader).unwrap();
             let task = reader.task_item(active.task_id()).unwrap();
             assert!(!task.task.is_archived());
             assert_eq!(task.latest_work_start, Some(active.start()));

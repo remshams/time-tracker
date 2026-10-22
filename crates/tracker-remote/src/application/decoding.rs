@@ -2,8 +2,8 @@ use super::{
     ActiveWorklog, ApplicationError, ClearActiveTaskOutcome, GlobalWorklogCursor, HashSet,
     HistoryRead, InactiveTaskPreviewDto, InactivityPeriod, MutationResultDto, RemoteError,
     ReportDto, SetActiveTaskOutcome, Task, TaskDto, TaskId, TaskListItem, TaskListStateDto,
-    TaskName, TasksDto, Tracker, TrackingDto, TrackingState, Worklog, WorklogDto, WorklogId,
-    WorklogPageDto, canonical, protocol_failure,
+    TaskName, TasksDto, Tracker, TrackingState, Worklog, WorklogDto, WorklogId, WorklogPageDto,
+    canonical, protocol_failure,
 };
 use tracker_protocol::{WorklogCursorError, parse_worklog_cursor};
 
@@ -93,12 +93,6 @@ pub(super) fn decode_task_item(dto: TaskDto) -> Result<TaskListItem, RemoteError
     })
 }
 
-pub(super) fn decode_tracking(
-    dto: TrackingDto,
-) -> Result<(Option<Worklog>, TrackingState), RemoteError> {
-    decode_active(dto.active_worklog)
-}
-
 pub(super) fn decode_task(dto: TaskDto) -> Result<Task, RemoteError> {
     let id = dto
         .id
@@ -110,7 +104,7 @@ pub(super) fn decode_task(dto: TaskDto) -> Result<Task, RemoteError> {
         .map_err(|error| RemoteError::Protocol(error.to_string()))
 }
 
-pub(super) fn decode_worklog(dto: WorklogDto) -> Result<Worklog, RemoteError> {
+fn decode_worklog(dto: WorklogDto) -> Result<Worklog, RemoteError> {
     let id = dto
         .id
         .parse()

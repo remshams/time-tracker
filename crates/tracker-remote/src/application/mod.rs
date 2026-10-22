@@ -33,8 +33,7 @@ use tracker_protocol::{
     ArchiveInactiveTasksRequest, CreateTaskRequest, DailyOverviewDto, DeleteWorklogRequest,
     ErrorCode, ErrorDto, HealthDto, InactiveTaskPreviewDto, MutationDto, MutationResultDto,
     ReportDto, SetTrackingRequest, TaskChangeRequest, TaskDto, TaskListStateDto, TaskResourceDto,
-    TasksDto, TrackingDto, WorklogChangeRequest, WorklogDto, WorklogPageDto, WorklogResourceDto,
-    WriteGuard,
+    TasksDto, TrackingDto, WorklogChangeRequest, WorklogDto, WorklogPageDto, WriteGuard,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,8 +138,8 @@ struct HistoryRead {
 }
 
 use decoding::{
-    clear_tracking_result, decode_history, decode_task, decode_task_item, decode_task_list_state,
-    decode_tasks, decode_tracking, decode_worklog, set_tracking_result, task_result,
+    clear_tracking_result, decode_active, decode_history, decode_task, decode_task_item,
+    decode_task_list_state, decode_tasks, set_tracking_result, task_result,
     validate_inactive_preview, validate_report, worklog_result,
 };
 use error::{classify_error, map_application_error, protocol_failure};
