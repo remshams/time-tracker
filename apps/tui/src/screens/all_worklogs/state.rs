@@ -95,7 +95,7 @@ impl AllWorklogsState {
         self.replace_rows(page.worklogs, page.next_cursor, preferred);
     }
 
-    pub(crate) fn replace_rows(
+    fn replace_rows(
         &mut self,
         worklogs: Vec<Worklog>,
         next_cursor: Option<GlobalWorklogCursor>,

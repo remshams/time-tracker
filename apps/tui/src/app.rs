@@ -120,9 +120,7 @@ impl<S: TrackerApplicationService> App<S> {
                 return;
             };
             let completed = execute_local(&mut self.application, effect.request.clone());
-            if completed.request.needs_task_list()
-                && completed.request != ApplicationRequest::RefreshTaskList
-            {
+            if completed.request.needs_follow_up_refresh() {
                 let _ = self.application.refresh_task_list();
             }
             self.state.publish_request_resources(
@@ -485,14 +483,9 @@ impl AppState {
         self.reload_tasks();
     }
 
-    pub(crate) fn sync_task_list(
-        &mut self,
-        items: Vec<TaskListItem>,
-        tracking: TrackingState,
-        fresh_active: bool,
-    ) {
+    pub(crate) fn sync_task_list(&mut self, items: Vec<TaskListItem>, tracking: TrackingState) {
         self.replace_items(items);
-        self.tracking.sync(tracking, fresh_active);
+        self.tracking.sync(tracking, false);
     }
 }
 

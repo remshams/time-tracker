@@ -43,7 +43,6 @@ impl AppState {
             match result {
                 Ok(_) => {
                     state.history_mut().expect("history is open").remove(target_id);
-                    state.reload_tasks();
                     state.history_state_mut().expect("history is open").close_mode();
                     state.shell_mut().info("Deleted worklog");
                 }

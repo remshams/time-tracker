@@ -149,7 +149,7 @@ impl TaskListState {
         self.selection_for(self.view)
     }
 
-    pub(crate) fn selection_for(&self, view: TaskView) -> Option<TaskId> {
+    fn selection_for(&self, view: TaskView) -> Option<TaskId> {
         match view {
             TaskView::Active => self.active_selection,
             TaskView::Archived => self.archived_selection,

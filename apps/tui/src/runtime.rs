@@ -196,9 +196,7 @@ fn start_request(backend: Backend, request: ApplicationRequest) -> Pending {
     Box::pin(async move {
         let mut backend = backend;
         let completed = execute_backend(&mut backend, request).await;
-        if completed.request.needs_task_list()
-            && completed.request != ApplicationRequest::RefreshTaskList
-        {
+        if completed.request.needs_follow_up_refresh() {
             let _ = backend.refresh_task_list().await;
         }
         (backend, ResultKind::Request(Box::new(completed)))
@@ -261,7 +259,7 @@ fn apply_refresh(
             if let (Some(tasks), Some(tracking)) =
                 (remote.task_observation(), remote.tracking_observation())
             {
-                state.sync_task_list(tasks.to_vec(), tracking.clone(), false);
+                state.sync_task_list(tasks.to_vec(), tracking.clone());
             }
             if matches!(state.shell().status(), Status::Info(message) if [
                 "Connecting to server...",
