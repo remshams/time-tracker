@@ -245,7 +245,7 @@ fn remote_preview_and_archive_use_server_candidates_and_keep_the_running_task() 
         tracker_server::router_for_database(&path).unwrap(),
     );
     let mut bridge = server.client();
-    bridge.application.refresh_resources(3).unwrap();
+    bridge.application.refresh_resources().unwrap();
     let selected = preview(&mut bridge, 7, as_of);
     assert_eq!(selected["data"]["tasks"].as_array().unwrap().len(), 2);
     assert!(
@@ -256,7 +256,7 @@ fn remote_preview_and_archive_use_server_candidates_and_keep_the_running_task() 
             .all(|task| task["id"] != id.to_string())
     );
     // Polling resources between preview and confirmation keeps the retained preview.
-    bridge.application.refresh_resources(3).unwrap();
+    bridge.application.refresh_resources().unwrap();
     let result = archive(&mut bridge, 7, as_of);
     assert_eq!(result["data"]["archivedCount"], 2, "{result}");
     assert_eq!(
@@ -282,8 +282,8 @@ fn remote_archive_after_other_clients_writes_archives_what_matches_when_it_runs(
     );
     let mut first = server.client();
     let mut second = server.client();
-    first.application.refresh_resources(3).unwrap();
-    second.application.refresh_resources(3).unwrap();
+    first.application.refresh_resources().unwrap();
+    second.application.refresh_resources().unwrap();
     let as_of = Utc::now();
     let selected = preview(&mut first, 14, as_of);
     assert_eq!(selected["data"]["tasks"].as_array().unwrap().len(), 3);
@@ -299,12 +299,12 @@ fn remote_archive_after_other_clients_writes_archives_what_matches_when_it_runs(
             as_of,
         )
         .unwrap();
-    first.application.refresh_resources(3).unwrap();
+    first.application.refresh_resources().unwrap();
     // The server archives the tasks that match the period when confirmation runs, not the
     // previewed list.
     let result = archive(&mut first, 14, as_of);
     assert_eq!(result["data"]["archivedCount"], 2, "{result}");
-    first.application.refresh_resources(3).unwrap();
+    first.application.refresh_resources().unwrap();
     let tasks = first.application.tasks(TaskOrdering::default());
     assert_eq!(tasks.len(), 4);
     assert!(
@@ -334,7 +334,7 @@ fn unavailable_preview_and_confirmation_invalidate_context_and_preserve_confirme
             tracker_server::router_for_database(&path).unwrap(),
         );
         let mut bridge = server.client();
-        bridge.application.refresh_resources(3).unwrap();
+        bridge.application.refresh_resources().unwrap();
         let as_of = Utc::now();
         assert!(preview(&mut bridge, 14, as_of).get("error").is_none());
         let before = crate::tests::test_resource_values(&bridge.application);

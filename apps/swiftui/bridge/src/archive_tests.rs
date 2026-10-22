@@ -186,9 +186,9 @@ fn remote_archive_and_restore_require_refresh_and_preserve_committed_tracking_an
     let server = report_tests::Server::start(tracker_server::router_for_database(&path).unwrap());
     let mut bridge = server.client();
     assert_eq!(change(&mut bridge, target, true)["kind"], "unavailable");
-    bridge.application.refresh_resources(3).unwrap();
+    bridge.application.refresh_resources().unwrap();
     let mut second = server.client();
-    second.application.refresh_resources(3).unwrap();
+    second.application.refresh_resources().unwrap();
     second
         .application
         .rename_task_with_expected_name(
@@ -204,7 +204,7 @@ fn remote_archive_and_restore_require_refresh_and_preserve_committed_tracking_an
     assert_eq!(stale["requiresRefresh"], true);
     let expected_active = writer.application.current_tracking().clone();
     for archived in [true, true, false, false] {
-        bridge.application.refresh_resources(3).unwrap();
+        bridge.application.refresh_resources().unwrap();
         let result = change(&mut bridge, target, archived);
         assert!(result.get("error").is_none(), "{result}");
         let task = &result["data"]["task"];
@@ -212,12 +212,12 @@ fn remote_archive_and_restore_require_refresh_and_preserve_committed_tracking_an
         assert_eq!(task["archived"], archived);
         assert_eq!(bridge.application.current_tracking(), &expected_active);
     }
-    bridge.application.refresh_resources(3).unwrap();
+    bridge.application.refresh_resources().unwrap();
     let failure = change(&mut bridge, tasks[1].task.id(), true);
     assert_eq!(failure["kind"], "task_active");
     assert_eq!(failure["uncertain"], false);
     assert_eq!(failure["requiresRefresh"], true);
-    bridge.application.refresh_resources(3).unwrap();
+    bridge.application.refresh_resources().unwrap();
     assert_eq!(
         change(&mut bridge, TaskId::generate(), false)["kind"],
         "task_not_found"
@@ -340,7 +340,7 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
             let requests = Arc::new(Mutex::new(Vec::new()));
             let server = mock_server(initial.clone(), reply, requests.clone());
             let mut bridge = server.client();
-            bridge.application.refresh_resources(3).unwrap();
+            bridge.application.refresh_resources().unwrap();
             let response = change(&mut bridge, target, archived);
             if index == 0 {
                 assert!(response.get("error").is_none(), "{response}");
@@ -369,7 +369,7 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
                 assert_eq!(blocked["kind"], "unavailable");
                 assert_eq!(blocked["uncertain"], false);
                 assert_eq!(requests.lock().unwrap().len(), 1);
-                bridge.application.refresh_resources(3).unwrap();
+                bridge.application.refresh_resources().unwrap();
             }
         }
     }
@@ -390,7 +390,7 @@ fn unavailable_archive_and_restore_keep_confirmed_state_and_block_writes_until_r
         let server =
             report_tests::Server::start(tracker_server::router_for_database(&path).unwrap());
         let mut bridge = server.client();
-        bridge.application.refresh_resources(3).unwrap();
+        bridge.application.refresh_resources().unwrap();
         let before = crate::tests::test_resource_values(&bridge.application);
         drop(server);
         let failure = change(&mut bridge, target, archived);
@@ -404,7 +404,7 @@ fn unavailable_archive_and_restore_keep_confirmed_state_and_block_writes_until_r
         let blocked = change(&mut bridge, target, archived);
         assert_eq!(blocked["uncertain"], false);
         assert_eq!(blocked["requiresRefresh"], true);
-        assert!(bridge.application.refresh_resources(3).is_err());
+        assert!(bridge.application.refresh_resources().is_err());
     }
 }
 
@@ -502,7 +502,7 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
             );
         let server = report_tests::Server::start(router);
         let mut bridge = server.client();
-        bridge.application.refresh_resources(3).unwrap();
+        bridge.application.refresh_resources().unwrap();
         let before = crate::tests::test_resource_values(&bridge.application);
         let result = bridge.application.rename_task_with_expected_name(
             task.id(),
@@ -526,7 +526,7 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
             ));
         } else {
             assert!(result.is_ok());
-            let error = bridge.application.refresh_resources(3).unwrap_err();
+            let error = bridge.application.refresh_resources().unwrap_err();
             assert!(error.requires_refresh);
             assert!(!error.uncertain);
             assert_eq!(
@@ -606,7 +606,7 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
                 );
             let server = report_tests::Server::start(router);
             let mut bridge = server.client();
-            bridge.application.refresh_resources(3).unwrap();
+            bridge.application.refresh_resources().unwrap();
             let value = if action == "rename" {
                 let id = CString::new(task.id().to_string()).unwrap();
                 let expected = c"Original project";
@@ -685,9 +685,6 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
     let write_failures = failed_reads.clone();
     let writes = Arc::new(AtomicUsize::new(0));
     let write_count = writes.clone();
-    let task_reads = Arc::new(AtomicUsize::new(0));
-    let catalog_reads = task_reads.clone();
-    let single_task_reads = task_reads.clone();
     let server = report_tests::Server::start(
         Router::new()
             .route(
@@ -704,9 +701,7 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
                 get({
                     let state = state.clone();
                     let failures = failed_reads.clone();
-                    let reads = task_reads.clone();
                     move || {
-                        reads.fetch_add(1, Ordering::SeqCst);
                         let state = state.lock().unwrap();
                         let dto = tracker_protocol::TaskListStateDto {
                             tasks: state.0.tasks.clone(),
@@ -729,7 +724,6 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
             .route(
                 "/v1/tasks",
                 get(move || {
-                    catalog_reads.fetch_add(1, Ordering::SeqCst);
                     let tasks = tasks_state.lock().unwrap().0.clone();
                     async move { Json(tasks) }
                 }),
@@ -758,7 +752,6 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
             .route(
                 "/v1/tasks/{id}",
                 get(move || {
-                    single_task_reads.fetch_add(1, Ordering::SeqCst);
                     let tasks = task_state.lock().unwrap().0.clone();
                     async move {
                         Json(TaskResourceDto {
@@ -783,7 +776,7 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
             ),
     );
     let mut bridge = server.client();
-    bridge.application.refresh_resources(3).unwrap();
+    bridge.application.refresh_resources().unwrap();
     let confirmed_before = crate::tests::test_resource_values(&bridge.application);
     let id = CString::new(task.id().to_string()).unwrap();
     let expected = c"Before name";
@@ -824,29 +817,24 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
     assert_eq!(writes.load(Ordering::SeqCst), 1);
 
     failed_reads.store(false, Ordering::SeqCst);
-    for selection in [2, 1] {
-        bridge.application.refresh_resources(selection).unwrap();
-        let reads_before = task_reads.load(Ordering::SeqCst);
-        let blocked = bridge
-            .application
-            .rename_task_with_expected_name(
-                task.id(),
-                TaskName::new("Committed name").unwrap(),
-                TaskName::new("Next name").unwrap(),
-                at(500),
-            )
-            .unwrap_err();
-        assert_eq!(blocked.kind, "unavailable");
-        assert_eq!(
-            blocked.message,
-            "Refresh server state before changing tracker state"
-        );
-        assert!(blocked.requires_refresh);
-        assert!(!blocked.uncertain);
-        assert_eq!(task_reads.load(Ordering::SeqCst), reads_before);
-    }
+    // A health check clears the remote failure but does not refresh the task list.
+    bridge.application.check_connection().unwrap();
+    let blocked = bridge
+        .application
+        .rename_task_with_expected_name(
+            task.id(),
+            TaskName::new("Committed name").unwrap(),
+            TaskName::new("Next name").unwrap(),
+            at(500),
+        )
+        .unwrap_err();
+    assert_eq!(
+        blocked.message,
+        "Refresh server state before changing tracker state"
+    );
+    assert!(blocked.requires_refresh);
     assert_eq!(writes.load(Ordering::SeqCst), 1);
-    bridge.application.refresh_resources(3).unwrap();
+    bridge.application.refresh_resources().unwrap();
     let next = bridge
         .application
         .rename_task_with_expected_name(

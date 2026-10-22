@@ -20,36 +20,25 @@ fn report(bridge: &mut Bridge, start: i64, end: i64, now: i64) -> Value {
     let end = CString::new(timestamp(at(end))).unwrap();
     let now = CString::new(timestamp(at(now))).unwrap();
     // SAFETY: The bridge and all strings remain live for this call.
-    response(unsafe { tt_bridge_report(bridge, start.as_ptr(), end.as_ptr(), now.as_ptr()) })
+    unsafe { report_at(bridge, start.as_ptr(), end.as_ptr(), now.as_ptr()) }
 }
 
-fn selected_report(bridge: &mut Bridge, start: i64, end: i64, now: i64) -> Value {
-    selected_totals(bridge, true, start, end, now)
-}
-
-fn selected_totals(
-    bridge: &mut Bridge,
-    include_tasks: bool,
-    start: i64,
-    end: i64,
-    now: i64,
+/// Refreshes totals and returns the captured report, or the refresh error.
+///
+/// # Safety
+/// `bridge` must be live or null, and the strings must be valid C strings or null.
+unsafe fn report_at(
+    bridge: *mut Bridge,
+    start: *const c_char,
+    end: *const c_char,
+    now: *const c_char,
 ) -> Value {
-    let start = CString::new(timestamp(at(start))).unwrap();
-    let end = CString::new(timestamp(at(end))).unwrap();
-    let now = CString::new(timestamp(at(now))).unwrap();
-    // SAFETY: The bridge and all input strings remain live during each call.
-    let result = response(unsafe {
-        tt_bridge_refresh_totals(
-            bridge,
-            include_tasks,
-            start.as_ptr(),
-            end.as_ptr(),
-            now.as_ptr(),
-        )
-    });
+    // SAFETY: The caller keeps the bridge and all input strings live for this call.
+    let result = response(unsafe { tt_bridge_refresh_totals(bridge, start, end, now) });
     if result.get("error").is_some() {
         return result;
     }
+    // SAFETY: The refresh succeeded, so the bridge is live.
     response(unsafe { tt_bridge_report_observation(bridge) })
 }
 
@@ -277,57 +266,12 @@ fn local_reports_echo_the_microsecond_cutoff_used_for_totals() {
     let now = DateTime::from_timestamp(1010, 123_456_789).unwrap();
     let expected_now = DateTime::from_timestamp(1010, 123_456_000).unwrap();
 
-    let (rows, cutoff) = bridge
+    let totals = bridge
         .application
-        .report_rows(at(1000), at(1100), now)
+        .refresh_totals(at(1000), at(1100), now)
         .unwrap();
-    assert_eq!(cutoff, expected_now);
-    assert_eq!(rows[0].duration_microseconds, 5_123_456);
-
-    for include_tasks in [false, true] {
-        let totals = bridge
-            .application
-            .refresh_totals(include_tasks, at(1000), at(1100), now)
-            .unwrap();
-        assert_eq!(totals.now, timestamp(expected_now));
-        assert_eq!(totals.rows[0].duration_microseconds, 5_123_456);
-    }
-}
-
-/// Exercises a report read after another handle starts tracking without attaching task-list data.
-#[test]
-fn report_adopts_local_tracking_and_returns_only_totals() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("tracker.db");
-    let mut first = open_fixture(&path).unwrap();
-    let mut second = open_fixture(&path).unwrap();
-    let task_id = second.application.tasks(TaskOrdering::default())[0]
-        .task
-        .id();
-    second
-        .application
-        .set_active_task(task_id, at(1005))
-        .unwrap_or_else(|error| panic!("{}", error.message));
-    assert!(matches!(
-        first.application.current_tracking(),
-        TrackingState::Idle
-    ));
-
-    let value = report(&mut first, 1000, 1100, 1010);
-    assert_eq!(
-        value["data"]["rows"],
-        json!([
-            {"taskId": task_id.to_string(), "durationMicroseconds": 5_000_000}
-        ])
-    );
-    assert_eq!(
-        crate::tests::test_active_value(&first.application)["taskId"],
-        task_id.to_string()
-    );
-    assert_eq!(
-        crate::tests::test_resource_values(&first.application),
-        crate::tests::test_resource_values(&second.application)
-    );
+    assert_eq!(totals.now, timestamp(expected_now));
+    assert_eq!(totals.rows[0].duration_microseconds, 5_123_456);
 }
 
 #[test]
@@ -351,9 +295,7 @@ fn report_preserves_microseconds_and_accepts_utc_offsets() {
     let end = c"2026-10-05T02:00:00+02:00";
     let now = c"2026-10-04T00:00:00.500000Z";
     // SAFETY: The bridge and all strings remain live for this call.
-    let value = response(unsafe {
-        tt_bridge_report(&mut bridge, start.as_ptr(), end.as_ptr(), now.as_ptr())
-    });
+    let value = unsafe { report_at(&mut bridge, start.as_ptr(), end.as_ptr(), now.as_ptr()) };
     assert_eq!(
         value["data"]["rows"],
         json!([
@@ -373,40 +315,20 @@ fn report_rejects_null_malformed_and_invalid_ranges_and_returns_empty_totals() {
     // SAFETY: All handles and strings are live or null, as the API supports.
     unsafe {
         assert_eq!(
-            response(tt_bridge_report(
-                ptr::null_mut(),
-                ptr::null(),
-                ptr::null(),
-                ptr::null()
-            ))["error"],
+            report_at(ptr::null_mut(), ptr::null(), ptr::null(), ptr::null())["error"],
             "Database is not open"
         );
         for invalid in [ptr::null(), malformed.as_ptr(), non_utf8.as_ptr()] {
             assert_eq!(
-                response(tt_bridge_report(
-                    &mut bridge,
-                    invalid,
-                    valid.as_ptr(),
-                    valid.as_ptr()
-                ))["error"],
+                report_at(&mut bridge, invalid, valid.as_ptr(), valid.as_ptr())["error"],
                 "Invalid report start"
             );
             assert_eq!(
-                response(tt_bridge_report(
-                    &mut bridge,
-                    valid.as_ptr(),
-                    invalid,
-                    valid.as_ptr()
-                ))["error"],
+                report_at(&mut bridge, valid.as_ptr(), invalid, valid.as_ptr())["error"],
                 "Invalid report end"
             );
             assert_eq!(
-                response(tt_bridge_report(
-                    &mut bridge,
-                    valid.as_ptr(),
-                    valid.as_ptr(),
-                    invalid
-                ))["error"],
+                report_at(&mut bridge, valid.as_ptr(), valid.as_ptr(), invalid)["error"],
                 "Invalid report timestamp"
             );
         }
@@ -496,7 +418,7 @@ fn remote_report_uses_server_totals_and_composes_task_and_tracking_resources() {
         .set_active_task(task_id, at(900))
         .unwrap_or_else(|error| panic!("{}", error.message));
 
-    let value = selected_report(&mut bridge, 1000, 1100, 1050);
+    let value = report(&mut bridge, 1000, 1100, 1050);
     assert_eq!(
         value["data"]["rows"],
         json!([
@@ -508,8 +430,6 @@ fn remote_report_uses_server_totals_and_composes_task_and_tracking_resources() {
         crate::tests::test_resource_values(&bridge.application),
         crate::tests::test_resource_values(&writer.application)
     );
-    let invalid = report(&mut bridge, 1100, 1000, 1050);
-    assert_eq!(invalid["requiresRefresh"], false);
     bridge
         .application
         .set_active_task(tasks[1].task.id(), at(1060))
@@ -568,105 +488,12 @@ fn remote_selected_report_reads_one_daily_overview_without_reconciliation() {
         );
     let server = Server::start(router);
     let mut bridge = server.client();
-    let value = selected_report(&mut bridge, 1000, 1100, 1050);
+    let value = report(&mut bridge, 1000, 1100, 1050);
     assert!(value.get("error").is_none(), "{value}");
     assert!(value["data"].get("revision").is_none(), "{value}");
     assert!(tracking_json(&bridge.application).unwrap().value.is_none());
     assert_eq!(requests.load(Ordering::SeqCst), 1);
     assert_eq!(value["data"]["rows"][0]["durationMicroseconds"], 50_000_000);
-}
-
-#[test]
-fn remote_report_failure_retains_resource_caches_until_an_explicit_refresh() {
-    use axum::{Json, Router, http::StatusCode, routing::get};
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-    use tracker_protocol::{ErrorCode, ErrorDto, HealthDto, TasksDto, TrackingDto};
-
-    let repository = SqliteRepository::open_in_memory().unwrap();
-    let mut application = TrackerApplication::load(repository).unwrap();
-    let task = application
-        .create_task(TaskName::new("Changed elsewhere").unwrap(), at(0))
-        .unwrap();
-    let refreshed = report_tests::resource_dtos(application.tasks(TaskOrdering::default()), None);
-    let task_reads = Arc::new(AtomicUsize::new(0));
-    let router = Router::new()
-        .route(
-            "/v1/health",
-            get(|| async {
-                Json(HealthDto {
-                    status: "ok".into(),
-                    protocol_version: tracker_protocol::VERSION,
-                })
-            }),
-        )
-        .route(
-            "/v1/state/task-list",
-            get(move || {
-                let resources = if task_reads.fetch_add(1, Ordering::SeqCst) == 0 {
-                    (
-                        TasksDto { tasks: vec![] },
-                        TrackingDto {
-                            active_worklog: None,
-                        },
-                    )
-                } else {
-                    refreshed.clone()
-                };
-                async move {
-                    Json(tracker_protocol::TaskListStateDto {
-                        tasks: resources.0.tasks,
-                        active_worklog: resources.1.active_worklog,
-                    })
-                }
-            }),
-        )
-        .route(
-            "/v1/tracking",
-            get(|| async {
-                Json(TrackingDto {
-                    active_worklog: None,
-                })
-            }),
-        )
-        .route(
-            "/v1/reports/task-totals",
-            get(|| async {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorDto {
-                        code: ErrorCode::InvalidRequest,
-                        message: "Report unavailable".into(),
-                    }),
-                )
-            }),
-        );
-    let server = Server::start(router);
-    let mut bridge = server.client();
-    // SAFETY: The bridge is live and uniquely accessed.
-    let initial = response(unsafe { tt_bridge_refresh_resources(&mut bridge, 3) });
-    assert!(initial.get("error").is_none());
-    assert_eq!(
-        crate::tests::test_task_values(&bridge.application),
-        json!([])
-    );
-    assert!(bridge.application.tasks(TaskOrdering::default()).is_empty());
-
-    let value = report(&mut bridge, 1000, 1100, 1050);
-    assert!(value.get("error").is_some());
-    assert_eq!(value["requiresRefresh"], false);
-    assert_eq!(value["uncertain"], false);
-    assert!(bridge.application.tasks(TaskOrdering::default()).is_empty());
-
-    // SAFETY: The bridge is live and uniquely accessed.
-    let refreshed = response(unsafe { tt_bridge_refresh_resources(&mut bridge, 3) });
-    assert!(refreshed.get("error").is_none());
-    assert_eq!(
-        crate::tests::test_task_values(&bridge.application)[0]["id"],
-        task.id().to_string()
-    );
 }
 
 #[test]
@@ -740,7 +567,7 @@ fn connection_check_supports_local_handles_and_rejects_null_handles() {
 }
 
 #[test]
-fn separate_resource_exports_distinguish_unloaded_empty_and_idle_observations() {
+fn resource_exports_distinguish_unloaded_empty_and_idle_observations() {
     use axum::{Json, routing::get};
     let server = Server::start(resource_router(resource_dtos(vec![], None), vec![]).route(
         "/v1/health",
@@ -758,107 +585,32 @@ fn separate_resource_exports_distinguish_unloaded_empty_and_idle_observations() 
         assert!(response(tt_bridge_tracking(&mut bridge))["data"].is_null());
         assert!(response(tt_bridge_report_observation(&mut bridge))["data"].is_null());
         assert!(
-            response(tt_bridge_refresh_resources(&mut bridge, 1))
+            response(tt_bridge_refresh_resources(&mut bridge))
                 .get("error")
                 .is_none()
         );
         assert_eq!(
             response(tt_bridge_tasks(&mut bridge))["data"],
             json!({"value":[]})
-        );
-        assert!(response(tt_bridge_tracking(&mut bridge))["data"].is_null());
-        assert!(
-            response(tt_bridge_refresh_resources(&mut bridge, 2))
-                .get("error")
-                .is_none()
         );
         assert_eq!(
             response(tt_bridge_tracking(&mut bridge))["data"],
             json!({"value":null})
         );
-        assert_eq!(
-            response(tt_bridge_tasks(&mut bridge))["data"],
-            json!({"value":[]})
-        );
-    }
-}
-
-#[test]
-fn independent_remote_report_retains_totals_without_loading_task_or_tracking_metadata() {
-    use axum::{Json, Router, routing::get};
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-    let unrelated_reads = Arc::new(AtomicUsize::new(0));
-    let tasks_reads = unrelated_reads.clone();
-    let tracking_reads = unrelated_reads.clone();
-    let task_id = TaskId::generate();
-    let server = Server::start(
-        Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(tracker_protocol::HealthDto {
-                        status: "ok".into(),
-                        protocol_version: tracker_protocol::VERSION,
-                    })
-                }),
-            )
-            .route(
-                "/v1/tasks",
-                get(move || {
-                    tasks_reads.fetch_add(1, Ordering::SeqCst);
-                    async { axum::http::StatusCode::NOT_FOUND }
-                }),
-            )
-            .route(
-                "/v1/tracking",
-                get(move || {
-                    tracking_reads.fetch_add(1, Ordering::SeqCst);
-                    async { axum::http::StatusCode::NOT_FOUND }
-                }),
-            )
-            .route(
-                "/v1/reports/task-totals",
-                get(move || async move {
-                    Json(tracker_protocol::ReportDto {
-                        start: at(1000),
-                        end: at(1100),
-                        now: at(1050),
-                        rows: vec![tracker_protocol::ReportRowDto {
-                            task_id: task_id.to_string(),
-                            duration_us: 50_000_000,
-                        }],
-                        total_us: 50_000_000,
-                    })
-                }),
-            ),
-    );
-    let mut bridge = server.client();
-
-    let value = report(&mut bridge, 1000, 1100, 1050);
-
-    assert!(value.get("error").is_none(), "{value}");
-    assert_eq!(
-        value["data"]["rows"],
-        json!([{"taskId":task_id.to_string(),"durationMicroseconds":50_000_000}])
-    );
-    assert!(value["data"].get("revision").is_none(), "{value}");
-    assert!(value["data"].get("snapshot").is_none());
-    assert_eq!(unrelated_reads.load(Ordering::SeqCst), 0);
-    // SAFETY: Each call has exclusive access to the live bridge.
-    unsafe {
-        assert!(response(tt_bridge_tasks(&mut bridge))["data"].is_null());
-        assert!(response(tt_bridge_tracking(&mut bridge))["data"].is_null());
+        assert!(response(tt_bridge_report_observation(&mut bridge))["data"].is_null());
     }
 }
 
 #[test]
 fn failed_aggregate_refresh_retains_each_confirmed_resource_observation() {
-    use axum::{Json, Router, http::StatusCode, routing::get};
-    use tracker_protocol::{ErrorCode, ErrorDto};
-    let (tasks, tracking) = resource_dtos(vec![], None);
+    use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing::get};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    use tracker_protocol::{ErrorCode, ErrorDto, TaskListStateDto};
+    let failing = Arc::new(AtomicBool::new(false));
+    let fail_reads = failing.clone();
     let server = Server::start(
         Router::new()
             .route(
@@ -870,18 +622,28 @@ fn failed_aggregate_refresh_retains_each_confirmed_resource_observation() {
                     })
                 }),
             )
-            .route("/v1/tasks", get(move || async move { Json(tasks) }))
-            .route("/v1/tracking", get(move || async move { Json(tracking) }))
             .route(
                 "/v1/state/task-list",
-                get(|| async {
-                    (
-                        StatusCode::CONFLICT,
-                        Json(ErrorDto {
-                            code: ErrorCode::Conflict,
-                            message: "Task list changed".into(),
-                        }),
-                    )
+                get(move || {
+                    let fail = fail_reads.load(Ordering::SeqCst);
+                    async move {
+                        if fail {
+                            (
+                                StatusCode::CONFLICT,
+                                Json(ErrorDto {
+                                    code: ErrorCode::Conflict,
+                                    message: "Task list changed".into(),
+                                }),
+                            )
+                                .into_response()
+                        } else {
+                            Json(TaskListStateDto {
+                                tasks: vec![],
+                                active_worklog: None,
+                            })
+                            .into_response()
+                        }
+                    }
                 }),
             ),
     );
@@ -889,19 +651,15 @@ fn failed_aggregate_refresh_retains_each_confirmed_resource_observation() {
     // SAFETY: Each call has exclusive access to the live bridge.
     unsafe {
         assert!(
-            response(tt_bridge_refresh_resources(&mut bridge, 1))
-                .get("error")
-                .is_none()
-        );
-        assert!(
-            response(tt_bridge_refresh_resources(&mut bridge, 2))
+            response(tt_bridge_refresh_resources(&mut bridge))
                 .get("error")
                 .is_none()
         );
         let tasks = response(tt_bridge_tasks(&mut bridge));
         let tracking = response(tt_bridge_tracking(&mut bridge));
+        failing.store(true, Ordering::SeqCst);
 
-        let failure = response(tt_bridge_refresh_resources(&mut bridge, 3));
+        let failure = response(tt_bridge_refresh_resources(&mut bridge));
 
         assert_eq!(failure["kind"], "conflict");
         assert_eq!(failure["requiresRefresh"], true);
@@ -911,89 +669,29 @@ fn failed_aggregate_refresh_retains_each_confirmed_resource_observation() {
 }
 
 #[test]
-fn resource_exports_and_selected_refresh_reject_null_handles_and_unknown_selections() {
-    let repository = SqliteRepository::open_in_memory().unwrap();
-    let mut bridge =
-        Bridge::new(Backend::local(TrackerApplication::load(repository).unwrap()).unwrap());
-    // SAFETY: Null handles are supported inputs and the local bridge stays live.
+fn resource_exports_and_refreshes_reject_null_handles() {
+    // SAFETY: Null handles are supported inputs.
     unsafe {
         for returned in [
             tt_bridge_tasks(ptr::null_mut()),
             tt_bridge_tracking(ptr::null_mut()),
             tt_bridge_report_observation(ptr::null_mut()),
-            tt_bridge_refresh_resources(ptr::null_mut(), 3),
-            tt_bridge_refresh_totals(ptr::null_mut(), true, ptr::null(), ptr::null(), ptr::null()),
+            tt_bridge_refresh_resources(ptr::null_mut()),
+            tt_bridge_refresh_totals(ptr::null_mut(), ptr::null(), ptr::null(), ptr::null()),
         ] {
             assert_eq!(response(returned)["error"], "Database is not open");
         }
-        assert!(
-            response(tt_bridge_refresh_resources(&mut bridge, 0))
-                .get("error")
-                .is_some()
-        );
-        assert!(
-            response(tt_bridge_refresh_resources(&mut bridge, 4))
-                .get("error")
-                .is_some()
-        );
     }
 }
 
 #[test]
-fn local_resource_refresh_adopts_only_the_requested_observation() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("independent-local.db");
-    let mut bridge = open_fixture(&path).unwrap();
-    let mut writer = open_fixture(&path).unwrap();
-    let original = writer.application.tasks(TaskOrdering::default());
-    writer
-        .application
-        .create_task(TaskName::new("Added task").unwrap(), at(0))
-        .unwrap();
-    writer
-        .application
-        .set_active_task(original[0].task.id(), at(900))
-        .unwrap();
-
-    // SAFETY: Each call has exclusive access to a live bridge handle.
-    unsafe {
-        let idle_tracking = response(tt_bridge_tracking(&mut bridge));
-        assert!(idle_tracking["data"]["value"].is_null());
-        let refreshed = response(tt_bridge_refresh_resources(&mut bridge, 1));
-        assert!(refreshed.get("error").is_none(), "{refreshed}");
-        let refreshed_tasks = response(tt_bridge_tasks(&mut bridge));
-        assert_eq!(refreshed_tasks, response(tt_bridge_tasks(&mut writer)));
-        assert_eq!(response(tt_bridge_tracking(&mut bridge)), idle_tracking);
-
-        let unrelated = writer
-            .application
-            .create_task(TaskName::new("Later task").unwrap(), at(0))
-            .unwrap();
-        let refreshed = response(tt_bridge_refresh_resources(&mut bridge, 2));
-        assert!(refreshed.get("error").is_none(), "{refreshed}");
-        assert_eq!(
-            response(tt_bridge_tracking(&mut bridge)),
-            response(tt_bridge_tracking(&mut writer))
-        );
-        assert_eq!(response(tt_bridge_tasks(&mut bridge)), refreshed_tasks);
-        assert!(
-            !bridge
-                .application
-                .tasks(TaskOrdering::default())
-                .iter()
-                .any(|item| item.task.id() == unrelated.id())
-        );
-    }
-}
-
-#[test]
-fn local_selected_totals_refresh_only_the_requested_catalog_and_preserve_failed_reads() {
+fn local_totals_refresh_adopts_the_task_list_and_preserves_failed_reads() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("selected-local.db");
     let mut bridge = open_fixture(&path).unwrap();
     let mut writer = open_fixture(&path).unwrap();
     let original = writer.application.tasks(TaskOrdering::default());
-    let added = writer
+    writer
         .application
         .create_task(TaskName::new("Unrelated task").unwrap(), at(0))
         .unwrap();
@@ -1002,51 +700,35 @@ fn local_selected_totals_refresh_only_the_requested_catalog_and_preserve_failed_
         .set_active_task(original[0].task.id(), at(900))
         .unwrap();
 
-    let daily = selected_totals(&mut bridge, false, 1000, 1100, 1050);
+    let totals = report(&mut bridge, 1000, 1100, 1050);
     assert_eq!(
-        daily["data"]["rows"],
+        totals["data"]["rows"],
         json!([
             {"taskId": original[0].task.id().to_string(), "durationMicroseconds": 50_000_000}
         ])
     );
-    assert!(daily["data"].get("revision").is_none(), "{daily}");
-    assert!(
-        !bridge
-            .application
-            .tasks(TaskOrdering::default())
-            .iter()
-            .any(|item| item.task.id() == added.id())
-    );
-    assert_eq!(
-        crate::tests::test_active_value(&bridge.application),
-        crate::tests::test_active_value(&writer.application)
-    );
-
-    let with_catalog = selected_totals(&mut bridge, true, 1000, 1100, 1050);
-    assert_eq!(with_catalog, daily);
+    assert!(totals["data"].get("revision").is_none(), "{totals}");
     assert_eq!(
         crate::tests::test_resource_values(&bridge.application),
         crate::tests::test_resource_values(&writer.application)
     );
     let confirmed_resources = crate::tests::test_resource_values(&bridge.application);
     let confirmed_report = serde_json::to_value(&bridge.report_observation).unwrap();
-    for include_tasks in [false, true] {
-        let failure = selected_totals(&mut bridge, include_tasks, 1100, 1000, 1050);
-        assert_eq!(failure["error"], "Report end must be later than start");
-        assert_eq!(failure["uncertain"], false);
-        assert_eq!(
-            crate::tests::test_resource_values(&bridge.application),
-            confirmed_resources
-        );
-        assert_eq!(
-            serde_json::to_value(&bridge.report_observation).unwrap(),
-            confirmed_report
-        );
-    }
+    let failure = report(&mut bridge, 1100, 1000, 1050);
+    assert_eq!(failure["error"], "Report end must be later than start");
+    assert_eq!(failure["uncertain"], false);
+    assert_eq!(
+        crate::tests::test_resource_values(&bridge.application),
+        confirmed_resources
+    );
+    assert_eq!(
+        serde_json::to_value(&bridge.report_observation).unwrap(),
+        confirmed_report
+    );
 }
 
 #[test]
-fn remote_selected_daily_totals_load_tracking_without_loading_the_task_catalog() {
+fn remote_totals_refresh_loads_the_task_list_and_retains_it_after_failure() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("selected-remote.db");
     let mut writer = open_fixture(&path).unwrap();
@@ -1058,21 +740,12 @@ fn remote_selected_daily_totals_load_tracking_without_loading_the_task_catalog()
     let mut server = Server::start(tracker_server::router_for_database(&path).unwrap());
     let mut bridge = server.client();
 
-    let daily = selected_totals(&mut bridge, false, 1000, 1100, 1050);
-    assert!(daily.get("error").is_none(), "{daily}");
-    assert!(tasks_json(&bridge.application).is_none());
+    let totals = report(&mut bridge, 1000, 1100, 1050);
+    assert!(totals.get("error").is_none(), "{totals}");
     assert_eq!(
-        tracking_json(&bridge.application)
-            .unwrap()
-            .value
-            .unwrap()
-            .task_id,
-        tasks[0].task.id().to_string()
+        totals["data"]["rows"][0]["durationMicroseconds"],
+        50_000_000
     );
-    assert_eq!(daily["data"]["rows"][0]["durationMicroseconds"], 50_000_000);
-
-    let with_catalog = selected_totals(&mut bridge, true, 1000, 1100, 1050);
-    assert_eq!(with_catalog, daily);
     assert_eq!(
         crate::tests::test_resource_values(&bridge.application),
         crate::tests::test_resource_values(&writer.application)
@@ -1081,22 +754,20 @@ fn remote_selected_daily_totals_load_tracking_without_loading_the_task_catalog()
     let confirmed_tracking = serde_json::to_value(tracking_json(&bridge.application)).unwrap();
     let confirmed_report = serde_json::to_value(&bridge.report_observation).unwrap();
     server.stop();
-    for include_tasks in [false, true] {
-        let failure = selected_totals(&mut bridge, include_tasks, 1000, 1100, 1050);
-        assert_eq!(failure["kind"], "unavailable");
-        assert_eq!(failure["uncertain"], false);
-        assert_eq!(failure["requiresRefresh"], true);
-        assert_eq!(
-            serde_json::to_value(tasks_json(&bridge.application)).unwrap(),
-            confirmed_tasks
-        );
-        assert_eq!(
-            serde_json::to_value(tracking_json(&bridge.application)).unwrap(),
-            confirmed_tracking
-        );
-        assert_eq!(
-            serde_json::to_value(&bridge.report_observation).unwrap(),
-            confirmed_report
-        );
-    }
+    let failure = report(&mut bridge, 1000, 1100, 1050);
+    assert_eq!(failure["kind"], "unavailable");
+    assert_eq!(failure["uncertain"], false);
+    assert_eq!(failure["requiresRefresh"], true);
+    assert_eq!(
+        serde_json::to_value(tasks_json(&bridge.application)).unwrap(),
+        confirmed_tasks
+    );
+    assert_eq!(
+        serde_json::to_value(tracking_json(&bridge.application)).unwrap(),
+        confirmed_tracking
+    );
+    assert_eq!(
+        serde_json::to_value(&bridge.report_observation).unwrap(),
+        confirmed_report
+    );
 }

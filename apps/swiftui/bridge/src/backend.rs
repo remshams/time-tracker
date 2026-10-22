@@ -15,7 +15,6 @@ use tracker_remote::{RemoteApplication, RemoteError, ResourceSelection};
 use tracker_storage::SqliteRepository;
 
 pub(crate) use tracker_client::InactivePreview;
-type ReportRows = (Vec<super::ReportRowJson>, DateTime<Utc>);
 
 pub(crate) struct Backend {
     application: TrackerBackend,
@@ -85,34 +84,27 @@ impl Backend {
         })
     }
 
-    pub fn refresh_resources(&mut self, selection: u32) -> Result<(), BridgeError> {
-        let selection = resource_selection(selection)?;
-        let result = self
-            .runtime
-            .block_on(self.application.refresh_resources(selection));
-        self.record_refresh(selection, &result);
+    /// Refreshes the task catalog and tracking state together.
+    pub fn refresh_resources(&mut self) -> Result<(), BridgeError> {
+        let result = self.runtime.block_on(
+            self.application
+                .refresh_resources(ResourceSelection::TaskList),
+        );
+        self.record_refresh(&result);
         result.map_err(refresh_error)
     }
 
-    /// Refreshes the selected report resources and returns their canonical cutoff.
+    /// Refreshes the task list with totals and returns the report's canonical cutoff.
     pub fn refresh_totals(
         &mut self,
-        include_tasks: bool,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<super::ReportJson, BridgeError> {
-        let selection = if include_tasks {
-            ResourceSelection::TaskListWithTotals { start, end, now }
-        } else {
-            ResourceSelection::DailyTotals { start, end, now }
-        };
-        let result =
-            self.runtime.block_on(
-                self.application
-                    .refresh_totals(include_tasks, start, end, now),
-            );
-        self.record_refresh(selection, &result);
+        let result = self
+            .runtime
+            .block_on(self.application.refresh_totals(true, start, end, now));
+        self.record_refresh(&result);
         let report = result.map_err(refresh_error)?;
         Ok(super::ReportJson {
             rows: report_rows(&report)?,
@@ -120,36 +112,10 @@ impl Backend {
         })
     }
 
-    fn record_refresh<T>(
-        &mut self,
-        selection: ResourceSelection,
-        result: &Result<T, RefreshError>,
-    ) {
-        if !self.application.is_remote() {
-            return;
-        }
-        if matches!(
-            selection,
-            ResourceSelection::TaskList | ResourceSelection::TaskListWithTotals { .. }
-        ) {
+    fn record_refresh<T>(&mut self, result: &Result<T, RefreshError>) {
+        if self.application.is_remote() {
             self.requires_refresh = result.is_err();
-        } else {
-            self.requires_refresh |= result.is_err();
         }
-    }
-
-    /// Returns report rows and the canonical cutoff.
-    pub fn report_rows(
-        &mut self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-        now: DateTime<Utc>,
-    ) -> Result<ReportRows, BridgeError> {
-        let result = self
-            .runtime
-            .block_on(self.application.report(start, end, now));
-        let report = result.map_err(|error| self.operation_error(error, false))?;
-        Ok((report_rows(&report)?, report.now))
     }
 
     #[cfg(test)]
@@ -533,14 +499,6 @@ fn report_rows(report: &ClientReport) -> Result<Vec<super::ReportRowJson>, Bridg
         .collect()
 }
 
-fn resource_selection(selection: u32) -> Result<ResourceSelection, BridgeError> {
-    match selection {
-        1 => Ok(ResourceSelection::Tasks),
-        2 => Ok(ResourceSelection::Tracking),
-        3 => Ok(ResourceSelection::TaskList),
-        _ => Err("Invalid resource selection".to_owned().into()),
-    }
-}
 fn remote_read_error(error: RemoteError) -> BridgeError {
     BridgeError {
         message: error.to_string(),

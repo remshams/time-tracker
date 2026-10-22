@@ -45,9 +45,8 @@ final class ModelsTests: XCTestCase {
         let reportJSON =
             #"{"rows":[{"taskId":"metadata-not-loaded","durationMicroseconds":12}],"now":"2025-01-01T00:00:00Z"}"#
         let report = try JSONDecoder().decode(TrackerReport.self, from: Data(reportJSON.utf8))
-        let resources = DailyTotalsResources(report: report, tracking: TrackingObservation(value: nil))
-        XCTAssertEqual(resources.report.rows.first?.taskId, "metadata-not-loaded")
-        XCTAssertEqual(resources.report.now, "2025-01-01T00:00:00Z")
+        XCTAssertEqual(report.rows.first?.taskId, "metadata-not-loaded")
+        XCTAssertEqual(report.now, "2025-01-01T00:00:00Z")
     }
 
     func testHistoryDecodesOpaqueCursorAndResetFlag() throws {

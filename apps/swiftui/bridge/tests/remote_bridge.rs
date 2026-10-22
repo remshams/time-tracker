@@ -164,7 +164,7 @@ impl Client {
         // SAFETY: This client owns and serializes access to its bridge.
         unsafe {
             if refresh {
-                let status = response(tt_bridge_refresh_resources(self.0, 3));
+                let status = response(tt_bridge_refresh_resources(self.0));
                 if status.get("error").is_some() {
                     return (status.clone(), status);
                 }

@@ -41,16 +41,6 @@ public struct TaskListResources: Equatable, Sendable {
     }
 }
 
-public struct DailyTotalsResources: Equatable, Sendable {
-    public let report: TrackerReport
-    public let tracking: TrackingObservation
-
-    public init(report: TrackerReport, tracking: TrackingObservation) {
-        self.report = report
-        self.tracking = tracking
-    }
-}
-
 public struct TaskListTotalsRefresh: Equatable, Sendable {
     public let taskList: TaskListResources
     public let report: TrackerReport
