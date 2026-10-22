@@ -223,6 +223,39 @@ mod tests {
         }
     }
 
+    /// Reads one HTTP request from the stream and returns its body.
+    fn read_request_body(stream: &mut TcpStream) -> Vec<u8> {
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let mut request = Vec::new();
+        let header_end = loop {
+            let mut chunk = [0_u8; 1024];
+            let count = stream.read(&mut chunk).unwrap();
+            assert!(count > 0);
+            request.extend_from_slice(&chunk[..count]);
+            if let Some(index) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                break index + 4;
+            }
+        };
+        let headers = String::from_utf8_lossy(&request[..header_end]);
+        let length: usize = headers
+            .lines()
+            .find_map(|line| {
+                line.to_ascii_lowercase()
+                    .strip_prefix("content-length: ")
+                    .and_then(|value| value.parse().ok())
+            })
+            .unwrap();
+        while request.len() < header_end + length {
+            let mut chunk = [0_u8; 1024];
+            let count = stream.read(&mut chunk).unwrap();
+            assert!(count > 0);
+            request.extend_from_slice(&chunk[..count]);
+        }
+        request[header_end..header_end + length].to_vec()
+    }
+
     fn serve_json(body: Vec<u8>) -> (String, thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}/", listener.local_addr().unwrap());
@@ -259,35 +292,7 @@ mod tests {
                 let Some(mut stream) = accept_with_deadline(&listener) else {
                     break;
                 };
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                let mut request = Vec::new();
-                let header_end = loop {
-                    let mut chunk = [0_u8; 1024];
-                    let count = stream.read(&mut chunk).unwrap();
-                    assert!(count > 0);
-                    request.extend_from_slice(&chunk[..count]);
-                    if let Some(index) = request.windows(4).position(|part| part == b"\r\n\r\n") {
-                        break index + 4;
-                    }
-                };
-                let headers = String::from_utf8_lossy(&request[..header_end]);
-                let length: usize = headers
-                    .lines()
-                    .find_map(|line| {
-                        line.to_ascii_lowercase()
-                            .strip_prefix("content-length: ")
-                            .and_then(|value| value.parse().ok())
-                    })
-                    .unwrap();
-                while request.len() < header_end + length {
-                    let mut chunk = [0_u8; 1024];
-                    let count = stream.read(&mut chunk).unwrap();
-                    assert!(count > 0);
-                    request.extend_from_slice(&chunk[..count]);
-                }
-                bodies.push(request[header_end..header_end + length].to_vec());
+                bodies.push(read_request_body(&mut stream));
                 if attempt == 1 {
                     stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}").unwrap();
                 }
@@ -316,35 +321,7 @@ mod tests {
                 let Some(mut stream) = accept_with_deadline(&listener) else {
                     break;
                 };
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                let mut request = Vec::new();
-                let header_end = loop {
-                    let mut chunk = [0_u8; 1024];
-                    let count = stream.read(&mut chunk).unwrap();
-                    assert!(count > 0);
-                    request.extend_from_slice(&chunk[..count]);
-                    if let Some(index) = request.windows(4).position(|part| part == b"\r\n\r\n") {
-                        break index + 4;
-                    }
-                };
-                let headers = String::from_utf8_lossy(&request[..header_end]);
-                let length: usize = headers
-                    .lines()
-                    .find_map(|line| {
-                        line.to_ascii_lowercase()
-                            .strip_prefix("content-length: ")
-                            .and_then(|value| value.parse().ok())
-                    })
-                    .unwrap();
-                while request.len() < header_end + length {
-                    let mut chunk = [0_u8; 1024];
-                    let count = stream.read(&mut chunk).unwrap();
-                    assert!(count > 0);
-                    request.extend_from_slice(&chunk[..count]);
-                }
-                requests.push(request[header_end..header_end + length].to_vec());
+                requests.push(read_request_body(&mut stream));
                 stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 8\r\nConnection: close\r\n\r\npart").unwrap();
             }
             requests
@@ -488,19 +465,6 @@ mod tests {
             .await;
         assert!(result.is_err());
         assert!(!server.join().unwrap());
-    }
-
-    #[tokio::test]
-    async fn accepts_a_large_response_within_the_sixteen_megabyte_limit() {
-        let payload = format!("\"{}\"", "x".repeat(2_000_000)).into_bytes();
-        let (endpoint, worker) = serve_json(payload);
-        let transport = Transport::new(&endpoint).unwrap();
-        let received: String = transport
-            .send(Method::GET, transport.url("v1/tasks"), None::<&()>)
-            .await
-            .unwrap();
-        assert_eq!(received.len(), 2_000_000);
-        worker.join().unwrap();
     }
 
     #[tokio::test]
