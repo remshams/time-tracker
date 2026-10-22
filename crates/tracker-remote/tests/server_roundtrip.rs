@@ -11,7 +11,6 @@ use tracker_domain::{TaskName, WorklogId, WorklogTimes};
 use tracker_protocol::{DailyOverviewDto, HealthDto, TaskListStateDto, VERSION};
 use tracker_remote::RemoteApplication;
 use tracker_remote::RemoteFailureKind;
-use tracker_remote::ResourceSelection;
 
 /// Checks that a collapsed report interval fails before attempting a server connection.
 #[tokio::test]
@@ -25,27 +24,13 @@ async fn report_range_validation_uses_microseconds_before_connecting() {
         Err(tracker_application::ApplicationError::InvalidReportRange)
     );
     assert!(client.report_observation().is_none());
-    for selection in [
-        ResourceSelection::DailyTotals {
-            start,
-            end,
-            now: end,
-        },
-        ResourceSelection::TaskListWithTotals {
-            start,
-            end,
-            now: end,
-        },
-    ] {
-        let mut client = RemoteApplication::disconnected("http://127.0.0.1:1/").unwrap();
-        assert!(matches!(
-            client.refresh_resources(selection).await,
-            Err(tracker_remote::RemoteError::Protocol(message)) if message == "invalid report range"
-        ));
-        assert!(client.report_observation().is_none());
-        assert!(client.task_observation().is_none());
-        assert!(client.tracking_observation().is_none());
-    }
+    assert!(matches!(
+        client.refresh_task_list_with_totals(start, end, end).await,
+        Err(tracker_remote::RemoteError::Protocol(message)) if message == "invalid report range"
+    ));
+    assert!(client.report_observation().is_none());
+    assert!(client.task_observation().is_none());
+    assert!(client.tracking_observation().is_none());
 }
 
 /// Invalid canonical input preserves network probes and existing availability state.
@@ -67,46 +52,29 @@ async fn invalid_report_refreshes_do_not_contact_the_server_or_start_an_outage_c
     ));
     let start = DateTime::from_timestamp(100, 100).unwrap();
     let end = DateTime::from_timestamp(100, 900).unwrap();
-    for include_tasks in [false, true] {
-        let mut client = RemoteApplication::disconnected(&server.endpoint()).unwrap();
-        let selection = |end| {
-            if include_tasks {
-                ResourceSelection::TaskListWithTotals {
-                    start,
-                    end,
-                    now: end,
-                }
-            } else {
-                ResourceSelection::DailyTotals {
-                    start,
-                    end,
-                    now: end,
-                }
-            }
-        };
-        let before = reads.load(Ordering::SeqCst);
-        let failure = client.last_failure();
-        assert!(matches!(
-            client.refresh_resources(selection(end)).await,
-            Err(tracker_remote::RemoteError::Protocol(message)) if message == "invalid report range"
-        ));
-        assert_eq!(reads.load(Ordering::SeqCst), before);
-        assert_eq!(client.last_failure(), failure);
-        assert!(
-            client
-                .refresh_resources(selection(end + Duration::seconds(1)))
-                .await
-                .unwrap_err()
-                .is_unavailable()
-        );
-        assert_eq!(reads.load(Ordering::SeqCst), before + 1);
-        assert!(matches!(
-            client.refresh_resources(selection(end)).await,
-            Err(tracker_remote::RemoteError::Protocol(message)) if message == "invalid report range"
-        ));
-        assert_eq!(reads.load(Ordering::SeqCst), before + 1);
-        assert_eq!(client.last_failure(), Some(RemoteFailureKind::Unavailable));
-    }
+    let mut client = RemoteApplication::disconnected(&server.endpoint()).unwrap();
+    let failure = client.last_failure();
+    assert!(matches!(
+        client.refresh_task_list_with_totals(start, end, end).await,
+        Err(tracker_remote::RemoteError::Protocol(message)) if message == "invalid report range"
+    ));
+    assert_eq!(reads.load(Ordering::SeqCst), 0);
+    assert_eq!(client.last_failure(), failure);
+    let later = end + Duration::seconds(1);
+    assert!(
+        client
+            .refresh_task_list_with_totals(start, later, later)
+            .await
+            .unwrap_err()
+            .is_unavailable()
+    );
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        client.refresh_task_list_with_totals(start, end, end).await,
+        Err(tracker_remote::RemoteError::Protocol(message)) if message == "invalid report range"
+    ));
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
+    assert_eq!(client.last_failure(), Some(RemoteFailureKind::Unavailable));
 }
 
 /// Checks that request bounds, returned cutoffs, and the retained report use identical precision.
@@ -129,25 +97,20 @@ async fn report_request_and_echo_use_the_same_microsecond_context() {
     assert!(client.task_observation().is_none());
     assert!(client.tracking_observation().is_none());
 
-    for selection in [
-        ResourceSelection::DailyTotals { start, end, now },
-        ResourceSelection::TaskListWithTotals { start, end, now },
-    ] {
-        client.refresh_resources(selection).await.unwrap();
-        assert_eq!(client.report_observation().unwrap().start, report.start);
-        assert_eq!(client.report_observation().unwrap().end, report.end);
-        assert_eq!(client.report_observation().unwrap().now, report.now);
-        assert!(client.tracking_observation().is_some());
-        assert_eq!(client.last_failure(), None);
-    }
+    client
+        .refresh_task_list_with_totals(start, end, now)
+        .await
+        .unwrap();
+    assert_eq!(client.report_observation().unwrap().start, report.start);
+    assert_eq!(client.report_observation().unwrap().end, report.end);
+    assert_eq!(client.report_observation().unwrap().now, report.now);
+    assert!(client.task_observation().is_some());
+    assert!(client.tracking_observation().is_some());
+    assert_eq!(client.last_failure(), None);
     let confirmed = client.report_observation().cloned();
     assert!(
         client
-            .refresh_resources(ResourceSelection::DailyTotals {
-                start,
-                end: start,
-                now,
-            })
+            .refresh_task_list_with_totals(start, start, now)
             .await
             .is_err()
     );
@@ -546,14 +509,12 @@ async fn unavailable_totals_reads_keep_the_cooldown_without_another_request() {
         .await
         .unwrap();
     let start = DateTime::UNIX_EPOCH;
-    let selection = ResourceSelection::DailyTotals {
-        start,
-        end: start + Duration::hours(24),
-        now: start,
-    };
+    let end = start + Duration::hours(24);
     for _ in 0..2 {
         assert!(matches!(
-            client.refresh_resources(selection).await,
+            client
+                .refresh_task_list_with_totals(start, end, start)
+                .await,
             Err(tracker_remote::RemoteError::Unavailable(_))
                 | Err(tracker_remote::RemoteError::Http {
                     status: StatusCode::SERVICE_UNAVAILABLE,
@@ -3573,9 +3534,9 @@ async fn coherent_rejected_tracking_command_initializes_a_pair_during_recovery()
     );
 }
 
-/// Exercises invalid reads so selected resources publish together or retain confirmed values.
+/// Invalid daily overviews keep the confirmed task list, tracking and totals.
 #[tokio::test]
-async fn selected_totals_refreshes_publish_together_and_keep_confirmed_resources_on_failure() {
+async fn task_list_totals_refreshes_publish_together_and_keep_confirmed_resources_on_failure() {
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -3649,48 +3610,44 @@ async fn selected_totals_refreshes_publish_together_and_keep_confirmed_resources
             ),
     );
     let mut client = RemoteApplication::disconnected(&server.endpoint()).unwrap();
-    let daily = ResourceSelection::DailyTotals {
-        start: at,
-        end: at + Duration::hours(1),
-        now: at,
-    };
-    let task_list = ResourceSelection::TaskListWithTotals {
-        start: at,
-        end: at + Duration::hours(1),
-        now: at,
-    };
-    client.refresh_resources(daily).await.unwrap();
-    assert!(client.task_observation().is_none());
+    let end = at + Duration::hours(1);
+    client
+        .refresh_task_list_with_totals(at, end, at)
+        .await
+        .unwrap();
+    assert_eq!(client.task_items()[0].task.id(), task_id);
     assert_eq!(reads.load(Ordering::SeqCst), 1);
     assert_eq!(client.tracking_observation(), Some(&TrackingState::Idle));
     assert_eq!(client.report_observation().unwrap().total_us, 0);
+    let tasks = client.task_observation().map(<[_]>::to_vec);
     let tracking = client.tracking_observation().cloned();
     let report = client.report_observation().cloned();
     let confirmed = report
         .as_ref()
-        .expect("daily totals publish a report observation");
+        .expect("the daily overview publishes a report observation");
     assert_eq!(confirmed.start, at);
     assert_eq!(confirmed.end, at + Duration::hours(1));
     assert_eq!(confirmed.now, at);
     for invalid_mode in [1, 2, 3, 5, 6, 7] {
         mode.store(invalid_mode, Ordering::SeqCst);
         let before = reads.load(Ordering::SeqCst);
-        client.refresh_resources(task_list).await.unwrap_err();
+        client
+            .refresh_task_list_with_totals(at, end, at)
+            .await
+            .unwrap_err();
         assert_eq!(reads.load(Ordering::SeqCst), before + 1);
         assert_eq!(client.tracking_observation(), tracking.as_ref());
         assert_eq!(client.report_observation(), report.as_ref());
-        assert!(client.task_observation().is_none());
+        assert_eq!(client.task_observation(), tasks.as_deref());
     }
     mode.store(4, Ordering::SeqCst);
-    client.refresh_resources(task_list).await.unwrap();
+    client
+        .refresh_task_list_with_totals(at, end, at)
+        .await
+        .unwrap();
     assert_eq!(active_worklog(&client).unwrap().task_id(), task_id);
     assert_eq!(client.task_items()[0].task.id(), task_id);
     assert!(client.report_observation().is_some());
-    let tasks = client.task_observation().map(<[_]>::to_vec);
-    mode.store(0, Ordering::SeqCst);
-    client.refresh_resources(daily).await.unwrap();
-    assert_eq!(client.tracking_observation(), Some(&TrackingState::Idle));
-    assert_eq!(client.task_observation(), tasks.as_deref());
     assert_eq!(client.last_failure(), None);
 }
 
@@ -3700,24 +3657,15 @@ async fn selected_empty_resources_are_loaded_independently() {
     let mut client = RemoteApplication::connect(&server.endpoint())
         .await
         .unwrap();
-    client
-        .refresh_resources(ResourceSelection::Tracking)
-        .await
-        .unwrap();
+    client.refresh_tracking().await.unwrap();
     assert!(client.task_observation().is_none());
     assert!(client.tracking_observation().is_some());
     assert!(active_worklog(&client).is_none());
     let tracking = client.tracking_observation().cloned();
-    client
-        .refresh_resources(ResourceSelection::Tasks)
-        .await
-        .unwrap();
+    client.refresh_tasks().await.unwrap();
     assert!(client.task_observation().unwrap().is_empty());
     assert_eq!(client.tracking_observation(), tracking.as_ref());
-    client
-        .refresh_resources(ResourceSelection::TaskList)
-        .await
-        .unwrap();
+    client.refresh_task_list().await.unwrap();
     assert!(client.task_observation().is_some());
     assert!(client.tracking_observation().is_some());
 }
@@ -3732,10 +3680,7 @@ async fn coherent_tracking_command_adopts_the_task_pair_after_a_tracking_only_re
         .await
         .unwrap()
         .with_coherent_task_views();
-    client
-        .refresh_resources(ResourceSelection::Tracking)
-        .await
-        .unwrap();
+    client.refresh_tracking().await.unwrap();
     assert!(client.task_observation().is_none());
     let started = client
         .set_active_task_with_expected_active(task.id(), None, at)
@@ -4079,16 +4024,18 @@ async fn aggregate_reads_remain_coherent_while_http_commands_switch_tracking() {
     };
     let read = async {
         for index in 0..40 {
-            let selection = if index % 2 == 0 {
-                ResourceSelection::TaskList
+            if index % 2 == 0 {
+                reader.refresh_task_list().await.unwrap();
             } else {
-                ResourceSelection::TaskListWithTotals {
-                    start: at,
-                    end: at + Duration::minutes(1),
-                    now: at + Duration::seconds(30),
-                }
-            };
-            reader.refresh_resources(selection).await.unwrap();
+                reader
+                    .refresh_task_list_with_totals(
+                        at,
+                        at + Duration::minutes(1),
+                        at + Duration::seconds(30),
+                    )
+                    .await
+                    .unwrap();
+            }
             let active = active_worklog(&reader).unwrap();
             let task = reader.task_item(active.task_id()).unwrap();
             assert!(!task.task.is_archived());
