@@ -2,7 +2,7 @@ name: Set up Rust
 description: Install the CI toolchain and cache Cargo dependencies and build output.
 inputs:
   cache-key:
-    description: Separate build caches for tests, coverage, lint, and installed tools. Unused when cache-build is false.
+    description: Build cache name for the job type. CI uses lint, coverage, mutations, native, and native-tests. Unused when cache-build is false.
     default: ''
   cache-build:
     description: Restore and save the target directory. Set to false for jobs that never build the workspace.
