@@ -1,6 +1,5 @@
 //! Router construction, database ownership and server startup.
 
-use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::net::SocketAddr;
@@ -42,14 +41,7 @@ pub fn router_for_database(path: &Path) -> Result<Router, Box<dyn Error + Send +
     let database_lock = lock_database(path)?;
     let repository = SqliteRepository::open(path)?;
     let app = TrackerApplication::load(repository)?;
-    let core = Core {
-        _database_lock: database_lock,
-        app,
-        needs_refresh: false,
-        completed: HashMap::new(),
-        completion_order: VecDeque::new(),
-    };
-    let shared = Arc::new(Mutex::new(core));
+    let shared = Arc::new(Mutex::new(Core::new(database_lock, app)));
     Ok(Router::new()
         .route("/v1/health", get(health))
         .route("/v1/tasks", get(tasks).post(create_task))

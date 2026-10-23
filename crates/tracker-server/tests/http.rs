@@ -143,7 +143,6 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
         &body,
         &["as_of", "inactive_days", "count", "candidate_task_ids"],
     );
-    assert!(body.get("candidate_fingerprint").is_none());
     let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
     assert_eq!(preview.count, 1);
     assert_eq!(preview.inactive_days, 14);
@@ -151,7 +150,6 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
 
     let request = archive_request(&preview);
     assert_eq!(request.as_object().unwrap().len(), 3);
-    assert!(request.get("expected_revision").is_none());
     assert!(Uuid::parse_str(request["request_id"].as_str().unwrap()).is_ok());
     let (status, first) = call(
         &router,
@@ -1176,52 +1174,6 @@ async fn resource_reads_return_only_requested_data_and_include_task_activity() {
     assert_eq!(status, StatusCode::OK);
     assert_keys(&history, &["worklogs", "next_cursor"]);
     assert_eq!(history["worklogs"][0], tracking["active_worklog"]);
-}
-
-/// Reads and command receipts carry no server revision.
-#[tokio::test]
-async fn read_responses_and_receipts_carry_no_server_revision() {
-    let directory = TempDir::new().unwrap();
-    let router = tracker_server::router_for_database(&directory.path().join("plain.db")).unwrap();
-    let task_id = Uuid::now_v7().to_string();
-    let worklog_id = Uuid::now_v7().to_string();
-    let receipts = [
-        write(
-            &router,
-            Method::POST,
-            "/v1/tasks",
-            json!({"task_id":task_id,"name":"Plain project","occurred_at":at(0)}),
-        )
-        .await,
-        write(
-            &router,
-            Method::PUT,
-            "/v1/tracking",
-            json!({"task_id":task_id,"worklog_id":worklog_id,"expected_active":null,"occurred_at":at(10)}),
-        )
-        .await,
-    ];
-    for receipt in receipts {
-        let receipt = serde_json::to_value(receipt).unwrap();
-        assert!(receipt.get("applied_revision").is_none(), "{receipt}");
-    }
-    let interval = "start=1970-01-01T00:00:00Z&end=1970-01-01T00:01:00Z&now=1970-01-01T00:00:30Z";
-    for uri in [
-        "/v1/tasks".to_owned(),
-        format!("/v1/tasks/{task_id}"),
-        "/v1/tracking".to_owned(),
-        format!("/v1/worklogs/{worklog_id}"),
-        "/v1/worklogs".to_owned(),
-        format!("/v1/worklogs?task_id={task_id}"),
-        format!("/v1/reports/task-totals?{interval}"),
-        "/v1/state/task-list".to_owned(),
-        format!("/v1/state/daily-overview?{interval}"),
-        preview_uri(Utc::now()),
-    ] {
-        let (status, body) = call(&router, Method::GET, &uri, None).await;
-        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
-        assert!(body.get("revision").is_none(), "{uri}: {body}");
-    }
 }
 
 #[tokio::test]

@@ -400,7 +400,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
     }
 
     /// Replaces task and tracking caches together for a coherent workflow.
-    pub fn refresh_authoritative_state(&mut self) -> Result<(), ApplicationError> {
+    pub fn refresh_task_list(&mut self) -> Result<(), ApplicationError> {
         let (tasks, active_worklog) = self.repository.load_task_tracking_resources()?;
         self.adopt_task_tracking_resources(tasks, active_worklog)
     }
@@ -480,16 +480,15 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         self.set_latest_work_start(id, item.latest_work_start);
     }
 
-    /// Reloads like `refresh_authoritative_state`, but reports a stored active
+    /// Reloads like `refresh_task_list`, but reports a stored active
     /// worklog that cannot resume as corrupt data.
     fn reload_authoritative_state(&mut self) -> Result<(), RepositoryError> {
-        self.refresh_authoritative_state()
-            .map_err(|error| match error {
-                ApplicationError::Repository(error) => error,
-                _ => RepositoryError::CorruptData {
-                    field: "active worklog",
-                },
-            })
+        self.refresh_task_list().map_err(|error| match error {
+            ApplicationError::Repository(error) => error,
+            _ => RepositoryError::CorruptData {
+                field: "active worklog",
+            },
+        })
     }
 
     fn recover_after_tracking_write(&mut self, write_error: RepositoryError) -> ApplicationError {
@@ -563,7 +562,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
     }
 
     fn refresh_after_task_operation(&mut self) -> Result<(), ApplicationError> {
-        match self.refresh_authoritative_state() {
+        match self.refresh_task_list() {
             Err(ApplicationError::Repository(error)) => Err(ApplicationError::TaskRecovery(error)),
             result => result,
         }
