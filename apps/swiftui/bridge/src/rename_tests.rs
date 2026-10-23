@@ -1,14 +1,5 @@
 use super::*;
-
-fn response(pointer: *mut c_char) -> Value {
-    assert!(!pointer.is_null());
-    // SAFETY: This test owns the returned bridge string and releases it once.
-    unsafe {
-        let value = serde_json::from_str(CStr::from_ptr(pointer).to_str().unwrap()).unwrap();
-        tt_bridge_string_free(pointer);
-        value
-    }
-}
+use crate::test_support::*;
 
 fn rename(bridge: &mut Bridge, id: TaskId, name: &str, at: DateTime<Utc>) -> Value {
     let expected =

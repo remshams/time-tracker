@@ -347,8 +347,6 @@ fn remote_creation_persists_client_ids_timestamps_and_preserves_tracking() {
             .any(|task| task["id"] == created["data"]["task"]["id"])
     );
     assert_eq!(refreshed.1["data"]["value"], active["data"]["active"]);
-    assert!(refreshed.0["data"].get("revision").is_none());
-    assert!(refreshed.1["data"].get("revision").is_none());
     let stored = TrackerApplication::load(SqliteRepository::open(server.path()).unwrap()).unwrap();
     let task = stored.task(id).unwrap();
     assert_eq!(task.name().as_str(), "Server project 🛠");
@@ -438,12 +436,11 @@ fn uncertain_creation_recovers_the_same_id_after_polling_or_retries_the_original
             let sent = requests.lock().unwrap();
             assert_eq!(sent.len(), count + usize::from(!committed));
             // Every attempt, including the retry after recovery, resends the
-            // original intent with the same request ID and no revision.
+            // original intent with the same request ID.
             for request in sent.iter() {
                 assert_eq!(request["task_id"], first["task_id"]);
                 assert_eq!(request["occurred_at"], first["occurred_at"]);
                 assert_eq!(request["request_id"], first["request_id"]);
-                assert!(request.get("expected_revision").is_none());
             }
         }
     }

@@ -36,6 +36,7 @@ pub(super) fn archive_cached_task(
 }
 
 use super::*;
+use crate::test_support::*;
 
 #[test]
 fn opening_without_error_storage_does_not_open_a_database() {
@@ -86,16 +87,6 @@ fn opening_failure_returns_an_owned_error_string() {
         assert_eq!(unsafe { CStr::from_ptr(error) }.to_str().unwrap(), expected);
         // SAFETY: The caller owns this string and releases it once.
         unsafe { tt_bridge_string_free(error) };
-    }
-}
-
-fn response(pointer: *mut c_char) -> Value {
-    assert!(!pointer.is_null());
-    // SAFETY: Tests pass strings returned by the bridge and release each once.
-    unsafe {
-        let value = serde_json::from_str(CStr::from_ptr(pointer).to_str().unwrap()).unwrap();
-        tt_bridge_string_free(pointer);
-        value
     }
 }
 

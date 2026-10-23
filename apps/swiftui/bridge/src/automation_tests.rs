@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::*;
 
 /// Exercises shared SQLite handles so a stale idle command cannot replace another timer.
 #[test]
@@ -53,17 +54,6 @@ fn local_guarded_switch_keeps_invalid_timestamps_distinct_from_stale_intent() {
     assert!(!error.requires_refresh);
     assert!(!error.uncertain);
     assert_eq!(bridge.application.current_tracking(), &confirmed);
-}
-
-/// Decodes the bridge response and releases its C string allocation.
-fn response(pointer: *mut c_char) -> Value {
-    assert!(!pointer.is_null());
-    // SAFETY: The pointer comes from the bridge and is released once.
-    unsafe {
-        let value = serde_json::from_str(CStr::from_ptr(pointer).to_str().unwrap()).unwrap();
-        tt_bridge_string_free(pointer);
-        value
-    }
 }
 
 fn pause(bridge: &mut Bridge, worklog_id: &str, at: &str) -> Value {
@@ -277,79 +267,9 @@ fn remote_resume_requires_authoritative_resources_before_writing() {
     assert_eq!(rejected["requiresRefresh"], true);
 }
 
-struct Server {
-    directory: tempfile::TempDir,
-    endpoint: String,
-    shutdown: Option<tokio::sync::oneshot::Sender<()>>,
-    thread: Option<std::thread::JoinHandle<()>>,
-    completed: std::sync::mpsc::Receiver<()>,
-}
-
-impl Server {
-    fn start() -> Self {
-        let directory = tempfile::tempdir().unwrap();
-        drop(open_fixture(&directory.path().join("server.db")).unwrap());
-        let router =
-            tracker_server::router_for_database(&directory.path().join("server.db")).unwrap();
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        listener.set_nonblocking(true).unwrap();
-        let (shutdown, cancelled) = tokio::sync::oneshot::channel();
-        let (finished, completed) = std::sync::mpsc::channel();
-        let thread = std::thread::spawn(move || {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(async move {
-                    let listener = tokio::net::TcpListener::from_std(listener).unwrap();
-                    axum::serve(listener, router)
-                        .with_graceful_shutdown(async {
-                            let _ = cancelled.await;
-                        })
-                        .await
-                        .unwrap();
-                });
-            let _ = finished.send(());
-        });
-        Self {
-            directory,
-            endpoint,
-            shutdown: Some(shutdown),
-            thread: Some(thread),
-            completed,
-        }
-    }
-
-    fn client(&self) -> Bridge {
-        let mut bridge = Bridge::new(Backend::remote(&self.endpoint).unwrap());
-        let loaded = refresh(&mut bridge);
-        assert!(loaded.get("error").is_none(), "{loaded}");
-        bridge
-    }
-
-    fn stop(&mut self) {
-        if let Some(shutdown) = self.shutdown.take() {
-            let _ = shutdown.send(());
-        }
-        if let Some(thread) = self.thread.take() {
-            self.completed
-                .recv_timeout(std::time::Duration::from_secs(5))
-                .expect("server shutdown timed out");
-            thread.join().unwrap();
-        }
-    }
-}
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        self.stop();
-    }
-}
-
 #[test]
 fn remote_pause_reports_ownership_and_resume_commits_the_captured_timestamp() {
-    let server = Server::start();
+    let server = FixtureServer::start();
     let mut bridge = server.client();
     let task_id = bridge.application.tasks(TaskOrdering::default())[0]
         .task
@@ -370,7 +290,7 @@ fn remote_pause_reports_ownership_and_resume_commits_the_captured_timestamp() {
         resumed["data"]["active"]["start"],
         "2026-10-04T10:20:00.000000Z"
     );
-    let repository = SqliteRepository::open(server.directory.path().join("server.db")).unwrap();
+    let repository = SqliteRepository::open(server.database_path()).unwrap();
     assert_eq!(
         timestamp(
             repository
@@ -386,7 +306,7 @@ fn remote_pause_reports_ownership_and_resume_commits_the_captured_timestamp() {
 
 #[test]
 fn remote_resume_from_a_stale_idle_cache_preserves_a_competing_clients_timer() {
-    let server = Server::start();
+    let server = FixtureServer::start();
     let mut first = server.client();
     let tasks = first.application.tasks(TaskOrdering::default());
     let mut second = server.client();
@@ -410,7 +330,7 @@ fn remote_resume_from_a_stale_idle_cache_preserves_a_competing_clients_timer() {
 
 #[test]
 fn remote_pause_after_another_clients_stop_reports_idle_without_claiming_the_stop() {
-    let server = Server::start();
+    let server = FixtureServer::start();
     let mut first = server.client();
     let tasks = first.application.tasks(TaskOrdering::default());
     let started = resume(&mut first, tasks[0].task.id(), "2026-10-04T10:00:00Z");
@@ -425,7 +345,7 @@ fn remote_pause_after_another_clients_stop_reports_idle_without_claiming_the_sto
     assert_eq!(idle["data"]["didStop"], false);
     assert!(idle["data"]["active"].is_null());
     assert!(refresh(&mut first)["data"]["value"].is_null());
-    let repository = SqliteRepository::open(server.directory.path().join("server.db")).unwrap();
+    let repository = SqliteRepository::open(server.database_path()).unwrap();
     let stopped = repository
         .find_worklog(worklog_id.parse().unwrap())
         .unwrap()
@@ -450,7 +370,7 @@ fn remote_pause_after_another_clients_stop_reports_idle_without_claiming_the_sto
 
 #[test]
 fn remote_pause_connection_failure_is_certain_and_requires_refresh() {
-    let mut server = Server::start();
+    let mut server = FixtureServer::start();
     let mut bridge = server.client();
     let task_id = bridge.application.tasks(TaskOrdering::default())[0]
         .task

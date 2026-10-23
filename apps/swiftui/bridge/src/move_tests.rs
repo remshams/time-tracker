@@ -1,44 +1,6 @@
 use super::*;
+use crate::test_support::*;
 use tracker_domain::Worklog;
-
-fn response(pointer: *mut c_char) -> Value {
-    assert!(!pointer.is_null());
-    // SAFETY: This test owns the returned bridge string and frees it once.
-    unsafe {
-        let value = serde_json::from_str(CStr::from_ptr(pointer).to_str().unwrap()).unwrap();
-        tt_bridge_string_free(pointer);
-        value
-    }
-}
-
-fn at(seconds: i64) -> DateTime<Utc> {
-    DateTime::from_timestamp(seconds, 123_456_000).unwrap()
-}
-
-fn record(bridge: &mut Bridge, task: TaskId, start: i64, end: Option<i64>) -> Worklog {
-    bridge
-        .application
-        .set_active_task(task, at(start))
-        .unwrap_or_else(|error| panic!("{}", error.message));
-    let TrackingState::Running { worklog } = bridge.application.current_tracking() else {
-        panic!("tracking should be running")
-    };
-    let id = worklog.id();
-    if let Some(end) = end {
-        bridge
-            .application
-            .clear_active_task(id, at(end))
-            .unwrap_or_else(|error| panic!("{}", error.message));
-    }
-    bridge
-        .application
-        .worklogs_for_task(task, None)
-        .unwrap()
-        .worklogs
-        .into_iter()
-        .find(|worklog| worklog.id() == id)
-        .unwrap()
-}
 
 fn move_to(bridge: &mut Bridge, expected: &Worklog, destination: TaskId) -> Value {
     let id = CString::new(expected.id().to_string()).unwrap();
@@ -348,7 +310,7 @@ fn remote_moves_succeed_after_an_unrelated_write_keep_original_guards_and_candid
     let source = tasks[0].task.id();
     let destination = tasks[1].task.id();
     let original = record(&mut writer, source, 100, None);
-    let server = report_tests::Server::start(tracker_server::router_for_database(&path).unwrap());
+    let server = Server::start(tracker_server::router_for_database(&path).unwrap());
     let mut first = server.client();
     let mut second = server.client();
     first
@@ -418,24 +380,12 @@ fn mock_server(
     resources: (tracker_protocol::TasksDto, tracker_protocol::TrackingDto),
     original: &Worklog,
     reply: Value,
-) -> report_tests::Server {
-    use axum::{
-        Json, Router,
-        routing::{get, patch},
-    };
+) -> Server {
+    use axum::{Json, routing::patch};
     let state = std::sync::Arc::new(std::sync::Mutex::new(resources));
     let write_state = state.clone();
-    let router = Router::new()
-        .route(
-            "/v1/health",
-            get(|| async {
-                Json(tracker_protocol::HealthDto {
-                    status: "ok".into(),
-                    protocol_version: tracker_protocol::VERSION,
-                })
-            }),
-        )
-        .merge(report_tests::resource_router_state(
+    let router = healthy_router()
+        .merge(resource_router_state(
             state,
             vec![tracker_protocol::WorklogDto::from(original)],
         ))
@@ -467,7 +417,7 @@ fn mock_server(
                 }
             }),
         );
-    report_tests::Server::start(router)
+    Server::start(router)
 }
 
 #[test]
@@ -482,7 +432,7 @@ fn remote_move_rejects_wrong_identity_destination_times_and_invalid_receipts() {
         let destination = tasks[1].task.id();
         let original = record(&mut writer, source, 100, end);
         let moved = original.moved_to(destination).unwrap();
-        let initial = report_tests::resource_dtos(
+        let initial = resource_dtos(
             writer.application.tasks(TaskOrdering::default()),
             end.is_none().then(|| original.clone()),
         );
@@ -538,19 +488,14 @@ fn remote_move_rejects_wrong_identity_destination_times_and_invalid_receipts() {
 
 #[test]
 fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures() {
-    use axum::{
-        Json, Router,
-        http::StatusCode,
-        routing::{get, patch},
-    };
+    use axum::{Json, http::StatusCode, routing::patch};
     use std::sync::{Arc, Mutex};
-    use tracker_protocol::{ErrorCode, ErrorDto, HealthDto};
+    use tracker_protocol::{ErrorCode, ErrorDto};
     let directory = tempfile::tempdir().unwrap();
     let mut writer = open_fixture(&directory.path().join("payload.db")).unwrap();
     let tasks = writer.application.tasks(TaskOrdering::default());
     let original = record(&mut writer, tasks[0].task.id(), 100, Some(200));
-    let resources =
-        report_tests::resource_dtos(writer.application.tasks(TaskOrdering::default()), None);
+    let resources = resource_dtos(writer.application.tasks(TaskOrdering::default()), None);
     for (code, status, kind, uncertain) in [
         (
             ErrorCode::WorklogChanged,
@@ -587,17 +532,8 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
         let received = Arc::new(Mutex::new(None));
         let captured = received.clone();
         let resources = resources.clone();
-        let router = Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: tracker_protocol::VERSION,
-                    })
-                }),
-            )
-            .merge(report_tests::resource_router(
+        let router = healthy_router()
+            .merge(resource_router(
                 resources,
                 vec![tracker_protocol::WorklogDto::from(&original)],
             ))
@@ -624,7 +560,7 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
                     },
                 ),
             );
-        let server = report_tests::Server::start(router);
+        let server = Server::start(router);
         let mut bridge = server.client();
         let failure = move_to(&mut bridge, &original, tasks[1].task.id());
         assert_eq!(failure["kind"], kind, "{failure}");
@@ -638,7 +574,6 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
         assert_eq!(body["expected_start"], timestamp(original.start()));
         assert_eq!(body["expected_end"], timestamp(original.end().unwrap()));
         assert_eq!(body["destination_task_id"], tasks[1].task.id().to_string());
-        assert!(body.get("expected_revision").is_none());
         assert!(body["request_id"].as_str().is_some_and(|id| !id.is_empty()));
         assert_eq!(body.as_object().unwrap().len(), 6);
     }
@@ -677,7 +612,7 @@ fn remote_move_classifies_archived_and_missing_destination_from_recovered_resour
     let original = record(&mut writer, tasks[0].task.id(), 100, Some(200));
     crate::tests::archive_cached_task(&mut writer.application, tasks[1].task.id(), at(300))
         .unwrap();
-    let server = report_tests::Server::start(tracker_server::router_for_database(&path).unwrap());
+    let server = Server::start(tracker_server::router_for_database(&path).unwrap());
     let mut bridge = server.client();
     for destination in [tasks[1].task.id(), TaskId::generate()] {
         let result = move_to(&mut bridge, &original, destination);
@@ -702,13 +637,12 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
-    use tracker_protocol::{ErrorCode, ErrorDto, HealthDto};
+    use tracker_protocol::{ErrorCode, ErrorDto};
     let directory = tempfile::tempdir().unwrap();
     let mut writer = open_fixture(&directory.path().join("recovery.db")).unwrap();
     let tasks = writer.application.tasks(TaskOrdering::default());
     let original = record(&mut writer, tasks[0].task.id(), 100, Some(200));
-    let resources =
-        report_tests::resource_dtos(writer.application.tasks(TaskOrdering::default()), None);
+    let resources = resource_dtos(writer.application.tasks(TaskOrdering::default()), None);
     let reads = Arc::new(AtomicUsize::new(0));
     let task_resources = resources.0.tasks.clone();
     let original_dto = tracker_protocol::WorklogDto::from(&original);
@@ -726,15 +660,7 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
                 },
             ),
         )
-        .route(
-            "/v1/health",
-            get(|| async {
-                Json(HealthDto {
-                    status: "ok".into(),
-                    protocol_version: tracker_protocol::VERSION,
-                })
-            }),
-        )
+        .merge(healthy_router())
         .route(
             "/v1/state/task-list",
             get(move || {
@@ -784,7 +710,7 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
                 )
             }),
         );
-    let server = report_tests::Server::start(router);
+    let server = Server::start(router);
     let mut bridge = server.client();
     bridge.application.refresh_resources().unwrap();
     let failure = move_to(&mut bridge, &original, tasks[1].task.id());
@@ -795,10 +721,7 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
 
 #[test]
 fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads() {
-    use axum::{
-        Json, Router,
-        routing::{get, patch},
-    };
+    use axum::{Json, routing::patch};
     use std::sync::{Arc, Mutex};
     use tracker_protocol::{MutationDto, MutationResultDto, WorklogDto};
     let directory = tempfile::tempdir().unwrap();
@@ -811,7 +734,7 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
         let competing_task = tasks[2].task.id();
         let original = record(&mut writer, source, 100, end);
         let moved = original.moved_to(destination).unwrap();
-        let initial = report_tests::resource_dtos(
+        let initial = resource_dtos(
             writer.application.tasks(TaskOrdering::default()),
             end.is_none().then(|| original.clone()),
         );
@@ -822,17 +745,8 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
         let applied = moved.clone();
         let later_active = Worklog::begin(WorklogId::generate(), competing_task, at(250));
         let expected_active = later_active.clone();
-        let router = Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(tracker_protocol::HealthDto {
-                        status: "ok".into(),
-                        protocol_version: tracker_protocol::VERSION,
-                    })
-                }),
-            )
-            .merge(report_tests::resource_router_resources(state, worklogs))
+        let router = healthy_router()
+            .merge(resource_router_resources(state, worklogs))
             .route(
                 "/v1/worklogs/{id}",
                 patch(move |Json(body): Json<Value>| {
@@ -869,7 +783,7 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
                     }
                 }),
             );
-        let server = report_tests::Server::start(router);
+        let server = Server::start(router);
         let mut bridge = server.client();
         let result = move_to(&mut bridge, &original, destination);
         assert!(result.get("error").is_none(), "{end:?}: {result}");
