@@ -171,26 +171,25 @@ impl ReportState {
         }
     }
 
+    /// Names the shown period after its preset, or "Day" for a single day
+    /// that is neither today nor yesterday.
     pub(crate) fn period_label(&self) -> &'static str {
-        if matches!(self.preset, ReportPreset::Today | ReportPreset::Yesterday) {
-            if self.from == self.calendar_today {
-                "Today"
-            } else if self.calendar_today.pred_opt() == Some(self.from) {
-                "Yesterday"
-            } else {
-                "Day"
-            }
-        } else {
-            self.preset.label()
-        }
+        self.highlighted_preset().map_or("Day", ReportPreset::label)
     }
 
+    /// Returns the preset that matches the shown period. A single day is
+    /// matched against the calendar day, so stepping from today to yesterday
+    /// moves the highlight, and any earlier or later day matches no preset.
     pub(crate) fn highlighted_preset(&self) -> Option<ReportPreset> {
-        match self.period_label() {
-            "Today" => Some(ReportPreset::Today),
-            "Yesterday" => Some(ReportPreset::Yesterday),
-            "Day" => None,
-            _ => Some(self.preset),
+        if !matches!(self.preset, ReportPreset::Today | ReportPreset::Yesterday) {
+            return Some(self.preset);
+        }
+        if self.from == self.calendar_today {
+            Some(ReportPreset::Today)
+        } else if self.calendar_today.pred_opt() == Some(self.from) {
+            Some(ReportPreset::Yesterday)
+        } else {
+            None
         }
     }
 
@@ -547,6 +546,21 @@ mod tests {
             from_yesterday.highlighted_preset(),
             Some(ReportPreset::Today)
         );
+    }
+
+    #[test]
+    fn longer_periods_keep_their_preset_label_and_highlight_after_stepping() {
+        let today = NaiveDate::from_ymd_opt(2026, 9, 25).unwrap();
+        for preset in [ReportPreset::Week, ReportPreset::Month, ReportPreset::Year] {
+            let mut state = ReportState::new(
+                today.and_hms_opt(12, 0, 0).unwrap().and_utc(),
+                chrono_tz::UTC,
+            );
+            assert!(state.choose(preset, today));
+            assert!(state.step(-1));
+            assert_eq!(state.period_label(), preset.label());
+            assert_eq!(state.highlighted_preset(), Some(preset));
+        }
     }
 
     #[test]
