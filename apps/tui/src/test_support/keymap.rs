@@ -4,6 +4,10 @@ use tracker_application::{ActiveTrackingRead, GlobalWorklogPage};
 use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
 
 use crate::command::Command;
+use crate::screens::all_worklogs::AllWorklogsFocus;
+use crate::screens::reports::{
+    ReportFocus, ReportMode, ReportPresentation, ReportPresentationRow, ReportState,
+};
 use crate::screens::task_list::{InputPurpose, TaskListMode};
 use crate::screens::{
     AllWorklogsState, CorrectionDraft, InputState, MoveDraft, TaskListState, TaskView,
@@ -45,14 +49,18 @@ pub(crate) fn confirm() -> TaskListMode {
     }
 }
 
+fn inactive_preview() -> crate::screens::task_list::InactiveTaskPreview {
+    crate::screens::task_list::InactiveTaskPreview::local(
+        DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
+        vec![TaskId::generate()],
+        vec!["old task".to_owned()],
+    )
+}
+
 /// Builds a pending archive fixture for keymap and footer assertions.
 pub(crate) fn archiving_mode() -> TaskListMode {
     TaskListMode::ArchivingInactiveTasks {
-        preview: crate::screens::task_list::InactiveTaskPreview::local(
-            DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
-            vec![TaskId::generate()],
-            vec!["old task".to_owned()],
-        ),
+        preview: inactive_preview(),
     }
 }
 
@@ -157,29 +165,131 @@ impl TestInputState {
     }
 }
 
+/// Builds a move dialog with the results list focused.
+fn move_dialog_results() -> MoveDraft {
+    let WorklogHistoryMode::Move(mut draft) = move_dialog() else {
+        unreachable!("move fixture opens the move dialog");
+    };
+    draft.toggle_focus();
+    draft
+}
+
+fn report_state(mode: ReportMode, focus: ReportFocus) -> ReportState {
+    let mut state = ReportState::new(Utc::now(), chrono_tz::UTC);
+    state.set_totals(ReportPresentation {
+        rows: vec![ReportPresentationRow {
+            task_id: TaskId::generate(),
+            task_name: Some("task".to_owned()),
+            duration: chrono::Duration::minutes(1),
+        }],
+        total: chrono::Duration::minutes(1),
+    });
+    state.mode = mode;
+    state.focus = focus;
+    state
+}
+
+fn custom_report_mode(focus_to: bool) -> ReportMode {
+    ReportMode::Custom {
+        from: "2026-01-01".to_owned(),
+        to: "2026-01-31".to_owned(),
+        focus_to,
+    }
+}
+
+fn all_worklogs_state(
+    focus: AllWorklogsFocus,
+    available: bool,
+    move_draft: Option<MoveDraft>,
+) -> AllWorklogsState {
+    let mut state = AllWorklogsState::new(GlobalWorklogPage {
+        worklogs: Vec::new(),
+        task_items: Vec::new(),
+        tracking: Some(ActiveTrackingRead {
+            active_worklog: None,
+            active_task_item: None,
+        }),
+        next_cursor: None,
+    });
+    state.focus = focus;
+    state.available = available;
+    state.move_draft = move_draft;
+    state
+}
+
 pub(crate) fn valid_input_states() -> Vec<TestInputState> {
-    vec![
-        TestInputState::TaskList(task_list_state(TaskListMode::Normal, TaskView::Active)),
-        TestInputState::TaskList(task_list_state(TaskListMode::Normal, TaskView::Archived)),
+    let WorklogHistoryMode::Move(move_draft) = move_dialog() else {
+        unreachable!("move fixture opens the move dialog");
+    };
+    let mut states = Vec::new();
+    for view in [TaskView::Active, TaskView::Archived] {
+        states.extend([
+            TestInputState::TaskList(task_list_state(TaskListMode::Normal, view)),
+            TestInputState::TaskList(task_list_state(TaskListMode::Search, view)),
+            TestInputState::TaskList(filtered_task_list_state(view)),
+        ]);
+    }
+    states.extend([
         TestInputState::TaskList(task_list_state(input(), TaskView::Active)),
         TestInputState::TaskList(task_list_state(rename_input(), TaskView::Active)),
         TestInputState::TaskList(task_list_state(confirm(), TaskView::Active)),
+        TestInputState::TaskList(task_list_state(
+            TaskListMode::PreviewingInactiveTasks {
+                as_of: DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
+            },
+            TaskView::Active,
+        )),
+        TestInputState::TaskList(task_list_state(
+            TaskListMode::ConfirmInactiveArchive {
+                preview: inactive_preview(),
+            },
+            TaskView::Active,
+        )),
+        TestInputState::TaskList(task_list_state(archiving_mode(), TaskView::Active)),
         TestInputState::History(Box::new(history_state(WorklogHistoryMode::Normal, true))),
         TestInputState::History(Box::new(history_state(WorklogHistoryMode::Normal, false))),
         TestInputState::History(Box::new(history_state(deletion(), true))),
         TestInputState::History(Box::new(history_state(correction(), true))),
         TestInputState::History(Box::new(history_state(move_dialog(), true))),
-        TestInputState::Reports(crate::screens::ReportState::new(Utc::now(), chrono_tz::UTC)),
-        TestInputState::AllWorklogs(Box::new(AllWorklogsState::new(GlobalWorklogPage {
-            worklogs: Vec::new(),
-            task_items: Vec::new(),
-            tracking: Some(ActiveTrackingRead {
-                active_worklog: None,
-                active_task_item: None,
-            }),
-            next_cursor: None,
-        }))),
-    ]
+        TestInputState::History(Box::new(history_state(
+            WorklogHistoryMode::Move(move_dialog_results()),
+            true,
+        ))),
+        TestInputState::Reports(ReportState::new(Utc::now(), chrono_tz::UTC)),
+        TestInputState::Reports(report_state(ReportMode::Normal, ReportFocus::Presets)),
+        TestInputState::Reports(report_state(ReportMode::Normal, ReportFocus::Rows)),
+        TestInputState::Reports(report_state(
+            custom_report_mode(false),
+            ReportFocus::Presets,
+        )),
+        TestInputState::Reports(report_state(custom_report_mode(true), ReportFocus::Presets)),
+        TestInputState::AllWorklogs(Box::new(all_worklogs_state(
+            AllWorklogsFocus::Tabs,
+            true,
+            None,
+        ))),
+        TestInputState::AllWorklogs(Box::new(all_worklogs_state(
+            AllWorklogsFocus::Rows,
+            true,
+            None,
+        ))),
+        TestInputState::AllWorklogs(Box::new(all_worklogs_state(
+            AllWorklogsFocus::Rows,
+            false,
+            None,
+        ))),
+        TestInputState::AllWorklogs(Box::new(all_worklogs_state(
+            AllWorklogsFocus::Rows,
+            true,
+            Some(move_draft),
+        ))),
+        TestInputState::AllWorklogs(Box::new(all_worklogs_state(
+            AllWorklogsFocus::Rows,
+            true,
+            Some(move_dialog_results()),
+        ))),
+    ]);
+    states
 }
 
 pub(crate) fn map_task_list(mode: TaskListMode, view: TaskView, key: KeyEvent) -> Option<Command> {
