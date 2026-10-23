@@ -15,16 +15,16 @@ pub use process::process;
 
 use serde_json::Value;
 
-pub async fn run(mut cli: Cli) -> Result<Value, CliError> {
+pub async fn run(cli: Cli) -> Result<Value, CliError> {
     let now = cli.at.unwrap_or_else(chrono::Utc::now);
     let identity = backend::identity(cli.db.as_deref(), cli.server.as_deref())?;
-    validate(&mut cli.command, &identity, now)?;
+    let request = validate(cli.command, &identity, now)?;
     let mut backend = backend::Backend::open(identity, cli.db, cli.server).await?;
-    match cli.command {
-        args::Command::Tasks { command } => tasks::execute(&mut backend, command, now).await,
-        args::Command::Tracking { command } => tracking::execute(&mut backend, command, now).await,
-        args::Command::Worklogs { command } => worklogs::execute(&mut backend, command, now).await,
-        args::Command::Reports(args) => reports::execute(&mut backend, args, now).await,
+    match request {
+        Request::Tasks(command) => tasks::execute(&mut backend, command, now).await,
+        Request::Tracking(command) => tracking::execute(&mut backend, command, now).await,
+        Request::Worklogs(request) => worklogs::execute(&mut backend, request, now).await,
+        Request::Reports(args) => reports::execute(&mut backend, args, now).await,
     }
 }
 
@@ -64,21 +64,35 @@ pub(crate) fn read_json<T: serde::de::DeserializeOwned>(input: &str) -> Result<T
     serde_json::from_str(&text).map_err(CliError::input)
 }
 
+/// A command that passed validation and is ready to run against the backend.
+enum Request {
+    Tasks(args::Tasks),
+    Tracking(args::Tracking),
+    Worklogs(worklogs::Request),
+    Reports(args::ReportArgs),
+}
+
+/// Rejects invalid input before a backend is opened, so it never creates a database.
 fn validate(
-    command: &mut args::Command,
+    command: args::Command,
     identity: &str,
     now: chrono::DateTime<chrono::Utc>,
-) -> Result<(), CliError> {
-    match command {
-        args::Command::Tasks { command } => tasks::validate(command, identity, now),
-        args::Command::Worklogs { command } => worklogs::validate(command, identity, now),
-        args::Command::Reports(args) => {
-            let range = reports::range(args, now)?;
-            args.timezone = Some(range.timezone);
-            Ok(())
+) -> Result<Request, CliError> {
+    Ok(match command {
+        args::Command::Tasks { mut command } => {
+            tasks::validate(&mut command, identity, now)?;
+            Request::Tasks(command)
         }
-        args::Command::Tracking { .. } => Ok(()),
-    }
+        args::Command::Worklogs { command } => {
+            Request::Worklogs(worklogs::validate(command, identity, now)?)
+        }
+        args::Command::Reports(mut args) => {
+            let range = reports::range(&args, now)?;
+            args.timezone = Some(range.timezone);
+            Request::Reports(args)
+        }
+        args::Command::Tracking { command } => Request::Tracking(command),
+    })
 }
 
 #[cfg(test)]
