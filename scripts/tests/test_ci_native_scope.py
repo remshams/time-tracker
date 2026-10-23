@@ -53,11 +53,13 @@ class NativeScopeTests(unittest.TestCase):
         self.write("scripts/tests/test_example.py", "pass\n")
         self.write("scripts/deploy-server.py", "pass\n")
         self.write(".github/workflows/mutations.yml", "name: Mutation tests\n")
+        self.write(".github/actions/setup-muter/action.yml", "name: Set up Muter\n")
+        self.write(".coderabbit.yaml", "reviews: {}\n")
         self.commit("Update documentation and Linux-only tooling")
         for event in ("pull_request", "push"):
             native, reason = self.scope(event)
             self.assertFalse(native, reason)
-            self.assertEqual(reason, "none of the 6 changed files affect native checks")
+            self.assertEqual(reason, "none of the 8 changed files affect native checks")
 
     def test_any_other_change_requires_native_checks(self):
         for name in ("apps/swiftui/App.swift", "crates/tracker-domain/src/lib.rs", "Cargo.lock",
