@@ -169,22 +169,15 @@ fn map_previewing(key: KeyEvent) -> Option<KeymapCommand<TaskListCommand>> {
     }
 }
 
+/// Returns the footer hints for the current mode.
+///
+/// Only normal mode depends on the width: its compact hints fit 60 columns,
+/// the medium ones 80 and the wide ones 110. Every other mode has one text
+/// that fits 60 columns.
 pub(crate) fn footer_hints(state: &TaskListState, width: u16) -> &'static str {
-    if width < 80 {
-        return compact_footer_hints(state);
-    }
-    if width < 110 {
-        return medium_footer_hints(state);
-    }
-    wide_footer_hints(state)
-}
-
-fn compact_footer_hints(state: &TaskListState) -> &'static str {
     match state.mode() {
-        TaskListMode::Normal => compact_normal_footer_hints(state),
-        TaskListMode::Search => {
-            "type · backspace · ↑/↓ select · enter keep · esc cancel · ctrl+c quit"
-        }
+        TaskListMode::Normal => normal_footer_hints(state, width),
+        TaskListMode::Search => "type/bs · ↑/↓ select · enter keep · esc cancel · ctrl+c quit",
         TaskListMode::Input { .. } => "type · backspace · enter save · esc cancel · ctrl+c quit",
         TaskListMode::ConfirmArchive { .. } => "y/enter confirm · n/esc cancel · ctrl+c quit",
         TaskListMode::PreviewingInactiveTasks { .. } => {
@@ -197,82 +190,40 @@ fn compact_footer_hints(state: &TaskListState) -> &'static str {
     }
 }
 
-fn compact_normal_footer_hints(state: &TaskListState) -> &'static str {
-    match (state.view(), state.search_query().is_some()) {
-        (TaskView::Active, false) => "j/k tab/⇧tab a/e/d/D space enter history s sort q/esc/ctrl+c",
-        (TaskView::Archived, false) => "j/k tab/⇧tab / enter history s sort u restore q/esc/ctrl+c",
-        (TaskView::Active, true) => "j/k tab/⇧tab /find a/e/d/D ␣ enter history esc q/esc/ctrl+c",
-        (TaskView::Archived, true) => "j/k tab/⇧tab / enter history s sort u restore esc q/ctrl+c",
+/// While a search filter is active, Esc clears it instead of quitting.
+fn normal_footer_hints(state: &TaskListState, width: u16) -> &'static str {
+    let filtered = state.search_query().is_some();
+    match state.view() {
+        TaskView::Active => active_footer_hints(filtered, width),
+        TaskView::Archived => archived_footer_hints(filtered, width),
     }
 }
 
-fn medium_footer_hints(state: &TaskListState) -> &'static str {
-    match state.mode() {
-        TaskListMode::Normal => medium_normal_footer_hints(state),
-        TaskListMode::Search => "type · ↑/↓ select · enter keep · esc cancel · ctrl+c quit",
-        TaskListMode::Input { .. } => {
-            "type · backspace delete · enter save · esc cancel · ctrl+c quit"
-        }
-        TaskListMode::ConfirmArchive { .. } => "y/enter confirm · n/esc cancel · ctrl+c quit",
-        TaskListMode::PreviewingInactiveTasks { .. } => {
-            "loading preview · esc cancel · ctrl+c quit"
-        }
-        TaskListMode::ConfirmInactiveArchive { .. } => {
-            "enter/y confirm · n/esc cancel · ctrl+c quit"
-        }
-        TaskListMode::ArchivingInactiveTasks { .. } => "archive in progress · ctrl+c quit",
-    }
-}
-
-fn medium_normal_footer_hints(state: &TaskListState) -> &'static str {
-    match (state.view(), state.search_query().is_some()) {
-        (TaskView::Active, false) => {
+fn active_footer_hints(filtered: bool, width: u16) -> &'static str {
+    match (filtered, width) {
+        (false, ..80) => "j/k tab/⇧tab a/e/d/D space enter history s sort q/esc/ctrl+c",
+        (false, ..110) => {
             "j/k/↑/↓ tab/⇧tab space track enter history s sort a/e/d edit D q/esc/ctrl+c quit"
         }
-        (TaskView::Archived, false) => {
-            "j/k/↑/↓ tab/⇧tab view / enter history s sort u unarchive q/esc/ctrl+c quit"
-        }
-        (TaskView::Active, true) => {
-            "j/k/↑/↓ tab/⇧tab /find space track enter history s sort a/e/d edit D bulk esc q/ctrl+c"
-        }
-        (TaskView::Archived, true) => {
-            "j/k/↑/↓ tab/⇧tab /find enter history s sort u restore esc q/esc/ctrl+c"
-        }
-    }
-}
-
-fn wide_footer_hints(state: &TaskListState) -> &'static str {
-    match state.mode() {
-        TaskListMode::Normal => wide_normal_footer_hints(state),
-        TaskListMode::Search => "type · ↑/↓ select · enter keep · esc cancel · ctrl+c quit",
-        TaskListMode::Input { .. } => {
-            "type · backspace delete · enter save · esc cancel · ctrl+c quit"
-        }
-        TaskListMode::ConfirmArchive { .. } => "y/enter confirm · n/esc cancel · ctrl+c quit",
-        TaskListMode::PreviewingInactiveTasks { .. } => {
-            "loading preview · esc cancel · ctrl+c quit"
-        }
-        TaskListMode::ConfirmInactiveArchive { .. } => {
-            "enter/y confirm · n/esc cancel · ctrl+c quit"
-        }
-        TaskListMode::ArchivingInactiveTasks { .. } => "archive in progress · ctrl+c quit",
-    }
-}
-
-fn wide_normal_footer_hints(state: &TaskListState) -> &'static str {
-    match (state.view(), state.search_query().is_some()) {
-        (TaskView::Active, false) => {
+        (false, _) => {
             "j/k/↑/↓ tab/⇧tab / space track enter history s sort a/e/d edit D archive inactive q/esc/ctrl+c quit"
         }
-        (TaskView::Archived, false) => {
-            "j/k/↑/↓ tab/⇧tab view / enter history s sort u unarchive q/esc/ctrl+c quit"
+        (true, ..80) => "j/k tab/⇧tab / a/e/d/D ␣ enter history s sort esc q/ctrl+c",
+        (true, ..110) => {
+            "j/k/↑/↓ tab/⇧tab / ␣ track enter history s sort a/e/d edit D esc clear q/ctrl+c"
         }
-        (TaskView::Active, true) => {
-            "j/k/↑/↓ tab/⇧tab /find ␣ enter history s sort D bulk esc clear q/ctrl+c"
+        (true, _) => {
+            "j/k/↑/↓ tab/⇧tab /find space track enter history s sort a/e/d edit D archive inactive esc clear q/ctrl+c"
         }
-        (TaskView::Archived, true) => {
-            "j/k/↑/↓ tab/⇧tab /find enter history s sort u restore esc clear q/ctrl+c"
-        }
+    }
+}
+
+fn archived_footer_hints(filtered: bool, width: u16) -> &'static str {
+    match (filtered, width) {
+        (false, ..80) => "j/k tab/⇧tab / enter history s sort u restore q/esc/ctrl+c",
+        (false, _) => "j/k/↑/↓ tab/⇧tab view / enter history s sort u unarchive q/esc/ctrl+c quit",
+        (true, ..80) => "j/k tab/⇧tab / enter history s sort u restore esc q/ctrl+c",
+        (true, _) => "j/k/↑/↓ tab/⇧tab /find enter history s sort u restore esc clear q/ctrl+c",
     }
 }
 
@@ -750,50 +701,63 @@ mod tests {
         );
     }
 
+    /// Checks the normal-mode footers at both edges of each width tier, with
+    /// and without a search filter.
     #[test]
     fn every_accepted_key_is_listed_in_the_footer() {
-        let active_keys = task_list_footer(TaskListMode::Normal, TaskView::Active, 80);
-        for hint in [
-            "j/k/↑/↓",
-            "tab/⇧tab",
-            "space",
-            "enter history",
-            "s sort",
-            "a/e/d",
-            "edit",
-            "D",
-            "q/esc",
-            "ctrl+c",
-        ] {
-            assert!(active_keys.contains(hint), "active footer misses {hint:?}");
+        for width in [60, 79, 80, 109, 110, 140] {
+            for view in [TaskView::Active, TaskView::Archived] {
+                for filtered in [false, true] {
+                    let footer = if filtered {
+                        filtered_task_list_footer(view, width)
+                    } else {
+                        task_list_footer(TaskListMode::Normal, view, width)
+                    };
+                    let context = format!("{view:?} at {width} columns, filtered: {filtered}");
+                    let mut hints = vec!["j/k", "tab/⇧tab", "enter history", "s sort", "ctrl+c"];
+                    match view {
+                        TaskView::Active => hints.extend(["a/e/d", "D"]),
+                        TaskView::Archived => hints.push("u "),
+                    }
+                    if width >= 80 {
+                        hints.push("↑/↓");
+                        if view == TaskView::Active {
+                            hints.extend(["track", "edit"]);
+                        }
+                    }
+                    // Esc clears an active filter, so it must not be listed as a quit key.
+                    if filtered {
+                        hints.extend(["esc", "q/ctrl+c"]);
+                        if width >= 80 {
+                            hints.push("esc clear");
+                        }
+                    } else {
+                        hints.push("q/esc/ctrl+c");
+                    }
+                    for hint in hints {
+                        assert!(
+                            footer.contains(hint),
+                            "{context}: footer misses {hint:?}: {footer:?}"
+                        );
+                    }
+                    if view == TaskView::Active {
+                        assert!(
+                            footer.contains("space") || footer.contains('␣'),
+                            "{context}: footer misses the tracking key: {footer:?}"
+                        );
+                    }
+                    assert_eq!(footer.contains("q/esc"), !filtered, "{context}: {footer:?}");
+                    assert!(
+                        footer.chars().count() <= usize::from(width),
+                        "{context}: footer too wide: {footer:?}"
+                    );
+                }
+            }
         }
-        assert!(active_keys.contains("s sort"));
-        let archived_keys = task_list_footer(TaskListMode::Normal, TaskView::Archived, 80);
-        for hint in [
-            "j/k/↑/↓",
-            "tab/⇧tab",
-            "enter history",
-            "s sort",
-            "u ",
-            "q/esc",
-            "ctrl+c",
-        ] {
-            assert!(
-                archived_keys.contains(hint),
-                "archived footer misses {hint:?}"
-            );
-        }
-        let input_keys = task_list_footer(input(), TaskView::Active, 80);
-        for hint in ["type", "backspace", "enter", "esc", "ctrl+c"] {
-            assert!(input_keys.contains(hint), "input footer misses {hint:?}");
-        }
-        let confirm_keys = task_list_footer(confirm(), TaskView::Active, 80);
-        for hint in ["y/enter", "n/esc", "ctrl+c"] {
-            assert!(
-                confirm_keys.contains(hint),
-                "confirm footer misses {hint:?}"
-            );
-        }
+    }
+
+    #[test]
+    fn the_history_footer_lists_every_key_at_eighty_columns() {
         let history_keys = history_footer(WorklogHistoryMode::Normal, true, 80);
         for hint in [
             "j/k/↑/↓ move",
@@ -810,16 +774,10 @@ mod tests {
                 "history footer misses {hint:?}"
             );
         }
-        // Every footer fits a standard 80-column terminal.
-        for footer in [
-            active_keys,
-            archived_keys,
-            input_keys,
-            confirm_keys,
-            history_keys,
-        ] {
-            assert!(footer.chars().count() <= 80, "footer too wide: {footer:?}");
-        }
+        assert!(
+            history_keys.chars().count() <= 80,
+            "footer too wide: {history_keys:?}"
+        );
     }
 
     #[test]
@@ -841,9 +799,10 @@ mod tests {
         assert!(footer.contains("D archive inactive"), "{footer:?}");
     }
 
-    /// Checks that footer hints follow each interaction stage, including pending archive work.
+    /// Checks that footer hints follow each interaction stage, including
+    /// pending archive work, and stay the same at every width.
     #[test]
-    fn wide_footers_describe_search_editing_and_each_bulk_archive_stage() {
+    fn footers_describe_search_editing_and_each_bulk_archive_stage_at_every_width() {
         use crate::screens::task_list::InactiveTaskPreview;
 
         let as_of = chrono::DateTime::<chrono::Utc>::from_timestamp(0, 0).unwrap();
@@ -851,11 +810,11 @@ mod tests {
         for (mode, expected) in [
             (
                 TaskListMode::Search,
-                "type · ↑/↓ select · enter keep · esc cancel · ctrl+c quit",
+                "type/bs · ↑/↓ select · enter keep · esc cancel · ctrl+c quit",
             ),
             (
                 input(),
-                "type · backspace delete · enter save · esc cancel · ctrl+c quit",
+                "type · backspace · enter save · esc cancel · ctrl+c quit",
             ),
             (confirm(), "y/enter confirm · n/esc cancel · ctrl+c quit"),
             (
@@ -868,7 +827,16 @@ mod tests {
             ),
             (archiving_mode(), "archive in progress · ctrl+c quit"),
         ] {
-            assert_eq!(task_list_footer(mode, TaskView::Active, 110), expected);
+            assert!(
+                expected.chars().count() <= 60,
+                "footer too wide: {expected:?}"
+            );
+            for width in [60, 80, 110] {
+                assert_eq!(
+                    task_list_footer(mode.clone(), TaskView::Active, width),
+                    expected
+                );
+            }
         }
     }
 
