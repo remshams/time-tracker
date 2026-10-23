@@ -23,20 +23,23 @@ pub(crate) enum CursorToken {
     },
 }
 
+/// A worklog command that passed validation and is ready to run against the backend.
+#[derive(Debug)]
+pub(crate) enum Request {
+    /// A history page whose cursor was already read and matched to the backend and scope.
+    History(HistoryRequest),
+    Change(Worklogs),
+}
+
 pub(crate) fn validate(
-    command: &mut Worklogs,
+    command: Worklogs,
     identity: &str,
     now: DateTime<Utc>,
-) -> Result<(), CliError> {
-    match command {
-        Worklogs::List {
-            task,
-            cursor: Some(text),
-        } => {
-            let token: CursorToken = read_json(text)?;
-            decode_cursor(&token, *task, identity)?;
-            *text = serde_json::to_string(&token).map_err(CliError::input)?;
-        }
+) -> Result<Request, CliError> {
+    if let Worklogs::List { task, cursor } = command {
+        return history_request(task, cursor.as_deref(), identity).map(Request::History);
+    }
+    match &command {
         Worklogs::Correct {
             start: None,
             end: None,
@@ -52,8 +55,8 @@ pub(crate) fn validate(
         }
         _ => {}
     }
-    validate_mutation(command, now)?;
-    Ok(())
+    validate_mutation(&command, now)?;
+    Ok(Request::Change(command))
 }
 
 /// Rebuilds the reviewed worklog at stored precision so validation matches backend writes.
@@ -118,7 +121,8 @@ fn replacement(
 }
 
 /// One history page request, with the cursor already matched to its scope.
-enum HistoryRequest {
+#[derive(Debug)]
+pub(crate) enum HistoryRequest {
     Task(TaskId, Option<WorklogCursor>),
     All(Option<GlobalWorklogCursor>),
 }
@@ -129,6 +133,18 @@ impl HistoryRequest {
             Some(task) => Self::Task(task, None),
             None => Self::All(None),
         }
+    }
+}
+
+/// Reads the cursor token, possibly from `@PATH`, once and matches it to the backend and scope.
+fn history_request(
+    task: Option<TaskId>,
+    cursor: Option<&str>,
+    identity: &str,
+) -> Result<HistoryRequest, CliError> {
+    match cursor {
+        Some(text) => decode_cursor(&read_json(text)?, task, identity),
+        None => Ok(HistoryRequest::first_page(task)),
     }
 }
 
@@ -170,11 +186,15 @@ fn times(expected: &ExpectedTimes) -> WorklogTimes {
 
 pub(crate) async fn execute(
     backend: &mut Backend,
-    command: Worklogs,
+    request: Request,
     now: DateTime<Utc>,
 ) -> Result<Value, CliError> {
+    let command = match request {
+        Request::History(history) => return list(backend, history).await,
+        Request::Change(command) => command,
+    };
     match command {
-        Worklogs::List { task, cursor } => list(backend, task, cursor.as_deref()).await,
+        Worklogs::List { .. } => unreachable!("validate turns list commands into history requests"),
         Worklogs::Correct {
             worklog_id,
             expected,
@@ -217,16 +237,7 @@ pub(crate) async fn execute(
     }
 }
 
-async fn list(
-    backend: &mut Backend,
-    task: Option<TaskId>,
-    cursor: Option<&str>,
-) -> Result<Value, CliError> {
-    let token = cursor.map(read_json::<CursorToken>).transpose()?;
-    let request = match &token {
-        Some(token) => decode_cursor(token, task, &backend.identity)?,
-        None => HistoryRequest::first_page(task),
-    };
+async fn list(backend: &mut Backend, request: HistoryRequest) -> Result<Value, CliError> {
     let (worklogs, next) = match request {
         HistoryRequest::Task(task, after) => {
             let page = backend.worklogs_for_task(task, after.as_ref()).await?;
@@ -358,8 +369,8 @@ mod tests {
     fn original_interval_errors_precede_replacement_completion_errors() {
         let start = DateTime::from_timestamp(200, 0).unwrap();
         let end = DateTime::from_timestamp(100, 0).unwrap();
-        let mut command = correction(start, end, EndTimestamp(None));
-        let error = validate(&mut command, "unused", start).unwrap_err();
+        let command = correction(start, end, EndTimestamp(None));
+        let error = validate(command, "unused", start).unwrap_err();
         assert_eq!(error.message, "worklog end must not precede its start");
         assert_eq!(error.exit_code, 2);
     }
@@ -369,7 +380,7 @@ mod tests {
         let earlier = DateTime::from_timestamp(100, 1).unwrap();
         let later = DateTime::from_timestamp(100, 999).unwrap();
         let now = DateTime::from_timestamp(100, 0).unwrap();
-        let mut command = correction(later, earlier, EndTimestamp(Some(later)));
-        assert!(validate(&mut command, "unused", now).is_err());
+        let command = correction(later, earlier, EndTimestamp(Some(later)));
+        assert!(validate(command, "unused", now).is_err());
     }
 }
