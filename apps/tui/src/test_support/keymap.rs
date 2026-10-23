@@ -115,6 +115,14 @@ fn task_list_state(mode: TaskListMode, view: TaskView) -> TaskListState {
     state
 }
 
+/// Builds a normal-mode task list with a committed search filter.
+fn filtered_task_list_state(view: TaskView) -> TaskListState {
+    let mut state = task_list_state(TaskListMode::Search, view);
+    state.insert_search('x', 1);
+    state.commit_search();
+    state
+}
+
 fn history_state(mode: WorklogHistoryMode, available: bool) -> WorklogHistoryState {
     let history = crate::screens::History::new(TaskId::generate(), Vec::new(), None);
     let mut state = WorklogHistoryState::new(TaskListState::new(None), history);
@@ -191,6 +199,10 @@ pub(crate) fn map_unavailable(key: KeyEvent) -> Option<Command> {
 
 pub(crate) fn task_list_footer(mode: TaskListMode, view: TaskView, width: u16) -> &'static str {
     crate::screens::task_list::footer_hints(&task_list_state(mode, view), width)
+}
+
+pub(crate) fn filtered_task_list_footer(view: TaskView, width: u16) -> &'static str {
+    crate::screens::task_list::footer_hints(&filtered_task_list_state(view), width)
 }
 
 pub(crate) fn history_footer(
