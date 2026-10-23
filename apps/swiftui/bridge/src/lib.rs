@@ -75,6 +75,9 @@ use tracking::tracking_json;
 use worklogs::{parse_cursor, worklog_json};
 
 #[cfg(test)]
+mod test_support;
+
+#[cfg(test)]
 mod automation_tests;
 
 #[cfg(test)]

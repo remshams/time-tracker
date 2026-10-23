@@ -1,18 +1,5 @@
 use super::*;
-
-fn response(pointer: *mut c_char) -> Value {
-    assert!(!pointer.is_null());
-    // SAFETY: This test owns the returned string and releases it once.
-    unsafe {
-        let value = serde_json::from_str(CStr::from_ptr(pointer).to_str().unwrap()).unwrap();
-        tt_bridge_string_free(pointer);
-        value
-    }
-}
-
-fn at(seconds: i64) -> DateTime<Utc> {
-    DateTime::from_timestamp(seconds, 123_456_000).unwrap()
-}
+use crate::test_support::*;
 
 /// Archives under the cached name, as the macOS app does, or restores the task.
 fn change(bridge: &mut Bridge, id: TaskId, archived: bool) -> Value {
@@ -183,7 +170,7 @@ fn remote_archive_and_restore_require_refresh_and_preserve_committed_tracking_an
         .application
         .set_active_task(tasks[1].task.id(), at(100))
         .unwrap();
-    let server = report_tests::Server::start(tracker_server::router_for_database(&path).unwrap());
+    let server = Server::start(tracker_server::router_for_database(&path).unwrap());
     let mut bridge = server.client();
     assert_eq!(change(&mut bridge, target, true)["kind"], "unavailable");
     bridge.application.refresh_resources().unwrap();
@@ -228,25 +215,13 @@ fn mock_server(
     initial: (tracker_protocol::TasksDto, tracker_protocol::TrackingDto),
     reply: Value,
     requests: std::sync::Arc<std::sync::Mutex<Vec<Value>>>,
-) -> report_tests::Server {
-    use axum::{
-        Json, Router,
-        routing::{get, patch},
-    };
+) -> Server {
+    use axum::{Json, routing::patch};
     let state = std::sync::Arc::new(std::sync::Mutex::new(initial));
     let write_state = state.clone();
-    report_tests::Server::start(
-        Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(tracker_protocol::HealthDto {
-                        status: "ok".into(),
-                        protocol_version: tracker_protocol::VERSION,
-                    })
-                }),
-            )
-            .merge(report_tests::resource_router_state(state, vec![]))
+    Server::start(
+        healthy_router()
+            .merge(resource_router_state(state, vec![]))
             .route(
                 "/v1/tasks/{id}",
                 patch(move |Json(body): Json<Value>| {
@@ -298,7 +273,7 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
         let TrackingState::Running { worklog } = writer.application.current_tracking() else {
             panic!("tracking should be running")
         };
-        let initial = report_tests::resource_dtos(
+        let initial = resource_dtos(
             writer.application.tasks(TaskOrdering::default()),
             Some(tracker_domain::Worklog::begin(
                 worklog.id(),
@@ -387,8 +362,7 @@ fn unavailable_archive_and_restore_keep_confirmed_state_and_block_writes_until_r
         if !archived {
             crate::tests::archive_cached_task(&mut writer.application, target, at(100)).unwrap();
         }
-        let server =
-            report_tests::Server::start(tracker_server::router_for_database(&path).unwrap());
+        let server = Server::start(tracker_server::router_for_database(&path).unwrap());
         let mut bridge = server.client();
         bridge.application.refresh_resources().unwrap();
         let before = crate::tests::test_resource_values(&bridge.application);
@@ -410,15 +384,13 @@ fn unavailable_archive_and_restore_keep_confirmed_state_and_block_writes_until_r
 
 #[test]
 fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair() {
-    use axum::{Json, Router, routing::get};
+    use axum::{Json, routing::get};
     use std::sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     };
 
-    use tracker_protocol::{
-        HealthDto, MutationDto, MutationResultDto, TaskDto, TaskResourceDto, WorklogDto,
-    };
+    use tracker_protocol::{MutationDto, MutationResultDto, TaskDto, TaskResourceDto, WorklogDto};
 
     for settles in [false, true] {
         let mut application =
@@ -445,16 +417,7 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
         let original_task = initial.clone();
 
         let write_written = written.clone();
-        let router = Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: tracker_protocol::VERSION,
-                    })
-                }),
-            )
+        let router = healthy_router()
             .route(
                 "/v1/state/task-list",
                 get(move || {
@@ -500,7 +463,7 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
                     }
                 }),
             );
-        let server = report_tests::Server::start(router);
+        let server = Server::start(router);
         let mut bridge = server.client();
         bridge.application.refresh_resources().unwrap();
         let before = crate::tests::test_resource_values(&bridge.application);
@@ -539,10 +502,7 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
 
 #[test]
 fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
-    use axum::{
-        Json, Router,
-        routing::{get, patch},
-    };
+    use axum::{Json, routing::patch};
     use std::sync::{Arc, Mutex};
 
     use tracker_protocol::{MutationDto, MutationResultDto, TaskDto};
@@ -556,8 +516,7 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
             if action == "restore" {
                 application.archive_task(task.id(), at(2)).unwrap();
             }
-            let initial =
-                report_tests::resource_dtos(application.tasks(TaskOrdering::default()), None);
+            let initial = resource_dtos(application.tasks(TaskOrdering::default()), None);
             let state = Arc::new(Mutex::new(initial));
             let changed = state.clone();
             let mut committed_task = state.lock().unwrap().0.tasks[0].clone();
@@ -567,17 +526,8 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
             } else {
                 committed_task.archived = action == "archive";
             }
-            let router = Router::new()
-                .route(
-                    "/v1/health",
-                    get(|| async {
-                        Json(tracker_protocol::HealthDto {
-                            status: "ok".into(),
-                            protocol_version: tracker_protocol::VERSION,
-                        })
-                    }),
-                )
-                .merge(report_tests::resource_router_state(state, vec![]))
+            let router = healthy_router()
+                .merge(resource_router_state(state, vec![]))
                 .route(
                     "/v1/tasks/{id}",
                     patch(move |Json(body): Json<Value>| {
@@ -604,7 +554,7 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
                         }
                     }),
                 );
-            let server = report_tests::Server::start(router);
+            let server = Server::start(router);
             let mut bridge = server.client();
             bridge.application.refresh_resources().unwrap();
             let value = if action == "rename" {
@@ -658,21 +608,19 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
 
 #[test]
 fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent_refresh() {
-    use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing::get};
+    use axum::{Json, http::StatusCode, response::IntoResponse, routing::get};
     use std::sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     };
 
-    use tracker_protocol::{
-        ErrorCode, ErrorDto, HealthDto, MutationDto, MutationResultDto, TaskResourceDto,
-    };
+    use tracker_protocol::{ErrorCode, ErrorDto, MutationDto, MutationResultDto, TaskResourceDto};
     let repository = SqliteRepository::open_in_memory().unwrap();
     let mut application = TrackerApplication::load(repository).unwrap();
     let task = application
         .create_task(TaskName::new("Before name").unwrap(), at(1))
         .unwrap();
-    let state = Arc::new(Mutex::new(report_tests::resource_dtos(
+    let state = Arc::new(Mutex::new(resource_dtos(
         application.tasks(TaskOrdering::default()),
         None,
     )));
@@ -685,17 +633,8 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
     let write_failures = failed_reads.clone();
     let writes = Arc::new(AtomicUsize::new(0));
     let write_count = writes.clone();
-    let server = report_tests::Server::start(
-        Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: tracker_protocol::VERSION,
-                    })
-                }),
-            )
+    let server = Server::start(
+        healthy_router()
             .route(
                 "/v1/state/task-list",
                 get({

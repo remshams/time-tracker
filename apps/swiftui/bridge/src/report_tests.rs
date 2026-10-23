@@ -1,15 +1,6 @@
 use super::*;
+use crate::test_support::*;
 use tracker_application::WORKLOG_PAGE_SIZE;
-
-fn response(pointer: *mut c_char) -> Value {
-    assert!(!pointer.is_null());
-    // SAFETY: The pointer comes from the bridge and is released once.
-    unsafe {
-        let value = serde_json::from_str(CStr::from_ptr(pointer).to_str().unwrap()).unwrap();
-        tt_bridge_string_free(pointer);
-        value
-    }
-}
 
 fn at(seconds: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(seconds, 0).unwrap()
@@ -55,121 +46,6 @@ fn completed(
     application
         .clear_active_task(worklog.id(), at(end))
         .unwrap();
-}
-
-pub(super) fn resource_dtos(
-    items: Vec<tracker_application::TaskListItem>,
-    active: Option<tracker_domain::Worklog>,
-) -> (tracker_protocol::TasksDto, tracker_protocol::TrackingDto) {
-    (
-        tracker_protocol::TasksDto {
-            tasks: items.iter().map(tracker_protocol::TaskDto::from).collect(),
-        },
-        tracker_protocol::TrackingDto {
-            active_worklog: active.as_ref().map(tracker_protocol::WorklogDto::from),
-        },
-    )
-}
-
-pub(super) fn resource_router(
-    resources: (tracker_protocol::TasksDto, tracker_protocol::TrackingDto),
-    worklogs: Vec<tracker_protocol::WorklogDto>,
-) -> axum::Router {
-    resource_router_state(
-        std::sync::Arc::new(std::sync::Mutex::new(resources)),
-        worklogs,
-    )
-}
-
-pub(super) fn resource_router_state(
-    resources: std::sync::Arc<
-        std::sync::Mutex<(tracker_protocol::TasksDto, tracker_protocol::TrackingDto)>,
-    >,
-    worklogs: Vec<tracker_protocol::WorklogDto>,
-) -> axum::Router {
-    resource_router_resources(
-        resources,
-        std::sync::Arc::new(std::sync::Mutex::new(worklogs)),
-    )
-}
-
-pub(super) fn resource_router_resources(
-    resources: std::sync::Arc<
-        std::sync::Mutex<(tracker_protocol::TasksDto, tracker_protocol::TrackingDto)>,
-    >,
-    worklogs: std::sync::Arc<std::sync::Mutex<Vec<tracker_protocol::WorklogDto>>>,
-) -> axum::Router {
-    use axum::{Json, Router, extract::Path, http::StatusCode, routing::get};
-    use tracker_protocol::{ErrorCode, ErrorDto, TaskResourceDto, WorklogResourceDto};
-    let aggregate_resources = resources.clone();
-    let task_list = resources.clone();
-    let tracking_state = resources.clone();
-    Router::new()
-        .route(
-            "/v1/state/task-list",
-            get(move || {
-                let resources = aggregate_resources.lock().unwrap();
-                let dto = tracker_protocol::TaskListStateDto {
-                    tasks: resources.0.tasks.clone(),
-                    active_worklog: resources.1.active_worklog.clone(),
-                };
-                async move { Json(dto) }
-            }),
-        )
-        .route(
-            "/v1/tasks",
-            get(move || {
-                let tasks = resources.lock().unwrap().0.clone();
-                async move { Json(tasks) }
-            }),
-        )
-        .route(
-            "/v1/tracking",
-            get(move || {
-                let tracking = tracking_state.lock().unwrap().1.clone();
-                async move { Json(tracking) }
-            }),
-        )
-        .route(
-            "/v1/tasks/{id}",
-            get(move |Path(id): Path<String>| {
-                let tasks = task_list.lock().unwrap().0.clone();
-                async move {
-                    use axum::response::IntoResponse;
-                    match tasks.tasks.into_iter().find(|task| task.id == id) {
-                        Some(task) => Json(TaskResourceDto { task }).into_response(),
-                        None => (
-                            StatusCode::NOT_FOUND,
-                            Json(ErrorDto {
-                                code: ErrorCode::NotFound,
-                                message: "Task not found".into(),
-                            }),
-                        )
-                            .into_response(),
-                    }
-                }
-            }),
-        )
-        .route(
-            "/v1/worklogs/{id}",
-            get(move |Path(id): Path<String>| {
-                let worklogs = worklogs.lock().unwrap().clone();
-                async move {
-                    use axum::response::IntoResponse;
-                    match worklogs.into_iter().find(|worklog| worklog.id == id) {
-                        Some(worklog) => Json(WorklogResourceDto { worklog }).into_response(),
-                        None => (
-                            StatusCode::NOT_FOUND,
-                            Json(ErrorDto {
-                                code: ErrorCode::NotFound,
-                                message: "Worklog not found".into(),
-                            }),
-                        )
-                            .into_response(),
-                    }
-                }
-            }),
-        )
 }
 
 #[test]
@@ -343,67 +219,6 @@ fn report_rejects_null_malformed_and_invalid_ranges_and_returns_empty_totals() {
     assert_eq!(value["data"], json!({"rows":[], "now":timestamp(at(1050))}));
 }
 
-pub(super) struct Server {
-    endpoint: String,
-    shutdown: Option<tokio::sync::oneshot::Sender<()>>,
-    thread: Option<std::thread::JoinHandle<()>>,
-    completed: std::sync::mpsc::Receiver<()>,
-}
-
-impl Server {
-    pub(super) fn start(router: axum::Router) -> Self {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        listener.set_nonblocking(true).unwrap();
-        let (shutdown, cancelled) = tokio::sync::oneshot::channel();
-        let (finished, completed) = std::sync::mpsc::channel();
-        let thread = std::thread::spawn(move || {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(async move {
-                    let listener = tokio::net::TcpListener::from_std(listener).unwrap();
-                    axum::serve(listener, router)
-                        .with_graceful_shutdown(async {
-                            let _ = cancelled.await;
-                        })
-                        .await
-                        .unwrap();
-                });
-            let _ = finished.send(());
-        });
-        Self {
-            endpoint,
-            shutdown: Some(shutdown),
-            thread: Some(thread),
-            completed,
-        }
-    }
-
-    pub(super) fn client(&self) -> Bridge {
-        Bridge::new(Backend::remote(&self.endpoint).unwrap())
-    }
-
-    fn stop(&mut self) {
-        if let Some(shutdown) = self.shutdown.take() {
-            let _ = shutdown.send(());
-        }
-        if let Some(thread) = self.thread.take() {
-            self.completed
-                .recv_timeout(std::time::Duration::from_secs(5))
-                .expect("server shutdown timed out");
-            thread.join().unwrap();
-        }
-    }
-}
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        self.stop();
-    }
-}
-
 #[test]
 fn remote_report_uses_server_totals_and_composes_task_and_tracking_resources() {
     let directory = tempfile::tempdir().unwrap();
@@ -446,7 +261,7 @@ fn remote_selected_report_reads_one_daily_overview_without_reconciliation() {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
-    use tracker_protocol::{DailyOverviewDto, HealthDto, ReportDto, ReportRowDto};
+    use tracker_protocol::{DailyOverviewDto, ReportDto, ReportRowDto};
     let mut application =
         TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap();
     let task = application
@@ -456,15 +271,7 @@ fn remote_selected_report_reads_one_daily_overview_without_reconciliation() {
     let requests = Arc::new(AtomicUsize::new(0));
     let read_requests = requests.clone();
     let router = resource_router(resources.clone(), vec![])
-        .route(
-            "/v1/health",
-            get(|| async {
-                Json(HealthDto {
-                    status: "ok".into(),
-                    protocol_version: tracker_protocol::VERSION,
-                })
-            }),
-        )
+        .merge(healthy_router())
         .route(
             "/v1/state/daily-overview",
             get(move || {
@@ -568,16 +375,8 @@ fn connection_check_supports_local_handles_and_rejects_null_handles() {
 
 #[test]
 fn resource_exports_distinguish_unloaded_empty_and_idle_observations() {
-    use axum::{Json, routing::get};
-    let server = Server::start(resource_router(resource_dtos(vec![], None), vec![]).route(
-        "/v1/health",
-        get(|| async {
-            Json(tracker_protocol::HealthDto {
-                status: "ok".into(),
-                protocol_version: tracker_protocol::VERSION,
-            })
-        }),
-    ));
+    let server =
+        Server::start(resource_router(resource_dtos(vec![], None), vec![]).merge(healthy_router()));
     let mut bridge = server.client();
     // SAFETY: Each call has exclusive access to the live bridge.
     unsafe {
@@ -603,7 +402,7 @@ fn resource_exports_distinguish_unloaded_empty_and_idle_observations() {
 
 #[test]
 fn failed_aggregate_refresh_retains_each_confirmed_resource_observation() {
-    use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing::get};
+    use axum::{Json, http::StatusCode, response::IntoResponse, routing::get};
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -611,42 +410,30 @@ fn failed_aggregate_refresh_retains_each_confirmed_resource_observation() {
     use tracker_protocol::{ErrorCode, ErrorDto, TaskListStateDto};
     let failing = Arc::new(AtomicBool::new(false));
     let fail_reads = failing.clone();
-    let server = Server::start(
-        Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(tracker_protocol::HealthDto {
-                        status: "ok".into(),
-                        protocol_version: tracker_protocol::VERSION,
+    let server = Server::start(healthy_router().route(
+        "/v1/state/task-list",
+        get(move || {
+            let fail = fail_reads.load(Ordering::SeqCst);
+            async move {
+                if fail {
+                    (
+                        StatusCode::CONFLICT,
+                        Json(ErrorDto {
+                            code: ErrorCode::Conflict,
+                            message: "Task list changed".into(),
+                        }),
+                    )
+                        .into_response()
+                } else {
+                    Json(TaskListStateDto {
+                        tasks: vec![],
+                        active_worklog: None,
                     })
-                }),
-            )
-            .route(
-                "/v1/state/task-list",
-                get(move || {
-                    let fail = fail_reads.load(Ordering::SeqCst);
-                    async move {
-                        if fail {
-                            (
-                                StatusCode::CONFLICT,
-                                Json(ErrorDto {
-                                    code: ErrorCode::Conflict,
-                                    message: "Task list changed".into(),
-                                }),
-                            )
-                                .into_response()
-                        } else {
-                            Json(TaskListStateDto {
-                                tasks: vec![],
-                                active_worklog: None,
-                            })
-                            .into_response()
-                        }
-                    }
-                }),
-            ),
-    );
+                    .into_response()
+                }
+            }
+        }),
+    ));
     let mut bridge = server.client();
     // SAFETY: Each call has exclusive access to the live bridge.
     unsafe {

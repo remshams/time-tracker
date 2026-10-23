@@ -1,14 +1,5 @@
 use super::*;
-
-fn response(pointer: *mut c_char) -> Value {
-    assert!(!pointer.is_null());
-    // SAFETY: The bridge owns this string until this test releases it once.
-    unsafe {
-        let value = serde_json::from_str(CStr::from_ptr(pointer).to_str().unwrap()).unwrap();
-        tt_bridge_string_free(pointer);
-        value
-    }
-}
+use crate::test_support::*;
 
 fn create(bridge: &mut Bridge, name: &str, at: &str) -> Value {
     let name = CString::new(name).unwrap();

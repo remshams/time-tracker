@@ -1,15 +1,6 @@
 use super::*;
+use crate::test_support::*;
 use chrono::Duration;
-
-fn response(pointer: *mut c_char) -> Value {
-    assert!(!pointer.is_null());
-    // SAFETY: The test owns this bridge string and releases it once.
-    unsafe {
-        let value = serde_json::from_str(CStr::from_ptr(pointer).to_str().unwrap()).unwrap();
-        tt_bridge_string_free(pointer);
-        value
-    }
-}
 
 fn preview(bridge: &mut Bridge, days: u32, as_of: DateTime<Utc>) -> Value {
     let instant = CString::new(timestamp(as_of)).unwrap();
@@ -241,9 +232,7 @@ fn remote_preview_and_archive_use_server_candidates_and_keep_the_running_task() 
         .application
         .set_active_task(id, as_of - Duration::hours(1))
         .unwrap();
-    let server = super::super::report_tests::Server::start(
-        tracker_server::router_for_database(&path).unwrap(),
-    );
+    let server = Server::start(tracker_server::router_for_database(&path).unwrap());
     let mut bridge = server.client();
     bridge.application.refresh_resources().unwrap();
     let selected = preview(&mut bridge, 7, as_of);
@@ -277,9 +266,7 @@ fn remote_archive_after_other_clients_writes_archives_what_matches_when_it_runs(
     let archived_elsewhere = writer.application.tasks(TaskOrdering::default())[0]
         .task
         .clone();
-    let server = super::super::report_tests::Server::start(
-        tracker_server::router_for_database(&path).unwrap(),
-    );
+    let server = Server::start(tracker_server::router_for_database(&path).unwrap());
     let mut first = server.client();
     let mut second = server.client();
     first.application.refresh_resources().unwrap();
@@ -330,9 +317,7 @@ fn unavailable_preview_and_confirmation_invalidate_context_and_preserve_confirme
     let path = directory.path().join("offline.db");
     let _writer = open_fixture(&path).unwrap();
     for fail_preview in [false, true] {
-        let server = super::super::report_tests::Server::start(
-            tracker_server::router_for_database(&path).unwrap(),
-        );
+        let server = Server::start(tracker_server::router_for_database(&path).unwrap());
         let mut bridge = server.client();
         bridge.application.refresh_resources().unwrap();
         let as_of = Utc::now();

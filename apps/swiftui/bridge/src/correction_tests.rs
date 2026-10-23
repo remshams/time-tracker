@@ -1,44 +1,6 @@
 use super::*;
+use crate::test_support::*;
 use tracker_domain::Worklog;
-
-fn response(pointer: *mut c_char) -> Value {
-    assert!(!pointer.is_null());
-    // SAFETY: This test owns the returned bridge string and releases it once.
-    unsafe {
-        let value = serde_json::from_str(CStr::from_ptr(pointer).to_str().unwrap()).unwrap();
-        tt_bridge_string_free(pointer);
-        value
-    }
-}
-
-fn at(seconds: i64) -> DateTime<Utc> {
-    DateTime::from_timestamp(seconds, 123_456_000).unwrap()
-}
-
-fn record(bridge: &mut Bridge, task: TaskId, start: i64, end: Option<i64>) -> Worklog {
-    bridge
-        .application
-        .set_active_task(task, at(start))
-        .unwrap_or_else(|error| panic!("{}", error.message));
-    let TrackingState::Running { worklog } = bridge.application.current_tracking() else {
-        panic!("tracking should be running")
-    };
-    let id = worklog.id();
-    if let Some(end) = end {
-        bridge
-            .application
-            .clear_active_task(id, at(end))
-            .unwrap_or_else(|error| panic!("{}", error.message));
-    }
-    bridge
-        .application
-        .worklogs_for_task(task, None)
-        .unwrap()
-        .worklogs
-        .into_iter()
-        .find(|worklog| worklog.id() == id)
-        .unwrap()
-}
 
 fn correct(bridge: &mut Bridge, expected: &Worklog, start: i64, end: Option<i64>) -> Value {
     let id = CString::new(expected.id().to_string()).unwrap();
@@ -320,7 +282,7 @@ fn remote_correction_succeeds_after_an_unrelated_write_and_keeps_original_timest
         .task
         .id();
     let original = record(&mut writer, task, 100, None);
-    let server = report_tests::Server::start(tracker_server::router_for_database(&path).unwrap());
+    let server = Server::start(tracker_server::router_for_database(&path).unwrap());
     let mut first = server.client();
     let mut second = server.client();
     first
@@ -386,13 +348,9 @@ fn remote_correction_succeeds_after_an_unrelated_write_and_keeps_original_timest
 
 #[test]
 fn remote_correction_sends_original_and_replacement_times_and_classifies_failures() {
-    use axum::{
-        Json, Router,
-        http::StatusCode,
-        routing::{get, patch},
-    };
+    use axum::{Json, http::StatusCode, routing::patch};
     use std::sync::{Arc, Mutex};
-    use tracker_protocol::{ErrorCode, ErrorDto, HealthDto};
+    use tracker_protocol::{ErrorCode, ErrorDto};
 
     let directory = tempfile::tempdir().unwrap();
     let mut writer = open_fixture(&directory.path().join("payload.db")).unwrap();
@@ -400,8 +358,7 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
         .task
         .id();
     let original = record(&mut writer, task, 100, Some(200));
-    let resources =
-        report_tests::resource_dtos(writer.application.tasks(TaskOrdering::default()), None);
+    let resources = resource_dtos(writer.application.tasks(TaskOrdering::default()), None);
     for (code, message, status, kind, uncertain) in [
         (
             ErrorCode::WorklogOverlap,
@@ -435,17 +392,8 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
         let received = Arc::new(Mutex::new(None));
         let captured = received.clone();
         let resources = resources.clone();
-        let router = Router::new()
-            .route(
-                "/v1/health",
-                get(|| async {
-                    Json(HealthDto {
-                        status: "ok".into(),
-                        protocol_version: tracker_protocol::VERSION,
-                    })
-                }),
-            )
-            .merge(report_tests::resource_router(
+        let router = healthy_router()
+            .merge(resource_router(
                 resources,
                 vec![tracker_protocol::WorklogDto::from(&original)],
             ))
@@ -467,7 +415,7 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
                     },
                 ),
             );
-        let server = report_tests::Server::start(router);
+        let server = Server::start(router);
         let mut bridge = server.client();
         let failure = correct(&mut bridge, &original, 90, Some(210));
         assert_eq!(failure["kind"], kind, "{failure}");
