@@ -55,6 +55,8 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 
 - Keep E2E tests unchanged when a task does not change requirements or externally observable behavior.
 - If changed requirements or behavior warrant E2E updates, update or add those tests without asking for permission. At handoff, summarize which E2E tests were updated or added and why.
+- Write E2E tests as black-box tests. Drive the application only through its public interface (CLI, HTTP API, or UI) and assert only on externally observable results such as output, exit codes, responses, persisted files, or rendered UI.
+- Do not import internal modules, call internal functions, mock internal components, or inspect internal state from E2E tests. Set up preconditions through the public interface where possible. Test harness code that starts real external dependencies (servers, databases, proxies) is fine.
 
 ## Validation
 
