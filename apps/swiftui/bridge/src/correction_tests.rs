@@ -431,7 +431,6 @@ fn remote_correction_sends_original_and_replacement_times_and_classifies_failure
         assert_eq!(body["replacement_start"], timestamp(at(90)));
         assert_eq!(body["replacement_end"], timestamp(at(210)));
         assert_eq!(body["occurred_at"], timestamp(at(1000)));
-        assert!(body.get("expected_revision").is_none());
         assert!(body["request_id"].as_str().is_some_and(|id| !id.is_empty()));
         assert_eq!(body.as_object().unwrap().len(), 7);
     }

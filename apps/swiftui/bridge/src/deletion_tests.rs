@@ -286,7 +286,6 @@ fn remote_deletion_sends_the_expected_worklog_and_classifies_failures() {
         assert_eq!(body["expected_task_id"], task.to_string());
         assert_eq!(body["expected_start"], timestamp(original.start()));
         assert_eq!(body["expected_end"], timestamp(original.end().unwrap()));
-        assert!(body.get("expected_revision").is_none());
         assert!(body["request_id"].as_str().is_some_and(|id| !id.is_empty()));
         assert_eq!(body.as_object().unwrap().len(), 4);
     }

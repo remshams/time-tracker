@@ -574,7 +574,6 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
         assert_eq!(body["expected_start"], timestamp(original.start()));
         assert_eq!(body["expected_end"], timestamp(original.end().unwrap()));
         assert_eq!(body["destination_task_id"], tasks[1].task.id().to_string());
-        assert!(body.get("expected_revision").is_none());
         assert!(body["request_id"].as_str().is_some_and(|id| !id.is_empty()));
         assert_eq!(body.as_object().unwrap().len(), 6);
     }

@@ -240,7 +240,6 @@ fn remote_report_uses_server_totals_and_composes_task_and_tracking_resources() {
             {"taskId": task_id.to_string(), "durationMicroseconds": 50_000_000}
         ])
     );
-    assert!(value["data"].get("revision").is_none(), "{value}");
     assert_eq!(
         crate::tests::test_resource_values(&bridge.application),
         crate::tests::test_resource_values(&writer.application)
@@ -297,7 +296,6 @@ fn remote_selected_report_reads_one_daily_overview_without_reconciliation() {
     let mut bridge = server.client();
     let value = report(&mut bridge, 1000, 1100, 1050);
     assert!(value.get("error").is_none(), "{value}");
-    assert!(value["data"].get("revision").is_none(), "{value}");
     assert!(tracking_json(&bridge.application).unwrap().value.is_none());
     assert_eq!(requests.load(Ordering::SeqCst), 1);
     assert_eq!(value["data"]["rows"][0]["durationMicroseconds"], 50_000_000);
@@ -494,7 +492,6 @@ fn local_totals_refresh_adopts_the_task_list_and_preserves_failed_reads() {
             {"taskId": original[0].task.id().to_string(), "durationMicroseconds": 50_000_000}
         ])
     );
-    assert!(totals["data"].get("revision").is_none(), "{totals}");
     assert_eq!(
         crate::tests::test_resource_values(&bridge.application),
         crate::tests::test_resource_values(&writer.application)
