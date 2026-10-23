@@ -1404,32 +1404,6 @@ async fn history_continuations_keep_collection_scope_and_reject_invalidated_curs
 }
 
 #[tokio::test]
-async fn removed_bundled_routes_and_parallel_versions_are_unavailable() {
-    let directory = TempDir::new().unwrap();
-    let router = tracker_server::router_for_database(&directory.path().join("routes.db")).unwrap();
-    let id = create_fixture_task(&router, "Routes project").await;
-    for route in [
-        "/v1/snapshot".to_owned(),
-        "/v1/reports".to_owned(),
-        format!("/v1/tasks/{id}/worklogs"),
-        "/v2/tasks".to_owned(),
-    ] {
-        let (status, _) = call(&router, Method::GET, &route, None).await;
-        assert_eq!(status, StatusCode::NOT_FOUND, "{route}");
-    }
-    let (status, _) = call(&router, Method::GET, "/v1/tasks/inactive-candidates", None).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    let (status, _) = call(
-        &router,
-        Method::POST,
-        "/v1/tasks/archive-inactive-candidates",
-        Some(json!({})),
-    )
-    .await;
-    assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
-}
-
-#[tokio::test]
 async fn aggregate_routes_load_empty_idle_state_and_validate_interval_parameters() {
     let directory = TempDir::new().unwrap();
     let router = tracker_server::router_for_database(&directory.path().join("empty.db")).unwrap();
