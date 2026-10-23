@@ -7,7 +7,7 @@ use tracker_domain::TaskName;
 
 use crate::Bridge;
 use crate::backend::{Backend, BridgeError};
-use crate::ffi::{ResourceJson, encode, read_identifier, timestamp};
+use crate::ffi::{ResourceJson, read_text, timestamp, with_bridge};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,13 +47,7 @@ fn task_result(application: &Backend, task: &tracker_domain::Task) -> Value {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tt_bridge_tasks(bridge: *mut Bridge) -> *mut c_char {
     // SAFETY: The caller supplies exclusive access to a live bridge or null.
-    let Some(bridge) = (unsafe { bridge.as_ref() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    encode(
-        serde_json::to_value(tasks_json(&bridge.application))
-            .map_err(|error| error.to_string().into()),
-    )
+    unsafe { with_bridge(bridge, |bridge| Ok(tasks_json(&bridge.application))) }
 }
 
 /// Creates a task with a permanent Rust-generated ID at the submitted timestamp.
@@ -68,20 +62,16 @@ pub unsafe extern "C" fn tt_bridge_create_task_at(
     name: *const c_char,
     occurred_at: *const c_char,
 ) -> *mut c_char {
-    // SAFETY: The caller guarantees exclusive access to the live bridge.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    let result = (|| {
-        // SAFETY: The caller supplies valid C strings or null.
-        let name = unsafe { read_task_name(name, "Invalid task name") }?;
-        // SAFETY: The caller supplies a valid C string or null.
-        let occurred_at = unsafe { read_identifier(occurred_at, "Invalid creation timestamp") }
-            .map_err(BridgeError::from)?;
-        let task = bridge.application.create_task(name, occurred_at)?;
-        Ok(task_result(&bridge.application, &task))
-    })();
-    encode(result)
+    // SAFETY: The caller supplies exclusive access to a live bridge or null,
+    // and valid C strings or null.
+    unsafe {
+        with_bridge(bridge, |bridge| {
+            let name = read_task_name(name, "Invalid task name")?;
+            let occurred_at = read_text(occurred_at, "Invalid creation timestamp")?;
+            let task = bridge.application.create_task(name, occurred_at)?;
+            Ok(task_result(&bridge.application, &task))
+        })
+    }
 }
 
 /// Renames a task only if its stored name still matches the reviewed name.
@@ -97,30 +87,23 @@ pub unsafe extern "C" fn tt_bridge_rename_task_with_expected_name_at(
     name: *const c_char,
     occurred_at: *const c_char,
 ) -> *mut c_char {
-    // SAFETY: The caller supplies exclusive access to a live bridge or null.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    let result = (|| {
-        // SAFETY: The caller supplies valid C strings or null.
-        let task_id =
-            unsafe { read_identifier(task_id, "Invalid task ID") }.map_err(BridgeError::from)?;
-        // SAFETY: The caller supplies valid C strings or null.
-        let expected_name = unsafe { read_task_name(expected_name, "Invalid reviewed task name") }?;
-        // SAFETY: The caller supplies valid C strings or null.
-        let name = unsafe { read_task_name(name, "Invalid task name") }?;
-        // SAFETY: The caller supplies valid C strings or null.
-        let occurred_at = unsafe { read_identifier(occurred_at, "Invalid rename timestamp") }
-            .map_err(BridgeError::from)?;
-        let task = bridge.application.rename_task_with_expected_name(
-            task_id,
-            expected_name,
-            name,
-            occurred_at,
-        )?;
-        Ok(task_result(&bridge.application, &task))
-    })();
-    encode(result)
+    // SAFETY: The caller supplies exclusive access to a live bridge or null,
+    // and valid C strings or null.
+    unsafe {
+        with_bridge(bridge, |bridge| {
+            let task_id = read_text(task_id, "Invalid task ID")?;
+            let expected_name = read_task_name(expected_name, "Invalid reviewed task name")?;
+            let name = read_task_name(name, "Invalid task name")?;
+            let occurred_at = read_text(occurred_at, "Invalid rename timestamp")?;
+            let task = bridge.application.rename_task_with_expected_name(
+                task_id,
+                expected_name,
+                name,
+                occurred_at,
+            )?;
+            Ok(task_result(&bridge.application, &task))
+        })
+    }
 }
 
 /// Archives a stopped task only if its stored name still matches the reviewed name.
@@ -135,32 +118,26 @@ pub unsafe extern "C" fn tt_bridge_archive_task_with_expected_name_at(
     expected_name: *const c_char,
     occurred_at: *const c_char,
 ) -> *mut c_char {
-    // SAFETY: The caller supplies exclusive access to a live bridge or null.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    let result = (|| {
-        // SAFETY: The caller supplies valid C strings or null.
-        let task_id =
-            unsafe { read_identifier(task_id, "Invalid task ID") }.map_err(BridgeError::from)?;
-        // SAFETY: The caller supplies valid C strings or null.
-        let expected_name = unsafe { read_task_name(expected_name, "Invalid reviewed task name") }?;
-        // SAFETY: The caller supplies valid C strings or null.
-        let occurred_at = unsafe { read_identifier(occurred_at, "Invalid archive timestamp") }
-            .map_err(BridgeError::from)?;
-        let task = bridge.application.archive_task_with_expected_name(
-            task_id,
-            expected_name,
-            occurred_at,
-        )?;
-        Ok(task_result(&bridge.application, &task))
-    })();
-    encode(result)
+    // SAFETY: The caller supplies exclusive access to a live bridge or null,
+    // and valid C strings or null.
+    unsafe {
+        with_bridge(bridge, |bridge| {
+            let task_id = read_text(task_id, "Invalid task ID")?;
+            let expected_name = read_task_name(expected_name, "Invalid reviewed task name")?;
+            let occurred_at = read_text(occurred_at, "Invalid archive timestamp")?;
+            let task = bridge.application.archive_task_with_expected_name(
+                task_id,
+                expected_name,
+                occurred_at,
+            )?;
+            Ok(task_result(&bridge.application, &task))
+        })
+    }
 }
 
 unsafe fn read_task_name(pointer: *const c_char, message: &str) -> Result<TaskName, BridgeError> {
     // SAFETY: The caller supplies a valid C string or null.
-    let name = unsafe { read_identifier::<String>(pointer, message) }.map_err(BridgeError::from)?;
+    let name = unsafe { read_text::<String>(pointer, message) }?;
     TaskName::new(&name).map_err(|error| BridgeError::from(error.to_string()))
 }
 
@@ -175,19 +152,14 @@ pub unsafe extern "C" fn tt_bridge_unarchive_task_at(
     task_id: *const c_char,
     occurred_at: *const c_char,
 ) -> *mut c_char {
-    // SAFETY: The caller supplies exclusive access to a live bridge or null.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    let result = (|| {
-        // SAFETY: The caller supplies valid C strings or null.
-        let task_id =
-            unsafe { read_identifier(task_id, "Invalid task ID") }.map_err(BridgeError::from)?;
-        // SAFETY: The caller supplies valid C strings or null.
-        let occurred_at = unsafe { read_identifier(occurred_at, "Invalid archive timestamp") }
-            .map_err(BridgeError::from)?;
-        let task = bridge.application.unarchive_task(task_id, occurred_at)?;
-        Ok(task_result(&bridge.application, &task))
-    })();
-    encode(result)
+    // SAFETY: The caller supplies exclusive access to a live bridge or null,
+    // and valid C strings or null.
+    unsafe {
+        with_bridge(bridge, |bridge| {
+            let task_id = read_text(task_id, "Invalid task ID")?;
+            let occurred_at = read_text(occurred_at, "Invalid archive timestamp")?;
+            let task = bridge.application.unarchive_task(task_id, occurred_at)?;
+            Ok(task_result(&bridge.application, &task))
+        })
+    }
 }
