@@ -43,7 +43,7 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 
 ## CodeRabbit
 
-- CodeRabbit does not review pull requests automatically. Each PR gets one CodeRabbit review.
+- CodeRabbit does not review pull requests automatically. Each PR gets one initial CodeRabbit review.
 - Request it only when the PR is finished: your own review rounds are done, CI passes, and the branch is rebased onto its base. For a stack, wait until every layer is finished, then request one review per layer. Use `gh pr comment <number> --body "@coderabbitai review"`.
 - Fix all actionable findings in one push and add a regression test for every fix that changes behavior. Reply on each thread with the commit that fixes it, or the reason for declining.
 - Before replying, review the fix commits against the commit CodeRabbit reviewed, and check that each "Fixed in <sha>" reply points to a commit that addresses that finding.
