@@ -24,10 +24,12 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 
 ## Architecture documentation
 
-- Start with `docs/architecture/README.md`. The concise architecture and application catalog is `docs/architecture/primitives.md`; its human-readable companion is `docs/architecture/primitives.html`. Keep their concepts, rules, ownership, and source snapshot aligned.
+- Start with `docs/architecture/README.md`. The concise architecture and application catalog is `docs/architecture/primitives.md`; its human-readable companion is `docs/architecture/primitives.html`.
+- Keep each architecture document in both Markdown and HTML. Agents read the Markdown and reviewers diff it; people read the HTML. When you add or change an architecture document, update both formats in the same change and keep their concepts, rules, ownership, and source snapshot aligned.
 - The architecture diagrams are in `docs/architecture/architecture.html`. Open the file in a browser; its diagrams and controls work offline.
 - When implementing a feature that changes application components, dependencies, ownership, or communication paths, update the affected diagrams and method tables in the same change. Keep the source snapshot date and revision accurate, and state the scope and revision of any retained quality measurements.
 - Keep the HTML self-contained. Use portable source links and avoid machine-specific paths or links to temporary reports.
+- Use the `frontend-design` skill when creating or redesigning an HTML architecture page.
 
 ## Git
 
