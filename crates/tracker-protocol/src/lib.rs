@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tracker_application::{
     GlobalWorklogCursor, GlobalWorklogPage, ReportTotals, TaskListItem, WorklogCursor, WorklogPage,
 };
-use tracker_domain::{Task, TaskId, Worklog, WorklogId};
+use tracker_domain::{Task, Worklog, WorklogId};
 
 pub const VERSION: u32 = 6;
 
@@ -415,14 +415,6 @@ pub enum ErrorCode {
 pub struct ErrorDto {
     pub code: ErrorCode,
     pub message: String,
-}
-
-pub fn parse_task_id(value: &str) -> Result<TaskId, &'static str> {
-    value.parse().map_err(|_| "invalid task id")
-}
-
-pub fn parse_worklog_id(value: &str) -> Result<WorklogId, &'static str> {
-    value.parse().map_err(|_| "invalid worklog id")
 }
 
 #[cfg(test)]
