@@ -78,7 +78,7 @@ Shared:
 - `Tab`: move to the next task tab. `Shift+Tab`: move to the previous one. Navigation wraps between Active and Archived. The compact footer writes `⇧tab` for Shift+Tab.
 - `j` / `k` or Down / Up: move the selection, with safe bounds at both ends.
 - `s`: cycle through Recently worked, Recently updated, and Recently created ordering. One session-only choice applies to both task views, and selection follows the same task when its row changes.
-- `/`: search names in the current task view. Matches update as you type and use latest-activity order even when another list sort is selected. Up and Down navigate results while typing; Enter keeps the filter and restores normal task actions. Escape cancels editing, or clears a committed filter. Switching views clears the filter. At 60 columns the footer uses `␣` for Space.
+- `/`: search names in the current task view. Matches update as you type and use latest-activity order even when another list sort is selected. Up and Down navigate results while typing; Enter keeps the filter and restores normal task actions. Escape cancels editing, or clears a committed filter. Switching views clears the filter. Below 110 columns the footer of a filtered Active list uses `␣` for Space.
 - `q` or Escape: quit. An active timer keeps running and is recovered on the next start.
 - Only unmodified keys act in the task list and confirmation modes; modifier chords other than Ctrl+C are ignored.
 
