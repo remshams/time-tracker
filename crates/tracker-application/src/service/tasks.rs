@@ -7,10 +7,6 @@ use super::{TrackerApplication, canonical_timestamp};
 use crate::{ApplicationError, RepositoryError, TaskListItem, TaskOrdering, TrackerRepository};
 
 impl<R: TrackerRepository> TrackerApplication<R> {
-    pub fn refresh_task_list(&mut self) -> Result<(), ApplicationError> {
-        self.refresh_authoritative_state()
-    }
-
     pub fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem> {
         let mut items = self.tasks.clone();
         ordering.sort_items(&mut items);
@@ -55,7 +51,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
         let occurred_at = canonical_timestamp(occurred_at);
-        self.refresh_authoritative_state()?;
+        self.refresh_task_list()?;
         self.tracker.ensure_archivable(id)?;
         // The operation preserves unrelated metadata, so a concurrent rename
         // survives the archive.
@@ -108,7 +104,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         expected_name: &TaskName,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
-        self.refresh_authoritative_state()?;
+        self.refresh_task_list()?;
         match self.repository.compare_and_archive_task(
             id,
             expected_name,
@@ -141,7 +137,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         // since our last load. Refresh before the write so a read failure
         // prevents the unarchive and Idle is never reported over an active
         // worklog that survived the call.
-        self.refresh_authoritative_state()?;
+        self.refresh_task_list()?;
         match self.repository.unarchive_task(id, occurred_at) {
             Ok(task) => {
                 self.replace_task(task.clone());

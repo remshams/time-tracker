@@ -11,11 +11,11 @@ fn explicit_refresh_adopts_authoritative_resources_and_preserves_state_on_read_f
         latest_work_start: None,
     });
     assert_eq!(application.tasks(TaskOrdering::RecentlyCreated).len(), 1);
-    application.refresh_authoritative_state().unwrap();
+    application.refresh_task_list().unwrap();
     assert_eq!(application.tasks(TaskOrdering::RecentlyCreated).len(), 2);
 
     repository.0.borrow_mut().fail_reads = true;
-    assert!(application.refresh_authoritative_state().is_err());
+    assert!(application.refresh_task_list().is_err());
     assert_eq!(application.tasks(TaskOrdering::RecentlyCreated).len(), 2);
 }
 
