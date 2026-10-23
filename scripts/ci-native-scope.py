@@ -15,6 +15,8 @@ NON_NATIVE_DIRECTORIES = ("docs/", ".githooks/", "scripts/tests/")
 NON_NATIVE_FILES = {
     ".cargo-crap.toml",
     ".cargo/mutants.toml",
+    ".coderabbit.yaml",
+    ".github/actions/setup-muter/action.yml",
     ".github/workflows/dependencies.yml",
     ".github/workflows/mutations.yml",
     "scripts/audit-omarchy-themes.py",
