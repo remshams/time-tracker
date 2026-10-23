@@ -9,7 +9,9 @@ use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName};
 
 use super::{
     SqliteRepository, error,
-    mapping::{raw_task, raw_task_item, task_from_raw, timestamp_to_us, us_to_timestamp},
+    mapping::{
+        RawTaskItem, raw_task, raw_task_item, task_from_raw, timestamp_to_us, us_to_timestamp,
+    },
     tracking::active_tracking_read_on,
 };
 use crate::StorageError;
@@ -25,24 +27,33 @@ pub(crate) fn task_by_id_on(conn: &Connection, id: TaskId) -> Result<Option<Task
         .transpose()
 }
 
-/// The task list probes the latest start through the existing task/start
-/// index once per task, instead of scanning every historical worklog.
-pub(crate) const TASK_ITEMS_SQL: &str =
-    "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us,
-            (SELECT MAX(w.start_us) FROM worklogs AS w WHERE w.task_id = t.id) AS latest_start_us
-     FROM tasks AS t
-     ORDER BY t.id";
+/// Selects each task with its latest worklog start. The subquery probes the
+/// task/start index once per task instead of scanning every historical
+/// worklog. A macro, because `concat!` accepts only literals.
+macro_rules! task_item_select {
+    () => {
+        "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us,
+                (SELECT MAX(w.start_us) FROM worklogs AS w WHERE w.task_id = t.id) AS latest_start_us
+         FROM tasks AS t"
+    };
+}
+
+pub(crate) const TASK_ITEMS_SQL: &str = concat!(task_item_select!(), " ORDER BY t.id");
+const TASK_ITEM_BY_ID_SQL: &str = concat!(task_item_select!(), " WHERE t.id = ?1");
+
+fn task_item_from_raw((raw, latest_us): RawTaskItem) -> Result<TaskListItem, StorageError> {
+    Ok(TaskListItem {
+        task: task_from_raw(raw)?,
+        latest_work_start: latest_us.map(us_to_timestamp).transpose()?,
+    })
+}
 
 pub(crate) fn list_task_items_on(conn: &Connection) -> Result<Vec<TaskListItem>, StorageError> {
     let mut statement = conn.prepare(TASK_ITEMS_SQL)?;
     let mut rows = statement.query([])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
-        let (raw, latest_us) = raw_task_item(row)?;
-        items.push(TaskListItem {
-            task: task_from_raw(raw)?,
-            latest_work_start: latest_us.map(us_to_timestamp).transpose()?,
-        });
+        items.push(task_item_from_raw(raw_task_item(row)?)?);
     }
     Ok(items)
 }
@@ -52,20 +63,10 @@ pub(crate) fn task_item_by_id_on(
     conn: &Connection,
     id: TaskId,
 ) -> Result<Option<TaskListItem>, StorageError> {
-    let mut statement = conn.prepare(
-        "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us,
-                (SELECT MAX(w.start_us) FROM worklogs AS w WHERE w.task_id = t.id) AS latest_start_us
-         FROM tasks AS t WHERE t.id = ?1",
-    )?;
-    statement
+    conn.prepare(TASK_ITEM_BY_ID_SQL)?
         .query_row([id.to_string()], raw_task_item)
         .optional()?
-        .map(|(raw, latest_us)| {
-            Ok(TaskListItem {
-                task: task_from_raw(raw)?,
-                latest_work_start: latest_us.map(us_to_timestamp).transpose()?,
-            })
-        })
+        .map(task_item_from_raw)
         .transpose()
 }
 
