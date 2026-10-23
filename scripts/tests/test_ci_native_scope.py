@@ -55,17 +55,21 @@ class NativeScopeTests(unittest.TestCase):
         self.write(".github/workflows/mutations.yml", "name: Mutation tests\n")
         self.write(".github/actions/setup-muter/action.yml", "name: Set up Muter\n")
         self.write(".coderabbit.yaml", "reviews: {}\n")
+        self.write(".swiftlint.yml", "opt_in_rules: []\n")
+        self.write("scripts/swift-mutation-scope.py", "pass\n")
+        self.write("scripts/swift-style.py", "pass\n")
         self.commit("Update documentation and Linux-only tooling")
         for event in ("pull_request", "push"):
             native, reason = self.scope(event)
             self.assertFalse(native, reason)
-            self.assertEqual(reason, "none of the 8 changed files affect native checks")
+            self.assertEqual(reason, "none of the 11 changed files affect native checks")
 
     def test_any_other_change_requires_native_checks(self):
         for name in ("apps/swiftui/App.swift", "crates/tracker-domain/src/lib.rs", "Cargo.lock",
                      "apps/server/src/main.rs", "apps/server/Cargo.toml", ".github/workflows/ci.yml",
                      ".github/actions/setup-rust/action.yml",
-                     "scripts/run-native-ui.py", "scripts/ci-native-scope.py", ".cargo/config.toml"):
+                     "scripts/run-native-ui.py", "scripts/swift_muter_tools.py", "scripts/ci-native-scope.py",
+                     ".cargo/config.toml"):
             with self.subTest(name=name):
                 self.write("README.md", f"Changed with {name}\n")
                 self.write(name, f"// {name}\n")

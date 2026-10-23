@@ -19,8 +19,19 @@ NON_NATIVE_FILES = {
     ".github/actions/setup-muter/action.yml",
     ".github/workflows/dependencies.yml",
     ".github/workflows/mutations.yml",
+    ".swift-format",
+    ".swiftlint.yml",
     "scripts/audit-omarchy-themes.py",
+    "scripts/benchmark-native-ui.py",
     "scripts/deploy-server.py",
+    "scripts/install-swift-muter.py",
+    "scripts/install-swift-style-tools.py",
+    "scripts/swift-coverage.py",
+    "scripts/swift-muter-regressions.py",
+    "scripts/swift-mutation-scope.py",
+    "scripts/swift-mutations.py",
+    "scripts/swift-style-tools.resolved",
+    "scripts/swift-style.py",
 }
 NO_BASE = {"", "0" * 40}
 
