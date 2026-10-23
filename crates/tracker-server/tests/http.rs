@@ -807,7 +807,7 @@ async fn stopping_an_already_idle_tracker_is_an_idempotent_success() {
     let temp = TempDir::new().unwrap();
     let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
     let request = merge(
-        json!({"task_id":null,"worklog_id":null,"expected_active":null,"occurred_at":at(100)}),
+        json!({"task_id":null,"worklog_id":null,"expected_active":Uuid::now_v7().to_string(),"occurred_at":at(100)}),
         guard(),
     );
 
@@ -822,6 +822,22 @@ async fn stopping_an_already_idle_tracker_is_an_idempotent_success() {
     assert_eq!(retry["result"], first["result"]);
     assert_eq!(retry["replayed"], true);
     assert!(state(&router).await.0.tasks.is_empty());
+}
+
+#[tokio::test]
+async fn a_tracking_request_without_a_task_or_an_expected_timer_is_invalid() {
+    let temp = TempDir::new().unwrap();
+    let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
+    let request = merge(
+        json!({"task_id":null,"worklog_id":null,"expected_active":null,"occurred_at":at(100)}),
+        guard(),
+    );
+
+    let (status, body) = call(&router, Method::PUT, "/v1/tracking", Some(request)).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "invalid_request");
+    assert_eq!(body["message"], "Invalid tracking request");
 }
 
 #[tokio::test]
@@ -1915,12 +1931,6 @@ async fn writes_based_on_an_outdated_item_are_rejected_by_expected_values() {
                 json!({"task_id":first,"worklog_id":Uuid::now_v7().to_string(),"expected_active":null,"occurred_at":at(210)}),
                 "conflict",
             ),
-            (
-                Method::PUT,
-                "/v1/tracking".to_owned(),
-                json!({"task_id":null,"worklog_id":null,"expected_active":null,"occurred_at":at(210)}),
-                "conflict",
-            ),
         ],
     )
     .await;
@@ -1996,11 +2006,6 @@ async fn writes_that_send_an_expected_revision_are_rejected_without_writing() {
             Method::PUT,
             "/v1/tracking".to_owned(),
             json!({"task_id":id,"worklog_id":Uuid::now_v7().to_string(),"expected_active":null,"occurred_at":at(200)}),
-        ),
-        (
-            Method::PUT,
-            "/v1/tracking".to_owned(),
-            json!({"task_id":null,"worklog_id":null,"expected_active":null,"occurred_at":at(200)}),
         ),
         (
             Method::PATCH,
