@@ -8,7 +8,7 @@ use tracker_domain::InactivityPeriod;
 
 use crate::Bridge;
 use crate::backend::{BridgeError, InactivePreview};
-use crate::ffi::{encode, read_identifier, timestamp};
+use crate::ffi::{read_text, timestamp, with_bridge};
 use crate::tasks::TaskJson;
 
 #[cfg(test)]
@@ -41,29 +41,26 @@ pub unsafe extern "C" fn tt_bridge_preview_inactive_tasks_at(
     inactive_days: u32,
     as_of: *const c_char,
 ) -> *mut c_char {
-    // SAFETY: The caller supplies exclusive access to a live bridge or null.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    bridge.inactive_preview = None;
-    let result = (|| {
-        let period = InactivityPeriod::new(inactive_days)
-            .map_err(|error| BridgeError::from(error.to_string()))?;
-        // SAFETY: The caller supplies a valid C string or null.
-        let as_of = unsafe { read_identifier(as_of, "Invalid archive preview timestamp") }
-            .map_err(BridgeError::from)?;
-        let preview = bridge
-            .application
-            .preview_inactive_tasks(canonical(as_of), period)?;
-        let value = json!({
-            "asOf": timestamp(preview.as_of()),
-            "inactiveDays": preview.days(),
-            "tasks": preview_tasks(&preview),
-        });
-        bridge.inactive_preview = Some(preview);
-        Ok(value)
-    })();
-    encode(result)
+    // SAFETY: The caller supplies exclusive access to a live bridge or null,
+    // and a valid C string or null.
+    unsafe {
+        with_bridge(bridge, |bridge| {
+            bridge.inactive_preview = None;
+            let period = InactivityPeriod::new(inactive_days)
+                .map_err(|error| BridgeError::from(error.to_string()))?;
+            let as_of = read_text(as_of, "Invalid archive preview timestamp")?;
+            let preview = bridge
+                .application
+                .preview_inactive_tasks(canonical(as_of), period)?;
+            let value = json!({
+                "asOf": timestamp(preview.as_of()),
+                "inactiveDays": preview.days(),
+                "tasks": preview_tasks(&preview),
+            });
+            bridge.inactive_preview = Some(preview);
+            Ok(value)
+        })
+    }
 }
 
 /// Confirms the retained preview once and returns the actual archived count.
@@ -78,33 +75,30 @@ pub unsafe extern "C" fn tt_bridge_archive_inactive_tasks_at(
     inactive_days: u32,
     as_of: *const c_char,
 ) -> *mut c_char {
-    // SAFETY: The caller supplies exclusive access to a live bridge or null.
-    let Some(bridge) = (unsafe { bridge.as_mut() }) else {
-        return encode(Err("Database is not open".to_owned().into()));
-    };
-    let preview = bridge.inactive_preview.take();
-    let result = (|| {
-        let period = InactivityPeriod::new(inactive_days)
-            .map_err(|error| BridgeError::from(error.to_string()))?;
-        // SAFETY: The caller supplies a valid C string or null.
-        let as_of = unsafe { read_identifier(as_of, "Invalid archive preview timestamp") }
-            .map_err(BridgeError::from)?;
-        let preview = preview.ok_or_else(|| {
-            BridgeError::from("Load an archive preview before confirming".to_owned())
-        })?;
-        if preview.as_of() != canonical(as_of) || preview.days() != period.days() {
-            return Err(
-                "Archive preview changed. Load a new preview before confirming"
-                    .to_owned()
-                    .into(),
-            );
-        }
-        let archived_count = bridge.application.archive_inactive_tasks(preview)?;
-        Ok(
-            json!({ "archivedCount": archived_count, "receipt": bridge.application.command_receipt() }),
-        )
-    })();
-    encode(result)
+    // SAFETY: The caller supplies exclusive access to a live bridge or null,
+    // and a valid C string or null.
+    unsafe {
+        with_bridge(bridge, |bridge| {
+            let preview = bridge.inactive_preview.take();
+            let period = InactivityPeriod::new(inactive_days)
+                .map_err(|error| BridgeError::from(error.to_string()))?;
+            let as_of = read_text(as_of, "Invalid archive preview timestamp")?;
+            let preview = preview.ok_or_else(|| {
+                BridgeError::from("Load an archive preview before confirming".to_owned())
+            })?;
+            if preview.as_of() != canonical(as_of) || preview.days() != period.days() {
+                return Err(
+                    "Archive preview changed. Load a new preview before confirming"
+                        .to_owned()
+                        .into(),
+                );
+            }
+            let archived_count = bridge.application.archive_inactive_tasks(preview)?;
+            Ok(
+                json!({ "archivedCount": archived_count, "receipt": bridge.application.command_receipt() }),
+            )
+        })
+    }
 }
 
 #[cfg(test)]
