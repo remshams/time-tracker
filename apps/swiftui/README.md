@@ -128,7 +128,7 @@ Settings > Menu bar > Task order controls the order of Today and Start tracking.
 
 The Rust report query aggregates the full day independently of paged worklog history. `TrackerSession` requests today's totals only together with the task list, which holds tasks and tracking. The remote Rust adapter reads `/v1/state/daily-overview` once, validates its context, and publishes the task, tracking and report observations together. Local mode reads the same group in one SQLite transaction. The serialized Swift worker captures each resource separately before another bridge operation can run.
 
-Swift advances running time only when tracking is loaded and the running worklog still matches the projection anchor. Bridge JSON carries no revisions, and the Swift models have no revision fields. Totals remain valid when task metadata is missing; an unsafe projection keeps the confirmed report value. Ordinary display ticks make no network request. One local day-boundary timer clears yesterday's totals and requests today's report, even while tracking is idle.
+Swift advances running time only when tracking is loaded and the running worklog still matches the projection anchor. The daily-totals JSON from the bridge carries no revisions, and the Swift models have no revision fields. History cursors are separate and keep their own revision. Totals remain valid when task metadata is missing; an unsafe projection keeps the confirmed report value. Ordinary display ticks make no network request. One local day-boundary timer clears yesterday's totals and requests today's report, even while tracking is idle.
 
 ## Menu navigation and task actions
 
