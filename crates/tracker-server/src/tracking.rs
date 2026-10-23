@@ -95,7 +95,6 @@ mod tracking_tests {
     use crate::core::Core;
     use axum::http::StatusCode;
     use chrono::{DateTime, Utc};
-    use std::collections::{HashMap, VecDeque};
     use std::path::Path;
     use std::sync::{Arc, Mutex};
     use tracker_application::{TaskOrdering, TrackerApplication};
@@ -112,13 +111,7 @@ mod tracking_tests {
             .unwrap();
         app.create_task(TaskName::new("Review changes").unwrap(), at(2))
             .unwrap();
-        Arc::new(Mutex::new(Core {
-            _database_lock: database_lock,
-            app,
-            needs_refresh: false,
-            completed: HashMap::new(),
-            completion_order: VecDeque::new(),
-        }))
+        Arc::new(Mutex::new(Core::new(database_lock, app)))
     }
 
     fn at(seconds: i64) -> DateTime<Utc> {

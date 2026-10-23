@@ -16,14 +16,25 @@ const IDEMPOTENCY_CACHE_SIZE: usize = 1024;
 pub(super) type Shared = Arc<Mutex<Core>>;
 
 pub(super) struct Core {
-    pub(super) _database_lock: File,
+    _database_lock: File,
     pub(super) app: TrackerApplication<SqliteRepository>,
-    pub(super) needs_refresh: bool,
-    pub(super) completed: HashMap<String, (String, MutationDto)>,
-    pub(super) completion_order: VecDeque<String>,
+    needs_refresh: bool,
+    completed: HashMap<String, (String, MutationDto)>,
+    completion_order: VecDeque<String>,
 }
 
 impl Core {
+    /// Keeps the database lock alongside the application and starts with no cached receipts.
+    pub(super) fn new(database_lock: File, app: TrackerApplication<SqliteRepository>) -> Self {
+        Self {
+            _database_lock: database_lock,
+            app,
+            needs_refresh: false,
+            completed: HashMap::new(),
+            completion_order: VecDeque::new(),
+        }
+    }
+
     pub(super) fn active_worklog(&self) -> Option<WorklogDto> {
         match self.app.current_tracking() {
             TrackingState::Idle => None,
@@ -60,7 +71,7 @@ impl Core {
                 if error.status.is_server_error() {
                     // A command may commit before its follow-up read fails.
                     // Reload the caches so later reads report the stored state.
-                    self.needs_refresh = self.app.refresh_authoritative_state().is_err();
+                    self.needs_refresh = self.app.refresh_task_list().is_err();
                 }
                 return Err(error);
             }
@@ -85,7 +96,7 @@ pub(super) fn lock(shared: &Shared) -> Result<std::sync::MutexGuard<'_, Core>, A
     let mut core = shared.lock().map_err(|_| ApiError::internal())?;
     if core.needs_refresh {
         core.app
-            .refresh_authoritative_state()
+            .refresh_task_list()
             .map_err(|_| ApiError::internal())?;
         core.needs_refresh = false;
     }
@@ -104,13 +115,7 @@ mod tests {
         let database_lock = lock_database(&path).unwrap();
         let repository = SqliteRepository::open(&path).unwrap();
         let app = TrackerApplication::load(repository).unwrap();
-        let mut core = Core {
-            _database_lock: database_lock,
-            app,
-            needs_refresh: false,
-            completed: HashMap::new(),
-            completion_order: VecDeque::new(),
-        };
+        let mut core = Core::new(database_lock, app);
         for index in 0..IDEMPOTENCY_CACHE_SIZE - 1 {
             let request_id = format!("cached-{index}");
             core.completed.insert(
