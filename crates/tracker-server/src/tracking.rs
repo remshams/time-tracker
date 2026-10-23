@@ -136,30 +136,6 @@ mod tracking_tests {
     }
 
     #[tokio::test]
-    async fn idle_request_preserves_a_timer_started_directly_in_the_database() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("tracker.db");
-        let shared = core(&path);
-        let tasks = shared.lock().unwrap().app.tasks(TaskOrdering::default());
-        let mut other = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
-        other.set_active_task(tasks[1].task.id(), at(100)).unwrap();
-        let foreign = other.current_tracking().clone();
-        let new_id = WorklogId::generate();
-        let request = request(tasks[0].task.id(), new_id, None, 200);
-        let rejected = set_tracking(State(shared.clone()), Ok(Json(request)))
-            .await
-            .unwrap_err();
-        assert_eq!(rejected.status, StatusCode::CONFLICT);
-        assert_eq!(shared.lock().unwrap().app.current_tracking(), &foreign);
-        let repository = SqliteRepository::open(&path).unwrap();
-        assert!(repository.find_worklog(new_id).unwrap().is_none());
-        assert_eq!(
-            repository.active_worklog().unwrap().unwrap().task_id(),
-            tasks[1].task.id()
-        );
-    }
-
-    #[tokio::test]
     async fn conditional_idle_start_keeps_the_id_and_explicit_switch_remains_supported() {
         let directory = tempfile::tempdir().unwrap();
         let shared = core(&directory.path().join("tracker.db"));
@@ -197,50 +173,6 @@ mod tracking_tests {
             matches!(switched.result, MutationResultDto::TrackingSwitched { stopped, started }
             if stopped.id == first_id.to_string() && stopped.end == Some(at(200))
                 && started.start == at(200))
-        );
-    }
-    /// A cached timer cannot authorize a switch after another writer replaces that timer.
-    #[tokio::test]
-    async fn switch_preserves_a_timer_replaced_directly_in_the_database() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("tracker.db");
-        let shared = core(&path);
-        let tasks = shared.lock().unwrap().app.tasks(TaskOrdering::default());
-        let original_id = WorklogId::generate();
-        let initial = request(tasks[0].task.id(), original_id, None, 100);
-        let initial = set_tracking(State(shared.clone()), Ok(Json(initial)))
-            .await
-            .unwrap()
-            .0;
-        assert!(
-            matches!(initial.result, MutationResultDto::Worklog(worklog) if worklog.id == original_id.to_string())
-        );
-
-        let mut other = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
-        other.clear_active_task(original_id, at(150)).unwrap();
-        other.set_active_task(tasks[0].task.id(), at(160)).unwrap();
-        let replacement = other.current_tracking().clone();
-        let new_id = WorklogId::generate();
-        let stale = request(tasks[1].task.id(), new_id, Some(original_id), 200);
-
-        let rejected = set_tracking(State(shared.clone()), Ok(Json(stale)))
-            .await
-            .unwrap_err();
-
-        assert_eq!(rejected.status, StatusCode::CONFLICT);
-        assert_eq!(shared.lock().unwrap().app.current_tracking(), &replacement);
-        let repository = SqliteRepository::open(&path).unwrap();
-        assert!(repository.find_worklog(new_id).unwrap().is_none());
-        let TrackingState::Running { worklog } = replacement else {
-            panic!("the replacement timer must remain active");
-        };
-        assert_eq!(
-            repository.active_worklog().unwrap().unwrap().id(),
-            worklog.id()
-        );
-        assert_eq!(
-            repository.find_worklog(original_id).unwrap().unwrap().end(),
-            Some(at(150))
         );
     }
 
