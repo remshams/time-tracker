@@ -52,7 +52,7 @@ pub unsafe extern "C" fn tt_bridge_refresh_totals(
     encode(result)
 }
 
-/// Returns the report captured by the last successful selected totals refresh.
+/// Returns the report captured by the last successful totals refresh.
 ///
 /// # Safety
 /// `bridge` must be live and uniquely accessed. Free the returned owned string.
