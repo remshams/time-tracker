@@ -12,7 +12,7 @@ public final class TrackerSession {
     private let clock: any TrackerClock
     private let scheduler: any TrackerScheduler
     private let settingsRepository: any ConnectionSettingsRepository
-    private let trackingPreferencesRepository: (any TrackingPreferencesRepository)?
+    private let trackingPreferencesRepository: any TrackingPreferencesRepository
     private let automation: TrackingAutomationState
     private let connection: ConnectionState
     private let catalog = TaskCatalogState()
@@ -44,7 +44,7 @@ public final class TrackerSession {
     public init(
         client: any TrackerClient, clock: any TrackerClock,
         scheduler: any TrackerScheduler, settings: any ConnectionSettingsRepository,
-        trackingPreferences: (any TrackingPreferencesRepository)? = nil,
+        trackingPreferences: any TrackingPreferencesRepository,
         lastTrackedTasks: (any LastTrackedTaskRepository)? = nil,
         reports: (any ReportClient)? = nil, calendar: Calendar = .autoupdatingCurrent
     ) {
@@ -55,7 +55,7 @@ public final class TrackerSession {
         self.scheduler = scheduler
         settingsRepository = settings
         trackingPreferencesRepository = trackingPreferences
-        automation = TrackingAutomationState(preferences: trackingPreferences?.load() ?? TrackingPreferences())
+        automation = TrackingAutomationState(preferences: trackingPreferences.load())
         let initialSettings = settings.load() ?? .local
         connection = ConnectionState(settings: initialSettings)
         lastTracked = LastTrackedTaskState(repository: lastTrackedTasks, settings: initialSettings)
@@ -509,7 +509,7 @@ public final class TrackerSession {
 
     public func setPauseOnScreenLock(_ enabled: Bool) {
         guard automation.setEnabled(enabled) else { return }
-        trackingPreferencesRepository?.save(TrackingPreferences(pauseOnScreenLock: enabled))
+        trackingPreferencesRepository.save(TrackingPreferences(pauseOnScreenLock: enabled))
         if enabled && automation.locked { pauseTracking(at: clock.now) }
         publish()
     }
