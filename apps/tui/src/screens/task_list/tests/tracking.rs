@@ -71,6 +71,41 @@ fn space_switches_to_another_task() {
     );
 }
 #[test]
+fn switching_uses_one_monotonic_timestamp_for_both_worklogs() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("tracker.db");
+    let repository = SqliteRepository::open(&path).unwrap();
+    let alpha = task(1, "alpha");
+    let beta = task(2, "beta");
+    repository.create_task(alpha.clone()).unwrap();
+    repository.create_task(beta.clone()).unwrap();
+    let (mut app, clock) = app_with_test_clock(
+        TrackerApplication::load(repository).unwrap(),
+        chrono_tz::UTC,
+        Utc::now(),
+    );
+    let alpha = alpha.id();
+    let beta = beta.id();
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
+    clock.advance_monotonic(Duration::from_secs(125));
+    app.handle(Command::TaskList(TaskListCommand::MoveDown));
+    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
+    let mut verifier = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
+    let alpha_worklog = verifier
+        .worklogs_for_task(alpha, None)
+        .unwrap()
+        .worklogs
+        .pop()
+        .unwrap();
+    let beta_worklog = verifier
+        .worklogs_for_task(beta, None)
+        .unwrap()
+        .worklogs
+        .pop()
+        .unwrap();
+    assert_eq!(alpha_worklog.end(), Some(beta_worklog.start()));
+}
+#[test]
 fn tracking_outcomes_choose_the_right_status_and_clock_anchor() {
     let task = |tag, name| {
         Task::create(
