@@ -26,7 +26,7 @@ impl TasksClient {
         Ok(())
     }
 
-    pub(super) async fn fetch_task_catalog(
+    async fn fetch_task_catalog(
         &mut self,
         session: &mut RemoteSession,
     ) -> Result<Vec<TaskListItem>, RemoteError> {
@@ -148,13 +148,12 @@ impl TasksClient {
             .await
             .map_err(|error| map_application_error(&error, None, None))?;
         let as_of = canonical(as_of);
-        let path = format!(
-            "v1/tasks/inactive-preview?as_of={}&inactive_days={}",
-            as_of.to_rfc3339().replace('+', "%2B"),
-            period.days()
-        );
+        let mut url = session.url("v1/tasks/inactive-preview");
+        url.query_pairs_mut()
+            .append_pair("as_of", &as_of.to_rfc3339())
+            .append_pair("inactive_days", &period.days().to_string());
         let preview: InactiveTaskPreviewDto = session
-            .read(&path)
+            .get(url)
             .await
             .map_err(|error| map_application_error(&error, None, None))?;
         let preview = InactiveTaskPreview::validated(preview)

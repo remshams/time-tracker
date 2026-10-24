@@ -1,7 +1,8 @@
+use super::error::state_changed;
 use super::{
-    ApplicationError, ApplicationFailureCategory, HealthDto, Instant, Method, MutationContext,
-    MutationDto, MutationResultDto, RemoteError, RemoteFailureKind, Transport, WriteGuard,
-    classify_error, map_application_error, protocol_failure,
+    ApplicationError, HealthDto, Instant, Method, MutationContext, MutationDto, MutationResultDto,
+    RemoteError, RemoteFailureKind, Transport, WriteGuard, classify_error, map_application_error,
+    protocol_failure,
 };
 
 /// Shared connection state, HTTP transport and validated command receipts.
@@ -46,10 +47,7 @@ impl RemoteSession {
     }
     pub(super) fn intent_changed(&mut self) -> ApplicationError {
         self.set_failure(RemoteFailureKind::Conflict);
-        ApplicationError::semantic_failure(
-            ApplicationFailureCategory::General,
-            "Tracker state changed. Refresh and retry.",
-        )
+        state_changed()
     }
     pub(super) fn set_failure(&mut self, failure: RemoteFailureKind) {
         self.last_failure = Some(failure);
@@ -77,8 +75,16 @@ impl RemoteSession {
         &mut self,
         path: &str,
     ) -> Result<T, RemoteError> {
+        self.get(self.transport.url(path)).await
+    }
+
+    /// Sends a GET request and records any failure.
+    pub(super) async fn get<T: serde::de::DeserializeOwned>(
+        &mut self,
+        url: reqwest::Url,
+    ) -> Result<T, RemoteError> {
         self.transport
-            .send(Method::GET, self.transport.url(path), None::<&()>)
+            .send(Method::GET, url, None::<&()>)
             .await
             .map_err(|error| self.record_error(error))
     }
@@ -119,15 +125,6 @@ impl RemoteSession {
                 ))
             }
         }
-    }
-
-    pub(super) async fn send<T: serde::de::DeserializeOwned, B: serde::Serialize>(
-        &mut self,
-        method: Method,
-        url: reqwest::Url,
-        body: Option<&B>,
-    ) -> Result<T, RemoteError> {
-        self.transport.send(method, url, body).await
     }
 
     pub(super) async fn mutation<B: serde::Serialize, T>(
