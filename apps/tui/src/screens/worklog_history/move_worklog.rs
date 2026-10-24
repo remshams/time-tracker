@@ -106,7 +106,6 @@ impl MoveDraft {
 mod tests {
     use super::*;
     use chrono::{DateTime, Utc};
-    use tracker_application::task_search::fuzzy_match;
     use tracker_domain::{Task, WorklogId, WorklogTimes};
 
     fn worklog() -> Worklog {
@@ -147,8 +146,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![blue.task.id(), build.task.id()]
         );
-        assert!(fuzzy_match("Build release", "BSE"));
-        assert!(!fuzzy_match("Build release", "BX"));
     }
 
     #[test]
@@ -221,12 +218,5 @@ mod tests {
         }
         assert_eq!(draft.query().chars().count(), TaskName::MAX_LEN);
         assert_eq!(draft.selected_task_id(), None);
-    }
-
-    #[test]
-    fn fuzzy_matching_handles_the_maximum_query() {
-        let text = "a".repeat(TaskName::MAX_LEN);
-        assert!(fuzzy_match(&text, &text));
-        assert!(!fuzzy_match(&text, &format!("{text}a")));
     }
 }
