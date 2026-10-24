@@ -26,7 +26,6 @@ tokio = { workspace = true, features = ["macros", "sync", "time"] }
 unicode-width = { workspace = true }
 
 [dev-dependencies]
-tracker-server = { path = "../../crates/tracker-server" }
 libc = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
