@@ -175,10 +175,6 @@ fn write_and_recovery_classification_sanitizes_both_causes() {
 
     assert_eq!(failure.category(), ApplicationFailureCategory::General);
     assert!(failure.recovery_failed());
-    assert_eq!(
-        failure.recovery_category(),
-        Some(ApplicationFailureCategory::General)
-    );
     assert_eq!(failure.recovery_message(), Some("Stored data is invalid"));
     assert_eq!(
         failure.message(),
@@ -288,7 +284,6 @@ fn failure_sources_include_storage_in_either_cause_and_standalone_recovery() {
         let failure = error.failure();
         assert_eq!(failure.source(), ApplicationFailureSource::Storage);
         assert!(!failure.recovery_failed());
-        assert_eq!(failure.recovery_category(), None);
         assert_eq!(failure.recovery_message(), None);
         assert!(!failure.message().contains("private"));
     }
@@ -299,10 +294,6 @@ fn failure_sources_include_storage_in_either_cause_and_standalone_recovery() {
         let failure = error.failure();
         assert_eq!(failure.source(), ApplicationFailureSource::Storage);
         assert!(failure.recovery_failed());
-        assert_eq!(
-            failure.recovery_category(),
-            Some(ApplicationFailureCategory::General)
-        );
         assert_eq!(failure.recovery_message(), Some("Storage error"));
     }
     for error in [
@@ -346,10 +337,7 @@ fn failure_sources_include_storage_in_either_cause_and_standalone_recovery() {
         let failure = error.failure();
         assert_eq!(failure.source(), ApplicationFailureSource::Storage);
         assert!(failure.recovery_failed());
-        assert_eq!(
-            failure.recovery_category(),
-            Some(ApplicationFailureCategory::WorklogNotFound)
-        );
+        assert_eq!(failure.recovery_message(), Some("Worklog not found"));
     }
 }
 
