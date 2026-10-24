@@ -52,7 +52,6 @@ pub struct TaskListState {
     search_restore_point: Option<(Option<String>, Option<TaskId>)>,
     before_filter_selection: Option<TaskId>,
     g_prefix: bool,
-    dialog_generation: u64,
     view_generation: u64,
 }
 
@@ -68,7 +67,6 @@ impl TaskListState {
             search_restore_point: None,
             before_filter_selection: None,
             g_prefix: false,
-            dialog_generation: 0,
             view_generation: 0,
         }
     }
@@ -79,10 +77,6 @@ impl TaskListState {
 
     pub fn mode(&self) -> &TaskListMode {
         &self.mode
-    }
-
-    pub(crate) fn dialog_generation(&self) -> u64 {
-        self.dialog_generation
     }
 
     pub(crate) fn view_generation(&self) -> u64 {
@@ -155,7 +149,7 @@ impl TaskListState {
         self.selection_for(self.view)
     }
 
-    pub(crate) fn selection_for(&self, view: TaskView) -> Option<TaskId> {
+    fn selection_for(&self, view: TaskView) -> Option<TaskId> {
         match view {
             TaskView::Active => self.active_selection,
             TaskView::Archived => self.archived_selection,
@@ -194,7 +188,6 @@ impl TaskListState {
     }
 
     pub(crate) fn open_input(&mut self, purpose: InputPurpose, buffer: String) {
-        self.dialog_generation = self.dialog_generation.wrapping_add(1);
         self.rename_original_name = match purpose {
             InputPurpose::Rename { .. } => TaskName::new(&buffer).ok(),
             InputPurpose::Add => None,
@@ -207,22 +200,18 @@ impl TaskListState {
     }
 
     pub(crate) fn open_archive_confirmation(&mut self, task_id: TaskId, name: String) {
-        self.dialog_generation = self.dialog_generation.wrapping_add(1);
         self.mode = TaskListMode::ConfirmArchive { task_id, name };
     }
 
     pub(crate) fn open_inactive_archive_preview(&mut self, as_of: DateTime<Utc>) {
-        self.dialog_generation = self.dialog_generation.wrapping_add(1);
         self.mode = TaskListMode::PreviewingInactiveTasks { as_of };
     }
 
     pub(crate) fn confirm_inactive_archive(&mut self, preview: InactiveTaskPreview) {
-        self.dialog_generation = self.dialog_generation.wrapping_add(1);
         self.mode = TaskListMode::ConfirmInactiveArchive { preview };
     }
 
     pub(crate) fn begin_inactive_archive(&mut self, preview: InactiveTaskPreview) {
-        self.dialog_generation = self.dialog_generation.wrapping_add(1);
         self.mode = TaskListMode::ArchivingInactiveTasks { preview };
     }
 
