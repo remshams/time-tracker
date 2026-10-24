@@ -35,6 +35,10 @@ fn error_classes_keep_input_semantic_storage_and_remote_failures_distinct() {
             "worklog_overlap",
         ),
         (
+            RepositoryError::TaskChanged { id: task }.into(),
+            "task_changed",
+        ),
+        (
             RepositoryError::TaskIsActive { id: task }.into(),
             "active_task",
         ),
