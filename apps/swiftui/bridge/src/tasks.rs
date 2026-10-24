@@ -18,7 +18,10 @@ pub(super) struct TaskJson {
     pub(super) latest_start: Option<String>,
 }
 
-fn task_json(task: &tracker_domain::Task, latest_start: Option<DateTime<Utc>>) -> TaskJson {
+pub(super) fn task_json(
+    task: &tracker_domain::Task,
+    latest_start: Option<DateTime<Utc>>,
+) -> TaskJson {
     TaskJson {
         id: task.id().to_string(),
         name: task.name().as_str().to_owned(),
