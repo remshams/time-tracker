@@ -30,6 +30,14 @@ pub(crate) fn selected() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
+/// The selected top tab while focus is elsewhere on the screen.
+pub(crate) fn unfocused_tab() -> Style {
+    Style::default()
+        .fg(Color::Blue)
+        .add_modifier(Modifier::BOLD)
+        .add_modifier(Modifier::UNDERLINED)
+}
+
 /// The marker that identifies the running task.
 pub(crate) fn active_marker() -> Style {
     Style::default()
@@ -64,6 +72,7 @@ mod tests {
             title(),
             focused_border(),
             selected(),
+            unfocused_tab(),
             active_marker(),
             error_label(),
             input_cursor(),
@@ -87,6 +96,7 @@ mod tests {
     fn decorative_roles_use_named_ansi_accents() {
         assert_eq!(title().fg, Some(Color::Blue));
         assert_eq!(focused_border().fg, Some(Color::Blue));
+        assert_eq!(unfocused_tab().fg, Some(Color::Blue));
         assert_eq!(active_marker().fg, Some(Color::Green));
         assert_eq!(error_label().fg, Some(Color::Red));
     }
@@ -94,6 +104,11 @@ mod tests {
     #[test]
     fn important_roles_remain_prominent_without_fixed_colors() {
         assert!(title().add_modifier.contains(Modifier::BOLD));
+        assert!(
+            unfocused_tab()
+                .add_modifier
+                .contains(Modifier::BOLD | Modifier::UNDERLINED)
+        );
         assert!(active_marker().add_modifier.contains(Modifier::BOLD));
         assert!(error_label().add_modifier.contains(Modifier::BOLD));
         assert!(input_cursor().add_modifier.contains(Modifier::BOLD));
