@@ -3033,6 +3033,8 @@ dependencies = [
  "iana-time-zone",
  "libc",
  "ratatui",
+ "rusqlite",
+ "serde_json",
  "tempfile",
  "termlens",
  "thiserror 2.0.20",
