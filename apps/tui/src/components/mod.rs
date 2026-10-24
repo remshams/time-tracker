@@ -3,4 +3,5 @@
 pub(crate) mod dialogs;
 pub(crate) mod header;
 pub(crate) mod status;
+pub(crate) mod tabs;
 pub(crate) mod text;

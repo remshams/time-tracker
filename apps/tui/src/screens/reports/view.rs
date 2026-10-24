@@ -5,9 +5,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
+use crate::components::tabs::{self, TopTab};
 use crate::components::text;
 use crate::screens::reports::{ReportFocus, ReportMode, ReportPreset, ReportState};
-use crate::screens::task_list::view::render_tabs;
 use crate::styles;
 
 use super::actions::format_exact;
@@ -52,7 +52,12 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, state: &ReportState) {
         ..content
     };
     render_rows(frame, area, list_area, state);
-    render_tabs(frame, area, 3, state.focus == ReportFocus::TopTabs);
+    tabs::render(
+        frame,
+        area,
+        TopTab::Reports,
+        state.focus == ReportFocus::TopTabs,
+    );
     match &state.mode {
         ReportMode::Custom { from, to, focus_to } => {
             render_custom(frame, area, from, to, *focus_to)
