@@ -8,7 +8,6 @@ use tracker_application::{
 };
 use tracker_client::TrackerBackend;
 use tracker_domain::{InactivityPeriod, TaskName, WorklogTimes};
-use tracker_remote::ResourceSelection;
 use tracker_storage::SqliteRepository;
 
 struct Server {
@@ -195,16 +194,14 @@ async fn selected_backends_preserve_task_tracking_history_and_report_workflows()
         assert_eq!(totals.rows[0].task.id(), second.id());
         assert_eq!(totals.rows[0].duration, report.rows[0].duration);
         assert_eq!(totals.total, report.total);
-        for include_tasks in [false, true] {
-            assert_eq!(
-                backend
-                    .refresh_totals(include_tasks, at(0), at(40), at(35))
-                    .await
-                    .unwrap()
-                    .total,
-                report.total
-            );
-        }
+        assert_eq!(
+            backend
+                .refresh_task_list_with_totals(at(0), at(40), at(35))
+                .await
+                .unwrap()
+                .total,
+            report.total
+        );
         backend
             .delete_completed_worklog(moved.id(), second.id(), moved.times())
             .await
@@ -230,14 +227,7 @@ async fn selected_backends_preserve_task_tracking_history_and_report_workflows()
                 .unwrap()
                 .is_archived()
         );
-        backend
-            .refresh_resources(ResourceSelection::Tasks)
-            .await
-            .unwrap();
-        backend
-            .refresh_resources(ResourceSelection::Tracking)
-            .await
-            .unwrap();
+        backend.refresh_task_list().await.unwrap();
         assert_eq!(backend.tasks(TaskOrdering::RecentlyCreated).len(), 2);
         assert_eq!(backend.task_observation().unwrap().len(), 2);
         assert!(matches!(
@@ -426,14 +416,12 @@ async fn local_report_results_echo_the_canonical_cutoff() {
         backend.report(at(0), at(2), now).await.unwrap().now,
         expected
     );
-    for include_tasks in [false, true] {
-        assert_eq!(
-            backend
-                .refresh_totals(include_tasks, at(0), at(2), now)
-                .await
-                .unwrap()
-                .now,
-            expected
-        );
-    }
+    assert_eq!(
+        backend
+            .refresh_task_list_with_totals(at(0), at(2), now)
+            .await
+            .unwrap()
+            .now,
+        expected
+    );
 }
