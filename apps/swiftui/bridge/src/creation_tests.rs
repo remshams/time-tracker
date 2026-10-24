@@ -18,7 +18,7 @@ fn local_creation_returns_a_permanent_id_and_preserves_tracking() {
         .id();
     let at: DateTime<Utc> = "2026-10-05T08:00:00.123456Z".parse().unwrap();
     assert!(bridge.application.set_active_task(first, at).is_ok());
-    let before = crate::tests::test_resource_values(&bridge.application);
+    let before = test_resource_values(&bridge.application);
     let created = create(&mut bridge, "  Plan release 🛠  ", &timestamp(at));
     assert!(created.get("error").is_none(), "{created}");
     let id: TaskId = created["data"]["task"]["id"]
@@ -27,11 +27,8 @@ fn local_creation_returns_a_permanent_id_and_preserves_tracking() {
         .parse()
         .unwrap();
     assert_eq!(id.as_uuid().get_version_num(), 7);
-    assert_eq!(
-        crate::tests::test_active_value(&bridge.application),
-        before.1
-    );
-    let observed_tasks = crate::tests::test_task_values(&bridge.application);
+    assert_eq!(test_active_value(&bridge.application), before.1);
+    let observed_tasks = test_task_values(&bridge.application);
     let tasks = observed_tasks.as_array().unwrap();
     assert_eq!(tasks.len(), before.0.as_array().unwrap().len() + 1);
     let task = tasks

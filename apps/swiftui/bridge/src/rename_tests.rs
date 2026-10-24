@@ -2,8 +2,7 @@ use super::*;
 use crate::test_support::*;
 
 fn rename(bridge: &mut Bridge, id: TaskId, name: &str, at: DateTime<Utc>) -> Value {
-    let expected =
-        CString::new(crate::tests::cached_task_name(&bridge.application, id).as_str()).unwrap();
+    let expected = CString::new(cached_task_name(&bridge.application, id).as_str()).unwrap();
     let id = CString::new(id.to_string()).unwrap();
     let name = CString::new(name).unwrap();
     let at = CString::new(timestamp(at)).unwrap();
@@ -39,7 +38,7 @@ fn renaming_active_and_archived_tasks_preserves_ids_tracking_and_worklog_history
             .clear_active_task(old_worklog, at + chrono::Duration::seconds(1))
             .is_ok()
     );
-    crate::tests::archive_cached_task(
+    archive_cached_task(
         &mut bridge.application,
         archived,
         at + chrono::Duration::seconds(2),
@@ -51,7 +50,7 @@ fn renaming_active_and_archived_tasks_preserves_ids_tracking_and_worklog_history
             .set_active_task(active, at + chrono::Duration::seconds(3))
             .is_ok()
     );
-    let before = crate::tests::test_resource_values(&bridge.application);
+    let before = test_resource_values(&bridge.application);
     let active_history = bridge
         .application
         .worklogs_for_task(active, None)
@@ -65,12 +64,9 @@ fn renaming_active_and_archived_tasks_preserves_ids_tracking_and_worklog_history
     let renamed_at = at + chrono::Duration::seconds(4);
     for (id, expected_archived) in [(active, false), (archived, true)] {
         let renamed = rename(&mut bridge, id, "  Shared name 🛠  ", renamed_at);
-        let observed_tasks = crate::tests::test_task_values(&bridge.application);
+        let observed_tasks = test_task_values(&bridge.application);
         assert!(renamed.get("error").is_none(), "{renamed}");
-        assert_eq!(
-            crate::tests::test_active_value(&bridge.application),
-            before.1
-        );
+        assert_eq!(test_active_value(&bridge.application), before.1);
         assert_eq!(observed_tasks.as_array().unwrap().len(), tasks.len());
         let item = observed_tasks
             .as_array()
@@ -130,7 +126,7 @@ fn renaming_active_and_archived_tasks_preserves_ids_tracking_and_worklog_history
 fn rename_validates_task_names_and_missing_ids_without_changes() {
     let directory = tempfile::tempdir().unwrap();
     let mut bridge = open_fixture(&directory.path().join("validation.db")).unwrap();
-    let before = crate::tests::test_resource_values(&bridge.application);
+    let before = test_resource_values(&bridge.application);
     let id = bridge.application.tasks(TaskOrdering::default())[0]
         .task
         .id();
@@ -151,10 +147,7 @@ fn rename_validates_task_names_and_missing_ids_without_changes() {
         rename(&mut bridge, TaskId::generate(), "Missing", Utc::now())["error"],
         "Task not found"
     );
-    assert_eq!(
-        crate::tests::test_resource_values(&bridge.application),
-        before
-    );
+    assert_eq!(test_resource_values(&bridge.application), before);
     assert!(
         rename(&mut bridge, id, &"🛠".repeat(256), Utc::now())
             .get("error")
@@ -175,7 +168,7 @@ fn reviewed_commands_validate_c_inputs_before_writing() {
     let at = CString::new(timestamp(Utc::now())).unwrap();
     let invalid = CString::new("invalid").unwrap();
     let non_utf8 = CString::new(vec![0xff]).unwrap();
-    let before = crate::tests::test_resource_values(&bridge.application);
+    let before = test_resource_values(&bridge.application);
     // SAFETY: Inputs remain live C strings or null and bridge access is exclusive.
     unsafe {
         assert_eq!(
@@ -304,8 +297,5 @@ fn reviewed_commands_validate_c_inputs_before_writing() {
             );
         }
     }
-    assert_eq!(
-        crate::tests::test_resource_values(&bridge.application),
-        before
-    );
+    assert_eq!(test_resource_values(&bridge.application), before);
 }

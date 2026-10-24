@@ -36,7 +36,7 @@ fn correction_preserves_identity_precision_and_archived_task_and_updates_totals(
         .task
         .id();
     let expected = record(&mut bridge, task, 100, Some(200));
-    crate::tests::archive_cached_task(&mut bridge.application, task, at(300)).unwrap();
+    archive_cached_task(&mut bridge.application, task, at(300)).unwrap();
     let corrected = correct(&mut bridge, &expected, 90, Some(220));
     assert!(corrected.get("error").is_none(), "{corrected}");
     assert_eq!(
@@ -46,8 +46,8 @@ fn correction_preserves_identity_precision_and_archived_task_and_updates_totals(
             "start": timestamp(at(90)), "end": timestamp(at(220))
         })
     );
-    assert!(crate::tests::test_active_value(&bridge.application).is_null());
-    let observed_tasks = crate::tests::test_task_values(&bridge.application);
+    assert!(test_active_value(&bridge.application).is_null());
+    let observed_tasks = test_task_values(&bridge.application);
     let updated_task = observed_tasks
         .as_array()
         .unwrap()
@@ -81,7 +81,7 @@ fn correcting_active_start_keeps_timer_running_and_updates_resources() {
     let corrected = correct(&mut bridge, &expected, 80, None);
     assert!(corrected.get("error").is_none(), "{corrected}");
     assert_eq!(
-        crate::tests::test_active_value(&bridge.application),
+        test_active_value(&bridge.application),
         corrected["data"]["worklog"]
     );
     assert_eq!(corrected["data"]["worklog"]["start"], timestamp(at(80)));
@@ -300,14 +300,14 @@ fn remote_correction_succeeds_after_an_unrelated_write_and_keeps_original_timest
     let corrected = correct(&mut first, &original, 90, None);
     assert!(corrected.get("error").is_none(), "{corrected}");
     assert_eq!(
-        crate::tests::test_task_values(&first.application)
+        test_task_values(&first.application)
             .as_array()
             .unwrap()
             .len(),
         4
     );
     assert_eq!(
-        crate::tests::test_active_value(&first.application)["start"],
+        test_active_value(&first.application)["start"],
         timestamp(at(90))
     );
     let failure = correct(&mut second, &original, 80, None);
@@ -343,7 +343,7 @@ fn remote_correction_succeeds_after_an_unrelated_write_and_keeps_original_timest
     let corrected = correct(&mut second, &completed, 60, Some(210));
     assert!(corrected.get("error").is_none(), "{corrected}");
     assert_eq!(corrected["data"]["worklog"]["end"], timestamp(at(210)));
-    assert!(crate::tests::test_active_value(&second.application).is_null());
+    assert!(test_active_value(&second.application).is_null());
 }
 
 #[test]

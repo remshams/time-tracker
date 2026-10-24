@@ -58,7 +58,7 @@ fn completed_and_running_moves_preserve_identity_times_and_update_history_and_to
             unrelated.as_ref().unwrap()
         };
         assert_eq!(
-            crate::tests::test_active_value(&bridge.application),
+            test_active_value(&bridge.application),
             serde_json::to_value(worklog_json(active)).unwrap()
         );
         assert!(
@@ -113,7 +113,7 @@ fn candidates_use_cached_tasks_filter_search_and_exclude_source_and_archived_row
     let tasks = bridge.application.tasks(TaskOrdering::default());
     let source = tasks[0].task.id();
     let destination = tasks[1].task.id();
-    crate::tests::archive_cached_task(&mut bridge.application, tasks[2].task.id(), at(0)).unwrap();
+    archive_cached_task(&mut bridge.application, tasks[2].task.id(), at(0)).unwrap();
     let first = candidates(&mut bridge, source, "");
     assert_eq!(
         first["data"],
@@ -181,8 +181,7 @@ fn stale_source_times_missing_rows_overlap_and_unavailable_destination_are_class
         move_to(&mut bridge, &original, TaskId::generate())["kind"],
         "destination_unavailable"
     );
-    crate::tests::archive_cached_task(&mut bridge.application, tasks[2].task.id(), at(300))
-        .unwrap();
+    archive_cached_task(&mut bridge.application, tasks[2].task.id(), at(300)).unwrap();
     assert_eq!(
         move_to(&mut bridge, &original, tasks[2].task.id())["kind"],
         "destination_unavailable"
@@ -328,14 +327,14 @@ fn remote_moves_succeed_after_an_unrelated_write_keep_original_guards_and_candid
     let moved = move_to(&mut first, &original, destination);
     assert!(moved.get("error").is_none(), "{moved}");
     assert_eq!(
-        crate::tests::test_task_values(&first.application)
+        test_task_values(&first.application)
             .as_array()
             .unwrap()
             .len(),
         4
     );
     assert_eq!(
-        crate::tests::test_active_value(&first.application),
+        test_active_value(&first.application),
         moved["data"]["worklog"]
     );
     let failure = move_to(&mut second, &original, tasks[2].task.id());
@@ -364,7 +363,7 @@ fn remote_moves_succeed_after_an_unrelated_write_keep_original_guards_and_candid
         .remove(0);
     let moved = move_to(&mut second, &completed, source);
     assert!(moved.get("error").is_none(), "{moved}");
-    assert!(crate::tests::test_active_value(&second.application).is_null());
+    assert!(test_active_value(&second.application).is_null());
     drop(server);
     assert_eq!(
         candidates(&mut second, source, "CONCURRENT")["data"][0]["name"],
@@ -610,8 +609,7 @@ fn remote_move_classifies_archived_and_missing_destination_from_recovered_resour
     let mut writer = open_fixture(&path).unwrap();
     let tasks = writer.application.tasks(TaskOrdering::default());
     let original = record(&mut writer, tasks[0].task.id(), 100, Some(200));
-    crate::tests::archive_cached_task(&mut writer.application, tasks[1].task.id(), at(300))
-        .unwrap();
+    archive_cached_task(&mut writer.application, tasks[1].task.id(), at(300)).unwrap();
     let server = Server::start(tracker_server::router_for_database(&path).unwrap());
     let mut bridge = server.client();
     for destination in [tasks[1].task.id(), TaskId::generate()] {
@@ -795,7 +793,7 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
         assert!(result["data"]["receipt"].get("appliedRevision").is_none());
         assert_eq!(result["data"]["receipt"]["replayed"], true);
         assert_eq!(
-            crate::tests::test_active_value(&bridge.application)["id"],
+            test_active_value(&bridge.application)["id"],
             expected_active.id().to_string()
         );
         assert!(

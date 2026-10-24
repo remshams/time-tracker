@@ -88,11 +88,11 @@ fn report_aggregates_all_history_and_clips_completed_and_active_work() {
         ])
     );
     assert_eq!(
-        crate::tests::test_active_value(&bridge.application)["taskId"],
+        test_active_value(&bridge.application)["taskId"],
         active.id().to_string()
     );
     assert!(
-        crate::tests::test_task_values(&bridge.application)
+        test_task_values(&bridge.application)
             .as_array()
             .unwrap()
             .iter()
@@ -241,8 +241,8 @@ fn remote_report_uses_server_totals_and_composes_task_and_tracking_resources() {
         ])
     );
     assert_eq!(
-        crate::tests::test_resource_values(&bridge.application),
-        crate::tests::test_resource_values(&writer.application)
+        test_resource_values(&bridge.application),
+        test_resource_values(&writer.application)
     );
     bridge
         .application
@@ -493,16 +493,16 @@ fn local_totals_refresh_adopts_the_task_list_and_preserves_failed_reads() {
         ])
     );
     assert_eq!(
-        crate::tests::test_resource_values(&bridge.application),
-        crate::tests::test_resource_values(&writer.application)
+        test_resource_values(&bridge.application),
+        test_resource_values(&writer.application)
     );
-    let confirmed_resources = crate::tests::test_resource_values(&bridge.application);
+    let confirmed_resources = test_resource_values(&bridge.application);
     let confirmed_report = serde_json::to_value(&bridge.report_observation).unwrap();
     let failure = report(&mut bridge, 1100, 1000, 1050);
     assert_eq!(failure["error"], "Report end must be later than start");
     assert_eq!(failure["uncertain"], false);
     assert_eq!(
-        crate::tests::test_resource_values(&bridge.application),
+        test_resource_values(&bridge.application),
         confirmed_resources
     );
     assert_eq!(
@@ -531,8 +531,8 @@ fn remote_totals_refresh_loads_the_task_list_and_retains_it_after_failure() {
         50_000_000
     );
     assert_eq!(
-        crate::tests::test_resource_values(&bridge.application),
-        crate::tests::test_resource_values(&writer.application)
+        test_resource_values(&bridge.application),
+        test_resource_values(&writer.application)
     );
     let confirmed_tasks = serde_json::to_value(tasks_json(&bridge.application)).unwrap();
     let confirmed_tracking = serde_json::to_value(tracking_json(&bridge.application)).unwrap();
