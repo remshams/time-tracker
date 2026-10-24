@@ -42,7 +42,7 @@ final class TaskCreationTests: XCTestCase {
     }
 
     @MainActor
-    func testNewerArchivedObservationSelectsArchivedTabAfterCreationReceipt() async throws {
+    func testNewerArchivedObservationSelectsArchivedTabAfterCreation() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
         try await fixture.start()
@@ -50,9 +50,8 @@ final class TaskCreationTests: XCTestCase {
         fixture.session.setTaskCreationName(archivedTask.name)
         fixture.session.submitTaskCreation()
         let command = try await fixture.client.next()
-        command.created(
-            task: TaskItem(id: archivedTask.id, name: archivedTask.name, archived: false, latestStart: nil),
-            receipt: CommandReceipt(requestId: "original", replayed: true))
+        let created = TaskItem(id: archivedTask.id, name: archivedTask.name, archived: false, latestStart: nil)
+        command.created(task: created)
         let refresh = try await fixture.client.next()
         XCTAssertEqual(refresh.operation, .refresh(fixture.session.connectionSettings))
         refresh.succeed(TaskListResources(tasks: [archivedTask], active: nil))
@@ -78,9 +77,7 @@ final class TaskCreationTests: XCTestCase {
         fixture.session.setTaskCreationName(secondTask.name)
         fixture.session.submitTaskCreation()
         let command = try await fixture.client.next()
-        command.created(
-            task: secondTask,
-            receipt: CommandReceipt(requestId: "original", replayed: true))
+        command.created(task: secondTask)
         let refresh = try await fixture.client.next()
         XCTAssertEqual(refresh.operation, .refresh(fixture.session.connectionSettings))
         try await fixture.update("the failed reload") {

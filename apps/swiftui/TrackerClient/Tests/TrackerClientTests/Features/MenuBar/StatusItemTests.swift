@@ -148,7 +148,7 @@ final class StatusItemTests: XCTestCase {
             XCTAssertEqual(fixture.client.operations.count, count)
             let label = TrackerMenuLabelContent(fixture.session, showDailyTotal: false)
             XCTAssertEqual(label.indicator.taskID, remembered)
-            XCTAssertEqual(label.symbol, "circle")
+            XCTAssertEqual(label.indicator.symbol, "circle")
             if remembered == nil { XCTAssertEqual(label.help, "No task tracked yet") }
             if remembered == "deleted-task" {
                 XCTAssertEqual(label.help, "Stopped. Last tracked task is no longer available")
@@ -184,7 +184,7 @@ final class StatusItemTests: XCTestCase {
         try await fixture.settled()
         XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
         let label = TrackerMenuLabelContent(fixture.session, showDailyTotal: false)
-        XCTAssertEqual(label.symbol, "circle")
+        XCTAssertEqual(label.indicator.symbol, "circle")
         XCTAssertEqual(label.help, "Tracking status unavailable. Last confirmed task: First task")
         XCTAssertEqual(fixture.session.lastTrackedTaskID, firstTask.id)
         let count = fixture.client.operations.count

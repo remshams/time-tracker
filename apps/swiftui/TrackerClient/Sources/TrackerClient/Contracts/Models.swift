@@ -51,23 +51,11 @@ public struct TaskListTotalsRefresh: Equatable, Sendable {
     }
 }
 
-public struct CommandReceipt: Decodable, Equatable, Sendable {
-    public let requestId: String
-    public let replayed: Bool
-
-    public init(requestId: String, replayed: Bool) {
-        self.requestId = requestId
-        self.replayed = replayed
-    }
-}
-
 public struct TaskCommandResult: Decodable, Equatable, Sendable {
     public let task: TaskItem
-    public let receipt: CommandReceipt?
 
-    public init(task: TaskItem, receipt: CommandReceipt? = nil) {
+    public init(task: TaskItem) {
         self.task = task
-        self.receipt = receipt
     }
 }
 
@@ -75,16 +63,11 @@ public struct TrackingCommandResult: Decodable, Equatable, Sendable {
     public let active: WorklogItem?
     public let stopped: WorklogItem?
     public let didStop: Bool
-    public let receipt: CommandReceipt?
 
-    public init(
-        active: WorklogItem?, stopped: WorklogItem? = nil, didStop: Bool = false,
-        receipt: CommandReceipt? = nil
-    ) {
+    public init(active: WorklogItem?, stopped: WorklogItem? = nil, didStop: Bool = false) {
         self.active = active
         self.stopped = stopped
         self.didStop = didStop
-        self.receipt = receipt
     }
 }
 
@@ -187,11 +170,9 @@ public typealias TaskCreationResult = TaskCommandResult
 
 public struct WorklogCorrectionResult: Decodable, Equatable, Sendable {
     public let worklog: WorklogItem
-    public let receipt: CommandReceipt?
 
-    public init(worklog: WorklogItem, receipt: CommandReceipt? = nil) {
+    public init(worklog: WorklogItem) {
         self.worklog = worklog
-        self.receipt = receipt
     }
 }
 
@@ -222,10 +203,8 @@ public struct InactiveTaskPreview: Decodable, Equatable, Sendable {
 
 public struct InactiveTaskArchiveResult: Decodable, Equatable, Sendable {
     public let archivedCount: Int
-    public let receipt: CommandReceipt?
 
-    public init(archivedCount: Int, receipt: CommandReceipt? = nil) {
+    public init(archivedCount: Int) {
         self.archivedCount = archivedCount
-        self.receipt = receipt
     }
 }

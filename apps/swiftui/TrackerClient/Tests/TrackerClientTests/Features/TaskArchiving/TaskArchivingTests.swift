@@ -95,7 +95,7 @@ final class TaskArchivingTests: XCTestCase {
         fixture.session.submitTaskArchiving()
         let command = try await fixture.client.next()
         let harness = PresentationHarness(session: fixture.session)
-        command.complete(.success(.task(TaskCommandResult(task: archived(secondTask), receipt: nil))))
+        command.complete(.success(.task(TaskCommandResult(task: archived(secondTask)))))
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings))
         XCTAssertFalse(harness.presentation.taskArchiving.isPresented, "The dialog must close before the reload.")

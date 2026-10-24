@@ -2,25 +2,7 @@ import SwiftUI
 import TrackerClient
 
 @MainActor
-struct BulkTaskArchivingDialog: View {
-    let archiving: BulkTaskArchivingStore
-    let isPresentationOwner: Bool
-
-    var body: some View {
-        Color.clear.frame(width: 0, height: 0)
-            .sheet(
-                isPresented: Binding(
-                    get: { isPresentationOwner && archiving.state.isPresented },
-                    set: { if isPresentationOwner && !$0 { archiving.cancel() } }
-                )
-            ) {
-                BulkTaskArchivingSheet(archiving: archiving)
-            }
-    }
-}
-
-@MainActor
-private struct BulkTaskArchivingSheet: View {
+struct BulkTaskArchivingSheet: View {
     let archiving: BulkTaskArchivingStore
 
     var body: some View {
