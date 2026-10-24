@@ -85,12 +85,8 @@ final class GlobalMenuShortcutRegistration {
         var replacement: EventHotKeyRef?
         #if DEBUG
             var testReservation: EventHotKeyRef?
-            let process = ProcessInfo.processInfo
-            if process.arguments.contains("-tt-ui-testing"),
-                let suite = process.environment["TT_UI_TEST_DEFAULTS_SUITE"],
-                suite.hasPrefix("TimeTrackerUITests."),
-                UUID(uuidString: String(suite.dropFirst("TimeTrackerUITests.".count))) != nil,
-                process.environment["TT_UI_TEST_CONFLICT_KEY"] == shortcut.key
+            if TrackerLaunchConfiguration.uiTestSuite != nil,
+                ProcessInfo.processInfo.environment["TT_UI_TEST_CONFLICT_KEY"] == shortcut.key
             {
                 RegisterEventHotKey(
                     keyCode, carbonModifiers(shortcut.modifiers),

@@ -24,11 +24,7 @@ struct TrackerWindow: View {
 
     @ViewBuilder var body: some View {
         #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-tt-ui-testing"),
-                let suite = ProcessInfo.processInfo.environment["TT_UI_TEST_DEFAULTS_SUITE"],
-                suite.hasPrefix("TimeTrackerUITests."),
-                UUID(uuidString: String(suite.dropFirst("TimeTrackerUITests.".count))) != nil
-            {
+            if TrackerLaunchConfiguration.uiTestSuite != nil {
                 content.background {
                     TrackerWindowAppearanceProbe(appearance: colorScheme == .dark ? "Dark" : "Light")
                         .frame(width: 1, height: 1)
@@ -114,9 +110,7 @@ struct TrackerWindow: View {
             }
 
             func observeResize(for field: NSTextField) {
-                guard TrackerLaunchConfiguration.current.localDatabasePath != nil,
-                    let suite = ProcessInfo.processInfo.environment["TT_UI_TEST_DEFAULTS_SUITE"]
-                else { return }
+                guard let suite = TrackerLaunchConfiguration.uiTestSuite else { return }
                 self.field = field
                 resizeObserver = DistributedNotificationCenter.default().addObserver(
                     forName: Notification.Name("\(suite).resize"), object: nil, queue: .main

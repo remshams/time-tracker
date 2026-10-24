@@ -8,7 +8,7 @@ final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
-            if TrackerLaunchConfiguration.current.localDatabasePath != nil,
+            if TrackerLaunchConfiguration.uiTestSuite != nil,
                 let requestedAppearance = ProcessInfo.processInfo.environment["TT_UI_TEST_APPEARANCE"]
             {
                 switch requestedAppearance {
