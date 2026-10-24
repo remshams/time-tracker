@@ -381,30 +381,6 @@ fn remote_preview_tokens_reject_invalid_guards_and_candidates_before_connecting(
 }
 
 #[test]
-fn correction_requires_a_replacement_even_when_expected_times_are_valid() {
-    let temp = tempfile::tempdir().unwrap();
-    let path = temp.path().join("never-created.db");
-    let id = "00000000-0000-7000-8000-000000000001";
-    let error = command(
-        &path,
-        T2,
-        &[
-            "worklogs",
-            "correct",
-            id,
-            "--expected-start",
-            T0,
-            "--expected-end",
-            T1,
-        ],
-    )
-    .unwrap_err();
-    assert_eq!(error.exit_code, 2);
-    assert_eq!(error.message, "correction requires --start or --end");
-    assert!(!path.exists());
-}
-
-#[test]
 fn zero_duration_stop_and_switch_preserve_tracking_and_history() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tt.db");

@@ -297,34 +297,51 @@ fn invalid_inputs_are_rejected_before_a_database_is_created() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("never-created.db");
     let id = "00000000-0000-7000-8000-000000000001";
-    for arguments in [
-        vec!["tasks", "create", "  "],
-        vec!["tasks", "archive-inactive", "--preview", "{}", "--yes"],
-        vec!["worklogs", "list", "--cursor", "{}"],
-        vec![
-            "worklogs",
-            "correct",
-            id,
-            "--expected-start",
-            T0,
-            "--expected-end",
-            T1,
-        ],
-        vec![
-            "worklogs",
-            "delete",
-            id,
-            "--expected-task",
-            id,
-            "--expected-start",
-            T0,
-            "--expected-end",
-            "running",
-            "--yes",
-        ],
-        vec!["reports", "--from", "2026-01-02", "--to", "2026-01-01"],
+    for (arguments, message) in [
+        (vec!["tasks", "create", "  "], "task name must not be empty"),
+        (
+            vec!["tasks", "archive-inactive", "--preview", "{}", "--yes"],
+            "missing field `mode` at line 1 column 2",
+        ),
+        (
+            vec!["worklogs", "list", "--cursor", "{}"],
+            "missing field `scope` at line 1 column 2",
+        ),
+        (
+            vec![
+                "worklogs",
+                "correct",
+                id,
+                "--expected-start",
+                T0,
+                "--expected-end",
+                T1,
+            ],
+            "correction requires --start or --end",
+        ),
+        (
+            vec![
+                "worklogs",
+                "delete",
+                id,
+                "--expected-task",
+                id,
+                "--expected-start",
+                T0,
+                "--expected-end",
+                "running",
+                "--yes",
+            ],
+            "only completed worklogs can be deleted",
+        ),
+        (
+            vec!["reports", "--from", "2026-01-02", "--to", "2026-01-01"],
+            "--from must be on or before --to",
+        ),
     ] {
-        assert_eq!(command(&path, T0, &arguments).unwrap_err().exit_code, 2);
+        let error = command(&path, T0, &arguments).unwrap_err();
+        assert_eq!(error.exit_code, 2, "{arguments:?}");
+        assert_eq!(error.message, message, "{arguments:?}");
         assert!(!path.exists(), "created database for {arguments:?}");
     }
 }
