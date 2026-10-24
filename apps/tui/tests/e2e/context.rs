@@ -103,19 +103,16 @@ impl TestContext {
             .expect("the report copy action must write the private clipboard file")
     }
 
-    /// Opens the context's database through the real SQLite adapter, as a
-    /// fixture for seeding and injected failures and as a probe for
-    /// postconditions.
+    /// Opens the context's database through `tt-cli`, as a fixture for
+    /// seeding and injected failures and as a probe for postconditions.
     ///
     /// The database's parent directory is created lazily, only when it is
     /// absent, so a scenario that seeds before launch can create it here
     /// while a post-launch probe uses the directory `tt` itself created.
     /// A directory created here gets the mode production uses, so the
-    /// adapter's own validation accepts it. Each call opens a new
-    /// connection and reruns migration setup. A scenario that probes
-    /// while `tt` runs opens this once after the first frame, before its
-    /// next action, and reuses the connection. This avoids opening a
-    /// migration transaction alongside an application action.
+    /// storage validation in `tt-cli` accepts it. Every `tt-cli` command
+    /// opens its own connection and reruns migration setup; SQLite's busy
+    /// timeout makes it wait for a write a running `tt` holds.
     pub(crate) fn database(&self) -> Database {
         let database_dir = self
             .database_path

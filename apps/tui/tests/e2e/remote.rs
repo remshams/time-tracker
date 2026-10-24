@@ -92,13 +92,19 @@ impl RemoteTestContext {
     }
 
     fn start_server(&mut self) {
-        let child = Command::new(std::env::current_exe().unwrap())
-            .args(["--ignored", "--exact", "remote::server_process"])
+        let mut command = Command::new(crate::binaries::server());
+        command
+            .arg("--bind")
+            .arg(self.address.to_string())
+            .arg("--db")
+            .arg(&self.database_path)
             .env_clear()
             .env("HOME", self.local.home())
-            .env("TZ", "UTC")
-            .env("TT_TEST_SERVER_BIND", self.address.to_string())
-            .env("TT_TEST_SERVER_DB", &self.database_path)
+            .env("TZ", "UTC");
+        if let Ok(profile) = std::env::var("LLVM_PROFILE_FILE") {
+            command.env("LLVM_PROFILE_FILE", profile);
+        }
+        let child = command
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -155,21 +161,6 @@ fn health_check(address: SocketAddr) -> bool {
         return false;
     };
     response[..read].starts_with(b"HTTP/1.1 200") || response[..read].starts_with(b"HTTP/1.0 200")
-}
-
-// Run in a child process so outage tests can kill and restart the real server.
-// Without the fixture environment, for example under `--include-ignored`, it does nothing.
-#[test]
-#[ignore = "spawned only by the remote E2E fixture"]
-fn server_process() {
-    let Ok(bind) = std::env::var("TT_TEST_SERVER_BIND") else {
-        return;
-    };
-    let bind = bind
-        .parse()
-        .expect("TT_TEST_SERVER_BIND must be ADDRESS:PORT");
-    let database = std::env::var_os("TT_TEST_SERVER_DB").expect("TT_TEST_SERVER_DB must be set");
-    tracker_server::run(bind, database.into()).unwrap();
 }
 
 #[test]

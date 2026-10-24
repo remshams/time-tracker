@@ -488,8 +488,10 @@ fn remote_history_can_move_correct_and_delete_worklogs() {
     let database = context.server_database();
     database.create_task("Server source");
     database.create_task("Server destination");
-    let original = database.create_worklog("Server source", at(10, 0), Some(at(12, 0)));
+    // Seed the older worklog first: a start before a later stored worklog
+    // would overlap it while it runs.
     database.create_worklog("Server source", at(8, 0), Some(at(8, 30)));
+    let original = database.create_worklog("Server source", at(10, 0), Some(at(12, 0)));
     context.start();
 
     let mut tt = context.launch();

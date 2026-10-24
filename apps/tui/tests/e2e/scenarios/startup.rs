@@ -212,7 +212,7 @@ fn tt_reports_a_startup_failure_and_exits_nonzero() {
 #[test]
 fn an_existing_custom_database_is_shown_without_changes() {
     let context = TestContext::new();
-    // Seed through the real adapter before tt starts, and keep the exact
+    // Seed through tt-cli before tt starts, and keep the exact
     // stored records the launch must leave untouched.
     let before_launch: Vec<StoredTask> = {
         let database = context.database();
@@ -263,7 +263,7 @@ fn an_existing_custom_database_is_shown_without_changes() {
 #[test]
 fn a_mixed_database_shows_active_and_archived_tasks_in_their_own_views() {
     let context = TestContext::new();
-    // Seed through the real adapter before tt starts, and keep the exact
+    // Seed through tt-cli before tt starts, and keep the exact
     // stored records the launch must leave untouched.
     let before_launch: Vec<StoredTask> = {
         let database = context.database();
