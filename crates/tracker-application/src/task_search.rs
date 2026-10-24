@@ -26,7 +26,7 @@ impl SearchRank {
     }
 
     /// Builds a rank using the caller's latest task activity timestamp.
-    pub fn new(id: TaskId, created_at: DateTime<Utc>, activity_at: DateTime<Utc>) -> Self {
+    fn new(id: TaskId, created_at: DateTime<Utc>, activity_at: DateTime<Utc>) -> Self {
         Self {
             activity_at: Reverse(activity_at),
             created_at: Reverse(created_at),
