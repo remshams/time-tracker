@@ -3,10 +3,10 @@ use chrono::{DateTime, FixedOffset, NaiveDateTime, Offset, TimeDelta, TimeZone, 
 /// One bounded timestamp input with a character-indexed cursor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimestampInput {
-    pub(crate) text: String,
-    pub(crate) initial_text: String,
-    pub(crate) cursor: usize,
-    pub(crate) adjusted_instant: Option<DateTime<Utc>>,
+    text: String,
+    initial_text: String,
+    cursor: usize,
+    adjusted_instant: Option<DateTime<Utc>>,
 }
 
 impl TimestampInput {
@@ -95,11 +95,7 @@ pub(crate) fn local_time<Tz>(at: DateTime<Utc>, timezone: &Tz) -> String
 where
     Tz: TimeZone,
 {
-    let offset = timezone.offset_from_utc_datetime(&at.naive_utc()).fix();
-    at.naive_utc()
-        .checked_add_offset(offset)
-        .map(|local| local.format(CORRECTION_FORMAT).to_string())
-        .unwrap_or_else(|| "outside local range".to_owned())
+    correction_timestamp(at, timezone).unwrap_or_else(|| "outside local range".to_owned())
 }
 
 pub(crate) const CORRECTION_FORMAT: &str = "%Y-%m-%d %H:%M";
@@ -195,10 +191,7 @@ where
     }
 }
 
-pub(crate) fn local_to_utc(
-    local: NaiveDateTime,
-    offset: FixedOffset,
-) -> Result<DateTime<Utc>, &'static str> {
+fn local_to_utc(local: NaiveDateTime, offset: FixedOffset) -> Result<DateTime<Utc>, &'static str> {
     local
         .checked_sub_offset(offset)
         .map(|utc| DateTime::from_naive_utc_and_offset(utc, Utc))
