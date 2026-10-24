@@ -9,7 +9,6 @@ use tracker_protocol::{DailyOverviewDto, ReportDto, TaskDto, TaskListStateDto};
 use crate::core::{Shared, lock};
 use crate::error::{ApiResult, query_payload};
 use crate::reports::ReportQuery;
-use tracker_application::timestamps::canonical_timestamp;
 
 /// Captures the full catalog and active tracking from one SQLite read version.
 pub(super) async fn task_list_state(State(shared): State<Shared>) -> ApiResult<TaskListStateDto> {
@@ -32,9 +31,7 @@ pub(super) async fn daily_overview(
     input: Result<Query<ReportQuery>, QueryRejection>,
 ) -> ApiResult<DailyOverviewDto> {
     let query = query_payload(input)?;
-    let start = canonical_timestamp(query.start);
-    let end = canonical_timestamp(query.end);
-    let now = canonical_timestamp(query.now);
+    let (start, end, now) = query.canonical();
     let mut core = lock(&shared)?;
     let totals = core.app.task_list_report_totals(start, end, now)?;
     Ok(Json(DailyOverviewDto {
