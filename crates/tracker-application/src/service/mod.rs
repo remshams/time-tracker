@@ -350,11 +350,11 @@ impl<R: TrackerRepository> TrackerApplicationService for TrackerApplication<R> {
 /// Stateful application service backed by one repository.
 ///
 /// The service owns persistence sequencing. It keeps the task catalog and
-/// current tracking queries ready for a synchronous client, updates the
-/// catalog itself on every committed write instead of reading the backend
-/// again behind an ambiguous result, commits switches through the
-/// repository's atomic operation, and reloads authoritative state after any
-/// tracking write conflict.
+/// current tracking queries ready for a synchronous client. Most committed
+/// writes update the catalog from the stored result instead of reading the
+/// backend again. Archive and restore adopt the stored task and then reload
+/// task and tracking state. Switches commit through the repository's atomic
+/// operation, and any tracking write conflict reloads authoritative state.
 pub struct TrackerApplication<R> {
     repository: R,
     /// The task catalog in canonical `TaskId` order; queries sort it per the

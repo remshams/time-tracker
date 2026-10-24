@@ -465,9 +465,10 @@ impl SqliteRepository {
 
     /// Lists every worklog of the task, oldest first.
     ///
-    /// This test-support query is not part of the application repository
-    /// ports. Application history reads bounded pages instead.
-    #[cfg(any(test, feature = "test-support"))]
+    /// This query serves this crate's unit tests and is not part of the
+    /// application repository ports. Application history reads bounded pages
+    /// instead.
+    #[cfg(test)]
     pub fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, StorageError> {
         let mut statement = self.conn.prepare(
             "SELECT id, task_id, start_us, end_us FROM worklogs
