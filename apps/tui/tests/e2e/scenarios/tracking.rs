@@ -262,7 +262,7 @@ fn switching_tasks_moves_the_marker_and_shares_one_boundary_timestamp() {
     );
     assert_eq!(
         database.active_worklog().map(|worklog| worklog.id),
-        Some(started[0].id),
+        Some(started[0].id.clone()),
         "the new worklog is the one active worklog"
     );
     assert_eq!(

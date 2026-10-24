@@ -36,8 +36,10 @@ fn completed_worklog_correction_persists_and_refreshes_history() {
     let context = TestContext::new();
     let database = context.database();
     database.create_task("Release review");
-    let original = database.create_worklog("Release review", at(10, 0), Some(at(12, 0)));
+    // Seed the older worklog first: a start before a later stored worklog
+    // would overlap it while it runs.
     database.create_worklog("Release review", at(8, 0), Some(at(8, 30)));
+    let original = database.create_worklog("Release review", at(10, 0), Some(at(12, 0)));
 
     let mut tt = context.launch();
     open_history(&mut tt, "Release review");
