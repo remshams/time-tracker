@@ -67,7 +67,7 @@ fn local_preview_uses_chosen_period_and_archive_preserves_running_work() {
     assert_eq!(fortnight["data"]["tasks"][0]["id"], old.id().to_string());
     let result = archive(&mut bridge, 14, as_of);
     assert_eq!(result["data"]["archivedCount"], 1);
-    let observations = crate::tests::test_resource_values(&bridge.application);
+    let observations = test_resource_values(&bridge.application);
     assert_eq!(observations.1["taskId"], running.id().to_string());
     for (id, expected) in [
         (old.id(), true),
@@ -249,7 +249,7 @@ fn remote_preview_and_archive_use_server_candidates_and_keep_the_running_task() 
     let result = archive(&mut bridge, 7, as_of);
     assert_eq!(result["data"]["archivedCount"], 2, "{result}");
     assert_eq!(
-        crate::tests::test_active_value(&bridge.application)["taskId"],
+        test_active_value(&bridge.application)["taskId"],
         id.to_string()
     );
     assert_eq!(
@@ -322,7 +322,7 @@ fn unavailable_preview_and_confirmation_invalidate_context_and_preserve_confirme
         bridge.application.refresh_resources().unwrap();
         let as_of = Utc::now();
         assert!(preview(&mut bridge, 14, as_of).get("error").is_none());
-        let before = crate::tests::test_resource_values(&bridge.application);
+        let before = test_resource_values(&bridge.application);
         drop(server);
         let failure = if fail_preview {
             preview(&mut bridge, 14, as_of)
@@ -333,10 +333,7 @@ fn unavailable_preview_and_confirmation_invalidate_context_and_preserve_confirme
         // A refused connection never delivers the confirmation, so it stays certain.
         assert_eq!(failure["uncertain"], false);
         assert_eq!(failure["requiresRefresh"], true);
-        assert_eq!(
-            crate::tests::test_resource_values(&bridge.application),
-            before
-        );
+        assert_eq!(test_resource_values(&bridge.application), before);
         assert_eq!(
             archive(&mut bridge, 14, as_of)["error"],
             "Load an archive preview before confirming"

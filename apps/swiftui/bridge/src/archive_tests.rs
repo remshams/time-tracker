@@ -3,8 +3,7 @@ use crate::test_support::*;
 
 /// Archives under the cached name, as the macOS app does, or restores the task.
 fn change(bridge: &mut Bridge, id: TaskId, archived: bool) -> Value {
-    let expected =
-        CString::new(crate::tests::cached_task_name(&bridge.application, id).as_str()).unwrap();
+    let expected = CString::new(cached_task_name(&bridge.application, id).as_str()).unwrap();
     let id = CString::new(id.to_string()).unwrap();
     let instant = CString::new(timestamp(at(400))).unwrap();
     // SAFETY: The bridge and strings remain live with exclusive access.
@@ -59,7 +58,7 @@ fn archive_and_restore_preserve_history_other_tracking_and_concurrent_names() {
         let item = &result["data"]["task"];
         assert_eq!(item["name"], "Concurrent rename");
         assert_eq!(item["archived"], archived);
-        let observed_tasks = crate::tests::test_task_values(&bridge.application);
+        let observed_tasks = test_task_values(&bridge.application);
         let observed = observed_tasks
             .as_array()
             .unwrap()
@@ -118,7 +117,7 @@ fn concurrent_running_task_and_missing_target_have_typed_errors() {
 fn archive_and_restore_reject_invalid_c_inputs_without_mutating_state() {
     let directory = tempfile::tempdir().unwrap();
     let mut bridge = open_fixture(&directory.path().join("inputs.db")).unwrap();
-    let before = crate::tests::test_resource_values(&bridge.application);
+    let before = test_resource_values(&bridge.application);
     let task = bridge.application.tasks(TaskOrdering::default())[0]
         .task
         .clone();
@@ -153,10 +152,7 @@ fn archive_and_restore_reject_invalid_c_inputs_without_mutating_state() {
             );
         }
     }
-    assert_eq!(
-        crate::tests::test_resource_values(&bridge.application),
-        before
-    );
+    assert_eq!(test_resource_values(&bridge.application), before);
 }
 
 #[test]
@@ -264,7 +260,7 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
         let target = tasks[0].task.id();
         let reviewed_name = tasks[0].task.name().as_str().to_owned();
         if !archived {
-            crate::tests::archive_cached_task(&mut writer.application, target, at(50)).unwrap();
+            archive_cached_task(&mut writer.application, target, at(50)).unwrap();
         }
         writer
             .application
@@ -320,7 +316,7 @@ fn remote_archive_payload_reuses_public_commands_and_rejects_contradictory_succe
             if index == 0 {
                 assert!(response.get("error").is_none(), "{response}");
                 assert_eq!(
-                    crate::tests::test_active_value(&bridge.application)["id"],
+                    test_active_value(&bridge.application)["id"],
                     worklog.id().to_string()
                 );
                 assert_eq!(requests.lock().unwrap().len(), 1);
@@ -359,21 +355,18 @@ fn unavailable_archive_and_restore_keep_confirmed_state_and_block_writes_until_r
             .task
             .id();
         if !archived {
-            crate::tests::archive_cached_task(&mut writer.application, target, at(100)).unwrap();
+            archive_cached_task(&mut writer.application, target, at(100)).unwrap();
         }
         let server = Server::start(tracker_server::router_for_database(&path).unwrap());
         let mut bridge = server.client();
         bridge.application.refresh_resources().unwrap();
-        let before = crate::tests::test_resource_values(&bridge.application);
+        let before = test_resource_values(&bridge.application);
         drop(server);
         let failure = change(&mut bridge, target, archived);
         assert_eq!(failure["kind"], "unavailable");
         assert_eq!(failure["uncertain"], false);
         assert_eq!(failure["requiresRefresh"], true);
-        assert_eq!(
-            crate::tests::test_resource_values(&bridge.application),
-            before
-        );
+        assert_eq!(test_resource_values(&bridge.application), before);
         let blocked = change(&mut bridge, target, archived);
         assert_eq!(blocked["uncertain"], false);
         assert_eq!(blocked["requiresRefresh"], true);
@@ -465,7 +458,7 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
         let server = Server::start(router);
         let mut bridge = server.client();
         bridge.application.refresh_resources().unwrap();
-        let before = crate::tests::test_resource_values(&bridge.application);
+        let before = test_resource_values(&bridge.application);
         let result = bridge.application.rename_task_with_expected_name(
             task.id(),
             TaskName::new("Original name").unwrap(),
@@ -491,10 +484,7 @@ fn task_write_recovery_adopts_an_aggregate_or_preserves_the_last_coherent_pair()
             let error = bridge.application.refresh_resources().unwrap_err();
             assert!(error.requires_refresh);
             assert!(!error.uncertain);
-            assert_eq!(
-                crate::tests::test_resource_values(&bridge.application),
-                before
-            );
+            assert_eq!(test_resource_values(&bridge.application), before);
         }
     }
 }
@@ -592,12 +582,12 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
             assert!(value["data"]["receipt"].get("appliedRevision").is_none());
             assert_eq!(value["data"]["receipt"]["replayed"], replayed);
             assert_eq!(
-                crate::tests::test_task_values(&bridge.application)[0]["name"],
+                test_task_values(&bridge.application)[0]["name"],
                 "Later writer name"
             );
             if action != "rename" {
                 assert_eq!(
-                    crate::tests::test_task_values(&bridge.application)[0]["archived"],
+                    test_task_values(&bridge.application)[0]["archived"],
                     action != "archive"
                 );
             }
@@ -715,7 +705,7 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
     );
     let mut bridge = server.client();
     bridge.application.refresh_resources().unwrap();
-    let confirmed_before = crate::tests::test_resource_values(&bridge.application);
+    let confirmed_before = test_resource_values(&bridge.application);
     let id = CString::new(task.id().to_string()).unwrap();
     let expected = c"Before name";
     let name = c"Committed name";
@@ -735,10 +725,7 @@ fn confirmed_receipt_survives_failed_recovery_and_blocks_writes_until_a_coherent
     assert_eq!(result["data"]["task"]["name"], "Committed name");
     assert_eq!(result["data"]["receipt"]["replayed"], false);
     assert!(result["data"]["receipt"].get("appliedRevision").is_none());
-    assert_eq!(
-        crate::tests::test_resource_values(&bridge.application),
-        confirmed_before
-    );
+    assert_eq!(test_resource_values(&bridge.application), confirmed_before);
     assert_eq!(writes.load(Ordering::SeqCst), 1);
     let blocked = bridge
         .application

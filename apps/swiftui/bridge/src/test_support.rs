@@ -6,14 +6,17 @@ use std::sync::{Arc, Mutex};
 use axum::{Json, Router, extract::Path, http::StatusCode, response::IntoResponse, routing::get};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use tracker_domain::{TaskId, TrackingState, Worklog};
+use tracker_application::TaskOrdering;
+use tracker_domain::{TaskId, TaskName, TrackingState, Worklog};
 use tracker_protocol::{
     ErrorCode, ErrorDto, HealthDto, TaskDto, TaskListStateDto, TaskResourceDto, TasksDto,
     TrackingDto, WorklogDto, WorklogResourceDto,
 };
 
-use crate::backend::Backend;
+use crate::backend::{Backend, BridgeError};
 use crate::lifecycle::open_fixture;
+use crate::tasks::tasks_json;
+use crate::tracking::tracking_json;
 use crate::{Bridge, tt_bridge_refresh_resources, tt_bridge_string_free};
 
 /// Task and tracking resources served by the mock resource routes.
@@ -28,6 +31,43 @@ pub(crate) fn response(pointer: *mut c_char) -> Value {
         tt_bridge_string_free(pointer);
         value
     }
+}
+
+pub(crate) fn test_task_values(application: &Backend) -> Value {
+    serde_json::to_value(tasks_json(application).map(|resource| resource.value)).unwrap()
+}
+
+pub(crate) fn test_active_value(application: &Backend) -> Value {
+    serde_json::to_value(tracking_json(application).and_then(|resource| resource.value)).unwrap()
+}
+
+pub(crate) fn test_resource_values(application: &Backend) -> (Value, Value) {
+    (
+        test_task_values(application),
+        test_active_value(application),
+    )
+}
+
+/// Returns the name the bridge cache holds for `id`, or a placeholder for unknown tasks.
+pub(crate) fn cached_task_name(application: &Backend, id: TaskId) -> TaskName {
+    application
+        .tasks(TaskOrdering::default())
+        .into_iter()
+        .find(|item| item.task.id() == id)
+        .map_or_else(
+            || TaskName::new("Missing task").unwrap(),
+            |item| item.task.name().clone(),
+        )
+}
+
+/// Archives a fixture task under the name the bridge last read for it.
+pub(crate) fn archive_cached_task(
+    application: &mut Backend,
+    id: TaskId,
+    at: DateTime<Utc>,
+) -> Result<tracker_domain::Task, BridgeError> {
+    let name = cached_task_name(application, id);
+    application.archive_task_with_expected_name(id, name, at)
 }
 
 /// Returns a timestamp with sub-second precision, so tests catch truncation.

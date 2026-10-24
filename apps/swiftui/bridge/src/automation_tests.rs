@@ -87,16 +87,13 @@ fn pause_owns_only_a_successful_stop_and_resume_excludes_the_locked_interval() {
         .task
         .id();
     let started = resume(&mut bridge, task_id, "2026-10-04T10:00:00.123456789Z");
-    let started_tasks = crate::tests::test_task_values(&bridge.application);
+    let started_tasks = test_task_values(&bridge.application);
     assert!(started.get("error").is_none(), "{started}");
     let worklog_id = started["data"]["active"]["id"].as_str().unwrap();
     let paused = pause(&mut bridge, worklog_id, "2026-10-04T10:10:00.987654321Z");
     assert_eq!(paused["data"]["didStop"], true);
     assert!(paused["data"]["active"].is_null());
-    assert_eq!(
-        crate::tests::test_task_values(&bridge.application),
-        started_tasks
-    );
+    assert_eq!(test_task_values(&bridge.application), started_tasks);
     let repeated = pause(&mut bridge, worklog_id, "2026-10-04T10:11:00Z");
     assert_eq!(repeated["data"]["didStop"], false);
     let resumed = resume(&mut bridge, task_id, "2026-10-04T10:20:00Z");
@@ -134,7 +131,7 @@ fn local_automation_never_stops_or_switches_a_competing_clients_timer() {
         .application
         .set_active_task(tasks[1].task.id(), "2026-10-04T10:10:00Z".parse().unwrap())
         .unwrap_or_else(|error| panic!("{}", error.message));
-    let foreign = crate::tests::test_active_value(&second.application).clone();
+    let foreign = test_active_value(&second.application).clone();
 
     let rejected = pause(&mut first, old_id, "2026-10-04T10:20:00Z");
     assert!(rejected.get("error").is_some());
@@ -173,7 +170,7 @@ fn local_resume_rejects_missing_and_archived_tasks() {
     let task_id = bridge.application.tasks(TaskOrdering::default())[0]
         .task
         .id();
-    crate::tests::archive_cached_task(
+    archive_cached_task(
         &mut bridge.application,
         task_id,
         "2026-10-04T10:00:00Z".parse().unwrap(),

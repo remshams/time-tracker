@@ -9,7 +9,7 @@ use tracker_domain::InactivityPeriod;
 use crate::Bridge;
 use crate::backend::{BridgeError, InactivePreview};
 use crate::ffi::{read_text, timestamp, with_bridge};
-use crate::tasks::TaskJson;
+use crate::tasks::{TaskJson, task_json};
 
 #[cfg(test)]
 use crate::*;
@@ -17,15 +17,9 @@ use crate::*;
 /// Maps captured candidates into bridge task values without exposing confirmation guards.
 fn preview_tasks(preview: &InactivePreview) -> Vec<TaskJson> {
     match preview {
-        InactivePreview::Local { tasks, .. } | InactivePreview::Remote { tasks, .. } => tasks
-            .iter()
-            .map(|task| TaskJson {
-                id: task.id().to_string(),
-                name: task.name().as_str().to_owned(),
-                archived: task.is_archived(),
-                latest_start: None,
-            })
-            .collect(),
+        InactivePreview::Local { tasks, .. } | InactivePreview::Remote { tasks, .. } => {
+            tasks.iter().map(|task| task_json(task, None)).collect()
+        }
     }
 }
 
