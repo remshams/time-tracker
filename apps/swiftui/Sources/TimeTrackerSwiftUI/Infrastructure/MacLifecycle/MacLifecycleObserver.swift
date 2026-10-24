@@ -32,11 +32,7 @@ final class MacLifecycleObserver {
         observeScreenEvent(distributed, Notification.Name("com.apple.screenIsLocked"), locked: true)
         observeScreenEvent(distributed, Notification.Name("com.apple.screenIsUnlocked"), locked: false)
         #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-tt-ui-testing"),
-                let suite = ProcessInfo.processInfo.environment["TT_UI_TEST_DEFAULTS_SUITE"],
-                suite.hasPrefix("TimeTrackerUITests."),
-                UUID(uuidString: String(suite.dropFirst("TimeTrackerUITests.".count))) != nil
-            {
+            if let suite = TrackerLaunchConfiguration.uiTestSuite {
                 for locked in [true, false] {
                     let name = Notification.Name("\(suite).\(locked ? "lock" : "unlock")")
                     observeScreenEvent(distributed, name, locked: locked)
