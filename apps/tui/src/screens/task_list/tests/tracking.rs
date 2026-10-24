@@ -247,15 +247,6 @@ fn a_forward_wall_clock_jump_persists_the_displayed_duration() {
     );
 }
 #[test]
-fn quitting_in_a_dialog_does_not_stop_tracking() {
-    let mut app = app_with(&["alpha"]);
-    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
-    app.handle(Command::TaskList(TaskListCommand::OpenAdd));
-    app.handle(Command::Quit);
-    assert!(!app.is_running());
-    assert!(app.app_view().active_task_id().is_some());
-}
-#[test]
 fn quitting_from_every_mode_leaves_tracking_active() {
     for command in [
         None,
