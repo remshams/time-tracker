@@ -14,9 +14,20 @@ use crate::error::{ApiResult, query_payload};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ReportQuery {
-    pub(super) start: DateTime<Utc>,
-    pub(super) end: DateTime<Utc>,
-    pub(super) now: DateTime<Utc>,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    now: DateTime<Utc>,
+}
+
+impl ReportQuery {
+    /// Returns the start, end, and cutoff at canonical microsecond precision.
+    pub(super) fn canonical(&self) -> (DateTime<Utc>, DateTime<Utc>, DateTime<Utc>) {
+        (
+            canonical_timestamp(self.start),
+            canonical_timestamp(self.end),
+            canonical_timestamp(self.now),
+        )
+    }
 }
 
 /// Echoes the same microsecond bounds and cutoff used to compute report totals.
@@ -25,9 +36,7 @@ pub(super) async fn report(
     input: Result<Query<ReportQuery>, QueryRejection>,
 ) -> ApiResult<ReportDto> {
     let query = query_payload(input)?;
-    let start = canonical_timestamp(query.start);
-    let end = canonical_timestamp(query.end);
-    let now = canonical_timestamp(query.now);
+    let (start, end, now) = query.canonical();
     let mut core = lock(&shared)?;
     let totals = core.app.report_totals(start, end, now)?;
     Ok(Json(ReportDto::from_totals(&totals, start, end, now)))

@@ -55,7 +55,7 @@ pub(super) fn validate_report(dto: &ReportDto) -> Result<(), ApplicationError> {
     Ok(())
 }
 
-pub(super) fn validate_active_task(
+fn validate_active_task(
     items: &[TaskListItem],
     active: Option<&Worklog>,
 ) -> Result<(), RemoteError> {
@@ -172,7 +172,7 @@ pub(super) fn decode_history(
     })
 }
 
-pub(super) fn app_decode_task(dto: TaskDto) -> Result<Task, ApplicationError> {
+fn app_decode_task(dto: TaskDto) -> Result<Task, ApplicationError> {
     decode_task(dto).map_err(|error| protocol_failure(&error.to_string()))
 }
 
@@ -241,7 +241,7 @@ pub(super) fn set_tracking_result(
     }
 }
 
-pub(super) fn started_tracking_result(
+fn started_tracking_result(
     worklog: Worklog,
     task_id: TaskId,
     new_id: WorklogId,
@@ -257,7 +257,7 @@ pub(super) fn started_tracking_result(
     Ok(SetActiveTaskOutcome::Started { worklog })
 }
 
-pub(super) fn switched_tracking_result(
+fn switched_tracking_result(
     stopped: Worklog,
     started: Worklog,
     task_id: TaskId,
