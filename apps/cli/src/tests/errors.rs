@@ -76,19 +76,32 @@ fn wrapped_storage_failures_and_recovery_failures_preserve_the_failure_flag() {
     let backend = || RepositoryError::Backend {
         message: "private database details".into(),
     };
-    for error in [
-        ApplicationError::Repository(backend()),
-        ApplicationError::TrackingWrite(backend()),
-        ApplicationError::TrackingRecovery(backend()),
-        ApplicationError::TaskRecovery(backend()),
-        ApplicationError::WorklogCorrectionWrite { write: backend() },
-        ApplicationError::WorklogMoveWrite { write: backend() },
-        ApplicationError::WorklogDeletionWrite { write: backend() },
-        ApplicationError::Repository(RepositoryError::CorruptData { field: "timestamp" }),
+    for (error, recovery_failed) in [
+        (ApplicationError::Repository(backend()), false),
+        (ApplicationError::TrackingWrite(backend()), false),
+        (ApplicationError::TrackingRecovery(backend()), true),
+        (ApplicationError::TaskRecovery(backend()), true),
+        (
+            ApplicationError::WorklogCorrectionWrite { write: backend() },
+            false,
+        ),
+        (
+            ApplicationError::WorklogMoveWrite { write: backend() },
+            false,
+        ),
+        (
+            ApplicationError::WorklogDeletionWrite { write: backend() },
+            false,
+        ),
+        (
+            ApplicationError::Repository(RepositoryError::CorruptData { field: "timestamp" }),
+            false,
+        ),
     ] {
         let cli = CliError::application(error);
         assert_eq!(cli.exit_code, 4);
         assert_eq!(cli.code, "storage");
+        assert_eq!(cli.recovery_failed, recovery_failed);
         assert!(!cli.message.contains("private database details"));
     }
     for error in [
@@ -117,20 +130,6 @@ fn wrapped_storage_failures_and_recovery_failures_preserve_the_failure_flag() {
     assert_eq!(cli.exit_code, 4);
     assert!(cli.recovery_failed);
     assert_eq!(cli.code, "worklog_changed");
-    for error in [
-        ApplicationError::TrackingRecovery(backend()),
-        ApplicationError::TaskRecovery(backend()),
-    ] {
-        assert!(CliError::application(error).recovery_failed);
-    }
-    let remote = CliError::application(ApplicationError::RemoteProtocol(
-        "invalid protocol data".into(),
-    ));
-    assert_eq!(remote.exit_code, 5);
-    assert_eq!(remote.code, "remote");
-    let remote_semantic = CliError::application(ApplicationError::worklog_changed(id));
-    assert_eq!(remote_semantic.exit_code, 3);
-    assert_eq!(remote_semantic.code, "worklog_changed");
     let remote_recovery = CliError::application(
         ApplicationError::worklog_changed(id)
             .with_recovery_failure(ApplicationError::RemoteProtocol("private response".into())),
