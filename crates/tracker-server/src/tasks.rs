@@ -88,15 +88,19 @@ fn validate_inactive_as_of(as_of: DateTime<Utc>, now: DateTime<Utc>) -> Result<(
     }
 }
 
+/// Validates an inactive-task request and returns its inactivity period.
+fn inactivity_period(as_of: DateTime<Utc>, days: u32) -> Result<InactivityPeriod, ApiError> {
+    validate_inactive_as_of(as_of, Utc::now())?;
+    InactivityPeriod::new(days).map_err(|error| ApiError::invalid(&error.to_string()))
+}
+
 pub(super) async fn preview_inactive_tasks(
     State(shared): State<Shared>,
     input: Result<Query<InactivePreviewQuery>, QueryRejection>,
 ) -> ApiResult<InactiveTaskPreviewDto> {
     let query = query_payload(input)?;
-    validate_inactive_as_of(query.as_of, Utc::now())?;
+    let period = inactivity_period(query.as_of, query.inactive_days)?;
     let mut core = lock(&shared)?;
-    let period = InactivityPeriod::new(query.inactive_days)
-        .map_err(|error| ApiError::invalid(&error.to_string()))?;
     let tasks = core
         .app
         .preview_inactive_tasks_with_period(query.as_of, period)?;
@@ -116,9 +120,7 @@ pub(super) async fn archive_inactive_tasks(
     let key = fingerprint("POST /v1/tasks/archive-inactive", &request)?;
     let mut core = lock(&shared)?;
     let response = core.execute(&request.guard, key, |app| {
-        validate_inactive_as_of(request.as_of, Utc::now())?;
-        let period = InactivityPeriod::new(request.inactive_days)
-            .map_err(|error| ApiError::invalid(&error.to_string()))?;
+        let period = inactivity_period(request.as_of, request.inactive_days)?;
         let candidates = app.preview_inactive_tasks_with_period(request.as_of, period)?;
         let ids: Vec<TaskId> = candidates.iter().map(Task::id).collect();
         let archived = app.archive_inactive_tasks_with_period(&ids, request.as_of, period)?;
