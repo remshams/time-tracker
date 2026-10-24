@@ -5,7 +5,7 @@ pub(crate) mod render;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-pub(crate) use std::time::{Duration, Instant};
+pub(crate) use std::time::Duration;
 
 pub(crate) use chrono::{
     DateTime, FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, TimeDelta, TimeZone, Utc,
@@ -29,7 +29,6 @@ pub(crate) use crate::screens::worklog_history::{
     CorrectionField, HistoryAvailability, WorklogHistoryCommand,
 };
 pub(crate) use crate::screens::{Screen, ScreenState, WorklogHistoryMode};
-pub(crate) use crate::support::clock::{ElapsedClock, tracking_timestamp};
 pub(crate) use crate::support::errors::ACTIVE_WORKLOG_DELETE_MESSAGE;
 pub(crate) use crate::support::timestamps::*;
 

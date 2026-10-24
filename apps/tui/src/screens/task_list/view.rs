@@ -1,10 +1,11 @@
 use ratatui::Frame;
 use ratatui::layout::{Margin, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Tabs};
+use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 use tracker_domain::{Task, TaskId};
 
+use crate::components::tabs::{self, TopTab};
 use crate::components::{dialogs, text};
 use crate::screens::task_list::{
     InactiveTaskPreview, InputPurpose, TaskListMode, TaskListState, TaskView,
@@ -21,10 +22,14 @@ pub(crate) fn render(
     active_task_id: Option<TaskId>,
 ) {
     render_body(frame, area, state, tasks, ordering_label, active_task_id);
-    render_tabs(
+    let tab = match state.view() {
+        TaskView::Active => TopTab::Active,
+        TaskView::Archived => TopTab::Archived,
+    };
+    tabs::render(
         frame,
         area,
-        usize::from(state.view() == TaskView::Archived),
+        tab,
         matches!(state.mode(), TaskListMode::Normal),
     );
     match state.mode() {
@@ -91,30 +96,6 @@ fn render_inactive_archive_confirmation(
             Line::from("Includes all active tasks, regardless of search."),
             Line::from(sample_line),
         ],
-    );
-}
-
-pub(crate) fn render_tabs(frame: &mut Frame, area: Rect, selected: usize, focused: bool) {
-    const LABELS: [&str; 4] = ["Active", "Archived", "Worklogs", "Reports"];
-    let tabs = Tabs::new(LABELS)
-        .select(selected)
-        .highlight_style(if focused {
-            styles::selected()
-        } else {
-            Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD)
-                .add_modifier(Modifier::UNDERLINED)
-        })
-        .divider("│");
-    frame.render_widget(
-        tabs,
-        Rect {
-            x: area.x.saturating_add(1),
-            y: area.y,
-            width: area.width.saturating_sub(2),
-            height: 1,
-        },
     );
 }
 
