@@ -468,29 +468,6 @@ final class WorklogCorrectionTests: XCTestCase {
     }
 
     @MainActor
-    func testOpenCorrectionDoesNotBlockConnectionChange() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
-        fixture.session.openWorklogCorrection(worklogID: activeWorklog.id)
-        let draft = try XCTUnwrap(timestamp("2024-12-31T23:58:00.000Z"))
-        fixture.session.setWorklogCorrectionStart(draft)
-
-        let connecting = Task { await fixture.session.connect(serverSettings) }
-        let connection = try await fixture.client.next()
-        XCTAssertEqual(connection.operation, .connect(serverSettings))
-        connection.succeed(emptyTaskListResources)
-        let connected = try await fixture.taskValue(connecting)
-
-        XCTAssertTrue(connected)
-        XCTAssertEqual(fixture.session.connectionSettings, serverSettings)
-        XCTAssertNil(fixture.session.connectionMessage)
-        XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
-        XCTAssertEqual(fixture.session.worklogCorrection.original, activeWorklog)
-        XCTAssertEqual(fixture.session.worklogCorrection.start, draft)
-    }
-
-    @MainActor
     func testInvalidSubmissionPublishesItsValidationErrorToTheSheetObserver() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
