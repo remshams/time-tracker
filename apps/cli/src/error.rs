@@ -56,11 +56,7 @@ impl CliError {
             | ApplicationFailureSource::RemoteProtocol => ("remote", 5),
         };
         Self {
-            code: if category_code == "operation_failed" {
-                source_code
-            } else {
-                category_code
-            },
+            code: category_code.unwrap_or(source_code),
             message: failure.message().to_owned(),
             recovery_failed: failure.recovery_failed(),
             exit_code,
@@ -69,19 +65,20 @@ impl CliError {
 }
 
 /// Keeps conflict-specific JSON codes independent of local or remote failure sources.
-fn category_code(category: ApplicationFailureCategory) -> &'static str {
+/// Categories without their own code return `None` and use the source code instead.
+fn category_code(category: ApplicationFailureCategory) -> Option<&'static str> {
     match category {
-        ApplicationFailureCategory::General | ApplicationFailureCategory::TaskNotFound => {
-            "operation_failed"
+        ApplicationFailureCategory::General | ApplicationFailureCategory::TaskNotFound => None,
+        ApplicationFailureCategory::WorklogNotFound => Some("worklog_not_found"),
+        ApplicationFailureCategory::WorklogChanged => Some("worklog_changed"),
+        ApplicationFailureCategory::TaskChanged => Some("task_changed"),
+        ApplicationFailureCategory::ActiveWorklog => Some("active_worklog"),
+        ApplicationFailureCategory::WorklogHistoryChanged => Some("worklog_history_changed"),
+        ApplicationFailureCategory::WorklogOverlap => Some("worklog_overlap"),
+        ApplicationFailureCategory::ActiveTask => Some("active_task"),
+        ApplicationFailureCategory::InactiveTaskCandidatesChanged => {
+            Some("inactive_candidates_changed")
         }
-        ApplicationFailureCategory::WorklogNotFound => "worklog_not_found",
-        ApplicationFailureCategory::WorklogChanged => "worklog_changed",
-        ApplicationFailureCategory::TaskChanged => "task_changed",
-        ApplicationFailureCategory::ActiveWorklog => "active_worklog",
-        ApplicationFailureCategory::WorklogHistoryChanged => "worklog_history_changed",
-        ApplicationFailureCategory::WorklogOverlap => "worklog_overlap",
-        ApplicationFailureCategory::ActiveTask => "active_task",
-        ApplicationFailureCategory::InactiveTaskCandidatesChanged => "inactive_candidates_changed",
     }
 }
 

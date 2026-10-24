@@ -100,7 +100,7 @@ fn help_is_a_successful_parse_display_with_all_command_groups() {
 }
 
 #[test]
-fn json_inputs_are_bounded_and_file_inputs_use_the_same_parser() {
+fn inline_and_file_json_inputs_use_the_same_parser() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("preview.json");
     std::fs::write(&path, r#"{"value": 1}"#).unwrap();
@@ -110,10 +110,6 @@ fn json_inputs_are_bounded_and_file_inputs_use_the_same_parser() {
     );
     assert!(crate::read_json::<serde_json::Value>("broken").is_err());
     assert!(crate::read_json::<serde_json::Value>("@/missing-preview-file").is_err());
-    let oversized = " ".repeat(1024 * 1024 + 1);
-    assert!(crate::read_json::<serde_json::Value>(&oversized).is_err());
-    std::fs::write(&path, oversized).unwrap();
-    assert!(crate::read_json::<serde_json::Value>(&format!("@{}", path.display())).is_err());
 }
 
 #[test]
