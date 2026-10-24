@@ -38,7 +38,7 @@ pub struct ApplicationFailure {
     category: ApplicationFailureCategory,
     message: String,
     source: ApplicationFailureSource,
-    recovery: Option<(ApplicationFailureCategory, String)>,
+    recovery: Option<String>,
 }
 
 impl ApplicationFailure {
@@ -62,14 +62,9 @@ impl ApplicationFailure {
         self.recovery.is_some()
     }
 
-    /// Returns the recovery failure category when state recovery also failed.
-    pub fn recovery_category(&self) -> Option<ApplicationFailureCategory> {
-        self.recovery.as_ref().map(|(category, _)| *category)
-    }
-
     /// Returns the sanitized recovery failure message when recovery also failed.
     pub fn recovery_message(&self) -> Option<&str> {
-        self.recovery.as_ref().map(|(_, message)| message.as_str())
+        self.recovery.as_deref()
     }
 }
 
@@ -354,7 +349,7 @@ impl ApplicationError {
             Self::Repository(error) | Self::TrackingWrite(error) => repository_failure(error),
             Self::TrackingRecovery(error) | Self::TaskRecovery(error) => {
                 let mut failure = repository_failure(error);
-                failure.recovery = Some((failure.category, failure.message.clone()));
+                failure.recovery = Some(failure.message.clone());
                 failure
             }
             _ => unreachable!("only repository failures reach this classifier"),
@@ -402,7 +397,7 @@ fn attach_recovery(
     if recovery.source != ApplicationFailureSource::Operation {
         failure.source = recovery.source;
     }
-    failure.recovery = Some((recovery.category, recovery.message));
+    failure.recovery = Some(recovery.message);
     failure
 }
 

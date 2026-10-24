@@ -585,10 +585,6 @@ fn failed_task_writes_preserve_primary_categories_when_authoritative_recovery_fa
         assert_eq!(failure.category(), category);
         assert_eq!(failure.source(), ApplicationFailureSource::Storage);
         assert!(failure.recovery_failed());
-        assert_eq!(
-            failure.recovery_category(),
-            Some(ApplicationFailureCategory::General)
-        );
         assert_eq!(failure.recovery_message(), Some("Storage error"));
         assert!(!failure.message().contains("read failed"));
         assert!(!application.task(task.id()).unwrap().is_archived());
@@ -724,11 +720,8 @@ fn guarded_task_write_failures_keep_primary_categories_when_recovery_also_fails(
         };
         let failure = error.failure();
         assert_eq!(failure.category(), ApplicationFailureCategory::TaskNotFound);
-        assert_eq!(
-            failure.recovery_category(),
-            Some(ApplicationFailureCategory::General)
-        );
         assert!(failure.recovery_failed());
+        assert_eq!(failure.recovery_message(), Some("Storage error"));
         assert_eq!(repository.0.borrow().tasks[0].task, alpha);
     }
 }
