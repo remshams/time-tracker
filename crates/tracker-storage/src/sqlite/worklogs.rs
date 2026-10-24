@@ -184,22 +184,6 @@ fn task_worklog_rows_on(
     Ok(rows)
 }
 
-#[cfg(any(test, feature = "test-support"))]
-fn list_worklogs_on(conn: &Connection, task_id: TaskId) -> Result<Vec<Worklog>, StorageError> {
-    let mut statement = conn.prepare(
-        "SELECT id, task_id, start_us, end_us FROM worklogs
-         WHERE task_id = ?1
-         ORDER BY start_us, id",
-    )?;
-    let mut rows = statement.query([task_id.to_string()])?;
-    let mut worklogs = Vec::new();
-    while let Some(row) = rows.next()? {
-        let raw = raw_worklog(row)?;
-        worklogs.push(worklog_from_raw(raw)?);
-    }
-    Ok(worklogs)
-}
-
 impl SqliteRepository {
     /// Reads a global page, its task metadata, and active tracking together.
     ///
@@ -485,7 +469,18 @@ impl SqliteRepository {
     /// ports. Application history reads bounded pages instead.
     #[cfg(any(test, feature = "test-support"))]
     pub fn list_worklogs(&self, task_id: TaskId) -> Result<Vec<Worklog>, StorageError> {
-        list_worklogs_on(&self.conn, task_id)
+        let mut statement = self.conn.prepare(
+            "SELECT id, task_id, start_us, end_us FROM worklogs
+             WHERE task_id = ?1
+             ORDER BY start_us, id",
+        )?;
+        let mut rows = statement.query([task_id.to_string()])?;
+        let mut worklogs = Vec::new();
+        while let Some(row) = rows.next()? {
+            let raw = raw_worklog(row)?;
+            worklogs.push(worklog_from_raw(raw)?);
+        }
+        Ok(worklogs)
     }
 }
 
