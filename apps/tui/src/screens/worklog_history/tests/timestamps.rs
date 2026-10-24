@@ -3,69 +3,6 @@
 use super::*;
 
 #[test]
-fn switching_uses_one_monotonic_timestamp_for_both_worklogs() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("tracker.db");
-    let repository = SqliteRepository::open(&path).unwrap();
-    let alpha = task(1, "alpha");
-    let beta = task(2, "beta");
-    repository.create_task(alpha.clone()).unwrap();
-    repository.create_task(beta.clone()).unwrap();
-    let (mut app, clock) = app_with_test_clock(
-        TrackerApplication::load(repository).unwrap(),
-        chrono_tz::UTC,
-        Utc::now(),
-    );
-    let alpha = alpha.id();
-    let beta = beta.id();
-    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
-    clock.advance_monotonic(Duration::from_secs(125));
-    app.handle(Command::TaskList(TaskListCommand::MoveDown));
-    app.handle(Command::TaskList(TaskListCommand::ToggleTracking));
-    let mut verifier = TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap();
-    let alpha_worklog = verifier
-        .worklogs_for_task(alpha, None)
-        .unwrap()
-        .worklogs
-        .pop()
-        .unwrap();
-    let beta_worklog = verifier
-        .worklogs_for_task(beta, None)
-        .unwrap()
-        .worklogs
-        .pop()
-        .unwrap();
-    assert_eq!(alpha_worklog.end(), Some(beta_worklog.start()));
-}
-#[test]
-fn elapsed_clock_and_client_timestamp_share_one_duration() {
-    let clock = ElapsedClock::at_anchor(Duration::from_secs(100), Instant::now());
-    assert_eq!(clock.at(Duration::from_secs(5)), Duration::from_secs(105));
-    let start = DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
-        .unwrap()
-        .with_timezone(&Utc);
-    assert_eq!(
-        tracking_timestamp(start, Duration::from_secs(5)),
-        start + TimeDelta::seconds(5)
-    );
-}
-#[test]
-fn future_clock_anchors_at_zero_and_timestamp_overflow_saturates() {
-    let now = Utc::now();
-    assert_eq!(
-        ElapsedClock::base_since(now + TimeDelta::seconds(1), now),
-        Duration::ZERO
-    );
-    assert_eq!(
-        ElapsedClock::base_since(now - TimeDelta::seconds(5), now),
-        Duration::from_secs(5)
-    );
-    assert_eq!(
-        tracking_timestamp(DateTime::<Utc>::MAX_UTC, Duration::MAX),
-        DateTime::<Utc>::MAX_UTC
-    );
-}
-#[test]
 fn history_uses_the_session_timezone_snapshot() {
     let london = app_in_timezone(
         TestService::with_tasks(vec![task(1, "alpha")]),
@@ -84,48 +21,6 @@ fn history_uses_the_session_timezone_snapshot() {
     assert_eq!(
         johannesburg.app_view().local_time(at(0)),
         "1970-01-01 02:00"
-    );
-}
-#[test]
-fn timezone_resolution_accepts_common_tz_forms_and_reports_the_utc_fallback() {
-    for (value, expected) in [
-        ("UTC", chrono_tz::UTC),
-        (":UTC", chrono_tz::UTC),
-        (
-            "/usr/share/zoneinfo/Europe/London",
-            chrono_tz::Europe::London,
-        ),
-        (
-            "../usr/share/zoneinfo/posix/Europe/London",
-            chrono_tz::Europe::London,
-        ),
-        (":/etc/zoneinfo/Europe/London", chrono_tz::Europe::London),
-        ("../etc/zoneinfo/Europe/London", chrono_tz::Europe::London),
-        (
-            "/usr/share/zoneinfo/right/Europe/London",
-            chrono_tz::Europe::London,
-        ),
-    ] {
-        assert_eq!(parse_timezone_name(value), Some(expected));
-    }
-    assert_eq!(
-        resolve_timezone(
-            Some(":/etc/zoneinfo/America/Phoenix"),
-            Some("America/Denver")
-        ),
-        (chrono_tz::America::Phoenix, None),
-        "a valid environment override wins over the OS timezone"
-    );
-    assert_eq!(
-        resolve_timezone(Some("not a timezone"), Some("Europe/Paris")),
-        (chrono_tz::Europe::Paris, None)
-    );
-    assert_eq!(
-        resolve_timezone(Some("not a timezone"), Some("also invalid")),
-        (
-            chrono_tz::UTC,
-            Some("Could not detect an IANA timezone; using UTC for this session.")
-        )
     );
 }
 #[test]

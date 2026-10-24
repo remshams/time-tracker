@@ -6,8 +6,8 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::AppView;
+use crate::components::tabs::{self, TopTab};
 use crate::components::text;
-use crate::screens::task_list::view::render_tabs;
 use crate::screens::worklog_history::view::render_move_modal;
 use crate::styles;
 
@@ -75,10 +75,10 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: AppView<'_>, state: &Al
         );
         frame.render_stateful_widget(list, area, &mut selection);
     }
-    render_tabs(
+    tabs::render(
         frame,
         area,
-        2,
+        TopTab::Worklogs,
         state.focus == AllWorklogsFocus::Tabs && state.move_draft.is_none(),
     );
     if let Some(draft) = &state.move_draft {
