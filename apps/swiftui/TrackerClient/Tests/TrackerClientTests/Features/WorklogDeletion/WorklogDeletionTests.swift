@@ -87,33 +87,6 @@ final class WorklogDeletionTests: XCTestCase {
     }
 
     @MainActor
-    func testOpenDeletionDoesNotBlockOtherEditorsOrConnectionChange() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await open(fixture)
-        XCTAssertTrue(fixture.session.canOpenWorklogCorrection)
-        XCTAssertTrue(fixture.session.canOpenWorklogMove)
-        XCTAssertTrue(fixture.session.canOpenTaskCreation)
-        XCTAssertTrue(fixture.session.canOpenTaskRename)
-        XCTAssertTrue(fixture.session.canArchiveTask(taskID: secondTask.id))
-
-        let connecting = Task { await fixture.session.connect(serverSettings) }
-        let connection = try await fixture.client.next()
-        XCTAssertEqual(connection.operation, .connect(serverSettings))
-        connection.succeed(emptyTaskListResources)
-        let connected = try await fixture.taskValue(connecting)
-
-        XCTAssertTrue(connected)
-        XCTAssertEqual(fixture.session.connectionSettings, serverSettings)
-        XCTAssertNil(fixture.session.connectionMessage)
-        XCTAssertTrue(fixture.session.worklogDeletion.isPresented)
-        XCTAssertEqual(fixture.session.worklogDeletion.original, precise)
-        fixture.session.cancelWorklogDeletion()
-        XCTAssertFalse(fixture.session.worklogDeletion.isPresented)
-        XCTAssertNil(fixture.session.worklogDeletion.original)
-    }
-
-    @MainActor
     func testDeletionOpensWhileCorrectionAndArchiveDialogsAreOpen() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }

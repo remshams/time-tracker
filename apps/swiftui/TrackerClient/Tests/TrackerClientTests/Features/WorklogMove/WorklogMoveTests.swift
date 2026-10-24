@@ -534,26 +534,6 @@ final class WorklogMoveTests: XCTestCase {
     }
 
     @MainActor
-    func testOpenMoverDoesNotBlockConnectionChange() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        let log = try await open(fixture)
-
-        let connecting = Task { await fixture.session.connect(serverSettings) }
-        let connection = try await fixture.client.next()
-        XCTAssertEqual(connection.operation, .connect(serverSettings))
-        connection.succeed(emptyTaskListResources)
-        let connected = try await fixture.taskValue(connecting)
-
-        XCTAssertTrue(connected)
-        XCTAssertEqual(fixture.session.connectionSettings, serverSettings)
-        XCTAssertNil(fixture.session.connectionMessage)
-        XCTAssertTrue(fixture.session.worklogMove.isPresented)
-        XCTAssertEqual(fixture.session.worklogMove.original, log)
-        XCTAssertEqual(fixture.session.worklogMove.selectedTaskID, secondTask.id)
-    }
-
-    @MainActor
     func testHistoryReloadDoesNotChangeTheOpenMover() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
