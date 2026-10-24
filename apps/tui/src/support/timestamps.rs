@@ -363,3 +363,51 @@ mod rendering_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod timezone_tests {
+    use super::*;
+
+    #[test]
+    fn timezone_resolution_accepts_common_tz_forms_and_reports_the_utc_fallback() {
+        for (value, expected) in [
+            ("UTC", chrono_tz::UTC),
+            (":UTC", chrono_tz::UTC),
+            (
+                "/usr/share/zoneinfo/Europe/London",
+                chrono_tz::Europe::London,
+            ),
+            (
+                "../usr/share/zoneinfo/posix/Europe/London",
+                chrono_tz::Europe::London,
+            ),
+            (":/etc/zoneinfo/Europe/London", chrono_tz::Europe::London),
+            ("../etc/zoneinfo/Europe/London", chrono_tz::Europe::London),
+            (
+                "/usr/share/zoneinfo/right/Europe/London",
+                chrono_tz::Europe::London,
+            ),
+        ] {
+            assert_eq!(parse_timezone_name(value), Some(expected));
+        }
+        assert_eq!(
+            resolve_timezone(
+                Some(":/etc/zoneinfo/America/Phoenix"),
+                Some("America/Denver")
+            ),
+            (chrono_tz::America::Phoenix, None),
+            "a valid environment override wins over the OS timezone"
+        );
+        assert_eq!(
+            resolve_timezone(Some("not a timezone"), Some("Europe/Paris")),
+            (chrono_tz::Europe::Paris, None)
+        );
+        assert_eq!(
+            resolve_timezone(Some("not a timezone"), Some("also invalid")),
+            (
+                chrono_tz::UTC,
+                Some("Could not detect an IANA timezone; using UTC for this session.")
+            )
+        );
+    }
+}
