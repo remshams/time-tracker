@@ -136,7 +136,8 @@ fn archive_and_restore_reject_invalid_c_inputs_without_mutating_state() {
     };
     let operations: [&dyn Fn(*mut Bridge, *const c_char, *const c_char) -> *mut c_char; 2] =
         [&archive, &restore];
-    for operation in operations {
+    let timestamp_errors = ["Invalid archive timestamp", "Invalid restore timestamp"];
+    for (operation, timestamp_error) in operations.into_iter().zip(timestamp_errors) {
         assert_eq!(
             response(operation(ptr::null_mut(), id.as_ptr(), instant.as_ptr()))["error"],
             "Database is not open"
@@ -148,7 +149,7 @@ fn archive_and_restore_reject_invalid_c_inputs_without_mutating_state() {
             );
             assert_eq!(
                 response(operation(&mut bridge, id.as_ptr(), invalid))["error"],
-                "Invalid archive timestamp"
+                timestamp_error
             );
         }
     }
