@@ -6,8 +6,9 @@
 //! never through coordinates, cell styles, or raw output. Support code
 //! lives beside them by concern: process control in `e2e::driver`, test
 //! fixtures in `e2e::context`, database probes through `tt-cli` in
-//! `e2e::database`, and the `tt-cli` and `tt-server` builds in
-//! `e2e::binaries`.
+//! `e2e::database`, the `tt-cli` and `tt-server` builds in
+//! `e2e::binaries`, and the coverage environment every child inherits in
+//! `e2e::coverage`.
 //!
 //! Tests run on Linux and macOS. Every child gets a temporary `HOME`, so
 //! `tt` always operates on a temporary database and never touches the
@@ -23,6 +24,8 @@ mod binaries;
 mod context;
 #[path = "e2e/controlled_proxy.rs"]
 mod controlled_proxy;
+#[path = "e2e/coverage.rs"]
+mod coverage;
 #[path = "e2e/database.rs"]
 mod database;
 #[path = "e2e/driver.rs"]

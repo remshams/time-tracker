@@ -100,10 +100,8 @@ impl RemoteTestContext {
             .arg(&self.database_path)
             .env_clear()
             .env("HOME", self.local.home())
-            .env("TZ", "UTC");
-        if let Ok(profile) = std::env::var("LLVM_PROFILE_FILE") {
-            command.env("LLVM_PROFILE_FILE", profile);
-        }
+            .env("TZ", "UTC")
+            .envs(crate::coverage::profile_env());
         let child = command
             .stdin(Stdio::null())
             .stdout(Stdio::null())

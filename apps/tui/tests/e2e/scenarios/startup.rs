@@ -154,11 +154,9 @@ fn tt_reports_a_startup_failure_and_exits_nonzero() {
         .env_clear()
         .env("HOME", &blocker)
         .env("TERM", "xterm-256color")
+        .envs(crate::coverage::profile_env())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Ok(profile) = std::env::var("LLVM_PROFILE_FILE") {
-        command.env("LLVM_PROFILE_FILE", profile);
-    }
     let mut child = command.spawn().expect("tt must start");
 
     // Bounded wait: a hung child is killed and reaped instead of hanging

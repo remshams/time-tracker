@@ -109,14 +109,12 @@ impl Database {
         command
             .env_clear()
             .env("TZ", "UTC")
+            .envs(crate::coverage::profile_env())
             .arg("--db")
             .arg(&self.path)
             .stdin(Stdio::null());
         if let Some(at) = at {
             command.arg("--at").arg(timestamp_argument(at));
-        }
-        if let Ok(profile) = std::env::var("LLVM_PROFILE_FILE") {
-            command.env("LLVM_PROFILE_FILE", profile);
         }
         let output = command.args(arguments).output().expect("tt-cli must run");
         assert!(
