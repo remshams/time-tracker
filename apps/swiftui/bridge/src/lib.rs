@@ -72,7 +72,7 @@ use tracker_storage::SqliteRepository;
 #[cfg(test)]
 use tracking::tracking_json;
 #[cfg(test)]
-use worklogs::{parse_cursor, worklog_json};
+use worklogs::worklog_json;
 
 #[cfg(test)]
 mod test_support;
