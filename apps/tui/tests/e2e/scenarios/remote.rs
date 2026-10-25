@@ -219,7 +219,7 @@ fn remote_create_recovers_newer_resources_after_its_original_receipt() {
     let context = RemoteTestContext::new_with_tasks();
     let proxy = context.proxy();
     let mut first = context.launch_through(&proxy);
-    let mut second = context.launch_second_client();
+    let mut second = context.launch();
     for client in [&mut first, &mut second] {
         client.wait_for_first_frame("the initial task list", |screen| {
             TimeTrackerPage::new(screen.clone())
@@ -719,7 +719,7 @@ fn remote_clients_refresh_and_reject_a_stale_worklog_correction() {
             .is_some()
     });
 
-    let mut current = context.launch_second_client();
+    let mut current = context.launch();
     current.wait_for_first_frame("the second client", |screen| {
         TimeTrackerPage::new(screen.clone())
             .task_panel()
@@ -798,7 +798,7 @@ fn remote_clients_refresh_and_reject_a_stale_worklog_correction() {
 #[test]
 fn a_second_remote_client_refreshes_after_a_server_change() {
     let context = RemoteTestContext::new_with_tasks();
-    let mut observer = context.launch_second_client();
+    let mut observer = context.launch();
     observer.wait_for_first_frame("the observer client task list", |screen| {
         TimeTrackerPage::new(screen.clone())
             .task_panel()
@@ -973,7 +973,7 @@ fn remote_aggregate_refresh_keeps_task_list_and_timer_coherent_during_another_cl
     let mut first = context.launch_through(&proxy);
     proxy.wait_for_request();
 
-    let mut second = context.launch_second_client();
+    let mut second = context.launch();
     second.wait_for_first_frame("the second client task list", |screen| {
         TimeTrackerPage::new(screen.clone())
             .task_panel()
@@ -1039,7 +1039,7 @@ fn remote_aggregate_refresh_keeps_task_list_and_timer_coherent_during_another_cl
 fn remote_rename_keeps_the_reviewed_name_when_another_client_renames() {
     let context = RemoteTestContext::new_with_tasks();
     let mut first = context.launch();
-    let mut second = context.launch_second_client();
+    let mut second = context.launch();
     for client in [&mut first, &mut second] {
         client.wait_for_first_frame("the remote task list", |screen| {
             TimeTrackerPage::new(screen.clone())
@@ -1086,7 +1086,7 @@ fn remote_queued_start_does_not_replace_a_timer_started_by_another_client() {
     let context = RemoteTestContext::new_with_tasks();
     let proxy = context.proxy();
     let mut first = context.launch_through(&proxy);
-    let mut second = context.launch_second_client();
+    let mut second = context.launch();
     for client in [&mut first, &mut second] {
         client.wait_for_first_frame("the idle remote task list", |screen| {
             let page = TimeTrackerPage::new(screen.clone());

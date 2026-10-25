@@ -54,10 +54,6 @@ impl RemoteTestContext {
         self.local.launch_remote(&self.endpoint())
     }
 
-    pub(crate) fn launch_second_client(&self) -> crate::driver::TuiDriver {
-        self.local.launch_remote(&self.endpoint())
-    }
-
     pub(crate) fn proxy(&self) -> ControlledProxy {
         ControlledProxy::new(self.address)
     }
