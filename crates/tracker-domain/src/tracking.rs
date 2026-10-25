@@ -17,7 +17,7 @@ use crate::worklog::{ActiveWorklog, Worklog};
 pub enum TrackingError {
     /// A start command ran while another worklog is already active.
     #[error("another worklog is already active")]
-    AlreadyRunning { active: ActiveWorklog },
+    AlreadyRunning,
     /// A stop or switch command ran while no worklog is active.
     #[error("no worklog is running")]
     NotRunning,
@@ -121,10 +121,8 @@ impl Tracker {
         worklog_id: WorklogId,
         at: DateTime<Utc>,
     ) -> Result<Worklog, TrackingError> {
-        if let TrackingState::Running { worklog } = &self.state {
-            return Err(TrackingError::AlreadyRunning {
-                active: worklog.clone(),
-            });
+        if matches!(self.state, TrackingState::Running { .. }) {
+            return Err(TrackingError::AlreadyRunning);
         }
         if task.is_archived() {
             return Err(TrackingError::TaskArchived { id: task.id() });
@@ -250,19 +248,14 @@ mod tests {
         );
     }
 
-    /// Rejected starts retain the identity and state of the worklog already running.
+    /// A rejected start leaves the running worklog active.
     #[test]
-    fn start_while_running_is_rejected_with_the_active_worklog() {
+    fn start_while_running_is_rejected_and_keeps_the_active_worklog() {
         let mut tracker = Tracker::idle();
         let first = tracker.start(&task(1), worklog_id(1), at(100)).unwrap();
-        let error = tracker
-            .start(&task(2), worklog_id(1), at(110))
-            .expect_err("already running");
         assert_eq!(
-            error,
-            TrackingError::AlreadyRunning {
-                active: ActiveWorklog::begin(first.id(), task_id(1), at(100))
-            }
+            tracker.start(&task(2), worklog_id(1), at(110)),
+            Err(TrackingError::AlreadyRunning)
         );
         assert_eq!(tracker.active().map(|e| e.id()), Some(first.id()));
     }
