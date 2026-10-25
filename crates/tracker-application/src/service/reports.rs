@@ -78,9 +78,6 @@ fn totals_from_rows(mut rows: Vec<ReportRow>) -> Result<ReportTotals, Applicatio
             .duration
             .num_microseconds()
             .ok_or(ApplicationError::ReportDurationOverflow)?;
-        if duration_us <= 0 {
-            return Err(ApplicationError::ReportDurationOverflow);
-        }
         total_us = total_us
             .checked_add(duration_us)
             .ok_or(ApplicationError::ReportDurationOverflow)?;

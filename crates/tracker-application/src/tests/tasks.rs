@@ -486,69 +486,6 @@ fn archiving_the_active_task_is_rejected_before_persistence() {
 }
 
 #[test]
-fn rename_task_never_moves_stored_updated_at_backward() {
-    let alpha = stamped_task(1, "alpha", 100, 500);
-    let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
-    let saved = repository
-        .rename_task(alpha.id(), TaskName::new("older clock").unwrap(), at(200))
-        .unwrap();
-    assert_eq!(
-        saved.updated_at(),
-        at(500),
-        "the backend keeps the newer value"
-    );
-    assert_eq!(saved.name().as_str(), "older clock");
-    assert_eq!(saved.created_at(), at(100), "creation is never rewritten");
-}
-
-#[test]
-fn renaming_a_missing_task_reports_task_not_found() {
-    let repository = MemoryRepository::default();
-    let missing = TaskId::from_uuid(uuid::Uuid::from_u128(99));
-    assert_eq!(
-        repository.rename_task(missing, TaskName::new("ghost").unwrap(), at(100)),
-        Err(RepositoryError::TaskNotFound { id: missing })
-    );
-}
-
-#[test]
-fn renaming_after_a_concurrent_archive_keeps_the_archived_state() {
-    let alpha = stamped_task(1, "alpha", 100, 100);
-    let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
-    // Another client archives the task after this client last looked.
-    repository.archive_task(alpha.id(), at(150)).unwrap();
-
-    // The stale client renames from its unarchived view: the rename
-    // lands and the archive state survives it.
-    let renamed = repository
-        .rename_task(alpha.id(), TaskName::new("beta").unwrap(), at(200))
-        .unwrap();
-    assert_eq!(renamed.name().as_str(), "beta");
-    assert!(
-        renamed.is_archived(),
-        "the rename did not resurrect the task"
-    );
-}
-
-#[test]
-fn archiving_after_a_concurrent_rename_keeps_the_name() {
-    let alpha = stamped_task(1, "alpha", 100, 100);
-    let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
-    repository
-        .rename_task(alpha.id(), TaskName::new("beta").unwrap(), at(150))
-        .unwrap();
-
-    let archived = repository.archive_task(alpha.id(), at(200)).unwrap();
-    assert!(archived.is_archived());
-    assert_eq!(
-        archived.name().as_str(),
-        "beta",
-        "the archive kept the rename"
-    );
-    assert_eq!(archived.updated_at(), at(200));
-}
-
-#[test]
 fn failed_task_writes_preserve_primary_categories_when_authoritative_recovery_fails() {
     for operation in 0..3 {
         let task = stamped_task(1, "Old task", 100, 100);

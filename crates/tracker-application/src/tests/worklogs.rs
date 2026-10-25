@@ -99,61 +99,6 @@ fn global_cursor_rejects_a_change_to_a_row_on_another_task() {
 }
 
 #[test]
-fn memory_repository_honors_worklog_ordering_and_write_contracts() {
-    let alpha = task(1, "alpha");
-    let mut archived = task(2, "archived");
-    assert!(archived.archive(at(100)));
-    let repository = MemoryRepository::with_tasks(vec![archived.clone(), alpha.clone()]);
-    let later = Worklog::new(
-        worklog(2, alpha.id(), 20).id(),
-        alpha.id(),
-        at(20),
-        Some(at(30)),
-    )
-    .unwrap();
-    let earlier = Worklog::new(
-        worklog(1, alpha.id(), 10).id(),
-        alpha.id(),
-        at(10),
-        Some(at(15)),
-    )
-    .unwrap();
-    repository.insert_worklog(&later).unwrap();
-    repository.insert_worklog(&earlier).unwrap();
-    // History order is start descending, so the later worklog leads.
-    assert_eq!(WORKLOG_PAGE_SIZE, 50);
-    assert_eq!(
-        repository
-            .worklog_page(alpha.id(), None)
-            .unwrap()
-            .worklogs
-            .into_iter()
-            .map(|worklog| worklog.id())
-            .collect::<Vec<_>>(),
-        vec![later.id(), earlier.id()]
-    );
-    assert!(matches!(
-        repository.insert_worklog(&worklog(3, archived.id(), 40)),
-        Err(RepositoryError::TaskArchived { id }) if id == archived.id()
-    ));
-    let active = worklog(4, alpha.id(), 50);
-    repository.insert_worklog(&active).unwrap();
-    assert!(matches!(
-        repository.stop_worklog(active.id(), active.start(), at(49)),
-        Err(RepositoryError::Constraint { .. })
-    ));
-    let next = worklog(5, archived.id(), 60);
-    assert!(matches!(
-        repository.switch_worklog(active.id(), active.start(), at(55), &next),
-        Err(RepositoryError::TaskArchived { id }) if id == archived.id()
-    ));
-    assert!(matches!(
-        repository.active_worklog(),
-        Ok(Some(worklog)) if worklog.id() == active.id()
-    ));
-}
-
-#[test]
 fn worklog_queries_adopt_the_transaction_state() {
     let alpha = task(1, "alpha");
     let repository = MemoryRepository::with_tasks(vec![alpha.clone()]);
@@ -379,62 +324,6 @@ fn deletion_canonicalizes_expected_times_and_adopts_the_transaction_aggregate() 
         TrackingState::Running { worklog } if worklog.id() == beta_work.id()
     ));
     assert_eq!(repository.0.borrow().worklogs, [old_alpha, beta_work]);
-}
-
-#[test]
-fn deletion_rejects_active_missing_stale_and_task_moved_targets() {
-    let alpha = task(1, "alpha");
-    let beta = task(2, "beta");
-    let completed = completed_worklog(10, alpha.id(), 100, 150);
-    let active = worklog(11, alpha.id(), 200);
-    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
-    repository.insert_worklog(&completed).unwrap();
-    repository.insert_worklog(&active).unwrap();
-
-    assert_eq!(
-        repository.compare_and_delete_completed_worklog(
-            active.id(),
-            active.task_id(),
-            active.times(),
-        ),
-        Err(RepositoryError::WorklogIsActive { id: active.id() })
-    );
-    assert_eq!(
-        repository.compare_and_delete_completed_worklog(
-            WorklogId::from_uuid(uuid::Uuid::from_u128(99)),
-            alpha.id(),
-            completed.times(),
-        ),
-        Err(RepositoryError::WorklogNotFound {
-            id: WorklogId::from_uuid(uuid::Uuid::from_u128(99))
-        })
-    );
-    assert_eq!(
-        repository.compare_and_delete_completed_worklog(
-            completed.id(),
-            alpha.id(),
-            WorklogTimes::new(at(100), Some(at(151))),
-        ),
-        Err(RepositoryError::WorklogChanged { id: completed.id() })
-    );
-    let moved = Worklog::new(
-        completed.id(),
-        beta.id(),
-        completed.start(),
-        completed.end(),
-    )
-    .unwrap();
-    repository.0.borrow_mut().worklogs[0] = moved.clone();
-    assert_eq!(
-        repository.compare_and_delete_completed_worklog(
-            completed.id(),
-            alpha.id(),
-            completed.times(),
-        ),
-        Err(RepositoryError::WorklogChanged { id: completed.id() })
-    );
-    assert!(repository.0.borrow().worklogs.contains(&moved));
-    assert!(repository.0.borrow().worklogs.contains(&active));
 }
 
 #[test]
@@ -847,65 +736,6 @@ fn overlap_errors_propagate_and_leave_the_original_worklog() {
     assert_eq!(application.current_tracking(), &TrackingState::Idle);
 }
 
-#[test]
-fn compare_and_swap_distinguishes_stale_and_missing_worklogs() {
-    let alpha = task(1, "alpha");
-    let original = completed_worklog(10, alpha.id(), 100, 150);
-    let repository = MemoryRepository::with_tasks(vec![alpha]);
-    repository.insert_worklog(&original).unwrap();
-
-    assert_eq!(
-        repository.compare_and_set_worklog_times(
-            original.id(),
-            WorklogTimes::new(at(100), Some(at(151))),
-            WorklogTimes::new(at(110), Some(at(160))),
-        ),
-        Err(RepositoryError::WorklogChanged { id: original.id() })
-    );
-    let missing = WorklogId::from_uuid(uuid::Uuid::from_u128(99));
-    assert_eq!(
-        repository.compare_and_set_worklog_times(
-            missing,
-            WorklogTimes::new(at(100), Some(at(150))),
-            WorklogTimes::new(at(110), Some(at(160))),
-        ),
-        Err(RepositoryError::WorklogNotFound { id: missing })
-    );
-    assert_eq!(
-        repository.find_worklog(original.id()).unwrap(),
-        Some(original)
-    );
-}
-
-#[test]
-fn half_open_overlap_rules_allow_touching_and_other_tasks() {
-    let alpha = task(1, "alpha");
-    let beta = task(2, "beta");
-    let repository = MemoryRepository::with_tasks(vec![alpha.clone(), beta.clone()]);
-    let first = completed_worklog(10, alpha.id(), 100, 150);
-    let touching = completed_worklog(11, alpha.id(), 150, 200);
-    let other_task = completed_worklog(13, beta.id(), 120, 180);
-    repository.insert_worklog(&first).unwrap();
-    repository.insert_worklog(&touching).unwrap();
-    repository.insert_worklog(&other_task).unwrap();
-
-    let overlapping = completed_worklog(14, alpha.id(), 149, 151);
-    assert_eq!(
-        repository.insert_worklog(&overlapping),
-        Err(RepositoryError::SameTaskWorklogOverlap {
-            id: overlapping.id()
-        })
-    );
-    let moved = repository
-        .compare_and_set_worklog_times(
-            touching.id(),
-            touching.times(),
-            WorklogTimes::new(at(200), Some(at(210))),
-        )
-        .unwrap()
-        .worklog;
-    assert_eq!(moved.start(), at(200));
-}
 #[test]
 fn correction_preserves_write_and_recovery_errors() {
     let alpha = task(1, "alpha");

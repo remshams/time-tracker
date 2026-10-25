@@ -29,9 +29,7 @@ pub trait TrackerApplicationService {
     fn tasks(&self, ordering: TaskOrdering) -> Vec<TaskListItem>;
 
     /// Refreshes the task list and its active-task indication together.
-    fn refresh_task_list(&mut self) -> Result<(), ApplicationError> {
-        Ok(())
-    }
+    fn refresh_task_list(&mut self) -> Result<(), ApplicationError>;
 
     /// Clips completed work to the interval and ends open work at `now`.
     /// Adopts active tracking and metadata for reported tasks from the same
