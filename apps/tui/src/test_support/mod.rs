@@ -394,6 +394,10 @@ impl TrackerApplicationService for TestService {
         items
     }
 
+    fn refresh_task_list(&mut self) -> Result<(), ApplicationError> {
+        Ok(())
+    }
+
     fn create_task(
         &mut self,
         name: TaskName,
