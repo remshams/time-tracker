@@ -605,3 +605,26 @@ fn stop_switch_and_insert_reject_durations_that_collapse_to_stored_microseconds(
         Some(end)
     );
 }
+
+/// The application refreshes the task catalog and the tracking resource
+/// through these repository reads separately from its combined workflow read.
+#[test]
+fn repository_reads_return_the_stored_catalog_and_active_worklog() {
+    let repository = repo();
+    let task = named_task(1, "alpha");
+    repository.create_task(task.clone()).unwrap();
+    let active = Worklog::begin(worklog_id(1), task.id(), at(100));
+    repository.insert_worklog(&active).unwrap();
+
+    assert_eq!(
+        TrackerRepository::load_task_catalog(&repository).unwrap(),
+        vec![TaskListItem {
+            task,
+            latest_work_start: Some(at(100)),
+        }]
+    );
+    assert_eq!(
+        TrackerRepository::active_worklog(&repository).unwrap(),
+        Some(active)
+    );
+}
