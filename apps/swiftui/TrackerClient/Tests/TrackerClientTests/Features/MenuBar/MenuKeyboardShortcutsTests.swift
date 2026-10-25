@@ -11,7 +11,6 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(shortcuts.copyExact, MenuShortcut(key: "t"))
         XCTAssertEqual(shortcuts.copyRounded, MenuShortcut(key: "s"))
         XCTAssertTrue(shortcuts.validationErrors().isEmpty)
-        XCTAssertEqual(try shortcuts.validated(), shortcuts)
         XCTAssertEqual(shortcuts.action(forKey: "t", modifiers: []), .copyExact)
         XCTAssertNil(shortcuts.action(forKey: "t", modifiers: [.control, .option]))
         XCTAssertEqual(shortcuts.action(forKey: "t", modifiers: [.control, .option], includingGlobal: true), .openMenu)
@@ -35,7 +34,6 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(
             shortcuts.validationError,
             "Copy exact duration and Copy task name use the same shortcut, C.")
-        XCTAssertThrowsError(try shortcuts.validated())
         XCTAssertThrowsError(
             try JSONDecoder().decode(
                 MenuKeyboardShortcuts.self,
@@ -102,7 +100,6 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertNil(shortcuts.action(forKey: "c", modifiers: [.command]))
         XCTAssertNil(shortcuts.action(forKey: "c", modifiers: [.shift, .command, .option]))
         shortcuts.copyName.key = "N"
-        XCTAssertEqual(try shortcuts.validated().copyName.key, "n")
         XCTAssertEqual(shortcuts.action(forKey: "n", modifiers: [.shift, .command]), .copyName)
     }
 

@@ -76,11 +76,6 @@ public enum MenuShortcutAction: String, CaseIterable, Codable, Sendable {
     }
 }
 
-public struct MenuShortcutValidationError: Error, LocalizedError, Equatable {
-    public let errors: [String]
-    public var errorDescription: String? { errors.first }
-}
-
 public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
     public var openMenu: MenuShortcut
     public var moveDown: MenuShortcut
@@ -156,14 +151,6 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
         return errors
     }
 
-    public func validated() throws -> Self {
-        let errors = validationErrors()
-        guard errors.isEmpty else { throw MenuShortcutValidationError(errors: errors) }
-        var result = self
-        for action in MenuShortcutAction.allCases { result[action] = self[action].normalized }
-        return result
-    }
-
     public func action(
         forKey key: String, modifiers: MenuShortcut.Modifiers,
         includingGlobal: Bool = false
@@ -193,7 +180,6 @@ public struct MenuKeyboardShortcuts: Codable, Equatable, Sendable {
                     codingPath: decoder.codingPath,
                     debugDescription: errors.joined(separator: " ")))
         }
-        self = try validated()
     }
 }
 

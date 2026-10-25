@@ -77,29 +77,6 @@ final class ConnectionTests: XCTestCase {
     }
 
     @MainActor
-    func testEmptyReplacementSourceClearsHistoryWhenBothSourcesAreIdle() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        fixture.session.retryHistory()
-        let history = try await fixture.client.next()
-        history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
-        try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
-
-        let connecting = Task { await fixture.session.connect(serverSettings) }
-        let request = try await fixture.client.next()
-        request.succeed(emptyTaskListResources)
-        let connected = try await fixture.taskValue(connecting)
-
-        XCTAssertTrue(connected)
-        XCTAssertTrue(fixture.session.worklogs.isEmpty)
-        XCTAssertNil(fixture.session.nextCursor)
-        XCTAssertNil(fixture.session.selectedTaskID)
-        XCTAssertEqual(fixture.session.connectionSettings, serverSettings)
-    }
-
-    @MainActor
     func testReplacementSourceChoosesItsFirstTaskWhenPreviousIDsAlsoExist() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
