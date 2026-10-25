@@ -242,12 +242,30 @@ mod tests {
     #[test]
     fn history_cursors_keep_their_token_bytes() {
         let id = "00000000-0000-7000-8000-000000000001".parse().unwrap();
-        let token = encode_cursor(WorklogCursor { id, revision: 7 }).unwrap();
-        assert_eq!(
-            token,
-            r#"{"id":"00000000-0000-7000-8000-000000000001","revision":7}"#
-        );
-        let parsed = parse_cursor(&token).unwrap();
-        assert_eq!((parsed.id, parsed.revision), (id, 7));
+        for revision in [0, 7] {
+            let token = encode_cursor(WorklogCursor { id, revision }).unwrap();
+            assert_eq!(
+                token,
+                format!(r#"{{"id":"00000000-0000-7000-8000-000000000001","revision":{revision}}}"#)
+            );
+            let parsed = parse_cursor(&token).unwrap();
+            assert_eq!((parsed.id, parsed.revision), (id, revision));
+        }
+    }
+
+    #[test]
+    fn history_cursor_rejects_invalid_and_legacy_fields() {
+        let id = tracker_domain::WorklogId::generate();
+        assert!(parse_cursor("not json").is_err());
+        for value in [
+            json!({"id": id.to_string()}),
+            json!({"revision": 0}),
+            json!({"id": "invalid", "revision": 0}),
+            json!({"id": id.to_string(), "revision": -1}),
+            json!({"id": id.to_string(), "revision": 0, "start": "2026-01-01T00:00:00Z"}),
+            json!({"id": id.to_string(), "revision": 0, "task_id": TaskId::generate().to_string()}),
+        ] {
+            assert!(parse_cursor(&value.to_string()).is_err(), "{value}");
+        }
     }
 }

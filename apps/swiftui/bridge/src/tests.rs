@@ -269,38 +269,6 @@ fn tracking_commands_reject_null_bridges_and_invalid_identifiers() {
 }
 
 #[test]
-fn history_cursor_rejects_incomplete_input() {
-    assert!(parse_cursor("{}").is_err());
-    assert!(parse_cursor("not json").is_err());
-}
-
-#[test]
-fn history_cursor_round_trips_page_position() {
-    let id = WorklogId::generate();
-    for revision in [0, 7] {
-        let text = json!({"id": id.to_string(), "revision": revision}).to_string();
-        let cursor = parse_cursor(&text).unwrap();
-        assert_eq!(cursor.id, id);
-        assert_eq!(cursor.revision, revision);
-    }
-}
-
-#[test]
-fn history_cursor_rejects_invalid_and_legacy_fields() {
-    let id = WorklogId::generate();
-    for value in [
-        json!({"id": id.to_string()}),
-        json!({"revision": 0}),
-        json!({"id": "invalid", "revision": 0}),
-        json!({"id": id.to_string(), "revision": -1}),
-        json!({"id": id.to_string(), "revision": 0, "start": "2026-01-01T00:00:00Z"}),
-        json!({"id": id.to_string(), "revision": 0, "task_id": TaskId::generate().to_string()}),
-    ] {
-        assert!(parse_cursor(&value.to_string()).is_err(), "{value}");
-    }
-}
-
-#[test]
 fn task_resources_expose_explicit_tasks_in_the_swift_schema() {
     let directory = tempfile::tempdir().unwrap();
     let bridge = open_fixture(&directory.path().join("tt.db")).unwrap();
