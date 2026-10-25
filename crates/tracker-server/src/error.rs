@@ -7,7 +7,7 @@ use axum::http::StatusCode;
 use serde::Serialize;
 use tracker_application::{ApplicationError, ApplicationFailureCategory};
 use tracker_domain::{TaskId, TaskName, WorklogId};
-use tracker_protocol::{ErrorCode, ErrorDto, parse_task_id, parse_worklog_id};
+use tracker_protocol::{ErrorCode, ErrorDto};
 
 pub(super) type ApiResult<T> = Result<Json<T>, ApiError>;
 
@@ -105,11 +105,13 @@ fn failure_status(category: ApplicationFailureCategory) -> (StatusCode, ErrorCod
     }
 }
 pub(super) fn task_id(raw: &str) -> Result<TaskId, ApiError> {
-    parse_task_id(raw).map_err(ApiError::invalid)
+    raw.parse()
+        .map_err(|_| ApiError::invalid("invalid task id"))
 }
 
 pub(super) fn worklog_id(raw: &str) -> Result<WorklogId, ApiError> {
-    parse_worklog_id(raw).map_err(ApiError::invalid)
+    raw.parse()
+        .map_err(|_| ApiError::invalid("invalid worklog id"))
 }
 
 pub(super) fn task_name(raw: &str) -> Result<TaskName, ApiError> {

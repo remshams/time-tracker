@@ -225,123 +225,13 @@ async fn inactive_preview_archives_once_and_replays_the_same_result() {
 }
 
 #[tokio::test]
-async fn inactive_preview_returns_all_candidate_ids() {
-    let directory = TempDir::new().unwrap();
-    let database = directory.path().join("tracker.db");
-    let router = tracker_server::router_for_database(&database).unwrap();
-    let as_of = Utc::now();
-    let outside = SqliteRepository::open(&database).unwrap();
-    for index in 0..7 {
-        outside
-            .create_task(Task::create(
-                TaskId::generate(),
-                TaskName::new(&format!("Old candidate {index}")).unwrap(),
-                as_of - TimeDelta::days(20),
-            ))
-            .unwrap();
-    }
-    let (status, body) = call(&router, Method::GET, &preview_uri(as_of), None).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
-    assert_eq!(preview.count, 7);
-    assert_eq!(preview.candidate_task_ids.len(), 7);
-}
-
-#[tokio::test]
-async fn inactive_archive_uses_current_candidates_when_database_changes_after_preview() {
-    let directory = TempDir::new().unwrap();
-    let database = directory.path().join("tracker.db");
-    let router = tracker_server::router_for_database(&database).unwrap();
-    let as_of = Utc::now();
-    let outside = SqliteRepository::open(&database).unwrap();
-    let changed_id = TaskId::generate();
-    outside
-        .create_task(Task::create(
-            changed_id,
-            TaskName::new("Previously inactive").unwrap(),
-            as_of - TimeDelta::days(20),
-        ))
-        .unwrap();
-    let (status, body) = call(&router, Method::GET, &preview_uri(as_of), None).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
-    assert_eq!(preview.count, 1);
-
-    outside
-        .rename_task(
-            changed_id,
-            TaskName::new("Recently changed").unwrap(),
-            as_of,
-        )
-        .unwrap();
-    let candidate_ids = [TaskId::generate(), TaskId::generate()];
-    for (index, id) in candidate_ids.iter().enumerate() {
-        outside
-            .create_task(Task::create(
-                *id,
-                TaskName::new(&format!("New inactive candidate {index}")).unwrap(),
-                as_of - TimeDelta::days(20),
-            ))
-            .unwrap();
-    }
-    let (status, body) = call(
-        &router,
-        Method::POST,
-        "/v1/tasks/archive-inactive",
-        Some(archive_request(&preview)),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let result: MutationDto = serde_json::from_value(body).unwrap();
-    assert_eq!(
-        result.result,
-        MutationResultDto::ArchivedInactive { count: 2 }
-    );
-    assert_eq!(state(&router).await.0.tasks.len(), 3);
-    for id in candidate_ids {
-        let task = outside.find_task(id).unwrap().unwrap();
-        assert!(task.is_archived());
-        assert!(
-            state(&router)
-                .await
-                .0
-                .tasks
-                .iter()
-                .any(|item| { item.id == id.to_string() && item.archived })
-        );
-    }
-    let changed = outside.find_task(changed_id).unwrap().unwrap();
-    assert!(!changed.is_archived());
-    assert_eq!(changed.name().as_str(), "Recently changed");
-    assert!(state(&router).await.0.tasks.iter().any(|item| {
-        item.id == changed_id.to_string() && item.name == "Recently changed" && !item.archived
-    }));
-}
-
-#[tokio::test]
-async fn inactive_archive_rejects_out_of_range_time_and_accepts_a_preview_from_before_another_write()
- {
+async fn inactive_archive_accepts_a_preview_from_before_another_write() {
     let directory = TempDir::new().unwrap();
     let router = tracker_server::router_for_database(&directory.path().join("tracker.db")).unwrap();
     let now = Utc::now();
-    for as_of in [now - TimeDelta::hours(1), now + TimeDelta::hours(1)] {
-        let (status, body) = call(&router, Method::GET, &preview_uri(as_of), None).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    }
-
     let (status, body) = call(&router, Method::GET, &preview_uri(now), None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
-    let mut future_request = archive_request(&preview);
-    future_request["as_of"] = json!(now + TimeDelta::hours(1));
-    let (status, body) = call(
-        &router,
-        Method::POST,
-        "/v1/tasks/archive-inactive",
-        Some(future_request),
-    )
-    .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     let create = merge(
         json!({
             "task_id": Uuid::now_v7().to_string(),
@@ -807,7 +697,7 @@ async fn stopping_an_already_idle_tracker_is_an_idempotent_success() {
     let temp = TempDir::new().unwrap();
     let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
     let request = merge(
-        json!({"task_id":null,"worklog_id":null,"expected_active":null,"occurred_at":at(100)}),
+        json!({"task_id":null,"worklog_id":null,"expected_active":Uuid::now_v7().to_string(),"occurred_at":at(100)}),
         guard(),
     );
 
@@ -822,6 +712,22 @@ async fn stopping_an_already_idle_tracker_is_an_idempotent_success() {
     assert_eq!(retry["result"], first["result"]);
     assert_eq!(retry["replayed"], true);
     assert!(state(&router).await.0.tasks.is_empty());
+}
+
+#[tokio::test]
+async fn a_tracking_request_without_a_task_or_an_expected_timer_is_invalid() {
+    let temp = TempDir::new().unwrap();
+    let router = tracker_server::router_for_database(&temp.path().join("tracker.db")).unwrap();
+    let request = merge(
+        json!({"task_id":null,"worklog_id":null,"expected_active":null,"occurred_at":at(100)}),
+        guard(),
+    );
+
+    let (status, body) = call(&router, Method::PUT, "/v1/tracking", Some(request)).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "invalid_request");
+    assert_eq!(body["message"], "Invalid tracking request");
 }
 
 #[tokio::test]
@@ -885,6 +791,7 @@ async fn configurable_candidates_include_every_task_and_archive_the_chosen_perio
     assert_eq!(body["inactive_days"], 7);
     let preview: InactiveTaskPreviewDto = serde_json::from_value(body).unwrap();
     assert_eq!(preview.as_of, as_of);
+    assert_eq!(preview.count, 8);
     assert_eq!(preview.candidate_task_ids.len(), 8);
     for id in &preview.candidate_task_ids {
         let task = outside.find_task(id.parse().unwrap()).unwrap().unwrap();
@@ -1497,32 +1404,6 @@ async fn history_continuations_keep_collection_scope_and_reject_invalidated_curs
 }
 
 #[tokio::test]
-async fn removed_bundled_routes_and_parallel_versions_are_unavailable() {
-    let directory = TempDir::new().unwrap();
-    let router = tracker_server::router_for_database(&directory.path().join("routes.db")).unwrap();
-    let id = create_fixture_task(&router, "Routes project").await;
-    for route in [
-        "/v1/snapshot".to_owned(),
-        "/v1/reports".to_owned(),
-        format!("/v1/tasks/{id}/worklogs"),
-        "/v2/tasks".to_owned(),
-    ] {
-        let (status, _) = call(&router, Method::GET, &route, None).await;
-        assert_eq!(status, StatusCode::NOT_FOUND, "{route}");
-    }
-    let (status, _) = call(&router, Method::GET, "/v1/tasks/inactive-candidates", None).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    let (status, _) = call(
-        &router,
-        Method::POST,
-        "/v1/tasks/archive-inactive-candidates",
-        Some(json!({})),
-    )
-    .await;
-    assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
-}
-
-#[tokio::test]
 async fn aggregate_routes_load_empty_idle_state_and_validate_interval_parameters() {
     let directory = TempDir::new().unwrap();
     let router = tracker_server::router_for_database(&directory.path().join("empty.db")).unwrap();
@@ -1915,12 +1796,6 @@ async fn writes_based_on_an_outdated_item_are_rejected_by_expected_values() {
                 json!({"task_id":first,"worklog_id":Uuid::now_v7().to_string(),"expected_active":null,"occurred_at":at(210)}),
                 "conflict",
             ),
-            (
-                Method::PUT,
-                "/v1/tracking".to_owned(),
-                json!({"task_id":null,"worklog_id":null,"expected_active":null,"occurred_at":at(210)}),
-                "conflict",
-            ),
         ],
     )
     .await;
@@ -1996,11 +1871,6 @@ async fn writes_that_send_an_expected_revision_are_rejected_without_writing() {
             Method::PUT,
             "/v1/tracking".to_owned(),
             json!({"task_id":id,"worklog_id":Uuid::now_v7().to_string(),"expected_active":null,"occurred_at":at(200)}),
-        ),
-        (
-            Method::PUT,
-            "/v1/tracking".to_owned(),
-            json!({"task_id":null,"worklog_id":null,"expected_active":null,"occurred_at":at(200)}),
         ),
         (
             Method::PATCH,

@@ -18,7 +18,6 @@ pub(super) type Shared = Arc<Mutex<Core>>;
 pub(super) struct Core {
     _database_lock: File,
     pub(super) app: TrackerApplication<SqliteRepository>,
-    needs_refresh: bool,
     completed: HashMap<String, (String, MutationDto)>,
     completion_order: VecDeque<String>,
 }
@@ -29,7 +28,6 @@ impl Core {
         Self {
             _database_lock: database_lock,
             app,
-            needs_refresh: false,
             completed: HashMap::new(),
             completion_order: VecDeque::new(),
         }
@@ -65,17 +63,7 @@ impl Core {
                 ))
             };
         }
-        let result = match operation(&mut self.app) {
-            Ok(result) => result,
-            Err(error) => {
-                if error.status.is_server_error() {
-                    // A command may commit before its follow-up read fails.
-                    // Reload the caches so later reads report the stored state.
-                    self.needs_refresh = self.app.refresh_task_list().is_err();
-                }
-                return Err(error);
-            }
-        };
+        let result = operation(&mut self.app)?;
         let response = MutationDto {
             request_id: guard.request_id.clone(),
             replayed: false,
@@ -93,14 +81,7 @@ impl Core {
     }
 }
 pub(super) fn lock(shared: &Shared) -> Result<std::sync::MutexGuard<'_, Core>, ApiError> {
-    let mut core = shared.lock().map_err(|_| ApiError::internal())?;
-    if core.needs_refresh {
-        core.app
-            .refresh_task_list()
-            .map_err(|_| ApiError::internal())?;
-        core.needs_refresh = false;
-    }
-    Ok(core)
+    shared.lock().map_err(|_| ApiError::internal())
 }
 
 #[cfg(test)]
