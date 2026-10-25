@@ -61,15 +61,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
                 self.refresh_after_task_operation()?;
                 Ok(task)
             }
-            Err(error) => {
-                let primary = match error {
-                    RepositoryError::TaskIsActive { id } => {
-                        TrackingError::TaskIsActive { id }.into()
-                    }
-                    error => error.into(),
-                };
-                Err(self.task_failure_with_recovery(primary))
-            }
+            Err(error) => Err(self.task_failure_with_recovery(archive_error(error))),
         }
     }
 
@@ -115,15 +107,7 @@ impl<R: TrackerRepository> TrackerApplication<R> {
                 self.refresh_after_task_operation()?;
                 Ok(task)
             }
-            Err(error) => {
-                let primary = match error {
-                    RepositoryError::TaskIsActive { id } => {
-                        TrackingError::TaskIsActive { id }.into()
-                    }
-                    error => error.into(),
-                };
-                Err(self.task_failure_with_recovery(primary))
-            }
+            Err(error) => Err(self.task_failure_with_recovery(archive_error(error))),
         }
     }
 
@@ -219,5 +203,13 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         self.repository.create_task(task.clone())?;
         self.replace_task(task.clone());
         Ok(task)
+    }
+}
+
+/// Reports an active task as a tracking rule violation, as the preflight does.
+fn archive_error(error: RepositoryError) -> ApplicationError {
+    match error {
+        RepositoryError::TaskIsActive { id } => TrackingError::TaskIsActive { id }.into(),
+        error => error.into(),
     }
 }
