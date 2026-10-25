@@ -160,7 +160,7 @@ pub unsafe extern "C" fn tt_bridge_unarchive_task_at(
     unsafe {
         with_bridge(bridge, |bridge| {
             let task_id = read_text(task_id, "Invalid task ID")?;
-            let occurred_at = read_text(occurred_at, "Invalid archive timestamp")?;
+            let occurred_at = read_text(occurred_at, "Invalid restore timestamp")?;
             let task = bridge.application.unarchive_task(task_id, occurred_at)?;
             Ok(task_result(&bridge.application, &task))
         })
