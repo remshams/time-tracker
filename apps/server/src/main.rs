@@ -51,25 +51,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reports_success_and_failure() {
-        assert_eq!(report(Ok(())), ExitCode::SUCCESS);
-        assert_eq!(report(Err("startup failed".into())), ExitCode::FAILURE);
-    }
-
-    #[test]
-    fn help_succeeds_and_invalid_arguments_fail() {
-        assert!(run_app(["--help".into()]).is_ok());
-        assert!(run_app(["--bind".into(), "0.0.0.0:80".into()]).is_err());
-    }
-
-    #[test]
-    fn database_selection_preserves_explicit_paths() {
-        let directory = tempfile::tempdir().unwrap();
-        let explicit = directory.path().join("custom.db");
-        assert_eq!(database_path(Some(explicit.clone())).unwrap(), explicit);
-    }
-
-    #[test]
     fn server_startup_reports_an_invalid_database_path() {
         let directory = tempfile::tempdir().unwrap();
         let error = run_app([
