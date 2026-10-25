@@ -866,7 +866,8 @@ fn unarchiving_restores_a_task_keeps_its_worklogs_and_persists() {
 fn the_application_orders_the_sqlite_task_list_per_adr_0002() {
     let repository = repo();
     // gamma worked most recently, then beta; alpha and delta never worked.
-    // delta is archived, so the active view hides it.
+    // Archiving delta at 900 makes it the most recently updated task. The
+    // orderings keep archived tasks.
     let alpha = stamped_task(1, "alpha", 100, 100);
     let beta = stamped_task(2, "beta", 200, 200);
     let gamma = stamped_task(3, "gamma", 300, 300);
