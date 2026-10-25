@@ -1,26 +1,7 @@
 import SwiftUI
 
 @MainActor
-struct TaskRenameDialog: View {
-    let rename: TaskRenameStore
-    let isPresentationOwner: Bool
-
-    var body: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .sheet(
-                isPresented: Binding(
-                    get: { isPresentationOwner && rename.state.isPresented },
-                    set: { if isPresentationOwner && !$0 { rename.cancel() } }
-                )
-            ) {
-                TaskRenameSheet(rename: rename)
-            }
-    }
-}
-
-@MainActor
-private struct TaskRenameSheet: View {
+struct TaskRenameSheet: View {
     let rename: TaskRenameStore
 
     var body: some View {

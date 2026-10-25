@@ -1,7 +1,7 @@
 use std::ffi::c_char;
 
 use serde_json::{Value, json};
-use tracker_domain::TrackingState;
+use tracker_domain::{ActiveWorklog, TrackingState};
 
 use crate::Bridge;
 use crate::backend::{Backend, BridgeError};
@@ -14,14 +14,18 @@ pub(super) fn tracking_json(application: &Backend) -> Option<ResourceJson<Option
         .map(|tracking| ResourceJson {
             value: match tracking {
                 TrackingState::Idle => None,
-                TrackingState::Running { worklog } => Some(WorklogJson {
-                    id: worklog.id().to_string(),
-                    task_id: worklog.task_id().to_string(),
-                    start: timestamp(worklog.start()),
-                    end: None,
-                }),
+                TrackingState::Running { worklog } => Some(active_worklog_json(&worklog)),
             },
         })
+}
+
+fn active_worklog_json(worklog: &ActiveWorklog) -> WorklogJson {
+    WorklogJson {
+        id: worklog.id().to_string(),
+        task_id: worklog.task_id().to_string(),
+        start: timestamp(worklog.start()),
+        end: None,
+    }
 }
 
 fn start_result(
@@ -31,15 +35,7 @@ fn start_result(
     use tracker_application::SetActiveTaskOutcome;
     let (active, stopped) = match outcome {
         SetActiveTaskOutcome::Started { worklog } => (worklog_json(&worklog), None),
-        SetActiveTaskOutcome::AlreadyActive { worklog } => (
-            WorklogJson {
-                id: worklog.id().to_string(),
-                task_id: worklog.task_id().to_string(),
-                start: timestamp(worklog.start()),
-                end: None,
-            },
-            None,
-        ),
+        SetActiveTaskOutcome::AlreadyActive { worklog } => (active_worklog_json(&worklog), None),
         SetActiveTaskOutcome::Switched { stopped, started } => {
             (worklog_json(&started), Some(worklog_json(&stopped)))
         }

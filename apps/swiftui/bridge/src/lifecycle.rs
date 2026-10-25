@@ -86,24 +86,14 @@ pub unsafe extern "C" fn tt_bridge_open_remote(
     endpoint: *const c_char,
     error: *mut *mut c_char,
 ) -> *mut Bridge {
-    if error.is_null() {
-        return ptr::null_mut();
-    }
-    // SAFETY: The caller supplies writable storage under this contract.
-    unsafe { *error = ptr::null_mut() };
-    // SAFETY: The caller supplies a valid C string or null.
-    let result = unsafe { read_identifier::<String>(endpoint, "Invalid server URL") }
-        .and_then(|endpoint| Backend::remote(&endpoint));
-    match result {
-        Ok(application) => Box::into_raw(Box::new(Bridge::new(application))),
-        Err(message) => {
-            let message = CString::new(message)
-                .unwrap_or_else(|_| c"Could not open remote client".to_owned());
-            // SAFETY: The caller supplies writable storage under this contract.
-            unsafe { *error = message.into_raw() };
-            ptr::null_mut()
-        }
-    }
+    let opener = || {
+        // SAFETY: The caller supplies a valid C string or null.
+        unsafe { read_identifier::<String>(endpoint, "Invalid server URL") }
+            .and_then(|endpoint| Backend::remote(&endpoint))
+            .map(Bridge::new)
+    };
+    // SAFETY: The caller supplies writable error storage under this function's contract.
+    unsafe { open_bridge(error, opener, c"Could not open remote client") }
 }
 
 /// Releases a bridge returned by either opener.

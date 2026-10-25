@@ -200,9 +200,8 @@ final class TrackerStatusItemController: NSObject {
             help: content.totalsExplanation, liveValue: true)
         menu.addItem(.separator())
         for entry in content.todayTasks {
-            let archived = entry.task.archived ? "  Archived" : ""
             let item = addTask(
-                entry, title: "\(entry.task.name)  \(entry.durationText)\(archived)",
+                entry, title: MenuTaskRow.title(entry, duration: entry.durationText),
                 help: content.totalsExplanation, content: content,
                 appearance: appearance, to: menu)
             let row = MenuTaskRow(item: item, entry: entry, isStale: content.isStale)
@@ -291,15 +290,7 @@ final class TrackerStatusItemController: NSObject {
         }
         item.toolTip =
             trackingAction != nil ? help : "Open the submenu to copy this task's name or time. Tracking is unavailable."
-        let status: String
-        if content.isStale {
-            status =
-                entry.isRunning
-                ? "last confirmed tracking, current status unavailable"
-                : "current tracking status unavailable"
-        } else {
-            status = entry.isRunning ? "tracking" : "not tracking"
-        }
+        let status = MenuTaskRow.accessibilityStatus(isRunning: entry.isRunning, isStale: content.isStale)
         item.setAccessibilityLabel("\(title), \(status)")
         return item
     }
