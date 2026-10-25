@@ -3,6 +3,7 @@ use ratatui::layout::{Constraint, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
+use tracker_domain::Worklog;
 
 use crate::app::AppView;
 use crate::components::{dialogs, text};
@@ -14,58 +15,14 @@ use crate::screens::worklog_history::{
 use crate::styles;
 use crate::support::timestamps::TimestampInput;
 
-/// The immutable text needed to render one history row.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Row {
-    start: String,
-    end: Option<String>,
-    duration: String,
-}
-
-/// The immutable text needed by the deletion dialog.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Deletion {
-    start: String,
-    end: String,
-}
-
 /// Renders history rows and the modal owned by its current mode.
 pub(crate) fn render(frame: &mut Frame, area: Rect, app: AppView<'_>, state: &WorklogHistoryState) {
-    let rows: Vec<Row> = state
-        .history()
-        .worklogs()
-        .iter()
-        .map(|worklog| Row {
-            start: app.local_time(worklog.start()),
-            end: worklog.end().map(|end| app.local_time(end)),
-            duration: text::format_elapsed(app.history_row_duration(worklog)),
-        })
-        .collect();
-    let deletion = match state.mode() {
-        WorklogHistoryMode::ConfirmDeletion { worklog } => Some(Deletion {
-            start: app.local_time(worklog.start()),
-            end: worklog
-                .end()
-                .map(|end| app.local_time(end))
-                .unwrap_or_else(|| "Running".to_owned()),
-        }),
-        _ => None,
-    };
-
-    render_body(
-        frame,
-        area,
-        state,
-        app.history_task_name().unwrap_or("unknown task"),
-        &rows,
-    );
+    render_body(frame, area, app, state);
     match state.mode() {
         WorklogHistoryMode::Correction(draft) => render_correction_modal(frame, area, draft),
         WorklogHistoryMode::Move(draft) => render_move_modal(frame, area, app, draft),
-        WorklogHistoryMode::ConfirmDeletion { .. } => {
-            if let Some(deletion) = deletion.as_ref() {
-                render_delete_modal(frame, area, deletion);
-            }
+        WorklogHistoryMode::ConfirmDeletion { worklog } => {
+            render_delete_modal(frame, area, app, worklog);
         }
         WorklogHistoryMode::Normal => {}
     }
@@ -152,19 +109,13 @@ fn move_search_line(draft: &MoveDraft, inner_width: usize) -> Line<'_> {
     }
 }
 
-fn render_body(
-    frame: &mut Frame,
-    area: Rect,
-    state: &WorklogHistoryState,
-    task_name: &str,
-    rows: &[Row],
-) {
+fn render_body(frame: &mut Frame, area: Rect, app: AppView<'_>, state: &WorklogHistoryState) {
     let history = state.history();
     let block = Block::bordered()
         .title(history_title(
             area.width,
             state.task_list().view(),
-            task_name,
+            app.history_task_name().unwrap_or("unknown task"),
             state.has_report_source(),
         ))
         .border_style(if matches!(state.mode(), WorklogHistoryMode::Normal) {
@@ -189,16 +140,22 @@ fn render_body(
         return;
     }
 
-    let items: Vec<ListItem> = rows
+    let items: Vec<ListItem> = history
+        .worklogs()
         .iter()
-        .map(|row| {
-            let end = match &row.end {
-                Some(end) => Span::raw(end),
+        .map(|worklog| {
+            let end = match worklog.end() {
+                Some(end) => Span::raw(app.local_time(end)),
                 None => Span::styled("Running", styles::active_marker()),
             };
+            let duration = text::format_elapsed(app.history_row_duration(worklog));
             ListItem::new(vec![
-                Line::from(vec![Span::raw(row.start.as_str()), Span::raw(" → "), end]),
-                Line::from(vec![Span::raw("  "), Span::raw(row.duration.as_str())]),
+                Line::from(vec![
+                    Span::raw(app.local_time(worklog.start())),
+                    Span::raw(" → "),
+                    end,
+                ]),
+                Line::from(vec![Span::raw("  "), Span::raw(duration)]),
             ])
         })
         .collect();
@@ -281,10 +238,14 @@ fn correction_field_line<'a>(
     ])
 }
 
-fn render_delete_modal(frame: &mut Frame, area: Rect, deletion: &Deletion) {
+fn render_delete_modal(frame: &mut Frame, area: Rect, app: AppView<'_>, worklog: &Worklog) {
+    let end = worklog
+        .end()
+        .map(|end| app.local_time(end))
+        .unwrap_or_else(|| "Running".to_owned());
     let lines = vec![
         Line::from("Delete this worklog permanently?"),
-        Line::from(format!("{} → {}", deletion.start, deletion.end)),
+        Line::from(format!("{} → {end}", app.local_time(worklog.start()))),
         Line::from("This cannot be undone."),
     ];
     dialogs::render_lines(frame, area, 58, 6, "Delete worklog", lines);

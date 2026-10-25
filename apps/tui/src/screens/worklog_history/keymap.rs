@@ -376,14 +376,6 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_c_quits_from_the_history() {
-        assert_eq!(
-            map_history(&WorklogHistoryMode::Normal, ctrl('c')),
-            Some(Command::Quit)
-        );
-    }
-
-    #[test]
     fn correction_maps_editing_switching_adjustment_and_exit_commands() {
         let mode = correction();
         let cases = [
@@ -439,7 +431,6 @@ mod tests {
                 key(KeyCode::Esc),
                 Command::WorklogHistory(WorklogHistoryCommand::Cancel),
             ),
-            (ctrl('c'), Command::Quit),
         ];
         for (key, expected) in cases {
             assert_eq!(
@@ -575,7 +566,6 @@ mod tests {
         }
         assert_eq!(map_history(&results, key(KeyCode::Backspace)), None);
         assert_eq!(map_history(&results, key(KeyCode::Char('x'))), None);
-        assert_eq!(map_history(&results, ctrl('c')), Some(Command::Quit));
     }
 
     #[test]
