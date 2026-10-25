@@ -266,7 +266,6 @@ impl AppState {
                                             Some(worklog.id()),
                                             page,
                                         );
-                                        state.reload_tasks();
                                         state.shell_mut().info("Corrected worklog");
                                     }
                                     Err(_) => {

@@ -120,9 +120,7 @@ impl<S: TrackerApplicationService> App<S> {
                 return;
             };
             let completed = execute_local(&mut self.application, effect.request.clone());
-            if completed.request.needs_task_list()
-                && completed.request != ApplicationRequest::RefreshTaskList
-            {
+            if completed.request.needs_follow_up_refresh() {
                 let _ = self.application.refresh_task_list();
             }
             self.state.publish_request_resources(
@@ -337,16 +335,6 @@ impl AppState {
             .retain(|effect| effect.request.is_write());
     }
 
-    pub(crate) fn discard_queued_inactive_preview(&mut self, as_of: chrono::DateTime<chrono::Utc>) {
-        self.pending_effects.retain(|effect| {
-            !matches!(
-                effect.request,
-                ApplicationRequest::PreviewInactiveTasks { as_of: queued_as_of }
-                    if queued_as_of == as_of
-            )
-        });
-    }
-
     #[cfg(test)]
     pub(crate) fn request_in_flight(&self) -> bool {
         self.active_request.is_some()
@@ -495,23 +483,15 @@ impl AppState {
         self.reload_tasks();
     }
 
-    pub(crate) fn sync_task_list(
-        &mut self,
-        items: Vec<TaskListItem>,
-        tracking: TrackingState,
-        fresh_active: bool,
-    ) {
+    pub(crate) fn sync_task_list(&mut self, items: Vec<TaskListItem>, tracking: TrackingState) {
         self.replace_items(items);
-        self.tracking.sync(tracking, fresh_active);
+        self.tracking.sync(tracking, false);
     }
 }
 
 #[cfg(test)]
 mod effect_tests {
-    use std::{
-        cell::{Cell, RefCell},
-        rc::Rc,
-    };
+    use std::{cell::RefCell, rc::Rc};
 
     use chrono::{DateTime, TimeDelta, Utc};
     use tracker_application::{
@@ -525,7 +505,6 @@ mod effect_tests {
         ApplicationOutcome, ApplicationRequest, CompletedRequest, execute_local,
     };
     use crate::command::Command;
-    use crate::screens::task_list::{TaskListCommand, TaskListMode};
 
     use super::{AppState, MAX_PENDING_EFFECTS};
 
@@ -587,63 +566,6 @@ mod effect_tests {
             panic!("expected report request");
         };
         assert_eq!(*latest, now + chrono::Duration::seconds(2));
-    }
-
-    #[test]
-    fn canceling_a_queued_inactive_preview_unblocks_later_reads() {
-        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
-        let active_request = ApplicationRequest::AllWorklogs { after: None };
-        assert!(state.enqueue(active_request.clone(), |_, _| {}));
-        let active_effect = state.take_effect().expect("active read");
-
-        state.handle_task_list_command(TaskListCommand::OpenInactiveArchivePreview);
-        let TaskListMode::PreviewingInactiveTasks { as_of } = *state.shell().task_list().mode()
-        else {
-            panic!("preview request should show its loading mode");
-        };
-        assert!(matches!(
-            state.pending_effects.front().map(|effect| &effect.request),
-            Some(ApplicationRequest::PreviewInactiveTasks { as_of: queued_as_of })
-                if *queued_as_of == as_of
-        ));
-
-        state.handle_task_list_command(TaskListCommand::Cancel);
-        assert_eq!(state.shell().task_list().mode(), &TaskListMode::Normal);
-        assert!(state.pending_effects.is_empty());
-
-        let completed_follow_up = Rc::new(Cell::new(false));
-        let callback_flag = Rc::clone(&completed_follow_up);
-        let later_read = ApplicationRequest::AllWorklogs { after: None };
-        assert!(state.enqueue(later_read.clone(), move |_, _| {
-            callback_flag.set(true);
-        }));
-        assert!(state.take_effect().is_none());
-
-        state.complete_effect_with_resources(
-            active_effect,
-            CompletedRequest {
-                request: active_request,
-                outcome: ApplicationOutcome::GlobalWorklogPage(Err(
-                    ApplicationError::InvalidReportRange,
-                )),
-            },
-            Vec::new(),
-            TrackingState::Idle,
-        );
-        let follow_up_effect = state.take_effect().expect("later read");
-        assert_eq!(follow_up_effect.request, later_read);
-        state.complete_effect_with_resources(
-            follow_up_effect,
-            CompletedRequest {
-                request: later_read,
-                outcome: ApplicationOutcome::GlobalWorklogPage(Err(
-                    ApplicationError::InvalidReportRange,
-                )),
-            },
-            Vec::new(),
-            TrackingState::Idle,
-        );
-        assert!(completed_follow_up.get());
     }
 
     #[test]

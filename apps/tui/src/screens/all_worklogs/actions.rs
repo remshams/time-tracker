@@ -10,9 +10,6 @@ use super::{AllWorklogsCommand as C, AllWorklogsFocus, AllWorklogsState};
 
 impl AppState {
     pub(crate) fn open_all_worklogs(&mut self) {
-        if !matches!(self.shell().screen(), Screen::TaskList | Screen::Reports) {
-            return;
-        }
         let source_screen = self.shell().screen();
         let screen_generation = self.shell().screen_generation();
         let task_view_generation =
@@ -131,9 +128,7 @@ impl AppState {
             }),
             C::ConfirmMove => self.confirm_global_move(),
             C::CancelMove => {
-                let state = self.global_mut();
-                state.move_draft_generation = state.move_draft_generation.wrapping_add(1);
-                state.move_draft = None;
+                self.global_mut().move_draft = None;
                 self.shell_mut().info("Move cancelled");
             }
             _ => unreachable!("command is handled by an earlier dispatch group"),
@@ -297,9 +292,7 @@ impl AppState {
             return;
         };
         let tasks = self.catalog().move_candidate_tasks();
-        let state = self.global_mut();
-        state.move_draft_generation = state.move_draft_generation.wrapping_add(1);
-        state.move_draft = Some(MoveDraft::new(worklog, tasks));
+        self.global_mut().move_draft = Some(MoveDraft::new(worklog, tasks));
         self.shell_mut().info("Choose a destination task");
     }
 
@@ -327,7 +320,6 @@ impl AppState {
             return;
         };
         let session = self.global_mut().session_id();
-        let draft_generation = self.global_mut().move_draft_generation;
         self.enqueue(
             ApplicationRequest::MoveWorklog {
                 id: source.id(),
@@ -343,7 +335,11 @@ impl AppState {
                 if !current {
                     return;
                 }
-                let same_draft = app.global_mut().move_draft_generation == draft_generation;
+                let same_draft = app
+                    .shell()
+                    .all_worklogs()
+                    .and_then(|state| state.move_draft.as_ref())
+                    .is_some_and(|draft| draft.worklog().id() == source.id());
                 match result {
                     Ok(moved) => {
                         if same_draft {
@@ -500,48 +496,48 @@ mod tests {
     }
 
     #[test]
-    fn completed_move_keeps_a_newer_move_dialog_open() {
+    fn completed_move_keeps_a_move_dialog_for_another_worklog_open() {
         let source = task(1, "source");
         let destination = task(2, "destination");
         let destination_id = destination.id();
-        let items = vec![source.clone(), destination.clone()]
-            .into_iter()
-            .map(|task| TaskListItem {
-                task,
-                latest_work_start: None,
-            })
-            .collect();
-        let mut state = AppState::load_task_list(items, TrackingState::Idle);
-        let entry = worklog(source.id(), 1);
-        state
-            .shell_mut()
-            .open_all_worklogs(AllWorklogsState::new(page(vec![entry.clone()])));
-        state.open_global_move();
-        state.confirm_global_move();
-        let effect = state.take_effect().expect("move request");
-        state.handle_all_worklogs_command(C::CancelMove);
-        state.open_global_move();
-        let newer_generation = state.shell().all_worklogs().unwrap().move_draft_generation;
-        let request = effect.request.clone();
-        state.complete_effect_with_resources(
-            effect,
-            CompletedRequest {
-                request,
-                outcome: ApplicationOutcome::Worklog(Ok(entry.moved_to(destination_id).unwrap())),
-            },
-            vec![source, destination]
+        let items = || {
+            vec![source.clone(), destination.clone()]
                 .into_iter()
                 .map(|task| TaskListItem {
                     task,
                     latest_work_start: None,
                 })
-                .collect(),
+                .collect::<Vec<_>>()
+        };
+        let mut state = AppState::load_task_list(items(), TrackingState::Idle);
+        let moved = worklog(source.id(), 1);
+        let other = worklog(source.id(), 2);
+        state
+            .shell_mut()
+            .open_all_worklogs(AllWorklogsState::new(page(vec![
+                moved.clone(),
+                other.clone(),
+            ])));
+        state.open_global_move();
+        state.confirm_global_move();
+        let effect = state.take_effect().expect("move request");
+        state.handle_all_worklogs_command(C::CancelMove);
+        state.handle_all_worklogs_command(C::MoveDown);
+        state.open_global_move();
+        let request = effect.request.clone();
+        state.complete_effect_with_resources(
+            effect,
+            CompletedRequest {
+                request,
+                outcome: ApplicationOutcome::Worklog(Ok(moved.moved_to(destination_id).unwrap())),
+            },
+            items(),
             TrackingState::Idle,
         );
         let state = state.shell().all_worklogs().unwrap();
-        assert_eq!(state.move_draft_generation, newer_generation);
-        assert!(state.move_draft.is_some());
-        assert_eq!(state.selected_worklog().unwrap().task_id(), destination_id);
+        let draft = state.move_draft.as_ref().expect("newer move dialog");
+        assert_eq!(draft.worklog().id(), other.id());
+        assert_eq!(state.worklogs()[0].task_id(), destination_id);
     }
 
     #[test]

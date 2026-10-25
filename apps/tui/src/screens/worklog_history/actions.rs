@@ -147,12 +147,10 @@ impl AppState {
     }
 
     pub(crate) fn open_history(&mut self) {
-        if self.shell().screen() != Screen::TaskList
-            || !matches!(
-                self.shell().task_list().mode(),
-                crate::screens::task_list::TaskListMode::Normal
-            )
-        {
+        if !matches!(
+            self.shell().task_list().mode(),
+            crate::screens::task_list::TaskListMode::Normal
+        ) {
             return;
         }
         let list = self.shell().task_list();

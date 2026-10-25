@@ -20,7 +20,6 @@ pub(crate) struct AllWorklogsState {
     pub(crate) move_draft: Option<MoveDraft>,
     pub(crate) g_prefix: bool,
     pub(crate) available: bool,
-    pub(crate) move_draft_generation: u64,
 }
 
 impl AllWorklogsState {
@@ -35,7 +34,6 @@ impl AllWorklogsState {
             move_draft: None,
             g_prefix: false,
             available: true,
-            move_draft_generation: 0,
         }
     }
 
@@ -97,7 +95,7 @@ impl AllWorklogsState {
         self.replace_rows(page.worklogs, page.next_cursor, preferred);
     }
 
-    pub(crate) fn replace_rows(
+    fn replace_rows(
         &mut self,
         worklogs: Vec<Worklog>,
         next_cursor: Option<GlobalWorklogCursor>,
