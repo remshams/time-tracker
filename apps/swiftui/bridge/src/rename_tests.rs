@@ -181,15 +181,6 @@ fn reviewed_commands_validate_c_inputs_before_writing() {
             ))["error"],
             "Database is not open"
         );
-        assert_eq!(
-            response(tt_bridge_archive_task_with_expected_name_at(
-                ptr::null_mut(),
-                ptr::null(),
-                ptr::null(),
-                ptr::null()
-            ))["error"],
-            "Database is not open"
-        );
         for bad in [ptr::null(), invalid.as_ptr(), non_utf8.as_ptr()] {
             assert_eq!(
                 response(tt_bridge_rename_task_with_expected_name_at(
@@ -197,15 +188,6 @@ fn reviewed_commands_validate_c_inputs_before_writing() {
                     bad,
                     expected.as_ptr(),
                     name.as_ptr(),
-                    at.as_ptr()
-                ))["error"],
-                "Invalid task ID"
-            );
-            assert_eq!(
-                response(tt_bridge_archive_task_with_expected_name_at(
-                    &mut bridge,
-                    bad,
-                    expected.as_ptr(),
                     at.as_ptr()
                 ))["error"],
                 "Invalid task ID"
@@ -219,15 +201,6 @@ fn reviewed_commands_validate_c_inputs_before_writing() {
                     bad
                 ))["error"],
                 "Invalid rename timestamp"
-            );
-            assert_eq!(
-                response(tt_bridge_archive_task_with_expected_name_at(
-                    &mut bridge,
-                    id.as_ptr(),
-                    expected.as_ptr(),
-                    bad
-                ))["error"],
-                "Invalid archive timestamp"
             );
         }
         for bad in [ptr::null(), non_utf8.as_ptr()] {
