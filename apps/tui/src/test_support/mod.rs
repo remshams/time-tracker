@@ -7,9 +7,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 pub(crate) use std::time::Duration;
 
-pub(crate) use chrono::{
-    DateTime, FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime, TimeDelta, TimeZone, Utc,
-};
+pub(crate) use chrono::{DateTime, FixedOffset, TimeDelta, TimeZone, Utc};
 pub(crate) use tracker_application::{
     ActiveTrackingRead, ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome,
     GlobalWorklogCursor, GlobalWorklogPage, ReportTotals, RepositoryError, SetActiveTaskOutcome,
@@ -1010,116 +1008,6 @@ pub(crate) fn correction_app_with_spy(
         WorklogHistoryCommand::OpenCorrection,
     ));
     (app, spy)
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct CorrectionTestZone;
-
-impl CorrectionTestZone {
-    fn offset(seconds: i64) -> FixedOffset {
-        let offset = if seconds < 3_600 {
-            3_600
-        } else if seconds < 18_000 {
-            7_200
-        } else if seconds < 100_000 {
-            3_600
-        } else {
-            10_800
-        };
-        FixedOffset::east_opt(offset).unwrap()
-    }
-}
-
-fn early_local_offset(seconds: i64) -> MappedLocalTime<FixedOffset> {
-    if seconds < 7_200 {
-        MappedLocalTime::Single(FixedOffset::east_opt(3_600).unwrap())
-    } else if seconds < 10_800 {
-        MappedLocalTime::None
-    } else {
-        MappedLocalTime::Single(FixedOffset::east_opt(7_200).unwrap())
-    }
-}
-
-fn late_local_offset(seconds: i64) -> MappedLocalTime<FixedOffset> {
-    if seconds < 25_200 {
-        MappedLocalTime::Ambiguous(
-            FixedOffset::east_opt(7_200).unwrap(),
-            FixedOffset::east_opt(3_600).unwrap(),
-        )
-    } else if seconds < 103_600 {
-        MappedLocalTime::Single(FixedOffset::east_opt(3_600).unwrap())
-    } else if seconds < 110_800 {
-        MappedLocalTime::None
-    } else {
-        MappedLocalTime::Single(FixedOffset::east_opt(10_800).unwrap())
-    }
-}
-
-impl TimeZone for CorrectionTestZone {
-    type Offset = FixedOffset;
-
-    fn from_offset(_offset: &Self::Offset) -> Self {
-        Self
-    }
-
-    fn offset_from_local_date(&self, local: &NaiveDate) -> MappedLocalTime<Self::Offset> {
-        self.offset_from_local_datetime(&local.and_hms_opt(0, 0, 0).unwrap())
-    }
-
-    fn offset_from_local_datetime(&self, local: &NaiveDateTime) -> MappedLocalTime<Self::Offset> {
-        let seconds = local.and_utc().timestamp();
-        if seconds < 21_600 {
-            early_local_offset(seconds)
-        } else {
-            late_local_offset(seconds)
-        }
-    }
-
-    fn offset_from_utc_date(&self, utc: &NaiveDate) -> Self::Offset {
-        Self::offset(utc.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp())
-    }
-
-    fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> Self::Offset {
-        Self::offset(utc.and_utc().timestamp())
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct SubminuteTransitionZone;
-
-impl TimeZone for SubminuteTransitionZone {
-    type Offset = FixedOffset;
-
-    fn from_offset(_offset: &Self::Offset) -> Self {
-        Self
-    }
-
-    fn offset_from_local_date(&self, local: &NaiveDate) -> MappedLocalTime<Self::Offset> {
-        self.offset_from_local_datetime(&local.and_hms_opt(0, 0, 0).unwrap())
-    }
-
-    fn offset_from_local_datetime(&self, local: &NaiveDateTime) -> MappedLocalTime<Self::Offset> {
-        let seconds = local.and_utc().timestamp();
-        if seconds < 330 {
-            MappedLocalTime::Single(FixedOffset::east_opt(30).unwrap())
-        } else if seconds < 360 {
-            MappedLocalTime::None
-        } else {
-            MappedLocalTime::Single(FixedOffset::east_opt(60).unwrap())
-        }
-    }
-
-    fn offset_from_utc_date(&self, utc: &NaiveDate) -> Self::Offset {
-        self.offset_from_utc_datetime(&utc.and_hms_opt(0, 0, 0).unwrap())
-    }
-
-    fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> Self::Offset {
-        if utc.and_utc().timestamp() < 300 {
-            FixedOffset::east_opt(30).unwrap()
-        } else {
-            FixedOffset::east_opt(60).unwrap()
-        }
-    }
 }
 
 pub(crate) fn stamped_task(

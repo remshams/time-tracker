@@ -103,6 +103,10 @@ fn switching_uses_one_monotonic_timestamp_for_both_worklogs() {
         .worklogs
         .pop()
         .unwrap();
+    assert_eq!(
+        alpha_worklog.end(),
+        Some(alpha_worklog.start() + TimeDelta::seconds(125))
+    );
     assert_eq!(alpha_worklog.end(), Some(beta_worklog.start()));
 }
 #[test]
