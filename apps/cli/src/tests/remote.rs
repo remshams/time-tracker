@@ -218,8 +218,13 @@ fn remote_commands_use_the_server_and_preserve_guards_and_committed_values() {
             .unwrap()["archived"],
         false
     );
+    let dormant_at = (now - chrono::Duration::days(20)).to_rfc3339();
+    let dormant = server
+        .command(&dormant_at, &["tasks", "create", "Dormant"])
+        .unwrap();
     let preview = server.command(&t3, &["tasks", "preview-inactive"]).unwrap();
-    assert_eq!(preview["count"], 0);
+    assert_eq!(preview["count"], 1);
+    assert_eq!(preview["tasks"], serde_json::json!([dormant]));
     assert_eq!(
         server
             .command(
@@ -233,7 +238,7 @@ fn remote_commands_use_the_server_and_preserve_guards_and_committed_values() {
                 ]
             )
             .unwrap()["archived_count"],
-        0
+        1
     );
 }
 

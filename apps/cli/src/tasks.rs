@@ -219,7 +219,7 @@ fn list(
 
 /// Captures the eligible candidate set and backend identity for later confirmation.
 async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, CliError> {
-    match backend
+    let (count, tasks, token) = match backend
         .preview_inactive_tasks(
             as_of,
             tracker_domain::InactivityPeriod::new(14).expect("default inactivity period is valid"),
@@ -232,23 +232,20 @@ async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, C
                 as_of,
                 task_ids: tasks.iter().map(|task| task.id().to_string()).collect(),
             };
-            Ok(
-                json!({"count": tasks.len(), "tasks": tasks.iter().map(TaskDto::from).collect::<Vec<_>>(), "preview": token}),
-            )
+            (tasks.len(), tasks, token)
         }
         tracker_client::InactivePreview::Remote { preview, tasks } => {
+            let count = preview.count();
             let token = PreviewToken::Remote {
                 backend: backend.identity.clone(),
-                preview: preview.clone(),
+                preview,
             };
-            let sample_names: Vec<_> = tasks
-                .iter()
-                .take(5)
-                .map(|task| task.name().as_str())
-                .collect();
-            Ok(json!({"count": preview.count(), "sample_names": sample_names, "preview": token}))
+            (count, tasks, token)
         }
-    }
+    };
+    Ok(
+        json!({"count": count, "tasks": tasks.iter().map(TaskDto::from).collect::<Vec<_>>(), "preview": token}),
+    )
 }
 
 /// Archives the candidates of a preview that `validate` already matched to this backend.
