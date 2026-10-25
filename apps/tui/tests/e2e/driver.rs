@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use termlens::{ExitStatus, Key, Screen, Signal, Terminal};
+use termlens::{ExitStatus, Key, Screen, Signal, Terminal, TerminalBuilder};
 
 use crate::page::TimeTrackerPage;
 
@@ -54,29 +54,13 @@ impl TuiDriver {
 
     /// Spawns `tt` with the remote server selected and an isolated home.
     pub(crate) fn spawn_remote(home: &Path, endpoint: &str) -> Self {
-        let mut builder = Terminal::builder()
-            .size(COLS, ROWS)
-            .timeout(STARTUP_LIMIT)
-            .env_clear()
-            .env("HOME", home)
-            .env("SHELL", "/bin/sh")
-            .env("TZ", "UTC")
-            .arg("--server")
-            .arg(endpoint);
-        if let Ok(profile) = std::env::var("LLVM_PROFILE_FILE") {
-            builder = builder.env("LLVM_PROFILE_FILE", profile);
-        }
-        let terminal = builder
-            .spawn(env!("CARGO_BIN_EXE_tt"))
-            .expect("spawning remote tt in a pty must succeed");
-        Self { terminal }
+        Self::launch(
+            Self::builder(home, "UTC").arg("--server").arg(endpoint),
+            "remote tt",
+        )
     }
 
     /// Spawns `tt` with a cleared environment and the given IANA timezone.
-    ///
-    /// The coverage profile file passes through when the suite runs under
-    /// cargo-llvm-cov, so the child's execution counts toward the measured
-    /// coverage.
     pub(crate) fn spawn_in_timezone(home: &Path, timezone: &str) -> Self {
         Self::spawn_with_report_clock(home, timezone, None, None, None)
     }
@@ -90,13 +74,7 @@ impl TuiDriver {
         fake_bin: Option<&Path>,
         clipboard_file: Option<&Path>,
     ) -> Self {
-        let mut builder = Terminal::builder()
-            .size(COLS, ROWS)
-            .timeout(STARTUP_LIMIT)
-            .env_clear()
-            .env("HOME", home)
-            .env("SHELL", "/bin/sh")
-            .env("TZ", timezone);
+        let mut builder = Self::builder(home, timezone);
         if let Some(now) = now {
             builder = builder.env("TT_TEST_NOW", now);
         }
@@ -107,12 +85,33 @@ impl TuiDriver {
             builder = builder.env("TT_E2E_CLIPBOARD_FILE", path);
             builder = builder.env("TT_E2E_SHORT_COPY_NOTICE", "1");
         }
-        if let Ok(profile) = std::env::var("LLVM_PROFILE_FILE") {
-            builder = builder.env("LLVM_PROFILE_FILE", profile);
-        }
+        Self::launch(builder, "tt")
+    }
+
+    /// The terminal every scenario starts from: the baseline geometry, the
+    /// startup allowance, and a cleared environment with only an isolated
+    /// home, a shell, and the given timezone.
+    ///
+    /// The coverage profile file passes through when the suite runs under
+    /// cargo-llvm-cov, so the child's execution counts toward the measured
+    /// coverage.
+    fn builder(home: &Path, timezone: &str) -> TerminalBuilder {
+        Terminal::builder()
+            .size(COLS, ROWS)
+            .timeout(STARTUP_LIMIT)
+            .env_clear()
+            .env("HOME", home)
+            .env("SHELL", "/bin/sh")
+            .env("TZ", timezone)
+            .envs(crate::coverage::profile_env())
+    }
+
+    /// Spawns the `tt` binary in `builder`'s pseudo-terminal. `name` labels
+    /// the spawn failure.
+    fn launch(builder: TerminalBuilder, name: &str) -> Self {
         let terminal = builder
             .spawn(env!("CARGO_BIN_EXE_tt"))
-            .expect("spawning tt in a pty must succeed");
+            .unwrap_or_else(|error| panic!("spawning {name} in a pty must succeed: {error}"));
         Self { terminal }
     }
 
