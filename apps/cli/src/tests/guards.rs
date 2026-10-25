@@ -279,12 +279,9 @@ fn backend_paths_reject_non_utf8_and_resolve_missing_descendants_of_symlinks() {
     use std::os::unix::ffi::OsStringExt;
     let temp = tempfile::tempdir().unwrap();
     let invalid = temp.path().join(std::ffi::OsString::from_vec(vec![0xff]));
-    assert_eq!(
-        crate::backend::identity(Some(&invalid), None)
-            .unwrap_err()
-            .exit_code,
-        2
-    );
+    let error = crate::backend::identity(Some(&invalid), None).unwrap_err();
+    assert_eq!(error.exit_code, 2);
+    assert_eq!(error.message, "database path must be valid UTF-8");
     assert!(!invalid.exists());
     let real = temp.path().join("real");
     std::fs::create_dir(&real).unwrap();

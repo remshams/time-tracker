@@ -25,13 +25,10 @@ pub(crate) fn identity(database: Option<&Path>, server: Option<&str>) -> Result<
         .map(Ok)
         .unwrap_or_else(default_database_path)
         .map_err(CliError::storage)?;
-    if path.to_str().is_none() {
-        return Err(CliError::input("database path must be valid UTF-8"));
-    }
     let path = canonical_database_path(&path).map_err(CliError::storage)?;
     let path = path
         .to_str()
-        .ok_or_else(|| CliError::input("canonical database path must be valid UTF-8"))?;
+        .ok_or_else(|| CliError::input("database path must be valid UTF-8"))?;
     Ok(format!("local:{path}"))
 }
 
