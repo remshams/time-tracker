@@ -55,9 +55,6 @@ fn report_rows_on(
     let start_us = timestamp_to_us(start);
     let end_us = timestamp_to_us(end);
     let now_us = timestamp_to_us(now);
-    if end_us <= start_us {
-        return Ok(Vec::new());
-    }
     let mut statement = conn.prepare(
         "SELECT t.id, t.name, t.archived, t.created_at_us, t.updated_at_us,
                     SUM(MIN(COALESCE(w.end_us, ?3), ?2) - MAX(w.start_us, ?1)) AS duration_us
