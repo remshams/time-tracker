@@ -208,6 +208,24 @@ fn tt_reports_a_startup_failure_and_exits_nonzero() {
 }
 
 #[test]
+fn the_terminal_binary_redirects_removed_serve_commands() {
+    let context = TestContext::new();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_tt"))
+        .args(["serve", "--bind", "127.0.0.1:8765"])
+        .env_clear()
+        .env("HOME", context.home())
+        .envs(crate::coverage::profile_env())
+        .output()
+        .expect("tt must start");
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("serve moved to `tt-server --bind ADDRESS:PORT [--db PATH]`")
+    );
+}
+
+#[test]
 fn an_existing_custom_database_is_shown_without_changes() {
     let context = TestContext::new();
     // Seed through tt-cli before tt starts, and keep the exact

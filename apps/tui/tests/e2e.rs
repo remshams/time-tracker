@@ -7,8 +7,9 @@
 //! lives beside them by concern: process control in `e2e::driver`, test
 //! fixtures in `e2e::context`, database probes through `tt-cli` in
 //! `e2e::database`, the `tt-cli` and `tt-server` builds in
-//! `e2e::binaries`, and the coverage environment every child inherits in
-//! `e2e::coverage`.
+//! `e2e::binaries`, the real server and remote clients in `e2e::remote`,
+//! the response gate between them in `e2e::controlled_proxy`, and the
+//! coverage environment every child inherits in `e2e::coverage`.
 //!
 //! Tests run on Linux and macOS. Every child gets a temporary `HOME`, so
 //! `tt` always operates on a temporary database and never touches the
