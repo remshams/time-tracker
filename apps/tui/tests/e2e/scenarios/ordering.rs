@@ -1,14 +1,10 @@
 //! Task-list ordering scenarios.
 
-use chrono::{DateTime, Utc};
 use termlens::Key;
 
 use crate::context::TestContext;
+use crate::database::fixture_time as at;
 use crate::page::TimeTrackerPage;
-
-fn at(seconds: i64) -> DateTime<Utc> {
-    DateTime::from_timestamp(seconds, 0).expect("the fixture timestamp must be valid")
-}
 
 #[test]
 fn an_existing_database_starts_with_recently_worked_tasks_first() {

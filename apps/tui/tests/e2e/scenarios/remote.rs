@@ -2,18 +2,13 @@
 
 use std::time::Duration;
 
-use chrono::{DateTime, TimeDelta, TimeZone, Utc};
+use chrono::{TimeDelta, Utc};
 use termlens::Key;
 
 use crate::controlled_proxy::Route;
+use crate::database::fixture_day_time as at;
 use crate::page::TimeTrackerPage;
 use crate::remote::RemoteTestContext;
-
-fn at(hour: u32, minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2025, 8, 1, hour, minute, 0)
-        .single()
-        .expect("fixture time must be valid")
-}
 
 #[test]
 fn remote_terminal_redraws_after_resize_and_keeps_selection() {

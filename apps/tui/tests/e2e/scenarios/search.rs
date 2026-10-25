@@ -1,14 +1,10 @@
 //! Task-list search scenarios.
 
-use chrono::{DateTime, Utc};
 use termlens::Key;
 
 use crate::context::TestContext;
+use crate::database::fixture_time as at;
 use crate::page::TimeTrackerPage;
-
-fn at(seconds: i64) -> DateTime<Utc> {
-    DateTime::from_timestamp(seconds, 0).expect("the fixture timestamp must be valid")
-}
 
 #[test]
 fn active_search_filters_fuzzily_by_latest_work_or_update_and_preserves_sort() {

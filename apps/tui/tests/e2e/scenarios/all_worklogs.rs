@@ -1,17 +1,12 @@
 //! The global worklog tab and its move action.
 
-use chrono::{DateTime, TimeDelta, TimeZone, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use termlens::Key;
 
 use crate::context::TestContext;
+use crate::database::fixture_day_time as at;
 use crate::driver::TuiDriver;
 use crate::page::TimeTrackerPage;
-
-fn at(hour: u32, minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2025, 8, 1, hour, minute, 0)
-        .single()
-        .expect("the fixture timestamp must be valid")
-}
 
 fn open_worklogs(tt: &mut TuiDriver) -> TimeTrackerPage {
     tt.wait_for_first_frame("the active tab", |screen| {
