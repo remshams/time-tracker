@@ -107,6 +107,20 @@ mod tests {
         helper
     }
 
+    /// Runs a helper written by this test. Another test thread can fork while
+    /// the new file is still open for writing, and until that child calls exec
+    /// it keeps the file busy, so the spawn is retried on `ExecutableFileBusy`.
+    fn copy_with_helper(helper: &Path, value: &str, timeout: Duration) -> io::Result<()> {
+        loop {
+            match copy_with_program(helper.as_os_str(), value, timeout) {
+                Err(error) if error.kind() == io::ErrorKind::ExecutableFileBusy => {
+                    thread::sleep(Duration::from_millis(5));
+                }
+                result => return result,
+            }
+        }
+    }
+
     #[test]
     fn a_failed_writer_terminates_and_reaps_the_helper() {
         let mut child = Command::new("sleep").arg("10").spawn().unwrap();
@@ -144,8 +158,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let helper = helper(directory.path(), "#!/bin/sh\nread input\nexec sleep 10\n");
         let started = Instant::now();
-        let error = copy_with_program(helper.as_os_str(), "hello\n", Duration::from_millis(80))
-            .unwrap_err();
+        let error = copy_with_helper(&helper, "hello\n", Duration::from_millis(80)).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
         assert!(started.elapsed() < Duration::from_secs(2));
     }
@@ -155,12 +168,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let helper = helper(directory.path(), "#!/bin/sh\nexec sleep 10\n");
         let started = Instant::now();
-        let error = copy_with_program(
-            helper.as_os_str(),
-            &"x".repeat(1_000_000),
-            Duration::from_millis(80),
-        )
-        .unwrap_err();
+        let error = copy_with_helper(&helper, &"x".repeat(1_000_000), Duration::from_millis(80))
+            .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
         assert_eq!(error.to_string(), "clipboard write timed out");
         assert!(started.elapsed() < Duration::from_secs(2));
@@ -170,8 +179,7 @@ mod tests {
     fn a_helper_that_exits_unsuccessfully_reports_failure() {
         let directory = tempfile::tempdir().unwrap();
         let helper = helper(directory.path(), "#!/bin/sh\ncat >/dev/null\nexit 7\n");
-        let error =
-            copy_with_program(helper.as_os_str(), "hello", Duration::from_secs(2)).unwrap_err();
+        let error = copy_with_helper(&helper, "hello", Duration::from_secs(2)).unwrap_err();
         assert!(error.to_string().contains("exit status: 7"));
     }
 
@@ -186,8 +194,7 @@ mod tests {
                 marker.display()
             ),
         );
-        let error =
-            copy_with_program(helper.as_os_str(), "hello", Duration::from_millis(50)).unwrap_err();
+        let error = copy_with_helper(&helper, "hello", Duration::from_millis(50)).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
         thread::sleep(Duration::from_millis(350));
         assert!(!marker.exists());
