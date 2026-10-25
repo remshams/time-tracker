@@ -1,16 +1,10 @@
 //! Completed-worklog deletion scenarios.
 
-use chrono::{DateTime, TimeZone, Utc};
 use termlens::Key;
 
 use crate::context::TestContext;
+use crate::database::fixture_day_time as at;
 use crate::page::TimeTrackerPage;
-
-fn at(hour: u32, minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2025, 8, 1, hour, minute, 0)
-        .single()
-        .expect("the fixture timestamp must be valid")
-}
 
 fn open_history(tt: &mut crate::driver::TuiDriver, task_name: &str) -> TimeTrackerPage {
     tt.wait_for_first_frame("the deletion fixture", |screen| {
@@ -38,8 +32,7 @@ fn completed_deletion_removes_the_row_selects_its_replacement_and_persists() {
     tt.press_and_wait(Key::Char('d'), "the deletion confirmation", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.deletion_dialog().is_some_and(|dialog| {
-            dialog.title() == "Delete worklog"
-                && dialog.question() == "Delete this worklog permanently?"
+            dialog.question() == "Delete this worklog permanently?"
                 && dialog.interval() == "2025-08-01 12:00 → 2025-08-01 12:30"
                 && dialog.warning() == "This cannot be undone."
         })

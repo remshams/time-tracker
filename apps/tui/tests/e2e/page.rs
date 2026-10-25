@@ -576,8 +576,6 @@ impl TaskPanel {
     }
 }
 
-/// The text of one bordered-panel content row, without the border cells
-/// and trailing blanks.
 fn panel_title(screen: &Screen) -> String {
     screen
         .row_text(Layout::of(screen).panel_top_row())
@@ -586,6 +584,8 @@ fn panel_title(screen: &Screen) -> String {
         .to_owned()
 }
 
+/// The text of one bordered-panel content row, without the border cells
+/// and trailing blanks.
 fn panel_row_text(screen: &Screen, row: u16) -> String {
     let cols = Layout::of(screen).cols;
     screen
@@ -732,11 +732,6 @@ impl Footer {
         self.text().contains("u unarchive")
     }
 
-    /// Whether the footer names the worklog-history keys.
-    pub(crate) fn hints_correction(&self) -> bool {
-        self.text().contains("e correct") || self.text().contains("e edit")
-    }
-
     /// Whether the footer names the worklog-history keys and correction shortcut.
     pub(crate) fn hints_history(&self) -> bool {
         let text = self.text();
@@ -748,7 +743,7 @@ impl Footer {
             && text.contains("esc back")
             && has_q
             && text.contains("ctrl+c")
-            && self.hints_correction()
+            && text.contains("e edit")
     }
 
     /// Whether the footer names the quit keys.
@@ -1144,10 +1139,6 @@ impl DeletionDialog {
                 left,
                 top,
             })
-    }
-
-    pub(crate) fn title(&self) -> String {
-        "Delete worklog".to_owned()
     }
 
     pub(crate) fn question(&self) -> String {

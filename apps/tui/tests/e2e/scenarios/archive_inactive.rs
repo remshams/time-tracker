@@ -363,7 +363,7 @@ fn remote_bulk_archive_applies_after_an_unrelated_write_by_another_client() {
             .contains("1 active task inactive")
     });
 
-    let mut writer = context.launch_second_client();
+    let mut writer = context.launch();
     writer.wait_for_first_frame("the writer's task list", |screen| {
         TimeTrackerPage::new(screen.clone())
             .task_panel()

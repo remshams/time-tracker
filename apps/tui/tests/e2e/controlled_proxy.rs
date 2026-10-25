@@ -11,7 +11,6 @@ const REQUEST_LIMIT: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy)]
 pub(crate) enum Route {
-    Tasks,
     TaskList,
     CreateTask,
     InactivePreview,
@@ -22,7 +21,6 @@ pub(crate) enum Route {
 impl Route {
     fn matches(self, method: &str, path: &str) -> bool {
         match self {
-            Self::Tasks => method == "GET" && path == "/v1/tasks",
             Self::TaskList => method == "GET" && path == "/v1/state/task-list",
             Self::CreateTask => method == "POST" && path == "/v1/tasks",
             Self::InactivePreview => {
@@ -255,12 +253,12 @@ fn read_request(stream: &mut TcpStream) -> Option<Vec<u8>> {
 fn abandoned_requests_do_not_reach_the_server_or_count_toward_the_gate() {
     let upstream = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let proxy = ControlledProxy::new(upstream.local_addr().unwrap());
-    proxy.hold(Route::Tasks);
+    proxy.hold(Route::TaskList);
     let server = thread::spawn(move || {
         let (mut client, _) = upstream.accept().unwrap();
         client.set_read_timeout(Some(REQUEST_LIMIT)).unwrap();
         let request = read_request(&mut client).unwrap();
-        assert!(request.starts_with(b"GET /v1/tasks HTTP/1.1\r\n"));
+        assert!(request.starts_with(b"GET /v1/state/task-list HTTP/1.1\r\n"));
         client
             .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
             .unwrap();
@@ -277,7 +275,7 @@ fn abandoned_requests_do_not_reach_the_server_or_count_toward_the_gate() {
     let mut client = TcpStream::connect(proxy.address).unwrap();
     client.set_read_timeout(Some(REQUEST_LIMIT)).unwrap();
     client
-        .write_all(b"GET /v1/tasks HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        .write_all(b"GET /v1/state/task-list HTTP/1.1\r\nHost: localhost\r\n\r\n")
         .unwrap();
     proxy.wait_for_request();
     assert_eq!(proxy.request_count(), 1);

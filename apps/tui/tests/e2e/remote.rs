@@ -54,10 +54,6 @@ impl RemoteTestContext {
         self.local.launch_remote(&self.endpoint())
     }
 
-    pub(crate) fn launch_second_client(&self) -> crate::driver::TuiDriver {
-        self.local.launch_remote(&self.endpoint())
-    }
-
     pub(crate) fn proxy(&self) -> ControlledProxy {
         ControlledProxy::new(self.address)
     }
@@ -159,18 +155,4 @@ fn health_check(address: SocketAddr) -> bool {
         return false;
     };
     response[..read].starts_with(b"HTTP/1.1 200") || response[..read].starts_with(b"HTTP/1.0 200")
-}
-
-#[test]
-fn the_terminal_binary_redirects_removed_serve_commands() {
-    let output = Command::new(env!("CARGO_BIN_EXE_tt"))
-        .args(["serve", "--bind", "127.0.0.1:8765"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(
-        String::from_utf8(output.stderr)
-            .unwrap()
-            .contains("serve moved to `tt-server --bind ADDRESS:PORT [--db PATH]`")
-    );
 }

@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use serde_json::Value;
 
 /// The name of the trigger a scenario installs to make task creates fail.
@@ -43,8 +43,16 @@ pub(crate) struct StoredWorklog {
     pub(crate) end: Option<DateTime<Utc>>,
 }
 
-fn fixture_time(seconds: i64) -> DateTime<Utc> {
+/// The instant `seconds` after the Unix epoch.
+pub(crate) fn fixture_time(seconds: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(seconds, 0).expect("the fixture timestamp must be valid")
+}
+
+/// A minute on 2025-08-01 UTC, the day most worklog scenarios use.
+pub(crate) fn fixture_day_time(hour: u32, minute: u32) -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2025, 8, 1, hour, minute, 0)
+        .single()
+        .expect("the fixture timestamp must be valid")
 }
 
 fn timestamp_argument(at: DateTime<Utc>) -> String {
