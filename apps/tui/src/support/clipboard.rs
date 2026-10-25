@@ -96,6 +96,16 @@ mod tests {
     use super::*;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+
+    fn helper(directory: &Path, script: &str) -> PathBuf {
+        let helper = directory.join("clipboard-helper");
+        fs::write(&helper, script).unwrap();
+        let mut permissions = fs::metadata(&helper).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&helper, permissions).unwrap();
+        helper
+    }
 
     #[test]
     fn a_failed_writer_terminates_and_reaps_the_helper() {
@@ -132,11 +142,7 @@ mod tests {
     #[test]
     fn a_hanging_clipboard_helper_is_terminated() {
         let directory = tempfile::tempdir().unwrap();
-        let helper = directory.path().join("clipboard-helper");
-        fs::write(&helper, "#!/bin/sh\nread input\nexec sleep 10\n").unwrap();
-        let mut permissions = fs::metadata(&helper).unwrap().permissions();
-        permissions.set_mode(0o700);
-        fs::set_permissions(&helper, permissions).unwrap();
+        let helper = helper(directory.path(), "#!/bin/sh\nread input\nexec sleep 10\n");
         let started = Instant::now();
         let error = copy_with_program(helper.as_os_str(), "hello\n", Duration::from_millis(80))
             .unwrap_err();
@@ -147,11 +153,7 @@ mod tests {
     #[test]
     fn a_helper_that_never_reads_input_cannot_block_the_write() {
         let directory = tempfile::tempdir().unwrap();
-        let helper = directory.path().join("clipboard-helper");
-        fs::write(&helper, "#!/bin/sh\nexec sleep 10\n").unwrap();
-        let mut permissions = fs::metadata(&helper).unwrap().permissions();
-        permissions.set_mode(0o700);
-        fs::set_permissions(&helper, permissions).unwrap();
+        let helper = helper(directory.path(), "#!/bin/sh\nexec sleep 10\n");
         let started = Instant::now();
         let error = copy_with_program(
             helper.as_os_str(),
@@ -167,11 +169,7 @@ mod tests {
     #[test]
     fn a_helper_that_exits_unsuccessfully_reports_failure() {
         let directory = tempfile::tempdir().unwrap();
-        let helper = directory.path().join("clipboard-helper");
-        fs::write(&helper, "#!/bin/sh\ncat >/dev/null\nexit 7\n").unwrap();
-        let mut permissions = fs::metadata(&helper).unwrap().permissions();
-        permissions.set_mode(0o700);
-        fs::set_permissions(&helper, permissions).unwrap();
+        let helper = helper(directory.path(), "#!/bin/sh\ncat >/dev/null\nexit 7\n");
         let error =
             copy_with_program(helper.as_os_str(), "hello", Duration::from_secs(2)).unwrap_err();
         assert!(error.to_string().contains("exit status: 7"));
@@ -180,19 +178,14 @@ mod tests {
     #[test]
     fn a_timed_out_helper_cannot_continue_after_copy_returns() {
         let directory = tempfile::tempdir().unwrap();
-        let helper = directory.path().join("clipboard-helper");
         let marker = directory.path().join("late-write");
-        fs::write(
-            &helper,
-            format!(
+        let helper = helper(
+            directory.path(),
+            &format!(
                 "#!/bin/sh\ncat >/dev/null\nsleep 0.25\nprintf done > '{}'\n",
                 marker.display()
             ),
-        )
-        .unwrap();
-        let mut permissions = fs::metadata(&helper).unwrap().permissions();
-        permissions.set_mode(0o700);
-        fs::set_permissions(&helper, permissions).unwrap();
+        );
         let error =
             copy_with_program(helper.as_os_str(), "hello", Duration::from_millis(50)).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);

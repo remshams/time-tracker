@@ -225,10 +225,7 @@ impl ShellState {
 
     pub(crate) fn leave_reports(&mut self, view: TaskView, first: Option<tracker_domain::TaskId>) {
         self.screen_generation = self.screen_generation.wrapping_add(1);
-        let mut list = self
-            .task_list_return
-            .take()
-            .unwrap_or_else(|| TaskListState::new(None));
+        let mut list = self.task_list_return.take().expect("task list is saved");
         list.show(view, first);
         self.screen = ScreenState::TaskList(Box::new(list));
     }

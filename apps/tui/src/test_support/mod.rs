@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 pub(crate) use std::time::Duration;
 
-pub(crate) use chrono::{DateTime, FixedOffset, TimeDelta, TimeZone, Utc};
+pub(crate) use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 pub(crate) use tracker_application::{
     ActiveTrackingRead, ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome,
     GlobalWorklogCursor, GlobalWorklogPage, ReportTotals, RepositoryError, SetActiveTaskOutcome,
