@@ -276,6 +276,10 @@ mod rendering_tests {
         ] {
             let instant = Utc.with_ymd_and_hms(year, 1, 2, 3, 4, 0).single().unwrap();
             assert_eq!(local_time(instant, &Utc), expected);
+            assert_eq!(
+                parse_correction_timestamp(expected, &Utc, None),
+                Ok(instant)
+            );
         }
     }
 
@@ -551,6 +555,41 @@ mod correction_tests {
         assert_eq!(input.cursor(), 1);
         input.move_right();
         assert_eq!(input.cursor(), 2);
+    }
+
+    #[test]
+    fn timestamp_input_removes_whole_characters_and_rejects_invalid_or_excess_input() {
+        let mut input = TimestampInput::new("1🕒".to_owned());
+        input.backspace();
+        assert_eq!(input.text(), "1");
+        input.insert('x');
+        assert_eq!(input.text(), "1", "invalid timestamp text is ignored");
+        for _ in 0..100 {
+            input.insert('2');
+        }
+        assert_eq!(input.text().chars().count(), TimestampInput::MAX_LEN);
+    }
+
+    #[test]
+    fn correction_parsing_requires_local_minute_format() {
+        let timezone = FixedOffset::east_opt(2 * 3600).unwrap();
+        assert_eq!(
+            parse_correction_timestamp("1970-01-01 02:00", &timezone, None).unwrap(),
+            DateTime::from_timestamp(0, 0).unwrap()
+        );
+        for invalid in [
+            "1970-01-01 00:00+02:00",
+            "1970-01-01 00:00:01",
+            "1970-01-01 00:00:00",
+            "+9999-01-01 00:00",
+            "10000-01-01 00:00",
+            "not-a-timestamp",
+        ] {
+            assert_eq!(
+                parse_correction_timestamp(invalid, &timezone, None),
+                Err("Use YYYY-MM-DD HH:MM")
+            );
+        }
     }
 
     #[test]

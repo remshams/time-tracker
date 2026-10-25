@@ -25,7 +25,7 @@ fn correction_prefills_local_minutes() {
     );
 }
 #[test]
-fn correction_switches_fields_and_edits_at_a_bounded_character_cursor() {
+fn correction_switches_fields_and_edits_at_the_character_cursor() {
     let task_id = TaskId::from_uuid(uuid::Uuid::from_u128(1));
     let worklog = history_worklog(10, task_id, 100);
     let mut app = correction_app(worklog.clone(), vec![worklog]);
@@ -90,57 +90,6 @@ fn correction_switches_fields_and_edits_at_a_bounded_character_cursor() {
         app.app_view().correction().unwrap().focused(),
         CorrectionField::Start
     );
-
-    let mut input = TimestampInput::new("1🕒".to_owned());
-    input.backspace();
-    assert_eq!(input.text(), "1");
-    input.insert('x');
-    assert_eq!(input.text(), "1", "invalid timestamp text is ignored");
-    for _ in 0..100 {
-        input.insert('2');
-    }
-    assert_eq!(input.text().chars().count(), TimestampInput::MAX_LEN);
-}
-#[test]
-fn correction_parsing_requires_local_minute_format() {
-    let timezone = FixedOffset::east_opt(2 * 3600).unwrap();
-    assert_eq!(
-        parse_correction_timestamp("1970-01-01 02:00", &timezone, None).unwrap(),
-        DateTime::from_timestamp(0, 0).unwrap()
-    );
-    for invalid in [
-        "1970-01-01 00:00+02:00",
-        "1970-01-01 00:00:01",
-        "1970-01-01 00:00:00",
-        "+9999-01-01 00:00",
-        "10000-01-01 00:00",
-        "not-a-timestamp",
-    ] {
-        assert_eq!(
-            parse_correction_timestamp(invalid, &timezone, None),
-            Err("Use YYYY-MM-DD HH:MM")
-        );
-    }
-}
-#[test]
-fn correction_years_format_and_parse_with_chrono_strict_expanded_form() {
-    let timezone = FixedOffset::east_opt(0).unwrap();
-    for (year, expected) in [
-        (-1, "-0001-01-02 03:04"),
-        (0, "0000-01-02 03:04"),
-        (9999, "9999-01-02 03:04"),
-        (10000, "+10000-01-02 03:04"),
-    ] {
-        let instant = Utc.with_ymd_and_hms(year, 1, 2, 3, 4, 0).single().unwrap();
-        assert_eq!(
-            correction_timestamp(instant, &timezone).as_deref(),
-            Some(expected)
-        );
-        assert_eq!(
-            parse_correction_timestamp(expected, &timezone, None),
-            Ok(instant)
-        );
-    }
 }
 #[test]
 fn an_unparseable_adjustment_keeps_the_draft() {
