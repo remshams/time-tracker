@@ -1,6 +1,6 @@
 use super::{
-    ApplicationError, DailyOverviewDto, DateTime, Instant, Method, RemoteError, RemoteSession,
-    ReportDto, Utc, canonical, map_application_error, report_cooldown_active, validate_report,
+    ApplicationError, DailyOverviewDto, DateTime, Instant, RemoteError, RemoteSession, ReportDto,
+    Utc, canonical, map_application_error, report_cooldown_active, validate_report,
 };
 
 struct ReportRequest {
@@ -41,10 +41,7 @@ impl ReportRequest {
             .append_pair("start", &self.start.to_rfc3339())
             .append_pair("end", &self.end.to_rfc3339())
             .append_pair("now", &self.now.to_rfc3339());
-        let dto = session
-            .send(Method::GET, url, None::<&()>)
-            .await
-            .map_err(|error| session.record_error(error))?;
+        let dto = session.get(url).await?;
         let report = report(&dto);
         validate_report(report)
             .map_err(|error| session.record_error(RemoteError::Protocol(error.to_string())))?;

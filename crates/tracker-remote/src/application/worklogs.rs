@@ -29,14 +29,10 @@ impl WorklogsClient {
                 .append_pair("after_id", &id.to_string())
                 .append_pair("after_revision", &revision.to_string());
         }
-        let dto: WorklogPageDto =
-            session
-                .send(Method::GET, url, None::<&()>)
-                .await
-                .map_err(|error| {
-                    session.record_error(error.clone());
-                    map_application_error(&error, None, task_id)
-                })?;
+        let dto: WorklogPageDto = session
+            .get(url)
+            .await
+            .map_err(|error| map_application_error(&error, None, task_id))?;
         let decoded = decode_history(&dto, task_id).map_err(|error| {
             session.record_error(error.clone());
             map_application_error(&error, None, task_id)
