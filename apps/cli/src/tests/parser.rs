@@ -142,3 +142,26 @@ fn json_input_limit_accepts_exactly_one_mib_and_rejects_valid_json_above_it() {
         "JSON input exceeds 1 MiB"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn json_file_inputs_reject_fifos_and_directories_without_waiting_for_writers() {
+    use std::os::unix::ffi::OsStrExt;
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("fifo");
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: c_path is a valid terminated path and the mode is a file permission mask.
+    assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+    assert_eq!(
+        crate::read_json::<serde_json::Value>(&format!("@{}", path.display()))
+            .unwrap_err()
+            .exit_code,
+        2
+    );
+    assert_eq!(
+        crate::read_json::<serde_json::Value>(&format!("@{}", temp.path().display()))
+            .unwrap_err()
+            .exit_code,
+        2
+    );
+}

@@ -45,13 +45,8 @@ pub(crate) fn validate(
             end: None,
             ..
         } => return Err(CliError::input("correction requires --start or --end")),
-        Worklogs::Delete { yes, expected, .. } => {
-            if !*yes {
-                return Err(CliError::input("delete requires --yes"));
-            }
-            if expected.expected_end.0.is_none() {
-                return Err(CliError::input("only completed worklogs can be deleted"));
-            }
+        Worklogs::Delete { expected, .. } if expected.expected_end.0.is_none() => {
+            return Err(CliError::input("only completed worklogs can be deleted"));
         }
         _ => {}
     }

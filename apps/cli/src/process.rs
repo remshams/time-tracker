@@ -15,14 +15,14 @@ pub fn process(
         Err(error) if !error.use_stderr() => {
             return match write!(stdout, "{error}").and_then(|_| stdout.flush()) {
                 Ok(()) => 0,
-                Err(error) => report(Err(CliError::storage(error)), stdout, stderr),
+                Err(error) => failure(CliError::storage(error), stderr),
             };
         }
-        Err(error) => return report(Err(CliError::input(error)), stdout, stderr),
+        Err(error) => return failure(CliError::input(error), stderr),
     };
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(runtime) => runtime,
-        Err(error) => return report(Err(CliError::storage(error)), stdout, stderr),
+        Err(error) => return failure(CliError::storage(error), stderr),
     };
     report(runtime.block_on(run(cli)), stdout, stderr)
 }

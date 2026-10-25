@@ -53,9 +53,6 @@ pub(crate) fn read_json<T: serde::de::DeserializeOwned>(input: &str) -> Result<T
             .map_err(CliError::input)?;
         text
     } else {
-        if input.len() > MAX_BYTES {
-            return Err(CliError::input("JSON input exceeds 1 MiB"));
-        }
         input.to_owned()
     };
     if text.len() > MAX_BYTES {
