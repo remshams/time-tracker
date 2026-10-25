@@ -11,7 +11,7 @@ use tracker_client::{ClientReport, RefreshError, TrackerBackend};
 use tracker_domain::{
     InactivityPeriod, Task, TaskId, TaskName, TrackingState, Worklog, WorklogId, WorklogTimes,
 };
-use tracker_remote::{RemoteApplication, RemoteError, ResourceSelection};
+use tracker_remote::{RemoteApplication, RemoteError};
 use tracker_storage::SqliteRepository;
 
 pub(crate) use tracker_client::InactivePreview;
@@ -86,10 +86,7 @@ impl Backend {
 
     /// Refreshes the task catalog and tracking state together.
     pub fn refresh_resources(&mut self) -> Result<(), BridgeError> {
-        let result = self.runtime.block_on(
-            self.application
-                .refresh_resources(ResourceSelection::TaskList),
-        );
+        let result = self.runtime.block_on(self.application.refresh_task_list());
         self.record_refresh(&result);
         result.map_err(refresh_error)
     }
@@ -101,9 +98,10 @@ impl Backend {
         end: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<super::ReportJson, BridgeError> {
-        let result = self
-            .runtime
-            .block_on(self.application.refresh_totals(true, start, end, now));
+        let result = self.runtime.block_on(
+            self.application
+                .refresh_task_list_with_totals(start, end, now),
+        );
         self.record_refresh(&result);
         let report = result.map_err(refresh_error)?;
         Ok(super::ReportJson {

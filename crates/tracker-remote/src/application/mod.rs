@@ -93,24 +93,6 @@ impl InactiveTaskPreview {
     }
 }
 
-/// Resources requested by an explicit client workflow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResourceSelection {
-    Tasks,
-    Tracking,
-    TaskList,
-    DailyTotals {
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-        now: DateTime<Utc>,
-    },
-    TaskListWithTotals {
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-        now: DateTime<Utc>,
-    },
-}
-
 /// The remote tracker coordinator, retained under the existing client API name.
 pub use coordinator::RemoteTrackerCoordinator as RemoteApplication;
 
