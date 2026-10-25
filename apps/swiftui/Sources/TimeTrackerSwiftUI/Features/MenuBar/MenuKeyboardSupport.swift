@@ -11,12 +11,17 @@ extension MenuShortcut {
             let scalar = key.unicodeScalars.first,
             (33...126).contains(scalar.value)
         else { return nil }
-        var modifiers: Modifiers = []
-        if event.modifierFlags.contains(.command) { modifiers.insert(.command) }
-        if event.modifierFlags.contains(.control) { modifiers.insert(.control) }
-        if event.modifierFlags.contains(.option) { modifiers.insert(.option) }
-        if event.modifierFlags.contains(.shift) { modifiers.insert(.shift) }
-        self.init(key: key, modifiers: modifiers)
+        self.init(key: key, modifiers: Modifiers(event.modifierFlags))
+    }
+}
+
+private extension MenuShortcut.Modifiers {
+    init(_ flags: NSEvent.ModifierFlags) {
+        self.init()
+        if flags.contains(.command) { insert(.command) }
+        if flags.contains(.control) { insert(.control) }
+        if flags.contains(.option) { insert(.option) }
+        if flags.contains(.shift) { insert(.shift) }
     }
 }
 
@@ -175,12 +180,7 @@ final class GlobalMenuShortcutRegistration {
             event.type == .keyDown, !event.isARepeat,
             UInt32(event.keyCode) == registeredKeyCode
         else { return false }
-        var modifiers: MenuShortcut.Modifiers = []
-        if event.modifierFlags.contains(.command) { modifiers.insert(.command) }
-        if event.modifierFlags.contains(.control) { modifiers.insert(.control) }
-        if event.modifierFlags.contains(.option) { modifiers.insert(.option) }
-        if event.modifierFlags.contains(.shift) { modifiers.insert(.shift) }
-        return modifiers == shortcut.modifiers
+        return MenuShortcut.Modifiers(event.modifierFlags) == shortcut.modifiers
     }
 
     private func consumeTrackedShortcut() {

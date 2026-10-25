@@ -81,16 +81,12 @@ final class UserDefaultsMenuKeyboardPreferences {
 
     func load() -> MenuKeyboardShortcuts {
         guard let data = defaults.data(forKey: key),
-            let shortcuts = try? JSONDecoder().decode(MenuKeyboardShortcuts.self, from: data),
-            shortcuts.validationError == nil
+            let shortcuts = try? JSONDecoder().decode(MenuKeyboardShortcuts.self, from: data)
         else { return .defaults }
         return shortcuts
     }
 
     func save(_ shortcuts: MenuKeyboardShortcuts) {
-        guard shortcuts.validationError == nil,
-            let data = try? JSONEncoder().encode(shortcuts)
-        else { return }
-        defaults.set(data, forKey: key)
+        if let data = try? JSONEncoder().encode(shortcuts) { defaults.set(data, forKey: key) }
     }
 }
