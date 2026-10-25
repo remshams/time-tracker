@@ -291,7 +291,7 @@ fn older_page_load_after_another_client_changes_start_reloads_newest_page() {
 }
 
 #[test]
-fn archived_history_allows_worklog_correction() {
+fn archived_history_opens_the_correction_dialog() {
     let context = TestContext::new();
     let database = context.database();
     database.create_task("Archived review");

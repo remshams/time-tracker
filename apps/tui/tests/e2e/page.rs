@@ -576,8 +576,6 @@ impl TaskPanel {
     }
 }
 
-/// The text of one bordered-panel content row, without the border cells
-/// and trailing blanks.
 fn panel_title(screen: &Screen) -> String {
     screen
         .row_text(Layout::of(screen).panel_top_row())
@@ -586,6 +584,8 @@ fn panel_title(screen: &Screen) -> String {
         .to_owned()
 }
 
+/// The text of one bordered-panel content row, without the border cells
+/// and trailing blanks.
 fn panel_row_text(screen: &Screen, row: u16) -> String {
     let cols = Layout::of(screen).cols;
     screen
