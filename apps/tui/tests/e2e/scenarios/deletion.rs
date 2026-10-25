@@ -38,8 +38,7 @@ fn completed_deletion_removes_the_row_selects_its_replacement_and_persists() {
     tt.press_and_wait(Key::Char('d'), "the deletion confirmation", |screen| {
         let page = TimeTrackerPage::new(screen.clone());
         page.deletion_dialog().is_some_and(|dialog| {
-            dialog.title() == "Delete worklog"
-                && dialog.question() == "Delete this worklog permanently?"
+            dialog.question() == "Delete this worklog permanently?"
                 && dialog.interval() == "2025-08-01 12:00 → 2025-08-01 12:30"
                 && dialog.warning() == "This cannot be undone."
         })
