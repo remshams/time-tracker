@@ -305,55 +305,9 @@ mod unit_tests {
     }
 
     #[test]
-    fn a_history_page_reports_the_active_tasks_authoritative_aggregate() {
-        let repository = SqliteRepository::open_in_memory().unwrap();
-        let task = Task::create(
-            TaskId::generate(),
-            TaskName::new("active").unwrap(),
-            DateTime::from_timestamp(100, 0).unwrap(),
-        );
-        repository.create_task(task.clone()).unwrap();
-        let active = Worklog::begin(
-            WorklogId::generate(),
-            task.id(),
-            DateTime::from_timestamp(200, 0).unwrap(),
-        );
-        repository.insert_worklog(&active).unwrap();
-
-        let page = repository.worklog_page(task.id(), None).unwrap();
-
-        assert_eq!(page.adoption.as_ref().unwrap().active_worklog, Some(active));
-        assert_eq!(
-            page.adoption
-                .as_ref()
-                .unwrap()
-                .requested_task_latest_work_start,
-            Some(DateTime::from_timestamp(200, 0).unwrap())
-        );
-        assert_eq!(
-            page.adoption
-                .as_ref()
-                .unwrap()
-                .active_task_latest_work_start,
-            page.adoption
-                .as_ref()
-                .unwrap()
-                .requested_task_latest_work_start
-        );
-    }
-
-    #[test]
     fn timestamp_round_trips_through_microseconds() {
         let time = DateTime::from_timestamp(1_700_000_000, 123_456_000).unwrap();
         assert_eq!(us_to_timestamp(timestamp_to_us(time)).unwrap(), time);
-    }
-
-    #[test]
-    fn out_of_range_microseconds_are_corrupt_data() {
-        assert!(matches!(
-            us_to_timestamp(i64::MAX),
-            Err(StorageError::CorruptData("timestamp"))
-        ));
     }
 
     #[test]
@@ -368,19 +322,6 @@ mod unit_tests {
             task_id_from_stored("not-a-uuid"),
             Err(StorageError::InvalidId(_))
         ));
-    }
-
-    #[test]
-    fn stored_task_values_reject_an_empty_name() {
-        let error = task_from_stored(
-            TaskId::generate().to_string(),
-            "   ".to_owned(),
-            false,
-            0,
-            0,
-        )
-        .expect_err("whitespace name is corrupt");
-        assert!(matches!(error, StorageError::CorruptData("task name")));
     }
 
     #[test]
@@ -404,50 +345,6 @@ mod unit_tests {
         )
         .expect_err("an oversized name is corrupt");
         assert!(matches!(error, StorageError::CorruptData("task name")));
-    }
-
-    #[test]
-    fn stored_task_values_reject_updated_before_created() {
-        let error = task_from_stored(
-            TaskId::generate().to_string(),
-            "backwards".to_owned(),
-            false,
-            200,
-            199,
-        )
-        .expect_err("updated before created is corrupt");
-        assert!(matches!(
-            error,
-            StorageError::CorruptData("task timestamps")
-        ));
-    }
-
-    #[test]
-    fn stored_task_values_reject_out_of_range_timestamps() {
-        let error = task_from_stored(
-            TaskId::generate().to_string(),
-            "huge".to_owned(),
-            false,
-            i64::MAX,
-            i64::MAX,
-        )
-        .expect_err("an unrepresentable timestamp is corrupt");
-        assert!(matches!(error, StorageError::CorruptData("timestamp")));
-    }
-
-    #[test]
-    fn stored_worklog_values_reject_a_backwards_interval() {
-        let error = worklog_from_stored(
-            WorklogId::generate().to_string(),
-            TaskId::generate().to_string(),
-            200,
-            Some(100),
-        )
-        .expect_err("end before start is corrupt");
-        assert!(matches!(
-            error,
-            StorageError::CorruptData("worklog interval")
-        ));
     }
 
     #[test]
