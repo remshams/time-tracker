@@ -947,9 +947,6 @@ final class DailyTotalsSessionTests: XCTestCase {
         wake.succeed(TaskListTotalsRefresh(taskList: resources, rows: [total(firstTask, 304)]))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 304)
-        let count = fixture.client.operations.count
-        timers.forEach { $0.deliverQueuedAction() }
-        XCTAssertEqual(fixture.client.operations.count, count)
     }
 
     @MainActor

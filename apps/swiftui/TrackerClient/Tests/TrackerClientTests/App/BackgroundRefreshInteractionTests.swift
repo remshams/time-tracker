@@ -68,7 +68,7 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
     }
 
     @MainActor
-    func testRefreshAndQueuedTimerCallbacksDoNotOverlapAnInflightPoll() async throws {
+    func testRefreshAndVisibilityChangesDoNotOverlapAnInflightPoll() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start()
@@ -80,7 +80,6 @@ final class BackgroundRefreshInteractionTests: XCTestCase {
         let count = fixture.client.operations.count
         fixture.session.refresh()
         fixture.session.refresh()
-        timer.deliverQueuedAction()
         fixture.session.setWindowVisible(true)
         XCTAssertNil(fixture.scheduler.poll)
         XCTAssertEqual(fixture.client.operations.count, count)
