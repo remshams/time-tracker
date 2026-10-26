@@ -19,7 +19,7 @@ pub use model::{
 };
 pub use repository::{
     ActiveTrackingRead, InactiveTaskArchive, InactiveTaskPreviewRead, ReportRead, RepositoryError,
-    TrackerRepository, WorklogCorrection, WorklogDeletion, WorklogMove,
+    TaskListReportRead, TrackerRepository, WorklogCorrection, WorklogDeletion, WorklogMove,
 };
 pub use service::move_candidates_for_tasks;
 pub use service::{TrackerApplication, TrackerApplicationService};

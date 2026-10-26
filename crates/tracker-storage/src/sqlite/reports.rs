@@ -3,13 +3,13 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, Transaction, TransactionBehavior};
-use tracker_application::{ReportRead, ReportRow, TaskListItem};
+use tracker_application::{ReportRead, ReportRow, TaskListReportRead};
 
 use super::{
     SqliteRepository,
     mapping::{raw_task, task_from_raw, timestamp_to_us},
     tasks::list_task_items_on,
-    tracking::active_tracking_read_on,
+    tracking::{active_tracking_read_on, active_worklog_on},
 };
 use crate::StorageError;
 
@@ -20,13 +20,17 @@ impl SqliteRepository {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         now: DateTime<Utc>,
-    ) -> Result<(Vec<TaskListItem>, ReportRead), StorageError> {
+    ) -> Result<TaskListReportRead, StorageError> {
         let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Deferred)?;
         let items = list_task_items_on(&transaction)?;
         let rows = report_rows_on(&transaction, start, end, now)?;
-        let tracking = active_tracking_read_on(&transaction)?;
+        let active_worklog = active_worklog_on(&transaction)?;
         transaction.commit()?;
-        Ok((items, ReportRead { rows, tracking }))
+        Ok(TaskListReportRead {
+            items,
+            rows,
+            active_worklog,
+        })
     }
 
     /// Reads report rows and active tracking in one SQLite read transaction.

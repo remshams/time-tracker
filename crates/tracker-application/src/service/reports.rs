@@ -46,12 +46,12 @@ impl<R: TrackerRepository> TrackerApplication<R> {
             canonical_timestamp(now),
         );
         validate_range(start, end)?;
-        let (items, read) = self
+        let read = self
             .repository
             .task_list_report_read(start, end, now)
             .map_err(report_error)?;
         let totals = totals_from_rows(read.rows)?;
-        self.adopt_task_tracking_resources(items, read.tracking.active_worklog)?;
+        self.adopt_task_tracking_resources(read.items, read.active_worklog)?;
         Ok(totals)
     }
 }

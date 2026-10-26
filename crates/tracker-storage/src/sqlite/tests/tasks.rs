@@ -1,12 +1,12 @@
 // SQLite tasks integration tests.
 
 use super::*;
+use tracker_domain::InactivityPeriod;
 
 const FORTNIGHT_SECONDS: i64 = 14 * 24 * 60 * 60;
 
 #[test]
 fn configurable_inactivity_period_uses_exact_metadata_and_work_boundaries() {
-    use tracker_domain::InactivityPeriod;
     for days in [1, 7, 30] {
         let repository = repo();
         let as_of = at(4_000_000);
@@ -92,7 +92,6 @@ fn configurable_inactivity_period_uses_exact_metadata_and_work_boundaries() {
 
 #[test]
 fn configurable_archive_rejects_changed_period_and_recent_work_atomically() {
-    use tracker_domain::InactivityPeriod;
     let repository = repo();
     let as_of = at(4_000_000);
     repository
@@ -141,7 +140,6 @@ fn configurable_archive_rejects_changed_period_and_recent_work_atomically() {
 
 #[test]
 fn configurable_inactivity_cutoffs_reject_overflow_without_writing() {
-    use tracker_domain::InactivityPeriod;
     let repository = repo();
     repository
         .create_task(stamped_task(1, "Old planning", 100, 100))
@@ -270,7 +268,7 @@ fn inactive_preview_respects_creation_update_and_worklog_boundaries() {
     repository.archive_task(task_id(10), as_of).unwrap();
 
     let ids: Vec<_> = repository
-        .preview_inactive_tasks(as_of)
+        .preview_inactive_tasks_with_period(as_of, InactivityPeriod::default())
         .unwrap()
         .tasks
         .iter()
@@ -294,7 +292,9 @@ fn inactive_preview_reads_candidates_and_tracking_from_one_current_snapshot() {
     let running = Worklog::begin(worklog_id(1), old.id(), at(1_999_000));
     writer.insert_worklog(&running).unwrap();
 
-    let preview = reader.preview_inactive_tasks(as_of).unwrap();
+    let preview = reader
+        .preview_inactive_tasks_with_period(as_of, InactivityPeriod::default())
+        .unwrap();
     assert!(preview.tasks.is_empty());
     assert_eq!(preview.tracking.active_worklog, Some(running.clone()));
     assert_eq!(
@@ -322,7 +322,9 @@ fn renaming_after_preview_prevents_bulk_archive() {
     let as_of = at(2_000_000);
     let task = stamped_task(1, "old task", 100, 100);
     repository.create_task(task.clone()).unwrap();
-    let preview = repository.preview_inactive_tasks(as_of).unwrap();
+    let preview = repository
+        .preview_inactive_tasks_with_period(as_of, InactivityPeriod::default())
+        .unwrap();
     assert_eq!(preview.tasks, vec![task]);
 
     repository
@@ -330,7 +332,11 @@ fn renaming_after_preview_prevents_bulk_archive() {
         .unwrap();
 
     assert!(matches!(
-        repository.archive_inactive_tasks(&[task_id(1)], as_of),
+        repository.archive_inactive_tasks_with_period(
+            &[task_id(1)],
+            as_of,
+            InactivityPeriod::default()
+        ),
         Err(StorageError::InactiveTaskCandidatesChanged)
     ));
     assert!(
@@ -353,7 +359,7 @@ fn completed_work_at_or_after_preview_prevents_the_entire_bulk_archive() {
                 .unwrap();
         }
         let expected: Vec<_> = repository
-            .preview_inactive_tasks(as_of)
+            .preview_inactive_tasks_with_period(as_of, InactivityPeriod::default())
             .unwrap()
             .tasks
             .iter()
@@ -371,7 +377,11 @@ fn completed_work_at_or_after_preview_prevents_the_entire_bulk_archive() {
             )
             .unwrap();
         assert!(matches!(
-            repository.archive_inactive_tasks(&expected, as_of),
+            repository.archive_inactive_tasks_with_period(
+                &expected,
+                as_of,
+                InactivityPeriod::default()
+            ),
             Err(StorageError::InactiveTaskCandidatesChanged)
         ));
         assert!(
@@ -398,10 +408,14 @@ fn existing_future_work_is_excluded_from_a_preview_that_can_be_confirmed() {
             &Worklog::new(worklog_id(1), task_id(2), as_of, Some(at(2_000_001))).unwrap(),
         )
         .unwrap();
-    let preview = repository.preview_inactive_tasks(as_of).unwrap();
+    let preview = repository
+        .preview_inactive_tasks_with_period(as_of, InactivityPeriod::default())
+        .unwrap();
     let ids: Vec<_> = preview.tasks.iter().map(Task::id).collect();
     assert_eq!(ids, vec![task_id(1)]);
-    let result = repository.archive_inactive_tasks(&ids, as_of).unwrap();
+    let result = repository
+        .archive_inactive_tasks_with_period(&ids, as_of, InactivityPeriod::default())
+        .unwrap();
     assert_eq!(result.tasks.len(), 1);
     assert_eq!(result.tasks[0].id(), task_id(1));
     assert!(result.tasks[0].is_archived());
@@ -424,7 +438,9 @@ fn archive_ignores_future_work_for_other_tasks() {
     repository
         .create_task(stamped_task(2, "Recent task", 1_999_999, 1_999_999))
         .unwrap();
-    let preview = repository.preview_inactive_tasks(as_of).unwrap();
+    let preview = repository
+        .preview_inactive_tasks_with_period(as_of, InactivityPeriod::default())
+        .unwrap();
     assert_eq!(
         preview.tasks.iter().map(Task::id).collect::<Vec<_>>(),
         vec![task_id(1)]
@@ -435,7 +451,7 @@ fn archive_ignores_future_work_for_other_tasks() {
         )
         .unwrap();
     let archived = repository
-        .archive_inactive_tasks(&[task_id(1)], as_of)
+        .archive_inactive_tasks_with_period(&[task_id(1)], as_of, InactivityPeriod::default())
         .unwrap();
     assert_eq!(archived.tasks.len(), 1);
     assert!(archived.tasks[0].is_archived());
@@ -467,7 +483,11 @@ fn inactive_bulk_archive_rechecks_candidates_and_rolls_back_failed_writes() {
             task_id(2)
         ))
         .unwrap();
-    assert!(repository.archive_inactive_tasks(&expected, as_of).is_err());
+    assert!(
+        repository
+            .archive_inactive_tasks_with_period(&expected, as_of, InactivityPeriod::default())
+            .is_err()
+    );
     assert!(
         repository
             .list_tasks()
@@ -492,7 +512,11 @@ fn inactive_bulk_archive_rechecks_candidates_and_rolls_back_failed_writes() {
         )
         .unwrap();
     assert!(matches!(
-        repository.archive_inactive_tasks(&expected, as_of),
+        repository.archive_inactive_tasks_with_period(
+            &expected,
+            as_of,
+            InactivityPeriod::default()
+        ),
         Err(StorageError::InactiveTaskCandidatesChanged)
     ));
     assert!(
@@ -504,7 +528,7 @@ fn inactive_bulk_archive_rechecks_candidates_and_rolls_back_failed_writes() {
     );
 
     let archive = repository
-        .archive_inactive_tasks(&[task_id(1)], as_of)
+        .archive_inactive_tasks_with_period(&[task_id(1)], as_of, InactivityPeriod::default())
         .unwrap();
     assert_eq!(archive.tasks.len(), 1);
     assert_eq!(archive.tasks[0].updated_at(), as_of);
@@ -528,7 +552,7 @@ fn inactive_bulk_archive_rechecks_candidates_and_rolls_back_failed_writes() {
         .create_task(stamped_task(3, "newly added old task", 100, 100))
         .unwrap();
     assert!(matches!(
-        repository.archive_inactive_tasks(&[], as_of),
+        repository.archive_inactive_tasks_with_period(&[], as_of, InactivityPeriod::default()),
         Err(StorageError::InactiveTaskCandidatesChanged)
     ));
     assert!(
@@ -1139,14 +1163,16 @@ fn inactive_preview_and_archive_ignore_invalid_metadata_of_unrelated_archived_ta
         .unwrap();
     let as_of = at(2_000_000);
 
-    let preview = repository.preview_inactive_tasks(as_of).unwrap();
+    let preview = repository
+        .preview_inactive_tasks_with_period(as_of, InactivityPeriod::default())
+        .unwrap();
 
     assert_eq!(preview.tasks, vec![candidate]);
     assert!(preview.tracking.active_worklog.is_none());
     assert!(preview.tracking.active_task_item.is_none());
 
     let archived = repository
-        .archive_inactive_tasks(&[task_id(1)], as_of)
+        .archive_inactive_tasks_with_period(&[task_id(1)], as_of, InactivityPeriod::default())
         .unwrap();
 
     assert_eq!(archived.tasks.len(), 1);

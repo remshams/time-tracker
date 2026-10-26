@@ -279,13 +279,6 @@ impl SqliteRepository {
     }
 
     /// Reads the current eligible set from one SQLite snapshot.
-    pub fn preview_inactive_tasks(
-        &self,
-        as_of: DateTime<Utc>,
-    ) -> Result<InactiveTaskPreviewRead, StorageError> {
-        self.preview_inactive_tasks_with_period(as_of, InactivityPeriod::default())
-    }
-
     pub fn preview_inactive_tasks_with_period(
         &self,
         as_of: DateTime<Utc>,
@@ -299,14 +292,6 @@ impl SqliteRepository {
     }
 
     /// Rechecks the previewed set and archives all rows under one write lock.
-    pub fn archive_inactive_tasks(
-        &self,
-        expected_ids: &[TaskId],
-        as_of: DateTime<Utc>,
-    ) -> Result<InactiveTaskArchive, StorageError> {
-        self.archive_inactive_tasks_with_period(expected_ids, as_of, InactivityPeriod::default())
-    }
-
     pub fn archive_inactive_tasks_with_period(
         &self,
         expected_ids: &[TaskId],
