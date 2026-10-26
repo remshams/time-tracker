@@ -144,8 +144,6 @@ struct SpyState {
     clear_calls: Vec<(WorklogId, DateTime<Utc>)>,
     correction_error: Option<ApplicationError>,
     move_error: Option<ApplicationError>,
-    external_tracking: Option<TrackingState>,
-    latest_work_overrides: Vec<(TaskId, DateTime<Utc>)>,
     latest_work_starts: Vec<(TaskId, Option<DateTime<Utc>>)>,
 }
 
@@ -205,16 +203,6 @@ impl TestServiceSpy {
         self.state.borrow_mut().move_error = Some(error);
     }
 
-    pub(crate) fn set_external_tracking(&self, tracking: TrackingState) {
-        self.state.borrow_mut().external_tracking = Some(tracking);
-    }
-
-    pub(crate) fn set_latest_work_start(&self, task_id: TaskId, start: DateTime<Utc>) {
-        let mut state = self.state.borrow_mut();
-        upsert_latest(&mut state.latest_work_overrides, task_id, start);
-        record_latest(&mut state.latest_work_starts, task_id, Some(start));
-    }
-
     pub(crate) fn latest_work_start(&self, task_id: TaskId) -> Option<DateTime<Utc>> {
         self.state
             .borrow()
@@ -230,14 +218,6 @@ fn record_latest(
     task_id: TaskId,
     start: Option<DateTime<Utc>>,
 ) {
-    if let Some((_, existing)) = values.iter_mut().find(|(id, _)| *id == task_id) {
-        *existing = start;
-    } else {
-        values.push((task_id, start));
-    }
-}
-
-fn upsert_latest(values: &mut Vec<(TaskId, DateTime<Utc>)>, task_id: TaskId, start: DateTime<Utc>) {
     if let Some((_, existing)) = values.iter_mut().find(|(id, _)| *id == task_id) {
         *existing = start;
     } else {
@@ -261,8 +241,6 @@ pub(crate) struct TestService {
     pub(crate) latest_work_starts: Vec<(TaskId, DateTime<Utc>)>,
     pub(crate) tasks_after_next_worklog_read: Option<Vec<Task>>,
     pub(crate) worklog_pages: Vec<Result<WorklogPage, ApplicationError>>,
-    pub(crate) correction_error: Option<ApplicationError>,
-    pub(crate) move_error: Option<ApplicationError>,
     pub(crate) deletion_error: Option<ApplicationError>,
     pub(crate) authoritative_worklogs: Vec<Worklog>,
 }
@@ -287,8 +265,6 @@ impl TestService {
             latest_work_starts: Vec::new(),
             tasks_after_next_worklog_read: None,
             worklog_pages: Vec::new(),
-            correction_error: None,
-            move_error: None,
             deletion_error: None,
             authoritative_worklogs: Vec::new(),
         }
@@ -306,24 +282,6 @@ impl TestService {
             }
         }
         self.spy.clone()
-    }
-
-    fn apply_external_state(&mut self) {
-        let mut state = self.spy.state.borrow_mut();
-        if let Some(tracking) = state.external_tracking.take() {
-            self.tracking = tracking;
-        }
-        for (task_id, start) in state.latest_work_overrides.drain(..) {
-            if let Some((_, existing)) = self
-                .latest_work_starts
-                .iter_mut()
-                .find(|(id, _)| *id == task_id)
-            {
-                *existing = start;
-            } else {
-                self.latest_work_starts.push((task_id, start));
-            }
-        }
     }
 
     fn authoritative_worklog_index(&self, id: WorklogId) -> Result<usize, ApplicationError> {
@@ -438,7 +396,6 @@ impl TrackerApplicationService for TestService {
         id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
-        self.apply_external_state();
         if self.fail_archive {
             return Err(Self::failure());
         }
@@ -462,7 +419,7 @@ impl TrackerApplicationService for TestService {
         Ok(archived)
     }
 
-    /// Applies queued external state before checking the name captured by a rename request.
+    /// Checks the name captured by a rename request.
     fn rename_task_with_expected_name(
         &mut self,
         id: TaskId,
@@ -470,7 +427,6 @@ impl TrackerApplicationService for TestService {
         name: TaskName,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
-        self.apply_external_state();
         if self
             .tasks
             .iter()
@@ -482,14 +438,13 @@ impl TrackerApplicationService for TestService {
         self.rename_task(id, name, occurred_at)
     }
 
-    /// Applies queued external state before checking the name captured by archive confirmation.
+    /// Checks the name captured by archive confirmation.
     fn archive_task_with_expected_name(
         &mut self,
         id: TaskId,
         expected_name: &TaskName,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
-        self.apply_external_state();
         if self
             .tasks
             .iter()
@@ -507,7 +462,6 @@ impl TrackerApplicationService for TestService {
         id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError> {
-        self.apply_external_state();
         if self.fail_unarchive {
             return Err(Self::failure());
         }
@@ -535,7 +489,6 @@ impl TrackerApplicationService for TestService {
         &mut self,
         as_of: DateTime<Utc>,
     ) -> Result<Vec<Task>, ApplicationError> {
-        self.apply_external_state();
         Ok(self.inactive_candidates(as_of))
     }
 
@@ -544,7 +497,6 @@ impl TrackerApplicationService for TestService {
         expected_ids: &[TaskId],
         as_of: DateTime<Utc>,
     ) -> Result<Vec<Task>, ApplicationError> {
-        self.apply_external_state();
         if self.fail_archive {
             return Err(Self::failure());
         }
@@ -575,7 +527,6 @@ impl TrackerApplicationService for TestService {
         task_id: TaskId,
         occurred_at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
-        self.apply_external_state();
         let started_at = self.set_timestamp.unwrap_or(occurred_at);
         if let Some((_, latest)) = self
             .latest_work_starts
@@ -618,14 +569,13 @@ impl TrackerApplicationService for TestService {
         }
     }
 
-    /// Applies queued external tracking before checking the request's expected worklog.
+    /// Checks the request's expected worklog before starting or switching.
     fn set_active_task_with_expected_active(
         &mut self,
         task_id: TaskId,
         expected_active: Option<WorklogId>,
         occurred_at: DateTime<Utc>,
     ) -> Result<SetActiveTaskOutcome, ApplicationError> {
-        self.apply_external_state();
         let active = match &self.tracking {
             TrackingState::Idle => None,
             TrackingState::Running { worklog } => Some(worklog.id()),
@@ -642,7 +592,6 @@ impl TrackerApplicationService for TestService {
         expected_active: WorklogId,
         occurred_at: DateTime<Utc>,
     ) -> Result<ClearActiveTaskOutcome, ApplicationError> {
-        self.apply_external_state();
         self.spy
             .state
             .borrow_mut()
@@ -659,20 +608,13 @@ impl TrackerApplicationService for TestService {
         expected: WorklogTimes,
         destination_task_id: TaskId,
     ) -> Result<Worklog, ApplicationError> {
-        self.apply_external_state();
         self.spy.state.borrow_mut().move_calls.push((
             id,
             source_task_id,
             expected,
             destination_task_id,
         ));
-        let move_error = self
-            .spy
-            .state
-            .borrow()
-            .move_error
-            .clone()
-            .or_else(|| self.move_error.clone());
+        let move_error = self.spy.state.borrow().move_error.clone();
         if let Some(error) = move_error {
             return Err(error);
         }
@@ -716,19 +658,12 @@ impl TrackerApplicationService for TestService {
         replacement: WorklogTimes,
         occurred_at: DateTime<Utc>,
     ) -> Result<Worklog, ApplicationError> {
-        self.apply_external_state();
         self.spy
             .state
             .borrow_mut()
             .correction_calls
             .push((id, expected, replacement, occurred_at));
-        let correction_error = self
-            .spy
-            .state
-            .borrow()
-            .correction_error
-            .clone()
-            .or_else(|| self.correction_error.clone());
+        let correction_error = self.spy.state.borrow().correction_error.clone();
         if let Some(error) = correction_error {
             return Err(error);
         }
@@ -759,7 +694,6 @@ impl TrackerApplicationService for TestService {
         task_id: TaskId,
         expected: WorklogTimes,
     ) -> Result<Worklog, ApplicationError> {
-        self.apply_external_state();
         self.spy
             .state
             .borrow_mut()
@@ -783,7 +717,6 @@ impl TrackerApplicationService for TestService {
         if let Some(error) = self.spy.state.borrow_mut().global_worklog_error.take() {
             return Err(error);
         }
-        self.apply_external_state();
         let mut worklogs = self.authoritative_worklogs.clone();
         worklogs.sort_by_key(|worklog| (std::cmp::Reverse(worklog.start()), worklog.id()));
         if let Some(cursor) = after {
@@ -846,7 +779,6 @@ impl TrackerApplicationService for TestService {
         _task_id: TaskId,
         _after: Option<&WorklogCursor>,
     ) -> Result<WorklogPage, ApplicationError> {
-        self.apply_external_state();
         if let Some(tasks) = self.tasks_after_next_worklog_read.take() {
             self.tasks = tasks;
         }

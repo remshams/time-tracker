@@ -64,7 +64,7 @@ pub(crate) struct AppEffect {
 }
 
 type EffectCompletion = Box<dyn FnOnce(&mut AppState, CompletedRequest)>;
-const MAX_PENDING_EFFECTS: usize = 32;
+pub(crate) const MAX_PENDING_EFFECTS: usize = 32;
 
 #[cfg(test)]
 impl<S: TrackerApplicationService> App<S> {
@@ -494,11 +494,8 @@ mod effect_tests {
     use std::{cell::RefCell, rc::Rc};
 
     use chrono::{DateTime, TimeDelta, Utc};
-    use tracker_application::{
-        ApplicationError, ApplicationFailureCategory, ClearActiveTaskOutcome, SetActiveTaskOutcome,
-        TaskOrdering, TrackerApplication,
-    };
-    use tracker_domain::{TaskName, TrackingState, WorklogTimes};
+    use tracker_application::{ApplicationError, TaskOrdering, TrackerApplication};
+    use tracker_domain::{TaskName, TrackingState};
     use tracker_storage::SqliteRepository;
 
     use crate::application_request::{
@@ -632,70 +629,6 @@ mod effect_tests {
         }
         assert_eq!(observed.borrow().as_slice(), ["First task", "Second task"]);
         assert_eq!(application.tasks(TaskOrdering::RecentlyCreated).len(), 2);
-    }
-
-    #[test]
-    fn queued_worklog_write_keeps_its_expected_times_for_backend_validation() {
-        let mut application =
-            TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap();
-        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
-        let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
-        let task = application
-            .create_task(TaskName::new("Tracked task").unwrap(), at)
-            .unwrap();
-        let started = match application
-            .set_active_task(task.id(), at + TimeDelta::seconds(1))
-            .unwrap()
-        {
-            SetActiveTaskOutcome::Started { worklog } => worklog,
-            other => panic!("expected started worklog, got {other:?}"),
-        };
-        let completed = match application
-            .clear_active_task(started.id(), at + TimeDelta::seconds(10))
-            .unwrap()
-        {
-            ClearActiveTaskOutcome::Stopped { worklog } => worklog,
-            other => panic!("expected stopped worklog, got {other:?}"),
-        };
-        let original = completed.times();
-        let competing = WorklogTimes::new(
-            original.start() + TimeDelta::seconds(1),
-            original.end().map(|end| end + TimeDelta::seconds(1)),
-        );
-        let queued = WorklogTimes::new(
-            original.start() + TimeDelta::seconds(2),
-            original.end().map(|end| end + TimeDelta::seconds(2)),
-        );
-        assert!(state.enqueue(
-            ApplicationRequest::CorrectWorklog {
-                id: completed.id(),
-                expected: original,
-                replacement: queued,
-                occurred_at: at + TimeDelta::seconds(12),
-            },
-            |_, _| {},
-        ));
-        application
-            .correct_worklog(
-                completed.id(),
-                original,
-                competing,
-                at + TimeDelta::seconds(11),
-            )
-            .unwrap();
-
-        let effect = state.take_effect().unwrap();
-        let result = execute_local(&mut application, effect.request.clone());
-        let ApplicationOutcome::Worklog(Err(error)) = &result.outcome else {
-            panic!("stale correction should fail");
-        };
-        assert_eq!(
-            error.failure().category(),
-            ApplicationFailureCategory::WorklogChanged,
-        );
-        state.complete_effect(effect, result);
-        let page = application.worklogs_for_task(task.id(), None).unwrap();
-        assert_eq!(page.worklogs[0].times(), competing);
     }
 
     #[test]

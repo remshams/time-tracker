@@ -625,7 +625,7 @@ fn task_name_error_text(error: TaskNameError) -> String {
 #[cfg(test)]
 mod navigation_tests {
     use crate::app::Status;
-    use crate::app::{AppEffect, AppState};
+    use crate::app::{AppEffect, AppState, MAX_PENDING_EFFECTS};
     use crate::application_request::{ApplicationOutcome, ApplicationRequest, CompletedRequest};
     use crate::command::Command;
     use crate::screens::task_list::{InactiveTaskPreview, TaskListCommand, TaskListMode, TaskView};
@@ -751,7 +751,7 @@ mod navigation_tests {
     #[test]
     fn a_rejected_preview_request_closes_the_loading_modal() {
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
-        for _ in 0..32 {
+        for _ in 0..MAX_PENDING_EFFECTS {
             assert!(state.enqueue(ApplicationRequest::AllWorklogs { after: None }, |_, _| {}));
         }
         assert!(!state.enqueue(ApplicationRequest::AllWorklogs { after: None }, |_, _| {}));

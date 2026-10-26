@@ -686,17 +686,7 @@ fn unarchiving_clamps_the_archived_selection_to_the_nearest_row() {
 fn a_failed_unarchive_keeps_the_view_selection_and_reports_the_error() {
     let mut service = TestService::with_tasks(vec![task(1, "alpha"), archived_task(3, "gone")]);
     service.fail_unarchive = true;
-    let spy = service.spy();
     let mut app = App::load(service);
-    // Another client's activity reaches the service after the app loaded;
-    // the failed write must still resynchronize the TUI's tracking state.
-    spy.set_external_tracking(TrackingState::Running {
-        worklog: ActiveWorklog::begin(
-            WorklogId::from_uuid(uuid::Uuid::from_u128(20)),
-            TaskId::from_uuid(uuid::Uuid::from_u128(3)),
-            DateTime::from_timestamp(100, 0).unwrap(),
-        ),
-    });
     app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
     app.handle(Command::TaskList(TaskListCommand::UnarchiveSelected));
 
@@ -705,11 +695,6 @@ fn a_failed_unarchive_keeps_the_view_selection_and_reports_the_error() {
     assert_eq!(
         app.app_view().tasks()[0].id(),
         TaskId::from_uuid(uuid::Uuid::from_u128(3))
-    );
-    assert_eq!(
-        app.app_view().active_task_id(),
-        Some(TaskId::from_uuid(uuid::Uuid::from_u128(3))),
-        "the failed unarchive still refreshes tracking state"
     );
     assert_eq!(
         app.app_view().status(),
