@@ -356,46 +356,6 @@ impl TrackerRepository for MemoryRepository {
         Ok(task)
     }
 
-    fn preview_inactive_tasks(
-        &self,
-        as_of: DateTime<Utc>,
-    ) -> Result<crate::InactiveTaskPreviewRead, RepositoryError> {
-        self.read_guard()?;
-        let data = self.0.borrow();
-        Ok(crate::InactiveTaskPreviewRead {
-            tasks: Self::inactive_tasks(&data, as_of, InactivityPeriod::default())?,
-            tracking: Self::tracking_read(&data),
-        })
-    }
-
-    fn archive_inactive_tasks(
-        &self,
-        expected_ids: &[TaskId],
-        as_of: DateTime<Utc>,
-    ) -> Result<crate::InactiveTaskArchive, RepositoryError> {
-        if let Some(error) = self.take_write_failure() {
-            return Err(error);
-        }
-        let mut data = self.0.borrow_mut();
-        let mut tasks = Self::inactive_tasks(&data, as_of, InactivityPeriod::default())?;
-        let actual_ids: Vec<_> = tasks.iter().map(Task::id).collect();
-        if actual_ids != expected_ids {
-            return Err(RepositoryError::InactiveTaskCandidatesChanged);
-        }
-        for task in &mut tasks {
-            task.archive(as_of);
-            data.tasks
-                .iter_mut()
-                .find(|item| item.task.id() == task.id())
-                .unwrap()
-                .task = task.clone();
-        }
-        Ok(crate::InactiveTaskArchive {
-            tasks,
-            tracking: Self::tracking_read(&data),
-        })
-    }
-
     fn preview_inactive_tasks_with_period(
         &self,
         as_of: DateTime<Utc>,

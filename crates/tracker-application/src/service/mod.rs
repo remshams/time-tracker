@@ -78,8 +78,11 @@ pub trait TrackerApplicationService {
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError>;
 
-    /// Lists active tasks created more than 14 days before `as_of` with no
-    /// worklog overlapping the preceding 14 days.
+    /// Lists unarchived tasks that were inactive during the default
+    /// `InactivityPeriod` (14 days) before `as_of`. A task qualifies when it
+    /// was created and its metadata last changed before that window starts,
+    /// and it has no running worklog and no work ending after the window
+    /// starts.
     fn preview_inactive_tasks(
         &mut self,
         as_of: DateTime<Utc>,

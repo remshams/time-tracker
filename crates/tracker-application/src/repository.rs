@@ -181,25 +181,14 @@ pub trait TrackerRepository {
     ) -> Result<Task, RepositoryError>;
 
     /// Reads eligible tasks and active tracking from one backend transaction.
-    fn preview_inactive_tasks(
-        &self,
-        as_of: DateTime<Utc>,
-    ) -> Result<InactiveTaskPreviewRead, RepositoryError>;
-
-    /// Rechecks the exact eligible identifier set and archives it atomically.
-    fn archive_inactive_tasks(
-        &self,
-        expected_ids: &[TaskId],
-        as_of: DateTime<Utc>,
-    ) -> Result<InactiveTaskArchive, RepositoryError>;
-
     fn preview_inactive_tasks_with_period(
         &self,
         as_of: DateTime<Utc>,
         period: InactivityPeriod,
     ) -> Result<InactiveTaskPreviewRead, RepositoryError>;
 
-    /// Rechecks the exact eligible identifier set under the same write lock.
+    /// Rechecks the exact eligible identifier set and archives it under the
+    /// same write lock.
     fn archive_inactive_tasks_with_period(
         &self,
         expected_ids: &[TaskId],
