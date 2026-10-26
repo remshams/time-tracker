@@ -13,8 +13,8 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags};
 use tracker_application::{
     GlobalWorklogCursor, GlobalWorklogPage, InactiveTaskArchive, InactiveTaskPreviewRead,
-    ReportRead, RepositoryError, TaskListItem, TrackerRepository, WorklogCorrection, WorklogCursor,
-    WorklogDeletion, WorklogMove, WorklogPage,
+    ReportRead, RepositoryError, TaskListItem, TaskListReportRead, TrackerRepository,
+    WorklogCorrection, WorklogCursor, WorklogDeletion, WorklogMove, WorklogPage,
 };
 use tracker_domain::{InactivityPeriod, Task, TaskId, TaskName, Worklog, WorklogId, WorklogTimes};
 
@@ -165,7 +165,7 @@ impl TrackerRepository for SqliteRepository {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         now: DateTime<Utc>,
-    ) -> Result<(Vec<TaskListItem>, ReportRead), RepositoryError> {
+    ) -> Result<TaskListReportRead, RepositoryError> {
         SqliteRepository::task_list_report_read(self, start, end, now).map_err(Into::into)
     }
 
