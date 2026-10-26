@@ -140,34 +140,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-# These exact edits only stop the shared fake client from building command
-# receipts, which no production code reads. Every reply keeps its task.
-COMMAND_RECEIPT_SUPPORT_EDITS = (
-    ("                let receipt: CommandReceipt?\n"
-     "                if applyingTaskCommand {\n",
-     "                if applyingTaskCommand {\n"),
-    ("                        archived: desiredArchived ?? task.archived, latestStart: task.latestStart)\n"
-     "                    receipt = CommandReceipt(requestId: \"command-request\", replayed: false)\n"
-     "                } else {\n"
-     "                    receipt = nil\n"
-     "                }\n",
-     "                        archived: desiredArchived ?? task.archived, latestStart: task.latestStart)\n"
-     "                }\n"),
-    ("TaskCommandResult(task: task, receipt: receipt)", "TaskCommandResult(task: task)"),
-    ("        func created(task: TaskItem, receipt: CommandReceipt? = nil) {\n"
-     "            complete(.success(.created(TaskCreationResult(task: task, receipt: receipt))))\n",
-     "        func created(task: TaskItem) {\n"
-     "            complete(.success(.created(TaskCreationResult(task: task))))\n"),
-)
-COMMAND_RECEIPT_SUITES = (
-    "Features/TaskArchiving/TaskArchivingTests.swift",
-    "Features/TaskCreation/TaskCreationTests.swift",
-    "Features/TaskRename/TaskRenameTests.swift",
-)
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    ("Shared fixture stops building unread command receipts",
-     COMMAND_RECEIPT_SUPPORT_EDITS, None, None, COMMAND_RECEIPT_SUITES, COMMAND_RECEIPT_SUITES),
-)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [PRESENTATION, SESSION],
