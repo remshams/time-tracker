@@ -1399,8 +1399,8 @@ async fn coherent_refresh_rejects_missing_or_archived_active_tasks_without_adopt
     }
 }
 
-/// Another client's write between the preview and the candidate reads does not invalidate the
-/// preview; only an archived candidate does.
+/// Another client's writes between the preview and the task-list read show in the resolved
+/// candidates and never invalidate the preview.
 #[tokio::test]
 async fn preview_candidates_resolve_after_another_client_writes() {
     let server = TestServer::start();
@@ -1428,15 +1428,38 @@ async fn preview_candidates_resolve_after_another_client_writes() {
     assert_eq!(client.last_failure(), None);
 
     other.archive_task(candidate.id(), as_of).await.unwrap();
-    assert_eq!(
-        client
-            .resolve_preview_tasks(&preview)
-            .await
-            .unwrap_err()
-            .to_string(),
-        "Tracker state changed. Refresh and retry."
-    );
-    assert_eq!(client.last_failure(), Some(RemoteFailureKind::Conflict));
+    let resolved = client.resolve_preview_tasks(&preview).await.unwrap();
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(resolved[0].id(), candidate.id());
+    assert!(resolved[0].is_archived());
+    assert_eq!(client.last_failure(), None);
+}
+
+#[tokio::test]
+async fn a_preview_candidate_missing_from_the_task_list_is_a_protocol_failure() {
+    let server = TestServer::start();
+    let mut client = connected(&server.endpoint()).await.unwrap();
+    let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
+    let known = client.create_task(name("Old task"), at).await.unwrap();
+    let preview: tracker_remote::InactiveTaskPreview = serde_json::from_value(serde_json::json!({
+        "as_of": at,
+        "inactive_days": 14,
+        "count": 2,
+        "candidate_task_ids": [
+            known.id().to_string(),
+            tracker_domain::TaskId::generate().to_string(),
+        ],
+    }))
+    .unwrap();
+
+    let error = client.resolve_preview_tasks(&preview).await.unwrap_err();
+
+    assert!(matches!(
+        error,
+        tracker_application::ApplicationError::RemoteProtocol(message)
+            if message == "invalid server response: preview candidate is not in the task list"
+    ));
+    assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
 }
 
 #[tokio::test]

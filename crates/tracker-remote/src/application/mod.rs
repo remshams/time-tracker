@@ -119,9 +119,9 @@ struct HistoryRead {
 }
 
 use decoding::{
-    clear_tracking_result, decode_active, decode_history, decode_task, decode_task_item,
-    decode_task_list_state, decode_tasks, set_tracking_result, task_result,
-    validate_inactive_preview, validate_report, worklog_result,
+    clear_tracking_result, decode_active, decode_history, decode_task_item, decode_task_list_state,
+    decode_tasks, set_tracking_result, task_result, validate_inactive_preview, validate_report,
+    worklog_result,
 };
 use error::{classify_error, map_application_error, protocol_failure};
 

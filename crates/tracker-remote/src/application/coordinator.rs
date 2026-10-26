@@ -173,14 +173,17 @@ impl RemoteApplication {
         self.tasks.read_task(&mut self.session, id).await
     }
 
-    /// Loads domain tasks only while every candidate remains unarchived.
+    /// Reads the task list once and returns the preview's candidates for display.
     pub async fn resolve_preview_tasks(
         &mut self,
         preview: &InactiveTaskPreview,
     ) -> Result<Vec<Task>, ApplicationError> {
-        self.tasks
-            .resolve_preview_tasks(&mut self.session, preview)
+        self.refresh_task_command_view()
             .await
+            .map_err(|error| map_application_error(&error, None, None))?;
+        self.tasks
+            .preview_tasks(preview)
+            .inspect_err(|_| self.session.set_failure(RemoteFailureKind::Protocol))
     }
 
     /// Captures candidates in the default inactivity window.

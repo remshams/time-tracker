@@ -3,8 +3,8 @@ use super::{
     InactiveTaskPreview, InactiveTaskPreviewDto, InactivityPeriod, Method, MoveCandidate,
     MutationContext, MutationResultDto, RemoteError, RemoteFailureKind, RemoteSession, Task,
     TaskChangeRequest, TaskId, TaskListItem, TaskOrdering, TaskResourceDto, TasksDto, Utc,
-    canonical, decode_task, decode_task_item, decode_tasks, map_application_error,
-    protocol_failure, task_result,
+    canonical, decode_task_item, decode_tasks, map_application_error, protocol_failure,
+    task_result,
 };
 
 /// Task protocol operations and confirmed task observations.
@@ -99,27 +99,20 @@ impl TasksClient {
         Ok(dto)
     }
 
-    /// Loads domain tasks only while every candidate remains unarchived.
-    pub(super) async fn resolve_preview_tasks(
-        &mut self,
-        session: &mut RemoteSession,
+    /// Maps the preview's candidates to tasks in the confirmed catalog.
+    pub(super) fn preview_tasks(
+        &self,
         preview: &InactiveTaskPreview,
     ) -> Result<Vec<Task>, ApplicationError> {
-        let mut tasks = Vec::with_capacity(preview.candidate_ids.len());
-        for &id in &preview.candidate_ids {
-            let dto = self
-                .read_task(session, id)
-                .await
-                .map_err(|error| map_application_error(&error, None, Some(id)))?;
-            if dto.task.archived {
-                return Err(session.intent_changed());
-            }
-            tasks.push(
-                decode_task(dto.task)
-                    .map_err(|error| map_application_error(&error, None, Some(id)))?,
-            );
-        }
-        Ok(tasks)
+        preview
+            .candidate_ids
+            .iter()
+            .map(|&id| {
+                self.task(id)
+                    .cloned()
+                    .ok_or_else(|| protocol_failure("preview candidate is not in the task list"))
+            })
+            .collect()
     }
 
     pub(super) fn adopt_task(&mut self, item: TaskListItem) {
