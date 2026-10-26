@@ -119,16 +119,6 @@ final class GlobalMenuShortcutRegistration {
         }
     }
 
-    func unregister() {
-        stopMenuTracking()
-        if let hotKey { UnregisterEventHotKey(hotKey) }
-        hotKey = nil
-        shortcut = nil
-        registeredKeyCode = nil
-        if let handler { RemoveEventHandler(handler) }
-        handler = nil
-    }
-
     func beginMenuTracking(dismiss: @escaping @MainActor () -> Void) {
         guard dismissTrackedMenu == nil, shortcut != nil, registeredKeyCode != nil else { return }
         // Menu tracking consumes keys before AppKit dispatch and suspends Carbon hotkey delivery.

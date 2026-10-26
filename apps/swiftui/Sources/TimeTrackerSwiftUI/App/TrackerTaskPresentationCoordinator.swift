@@ -12,7 +12,6 @@ final class TrackerTaskPresentationCoordinator {
     private(set) var hasPresentation = false
     private let store: TrackerStore
     private let presentingWindow: (Bool) -> UUID?
-    @ObservationIgnored private var observationGeneration = 0
     @ObservationIgnored private var isRunning = false
     @ObservationIgnored private var isChoosingOwner = false
 
@@ -24,15 +23,7 @@ final class TrackerTaskPresentationCoordinator {
     func start() {
         guard !isRunning else { return }
         isRunning = true
-        observationGeneration += 1
-        observePresentations(generation: observationGeneration)
-    }
-
-    func stop() {
-        isRunning = false
-        observationGeneration += 1
-        hasPresentation = false
-        setOwner(nil)
+        observePresentations()
     }
 
     func windowAvailable() { update() }
@@ -62,13 +53,12 @@ final class TrackerTaskPresentationCoordinator {
     }
 
     /// Chooses an owner whenever a value read by `update()` changes.
-    private func observePresentations(generation: Int) {
-        guard isRunning, generation == observationGeneration else { return }
+    private func observePresentations() {
         withObservationTracking {
             update()
         } onChange: { [weak self] in
             // Observation reports changes before the new value is stored; read it on the next main-actor turn.
-            Task { @MainActor in self?.observePresentations(generation: generation) }
+            Task { @MainActor in self?.observePresentations() }
         }
     }
 

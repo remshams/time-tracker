@@ -42,9 +42,6 @@ final class TrackerStatusItemController: NSObject {
         store.menu.valuesDidChange.sink { [weak self] values in
             MainActor.assumeIsolated { self?.updateMenuValues(values) }
         }.store(in: &subscriptions)
-        NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
-            .sink { [weak self] _ in MainActor.assumeIsolated { self?.stop() } }
-            .store(in: &subscriptions)
         let registration = GlobalMenuShortcutRegistration { [weak self] in self?.toggleMenu() }
         shortcutRegistration = registration
         store.registerMenuShortcut = { [weak registration] shortcut in
@@ -69,19 +66,6 @@ final class TrackerStatusItemController: NSObject {
                 }
             }.store(in: &subscriptions)
         updateLabel()
-    }
-
-    func stop() {
-        nativeMenu?.cancelTracking()
-        clearMenuValues()
-        shortcutRegistration?.unregister()
-        shortcutRegistration = nil
-        store.registerMenuShortcut = nil
-        subscriptions.removeAll()
-        appearanceObservation = nil
-        if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
-        statusItem = nil
-        openWindow = nil
     }
 
     private func updateLabel() {
