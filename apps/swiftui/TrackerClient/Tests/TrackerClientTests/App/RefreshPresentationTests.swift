@@ -6,24 +6,22 @@ final class RefreshPresentationTests: XCTestCase {
     func testSelectedResourcesPublishTogetherAndPreserveLoadedIdleState() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        XCTAssertNil(fixture.session.taskCatalogResource)
-        XCTAssertNil(fixture.session.trackingResource)
+        XCTAssertTrue(fixture.session.tasks.isEmpty)
+        XCTAssertEqual(fixture.session.runningTaskName, "Waiting for tracker state")
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        XCTAssertEqual(fixture.session.taskCatalogResource?.value, [firstTask])
-        XCTAssertNotNil(fixture.session.trackingResource)
-        XCTAssertNil(fixture.session.trackingResource?.value)
-        var observations: [(TaskCatalogObservation?, TrackingObservation?)] = []
-        fixture.session.onChange = {
-            observations.append((fixture.session.taskCatalogResource, fixture.session.trackingResource))
-        }
+        XCTAssertEqual(fixture.session.tasks, [firstTask])
+        XCTAssertNil(fixture.session.active)
+        XCTAssertEqual(fixture.session.runningTaskName, "No timer running")
+        var observations: [([TaskItem], WorklogItem?)] = []
+        fixture.session.onChange = { observations.append((fixture.session.tasks, fixture.session.active)) }
         fixture.session.refresh()
         let refresh = try await fixture.client.next()
         let running = WorklogItem(id: "worklog-second", taskId: secondTask.id, start: activeWorklog.start, end: nil)
         let next = TaskListResources(tasks: [firstTask, secondTask], active: running)
         refresh.succeed(next)
         try await settleWithoutReplacingObserver(fixture)
-        XCTAssertTrue(observations.contains { $0.0 == next.catalog })
-        XCTAssertTrue(observations.allSatisfy { ($0.0 == next.catalog) == ($0.1 == next.tracking) })
+        XCTAssertTrue(observations.contains { $0.0 == next.catalog.value })
+        XCTAssertTrue(observations.allSatisfy { ($0.0 == next.catalog.value) == ($0.1 == next.tracking.value) })
     }
 
     @MainActor

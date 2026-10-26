@@ -3,10 +3,7 @@ import Foundation
 @MainActor
 public final class TrackerSession {
     public var onChange: (() -> Void)?
-    public private(set) var now: Date
 
-    public private(set) var taskCatalogResource: TaskCatalogObservation?
-    public private(set) var trackingResource: TrackingObservation?
     private let client: any TrackerClient
     private let reports: (any ReportClient)?
     private let clock: any TrackerClock
@@ -30,9 +27,7 @@ public final class TrackerSession {
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
     private var rolloverTimer: (any TrackerCancellation)?
-    private var displayGeneration = 0
-    private var pollGeneration = 0
-    private var rolloverGeneration = 0
+    // The scheduler runs no callback after cancel(), so timer callbacks need no staleness check.
     private var started = false
     // One poll at a time: no poll is scheduled while a refresh is waiting.
     private var refreshing = false
@@ -59,7 +54,6 @@ public final class TrackerSession {
         let initialSettings = settings.load() ?? .local
         connection = ConnectionState(settings: initialSettings)
         lastTracked = LastTrackedTaskState(repository: lastTrackedTasks, settings: initialSettings)
-        now = clock.now
         dailyTotals.updateDay(at: clock.now)
     }
 
@@ -160,13 +154,8 @@ public final class TrackerSession {
         case .unavailable: return dailyTotalsError ?? "Today's total is unavailable"
         }
     }
-    public var todayTasks: [TaskItem] {
-        tasks.filter { (dailyDuration(taskID: $0.id) ?? 0) > 0 }
-            .sorted {
-                if $0.name == $1.name { return $0.id < $1.id }
-                return $0.name < $1.name
-            }
-    }
+    /// Tasks with time logged today, in task list order. The menu applies its own task order.
+    public var todayTasks: [TaskItem] { tasks.filter { (dailyDuration(taskID: $0.id) ?? 0) > 0 } }
     public func dailyDuration(taskID: String) -> TimeInterval? {
         dailyTotals.duration(taskID: taskID, active: active, clock: clock)
     }
@@ -759,8 +748,6 @@ public final class TrackerSession {
     }
 
     private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
-        taskCatalogResource = resources.catalog
-        trackingResource = resources.tracking
         dailyTotals.updateDay(at: clock.now)
         let retryFailedHistory = connection.stale && history.unavailable
         connection.acceptTaskList()
@@ -833,11 +820,9 @@ public final class TrackerSession {
         cancelPolling()
         guard started, !sleeping, !refreshing, !connection.protocolBlocked else { return }
         let interval = TrackerPollingPolicy.interval(visible: uiVisible, failures: connection.failures)
-        let token = pollGeneration
         pollTimer = scheduler.schedule(after: interval, repeating: false, tolerance: min(5, interval * 0.2)) {
             [weak self] in
-            guard let self, token == pollGeneration else { return }
-            beginRefresh()
+            self?.beginRefresh()
         }
     }
 
@@ -848,11 +833,8 @@ public final class TrackerSession {
             return
         }
         guard displayTimer == nil else { return }
-        now = clock.now
-        let token = displayGeneration
         displayTimer = scheduler.schedule(after: 1, repeating: true, tolerance: 0.2) { [weak self] in
-            guard let self, displayTickIsCurrent(token) else { return }
-            now = clock.now
+            guard let self else { return }
             if reports != nil, dailyTotals.updateDay(at: clock.now) {
                 updateRolloverTimer()
                 if !connection.protocolBlocked { refresh() }
@@ -864,22 +846,19 @@ public final class TrackerSession {
     private func cancelTimers() {
         cancelPolling()
         cancelDisplay()
-        rolloverGeneration += 1
         rolloverTimer?.cancel()
         rolloverTimer = nil
     }
 
     private func updateRolloverTimer() {
-        rolloverGeneration += 1
         rolloverTimer?.cancel()
         rolloverTimer = nil
         guard reports != nil, started, !sleeping, let day = dailyTotals.day else { return }
-        let token = rolloverGeneration
         rolloverTimer = scheduler.schedule(
             after: max(0.001, day.end.timeIntervalSince(clock.now)),
             repeating: false, tolerance: 0
         ) { [weak self] in
-            guard let self, rolloverTickIsCurrent(token) else { return }
+            guard let self else { return }
             dailyTotals.updateDay(at: clock.now)
             updateRolloverTimer()
             if !connection.protocolBlocked { refresh() }
@@ -888,13 +867,11 @@ public final class TrackerSession {
     }
 
     private func cancelPolling() {
-        pollGeneration += 1
         pollTimer?.cancel()
         pollTimer = nil
     }
 
     private func cancelDisplay() {
-        displayGeneration += 1
         displayTimer?.cancel()
         displayTimer = nil
     }
@@ -929,12 +906,6 @@ public final class TrackerSession {
         tracking.error = nil
         acceptTaskList(resources)
     }
-
-    private func displayTickIsCurrent(_ token: Int) -> Bool {
-        token == displayGeneration && started && !sleeping && uiVisible && active != nil
-    }
-
-    private func rolloverTickIsCurrent(_ token: Int) -> Bool { token == rolloverGeneration && started && !sleeping }
 
     private func publish() { onChange?() }
 }

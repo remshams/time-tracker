@@ -7,7 +7,6 @@ import TrackerClient
 @Observable
 final class ConnectionDraftStore {
     private let store: TrackerStore
-    @ObservationIgnored private var presentationGeneration = UUID()
 
     var settings: ConnectionSettings
     private(set) var operationPending = false
@@ -25,31 +24,24 @@ final class ConnectionDraftStore {
 
     /// Starts a new presentation with the current settings and no result.
     func reset() {
-        presentationGeneration = UUID()
         settings = store.connectionSettings
         operationPending = false
         resultMessage = nil
         resultSucceeded = false
     }
 
-    /// Ignores results from operations that started before this call.
-    func invalidatePendingResults() { presentationGeneration = UUID() }
-
     func clearResult() { resultMessage = nil }
 
     func testConnection() {
         let settings = self.settings
-        let generation = presentationGeneration
         operationPending = true
         resultMessage = nil
         Task { @MainActor in
             do {
                 try await self.store.testConnection(settings)
-                guard self.presentationGeneration == generation else { return }
                 self.resultSucceeded = true
                 self.resultMessage = "Connection succeeded. Click Connect to use this data source."
             } catch {
-                guard self.presentationGeneration == generation else { return }
                 self.resultSucceeded = false
                 self.resultMessage = error.localizedDescription
             }
@@ -59,12 +51,10 @@ final class ConnectionDraftStore {
 
     func connect() {
         let settings = self.settings
-        let generation = presentationGeneration
         operationPending = true
         resultMessage = nil
         Task { @MainActor in
             let succeeded = await self.store.connect(settings)
-            guard self.presentationGeneration == generation else { return }
             self.resultSucceeded = succeeded
             self.resultMessage =
                 self.resultSucceeded
@@ -76,7 +66,7 @@ final class ConnectionDraftStore {
 }
 
 extension View {
-    /// Resets the draft when Settings appears and ignores in-flight results after it disappears.
+    /// Resets the draft when Settings appears.
     /// Apply it outside the Form so scrolling sections in and out of view does not reset the draft.
     @MainActor
     func connectionDraftLifecycle(_ draft: ConnectionDraftStore, store: TrackerStore) -> some View {
@@ -92,7 +82,6 @@ private struct ConnectionDraftLifecycle: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onAppear { draft.reset() }
-            .onDisappear { draft.invalidatePendingResults() }
             .onChange(of: draft.settings) { _, _ in draft.clearResult() }
             .onChange(of: store.connectionSettings) { _, settings in draft.settings = settings }
     }

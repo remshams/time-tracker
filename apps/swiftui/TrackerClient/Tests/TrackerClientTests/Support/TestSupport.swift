@@ -375,7 +375,6 @@ final class ScheduledAction: TrackerCancellation {
         if !repeating { cancelled = true }
         action()
     }
-    @MainActor func deliverQueuedAction() { action() }
 }
 
 @MainActor

@@ -58,77 +58,11 @@ final class LifecycleTests: XCTestCase {
         fixture.clock.uptime += 9
         fixture.clock.now.addTimeInterval(9)
         timer?.fire()
-        XCTAssertEqual(fixture.session.now, fixture.clock.now)
         XCTAssertEqual(fixture.session.timerDisplayText, "00:00:39")
         XCTAssertEqual(fixture.client.operations.count, operationCount)
         fixture.session.menuClosed()
         XCTAssertTrue(timer?.cancelled == true)
         XCTAssertNil(fixture.scheduler.display)
-    }
-
-    @MainActor
-    func testCancelledTimerCallbacksAlreadyQueuedCannotRefreshOrUpdateDisplay() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
-        try await fixture.start(resources)
-        fixture.session.setWindowVisible(true)
-        let refresh = try await fixture.client.next()
-        refresh.succeed(resources)
-        try await fixture.settled()
-        let oldPoll = fixture.scheduler.poll
-        let oldDisplay = fixture.scheduler.display
-        let previousNow = fixture.session.now
-        fixture.session.setWindowVisible(false)
-        fixture.clock.now.addTimeInterval(100)
-        let count = fixture.client.operations.count
-        oldPoll?.deliverQueuedAction()
-        oldDisplay?.deliverQueuedAction()
-        XCTAssertFalse(fixture.client.hasPendingRequests)
-        XCTAssertEqual(fixture.client.operations.count, count)
-        XCTAssertEqual(fixture.session.now, previousNow)
-        XCTAssertEqual(fixture.scheduler.poll?.delay, 60)
-        XCTAssertNil(fixture.scheduler.display)
-    }
-
-    @MainActor
-    func testReplacedTimersCannotPublishAfterSessionResumes() async throws {
-        let fixture = Fixture(reports: true)
-        defer { fixture.cleanup() }
-        fixture.session.setWindowVisible(true)
-        let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
-        try await fixture.start(resources)
-        let replacedTimers = fixture.scheduler.active
-        XCTAssertTrue(replacedTimers.contains { $0.repeating })
-        XCTAssertTrue(replacedTimers.contains { !$0.repeating && $0.tolerance == 0 })
-
-        fixture.session.sleep()
-        fixture.clock.now.addTimeInterval(30)
-        fixture.clock.uptime += 30
-        fixture.session.wake()
-        let resumed = try await fixture.client.next()
-        resumed.succeed(TaskListTotalsRefresh(taskList: resources, rows: []))
-        try await fixture.settled()
-        let currentDisplay = try XCTUnwrap(fixture.scheduler.display)
-        let publishedNow = fixture.session.now
-        let operationCount = fixture.client.operations.count
-        let scheduledCount = fixture.scheduler.scheduled.count
-        var changes = 0
-        fixture.session.onChange = { changes += 1 }
-        fixture.clock.now.addTimeInterval(10)
-        fixture.clock.uptime += 10
-
-        replacedTimers.forEach { $0.deliverQueuedAction() }
-        XCTAssertEqual(changes, 0, "Callbacks from replaced timers must not publish into the resumed session.")
-        XCTAssertEqual(fixture.session.now, publishedNow)
-        XCTAssertFalse(fixture.client.hasPendingRequests)
-        XCTAssertEqual(fixture.client.operations.count, operationCount)
-        XCTAssertEqual(fixture.scheduler.scheduled.count, scheduledCount)
-
-        currentDisplay.fire()
-        XCTAssertEqual(changes, 1)
-        XCTAssertEqual(fixture.session.now, fixture.clock.now)
-        XCTAssertEqual(fixture.client.operations.count, operationCount)
     }
 
     @MainActor

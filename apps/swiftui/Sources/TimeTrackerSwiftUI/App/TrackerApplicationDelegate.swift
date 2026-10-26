@@ -29,10 +29,6 @@ final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
         runtime.showTracker()
         return false
     }
-
-    func applicationWillTerminate(_ notification: Notification) {
-        runtime.stop()
-    }
 }
 
 @MainActor
@@ -58,14 +54,6 @@ final class TrackerAppRuntime {
         isRunning = true
         presentation.start()
         statusItem.start { [weak self] in _ = self?.showTracker() }
-    }
-
-    func stop() {
-        isRunning = false
-        statusItem.stop()
-        presentation.stop()
-        openTracker = nil
-        deferredOpenID = nil
     }
 
     func installSceneOpener(_ openTracker: @escaping (UUID) -> Void) {

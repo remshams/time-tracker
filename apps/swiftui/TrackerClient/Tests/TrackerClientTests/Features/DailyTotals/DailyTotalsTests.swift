@@ -575,18 +575,6 @@ final class DailyTotalsSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testTodaysTasksSortByNameAndThenByIDForMatchingNames() async throws {
-        let fixture = Fixture(reports: true, calendar: dailyCalendar())
-        defer { fixture.cleanup() }
-        let laterID = TaskItem(id: "task-z", name: "Matching name", archived: false, latestStart: nil)
-        let earlierID = TaskItem(id: "task-a", name: "Matching name", archived: true, latestStart: nil)
-        let earlierName = TaskItem(id: "task-middle", name: "Earlier name", archived: false, latestStart: nil)
-        let tasks = [laterID, earlierID, earlierName]
-        try await fixture.start(TaskListResources(tasks: tasks, active: nil), rows: tasks.map { total($0, 1) })
-        XCTAssertEqual(fixture.session.todayTasks.map(\.id), [earlierName.id, earlierID.id, laterID.id])
-    }
-
-    @MainActor
     func testReportPublishesNewActiveTrackingTogetherWithItsMatchingTotals() async throws {
         let fixture = Fixture(reports: true, calendar: dailyCalendar())
         defer { fixture.cleanup() }
@@ -947,9 +935,6 @@ final class DailyTotalsSessionTests: XCTestCase {
         wake.succeed(TaskListTotalsRefresh(taskList: resources, rows: [total(firstTask, 304)]))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.dailyDuration(taskID: firstTask.id), 304)
-        let count = fixture.client.operations.count
-        timers.forEach { $0.deliverQueuedAction() }
-        XCTAssertEqual(fixture.client.operations.count, count)
     }
 
     @MainActor

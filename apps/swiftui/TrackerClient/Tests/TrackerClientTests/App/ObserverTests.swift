@@ -28,17 +28,12 @@ final class ObserverTests: XCTestCase {
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         let display = try XCTUnwrap(fixture.scheduler.display)
         let operationCount = fixture.client.operations.count
-        var observedNow: Date?
         var observedTimerText: String?
-        fixture.session.onChange = {
-            observedNow = fixture.session.now
-            observedTimerText = fixture.session.timerDisplayText
-        }
+        fixture.session.onChange = { observedTimerText = fixture.session.timerDisplayText }
 
         fixture.clock.now.addTimeInterval(4)
         fixture.clock.uptime += 4
         display.fire()
-        XCTAssertEqual(observedNow, fixture.clock.now)
         XCTAssertEqual(observedTimerText, "00:00:34")
         XCTAssertEqual(fixture.client.operations.count, operationCount)
     }
@@ -53,17 +48,18 @@ final class ObserverTests: XCTestCase {
         let request = try await fixture.client.next()
         let operationCount = fixture.client.operations.count
         fixture.clock.now.addTimeInterval(4)
-        var observedNow: Date?
+        fixture.clock.uptime += 4
+        var observedTimerText: String?
         var observedBusy: Bool?
         var observedDisplayScheduled: Bool?
         fixture.session.onChange = {
-            observedNow = fixture.session.now
+            observedTimerText = fixture.session.timerDisplayText
             observedBusy = fixture.client.hasPendingRequests
             observedDisplayScheduled = fixture.scheduler.display != nil
         }
 
         fixture.session.setWindowVisible(true)
-        XCTAssertEqual(observedNow, fixture.clock.now)
+        XCTAssertEqual(observedTimerText, "00:00:34")
         XCTAssertEqual(observedBusy, true)
         XCTAssertEqual(observedDisplayScheduled, true)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
