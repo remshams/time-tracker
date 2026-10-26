@@ -141,21 +141,6 @@ impl TrackerRepository for SqliteRepository {
         SqliteRepository::unarchive_task(self, id, occurred_at).map_err(Into::into)
     }
 
-    fn preview_inactive_tasks(
-        &self,
-        as_of: DateTime<Utc>,
-    ) -> Result<InactiveTaskPreviewRead, RepositoryError> {
-        SqliteRepository::preview_inactive_tasks(self, as_of).map_err(Into::into)
-    }
-
-    fn archive_inactive_tasks(
-        &self,
-        expected_ids: &[TaskId],
-        as_of: DateTime<Utc>,
-    ) -> Result<InactiveTaskArchive, RepositoryError> {
-        SqliteRepository::archive_inactive_tasks(self, expected_ids, as_of).map_err(Into::into)
-    }
-
     fn preview_inactive_tasks_with_period(
         &self,
         as_of: DateTime<Utc>,
