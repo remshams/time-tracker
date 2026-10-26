@@ -43,33 +43,44 @@ pub(crate) enum PreviewToken {
     },
 }
 
+/// A task command that passed validation and is ready to run against the backend.
+#[derive(Debug)]
+pub(crate) enum Request {
+    /// A bulk archive whose preview token was already read and matched to the backend.
+    ArchiveInactive(PreviewToken),
+    Command(Tasks),
+}
+
 pub(crate) fn validate(
-    command: &mut Tasks,
+    command: Tasks,
     identity: &str,
     now: DateTime<Utc>,
-) -> Result<(), CliError> {
-    match command {
-        Tasks::Create { name } | Tasks::Rename { name, .. } => {
-            TaskName::new(name.as_str()).map_err(CliError::input)?;
-        }
-        Tasks::ArchiveInactive { preview, yes } => {
-            if !*yes {
-                return Err(CliError::input("archive-inactive requires --yes"));
-            }
-            let token: PreviewToken = read_json(preview)?;
-            validate_preview(&token, identity)?;
-            if let PreviewToken::Local { as_of, .. } = &token
-                && now < *as_of
-            {
-                return Err(CliError::input(
-                    "archive time must not precede preview time",
-                ));
-            }
-            *preview = serde_json::to_string(&token).map_err(CliError::input)?;
-        }
-        _ => {}
+) -> Result<Request, CliError> {
+    if let Tasks::ArchiveInactive { preview, .. } = &command {
+        return archive_request(preview, identity, now).map(Request::ArchiveInactive);
     }
-    Ok(())
+    if let Tasks::Create { name } | Tasks::Rename { name, .. } = &command {
+        TaskName::new(name.as_str()).map_err(CliError::input)?;
+    }
+    Ok(Request::Command(command))
+}
+
+/// Reads the preview token, possibly from `@PATH`, once and matches it to the backend.
+fn archive_request(
+    preview: &str,
+    identity: &str,
+    now: DateTime<Utc>,
+) -> Result<PreviewToken, CliError> {
+    let token: PreviewToken = read_json(preview)?;
+    validate_preview(&token, identity)?;
+    if let PreviewToken::Local { as_of, .. } = &token
+        && now < *as_of
+    {
+        return Err(CliError::input(
+            "archive time must not precede preview time",
+        ));
+    }
+    Ok(token)
 }
 
 fn validate_preview(token: &PreviewToken, identity: &str) -> Result<(), CliError> {
@@ -120,9 +131,13 @@ fn validate_remote_period(preview: &InactiveTaskPreview) -> Result<(), CliError>
 
 pub(crate) async fn execute(
     backend: &mut Backend,
-    command: Tasks,
+    request: Request,
     now: DateTime<Utc>,
 ) -> Result<Value, CliError> {
+    let command = match request {
+        Request::ArchiveInactive(token) => return archive(backend, token).await,
+        Request::Command(command) => command,
+    };
     match command {
         Tasks::List {
             state,
@@ -142,11 +157,7 @@ pub(crate) async fn execute(
             get(backend, task_id)
         }
         Tasks::PreviewInactive => preview(backend, now).await,
-        Tasks::ArchiveInactive { preview, .. } => archive(backend, read_json(&preview)?).await,
-        change @ (Tasks::Create { .. }
-        | Tasks::Rename { .. }
-        | Tasks::Archive { .. }
-        | Tasks::Restore { .. }) => change_task(backend, change, now).await,
+        change => change_task(backend, change, now).await,
     }
 }
 

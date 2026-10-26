@@ -179,11 +179,11 @@ fn remote_preview_tokens_reject_invalid_guards_and_candidates_before_connecting(
     });
     let now = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
     let validate = |token: &serde_json::Value, identity: &str| {
-        let mut command = crate::args::Tasks::ArchiveInactive {
+        let command = crate::args::Tasks::ArchiveInactive {
             preview: token.to_string(),
             yes: true,
         };
-        crate::tasks::validate(&mut command, identity, now)
+        crate::tasks::validate(command, identity, now)
     };
     validate(&valid, backend).unwrap();
     let mut empty = valid.clone();
