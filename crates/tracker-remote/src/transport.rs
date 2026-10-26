@@ -80,24 +80,23 @@ impl Transport {
             .expect("validated endpoint accepts fixed API paths")
     }
 
-    pub(crate) async fn send<T: DeserializeOwned, B: Serialize>(
-        &self,
-        method: Method,
-        url: Url,
-        body: Option<&B>,
-    ) -> Result<T, RemoteError> {
-        self.send_with_delivery(method, url, body).await.result
+    /// Sends one GET over the pooled client. Reads are never retried.
+    pub(crate) async fn get<T: DeserializeOwned>(&self, url: Url) -> Result<T, RemoteError> {
+        let (status, bytes) = Self::send_once(&self.client, &Method::GET, &url, None)
+            .await
+            .map_err(|failure| failure.error)?;
+        Self::decode_response(status, bytes)
     }
 
-    /// Sends a request and reports whether any attempt may have reached the server.
-    pub(crate) async fn send_with_delivery<T: DeserializeOwned, B: Serialize>(
+    /// Sends a write on a new connection, resends it once after an availability failure, and
+    /// reports whether any attempt may have reached the server.
+    pub(crate) async fn write<T: DeserializeOwned, B: Serialize>(
         &self,
         method: Method,
         url: Url,
-        body: Option<&B>,
+        body: &B,
     ) -> Delivery<T> {
-        let retry_write = method != Method::GET && method != Method::HEAD;
-        let encoded = match body.map(serde_json::to_vec).transpose() {
+        let encoded = match serde_json::to_vec(body) {
             Ok(encoded) => encoded,
             Err(error) => {
                 return Delivery {
@@ -108,36 +107,25 @@ impl Transport {
                 };
             }
         };
-        let attempts = if retry_write { 2 } else { 1 };
+        let send = || Self::send_once(&self.write_client, &method, &url, Some(&encoded));
+        let mut attempt = send().await;
         let mut may_have_reached_server = false;
-        for attempt in 0..attempts {
-            let client = if retry_write {
-                &self.write_client
-            } else {
-                &self.client
-            };
-            let (status, bytes) =
-                match Self::send_once(client, &method, &url, encoded.as_deref()).await {
-                    Ok(response) => response,
-                    Err(failure) => {
-                        may_have_reached_server |= failure.may_have_reached_server;
-                        if matches!(failure.error, RemoteError::Unavailable(_))
-                            && attempt + 1 < attempts
-                        {
-                            continue;
-                        }
-                        return Delivery {
-                            result: Err(failure.error),
-                            may_have_reached_server,
-                        };
-                    }
-                };
-            return Delivery {
+        if let Err(failure) = &attempt
+            && matches!(failure.error, RemoteError::Unavailable(_))
+        {
+            may_have_reached_server = failure.may_have_reached_server;
+            attempt = send().await;
+        }
+        match attempt {
+            Ok((status, bytes)) => Delivery {
                 result: Self::decode_response(status, bytes),
                 may_have_reached_server: true,
-            };
+            },
+            Err(failure) => Delivery {
+                result: Err(failure.error),
+                may_have_reached_server: may_have_reached_server || failure.may_have_reached_server,
+            },
         }
-        unreachable!("the loop returns after its last attempt")
     }
 
     fn decode_response<T: DeserializeOwned>(
@@ -302,8 +290,9 @@ mod tests {
         let transport = Transport::new(&endpoint).unwrap();
         let body = serde_json::json!({"request_id": "stable-id", "task_id": "stable-task"});
         let response: serde_json::Value = transport
-            .send(Method::POST, transport.url("v1/tasks"), Some(&body))
+            .write(Method::POST, transport.url("v1/tasks"), &body)
             .await
+            .result
             .unwrap();
         assert_eq!(response, serde_json::json!({"ok": true}));
         let bodies = server.join().unwrap();
@@ -329,10 +318,10 @@ mod tests {
         let transport = Transport::new(&endpoint).unwrap();
         let body = serde_json::json!({"request_id": "same-request"});
         let delivery: Delivery<serde_json::Value> = transport
-            .send_with_delivery(
+            .write(
                 Method::POST,
                 transport.url("v1/tasks/archive-inactive"),
-                Some(&body),
+                &body,
             )
             .await;
         assert!(matches!(delivery.result, Err(RemoteError::Unavailable(_))));
@@ -352,10 +341,10 @@ mod tests {
         let endpoint = closed_endpoint();
         let transport = Transport::new(&endpoint).unwrap();
         let delivery: Delivery<serde_json::Value> = transport
-            .send_with_delivery(
+            .write(
                 Method::POST,
                 transport.url("v1/tasks"),
-                Some(&serde_json::json!({"request_id": "refused"})),
+                &serde_json::json!({"request_id": "refused"}),
             )
             .await;
         assert!(matches!(delivery.result, Err(RemoteError::Unavailable(_))));
@@ -367,7 +356,7 @@ mod tests {
         let transport = Transport::new(&closed_endpoint()).unwrap();
         let body = HashMap::from([((1, 2), 3)]);
         let delivery: Delivery<serde_json::Value> = transport
-            .send_with_delivery(Method::POST, transport.url("v1/tasks"), Some(&body))
+            .write(Method::POST, transport.url("v1/tasks"), &body)
             .await;
         assert!(
             matches!(delivery.result, Err(RemoteError::Protocol(message)) if message.starts_with("invalid request body"))
@@ -391,10 +380,10 @@ mod tests {
         });
         let transport = Transport::new(&endpoint).unwrap();
         let delivery: Delivery<serde_json::Value> = transport
-            .send_with_delivery(
+            .write(
                 Method::POST,
                 transport.url("v1/tasks"),
-                Some(&serde_json::json!({"request_id": "answered"})),
+                &serde_json::json!({"request_id": "answered"}),
             )
             .await;
         assert!(matches!(
@@ -423,10 +412,10 @@ mod tests {
         });
         let transport = Transport::new(&endpoint).unwrap();
         let delivery: Delivery<serde_json::Value> = transport
-            .send_with_delivery(
+            .write(
                 Method::POST,
                 transport.url("v1/tasks"),
-                Some(&serde_json::json!({"request_id": "dropped"})),
+                &serde_json::json!({"request_id": "dropped"}),
             )
             .await;
         server.join().unwrap();
@@ -460,9 +449,7 @@ mod tests {
             false
         });
         let transport = Transport::new(&endpoint).unwrap();
-        let result: Result<bool, _> = transport
-            .send(Method::GET, transport.url("v1/tasks"), None::<&()>)
-            .await;
+        let result: Result<bool, _> = transport.get(transport.url("v1/tasks")).await;
         assert!(result.is_err());
         assert!(!server.join().unwrap());
     }
@@ -472,9 +459,7 @@ mod tests {
         let payload = format!("\"{}\"", "x".repeat(16 * 1024 * 1024)).into_bytes();
         let (endpoint, worker) = serve_json(payload);
         let transport = Transport::new(&endpoint).unwrap();
-        let result: Result<String, _> = transport
-            .send(Method::GET, transport.url("v1/tasks"), None::<&()>)
-            .await;
+        let result: Result<String, _> = transport.get(transport.url("v1/tasks")).await;
         assert!(
             matches!(result, Err(RemoteError::Protocol(message)) if message == "server response is too large")
         );
@@ -486,10 +471,7 @@ mod tests {
         let payload = format!("\"{}\"", "x".repeat(16 * 1024 * 1024 - 2)).into_bytes();
         let (endpoint, worker) = serve_json(payload);
         let transport = Transport::new(&endpoint).unwrap();
-        let received: String = transport
-            .send(Method::GET, transport.url("v1/tasks"), None::<&()>)
-            .await
-            .unwrap();
+        let received: String = transport.get(transport.url("v1/tasks")).await.unwrap();
         assert_eq!(received.len(), 16 * 1024 * 1024 - 2);
         worker.join().unwrap();
     }

@@ -79,7 +79,7 @@ impl RemoteSession {
         url: reqwest::Url,
     ) -> Result<T, RemoteError> {
         self.transport
-            .send(Method::GET, url, None::<&()>)
+            .get(url)
             .await
             .map_err(|error| self.record_error(error))
     }
@@ -138,7 +138,7 @@ impl RemoteSession {
         self.last_write_attempted = true;
         let delivery = self
             .transport
-            .send_with_delivery(method, self.transport.url(path), Some(body))
+            .write(method, self.transport.url(path), body)
             .await;
         // A refused connection proves the server never received the command.
         self.last_write_attempted = delivery.may_have_reached_server;
