@@ -21,7 +21,7 @@ pub async fn run(cli: Cli) -> Result<Value, CliError> {
     let request = validate(cli.command, &identity, now)?;
     let mut backend = backend::Backend::open(identity, cli.db, cli.server).await?;
     match request {
-        Request::Tasks(command) => tasks::execute(&mut backend, command, now).await,
+        Request::Tasks(request) => tasks::execute(&mut backend, request, now).await,
         Request::Tracking(command) => tracking::execute(&mut backend, command, now).await,
         Request::Worklogs(request) => worklogs::execute(&mut backend, request, now).await,
         Request::Reports(args) => reports::execute(&mut backend, args, now).await,
@@ -63,7 +63,7 @@ pub(crate) fn read_json<T: serde::de::DeserializeOwned>(input: &str) -> Result<T
 
 /// A command that passed validation and is ready to run against the backend.
 enum Request {
-    Tasks(args::Tasks),
+    Tasks(tasks::Request),
     Tracking(args::Tracking),
     Worklogs(worklogs::Request),
     Reports(args::ReportArgs),
@@ -76,9 +76,8 @@ fn validate(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<Request, CliError> {
     Ok(match command {
-        args::Command::Tasks { mut command } => {
-            tasks::validate(&mut command, identity, now)?;
-            Request::Tasks(command)
+        args::Command::Tasks { command } => {
+            Request::Tasks(tasks::validate(command, identity, now)?)
         }
         args::Command::Worklogs { command } => {
             Request::Worklogs(worklogs::validate(command, identity, now)?)
