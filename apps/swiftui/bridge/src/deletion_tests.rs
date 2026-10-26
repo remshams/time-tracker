@@ -250,29 +250,24 @@ fn remote_deletion_sends_the_expected_worklog_and_classifies_failures() {
         let received = Arc::new(Mutex::new(None));
         let captured = received.clone();
         let resources = resources.clone();
-        let router = healthy_router()
-            .merge(resource_router(
-                resources,
-                vec![tracker_protocol::WorklogDto::from(&original)],
-            ))
-            .route(
-                "/v1/worklogs/{id}",
-                delete(
-                    move |axum::extract::Path(id): axum::extract::Path<String>,
-                          Json(body): Json<Value>| {
-                        *captured.lock().unwrap() = Some((id, body));
-                        async move {
-                            (
-                                status,
-                                Json(ErrorDto {
-                                    code,
-                                    message: message.into(),
-                                }),
-                            )
-                        }
-                    },
-                ),
-            );
+        let router = healthy_router().merge(resource_router(resources)).route(
+            "/v1/worklogs/{id}",
+            delete(
+                move |axum::extract::Path(id): axum::extract::Path<String>,
+                      Json(body): Json<Value>| {
+                    *captured.lock().unwrap() = Some((id, body));
+                    async move {
+                        (
+                            status,
+                            Json(ErrorDto {
+                                code,
+                                message: message.into(),
+                            }),
+                        )
+                    }
+                },
+            ),
+        );
         let server = Server::start(router);
         let mut bridge = server.client();
         let failure = delete_expected(&mut bridge, &original);

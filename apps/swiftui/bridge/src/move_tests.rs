@@ -377,45 +377,38 @@ fn remote_moves_succeed_after_an_unrelated_write_keep_original_guards_and_candid
 
 fn mock_server(
     resources: (tracker_protocol::TasksDto, tracker_protocol::TrackingDto),
-    original: &Worklog,
     reply: Value,
 ) -> Server {
     use axum::{Json, routing::patch};
     let state = std::sync::Arc::new(std::sync::Mutex::new(resources));
     let write_state = state.clone();
-    let router = healthy_router()
-        .merge(resource_router_state(
-            state,
-            vec![tracker_protocol::WorklogDto::from(original)],
-        ))
-        .route(
-            "/v1/worklogs/{id}",
-            patch(move |Json(body): Json<Value>| {
-                let mut reply = reply.clone();
-                if reply["request_id"] == "" {
-                    reply["request_id"] = body["request_id"].clone();
-                }
-                let state = write_state.clone();
-                async move {
-                    if let Ok(receipt) =
-                        serde_json::from_value::<tracker_protocol::MutationDto>(reply.clone())
-                        && let tracker_protocol::MutationResultDto::Worklog(worklog) =
-                            receipt.result
+    let router = healthy_router().merge(resource_router_state(state)).route(
+        "/v1/worklogs/{id}",
+        patch(move |Json(body): Json<Value>| {
+            let mut reply = reply.clone();
+            if reply["request_id"] == "" {
+                reply["request_id"] = body["request_id"].clone();
+            }
+            let state = write_state.clone();
+            async move {
+                if let Ok(receipt) =
+                    serde_json::from_value::<tracker_protocol::MutationDto>(reply.clone())
+                    && let tracker_protocol::MutationResultDto::Worklog(worklog) = receipt.result
+                {
+                    let mut resources = state.lock().unwrap();
+                    if resources
+                        .1
+                        .active_worklog
+                        .as_ref()
+                        .is_some_and(|active| active.id == worklog.id)
                     {
-                        let mut resources = state.lock().unwrap();
-                        if resources
-                            .1
-                            .active_worklog
-                            .as_ref()
-                            .is_some_and(|active| active.id == worklog.id)
-                        {
-                            resources.1.active_worklog = worklog.end.is_none().then_some(worklog);
-                        }
+                        resources.1.active_worklog = worklog.end.is_none().then_some(worklog);
                     }
-                    Json(reply)
                 }
-            }),
-        );
+                Json(reply)
+            }
+        }),
+    );
     Server::start(router)
 }
 
@@ -467,7 +460,7 @@ fn remote_move_rejects_wrong_identity_destination_times_and_invalid_receipts() {
                 10 => reply["result"]["value"]["unexpected"] = json!(true),
                 _ => unreachable!(),
             }
-            let server = mock_server(initial.clone(), &original, reply);
+            let server = mock_server(initial.clone(), reply);
             let mut bridge = server.client();
             let failure = move_to(&mut bridge, &original, destination);
             assert_eq!(failure["kind"], "protocol", "{index}: {failure}");
@@ -475,7 +468,7 @@ fn remote_move_rejects_wrong_identity_destination_times_and_invalid_receipts() {
             assert_eq!(failure["requiresRefresh"], true);
             assert!(failure.get("data").is_none());
         }
-        let server = mock_server(initial.clone(), &original, baseline);
+        let server = mock_server(initial.clone(), baseline);
         let mut bridge = server.client();
         assert!(
             move_to(&mut bridge, &original, destination)
@@ -531,34 +524,29 @@ fn remote_move_sends_original_task_and_microsecond_times_and_classifies_failures
         let received = Arc::new(Mutex::new(None));
         let captured = received.clone();
         let resources = resources.clone();
-        let router = healthy_router()
-            .merge(resource_router(
-                resources,
-                vec![tracker_protocol::WorklogDto::from(&original)],
-            ))
-            .route(
-                "/v1/worklogs/{id}",
-                patch(
-                    move |axum::extract::Path(id): axum::extract::Path<String>,
-                          Json(body): Json<Value>| {
-                        *captured.lock().unwrap() = Some((id, body));
-                        let message = if code == ErrorCode::Conflict {
-                            "Tracker state changed in another client"
-                        } else {
-                            "Move failed"
-                        };
-                        async move {
-                            (
-                                status,
-                                Json(ErrorDto {
-                                    code,
-                                    message: message.into(),
-                                }),
-                            )
-                        }
-                    },
-                ),
-            );
+        let router = healthy_router().merge(resource_router(resources)).route(
+            "/v1/worklogs/{id}",
+            patch(
+                move |axum::extract::Path(id): axum::extract::Path<String>,
+                      Json(body): Json<Value>| {
+                    *captured.lock().unwrap() = Some((id, body));
+                    let message = if code == ErrorCode::Conflict {
+                        "Tracker state changed in another client"
+                    } else {
+                        "Move failed"
+                    };
+                    async move {
+                        (
+                            status,
+                            Json(ErrorDto {
+                                code,
+                                message: message.into(),
+                            }),
+                        )
+                    }
+                },
+            ),
+        );
         let server = Server::start(router);
         let mut bridge = server.client();
         let failure = move_to(&mut bridge, &original, tasks[1].task.id());
@@ -630,7 +618,12 @@ fn remote_move_classifies_archived_and_missing_destination_from_recovered_resour
 
 #[test]
 fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
-    use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing::get};
+    use axum::{
+        Json, Router,
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, patch},
+    };
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -643,7 +636,6 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
     let resources = resource_dtos(writer.application.tasks(TaskOrdering::default()), None);
     let reads = Arc::new(AtomicUsize::new(0));
     let task_resources = resources.0.tasks.clone();
-    let original_dto = tracker_protocol::WorklogDto::from(&original);
     let router = Router::new()
         .route(
             "/v1/tasks/{id}",
@@ -694,11 +686,7 @@ fn remote_move_failed_recovery_keeps_uncertain_transport_error() {
         )
         .route(
             "/v1/worklogs/{id}",
-            get(move || {
-                let worklog = original_dto.clone();
-                async move { Json(tracker_protocol::WorklogResourceDto { worklog }) }
-            })
-            .patch(|| async {
+            patch(|| async {
                 (
                     StatusCode::CONFLICT,
                     Json(ErrorDto {
@@ -737,50 +725,36 @@ fn move_receipts_allow_a_newer_timer_and_destination_state_from_recovery_reads()
             end.is_none().then(|| original.clone()),
         );
         let state = Arc::new(Mutex::new(initial));
-        let worklogs = Arc::new(Mutex::new(vec![WorklogDto::from(&original)]));
         let changed_state = state.clone();
-        let changed_worklogs = worklogs.clone();
         let applied = moved.clone();
         let later_active = Worklog::begin(WorklogId::generate(), competing_task, at(250));
         let expected_active = later_active.clone();
-        let router = healthy_router()
-            .merge(resource_router_resources(state, worklogs))
-            .route(
-                "/v1/worklogs/{id}",
-                patch(move |Json(body): Json<Value>| {
-                    let changed_state = changed_state.clone();
-                    let changed_worklogs = changed_worklogs.clone();
-                    let applied = applied.clone();
-                    let later_active = later_active.clone();
-                    async move {
-                        {
-                            let mut state = changed_state.lock().unwrap();
-                            state.1.active_worklog = Some(WorklogDto::from(&later_active));
-                            state
-                                .0
-                                .tasks
-                                .iter_mut()
-                                .find(|item| item.id == destination.to_string())
-                                .unwrap()
-                                .archived = true;
-                        }
-                        changed_worklogs.lock().unwrap()[0] = WorklogDto::from(
-                            &Worklog::new(
-                                applied.id(),
-                                destination,
-                                applied.start(),
-                                Some(at(250)),
-                            )
-                            .unwrap(),
-                        );
-                        Json(MutationDto {
-                            request_id: body["request_id"].as_str().unwrap().into(),
-                            replayed: true,
-                            result: MutationResultDto::Worklog(WorklogDto::from(&applied)),
-                        })
+        let router = healthy_router().merge(resource_router_state(state)).route(
+            "/v1/worklogs/{id}",
+            patch(move |Json(body): Json<Value>| {
+                let changed_state = changed_state.clone();
+                let applied = applied.clone();
+                let later_active = later_active.clone();
+                async move {
+                    {
+                        let mut state = changed_state.lock().unwrap();
+                        state.1.active_worklog = Some(WorklogDto::from(&later_active));
+                        state
+                            .0
+                            .tasks
+                            .iter_mut()
+                            .find(|item| item.id == destination.to_string())
+                            .unwrap()
+                            .archived = true;
                     }
-                }),
-            );
+                    Json(MutationDto {
+                        request_id: body["request_id"].as_str().unwrap().into(),
+                        replayed: true,
+                        result: MutationResultDto::Worklog(WorklogDto::from(&applied)),
+                    })
+                }
+            }),
+        );
         let server = Server::start(router);
         let mut bridge = server.client();
         let result = move_to(&mut bridge, &original, destination);

@@ -269,7 +269,7 @@ fn remote_selected_report_reads_one_daily_overview_without_reconciliation() {
     let resources = resource_dtos(application.tasks(TaskOrdering::default()), None);
     let requests = Arc::new(AtomicUsize::new(0));
     let read_requests = requests.clone();
-    let router = resource_router(resources.clone(), vec![])
+    let router = resource_router(resources.clone())
         .merge(healthy_router())
         .route(
             "/v1/state/daily-overview",
@@ -374,7 +374,7 @@ fn connection_check_supports_local_handles_and_rejects_null_handles() {
 #[test]
 fn resource_exports_distinguish_unloaded_empty_and_idle_observations() {
     let server =
-        Server::start(resource_router(resource_dtos(vec![], None), vec![]).merge(healthy_router()));
+        Server::start(resource_router(resource_dtos(vec![], None)).merge(healthy_router()));
     let mut bridge = server.client();
     // SAFETY: Each call has exclusive access to the live bridge.
     unsafe {

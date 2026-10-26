@@ -10,7 +10,7 @@ use tracker_application::TaskOrdering;
 use tracker_domain::{TaskId, TaskName, TrackingState, Worklog};
 use tracker_protocol::{
     ErrorCode, ErrorDto, HealthDto, TaskDto, TaskListStateDto, TaskResourceDto, TasksDto,
-    TrackingDto, WorklogDto, WorklogResourceDto,
+    TrackingDto, WorklogDto,
 };
 
 use crate::backend::{Backend, BridgeError};
@@ -128,21 +128,11 @@ pub(crate) fn resource_dtos(
     )
 }
 
-pub(crate) fn resource_router(resources: Resources, worklogs: Vec<WorklogDto>) -> Router {
-    resource_router_state(Arc::new(Mutex::new(resources)), worklogs)
+pub(crate) fn resource_router(resources: Resources) -> Router {
+    resource_router_state(Arc::new(Mutex::new(resources)))
 }
 
-pub(crate) fn resource_router_state(
-    resources: Arc<Mutex<Resources>>,
-    worklogs: Vec<WorklogDto>,
-) -> Router {
-    resource_router_resources(resources, Arc::new(Mutex::new(worklogs)))
-}
-
-pub(crate) fn resource_router_resources(
-    resources: Arc<Mutex<Resources>>,
-    worklogs: Arc<Mutex<Vec<WorklogDto>>>,
-) -> Router {
+pub(crate) fn resource_router_state(resources: Arc<Mutex<Resources>>) -> Router {
     let aggregate_resources = resources.clone();
     let task_list = resources.clone();
     let tracking_state = resources.clone();
@@ -184,25 +174,6 @@ pub(crate) fn resource_router_resources(
                             Json(ErrorDto {
                                 code: ErrorCode::NotFound,
                                 message: "Task not found".into(),
-                            }),
-                        )
-                            .into_response(),
-                    }
-                }
-            }),
-        )
-        .route(
-            "/v1/worklogs/{id}",
-            get(move |Path(id): Path<String>| {
-                let worklogs = worklogs.lock().unwrap().clone();
-                async move {
-                    match worklogs.into_iter().find(|worklog| worklog.id == id) {
-                        Some(worklog) => Json(WorklogResourceDto { worklog }).into_response(),
-                        None => (
-                            StatusCode::NOT_FOUND,
-                            Json(ErrorDto {
-                                code: ErrorCode::NotFound,
-                                message: "Worklog not found".into(),
                             }),
                         )
                             .into_response(),

@@ -216,37 +216,32 @@ fn mock_server(
     use axum::{Json, routing::patch};
     let state = std::sync::Arc::new(std::sync::Mutex::new(initial));
     let write_state = state.clone();
-    Server::start(
-        healthy_router()
-            .merge(resource_router_state(state, vec![]))
-            .route(
-                "/v1/tasks/{id}",
-                patch(move |Json(body): Json<Value>| {
-                    let reply = reply.clone();
-                    let requests = requests.clone();
-                    let state = write_state.clone();
-                    async move {
-                        requests.lock().unwrap().push(body.clone());
-                        let mut reply = reply;
-                        if reply["request_id"] == "" {
-                            reply["request_id"] = body["request_id"].clone();
-                        }
-                        if let Ok(receipt) =
-                            serde_json::from_value::<tracker_protocol::MutationDto>(reply.clone())
-                            && let tracker_protocol::MutationResultDto::Task(task) = receipt.result
-                        {
-                            let mut resources = state.lock().unwrap();
-                            if let Some(item) =
-                                resources.0.tasks.iter_mut().find(|item| item.id == task.id)
-                            {
-                                *item = task;
-                            }
-                        }
-                        Json(reply)
+    Server::start(healthy_router().merge(resource_router_state(state)).route(
+        "/v1/tasks/{id}",
+        patch(move |Json(body): Json<Value>| {
+            let reply = reply.clone();
+            let requests = requests.clone();
+            let state = write_state.clone();
+            async move {
+                requests.lock().unwrap().push(body.clone());
+                let mut reply = reply;
+                if reply["request_id"] == "" {
+                    reply["request_id"] = body["request_id"].clone();
+                }
+                if let Ok(receipt) =
+                    serde_json::from_value::<tracker_protocol::MutationDto>(reply.clone())
+                    && let tracker_protocol::MutationResultDto::Task(task) = receipt.result
+                {
+                    let mut resources = state.lock().unwrap();
+                    if let Some(item) = resources.0.tasks.iter_mut().find(|item| item.id == task.id)
+                    {
+                        *item = task;
                     }
-                }),
-            ),
-    )
+                }
+                Json(reply)
+            }
+        }),
+    ))
 }
 
 #[test]
@@ -516,34 +511,32 @@ fn task_receipts_allow_newer_metadata_and_archive_state_from_recovery_reads() {
             } else {
                 committed_task.archived = action == "archive";
             }
-            let router = healthy_router()
-                .merge(resource_router_state(state, vec![]))
-                .route(
-                    "/v1/tasks/{id}",
-                    patch(move |Json(body): Json<Value>| {
-                        let changed = changed.clone();
-                        let committed_task = committed_task.clone();
-                        async move {
-                            let mut latest: TaskDto = committed_task.clone();
-                            latest.name = "Later writer name".into();
-                            latest.archived = if action == "rename" {
-                                latest.archived
-                            } else {
-                                !latest.archived
-                            };
-                            latest.updated_at = at(401);
-                            {
-                                let mut state = changed.lock().unwrap();
-                                state.0.tasks[0] = latest;
-                            }
-                            Json(MutationDto {
-                                request_id: body["request_id"].as_str().unwrap().into(),
-                                replayed,
-                                result: MutationResultDto::Task(committed_task),
-                            })
+            let router = healthy_router().merge(resource_router_state(state)).route(
+                "/v1/tasks/{id}",
+                patch(move |Json(body): Json<Value>| {
+                    let changed = changed.clone();
+                    let committed_task = committed_task.clone();
+                    async move {
+                        let mut latest: TaskDto = committed_task.clone();
+                        latest.name = "Later writer name".into();
+                        latest.archived = if action == "rename" {
+                            latest.archived
+                        } else {
+                            !latest.archived
+                        };
+                        latest.updated_at = at(401);
+                        {
+                            let mut state = changed.lock().unwrap();
+                            state.0.tasks[0] = latest;
                         }
-                    }),
-                );
+                        Json(MutationDto {
+                            request_id: body["request_id"].as_str().unwrap().into(),
+                            replayed,
+                            result: MutationResultDto::Task(committed_task),
+                        })
+                    }
+                }),
+            );
             let server = Server::start(router);
             let mut bridge = server.client();
             bridge.application.refresh_resources().unwrap();
