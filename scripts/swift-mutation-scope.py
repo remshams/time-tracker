@@ -140,24 +140,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-# Removes the test scheduler's deliverQueuedAction(), which ran a cancelled timer's
-# callback. Only the three suites below called it.
-QUEUED_CALLBACK_SUITES = (
-    "App/BackgroundRefreshInteractionTests.swift",
-    "App/LifecycleTests.swift",
-    "Features/DailyTotals/DailyTotalsTests.swift",
-)
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    ("Reviewed removal of the queued timer callback helper",
-     (("        if !repeating { cancelled = true }\n"
-       "        action()\n"
-       "    }\n"
-       "    @MainActor func deliverQueuedAction() { action() }\n",
-       "        if !repeating { cancelled = true }\n"
-       "        action()\n"
-       "    }\n"),),
-     None, None, QUEUED_CALLBACK_SUITES, QUEUED_CALLBACK_SUITES),
-)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [PRESENTATION, SESSION],
