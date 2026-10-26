@@ -24,7 +24,7 @@ pub async fn run(cli: Cli) -> Result<Value, CliError> {
         Request::Tasks(request) => tasks::execute(&mut backend, request, now).await,
         Request::Tracking(command) => tracking::execute(&mut backend, command, now).await,
         Request::Worklogs(request) => worklogs::execute(&mut backend, request, now).await,
-        Request::Reports(args) => reports::execute(&mut backend, args, now).await,
+        Request::Reports(range) => reports::execute(&mut backend, range, now).await,
     }
 }
 
@@ -66,7 +66,8 @@ enum Request {
     Tasks(tasks::Request),
     Tracking(args::Tracking),
     Worklogs(worklogs::Request),
-    Reports(args::ReportArgs),
+    /// A report whose interval and timezone were already resolved.
+    Reports(reports::Range),
 }
 
 /// Rejects invalid input before a backend is opened, so it never creates a database.
@@ -82,11 +83,7 @@ fn validate(
         args::Command::Worklogs { command } => {
             Request::Worklogs(worklogs::validate(command, identity, now)?)
         }
-        args::Command::Reports(mut args) => {
-            let range = reports::range(&args, now)?;
-            args.timezone = Some(range.timezone);
-            Request::Reports(args)
-        }
+        args::Command::Reports(args) => Request::Reports(reports::range(&args, now)?),
         args::Command::Tracking { command } => Request::Tracking(command),
     })
 }

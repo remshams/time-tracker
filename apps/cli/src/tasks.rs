@@ -5,12 +5,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracker_application::task_search::{SearchRank, fuzzy_match};
 use tracker_application::{TaskListItem, TaskOrdering};
+use tracker_client::TrackerBackend;
 use tracker_domain::{TaskId, TaskName};
 use tracker_protocol::TaskDto;
 use tracker_remote::InactiveTaskPreview;
 
 use crate::args::{TaskSort, TaskState, Tasks};
-use crate::backend::{Backend, BackendKind};
+use crate::backend::Backend;
 use crate::{CliError, read_json};
 
 /// One task with its latest work start, as `tasks list` prints it.
@@ -48,7 +49,19 @@ pub(crate) enum PreviewToken {
 pub(crate) enum Request {
     /// A bulk archive whose preview token was already read and matched to the backend.
     ArchiveInactive(PreviewToken),
-    Command(Tasks),
+    /// A create, rename, archive, or restore of one task.
+    Change(TaskChange),
+    /// A task read or inactive-task preview.
+    Read(Tasks),
+}
+
+/// A single-task change. Names were already trimmed and checked.
+#[derive(Debug)]
+pub(crate) enum TaskChange {
+    Create(TaskName),
+    Rename { task_id: TaskId, name: TaskName },
+    Archive(TaskId),
+    Restore(TaskId),
 }
 
 pub(crate) fn validate(
@@ -56,13 +69,23 @@ pub(crate) fn validate(
     identity: &str,
     now: DateTime<Utc>,
 ) -> Result<Request, CliError> {
-    if let Tasks::ArchiveInactive { preview, .. } = &command {
-        return archive_request(preview, identity, now).map(Request::ArchiveInactive);
-    }
-    if let Tasks::Create { name } | Tasks::Rename { name, .. } = &command {
-        TaskName::new(name.as_str()).map_err(CliError::input)?;
-    }
-    Ok(Request::Command(command))
+    Ok(match command {
+        Tasks::ArchiveInactive { preview, .. } => {
+            Request::ArchiveInactive(archive_request(&preview, identity, now)?)
+        }
+        Tasks::Create { name } => Request::Change(TaskChange::Create(task_name(&name)?)),
+        Tasks::Rename { task_id, name } => Request::Change(TaskChange::Rename {
+            task_id,
+            name: task_name(&name)?,
+        }),
+        Tasks::Archive { task_id } => Request::Change(TaskChange::Archive(task_id)),
+        Tasks::Restore { task_id } => Request::Change(TaskChange::Restore(task_id)),
+        command => Request::Read(command),
+    })
+}
+
+fn task_name(name: &str) -> Result<TaskName, CliError> {
+    TaskName::new(name).map_err(CliError::input)
 }
 
 /// Reads the preview token, possibly from `@PATH`, once and matches it to the backend.
@@ -134,30 +157,38 @@ pub(crate) async fn execute(
     request: Request,
     now: DateTime<Utc>,
 ) -> Result<Value, CliError> {
-    let command = match request {
-        Request::ArchiveInactive(token) => return archive(backend, token).await,
-        Request::Command(command) => command,
-    };
+    match request {
+        Request::ArchiveInactive(token) => archive(backend, token).await,
+        Request::Change(change) => change_task(backend, change, now).await,
+        Request::Read(command) => read(backend, command, now).await,
+    }
+}
+
+async fn read(
+    backend: &mut Backend,
+    command: Tasks,
+    now: DateTime<Utc>,
+) -> Result<Value, CliError> {
     match command {
         Tasks::List {
             state,
             sort,
             search,
         } => {
-            if let BackendKind::Remote(app) = &mut backend.kind {
+            if let TrackerBackend::Remote(app) = &mut backend.kind {
                 app.refresh_tasks().await.map_err(CliError::remote)?;
             }
             list(backend, state, sort, search.as_deref())
         }
         Tasks::Get { task_id } => {
-            if let BackendKind::Remote(app) = &mut backend.kind {
+            if let TrackerBackend::Remote(app) = &mut backend.kind {
                 let resource = app.read_task(task_id).await.map_err(CliError::remote)?;
                 return crate::json(resource.task);
             }
             get(backend, task_id)
         }
         Tasks::PreviewInactive => preview(backend, now).await,
-        change => change_task(backend, change, now).await,
+        _ => unreachable!("validate turns task changes and bulk archive into their own requests"),
     }
 }
 
@@ -176,23 +207,14 @@ fn get(backend: &Backend, task_id: TaskId) -> Result<Value, CliError> {
 
 async fn change_task(
     backend: &mut Backend,
-    command: Tasks,
+    change: TaskChange,
     now: DateTime<Utc>,
 ) -> Result<Value, CliError> {
-    let task = match command {
-        Tasks::Create { name } => {
-            backend
-                .create_task(TaskName::new(&name).map_err(CliError::input)?, now)
-                .await
-        }
-        Tasks::Rename { task_id, name } => {
-            backend
-                .rename_task(task_id, TaskName::new(&name).map_err(CliError::input)?, now)
-                .await
-        }
-        Tasks::Archive { task_id } => backend.archive_task(task_id, now).await,
-        Tasks::Restore { task_id } => backend.unarchive_task(task_id, now).await,
-        _ => unreachable!("task reads and bulk archive are handled before task changes"),
+    let task = match change {
+        TaskChange::Create(name) => backend.create_task(name, now).await,
+        TaskChange::Rename { task_id, name } => backend.rename_task(task_id, name, now).await,
+        TaskChange::Archive(task_id) => backend.archive_task(task_id, now).await,
+        TaskChange::Restore(task_id) => backend.unarchive_task(task_id, now).await,
     }?;
     crate::json(TaskDto::from(&task))
 }
@@ -263,7 +285,7 @@ async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, C
 async fn archive(backend: &mut Backend, token: PreviewToken) -> Result<Value, CliError> {
     let count = match (&mut backend.kind, token) {
         (
-            BackendKind::Local(app),
+            TrackerBackend::Local(app),
             PreviewToken::Local {
                 task_ids, as_of, ..
             },
@@ -277,7 +299,7 @@ async fn archive(backend: &mut Backend, token: PreviewToken) -> Result<Value, Cl
                 .map_err(CliError::application)?
                 .len()
         }
-        (BackendKind::Remote(app), PreviewToken::Remote { preview, .. }) => app
+        (TrackerBackend::Remote(app), PreviewToken::Remote { preview, .. }) => app
             .archive_inactive_tasks(&preview)
             .await
             .map_err(CliError::application)?,

@@ -272,10 +272,11 @@ fn remote_rename_and_archive_act_on_a_task_another_client_renamed() {
 
 #[tokio::test]
 async fn report_metadata_failure_keeps_the_existing_semantic_cli_error() {
-    use crate::backend::{Backend, BackendKind};
+    use crate::backend::Backend;
     use axum::Json;
     use axum::http::StatusCode;
     use axum::routing::get;
+    use tracker_client::TrackerBackend;
     use tracker_protocol::{ErrorCode, ErrorDto, HealthDto, ReportDto, ReportRowDto};
 
     let start = chrono::DateTime::from_timestamp(100, 0).unwrap();
@@ -329,9 +330,16 @@ async fn report_metadata_failure_keeps_the_existing_semantic_cli_error() {
         .unwrap();
     let mut backend = Backend {
         identity: endpoint,
-        kind: BackendKind::Remote(Box::new(application)),
+        kind: TrackerBackend::Remote(Box::new(application)),
     };
-    let error = backend.report_totals(start, end, now).await.unwrap_err();
+    let range = crate::reports::Range {
+        start,
+        end,
+        timezone: chrono_tz::UTC,
+    };
+    let error = crate::reports::execute(&mut backend, range, now)
+        .await
+        .unwrap_err();
     server.abort();
     assert_eq!(error.code, "operation_failed");
     assert_eq!(error.exit_code, 3);
