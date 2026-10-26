@@ -93,8 +93,7 @@ impl InactiveTaskPreview {
     }
 }
 
-/// The remote tracker coordinator, retained under the existing client API name.
-pub use coordinator::RemoteTrackerCoordinator as RemoteApplication;
+pub use coordinator::RemoteApplication;
 
 use reports::ReportsClient;
 use session::RemoteSession;

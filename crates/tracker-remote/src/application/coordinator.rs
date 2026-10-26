@@ -11,7 +11,7 @@ use super::{
 };
 
 /// Coordinates remote tracker workflows across resource clients.
-pub struct RemoteTrackerCoordinator {
+pub struct RemoteApplication {
     session: RemoteSession,
     tasks: TasksClient,
     tracking: TrackingClient,
@@ -21,7 +21,7 @@ pub struct RemoteTrackerCoordinator {
     coherent_task_views: bool,
 }
 
-impl RemoteTrackerCoordinator {
+impl RemoteApplication {
     pub fn disconnected(endpoint: &str) -> Result<Self, RemoteError> {
         Ok(Self {
             session: RemoteSession::new(endpoint)?,
