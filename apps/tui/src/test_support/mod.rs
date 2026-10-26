@@ -373,52 +373,6 @@ impl TrackerApplicationService for TestService {
         Ok(task)
     }
 
-    fn rename_task(
-        &mut self,
-        id: TaskId,
-        name: TaskName,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<Task, ApplicationError> {
-        if self.fail_rename {
-            return Err(Self::failure());
-        }
-        let task = self
-            .tasks
-            .iter_mut()
-            .find(|task| task.id() == id)
-            .expect("test task exists");
-        task.rename(name, occurred_at);
-        Ok(task.clone())
-    }
-
-    fn archive_task(
-        &mut self,
-        id: TaskId,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<Task, ApplicationError> {
-        if self.fail_archive {
-            return Err(Self::failure());
-        }
-        let task = self
-            .tasks
-            .iter_mut()
-            .find(|task| task.id() == id)
-            .expect("test task exists");
-        task.archive(occurred_at);
-        let archived = task.clone();
-        if let Some(start) = self.archive_activates {
-            let other = self
-                .tasks
-                .iter()
-                .find(|task| task.id() != id && !task.is_archived())
-                .expect("the test service needs another active task");
-            self.tracking = TrackingState::Running {
-                worklog: ActiveWorklog::begin(WorklogId::generate(), other.id(), start),
-            };
-        }
-        Ok(archived)
-    }
-
     /// Checks the name captured by a rename request.
     fn rename_task_with_expected_name(
         &mut self,
@@ -520,53 +474,6 @@ impl TrackerApplicationService for TestService {
 
     fn current_tracking(&self) -> &TrackingState {
         &self.tracking
-    }
-
-    fn set_active_task(
-        &mut self,
-        task_id: TaskId,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
-        let started_at = self.set_timestamp.unwrap_or(occurred_at);
-        if let Some((_, latest)) = self
-            .latest_work_starts
-            .iter_mut()
-            .find(|(id, _)| *id == task_id)
-        {
-            *latest = (*latest).max(started_at);
-        } else {
-            self.latest_work_starts.push((task_id, started_at));
-        }
-        let worklog = Worklog::begin(
-            WorklogId::from_uuid(uuid::Uuid::from_u128(99)),
-            task_id,
-            started_at,
-        );
-        let active = ActiveWorklog::begin(worklog.id(), task_id, started_at);
-        let previous = self.tracking.clone();
-        self.tracking = TrackingState::Running {
-            worklog: active.clone(),
-        };
-        if self.set_returns_already_active {
-            Ok(SetActiveTaskOutcome::AlreadyActive { worklog: active })
-        } else if self.set_returns_switched {
-            let TrackingState::Running { worklog: previous } = previous else {
-                panic!("a switched outcome requires an active worklog");
-            };
-            let stopped = Worklog::new(
-                previous.id(),
-                previous.task_id(),
-                previous.start(),
-                Some(started_at),
-            )
-            .expect("the replacement task starts after the active worklog");
-            Ok(SetActiveTaskOutcome::Switched {
-                stopped,
-                started: worklog,
-            })
-        } else {
-            Ok(SetActiveTaskOutcome::Started { worklog })
-        }
     }
 
     /// Checks the request's expected worklog before starting or switching.
@@ -834,6 +741,99 @@ impl TrackerApplicationService for TestService {
 }
 
 impl TestService {
+    fn rename_task(
+        &mut self,
+        id: TaskId,
+        name: TaskName,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        if self.fail_rename {
+            return Err(Self::failure());
+        }
+        let task = self
+            .tasks
+            .iter_mut()
+            .find(|task| task.id() == id)
+            .expect("test task exists");
+        task.rename(name, occurred_at);
+        Ok(task.clone())
+    }
+
+    fn archive_task(
+        &mut self,
+        id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<Task, ApplicationError> {
+        if self.fail_archive {
+            return Err(Self::failure());
+        }
+        let task = self
+            .tasks
+            .iter_mut()
+            .find(|task| task.id() == id)
+            .expect("test task exists");
+        task.archive(occurred_at);
+        let archived = task.clone();
+        if let Some(start) = self.archive_activates {
+            let other = self
+                .tasks
+                .iter()
+                .find(|task| task.id() != id && !task.is_archived())
+                .expect("the test service needs another active task");
+            self.tracking = TrackingState::Running {
+                worklog: ActiveWorklog::begin(WorklogId::generate(), other.id(), start),
+            };
+        }
+        Ok(archived)
+    }
+
+    fn set_active_task(
+        &mut self,
+        task_id: TaskId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
+        let started_at = self.set_timestamp.unwrap_or(occurred_at);
+        if let Some((_, latest)) = self
+            .latest_work_starts
+            .iter_mut()
+            .find(|(id, _)| *id == task_id)
+        {
+            *latest = (*latest).max(started_at);
+        } else {
+            self.latest_work_starts.push((task_id, started_at));
+        }
+        let worklog = Worklog::begin(
+            WorklogId::from_uuid(uuid::Uuid::from_u128(99)),
+            task_id,
+            started_at,
+        );
+        let active = ActiveWorklog::begin(worklog.id(), task_id, started_at);
+        let previous = self.tracking.clone();
+        self.tracking = TrackingState::Running {
+            worklog: active.clone(),
+        };
+        if self.set_returns_already_active {
+            Ok(SetActiveTaskOutcome::AlreadyActive { worklog: active })
+        } else if self.set_returns_switched {
+            let TrackingState::Running { worklog: previous } = previous else {
+                panic!("a switched outcome requires an active worklog");
+            };
+            let stopped = Worklog::new(
+                previous.id(),
+                previous.task_id(),
+                previous.start(),
+                Some(started_at),
+            )
+            .expect("the replacement task starts after the active worklog");
+            Ok(SetActiveTaskOutcome::Switched {
+                stopped,
+                started: worklog,
+            })
+        } else {
+            Ok(SetActiveTaskOutcome::Started { worklog })
+        }
+    }
+
     fn inactive_candidates(&self, as_of: DateTime<Utc>) -> Vec<Task> {
         let cutoff = as_of - chrono::Duration::days(14);
         self.tasks
