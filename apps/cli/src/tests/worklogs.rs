@@ -199,6 +199,10 @@ fn invalid_inputs_are_rejected_before_a_database_is_created() {
     for (arguments, message) in [
         (vec!["tasks", "create", "  "], "task name must not be empty"),
         (
+            vec!["tasks", "rename", id, "  "],
+            "task name must not be empty",
+        ),
+        (
             vec!["tasks", "archive-inactive", "--preview", "{}", "--yes"],
             "missing field `mode` at line 1 column 2",
         ),
