@@ -121,11 +121,6 @@ impl AppState {
     fn cancel_task_list_mode(&mut self) {
         if matches!(self.shell().task_list().mode(), TaskListMode::Search) {
             self.cancel_task_search();
-        } else if matches!(
-            self.shell().task_list().mode(),
-            TaskListMode::ArchivingInactiveTasks { .. }
-        ) {
-            // A confirmed write cannot be dismissed while it is pending.
         } else {
             self.shell_mut().task_list_mut().close_mode();
         }
@@ -388,22 +383,18 @@ impl AppState {
         self.shell_mut()
             .task_list_mut()
             .begin_inactive_archive(preview.clone());
-        let completion_mode = self.shell().task_list().mode().clone();
         let accepted = self.enqueue(
             ApplicationRequest::ArchiveInactiveTasks {
                 preview: preview.clone(),
             },
             move |app, completed| {
-                let same_dialog = app.shell().task_list().mode() == &completion_mode;
                 let ApplicationOutcome::ArchivedInactiveTasks(result) = completed.outcome else {
                     unreachable!("inactive task archive returns a count")
                 };
 
+                app.shell_mut().task_list_mut().close_mode();
                 match result {
                     Ok(count) => {
-                        if same_dialog {
-                            app.shell_mut().task_list_mut().close_mode();
-                        }
                         let noun = if count == 1 { "task" } else { "tasks" };
                         app.shell_mut()
                             .info(format!("Archived {count} inactive {noun}"));
@@ -412,16 +403,10 @@ impl AppState {
                         if error.failure().category()
                             == ApplicationFailureCategory::InactiveTaskCandidatesChanged =>
                     {
-                        if same_dialog {
-                            app.shell_mut().task_list_mut().close_mode();
-                        }
                         app.shell_mut()
                             .error("Inactive task list changed. Preview again");
                     }
                     Err(error) => {
-                        if same_dialog {
-                            app.shell_mut().task_list_mut().close_mode();
-                        }
                         app.shell_mut().error(format!(
                             "{}; press D to preview again",
                             application_error_text(&error)
@@ -760,40 +745,6 @@ mod navigation_tests {
         assert_eq!(
             state.shell().status(),
             &Status::Error("Task has active work; press D to preview again".to_owned())
-        );
-    }
-
-    /// Checks that an older archive completion cannot dismiss a newer task-list interaction.
-    #[test]
-    fn a_bulk_archive_completion_keeps_a_newer_task_list_mode_open() {
-        let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
-        state
-            .shell_mut()
-            .task_list_mut()
-            .confirm_inactive_archive(InactiveTaskPreview::local(
-                chrono::Utc::now(),
-                vec![task(1, "old task").id()],
-                vec!["old task".to_owned()],
-            ));
-        state.handle_task_list_command(TaskListCommand::Confirm);
-        let effect = state.take_effect().expect("bulk archive request");
-        let request = effect.request.clone();
-        state.shell_mut().task_list_mut().open_search();
-
-        state.complete_effect_with_resources(
-            effect,
-            CompletedRequest {
-                request,
-                outcome: ApplicationOutcome::ArchivedInactiveTasks(Ok(1)),
-            },
-            Vec::new(),
-            TrackingState::Idle,
-        );
-
-        assert_eq!(state.shell().task_list().mode(), &TaskListMode::Search);
-        assert_eq!(
-            state.shell().status(),
-            &Status::Info("Archived 1 inactive task".to_owned())
         );
     }
 
