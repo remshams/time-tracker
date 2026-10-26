@@ -1,12 +1,13 @@
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use tracker_application::{ClearActiveTaskOutcome, SetActiveTaskOutcome};
+use tracker_client::TrackerBackend;
 use tracker_domain::TrackingState;
 use tracker_protocol::WorklogDto;
 
 use crate::CliError;
 use crate::args::Tracking;
-use crate::backend::{Backend, BackendKind};
+use crate::backend::Backend;
 
 pub(crate) async fn execute(
     backend: &mut Backend,
@@ -15,7 +16,7 @@ pub(crate) async fn execute(
 ) -> Result<Value, CliError> {
     match command {
         Tracking::Status => {
-            if let BackendKind::Remote(app) = &mut backend.kind {
+            if let TrackerBackend::Remote(app) = &mut backend.kind {
                 app.refresh_tracking().await.map_err(CliError::remote)?;
             }
             Ok(status(backend, now))

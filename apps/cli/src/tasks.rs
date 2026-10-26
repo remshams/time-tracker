@@ -5,12 +5,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracker_application::task_search::{SearchRank, fuzzy_match};
 use tracker_application::{TaskListItem, TaskOrdering};
+use tracker_client::TrackerBackend;
 use tracker_domain::{TaskId, TaskName};
 use tracker_protocol::TaskDto;
 use tracker_remote::InactiveTaskPreview;
 
 use crate::args::{TaskSort, TaskState, Tasks};
-use crate::backend::{Backend, BackendKind};
+use crate::backend::Backend;
 use crate::{CliError, read_json};
 
 /// One task with its latest work start, as `tasks list` prints it.
@@ -144,13 +145,13 @@ pub(crate) async fn execute(
             sort,
             search,
         } => {
-            if let BackendKind::Remote(app) = &mut backend.kind {
+            if let TrackerBackend::Remote(app) = &mut backend.kind {
                 app.refresh_tasks().await.map_err(CliError::remote)?;
             }
             list(backend, state, sort, search.as_deref())
         }
         Tasks::Get { task_id } => {
-            if let BackendKind::Remote(app) = &mut backend.kind {
+            if let TrackerBackend::Remote(app) = &mut backend.kind {
                 let resource = app.read_task(task_id).await.map_err(CliError::remote)?;
                 return crate::json(resource.task);
             }
@@ -263,7 +264,7 @@ async fn preview(backend: &mut Backend, as_of: DateTime<Utc>) -> Result<Value, C
 async fn archive(backend: &mut Backend, token: PreviewToken) -> Result<Value, CliError> {
     let count = match (&mut backend.kind, token) {
         (
-            BackendKind::Local(app),
+            TrackerBackend::Local(app),
             PreviewToken::Local {
                 task_ids, as_of, ..
             },
@@ -277,7 +278,7 @@ async fn archive(backend: &mut Backend, token: PreviewToken) -> Result<Value, Cl
                 .map_err(CliError::application)?
                 .len()
         }
-        (BackendKind::Remote(app), PreviewToken::Remote { preview, .. }) => app
+        (TrackerBackend::Remote(app), PreviewToken::Remote { preview, .. }) => app
             .archive_inactive_tasks(&preview)
             .await
             .map_err(CliError::application)?,

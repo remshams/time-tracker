@@ -9,10 +9,8 @@ use crate::CliError;
 
 pub(crate) struct Backend {
     pub identity: String,
-    pub kind: BackendKind,
+    pub kind: TrackerBackend,
 }
-
-pub(crate) type BackendKind = TrackerBackend;
 
 pub(crate) fn identity(database: Option<&Path>, server: Option<&str>) -> Result<String, CliError> {
     if let Some(server) = server {
@@ -56,18 +54,6 @@ fn canonical_database_path(path: &Path) -> std::io::Result<PathBuf> {
 }
 
 impl Backend {
-    pub async fn report_totals(
-        &mut self,
-        start: chrono::DateTime<chrono::Utc>,
-        end: chrono::DateTime<chrono::Utc>,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<tracker_application::ReportTotals, CliError> {
-        self.kind
-            .report_totals(start, end, now)
-            .await
-            .map_err(CliError::application)
-    }
-
     /// Opens the selected backend. `identity` must come from [`identity`] for the same arguments.
     pub async fn open(
         identity: String,
@@ -75,7 +61,7 @@ impl Backend {
         server: Option<String>,
     ) -> Result<Self, CliError> {
         let kind = if let Some(server) = server {
-            BackendKind::Remote(Box::new(
+            TrackerBackend::Remote(Box::new(
                 RemoteApplication::connect(&server)
                     .await
                     .map_err(CliError::remote)?,
@@ -89,7 +75,9 @@ impl Backend {
                 }
             };
             let repository = SqliteRepository::open(path).map_err(CliError::storage)?;
-            BackendKind::Local(TrackerApplication::load(repository).map_err(CliError::application)?)
+            TrackerBackend::Local(
+                TrackerApplication::load(repository).map_err(CliError::application)?,
+            )
         };
         Ok(Self { identity, kind })
     }
