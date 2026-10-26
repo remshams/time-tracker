@@ -46,17 +46,6 @@ pub trait TrackerApplicationService {
         name: TaskName,
         occurred_at: DateTime<Utc>,
     ) -> Result<Task, ApplicationError>;
-    fn rename_task(
-        &mut self,
-        id: TaskId,
-        name: TaskName,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<Task, ApplicationError>;
-    fn archive_task(
-        &mut self,
-        id: TaskId,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<Task, ApplicationError>;
     /// Renames only if the persisted name still matches the reviewed name.
     fn rename_task_with_expected_name(
         &mut self,
@@ -96,11 +85,6 @@ pub trait TrackerApplicationService {
     ) -> Result<Vec<Task>, ApplicationError>;
 
     fn current_tracking(&self) -> &TrackingState;
-    fn set_active_task(
-        &mut self,
-        task_id: TaskId,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<SetActiveTaskOutcome, ApplicationError>;
     /// Starts or switches only while the reviewed worklog remains active.
     /// `None` requires idle tracking.
     fn set_active_task_with_expected_active(
@@ -237,23 +221,6 @@ impl<R: TrackerRepository> TrackerApplicationService for TrackerApplication<R> {
         TrackerApplication::create_task(self, name, occurred_at)
     }
 
-    fn rename_task(
-        &mut self,
-        id: TaskId,
-        name: TaskName,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<Task, ApplicationError> {
-        TrackerApplication::rename_task(self, id, name, occurred_at)
-    }
-
-    fn archive_task(
-        &mut self,
-        id: TaskId,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<Task, ApplicationError> {
-        TrackerApplication::archive_task(self, id, occurred_at)
-    }
-
     fn unarchive_task(
         &mut self,
         id: TaskId,
@@ -279,14 +246,6 @@ impl<R: TrackerRepository> TrackerApplicationService for TrackerApplication<R> {
 
     fn current_tracking(&self) -> &TrackingState {
         TrackerApplication::current_tracking(self)
-    }
-
-    fn set_active_task(
-        &mut self,
-        task_id: TaskId,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<SetActiveTaskOutcome, ApplicationError> {
-        TrackerApplication::set_active_task(self, task_id, occurred_at)
     }
 
     fn clear_active_task(

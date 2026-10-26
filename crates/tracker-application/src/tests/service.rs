@@ -20,12 +20,17 @@ fn tui_service_contract_preserves_task_tracking_and_history_workflows() {
     );
     assert_eq!(service.tasks(TaskOrdering::RecentlyCreated).len(), 3);
     let renamed = service
-        .rename_task(created.id(), TaskName::new("Release").unwrap(), at(102))
+        .rename_task_with_expected_name(
+            created.id(),
+            created.name(),
+            TaskName::new("Release").unwrap(),
+            at(102),
+        )
         .unwrap();
     assert_eq!(renamed.name().as_str(), "Release");
     assert!(
         service
-            .archive_task(created.id(), at(103))
+            .archive_task_with_expected_name(created.id(), renamed.name(), at(103))
             .unwrap()
             .is_archived()
     );
@@ -36,7 +41,9 @@ fn tui_service_contract_preserves_task_tracking_and_history_workflows() {
             .is_archived()
     );
 
-    service.set_active_task(source.id(), at(110)).unwrap();
+    service
+        .set_active_task_with_expected_active(source.id(), None, at(110))
+        .unwrap();
     let active = match service.current_tracking() {
         TrackingState::Running { worklog } => worklog.clone(),
         TrackingState::Idle => panic!("tracking must be active after starting a task"),

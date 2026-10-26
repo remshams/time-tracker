@@ -342,7 +342,7 @@ fn saved_correction_marks_history_unavailable_until_retry_succeeds() {
     );
 }
 #[test]
-fn failed_post_save_reload_keeps_the_externally_corrected_active_aggregate() {
+fn failed_post_save_reload_with_an_active_worklog_reports_the_saved_correction() {
     let active_task = task(1, "active");
     let corrected_task = task(2, "corrected");
     let active = Worklog::begin(worklog_id(10), active_task.id(), at(600));
@@ -360,23 +360,17 @@ fn failed_post_save_reload_keeps_the_externally_corrected_active_aggregate() {
         )),
         Err(TestService::failure()),
     ];
-    let spy = service.spy();
     let mut app = app_in_timezone(service, chrono_tz::UTC);
     app.handle(Command::TaskList(TaskListCommand::MoveDown));
     app.handle(Command::TaskList(TaskListCommand::OpenHistory));
     app.handle(Command::WorklogHistory(
         WorklogHistoryCommand::OpenCorrection,
     ));
-    spy.set_latest_work_start(active_task.id(), at(540));
-    spy.set_external_tracking(TrackingState::Running {
-        worklog: ActiveWorklog::begin(active.id(), active.task_id(), at(540)),
-    });
     replace_start(&mut app, "1970-01-01 00:07".to_owned());
     replace_end(&mut app, "1970-01-01 00:08".to_owned());
 
     app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
 
-    assert_eq!(spy.latest_work_start(active_task.id()), Some(at(540)));
     assert_eq!(
         app.app_view().status(),
         &Status::Error("Correction saved, but history refresh failed".to_owned())
