@@ -18,11 +18,10 @@ pub(crate) struct Range {
 /// Emits report bounds and cutoff at the same microsecond precision used for totals.
 pub(crate) async fn execute(
     backend: &mut Backend,
-    args: ReportArgs,
+    range: Range,
     now: DateTime<Utc>,
 ) -> Result<Value, CliError> {
     let now = canonical_timestamp(now);
-    let range = range(&args, now)?;
     let totals = backend.report_totals(range.start, range.end, now).await?;
     let rows: Vec<_> = totals
         .rows
