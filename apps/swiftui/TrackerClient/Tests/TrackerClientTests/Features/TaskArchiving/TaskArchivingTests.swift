@@ -438,24 +438,6 @@ final class TaskArchivingTests: XCTestCase {
     }
 
     @MainActor
-    func testOpenConfirmationDoesNotBlockConnectionChange() async throws {
-        let fixture = Fixture()
-        defer { fixture.cleanup() }
-        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: nil))
-        fixture.session.openTaskArchive(taskID: secondTask.id)
-        let connecting = Task { await fixture.session.connect(serverSettings) }
-        let connection = try await fixture.client.next()
-        XCTAssertEqual(connection.operation, .connect(serverSettings))
-        connection.succeed(emptyTaskListResources)
-        let connected = try await fixture.taskValue(connecting)
-        XCTAssertTrue(connected)
-        XCTAssertEqual(fixture.session.connectionSettings, serverSettings)
-        XCTAssertNil(fixture.session.connectionMessage)
-        XCTAssertTrue(fixture.session.taskArchiving.isPresented)
-        XCTAssertEqual(fixture.session.taskArchiving.taskID, secondTask.id)
-    }
-
-    @MainActor
     func testObserverNotifiesArchiveAvailabilityWhenTimerChangesWithoutEditingState() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }

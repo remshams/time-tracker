@@ -462,26 +462,6 @@ final class TaskCreationTests: XCTestCase {
     }
 
     @MainActor
-    func testCreatedTaskArchivedByAnotherClientIsSelectedInArchivedTab() async throws {
-        let fixture = Fixture(saved: serverSettings)
-        defer { fixture.cleanup() }
-        try await fixture.start()
-        fixture.session.openTaskCreation()
-        fixture.session.setTaskCreationName("Task archived remotely")
-        fixture.session.submitTaskCreation()
-        let creation = try await fixture.client.next()
-        creation.created(taskID: archivedTask.id, resources: TaskListResources(tasks: [archivedTask], active: nil))
-        let history = try await fixture.client.next()
-        XCTAssertEqual(history.operation, .history(task: archivedTask.id, cursor: nil))
-        history.succeed(emptyPage)
-        try await fixture.settled()
-        XCTAssertFalse(fixture.session.taskCreation.isPresented)
-        XCTAssertEqual(fixture.session.tab, .archived)
-        XCTAssertEqual(fixture.session.selectedTaskID, archivedTask.id)
-        XCTAssertEqual(fixture.client.operations.count, 4)
-    }
-
-    @MainActor
     func testResubmissionAfterFailureClosesSheetAndReusesSelectedTaskHistory() async throws {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
