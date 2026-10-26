@@ -154,13 +154,8 @@ public final class TrackerSession {
         case .unavailable: return dailyTotalsError ?? "Today's total is unavailable"
         }
     }
-    public var todayTasks: [TaskItem] {
-        tasks.filter { (dailyDuration(taskID: $0.id) ?? 0) > 0 }
-            .sorted {
-                if $0.name == $1.name { return $0.id < $1.id }
-                return $0.name < $1.name
-            }
-    }
+    /// Tasks with time logged today, in task list order. The menu applies its own task order.
+    public var todayTasks: [TaskItem] { tasks.filter { (dailyDuration(taskID: $0.id) ?? 0) > 0 } }
     public func dailyDuration(taskID: String) -> TimeInterval? {
         dailyTotals.duration(taskID: taskID, active: active, clock: clock)
     }
