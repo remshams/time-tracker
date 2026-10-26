@@ -10,6 +10,8 @@ Accepted and implemented on 9 October 2026. The server, CLI, TUI and macOS clien
 
 Partially superseded by [ADR 0031](0031-remove-server-revisions-from-writes-and-reads.md) for server revisions on reads, receipts and writes, including the preview revision on archive confirmation; all other decisions remain accepted.
 
+On 26 October 2026 the server dropped two reads that no client used: `GET /v1/worklogs/{id}` (row 6) and the `archived` filter on `GET /v1/tasks`. A request with `archived=` now gets HTTP 400. The inactive-task preview also requires `inactive_days` now instead of defaulting to 14, matching the archive confirmation. See [issue #216](https://github.com/remshams/time-tracker/issues/216).
+
 ## Date
 
 2026-10-09
