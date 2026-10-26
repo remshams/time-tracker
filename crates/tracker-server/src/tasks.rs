@@ -18,26 +18,19 @@ use crate::error::{ApiError, ApiResult, fingerprint, payload, query_payload, tas
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct TasksQuery {
-    archived: Option<bool>,
-}
+pub(super) struct TasksQuery {}
 
 pub(super) async fn tasks(
     State(shared): State<Shared>,
     input: Result<Query<TasksQuery>, QueryRejection>,
 ) -> ApiResult<TasksDto> {
-    let query = query_payload(input)?;
+    query_payload(input)?;
     let mut core = lock(&shared)?;
     core.app.refresh_task_catalog()?;
     let tasks = core
         .app
         .tasks(TaskOrdering::RecentlyCreated)
         .iter()
-        .filter(|item| {
-            query
-                .archived
-                .is_none_or(|archived| item.task.is_archived() == archived)
-        })
         .map(TaskDto::from)
         .collect();
     Ok(Json(TasksDto { tasks }))
@@ -69,12 +62,7 @@ const INACTIVE_AS_OF_TOLERANCE: TimeDelta = TimeDelta::minutes(15);
 #[serde(deny_unknown_fields)]
 pub(super) struct InactivePreviewQuery {
     as_of: DateTime<Utc>,
-    #[serde(default = "default_inactive_days")]
     inactive_days: u32,
-}
-
-fn default_inactive_days() -> u32 {
-    InactivityPeriod::default().days()
 }
 
 fn validate_inactive_as_of(as_of: DateTime<Utc>, now: DateTime<Utc>) -> Result<(), ApiError> {
