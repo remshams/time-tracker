@@ -87,12 +87,6 @@ pub struct DailyOverviewDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct WorklogResourceDto {
-    pub worklog: WorklogDto,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct WorklogDto {
     pub id: String,
     pub task_id: String,

@@ -4,30 +4,16 @@ use axum::Json;
 use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::{Path as RoutePath, Query, State};
 use serde::Deserialize;
-use tracker_application::{ApplicationError, GlobalWorklogCursor, WorklogCursor};
+use tracker_application::{GlobalWorklogCursor, WorklogCursor};
 use tracker_domain::WorklogTimes;
 use tracker_protocol::{
     DeleteWorklogRequest, MutationDto, MutationResultDto, WorklogChangeRequest, WorklogCursorError,
-    WorklogDto, WorklogPageDto, WorklogResourceDto, parse_worklog_cursor,
+    WorklogDto, WorklogPageDto, parse_worklog_cursor,
 };
 
 use crate::core::{Shared, lock};
 use crate::error::{ApiError, ApiResult, fingerprint, payload, query_payload, task_id, worklog_id};
 use crate::tasks::task_resource;
-
-pub(super) async fn worklog(
-    State(shared): State<Shared>,
-    RoutePath(raw_id): RoutePath<String>,
-) -> ApiResult<WorklogResourceDto> {
-    let id = worklog_id(&raw_id)?;
-    let core = lock(&shared)?;
-    let worklog = core.app.worklog(id)?.ok_or_else(|| {
-        ApplicationError::from(tracker_application::RepositoryError::WorklogNotFound { id })
-    })?;
-    Ok(Json(WorklogResourceDto {
-        worklog: WorklogDto::from(&worklog),
-    }))
-}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

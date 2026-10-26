@@ -55,11 +55,6 @@ impl<R: TrackerRepository> TrackerApplication<R> {
         )
     }
 
-    /// Reads one worklog without loading unrelated resources.
-    pub fn worklog(&self, id: WorklogId) -> Result<Option<Worklog>, ApplicationError> {
-        self.repository.find_worklog(id).map_err(Into::into)
-    }
-
     pub fn all_worklogs(
         &mut self,
         after: Option<&GlobalWorklogCursor>,

@@ -1,6 +1,9 @@
 use std::{net::SocketAddr, path::PathBuf, sync::mpsc, thread};
 
-use axum::{Json, Router, routing::get};
+use axum::{
+    Json, Router,
+    routing::{get, patch},
+};
 use chrono::{DateTime, Duration, Utc};
 use tempfile::TempDir;
 use tokio::sync::oneshot;
@@ -2587,7 +2590,6 @@ async fn writes_refused_by_a_stopped_server_are_not_attempted() {
 fn command_receipt_server(
     tasks: Vec<tracker_protocol::TaskDto>,
     active: Option<tracker_protocol::WorklogDto>,
-    worklog: tracker_protocol::WorklogDto,
     invalid_receipt_field: Option<&'static str>,
     result: impl Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
 ) -> (
@@ -2596,7 +2598,7 @@ fn command_receipt_server(
 ) {
     use axum::extract::Path;
     use std::sync::{Arc, Mutex};
-    use tracker_protocol::{TaskResourceDto, TasksDto, TrackingDto, WorklogResourceDto};
+    use tracker_protocol::{TaskResourceDto, TasksDto, TrackingDto};
     let result = Arc::new(result);
     let write = move |Json(body): Json<serde_json::Value>| {
         let result = result.clone();
@@ -2663,15 +2665,7 @@ fn command_receipt_server(
             })
             .put(write.clone()),
         )
-        .route(
-            "/v1/worklogs/{id}",
-            get(move || {
-                let worklog = worklog.clone();
-                async move { Json(WorklogResourceDto { worklog }) }
-            })
-            .patch(write.clone())
-            .delete(write),
-        );
+        .route("/v1/worklogs/{id}", patch(write.clone()).delete(write));
     // Records resource request methods so tests can check that writes skip pre-write reads.
     let requests = Arc::new(Mutex::new(Vec::new()));
     let recorder = requests.clone();
@@ -2770,7 +2764,6 @@ async fn command_receipts_reject_results_that_contradict_the_command() {
             let (server, requests) = command_receipt_server(
                 vec![source, target],
                 running.then_some(original.clone()),
-                original,
                 field.strip_prefix("receipt."),
                 move |body| {
                     let mut value = match command {
@@ -2933,14 +2926,12 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
     };
     use tracker_protocol::{
         MutationDto, MutationResultDto, TaskDto, TrackingDto, WorklogChangeRequest, WorklogDto,
-        WorklogResourceDto,
     };
     let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
     let task_id = tracker_domain::TaskId::generate();
     let id = WorklogId::generate();
     let committed = Arc::new(AtomicBool::new(false));
     let tasks_committed = committed.clone();
-    let worklog_committed = committed.clone();
     let command_committed = committed.clone();
     let original = WorklogDto {
         id: id.to_string(),
@@ -2948,7 +2939,6 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
         start: at,
         end: Some(at + Duration::seconds(10)),
     };
-    let for_get = original.clone();
     let for_patch = original.clone();
     let router = Router::new()
         .route(
@@ -3002,18 +2992,7 @@ async fn raced_worklog_recovery_retains_the_last_coherent_view() {
         )
         .route(
             "/v1/worklogs/{id}",
-            get(move || {
-                let committed = worklog_committed.clone();
-                let mut worklog = for_get.clone();
-                async move {
-                    let changed = committed.load(Ordering::SeqCst);
-                    if changed {
-                        worklog.start = at + Duration::seconds(1);
-                    }
-                    Json(WorklogResourceDto { worklog })
-                }
-            })
-            .patch(move |Json(body): Json<WorklogChangeRequest>| {
+            patch(move |Json(body): Json<WorklogChangeRequest>| {
                 let committed = command_committed.clone();
                 let mut worklog = for_patch.clone();
                 async move {

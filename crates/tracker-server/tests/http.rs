@@ -105,9 +105,21 @@ async fn create_fixture_task(router: &axum::Router, name: &str) -> String {
 
 fn preview_uri(as_of: DateTime<Utc>) -> String {
     format!(
-        "/v1/tasks/inactive-preview?as_of={}",
+        "/v1/tasks/inactive-preview?as_of={}&inactive_days=14",
         as_of.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
     )
+}
+
+/// Reads one worklog from the global history, or `None` when it is absent.
+async fn history_worklog(router: &axum::Router, id: &str) -> Option<Value> {
+    let (status, history) = call(router, Method::GET, "/v1/worklogs", None).await;
+    assert_eq!(status, StatusCode::OK, "{history}");
+    history["worklogs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|worklog| worklog["id"] == id)
+        .cloned()
 }
 
 fn archive_request(preview: &InactiveTaskPreviewDto) -> Value {
@@ -1038,18 +1050,6 @@ async fn resource_reads_return_only_requested_data_and_include_task_activity() {
         ],
     );
     assert!(tasks["tasks"][0]["latest_work_start"].is_null());
-    for (filter, id) in [("false", active_task.id()), ("true", archived_task.id())] {
-        let (status, filtered) = call(
-            &router,
-            Method::GET,
-            &format!("/v1/tasks?archived={filter}"),
-            None,
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(filtered["tasks"].as_array().unwrap().len(), 1);
-        assert_eq!(filtered["tasks"][0]["id"], id.to_string());
-    }
     for (index, id) in [(0, archived_task.id()), (1, active_task.id())] {
         let (status, task) = call(&router, Method::GET, &format!("/v1/tasks/{id}"), None).await;
         assert_eq!(status, StatusCode::OK);
@@ -1060,17 +1060,10 @@ async fn resource_reads_return_only_requested_data_and_include_task_activity() {
     assert_eq!(status, StatusCode::OK);
     assert_keys(&tracking, &["active_worklog"]);
     assert_eq!(tracking["active_worklog"]["id"], running.id().to_string());
-    let (status, worklog) = call(
-        &router,
-        Method::GET,
-        &format!("/v1/worklogs/{}", running.id()),
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_keys(&worklog, &["worklog"]);
-    assert_keys(&worklog["worklog"], &["id", "task_id", "start", "end"]);
-    assert_eq!(worklog["worklog"], tracking["active_worklog"]);
+    assert_keys(
+        &tracking["active_worklog"],
+        &["id", "task_id", "start", "end"],
+    );
     let (status, history) = call(
         &router,
         Method::GET,
@@ -1099,18 +1092,18 @@ async fn resource_reads_distinguish_missing_ids_empty_history_and_invalid_parame
     assert_eq!(body["worklogs"], json!([]));
     for route in [
         format!("/v1/tasks/{}", Uuid::now_v7()),
-        format!("/v1/worklogs/{}", Uuid::now_v7()),
         format!("/v1/worklogs?task_id={}", Uuid::now_v7()),
     ] {
         let (status, body) = call(&router, Method::GET, &route, None).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{route}: {body}");
         assert_eq!(body["code"], "not_found");
     }
+    let as_of = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let preview_without_days = format!("/v1/tasks/inactive-preview?as_of={as_of}");
     for route in [
-        "/v1/tasks?archived=invalid",
+        "/v1/tasks?archived=false",
         "/v1/tasks?unexpected=true",
         "/v1/tasks/not-an-id",
-        "/v1/worklogs/not-an-id",
         "/v1/worklogs?task_id=not-an-id",
         "/v1/worklogs?after_task_id=not-an-id",
         "/v1/worklogs?after_id=not-an-id",
@@ -1118,6 +1111,7 @@ async fn resource_reads_distinguish_missing_ids_empty_history_and_invalid_parame
         "/v1/reports/task-totals",
         "/v1/tasks/inactive-preview?as_of=not-a-time",
         "/v1/tasks/inactive-preview?unexpected=true",
+        &preview_without_days,
     ] {
         let (status, body) = call(&router, Method::GET, route, None).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{route}: {body}");
@@ -1523,14 +1517,8 @@ async fn zero_duration_commands_reject_equal_canonical_instants_without_writes()
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
         assert_eq!(state(&router).await, before);
-        let (_, stored) = call(
-            &router,
-            Method::GET,
-            &format!("/v1/worklogs/{worklog_id}"),
-            None,
-        )
-        .await;
-        assert_eq!(stored["worklog"]["end"], json!(at(101)));
+        let stored = history_worklog(&router, &worklog_id).await.unwrap();
+        assert_eq!(stored["end"], json!(at(101)));
     }
 }
 
@@ -1672,8 +1660,7 @@ async fn every_write_succeeds_after_an_unrelated_write_by_another_client() {
     assert!(
         matches!(deleted.result, MutationResultDto::Worklog(worklog) if worklog.id == worklog_id)
     );
-    let (status, _) = call(&router, Method::GET, &worklog_route, None).await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(history_worklog(&router, &worklog_id).await, None);
 
     let as_of = Utc::now();
     let (status, body) = call(&router, Method::GET, &preview_uri(as_of), None).await;

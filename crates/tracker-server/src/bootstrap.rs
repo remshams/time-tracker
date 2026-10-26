@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn;
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use tracker_application::TrackerApplication;
 use tracker_protocol::HealthDto;
@@ -25,7 +25,7 @@ use crate::tasks::{
     archive_inactive_tasks, change_task, create_task, preview_inactive_tasks, task, tasks,
 };
 use crate::tracking::{set_tracking, tracking};
-use crate::worklogs::{all_worklogs, change_worklog, delete_worklog, worklog};
+use crate::worklogs::{all_worklogs, change_worklog, delete_worklog};
 
 const BODY_LIMIT: usize = 16 * 1024;
 
@@ -52,7 +52,7 @@ pub fn router_for_database(path: &Path) -> Result<Router, Box<dyn Error + Send +
         .route("/v1/worklogs", get(all_worklogs))
         .route(
             "/v1/worklogs/{id}",
-            get(worklog).patch(change_worklog).delete(delete_worklog),
+            patch(change_worklog).delete(delete_worklog),
         )
         .route("/v1/reports/task-totals", get(report))
         .route("/v1/state/task-list", get(task_list_state))
