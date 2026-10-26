@@ -34,12 +34,16 @@ impl TrackerBackend {
         }
     }
 
+    /// Returns totals with their tasks. Remote rows whose task is not cached read it once.
     pub async fn report_totals(
         &mut self,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<ReportTotals, ApplicationError> {
+        if let Self::Local(application) = self {
+            return application.report_totals(start, end, now);
+        }
         let report = self.report(start, end, now).await?;
         let mut rows = Vec::with_capacity(report.rows.len());
         for row in report.rows {

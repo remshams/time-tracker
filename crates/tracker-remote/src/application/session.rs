@@ -1,4 +1,3 @@
-use super::error::state_changed;
 use super::{
     ApplicationError, HealthDto, Instant, Method, MutationContext, MutationDto, MutationResultDto,
     RemoteError, RemoteFailureKind, Transport, WriteGuard, classify_error, map_application_error,
@@ -45,10 +44,6 @@ impl RemoteSession {
         self.last_write_attempted = false;
         self.last_command_receipt = None;
     }
-    pub(super) fn intent_changed(&mut self) -> ApplicationError {
-        self.set_failure(RemoteFailureKind::Conflict);
-        state_changed()
-    }
     pub(super) fn set_failure(&mut self, failure: RemoteFailureKind) {
         self.last_failure = Some(failure);
     }
@@ -84,7 +79,7 @@ impl RemoteSession {
         url: reqwest::Url,
     ) -> Result<T, RemoteError> {
         self.transport
-            .send(Method::GET, url, None::<&()>)
+            .get(url)
             .await
             .map_err(|error| self.record_error(error))
     }
@@ -143,7 +138,7 @@ impl RemoteSession {
         self.last_write_attempted = true;
         let delivery = self
             .transport
-            .send_with_delivery(method, self.transport.url(path), Some(body))
+            .write(method, self.transport.url(path), body)
             .await;
         // A refused connection proves the server never received the command.
         self.last_write_attempted = delivery.may_have_reached_server;

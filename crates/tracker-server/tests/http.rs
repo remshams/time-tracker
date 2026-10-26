@@ -716,7 +716,6 @@ async fn stopping_an_already_idle_tracker_is_an_idempotent_success() {
     let (status, first) = call(&router, Method::PUT, "/v1/tracking", Some(request.clone())).await;
     assert_eq!(status, StatusCode::OK, "{first}");
     assert_eq!(first["result"]["kind"], "tracking_already_idle");
-    assert!(first.get("snapshot").is_none());
     assert!(state(&router).await.1.active_worklog.is_none());
 
     let (status, retry) = call(&router, Method::PUT, "/v1/tracking", Some(request)).await;

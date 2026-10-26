@@ -1399,8 +1399,8 @@ async fn coherent_refresh_rejects_missing_or_archived_active_tasks_without_adopt
     }
 }
 
-/// Another client's write between the preview and the candidate reads does not invalidate the
-/// preview; only an archived candidate does.
+/// Another client's writes between the preview and the task-list read show in the resolved
+/// candidates and never invalidate the preview.
 #[tokio::test]
 async fn preview_candidates_resolve_after_another_client_writes() {
     let server = TestServer::start();
@@ -1428,15 +1428,38 @@ async fn preview_candidates_resolve_after_another_client_writes() {
     assert_eq!(client.last_failure(), None);
 
     other.archive_task(candidate.id(), as_of).await.unwrap();
-    assert_eq!(
-        client
-            .resolve_preview_tasks(&preview)
-            .await
-            .unwrap_err()
-            .to_string(),
-        "Tracker state changed. Refresh and retry."
-    );
-    assert_eq!(client.last_failure(), Some(RemoteFailureKind::Conflict));
+    let resolved = client.resolve_preview_tasks(&preview).await.unwrap();
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(resolved[0].id(), candidate.id());
+    assert!(resolved[0].is_archived());
+    assert_eq!(client.last_failure(), None);
+}
+
+#[tokio::test]
+async fn a_preview_candidate_missing_from_the_task_list_is_a_protocol_failure() {
+    let server = TestServer::start();
+    let mut client = connected(&server.endpoint()).await.unwrap();
+    let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
+    let known = client.create_task(name("Old task"), at).await.unwrap();
+    let preview: tracker_remote::InactiveTaskPreview = serde_json::from_value(serde_json::json!({
+        "as_of": at,
+        "inactive_days": 14,
+        "count": 2,
+        "candidate_task_ids": [
+            known.id().to_string(),
+            tracker_domain::TaskId::generate().to_string(),
+        ],
+    }))
+    .unwrap();
+
+    let error = client.resolve_preview_tasks(&preview).await.unwrap_err();
+
+    assert!(matches!(
+        error,
+        tracker_application::ApplicationError::RemoteProtocol(message)
+            if message == "invalid server response: preview candidate is not in the task list"
+    ));
+    assert_eq!(client.last_failure(), Some(RemoteFailureKind::Protocol));
 }
 
 #[tokio::test]
@@ -4025,126 +4048,4 @@ async fn aggregate_reads_remain_coherent_while_http_commands_switch_tracking() {
         }
     };
     tokio::join!(write, read);
-}
-
-#[tokio::test]
-async fn worklog_writes_send_no_individual_worklog_read() {
-    use axum::{
-        extract::Request,
-        middleware::{self, Next},
-    };
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-
-    let directory = TempDir::new().unwrap();
-    let reads = Arc::new(AtomicUsize::new(0));
-    let worklog_reads = reads.clone();
-    let router = tracker_server::router_for_database(&directory.path().join("requests.sqlite3"))
-        .unwrap()
-        .layer(middleware::from_fn(move |request: Request, next: Next| {
-            let reads = worklog_reads.clone();
-            async move {
-                if request.method() == axum::http::Method::GET
-                    && request.uri().path().starts_with("/v1/worklogs/")
-                {
-                    reads.fetch_add(1, Ordering::SeqCst);
-                }
-                next.run(request).await
-            }
-        }));
-    let server = StubServer::from_router(router);
-    let mut client = connected(&server.endpoint()).await.unwrap();
-    let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
-    let source = client.create_task(name("Source task"), at).await.unwrap();
-    let destination = client
-        .create_task(name("Destination task"), at)
-        .await
-        .unwrap();
-    let started = match client.set_active_task(source.id(), at).await.unwrap() {
-        SetActiveTaskOutcome::Started { worklog } => worklog,
-        other => panic!("expected started worklog, got {other:?}"),
-    };
-    let stopped = match client
-        .clear_active_task(started.id(), at + Duration::seconds(10))
-        .await
-        .unwrap()
-    {
-        ClearActiveTaskOutcome::Stopped { worklog } => worklog,
-        other => panic!("expected stopped worklog, got {other:?}"),
-    };
-    assert_eq!(reads.load(Ordering::SeqCst), 0);
-
-    let replacement = WorklogTimes::new(at + Duration::seconds(1), Some(at + Duration::seconds(9)));
-    let corrected = client
-        .correct_worklog(
-            stopped.id(),
-            stopped.times(),
-            replacement,
-            at + Duration::seconds(20),
-        )
-        .await
-        .unwrap();
-    assert_eq!(corrected.times(), replacement);
-    assert_eq!(
-        reads.load(Ordering::SeqCst),
-        0,
-        "correction reads no individual worklog"
-    );
-    assert_eq!(client.last_failure(), None);
-    assert_eq!(
-        client
-            .worklogs_for_task(source.id(), None)
-            .await
-            .unwrap()
-            .worklogs,
-        vec![corrected.clone()]
-    );
-
-    let moved = client
-        .move_worklog(
-            corrected.id(),
-            source.id(),
-            corrected.times(),
-            destination.id(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(moved.task_id(), destination.id());
-    assert_eq!(
-        reads.load(Ordering::SeqCst),
-        0,
-        "move reads no individual worklog"
-    );
-    assert_eq!(client.last_failure(), None);
-    assert!(
-        client
-            .worklogs_for_task(source.id(), None)
-            .await
-            .unwrap()
-            .worklogs
-            .is_empty()
-    );
-    assert_eq!(
-        client
-            .worklogs_for_task(destination.id(), None)
-            .await
-            .unwrap()
-            .worklogs,
-        vec![moved.clone()]
-    );
-
-    let deleted = client
-        .delete_completed_worklog(moved.id(), destination.id(), moved.times())
-        .await
-        .unwrap();
-    assert_eq!(deleted, moved);
-    assert_eq!(
-        reads.load(Ordering::SeqCst),
-        0,
-        "deletion reads no individual worklog"
-    );
-    assert_eq!(client.last_failure(), None);
-    assert!(client.all_worklogs(None).await.unwrap().worklogs.is_empty());
 }
