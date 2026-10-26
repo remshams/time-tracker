@@ -52,10 +52,7 @@ pub(crate) fn validate(
         Tasks::Create { name } | Tasks::Rename { name, .. } => {
             TaskName::new(name.as_str()).map_err(CliError::input)?;
         }
-        Tasks::ArchiveInactive { preview, yes } => {
-            if !*yes {
-                return Err(CliError::input("archive-inactive requires --yes"));
-            }
+        Tasks::ArchiveInactive { preview, .. } => {
             let token: PreviewToken = read_json(preview)?;
             validate_preview(&token, identity)?;
             if let PreviewToken::Local { as_of, .. } = &token
