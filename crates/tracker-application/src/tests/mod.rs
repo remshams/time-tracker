@@ -404,10 +404,14 @@ impl TrackerRepository for MemoryRepository {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         now: DateTime<Utc>,
-    ) -> Result<(Vec<TaskListItem>, ReportRead), RepositoryError> {
+    ) -> Result<TaskListReportRead, RepositoryError> {
         let data = self.0.borrow();
         let read = self.report_read(start, end, now)?;
-        Ok((Self::task_items(&data), read))
+        Ok(TaskListReportRead {
+            items: Self::task_items(&data),
+            rows: read.rows,
+            active_worklog: read.tracking.active_worklog,
+        })
     }
 
     fn report_read(

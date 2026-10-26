@@ -95,6 +95,15 @@ pub struct ReportRead {
     pub tracking: ActiveTrackingRead,
 }
 
+/// Task-list items, report totals, and the active worklog from one backend
+/// read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskListReportRead {
+    pub items: Vec<TaskListItem>,
+    pub rows: Vec<ReportRow>,
+    pub active_worklog: Option<Worklog>,
+}
+
 /// The committed result of a worklog correction.
 ///
 /// These values come from the correction transaction. The application must
@@ -264,14 +273,14 @@ pub trait TrackerRepository {
         next: &Worklog,
     ) -> Result<(), RepositoryError>;
 
-    /// Reads the explicitly requested task list, totals, and active tracking
-    /// under one backend transaction for the task-list totals workflow.
+    /// Reads the task list, totals, and the active worklog under one backend
+    /// transaction for the task-list totals workflow.
     fn task_list_report_read(
         &self,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         now: DateTime<Utc>,
-    ) -> Result<(Vec<TaskListItem>, ReportRead), RepositoryError>;
+    ) -> Result<TaskListReportRead, RepositoryError>;
 
     /// Returns positive task totals and tracker state from one read snapshot.
     /// Open worklogs end at `now` for the report calculation.
