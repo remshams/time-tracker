@@ -58,7 +58,6 @@ final class LifecycleTests: XCTestCase {
         fixture.clock.uptime += 9
         fixture.clock.now.addTimeInterval(9)
         timer?.fire()
-        XCTAssertEqual(fixture.session.now, fixture.clock.now)
         XCTAssertEqual(fixture.session.timerDisplayText, "00:00:39")
         XCTAssertEqual(fixture.client.operations.count, operationCount)
         fixture.session.menuClosed()

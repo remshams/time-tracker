@@ -3,10 +3,7 @@ import Foundation
 @MainActor
 public final class TrackerSession {
     public var onChange: (() -> Void)?
-    public private(set) var now: Date
 
-    public private(set) var taskCatalogResource: TaskCatalogObservation?
-    public private(set) var trackingResource: TrackingObservation?
     private let client: any TrackerClient
     private let reports: (any ReportClient)?
     private let clock: any TrackerClock
@@ -57,7 +54,6 @@ public final class TrackerSession {
         let initialSettings = settings.load() ?? .local
         connection = ConnectionState(settings: initialSettings)
         lastTracked = LastTrackedTaskState(repository: lastTrackedTasks, settings: initialSettings)
-        now = clock.now
         dailyTotals.updateDay(at: clock.now)
     }
 
@@ -757,8 +753,6 @@ public final class TrackerSession {
     }
 
     private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
-        taskCatalogResource = resources.catalog
-        trackingResource = resources.tracking
         dailyTotals.updateDay(at: clock.now)
         let retryFailedHistory = connection.stale && history.unavailable
         connection.acceptTaskList()
@@ -844,10 +838,8 @@ public final class TrackerSession {
             return
         }
         guard displayTimer == nil else { return }
-        now = clock.now
         displayTimer = scheduler.schedule(after: 1, repeating: true, tolerance: 0.2) { [weak self] in
             guard let self else { return }
-            now = clock.now
             if reports != nil, dailyTotals.updateDay(at: clock.now) {
                 updateRolloverTimer()
                 if !connection.protocolBlocked { refresh() }
