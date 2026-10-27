@@ -245,7 +245,7 @@ python3 scripts/swift-coverage.py
 
 The command runs the package tests with instrumentation and requires at least 95% executable source line coverage. It exports `coverage.json`, `lcov.info`, `summary.json`, and `html/index.html` under `.build/swift-coverage`. Tests, generated code, and the native app are outside this report. The protocol-only dependency contract has no executable lines; the script checks its compiler parse tree before listing it separately. Missing coverage for an executable source is an error. Use `--minimum-line-coverage` to choose a stricter minimum.
 
-Build the pinned Muter tool once with Swift 6.1 or newer, then run the mutation check:
+Build the pinned Muter tool once with Swift 6.4 or newer, then run the mutation check:
 
 ```sh
 python3 scripts/install-swift-muter.py
