@@ -12,7 +12,7 @@ For example, explain that switching tasks could leave a remote client's elapsed 
 
 ## Architecture impact
 
-Use the names in the [architecture catalog](architecture/primitives.md). Include a table with one row for each affected crate or client. Describe changes to its responsibilities, dependencies, contracts, or communication with other components. Include affected application rules, such as worklog overlap or active tracking, where relevant.
+Use the names in the [architecture catalog](architecture/architecture.md). Include a table with one row for each affected crate or client. Describe changes to its responsibilities, dependencies, contracts, or communication with other components. Include affected application rules, such as worklog overlap or active tracking, where relevant.
 
 The following rows illustrate a hypothetical protocol change.
 

@@ -7,8 +7,8 @@ import unittest
 ROOT = Path(__file__).parents[2]
 DOCUMENTS = [
     "docs/architecture/README.md",
-    "docs/architecture/primitives.md",
-    "docs/architecture/primitives.html",
+    "docs/architecture/architecture.md",
+    "docs/architecture/architecture.html",
     "docs/architecture/diagrams.html",
 ]
 REVISION = r"([0-9a-f]{7,40})\b"

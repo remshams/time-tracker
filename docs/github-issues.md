@@ -16,7 +16,7 @@ Assign at least one relevant GitHub label to every issue. Check the repository's
 
 ## Affected architectural primitives
 
-Include an "Affected architectural primitives" section. Use the names in the [architecture catalog](architecture/primitives.md) and list each affected crate or client when you can identify it. Briefly explain its connection to the issue. Include affected application rules where relevant.
+Include an "Affected architectural primitives" section. Use the names in the [architecture catalog](architecture/architecture.md) and list each affected crate or client when you can identify it. Briefly explain its connection to the issue. Include affected application rules where relevant.
 
 For example, a CLI task-renaming issue might list `tracker-cli` for command handling and `tracker-application` for the shared rename use case. Check the code before treating either as a confirmed cause.
 

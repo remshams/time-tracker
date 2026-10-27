@@ -15,7 +15,7 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 - Follow domain-driven design. Model code around the domain concepts, such as tasks, tracking, and worklogs, and use their names for types, functions, and modules.
 - Inside a crate or app, split code by feature, not by technical layer. Keep a feature's state, logic, and views together, as `crates/tracker-domain/src/` and `apps/swiftui/Sources/TimeTrackerSwiftUI/Features/` do. Don't add folders such as `models/`, `services/`, or `views/` that collect one technical role across all features.
 - Features may depend on other features, but their dependencies must not form a cycle. The compiler doesn't catch cycles between folders in one target, so check them in review. In the Swift app and package, only `App/` composes features at runtime, `Shared/` holds helpers that no feature owns, and `Contracts/` holds protocols and wire models ([ADR 0030](docs/adr/0030-replace-the-session-with-feature-stores.md)).
-- Keep the crate boundaries described in `docs/architecture/primitives.md`. This rule covers the code inside each crate and app, not the crate split.
+- Keep the crate boundaries described in `docs/architecture/architecture.md`. This rule covers the code inside each crate and app, not the crate split.
 
 ## General
 
@@ -24,7 +24,7 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 
 ## Architecture documentation
 
-- Start with `docs/architecture/README.md`. The concise architecture and application catalog is `docs/architecture/primitives.md`; its human-readable companion is `docs/architecture/primitives.html`.
+- Start with `docs/architecture/README.md`. The concise architecture and application catalog is `docs/architecture/architecture.md`; its human-readable companion is `docs/architecture/architecture.html`.
 - Keep each architecture document in both Markdown and HTML. Agents read the Markdown and reviewers diff it; people read the HTML. When you add or change an architecture document, update both formats in the same change and keep their concepts, rules, ownership, and source snapshot aligned.
 - The architecture diagrams are in `docs/architecture/diagrams.html`. Open the file in a browser; its diagrams and controls work offline.
 - When implementing a feature that changes application components, dependencies, ownership, or communication paths, update the affected diagrams and method tables in the same change. Keep the source snapshot date and revision accurate, and state the scope and revision of any retained quality measurements.
