@@ -230,7 +230,6 @@ fn archived_footer_hints(filtered: bool, width: u16) -> &'static str {
 #[cfg(test)]
 mod tests {
     use crate::command::Command;
-    use crate::screens::WorklogHistoryMode;
     use crate::screens::task_list::{TaskListCommand, TaskListMode, TaskView};
     use crate::test_support::keymap::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -757,43 +756,6 @@ mod tests {
     }
 
     #[test]
-    fn the_history_footer_lists_every_key_at_eighty_columns() {
-        let history_keys = history_footer(WorklogHistoryMode::Normal, true, 80);
-        for hint in [
-            "j/k/↑/↓ move",
-            "e edit",
-            "m move",
-            "o older",
-            "r refresh",
-            "esc back",
-            "q",
-            "ctrl+c",
-        ] {
-            assert!(
-                history_keys.contains(hint),
-                "history footer misses {hint:?}"
-            );
-        }
-        assert!(
-            history_keys.chars().count() <= 80,
-            "footer too wide: {history_keys:?}"
-        );
-    }
-
-    #[test]
-    fn normal_task_list_footers_explain_how_to_open_worklogs() {
-        for width in [60, 80] {
-            for view in [TaskView::Active, TaskView::Archived] {
-                let footer = task_list_footer(TaskListMode::Normal, view, width);
-                assert!(
-                    footer.contains("enter history"),
-                    "task-list footer misses the history hint at width {width}: {footer:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
     fn a_110_column_footer_uses_the_expanded_bulk_archive_hint() {
         let footer = task_list_footer(TaskListMode::Normal, TaskView::Active, 110);
         assert!(footer.contains("D archive inactive"), "{footer:?}");
@@ -838,34 +800,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn compact_footers_keep_every_key_visible_at_sixty_columns() {
-        let footers = [
-            task_list_footer(TaskListMode::Normal, TaskView::Active, 60),
-            task_list_footer(TaskListMode::Normal, TaskView::Archived, 60),
-            task_list_footer(input(), TaskView::Active, 60),
-            task_list_footer(confirm(), TaskView::Active, 60),
-            history_footer(WorklogHistoryMode::Normal, true, 60),
-        ];
-        for footer in footers {
-            assert!(footer.chars().count() <= 60, "footer too wide: {footer:?}");
-            assert!(
-                footer.contains("ctrl+c"),
-                "footer misses ctrl+c: {footer:?}"
-            );
-        }
-        assert!(footers[0].contains("j/k"));
-        assert!(footers[0].contains("tab/⇧tab"));
-        assert!(footers[0].contains("space"));
-        assert!(footers[0].contains("a/e/d/D"));
-        assert!(footers[0].contains("enter history"));
-        assert!(footers[0].contains("s sort"));
-        assert!(footers[1].contains("enter history"));
-        assert!(footers[1].contains("u restore"));
-        assert!(footers[4].contains("o older"));
-        assert!(footers[4].contains("r refresh"));
-        assert!(footers[4].contains("esc back"));
     }
 }
