@@ -9,7 +9,7 @@ DOCUMENTS = [
     "docs/architecture/README.md",
     "docs/architecture/primitives.md",
     "docs/architecture/primitives.html",
-    "docs/architecture/architecture.html",
+    "docs/architecture/diagrams.html",
 ]
 REVISION = r"([0-9a-f]{7,40})\b"
 # Revisions appear after these markers only. CSS colors, quality row IDs and SVG data
