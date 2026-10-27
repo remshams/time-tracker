@@ -269,9 +269,7 @@ final class TrackerStatusItemController: NSObject {
         item.image = TaskDotImage.make(
             color: TaskColor.forTaskID(entry.id),
             isRunning: isRunning, appearance: appearance)
-        if #available(macOS 27.0, *) {
-            item.preferredImageVisibility = .visible
-        }
+        item.preferredImageVisibility = .visible
         item.toolTip =
             trackingAction != nil ? help : "Open the submenu to copy this task's name or time. Tracking is unavailable."
         let status = MenuTaskRow.accessibilityStatus(isRunning: entry.isRunning, isStale: content.isStale)
