@@ -185,7 +185,7 @@ Use `python3 scripts/swift-style.py --format-check` to run only the formatting c
 
 ## Unit tests
 
-The `TrackerClient` package contains Foundation-only client state and XCTest tests. It has no Rust, SwiftUI, AppKit, database, or network dependency. Run it from the repository root on a Mac or Linux machine with Swift 5.9 or newer:
+The `TrackerClient` package contains Foundation-only client state and XCTest tests. It has no Rust, SwiftUI, AppKit, database, or network dependency. Run it from the repository root on a Mac or Linux machine with Swift 6.4 or newer:
 
 ```sh
 swift test --package-path apps/swiftui/TrackerClient
