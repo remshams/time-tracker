@@ -176,10 +176,6 @@ impl Transport {
     }
 }
 
-pub(crate) fn is_unavailable_status(status: StatusCode) -> bool {
-    status.is_server_error() || status == StatusCode::REQUEST_TIMEOUT
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,13 +470,5 @@ mod tests {
         let received: String = transport.get(transport.url("v1/tasks")).await.unwrap();
         assert_eq!(received.len(), 16 * 1024 * 1024 - 2);
         worker.join().unwrap();
-    }
-
-    #[test]
-    fn classifies_http_availability_without_treating_bad_requests_as_outages() {
-        assert!(is_unavailable_status(StatusCode::INTERNAL_SERVER_ERROR));
-        assert!(is_unavailable_status(StatusCode::REQUEST_TIMEOUT));
-        assert!(!is_unavailable_status(StatusCode::BAD_REQUEST));
-        assert!(!is_unavailable_status(StatusCode::CONFLICT));
     }
 }

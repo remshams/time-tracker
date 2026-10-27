@@ -26,7 +26,9 @@ impl RemoteError {
     pub fn is_unavailable(&self) -> bool {
         match self {
             Self::Unavailable(_) => true,
-            Self::Http { status, .. } => transport::is_unavailable_status(*status),
+            Self::Http { status, .. } => {
+                status.is_server_error() || *status == StatusCode::REQUEST_TIMEOUT
+            }
             Self::InvalidEndpoint(_) | Self::Protocol(_) => false,
         }
     }
@@ -38,23 +40,26 @@ mod tests {
 
     use super::RemoteError;
 
+    fn http(status: StatusCode) -> RemoteError {
+        RemoteError::Http {
+            status,
+            body: Vec::new(),
+        }
+    }
+
     #[test]
     fn unavailable_classification_distinguishes_connection_and_protocol_failures() {
         assert!(RemoteError::Unavailable("offline".into()).is_unavailable());
-        assert!(
-            RemoteError::Http {
-                status: StatusCode::SERVICE_UNAVAILABLE,
-                body: Vec::new(),
-            }
-            .is_unavailable()
-        );
-        assert!(
-            !RemoteError::Http {
-                status: StatusCode::CONFLICT,
-                body: Vec::new(),
-            }
-            .is_unavailable()
-        );
+        for status in [
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::SERVICE_UNAVAILABLE,
+            StatusCode::REQUEST_TIMEOUT,
+        ] {
+            assert!(http(status).is_unavailable(), "{status}");
+        }
+        for status in [StatusCode::BAD_REQUEST, StatusCode::CONFLICT] {
+            assert!(!http(status).is_unavailable(), "{status}");
+        }
         assert!(!RemoteError::Protocol("version mismatch".into()).is_unavailable());
         assert!(!RemoteError::InvalidEndpoint("invalid URL").is_unavailable());
     }
