@@ -176,6 +176,26 @@ class SwiftCoverageTests(unittest.TestCase):
                 coverage.collect("swift", "llvm-cov", 95)
         self.assert_reports_invalidated(output)
 
+    def test_collect_builds_and_tests_with_the_native_build_system(self) -> None:
+        output = self.old_reports()
+        commands = []
+
+        def stop_after_tests(arguments, capture=False):
+            commands.append(arguments)
+            if arguments[1] == "test":
+                raise coverage.CoverageError("Stop after the test command")
+            return str(output / "build/debug")
+
+        with mock.patch.object(coverage, "OUTPUT", output), mock.patch.object(coverage, "PACKAGE", self.package), \
+                mock.patch.object(coverage, "run", stop_after_tests):
+            with self.assertRaisesRegex(coverage.CoverageError, "Stop after the test command"):
+                coverage.collect("swift", "llvm-cov", 95)
+        self.assertEqual([command[:2] for command in commands], [["swift", "build"], ["swift", "test"]])
+        for command in commands:
+            with self.subTest(command=command[1]):
+                self.assertIn(["--build-system", "native"],
+                              [command[index:index + 2] for index in range(len(command))])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -161,7 +161,10 @@ def collect(swift: str, llvm_cov: str, minimum: float) -> dict:
     expected = source_files(PACKAGE)
     check_threshold({"line_coverage": 100}, minimum)
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    build_arguments = ["--package-path", str(PACKAGE), "--scratch-path", str(OUTPUT / "build")]
+    # Swift Build, the default since Swift 6.4, writes no per-target source list, so
+    # keep SwiftPM's native build system until the coverage checks are adapted.
+    build_arguments = ["--package-path", str(PACKAGE), "--build-system", "native",
+                       "--scratch-path", str(OUTPUT / "build")]
     build_arguments += ["--cache-path", str(OUTPUT / "cache"), "--config-path", str(OUTPUT / "config"),
                         "--security-path", str(OUTPUT / "security")]
     binary_directory = Path(run([swift, "build", *build_arguments, "--show-bin-path"], capture=True).strip())
