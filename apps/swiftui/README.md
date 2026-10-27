@@ -148,7 +148,7 @@ Native interaction checks require a Mac. Open the menu with the global shortcut 
 
 ## Formatting and linting
 
-Install the repository's pinned tools with Swift 6.1 or newer and Python 3.12 or newer:
+Install the repository's pinned tools with Swift 6.4 or newer and Python 3.12 or newer:
 
 ```sh
 python3 scripts/install-swift-style-tools.py
