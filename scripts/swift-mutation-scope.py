@@ -153,7 +153,46 @@ REVIEWED_REPLACEMENTS: dict[str, str] = {}
 # A PR that edits the package manifest can add a reviewed entry here: (reason,
 # exact text edits, production files whose behavior depends on the edit). Remove
 # the entry once its PR has merged, since its base text no longer matches main.
-REVIEWED_PACKAGE_EDITS: tuple = ()
+REVIEWED_PACKAGE_EDITS: tuple = (
+    # The Swift 6.4 platform raise (#235) changes the compiler for every source, so
+    # mutate the whole package.
+    ("Reviewed Swift 6.4 and macOS 27 platform raise",
+     (("// swift-tools-version: 5.9", "// swift-tools-version: 6.4"),
+      ("platforms: [.macOS(.v14)],", "platforms: [.macOS(.v27)],"),
+      ("swiftLanguageVersions: [.v5]", "swiftLanguageModes: [.v5]")),
+     (
+         "App/TrackerPresentation.swift",
+         "App/TrackerSession.swift",
+         "Contracts/Dependencies.swift",
+         "Contracts/Models.swift",
+         "Features/BulkTaskArchiving/BulkTaskArchivingState.swift",
+         "Features/Connection/ConnectionState.swift",
+         "Features/DailyTotals/DailyTotalsState.swift",
+         "Features/MenuBar/LastTrackedTaskState.swift",
+         "Features/MenuBar/MenuKeyboardShortcuts.swift",
+         "Features/MenuBar/MenuTaskClipboard.swift",
+         "Features/MenuBar/MenuTaskOrder.swift",
+         "Features/MenuBar/MenuTaskTrackingAction.swift",
+         "Features/MenuBar/TrackerMenuContent.swift",
+         "Features/MenuBar/TrackerMenuPresentationObserver.swift",
+         "Features/MenuBar/TrackerMenuValues.swift",
+         "Features/ProgressPresentation/DelayedProgressPresentation.swift",
+         "Features/TaskArchiving/TaskArchivingState.swift",
+         "Features/TaskCatalog/TaskCatalogState.swift",
+         "Features/TaskCreation/TaskCreationState.swift",
+         "Features/TaskEditing/TaskNameEditingPolicy.swift",
+         "Features/TaskIndicators/TaskIndicator.swift",
+         "Features/TaskRename/TaskRenameState.swift",
+         "Features/Tracking/TrackingState.swift",
+         "Features/TrackingAutomation/TrackingAutomationState.swift",
+         "Features/WindowRouting/TrackerWindowRoutingState.swift",
+         "Features/WorklogCorrection/WorklogCorrectionState.swift",
+         "Features/WorklogDeletion/WorklogDeletionState.swift",
+         "Features/WorklogHistory/WorklogHistoryState.swift",
+         "Features/WorklogHistory/WorklogTimestamp.swift",
+         "Features/WorklogMove/WorklogMoveState.swift",
+     )),
+)
 
 
 class ScopeError(Exception):
