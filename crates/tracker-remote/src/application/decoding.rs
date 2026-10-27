@@ -93,7 +93,7 @@ pub(super) fn decode_task_item(dto: TaskDto) -> Result<TaskListItem, RemoteError
     })
 }
 
-pub(super) fn decode_task(dto: TaskDto) -> Result<Task, RemoteError> {
+fn decode_task(dto: TaskDto) -> Result<Task, RemoteError> {
     let id = dto
         .id
         .parse()
