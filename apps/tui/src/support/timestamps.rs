@@ -412,11 +412,8 @@ mod timezone_tests {
 #[cfg(test)]
 mod correction_tests {
     use super::*;
+    use crate::test_support::at;
     use chrono::{MappedLocalTime, NaiveDate};
-
-    fn at(seconds: i64) -> DateTime<Utc> {
-        DateTime::from_timestamp(seconds, 0).unwrap()
-    }
 
     #[derive(Clone, Copy, Debug)]
     struct CorrectionTestZone;
