@@ -6,9 +6,9 @@ runs:
     - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
       with:
         python-version: '3.12'
-    - uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
+    - uses: ./.github/actions/setup-swift
       with:
-        swift-version: '6.1.3'
+        swift-version: '6.4.1'
     - name: Cache the pinned Muter binary
       id: tools
       uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -16,7 +16,7 @@ runs:
         path: |
           .build/swift-tools/muter
           .build/swift-tools/muter-revision.txt
-        key: muter-${{ runner.os }}-${{ runner.arch }}-swift-6.1.3-${{ hashFiles('scripts/install-swift-muter.py') }}
+        key: muter-${{ runner.os }}-${{ runner.arch }}-swift-6.4.1-${{ hashFiles('scripts/install-swift-muter.py') }}
     - name: Build the pinned Muter binary
       if: steps.tools.outputs.cache-hit != 'true'
       shell: bash
