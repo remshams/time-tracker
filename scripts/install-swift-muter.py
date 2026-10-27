@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the pinned Muter tool with Swift 6.1 or newer."""
+"""Build the pinned Muter tool with Swift 6.4 or newer."""
 
 import argparse
 import hashlib

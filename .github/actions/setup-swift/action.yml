@@ -1,0 +1,50 @@
+name: Set up Swift on Linux
+description: Install the pinned swiftly release and an exact Swift toolchain, and put the toolchain's own binaries on PATH.
+inputs:
+  swift-version:
+    description: Exact Swift release, such as 6.4.1.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install swiftly and Swift
+      shell: bash
+      env:
+        SWIFT_VERSION: ${{ inputs.swift-version }}
+        SWIFTLY_VERSION: '1.2.0'
+      run: |
+        set -euo pipefail
+        # swiftly writes .swift-version into the working directory; keep it out of the checkout.
+        cd "$RUNNER_TEMP"
+        architecture=$(uname -m)
+        case "$architecture" in
+          x86_64) checksum=0b26b568811404374c7d7f07276b6aad4145db5d1893a45f307de6a94ca8d9c3 ;;
+          aarch64) checksum=590d855e03807791f1b84aab77471bf7e31f9e3b22151972526077da296ecf96 ;;
+          *) echo "No pinned swiftly checksum for $architecture." >&2; exit 1 ;;
+        esac
+        archive="$RUNNER_TEMP/swiftly.tar.gz"
+        curl -fsSL --retry 3 -o "$archive" \
+          "https://download.swift.org/swiftly/linux/swiftly-$SWIFTLY_VERSION-$architecture.tar.gz"
+        echo "$checksum  $archive" | sha256sum --check --strict
+        tar -xzf "$archive" -C "$RUNNER_TEMP" swiftly
+        "$RUNNER_TEMP/swiftly" init --assume-yes --skip-install --no-modify-profile --quiet-shell-followup
+        . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"
+        post_install="$RUNNER_TEMP/swift-post-install.sh"
+        swiftly install "$SWIFT_VERSION" --use --assume-yes --post-install-file="$post_install"
+        if [ -f "$post_install" ]; then
+          # The post-install script installs system packages; refresh the stale runner index first.
+          sudo apt-get update -qq
+          sudo bash "$post_install"
+        fi
+        # The coverage script finds llvm-cov beside the resolved swift binary, so
+        # use the toolchain directory instead of swiftly's proxies.
+        location=$(swiftly use --print-location)
+        for directory in "$location/usr/bin" "$location/bin"; do
+          if [ -x "$directory/swift" ]; then
+            echo "$directory" >> "$GITHUB_PATH"
+            "$directory/swift" --version
+            exit 0
+          fi
+        done
+        echo "Swift $SWIFT_VERSION has no swift binary under $location." >&2
+        exit 1

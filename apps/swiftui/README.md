@@ -4,7 +4,7 @@ This SwiftUI app shows active and archived tasks, the running timer, and paged w
 
 ## Build and run on a Mac
 
-Use macOS 15 or newer, Xcode with the macOS 27 SDK or newer, and Rust 1.88 or newer. Open `apps/swiftui/TimeTracker.xcodeproj` in Xcode, select the `TimeTracker` scheme and `My Mac`, then press Run. Xcode builds the Rust library automatically. The build phase finds Rust installed with rustup or mise in their usual locations.
+Use macOS 27 or newer, Xcode 27 or newer, and Rust 1.88 or newer. Open `apps/swiftui/TimeTracker.xcodeproj` in Xcode, select the `TimeTracker` scheme and `My Mac`, then press Run. Xcode builds the Rust library automatically. The build phase finds Rust installed with rustup or mise in their usual locations.
 
 Debug builds use the Mac's active architecture. For a universal Release build, install both Rust targets first:
 
@@ -148,7 +148,7 @@ Native interaction checks require a Mac. Open the menu with the global shortcut 
 
 ## Formatting and linting
 
-Install the repository's pinned tools with Swift 6.1 or newer and Python 3.12 or newer:
+Install the repository's pinned tools with Swift 6.4 or newer and Python 3.12 or newer:
 
 ```sh
 python3 scripts/install-swift-style-tools.py
@@ -185,7 +185,7 @@ Use `python3 scripts/swift-style.py --format-check` to run only the formatting c
 
 ## Unit tests
 
-The `TrackerClient` package contains Foundation-only client state and XCTest tests. It has no Rust, SwiftUI, AppKit, database, or network dependency. Run it from the repository root on a Mac or Linux machine with Swift 5.9 or newer:
+The `TrackerClient` package contains Foundation-only client state and XCTest tests. It has no Rust, SwiftUI, AppKit, database, or network dependency. Run it from the repository root on a Mac or Linux machine with Swift 6.4 or newer:
 
 ```sh
 swift test --package-path apps/swiftui/TrackerClient
@@ -245,7 +245,7 @@ python3 scripts/swift-coverage.py
 
 The command runs the package tests with instrumentation and requires at least 95% executable source line coverage. It exports `coverage.json`, `lcov.info`, `summary.json`, and `html/index.html` under `.build/swift-coverage`. Tests, generated code, and the native app are outside this report. The protocol-only dependency contract has no executable lines; the script checks its compiler parse tree before listing it separately. Missing coverage for an executable source is an error. Use `--minimum-line-coverage` to choose a stricter minimum.
 
-Build the pinned Muter tool once with Swift 6.1 or newer, then run the mutation check:
+Build the pinned Muter tool once with Swift 6.4 or newer, then run the mutation check:
 
 ```sh
 python3 scripts/install-swift-muter.py
@@ -322,7 +322,7 @@ The package organizes state under `Features/Connection`, `Features/TaskCatalog`,
 
 `App/TrackerWindow` presents the existing sidebar and detail views through `App/TrackerSplitLayout`, a SwiftUI `NavigationSplitView`. Each window keeps its own column visibility. SwiftUI owns the split divider, sidebar toggle, toolbar, and content safe areas. Settings and New Task use SwiftUI toolbar buttons; editing and tracking actions belong to the detail toolbar. The task name appears in the fixed detail heading above the scrolling worklog cards. Toolbar controls observe each feature's in-flight flag and editor state separately from the list and history views.
 
-The app requires macOS 15 for SwiftUI window dismissal controls. The gear and Command-comma open the same named SwiftUI Settings window through `openWindow`. File > New Window, Command-Shift-N, creates another UUID tracker scene with independent sidebar layout and the shared session. Command-N reveals an existing tracker window or requests a new scene before presenting task creation. Closing all tracker windows leaves tracking and the status item running; Dock, Spotlight, and the status menu can reveal or reopen a tracker window.
+The app requires macOS 27. The gear and Command-comma open the same named SwiftUI Settings window through `openWindow`. File > New Window, Command-Shift-N, creates another UUID tracker scene with independent sidebar layout and the shared session. Command-N reveals an existing tracker window or requests a new scene before presenting task creation. Closing all tracker windows leaves tracking and the status item running; Dock, Spotlight, and the status menu can reveal or reopen a tracker window.
 
 `App/TrackerTaskPresentationCoordinator` routes every editor sheet and the tracking error alert to one owner UUID scene. Other windows cannot present or cancel them. macOS shows one sheet per window, so while the owner shows a sheet or the alert, every window disables the actions that open another editor: New task, Edit task name, Archive and Unarchive, Archive inactive tasks, and the worklog actions. The coordinator reaches these views through the SwiftUI environment, and the New Task menu command reads it from the runtime. This is a view rule. The session itself accepts several open editors. `TrackerWindowRoutingState` tracks scene identities, activity, preferred ownership, and pending open requests without native window references. SwiftUI `windowDismissBehavior` prevents closing the owner while an editor or alert is presented. Ownership persists through scene inactivity. Unowned tracking errors remain in the status menu until a tracker scene becomes active; errors never create or reveal a hidden window.
 

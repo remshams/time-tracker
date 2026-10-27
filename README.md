@@ -227,7 +227,9 @@ The job mutates complete selected production files and runs the package test sui
 Broad dependency or shared test-support changes, deleted production files, and changed tests without a curated production mapping return `review-required` and keep the gate red. The selector or mapping must define a bounded scope before CI can pass. The `swift-pr-mutations` artifact contains `.build/swift-mutation-scope.json` and `.build/swift-mutations`. Full package runs remain available through the manual workflow.
 
 CI pins Rust 1.98.1 in the [shared Rust setup action](.github/actions/setup-rust/action.yml),
-Swift 6.1.3 for Linux, and Xcode 27.0 for the native app. Coverage and mutation tool
+Swift 6.4.1 for Linux through the
+[swiftly setup action](.github/actions/setup-swift/action.yml), and Xcode 27.0,
+which ships Swift 6.4, for the native app. Coverage and mutation tool
 versions follow `AGENTS.md`. The macOS jobs use
 GitHub's `xcode-27` public preview image, which includes macOS 27, Xcode 27.0,
 and the macOS 27 SDK. The `mac` native group also runs the Rust workspace tests,
