@@ -14,6 +14,8 @@ runs:
         SWIFTLY_VERSION: '1.2.0'
       run: |
         set -euo pipefail
+        # swiftly writes .swift-version into the working directory; keep it out of the checkout.
+        cd "$RUNNER_TEMP"
         architecture=$(uname -m)
         case "$architecture" in
           x86_64) checksum=0b26b568811404374c7d7f07276b6aad4145db5d1893a45f307de6a94ca8d9c3 ;;
@@ -30,6 +32,8 @@ runs:
         post_install="$RUNNER_TEMP/swift-post-install.sh"
         swiftly install "$SWIFT_VERSION" --use --assume-yes --post-install-file="$post_install"
         if [ -f "$post_install" ]; then
+          # The post-install script installs system packages; refresh the stale runner index first.
+          sudo apt-get update -qq
           sudo bash "$post_install"
         fi
         # The coverage script finds llvm-cov beside the resolved swift binary, so
