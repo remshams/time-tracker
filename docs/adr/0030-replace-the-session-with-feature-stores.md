@@ -65,7 +65,7 @@ A view may load data with `.task(id:)` only when the data is needed just while t
 - `Shared/` holds helpers that no feature owns. The first are the time helpers `timestamp`, `commandTimestamp` and `clockDuration`, which currently live in `Features/Tracking/TrackingState.swift`. `hasPositiveWorklogDuration` stays in `WorklogHistory/`, `TaskEditing/` stays a feature, and `MenuBar/` stays one folder in each target.
 - `Contracts/` holds protocols and wire models.
 
-Swift compiles a target as one module and doesn't reject cycles between folders in it, so the rule is enforced in review. `AGENTS.md` states it. It is not an architecture primitive, so `docs/architecture/primitives.md` doesn't list it.
+Swift compiles a target as one module and doesn't reject cycles between folders in it, so the rule is enforced in review. `AGENTS.md` states it. It is not an architecture primitive, so `docs/architecture/architecture.md` doesn't list it.
 
 ### Platform
 
