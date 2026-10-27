@@ -37,11 +37,14 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 
 ## GitHub issues
 
-- Follow the [GitHub issue guide](docs/github-issues.md) when creating or updating an issue. Apply the `unslop` skill before publishing it.
+- Use the `github-issue` skill when creating or updating an issue. Apply the `unslop` skill before publishing it.
+- Take module names from the crates and clients in the [architecture catalog](docs/architecture/architecture.md). Also name the affected [application concepts](docs/architecture/architecture.md#application-concepts), such as worklog overlap or active tracking.
 
 ## Pull request descriptions
 
-- Follow the [pull request description guide](docs/pull-request-descriptions.md) when creating or updating a PR description. Apply the `unslop` skill to the description before publishing it.
+- Use the `pull-request-description` skill when creating or updating a PR description. Apply the `unslop` skill to the description before publishing it.
+- Take module names from the crates and clients in the [architecture catalog](docs/architecture/architecture.md). Also name the affected [application concepts](docs/architecture/architecture.md#application-concepts), such as worklog overlap or active tracking.
+- For post-merge steps, read [Deploy a server](docs/deployment.md) for server rollout, migrations and rollback. For a protocol change, state which server and client versions work together and whether the upgrade order matters. The protocol upgrade notes, such as [Protocol 6 upgrade](docs/architecture/architecture.md#protocol-6-upgrade), show earlier examples.
 
 ## CodeRabbit
 
