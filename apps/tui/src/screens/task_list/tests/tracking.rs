@@ -11,11 +11,7 @@ fn application_and_tui_recover_tracking_after_a_restart() {
         let repository = SqliteRepository::open(&path).unwrap();
         repository.create_task(task.clone()).unwrap();
         repository
-            .insert_worklog(&Worklog::begin(
-                WorklogId::generate(),
-                task.id(),
-                DateTime::from_timestamp(100, 0).unwrap(),
-            ))
+            .insert_worklog(&Worklog::begin(WorklogId::generate(), task.id(), at(100)))
             .unwrap();
     }
     let app = App::load(TrackerApplication::load(SqliteRepository::open(&path).unwrap()).unwrap());
@@ -118,7 +114,7 @@ fn tracking_outcomes_choose_the_right_status_and_clock_anchor() {
             at(100),
         )
     };
-    let old = DateTime::from_timestamp(100, 0).unwrap();
+    let old = at(100);
 
     let mut started_service = TestService::with_tasks(vec![task(1, "alpha")]);
     started_service.set_timestamp = Some(old);
@@ -268,7 +264,7 @@ fn quitting_from_every_mode_leaves_tracking_active() {
             worklog: ActiveWorklog::begin(
                 WorklogId::from_uuid(uuid::Uuid::from_u128(10)),
                 task.id(),
-                DateTime::from_timestamp(100, 0).unwrap(),
+                at(100),
             ),
         };
         let mut app = App::load(service);
@@ -328,7 +324,7 @@ fn start_switch_and_stop_keep_selection_on_the_operated_task() {
 #[test]
 fn unarchiving_refreshes_a_timer_another_client_started() {
     let mut service = TestService::with_tasks(vec![task(1, "alpha"), archived_task(3, "gone")]);
-    service.unarchive_activates = Some(DateTime::from_timestamp(100, 0).unwrap());
+    service.unarchive_activates = Some(at(100));
     let mut app = App::load(service);
     app.handle(Command::TaskList(TaskListCommand::ShowArchivedTasks));
     app.handle(Command::TaskList(TaskListCommand::UnarchiveSelected));
@@ -373,7 +369,7 @@ fn the_timer_header_resolves_the_active_task_outside_the_visible_list() {
         worklog: ActiveWorklog::begin(
             WorklogId::from_uuid(uuid::Uuid::from_u128(10)),
             alpha.id(),
-            DateTime::from_timestamp(100, 0).unwrap(),
+            at(100),
         ),
     };
     let mut app = App::load(service);
