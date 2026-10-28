@@ -572,7 +572,7 @@ mod correction_tests {
         let timezone = FixedOffset::east_opt(2 * 3600).unwrap();
         assert_eq!(
             parse_correction_timestamp("1970-01-01 02:00", &timezone, None).unwrap(),
-            DateTime::from_timestamp(0, 0).unwrap()
+            at(0)
         );
         for invalid in [
             "1970-01-01 00:00+02:00",
@@ -682,7 +682,7 @@ mod correction_tests {
             ("1969-12-31 23:00".to_owned(), at(-3_600))
         );
         let zone = CorrectionTestZone;
-        let original = DateTime::from_timestamp(3300, 0).unwrap();
+        let original = at(3300);
         assert_eq!(
             adjusted_correction_timestamp(
                 &TimestampInput::new("1970-01-01 01:55".to_owned()),

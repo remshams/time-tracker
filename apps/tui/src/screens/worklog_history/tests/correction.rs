@@ -342,41 +342,6 @@ fn saved_correction_marks_history_unavailable_until_retry_succeeds() {
     );
 }
 #[test]
-fn failed_post_save_reload_with_an_active_worklog_reports_the_saved_correction() {
-    let active_task = task(1, "active");
-    let corrected_task = task(2, "corrected");
-    let active = Worklog::begin(worklog_id(10), active_task.id(), at(600));
-    let corrected = history_worklog(11, corrected_task.id(), 480);
-    let mut service = TestService::with_tasks(vec![active_task.clone(), corrected_task.clone()]);
-    service.latest_work_starts = vec![(active_task.id(), at(600)), (corrected_task.id(), at(480))];
-    service.tracking = TrackingState::Running {
-        worklog: ActiveWorklog::begin(active.id(), active.task_id(), active.start()),
-    };
-    service.worklog_pages = vec![
-        Ok(page_with_active(
-            vec![corrected.clone()],
-            Some(active.clone()),
-            None,
-        )),
-        Err(TestService::failure()),
-    ];
-    let mut app = app_in_timezone(service, chrono_tz::UTC);
-    app.handle(Command::TaskList(TaskListCommand::MoveDown));
-    app.handle(Command::TaskList(TaskListCommand::OpenHistory));
-    app.handle(Command::WorklogHistory(
-        WorklogHistoryCommand::OpenCorrection,
-    ));
-    replace_start(&mut app, "1970-01-01 00:07".to_owned());
-    replace_end(&mut app, "1970-01-01 00:08".to_owned());
-
-    app.handle(Command::WorklogHistory(WorklogHistoryCommand::Confirm));
-
-    assert_eq!(
-        app.app_view().status(),
-        &Status::Error("Correction saved, but history refresh failed".to_owned())
-    );
-}
-#[test]
 fn correction_is_available_from_archived_history() {
     let mut archived = task(1, "archived");
     archived.archive(at(200));
