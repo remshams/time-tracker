@@ -263,9 +263,4 @@ final class TrackerMenuLabelStore {
 }
 
 // The AppKit status item subscribes to this publisher; SwiftUI views do not observe it.
-// Keep publisher access on the main actor with compilers that support isolated conformances.
-#if compiler(>=6.2)
-    extension TrackerMenuLabelStore: @MainActor ObservableObject {}
-#else
-    extension TrackerMenuLabelStore: ObservableObject {}
-#endif
+extension TrackerMenuLabelStore: @MainActor ObservableObject {}
