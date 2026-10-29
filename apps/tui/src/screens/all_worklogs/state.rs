@@ -133,13 +133,10 @@ mod tests {
     use tracker_domain::{TaskId, WorklogId};
 
     use super::*;
+    use crate::test_support::at;
 
     fn worklog(start: i64) -> Worklog {
-        Worklog::begin(
-            WorklogId::generate(),
-            TaskId::generate(),
-            chrono::DateTime::from_timestamp(start, 0).unwrap(),
-        )
+        Worklog::begin(WorklogId::generate(), TaskId::generate(), at(start))
     }
 
     fn page(worklogs: Vec<Worklog>) -> GlobalWorklogPage {

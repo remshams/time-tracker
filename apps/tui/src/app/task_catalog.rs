@@ -149,14 +149,10 @@ fn split_tasks(items: Vec<TaskListItem>) -> (Vec<Task>, Vec<Task>) {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{DateTime, Utc};
     use tracker_domain::TaskName;
 
     use super::*;
-
-    fn at(second: i64) -> DateTime<Utc> {
-        DateTime::from_timestamp(second, 0).unwrap()
-    }
+    use crate::test_support::at;
 
     fn item(name: &str, updated_at: i64, worked_at: Option<i64>) -> TaskListItem {
         TaskListItem {

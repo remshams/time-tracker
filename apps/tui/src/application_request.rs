@@ -722,11 +722,12 @@ async fn execute_backend_task(
 
 #[cfg(test)]
 mod intent_tests {
-    use chrono::{DateTime, TimeDelta, Utc};
+    use chrono::TimeDelta;
     use tracker_application::TrackerApplicationService;
     use tracker_domain::{TaskId, TaskName, WorklogId, WorklogTimes};
 
     use crate::screens::task_list::InactiveTaskPreview;
+    use crate::test_support::at;
 
     use super::ApplicationRequest as Request;
 
@@ -734,7 +735,7 @@ mod intent_tests {
     fn task_list_requests_other_than_the_refresh_need_a_follow_up_refresh() {
         let write = Request::CreateTask {
             name: TaskName::new("New task").unwrap(),
-            occurred_at: DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap(),
+            occurred_at: at(1_800_000_000),
         };
         assert!(write.needs_follow_up_refresh());
         assert!(!Request::RefreshTaskList.needs_follow_up_refresh());
@@ -778,7 +779,7 @@ mod intent_tests {
 
     #[test]
     fn write_intent_ignores_time_but_keeps_operation_target_and_expected_state() {
-        let at = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
+        let at = at(1_800_000_000);
         let later = at + TimeDelta::seconds(1);
         let task = TaskId::generate();
         let other_task = TaskId::generate();
@@ -1118,7 +1119,7 @@ mod intent_tests {
     /// Checks that duplicate writes retain the original preview rather than accepting new candidates.
     #[test]
     fn bulk_archive_write_intent_matches_only_the_same_captured_preview() {
-        let as_of = DateTime::<Utc>::from_timestamp(1_800_000_000, 0).unwrap();
+        let as_of = at(1_800_000_000);
         let task = TaskId::generate();
         let preview = InactiveTaskPreview::local(as_of, vec![task], vec!["old task".to_owned()]);
         let same = Request::ArchiveInactiveTasks {

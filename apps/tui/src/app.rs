@@ -493,7 +493,7 @@ impl AppState {
 mod effect_tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use chrono::{DateTime, TimeDelta, Utc};
+    use chrono::{TimeDelta, Utc};
     use tracker_application::{ApplicationError, TaskOrdering, TrackerApplication};
     use tracker_domain::{TaskName, TrackingState};
     use tracker_storage::SqliteRepository;
@@ -502,6 +502,7 @@ mod effect_tests {
         ApplicationOutcome, ApplicationRequest, CompletedRequest, execute_local,
     };
     use crate::command::Command;
+    use crate::test_support::at;
 
     use super::{AppState, MAX_PENDING_EFFECTS};
 
@@ -597,7 +598,7 @@ mod effect_tests {
         let mut application =
             TrackerApplication::load(SqliteRepository::open_in_memory().unwrap()).unwrap();
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
-        let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+        let at = at(1_800_000_000);
         let first = ApplicationRequest::CreateTask {
             name: TaskName::new("First task").unwrap(),
             occurred_at: at,
@@ -634,7 +635,7 @@ mod effect_tests {
     #[test]
     fn distinct_pending_writes_stop_at_the_queue_limit_with_a_visible_error() {
         let mut state = AppState::load_task_list(Vec::new(), TrackingState::Idle);
-        let at = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+        let at = at(1_800_000_000);
         for index in 0..MAX_PENDING_EFFECTS {
             assert!(state.enqueue(
                 ApplicationRequest::CreateTask {

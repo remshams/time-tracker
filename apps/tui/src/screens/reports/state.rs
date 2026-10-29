@@ -338,13 +338,13 @@ fn preset_dates(preset: ReportPreset, today: NaiveDate) -> Option<(NaiveDate, Na
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::task;
+    use crate::test_support::{at, task};
     use chrono::TimeDelta;
     use tracker_application::ReportRow;
 
     #[test]
     fn calendar_following_resets_a_shifted_start() {
-        let now = DateTime::from_timestamp(1_774_896_000, 0).unwrap();
+        let now = at(1_774_896_000);
         let mut state = ReportState::new(now, chrono_tz::UTC);
         let today = state.from;
         state.from = today.pred_opt().unwrap();
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn calendar_following_resets_a_shifted_end() {
-        let now = DateTime::from_timestamp(1_774_896_000, 0).unwrap();
+        let now = at(1_774_896_000);
         let mut state = ReportState::new(now, chrono_tz::UTC);
         let today = state.from;
         state.to = today.succ_opt().unwrap();
