@@ -8,6 +8,7 @@ private func dailyCalendar(_ zone: String = "UTC") -> Calendar {
     return calendar
 }
 
+@MainActor
 private func dailyDate(_ value: String) -> Date { timestamp(value)! }
 
 private func total(_ task: TaskItem, _ seconds: Int64) -> TaskReportTotal {

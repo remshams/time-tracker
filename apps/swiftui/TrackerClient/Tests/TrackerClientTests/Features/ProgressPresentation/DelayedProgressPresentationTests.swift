@@ -112,7 +112,7 @@ final class DelayedProgressPresentationTests: XCTestCase {
     func testDisposalCancelsPendingIndicatorWithoutRetainingPresentation() async {
         let clock = ProgressClock()
         var progress: DelayedProgressPresentation? = DelayedProgressPresentation(sleep: { try await clock.sleep($0) })
-        weak var weakProgress = progress
+        weak let weakProgress = progress
         var visible = false
         let shown = expectation(description: "Disposed presentation stays hidden")
         shown.isInverted = true

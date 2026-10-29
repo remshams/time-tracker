@@ -207,6 +207,7 @@ final class WorklogCorrectionTests: XCTestCase {
         XCTAssertEqual(fixture.client.operations.count, operations)
     }
 
+    @MainActor
     func testCompletedDurationUsesStoredMicrosecondsAcrossOffsets() {
         let start = "2024-12-30T10:00:00.123456000Z"
         XCTAssertTrue(hasPositiveWorklogDuration(start: start, end: "2024-12-30T11:00:00.123457000+01:00"))

@@ -2,8 +2,9 @@ import Foundation
 import XCTest
 @testable import TrackerClient
 
+@MainActor
 final class WindowRoutingTests: XCTestCase {
-    func testShowTrackerReusesPreferredWindowAndFallsBackAfterItCloses() {
+    func testShowTrackerReusesPreferredWindowAndFallsBackAfterItCloses() async {
         var routing = TrackerWindowRoutingState()
         let first = UUID(), second = UUID()
         routing.appeared(first, isActive: true)
@@ -15,7 +16,7 @@ final class WindowRoutingTests: XCTestCase {
         XCTAssertEqual(routing.activePresentationWindowID, second)
     }
 
-    func testRepeatedOpenRequestsWaitForTheSameSceneIdentity() {
+    func testRepeatedOpenRequestsWaitForTheSameSceneIdentity() async {
         var routing = TrackerWindowRoutingState()
         let id = UUID()
         XCTAssertEqual(routing.showTracker { id }, TrackerWindowOpenRequest(id: id, shouldOpen: true))
@@ -28,7 +29,7 @@ final class WindowRoutingTests: XCTestCase {
         XCTAssertEqual(routing.showTracker(), TrackerWindowOpenRequest(id: id, shouldOpen: true))
     }
 
-    func testUnknownWindowCannotReplaceThePreferredWindow() {
+    func testUnknownWindowCannotReplaceThePreferredWindow() async {
         var routing = TrackerWindowRoutingState()
         let first = UUID(), second = UUID()
         routing.appeared(first, isActive: true)
@@ -41,7 +42,7 @@ final class WindowRoutingTests: XCTestCase {
         XCTAssertEqual(routing.activePresentationWindowID, first)
     }
 
-    func testUnrelatedSceneAppearanceDoesNotClearAPendingOpenRequest() {
+    func testUnrelatedSceneAppearanceDoesNotClearAPendingOpenRequest() async {
         var routing = TrackerWindowRoutingState()
         let pending = UUID(), unrelated = UUID()
         _ = routing.showTracker { pending }
@@ -51,7 +52,7 @@ final class WindowRoutingTests: XCTestCase {
         XCTAssertEqual(routing.showTracker(), TrackerWindowOpenRequest(id: pending, shouldOpen: false))
     }
 
-    func testClosingAPreviouslyPendingSceneAllowsANewOpenRequest() {
+    func testClosingAPreviouslyPendingSceneAllowsANewOpenRequest() async {
         var routing = TrackerWindowRoutingState()
         let first = UUID(), second = UUID()
         _ = routing.showTracker { first }
@@ -61,7 +62,7 @@ final class WindowRoutingTests: XCTestCase {
         XCTAssertEqual(routing.showTracker { second }, TrackerWindowOpenRequest(id: second, shouldOpen: true))
     }
 
-    func testReopeningAClosedSceneWaitsForActivationBeforePresenting() {
+    func testReopeningAClosedSceneWaitsForActivationBeforePresenting() async {
         var routing = TrackerWindowRoutingState()
         let id = UUID()
         routing.appeared(id, isActive: true)
@@ -71,7 +72,7 @@ final class WindowRoutingTests: XCTestCase {
         XCTAssertNil(routing.activePresentationWindowID)
     }
 
-    func testClosingAnUnrelatedWindowPreservesThePreferredWindow() {
+    func testClosingAnUnrelatedWindowPreservesThePreferredWindow() async {
         var routing = TrackerWindowRoutingState()
         let first = UUID(), second = UUID(), third = UUID()
         routing.appeared(first, isActive: true)
@@ -84,7 +85,7 @@ final class WindowRoutingTests: XCTestCase {
         XCTAssertEqual(routing.activePresentationWindowID, second)
     }
 
-    func testBackgroundScenesWaitForActivationBeforePresentingErrors() {
+    func testBackgroundScenesWaitForActivationBeforePresentingErrors() async {
         var routing = TrackerWindowRoutingState()
         let id = UUID()
         routing.appeared(id, isActive: false)
@@ -96,7 +97,7 @@ final class WindowRoutingTests: XCTestCase {
         XCTAssertEqual(routing.showTracker(), TrackerWindowOpenRequest(id: id, shouldOpen: true))
     }
 
-    func testClosingOneSceneDoesNotRemoveAnotherActiveScene() {
+    func testClosingOneSceneDoesNotRemoveAnotherActiveScene() async {
         var routing = TrackerWindowRoutingState()
         let first = UUID(), second = UUID()
         routing.appeared(first, isActive: true)
@@ -108,7 +109,7 @@ final class WindowRoutingTests: XCTestCase {
         XCTAssertEqual(routing.showTracker(), TrackerWindowOpenRequest(id: first, shouldOpen: true))
     }
 
-    func testClosingAllScenesCreatesANewIdentityAndDuplicateAppearanceIsHarmless() {
+    func testClosingAllScenesCreatesANewIdentityAndDuplicateAppearanceIsHarmless() async {
         var routing = TrackerWindowRoutingState()
         let first = UUID(), second = UUID()
         routing.appeared(first, isActive: true)

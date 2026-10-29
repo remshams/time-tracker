@@ -1,8 +1,9 @@
 import XCTest
 @testable import TrackerClient
 
+@MainActor
 final class MenuKeyboardShortcutsTests: XCTestCase {
-    func testDefaultsSeparateGlobalAndMenuBindings() throws {
+    func testDefaultsSeparateGlobalAndMenuBindings() async throws {
         let shortcuts = MenuKeyboardShortcuts.defaults
         XCTAssertEqual(shortcuts.openMenu, MenuShortcut(key: "t", modifiers: [.control, .option]))
         XCTAssertEqual(shortcuts.moveDown, MenuShortcut(key: "j"))
@@ -16,7 +17,7 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(shortcuts.action(forKey: "t", modifiers: [.control, .option], includingGlobal: true), .openMenu)
     }
 
-    func testCustomizedBindingsRoundTripThroughJSON() throws {
+    func testCustomizedBindingsRoundTripThroughJSON() async throws {
         var shortcuts = MenuKeyboardShortcuts.defaults
         shortcuts[.copyName] = MenuShortcut(key: "n", modifiers: [.command])
         shortcuts[.copyExact] = MenuShortcut(key: "c")
@@ -28,7 +29,7 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(loaded.action(forKey: "n", modifiers: [.command]), .copyName)
     }
 
-    func testRemappingCopyToExactRequiresMovingTheNameBinding() throws {
+    func testRemappingCopyToExactRequiresMovingTheNameBinding() async throws {
         var shortcuts = MenuKeyboardShortcuts.defaults
         shortcuts.copyExact = MenuShortcut(key: "c")
         XCTAssertEqual(
@@ -43,7 +44,7 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(shortcuts.action(forKey: "c", modifiers: []), .copyExact)
     }
 
-    func testGlobalAndLocalCanUseTheSameKeyWithDifferentModifiers() {
+    func testGlobalAndLocalCanUseTheSameKeyWithDifferentModifiers() async {
         var shortcuts = MenuKeyboardShortcuts.defaults
         shortcuts.openMenu = MenuShortcut(key: "c", modifiers: [.command])
         XCTAssertTrue(shortcuts.validationErrors().isEmpty)
@@ -56,7 +57,7 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
             })
     }
 
-    func testGlobalShortcutRequiresACommandControlOrOptionModifier() {
+    func testGlobalShortcutRequiresACommandControlOrOptionModifier() async {
         for modifiers: MenuShortcut.Modifiers in [[], .shift] {
             var shortcuts = MenuKeyboardShortcuts.defaults
             shortcuts.openMenu = MenuShortcut(key: "x", modifiers: modifiers)
@@ -71,7 +72,7 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         }
     }
 
-    func testReservedAndInvalidKeysCannotBeConfigured() {
+    func testReservedAndInvalidKeysCannotBeConfigured() async {
         for key in [
             "", " ", "\r", "\n", "\u{1b}", "up", "down", "return", "escape", "ab", "\u{f700}", "\u{f701}", "★", "é",
             "K",
@@ -91,7 +92,7 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(shortcuts.action(forKey: "/", modifiers: []), .copyName)
     }
 
-    func testMatchingNormalizesCaseAndRequiresExactModifiers() throws {
+    func testMatchingNormalizesCaseAndRequiresExactModifiers() async throws {
         var shortcuts = MenuKeyboardShortcuts.defaults
         shortcuts.copyName = MenuShortcut(key: "C", modifiers: [.shift, .command])
         XCTAssertEqual(shortcuts.copyName.key, "c")
@@ -103,7 +104,7 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(shortcuts.action(forKey: "n", modifiers: [.shift, .command]), .copyName)
     }
 
-    func testUnknownModifierBitsFailValidationAndDecoding() throws {
+    func testUnknownModifierBitsFailValidationAndDecoding() async throws {
         let unknown = MenuShortcut.Modifiers(rawValue: 1 << 7)
         var shortcuts = MenuKeyboardShortcuts.defaults
         shortcuts.copyName.modifiers = unknown
@@ -121,13 +122,13 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(MenuShortcut(key: "x", modifiers: .allowed).displayText, "⌃⌥⇧⌘X")
     }
 
-    func testIncompleteAndMalformedSavedBindingsAreRejected() {
+    func testIncompleteAndMalformedSavedBindingsAreRejected() async {
         XCTAssertThrowsError(try JSONDecoder().decode(MenuKeyboardShortcuts.self, from: Data("{}".utf8)))
         XCTAssertThrowsError(try JSONDecoder().decode(MenuKeyboardShortcuts.self, from: Data("null".utf8)))
         XCTAssertThrowsError(try JSONDecoder().decode(MenuKeyboardShortcuts.self, from: Data("invalid".utf8)))
     }
 
-    func testExactDurationPreservesSecondsAndDropsLeadingZeroUnits() {
+    func testExactDurationPreservesSecondsAndDropsLeadingZeroUnits() async {
         XCTAssertEqual(MenuDurationFormatter.exact(5_025), "1h 23m 45s")
         XCTAssertEqual(MenuDurationFormatter.exact(1_425), "23m 45s")
         XCTAssertEqual(MenuDurationFormatter.exact(45.99), "45s")
@@ -136,7 +137,7 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(MenuDurationFormatter.exact(-10), "0s")
     }
 
-    func testRoundedDurationUsesNearestQuarterHourAndRoundsTiesUp() {
+    func testRoundedDurationUsesNearestQuarterHourAndRoundsTiesUp() async {
         XCTAssertEqual(MenuDurationFormatter.rounded(449), "0m")
         XCTAssertEqual(MenuDurationFormatter.rounded(450), "15m")
         XCTAssertEqual(MenuDurationFormatter.rounded(1_349), "15m")
@@ -146,7 +147,7 @@ final class MenuKeyboardShortcutsTests: XCTestCase {
         XCTAssertEqual(MenuDurationFormatter.rounded(-450), "0m")
     }
 
-    func testUnavailableNonfiniteAndOversizedDurationsHaveNoCopyValue() {
+    func testUnavailableNonfiniteAndOversizedDurationsHaveNoCopyValue() async {
         for duration: TimeInterval? in [nil, .nan, .infinity, -.infinity, .greatestFiniteMagnitude, Double(Int64.max)] {
             XCTAssertNil(MenuDurationFormatter.exact(duration))
             XCTAssertNil(MenuDurationFormatter.rounded(duration))

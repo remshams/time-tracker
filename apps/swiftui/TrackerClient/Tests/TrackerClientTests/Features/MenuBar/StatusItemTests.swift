@@ -14,6 +14,7 @@ final class MemoryLastTrackedTasks: LastTrackedTaskRepository {
 }
 
 final class StatusItemTests: XCTestCase {
+    @MainActor
     func testColorsUseStableTaskIDsAndSharedIndicators() {
         XCTAssertEqual(TaskColor.forTaskID("task-one"), .green)
         XCTAssertEqual(TaskColor.forTaskID("task-two"), .blue)
@@ -25,6 +26,7 @@ final class StatusItemTests: XCTestCase {
         XCTAssertNil(TaskIndicator(taskID: nil, isRunning: false).color)
     }
 
+    @MainActor
     func testIdentityKeySeparatesLocalAndServersAndTrimsWhitespace() {
         XCTAssertEqual(ConnectionSettings.local.trackingIdentityKey, "local")
         let padded = ConnectionSettings(mode: .server, serverURL: "  http://example.test:8765/ \n")
