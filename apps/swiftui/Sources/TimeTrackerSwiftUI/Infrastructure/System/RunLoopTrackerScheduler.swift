@@ -1,7 +1,6 @@
 import Foundation
 import TrackerClient
 
-@MainActor
 struct RunLoopTrackerScheduler: TrackerScheduler {
     func schedule(
         after interval: TimeInterval, repeating: Bool, tolerance: TimeInterval,
@@ -20,5 +19,5 @@ private final class TimerCancellation: TrackerCancellation {
     private var timer: Timer?
     init(timer: Timer) { self.timer = timer }
     func cancel() { timer?.invalidate(); timer = nil }
-    deinit { timer?.invalidate() }
+    isolated deinit { timer?.invalidate() }
 }

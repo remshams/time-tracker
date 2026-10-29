@@ -1,7 +1,6 @@
 import AppKit
 import TrackerClient
 
-@MainActor
 final class MacLifecycleObserver {
     private weak var session: TrackerSession?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
@@ -47,7 +46,7 @@ final class MacLifecycleObserver {
         updateVisibility()
     }
 
-    deinit {
+    isolated deinit {
         for (center, observer) in observers { center.removeObserver(observer) }
     }
 
