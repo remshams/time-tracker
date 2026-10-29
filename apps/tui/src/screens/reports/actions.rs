@@ -736,7 +736,7 @@ mod tests {
         let (start, end) = report.range(chrono_tz::Europe::Berlin).unwrap();
         assert_eq!(spy.report_reads()[0].0, start);
         assert_eq!(spy.report_reads()[0].1, end);
-        let same_second = DateTime::from_timestamp(report.last_refresh_second.unwrap(), 0).unwrap();
+        let same_second = at(report.last_refresh_second.unwrap());
         app.tick_reports_at(same_second);
         assert_eq!(spy.report_reads().len(), 1);
         let original_day = app.shell().report().unwrap().from;
