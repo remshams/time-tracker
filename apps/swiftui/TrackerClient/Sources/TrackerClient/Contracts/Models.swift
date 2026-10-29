@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TaskReportTotal: Decodable, Equatable, Sendable {
+nonisolated public struct TaskReportTotal: Decodable, Equatable, Sendable {
     public let taskId: String
     public let durationMicroseconds: Int64
 
@@ -10,7 +10,7 @@ public struct TaskReportTotal: Decodable, Equatable, Sendable {
     }
 }
 
-public struct TrackerReport: Decodable, Equatable, Sendable {
+nonisolated public struct TrackerReport: Decodable, Equatable, Sendable {
     public let rows: [TaskReportTotal]
     public let now: String?
 
@@ -20,7 +20,7 @@ public struct TrackerReport: Decodable, Equatable, Sendable {
     }
 }
 
-public struct ResourceObservation<Value: Decodable & Equatable & Sendable>: Decodable, Equatable, Sendable {
+nonisolated public struct ResourceObservation<Value: Decodable & Equatable & Sendable>: Decodable, Equatable, Sendable {
     public let value: Value
 
     public init(value: Value) {
@@ -31,7 +31,7 @@ public struct ResourceObservation<Value: Decodable & Equatable & Sendable>: Deco
 public typealias TaskCatalogObservation = ResourceObservation<[TaskItem]>
 public typealias TrackingObservation = ResourceObservation<WorklogItem?>
 
-public struct TaskListResources: Equatable, Sendable {
+nonisolated public struct TaskListResources: Equatable, Sendable {
     public let catalog: TaskCatalogObservation
     public let tracking: TrackingObservation
 
@@ -41,7 +41,7 @@ public struct TaskListResources: Equatable, Sendable {
     }
 }
 
-public struct TaskListTotalsRefresh: Equatable, Sendable {
+nonisolated public struct TaskListTotalsRefresh: Equatable, Sendable {
     public let taskList: TaskListResources
     public let report: TrackerReport
 
@@ -51,7 +51,7 @@ public struct TaskListTotalsRefresh: Equatable, Sendable {
     }
 }
 
-public struct TaskCommandResult: Decodable, Equatable, Sendable {
+nonisolated public struct TaskCommandResult: Decodable, Equatable, Sendable {
     public let task: TaskItem
 
     public init(task: TaskItem) {
@@ -59,7 +59,7 @@ public struct TaskCommandResult: Decodable, Equatable, Sendable {
     }
 }
 
-public struct TrackingCommandResult: Decodable, Equatable, Sendable {
+nonisolated public struct TrackingCommandResult: Decodable, Equatable, Sendable {
     public let active: WorklogItem?
     public let stopped: WorklogItem?
     public let didStop: Bool
@@ -71,11 +71,11 @@ public struct TrackingCommandResult: Decodable, Equatable, Sendable {
     }
 }
 
-public enum DailyTotalsStatus: String, Equatable, Sendable {
+nonisolated public enum DailyTotalsStatus: String, Equatable, Sendable {
     case unavailable, loading, current, cached
 }
 
-public struct TaskItem: Decodable, Identifiable, Equatable, Sendable {
+nonisolated public struct TaskItem: Decodable, Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String
     public let archived: Bool
@@ -89,7 +89,7 @@ public struct TaskItem: Decodable, Identifiable, Equatable, Sendable {
     }
 }
 
-public struct WorklogItem: Decodable, Identifiable, Equatable, Sendable {
+nonisolated public struct WorklogItem: Decodable, Identifiable, Equatable, Sendable {
     public let id: String
     public let taskId: String
     public let start: String
@@ -103,7 +103,7 @@ public struct WorklogItem: Decodable, Identifiable, Equatable, Sendable {
     }
 }
 
-public struct HistoryPage: Decodable, Equatable, Sendable {
+nonisolated public struct HistoryPage: Decodable, Equatable, Sendable {
     public let worklogs: [WorklogItem]
     public let nextCursor: String?
     public let reset: Bool
@@ -115,20 +115,20 @@ public struct HistoryPage: Decodable, Equatable, Sendable {
     }
 }
 
-public enum TaskTab: String, CaseIterable, Hashable, Identifiable, Sendable {
+nonisolated public enum TaskTab: String, CaseIterable, Hashable, Identifiable, Sendable {
     case active = "Active"
     case archived = "Archived"
     public var id: Self { self }
 }
 
-public enum ConnectionMode: String, CaseIterable, Codable, Identifiable, Sendable {
+nonisolated public enum ConnectionMode: String, CaseIterable, Codable, Identifiable, Sendable {
     case local
     case server
     public var id: Self { self }
     public var label: String { self == .local ? "Local database" : "Server" }
 }
 
-public struct ConnectionSettings: Codable, Equatable, Sendable {
+nonisolated public struct ConnectionSettings: Codable, Equatable, Sendable {
     public var mode: ConnectionMode
     public var serverURL: String
     public static let local = ConnectionSettings(mode: .local, serverURL: "")
@@ -139,7 +139,7 @@ public struct ConnectionSettings: Codable, Equatable, Sendable {
     }
 }
 
-public struct BridgeFailure: LocalizedError, Sendable {
+nonisolated public struct BridgeFailure: LocalizedError, Sendable {
     public let message: String
     public var kind: String
     public var uncertain: Bool
@@ -157,7 +157,7 @@ public struct BridgeFailure: LocalizedError, Sendable {
     }
 }
 
-public struct TrackingPreferences: Codable, Equatable, Sendable {
+nonisolated public struct TrackingPreferences: Codable, Equatable, Sendable {
     public var pauseOnScreenLock: Bool
 
     public init(pauseOnScreenLock: Bool = false) {
@@ -168,7 +168,7 @@ public struct TrackingPreferences: Codable, Equatable, Sendable {
 public typealias TrackingPauseResult = TrackingCommandResult
 public typealias TaskCreationResult = TaskCommandResult
 
-public struct WorklogCorrectionResult: Decodable, Equatable, Sendable {
+nonisolated public struct WorklogCorrectionResult: Decodable, Equatable, Sendable {
     public let worklog: WorklogItem
 
     public init(worklog: WorklogItem) {
@@ -176,7 +176,7 @@ public struct WorklogCorrectionResult: Decodable, Equatable, Sendable {
     }
 }
 
-public struct WorklogMoveCandidate: Decodable, Identifiable, Equatable, Sendable {
+nonisolated public struct WorklogMoveCandidate: Decodable, Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String
 
@@ -189,7 +189,7 @@ public struct WorklogMoveCandidate: Decodable, Identifiable, Equatable, Sendable
 public typealias WorklogMoveResult = WorklogCorrectionResult
 public typealias WorklogDeletionResult = WorklogCorrectionResult
 
-public struct InactiveTaskPreview: Decodable, Equatable, Sendable {
+nonisolated public struct InactiveTaskPreview: Decodable, Equatable, Sendable {
     public let asOf: String
     public let inactiveDays: Int
     public let tasks: [TaskItem]
@@ -201,7 +201,7 @@ public struct InactiveTaskPreview: Decodable, Equatable, Sendable {
     }
 }
 
-public struct InactiveTaskArchiveResult: Decodable, Equatable, Sendable {
+nonisolated public struct InactiveTaskArchiveResult: Decodable, Equatable, Sendable {
     public let archivedCount: Int
 
     public init(archivedCount: Int) {
