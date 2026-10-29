@@ -1,6 +1,5 @@
 import SwiftUI
 
-@MainActor
 struct TrackingSettingsSection: View {
     let store: TrackerStore
 

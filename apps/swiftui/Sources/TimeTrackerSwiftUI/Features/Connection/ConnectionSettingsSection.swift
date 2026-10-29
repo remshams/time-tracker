@@ -1,7 +1,6 @@
 import SwiftUI
 import TrackerClient
 
-@MainActor
 struct ConnectionSettingsSection: View {
     let store: TrackerStore
     @Bindable var draft: ConnectionDraftStore

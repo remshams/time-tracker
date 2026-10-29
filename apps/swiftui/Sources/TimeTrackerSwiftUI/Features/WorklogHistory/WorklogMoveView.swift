@@ -1,7 +1,6 @@
 import SwiftUI
 import TrackerClient
 
-@MainActor
 struct WorklogMoveSheet: View {
     let move: WorklogMoveStore
     @FocusState private var searchFocused: Bool

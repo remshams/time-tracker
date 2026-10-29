@@ -2,7 +2,6 @@ import Foundation
 import Observation
 import SwiftUI
 
-@MainActor
 @Observable
 final class TrackerTaskPresentationCoordinator {
     private(set) var ownerID: UUID?
@@ -82,7 +81,6 @@ final class TrackerTaskPresentationCoordinator {
     }
 }
 
-@MainActor
 struct TrackerDetailPresentation: View {
     let store: TrackerStore
     let presentation: TrackerTaskPresentationCoordinator
@@ -153,7 +151,6 @@ struct TrackerDetailPresentation: View {
 
 /// Presents an editor sheet only in the window that owns task presentations.
 /// `isPresented` is a closure, so the sheet binding reads the editor state and the window body doesn't.
-@MainActor
 private struct OwnedSheet<Content: View>: View {
     let isPresentationOwner: Bool
     let isPresented: () -> Bool

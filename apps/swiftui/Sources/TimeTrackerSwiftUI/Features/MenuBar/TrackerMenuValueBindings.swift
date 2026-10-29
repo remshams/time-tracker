@@ -1,7 +1,6 @@
 import AppKit
 import TrackerClient
 
-@MainActor
 struct MenuValueField {
     let item: NSMenuItem
     let label: NSTextField
@@ -20,7 +19,6 @@ struct MenuValueField {
     }
 }
 
-@MainActor
 struct MenuTaskRow {
     let item: NSMenuItem
     let entry: TrackerMenuTask

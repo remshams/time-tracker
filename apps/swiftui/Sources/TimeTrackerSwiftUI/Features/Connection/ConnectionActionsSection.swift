@@ -1,6 +1,5 @@
 import SwiftUI
 
-@MainActor
 struct ConnectionActionsSection: View {
     let draft: ConnectionDraftStore
 

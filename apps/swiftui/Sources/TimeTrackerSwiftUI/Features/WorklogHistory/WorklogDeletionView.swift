@@ -1,7 +1,6 @@
 import SwiftUI
 import TrackerClient
 
-@MainActor
 struct WorklogDeletionSheet: View {
     let deletion: WorklogDeletionStore
 

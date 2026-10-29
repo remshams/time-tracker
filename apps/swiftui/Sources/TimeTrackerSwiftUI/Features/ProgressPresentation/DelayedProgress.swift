@@ -1,7 +1,6 @@
 import SwiftUI
 import TrackerClient
 
-@MainActor
 struct DelayedProgress<Content: View>: View {
     let isBusy: Bool
     @ViewBuilder let content: (Bool) -> Content
@@ -24,7 +23,6 @@ struct DelayedProgress<Content: View>: View {
     }
 }
 
-@MainActor
 struct DelayedProgressIndicator: View {
     let isBusy: Bool
     var title: String? = nil

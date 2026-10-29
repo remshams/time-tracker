@@ -1,7 +1,6 @@
 import SwiftUI
 import TrackerClient
 
-@MainActor
 struct TaskArchivingSheet: View {
     let archiving: TaskArchivingStore
 

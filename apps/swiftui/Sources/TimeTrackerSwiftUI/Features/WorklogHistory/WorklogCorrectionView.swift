@@ -1,7 +1,6 @@
 import SwiftUI
 import TrackerClient
 
-@MainActor
 struct WorklogCorrectionSheet: View {
     let correction: WorklogCorrectionStore
 

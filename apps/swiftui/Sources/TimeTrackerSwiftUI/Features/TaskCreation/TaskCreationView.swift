@@ -1,7 +1,6 @@
 import SwiftUI
 import TrackerClient
 
-@MainActor
 struct TaskCreationSheet: View {
     let creation: TaskCreationStore
 

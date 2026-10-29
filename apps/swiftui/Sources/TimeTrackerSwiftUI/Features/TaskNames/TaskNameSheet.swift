@@ -1,6 +1,5 @@
 import SwiftUI
 
-@MainActor
 struct TaskNameSheet: View {
     let title: String
     var context: String? = nil

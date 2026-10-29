@@ -1,6 +1,5 @@
 import SwiftUI
 
-@MainActor
 struct SettingsView: View {
     let store: TrackerStore
     @State private var connectionDraft: ConnectionDraftStore

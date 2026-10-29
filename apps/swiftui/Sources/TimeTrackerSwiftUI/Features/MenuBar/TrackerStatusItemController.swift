@@ -3,7 +3,6 @@ import Combine
 import Carbon
 import TrackerClient
 
-@MainActor
 final class TrackerStatusItemController: NSObject {
     private let store: TrackerStore
     private var statusItem: NSStatusItem?

@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 import TrackerClient
 
-@MainActor
 final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
     let runtime = TrackerAppRuntime()
 
@@ -31,7 +30,6 @@ final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-@MainActor
 final class TrackerAppRuntime {
     let store = TrackerStore()
     private lazy var statusItem = TrackerStatusItemController(store: store)

@@ -1,7 +1,6 @@
 import Foundation
 import TrackerClient
 
-@MainActor
 final class UserDefaultsConnectionSettings: ConnectionSettingsRepository {
     private let defaults: UserDefaults
     private let key = "tracker.connection"
@@ -19,7 +18,6 @@ final class UserDefaultsConnectionSettings: ConnectionSettingsRepository {
     }
 }
 
-@MainActor
 final class UserDefaultsTrackingPreferences: TrackingPreferencesRepository {
     private let defaults: UserDefaults
     private let key = "tracker.pauseOnScreenLock"
@@ -35,7 +33,6 @@ final class UserDefaultsTrackingPreferences: TrackingPreferencesRepository {
     }
 }
 
-@MainActor
 final class UserDefaultsMenuBarPreferences {
     private let defaults: UserDefaults
     private let key = "tracker.showDailyTotalInMenuBar"
@@ -54,7 +51,6 @@ final class UserDefaultsMenuBarPreferences {
     func saveTaskOrder(_ order: MenuTaskOrder) { defaults.set(order.rawValue, forKey: taskOrderKey) }
 }
 
-@MainActor
 final class UserDefaultsLastTrackedTasks: LastTrackedTaskRepository {
     private let defaults: UserDefaults
     private let key = "tracker.lastTrackedTasks"
@@ -72,7 +68,6 @@ final class UserDefaultsLastTrackedTasks: LastTrackedTaskRepository {
     }
 }
 
-@MainActor
 final class UserDefaultsMenuKeyboardPreferences {
     private let defaults: UserDefaults
     private let key = "tracker.menuKeyboardShortcuts"

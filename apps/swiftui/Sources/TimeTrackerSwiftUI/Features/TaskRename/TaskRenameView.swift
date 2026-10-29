@@ -1,6 +1,5 @@
 import SwiftUI
 
-@MainActor
 struct TaskRenameSheet: View {
     let rename: TaskRenameStore
 

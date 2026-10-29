@@ -1,7 +1,6 @@
 import SwiftUI
 import TrackerClient
 
-@MainActor
 struct MenuShortcutSettingsSection: View {
     let store: TrackerStore
 
