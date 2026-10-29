@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 final class TrackingAutomationState {
     struct Resume {
         let taskID: String

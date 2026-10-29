@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 public final class TrackerMenuPresentationObserver {
     public var onLabelChange: (() -> Void)?
     public var onValuesChange: (() -> Void)?

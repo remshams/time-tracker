@@ -13,7 +13,6 @@ public extension ConnectionSettings {
     }
 }
 
-@MainActor
 final class LastTrackedTaskState {
     private let repository: (any LastTrackedTaskRepository)?
     private var remembered: [String: String] = [:]

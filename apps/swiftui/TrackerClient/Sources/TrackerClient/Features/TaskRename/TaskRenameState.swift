@@ -10,7 +10,6 @@ public struct TaskRenamePresentation: Equatable, Sendable {
     public let canSubmit: Bool
 }
 
-@MainActor
 final class TaskRenameState {
     struct Request {
         let taskID: String

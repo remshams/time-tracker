@@ -14,7 +14,6 @@ public struct WorklogMovePresentation: Equatable, Sendable {
     public let canSubmit: Bool
 }
 
-@MainActor
 final class WorklogMoveState {
     struct Request {
         let expected: WorklogItem

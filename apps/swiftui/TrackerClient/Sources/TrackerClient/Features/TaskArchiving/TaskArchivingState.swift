@@ -15,7 +15,6 @@ public struct TaskArchivingPresentation: Equatable, Sendable {
     public let canSubmit: Bool
 }
 
-@MainActor
 final class TaskArchivingState {
     struct Request {
         let taskID: String

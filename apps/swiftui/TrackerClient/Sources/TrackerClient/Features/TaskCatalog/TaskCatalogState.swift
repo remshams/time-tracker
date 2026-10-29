@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 final class TaskCatalogState {
     private(set) var tasks: [TaskItem] = []
     private(set) var selectedTaskID: String?

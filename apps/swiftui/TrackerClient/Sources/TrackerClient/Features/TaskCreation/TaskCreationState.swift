@@ -8,7 +8,6 @@ public struct TaskCreationPresentation: Equatable, Sendable {
     public let canSubmit: Bool
 }
 
-@MainActor
 final class TaskCreationState {
     private(set) var isPresented = false
     private(set) var name = ""

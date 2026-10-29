@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 final class DailyTotalsState {
     struct Request {
         let day: DateInterval

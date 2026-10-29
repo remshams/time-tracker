@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 final class WorklogHistoryState {
     private(set) var worklogs: [WorklogItem] = []
     private(set) var nextCursor: String?
