@@ -1,7 +1,7 @@
 import Foundation
 import TrackerClient
 
-private struct BridgeEnvelope<Value: Decodable>: Decodable {
+nonisolated private struct BridgeEnvelope<Value: Decodable>: Decodable {
     let data: Value?
     let error: String?
     let kind: String?
@@ -20,7 +20,7 @@ private struct BridgeEnvelope<Value: Decodable>: Decodable {
 
 }
 
-private final class RustBridge {
+nonisolated private final class RustBridge {
     private var handle: OpaquePointer?
 
     init(settings: ConnectionSettings, localDatabasePath: String?) throws {
@@ -77,7 +77,7 @@ private final class RustBridge {
     }
 
     func testConnection() throws {
-        struct Compatibility: Decodable { let compatible: Bool }
+        nonisolated struct Compatibility: Decodable { let compatible: Bool }
         let _: Compatibility = try decode(tt_bridge_check_connection(handle))
     }
 
@@ -87,7 +87,7 @@ private final class RustBridge {
     }
 
     private func requireRefreshed(_ pointer: UnsafeMutablePointer<CChar>?) throws {
-        struct Refreshed: Decodable { let refreshed: Bool }
+        nonisolated struct Refreshed: Decodable { let refreshed: Bool }
         let _: Refreshed = try decode(pointer)
     }
 
@@ -295,7 +295,7 @@ private final class RustBridge {
 }
 
 // Every handle operation, including creation and destruction, belongs to this queue.
-final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
+nonisolated final class TrackerWorker: TrackerClient, ReportClient, @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.timetracker.connection", qos: .utility)
     private let localDatabasePath: String?
     private var bridge: RustBridge?
