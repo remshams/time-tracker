@@ -241,27 +241,19 @@ where
 #[cfg(test)]
 mod rendering_tests {
     use super::*;
+    use crate::test_support::at;
     use chrono::{DateTime, FixedOffset, MappedLocalTime, NaiveDate, TimeZone, Utc};
 
     #[test]
     fn local_times_render_as_local_minutes() {
         let plus_two = FixedOffset::east_opt(2 * 3600).unwrap();
+        assert_eq!(local_time(at(0), &plus_two), "1970-01-01 02:00");
         assert_eq!(
-            local_time(DateTime::<Utc>::from_timestamp(0, 0).unwrap(), &plus_two),
-            "1970-01-01 02:00"
-        );
-        assert_eq!(
-            local_time(
-                DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
-                &FixedOffset::west_opt(5 * 3600 + 1800).unwrap()
-            ),
+            local_time(at(0), &FixedOffset::west_opt(5 * 3600 + 1800).unwrap()),
             "1969-12-31 18:30"
         );
         assert_eq!(
-            local_time(
-                DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
-                &FixedOffset::east_opt(0).unwrap()
-            ),
+            local_time(at(0), &FixedOffset::east_opt(0).unwrap()),
             "1970-01-01 00:00"
         );
     }
@@ -350,14 +342,8 @@ mod rendering_tests {
     #[test]
     fn local_times_use_the_offset_valid_at_each_instant() {
         let zone = SwitchingZone { switch: 3600 };
-        assert_eq!(
-            local_time(DateTime::<Utc>::from_timestamp(3599, 0).unwrap(), &zone),
-            "1970-01-01 01:59"
-        );
-        assert_eq!(
-            local_time(DateTime::<Utc>::from_timestamp(3600, 0).unwrap(), &zone),
-            "1970-01-01 03:00"
-        );
+        assert_eq!(local_time(at(3599), &zone), "1970-01-01 01:59");
+        assert_eq!(local_time(at(3600), &zone), "1970-01-01 03:00");
     }
 }
 
