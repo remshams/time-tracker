@@ -47,7 +47,6 @@ enum GlobalMenuShortcutError: LocalizedError {
     }
 }
 
-@MainActor
 final class GlobalMenuShortcutRegistration {
     private static let signature: OSType = 0x54544D53
     private let action: @MainActor () -> Void
@@ -65,7 +64,7 @@ final class GlobalMenuShortcutRegistration {
         self.action = action
     }
 
-    deinit {
+    isolated deinit {
         if let menuEventMonitor { NSEvent.removeMonitor(menuEventMonitor) }
         if let menuRunLoopObserver {
             CFRunLoopRemoveObserver(
@@ -126,11 +125,12 @@ final class GlobalMenuShortcutRegistration {
         hotKey = nil
         dismissTrackedMenu = dismiss
         menuEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            MainActor.assumeIsolated {
-                guard let self, self.matchesTrackedShortcut(event) else { return event }
+            let consumed = MainActor.assumeIsolated {
+                guard let self, self.matchesTrackedShortcut(event) else { return false }
                 self.dismissTrackedMenu?()
-                return nil
+                return true
             }
+            return consumed ? nil : event
         }
         let observer = CFRunLoopObserverCreateWithHandler(
             nil, CFRunLoopActivity.beforeSources.rawValue, true, 0
@@ -290,7 +290,6 @@ private enum KeyboardLayoutKeyCode {
     }
 }
 
-@MainActor
 struct ShortcutRecorder: NSViewRepresentable {
     var shortcut: MenuShortcut
     var onRecord: (MenuShortcut) -> Void
@@ -315,7 +314,6 @@ struct ShortcutRecorder: NSViewRepresentable {
     }
 }
 
-@MainActor
 final class ShortcutRecorderButton: NSButton {
     var shortcut: MenuShortcut?
     var onRecord: ((MenuShortcut) -> Void)?
@@ -334,7 +332,7 @@ final class ShortcutRecorderButton: NSButton {
 
     required init?(coder: NSCoder) { fatalError("ShortcutRecorderButton requires init(frame:)") }
 
-    deinit {
+    isolated deinit {
         if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
     }
 

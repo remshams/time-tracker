@@ -3,6 +3,7 @@ import XCTest
 @testable import TrackerClient
 
 final class TaskNameEditingPolicyTests: XCTestCase {
+    @MainActor
     func testWhitespaceTrimmingPreservesZeroWidthAndInteriorWhitespace() {
         XCTAssertEqual(TaskNameEditingPolicy.normalized(""), "")
         XCTAssertEqual(TaskNameEditingPolicy.normalized("Task name"), "Task name")

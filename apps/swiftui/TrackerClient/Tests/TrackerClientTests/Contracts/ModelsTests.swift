@@ -2,13 +2,14 @@ import Foundation
 import XCTest
 @testable import TrackerClient
 
+@MainActor
 final class ModelsTests: XCTestCase {
-    func testConnectionModeLabelsNameLocalStorageAndServer() {
+    func testConnectionModeLabelsNameLocalStorageAndServer() async {
         XCTAssertEqual(ConnectionMode.local.label, "Local database")
         XCTAssertEqual(ConnectionMode.server.label, "Server")
     }
 
-    func testResourceObservationsDecodeRustFieldsAndFractionalTimestamps() throws {
+    func testResourceObservationsDecodeRustFieldsAndFractionalTimestamps() async throws {
         let tasksJSON =
             #"{"value":[{"id":"task-one","name":"First task","archived":false,"latestStart":"2024-12-31T23:59:30.123456Z"}]}"#
         let trackingJSON =
@@ -23,7 +24,7 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(instant.timeIntervalSince1970, 1_735_689_570.123456, accuracy: 0.001)
     }
 
-    func testUnloadedTrackingDiffersFromConfirmedIdle() throws {
+    func testUnloadedTrackingDiffersFromConfirmedIdle() async throws {
         let unloaded = try JSONDecoder().decode(TrackingObservation?.self, from: Data("null".utf8))
         let idle = try JSONDecoder().decode(
             TrackingObservation?.self,
@@ -33,7 +34,7 @@ final class ModelsTests: XCTestCase {
         XCTAssertNil(idle?.value)
     }
 
-    func testFocusedCommandAndReportPayloadsDecodeWithoutTaskLists() throws {
+    func testFocusedCommandAndReportPayloadsDecodeWithoutTaskLists() async throws {
         let taskJSON =
             #"{"task":{"id":"created","name":"Created task","archived":false,"latestStart":null},"receipt":{"requestId":"request","replayed":true}}"#
         let task = try JSONDecoder().decode(TaskCommandResult.self, from: Data(taskJSON.utf8))
@@ -48,7 +49,7 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(report.now, "2025-01-01T00:00:00Z")
     }
 
-    func testHistoryDecodesOpaqueCursorAndResetFlag() throws {
+    func testHistoryDecodesOpaqueCursorAndResetFlag() async throws {
         let json =
             #"{"worklogs":[{"id":"worklog-one","taskId":"task-one","start":"2024-12-30T09:00:00.000000Z","end":"2024-12-30T10:00:00.000000Z"}],"nextCursor":"{\"taskId\":\"task-one\"}","reset":true}"#
         let page = try JSONDecoder().decode(HistoryPage.self, from: Data(json.utf8))
@@ -57,19 +58,19 @@ final class ModelsTests: XCTestCase {
         XCTAssertTrue(page.reset)
     }
 
-    func testMalformedResourcesCannotBecomeConfirmedIdleState() {
+    func testMalformedResourcesCannotBecomeConfirmedIdleState() async {
         for json in [#"{}"#, #"{"value":{"id":"worklog-one"}}"#] {
             XCTAssertThrowsError(try JSONDecoder().decode(TrackingObservation.self, from: Data(json.utf8)))
         }
         XCTAssertThrowsError(try JSONDecoder().decode(TaskCatalogObservation.self, from: Data(#"{}"#.utf8)))
     }
 
-    func testTimestampRejectsMissingOrInvalidInput() {
+    func testTimestampRejectsMissingOrInvalidInput() async {
         XCTAssertNil(timestamp(nil))
         XCTAssertNil(timestamp("Invalid timestamp"))
     }
 
-    func testDurationClampsNegativeValuesAndKeepsHoursBeyondOneDay() {
+    func testDurationClampsNegativeValuesAndKeepsHoursBeyondOneDay() async {
         XCTAssertEqual(clockDuration(-1), "00:00:00")
         XCTAssertEqual(clockDuration(90_061), "25:01:01")
     }

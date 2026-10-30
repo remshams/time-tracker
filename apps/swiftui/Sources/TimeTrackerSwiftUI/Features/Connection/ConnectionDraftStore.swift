@@ -3,7 +3,6 @@ import SwiftUI
 import TrackerClient
 
 /// Holds the unsaved data source shown in Settings and the result of testing or adopting it.
-@MainActor
 @Observable
 final class ConnectionDraftStore {
     private let store: TrackerStore
@@ -68,13 +67,11 @@ final class ConnectionDraftStore {
 extension View {
     /// Resets the draft when Settings appears.
     /// Apply it outside the Form so scrolling sections in and out of view does not reset the draft.
-    @MainActor
     func connectionDraftLifecycle(_ draft: ConnectionDraftStore, store: TrackerStore) -> some View {
         modifier(ConnectionDraftLifecycle(store: store, draft: draft))
     }
 }
 
-@MainActor
 private struct ConnectionDraftLifecycle: ViewModifier {
     let store: TrackerStore
     let draft: ConnectionDraftStore

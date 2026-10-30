@@ -1,7 +1,6 @@
 import Foundation
 import TrackerClient
 
-@MainActor
 final class WorklogMoveStore {
     private let session: TrackerSession
     private let presentation: TrackerPresentation

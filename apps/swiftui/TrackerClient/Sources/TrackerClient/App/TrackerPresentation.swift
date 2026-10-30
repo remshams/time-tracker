@@ -7,7 +7,6 @@ public struct TaskDailyTotalPresentation: Equatable, Sendable {
 }
 
 /// Holds one task's daily total so a ticking timer redraws only that task's label.
-@MainActor
 @Observable
 public final class TaskDailyTotal {
     public fileprivate(set) var content: TaskDailyTotalPresentation?
@@ -20,7 +19,6 @@ public final class TaskDailyTotal {
 /// Observation notifies on every assignment, including an equal value. `update(from:)` assigns a
 /// property only when its value changes, so draft edits, clock ticks, and unchanged polls notify
 /// only the views that read the changed values.
-@MainActor
 @Observable
 public final class TrackerPresentation {
     public private(set) var active: WorklogItem?

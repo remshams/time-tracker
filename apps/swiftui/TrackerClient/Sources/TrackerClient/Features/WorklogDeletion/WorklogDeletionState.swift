@@ -9,7 +9,6 @@ public struct WorklogDeletionPresentation: Equatable, Sendable {
     public let canSubmit: Bool
 }
 
-@MainActor
 final class WorklogDeletionState {
     private(set) var original: WorklogItem?
     private var taskName = ""

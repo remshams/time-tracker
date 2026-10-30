@@ -13,7 +13,6 @@ public struct WorklogCorrectionPresentation: Equatable, Sendable {
     public let canSubmit: Bool
 }
 
-@MainActor
 final class WorklogCorrectionState {
     struct Request {
         let expected: WorklogItem

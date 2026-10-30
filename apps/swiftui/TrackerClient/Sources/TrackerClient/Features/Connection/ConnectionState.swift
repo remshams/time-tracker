@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 final class ConnectionState {
     var settings: ConnectionSettings
     var statusText = "Connecting"

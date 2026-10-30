@@ -52,7 +52,6 @@ struct WorklogRow: View {
     }
 }
 
-@MainActor
 private struct WorklogActionsMenu: View {
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore
@@ -76,7 +75,6 @@ private struct WorklogActionsMenu: View {
     }
 }
 
-@MainActor
 private struct WorklogContextMenu: View {
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore

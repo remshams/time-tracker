@@ -1,6 +1,5 @@
 import SwiftUI
 
-@MainActor
 struct TaskContextMenu: View {
     let creation: TaskCreationStore
     let rename: TaskRenameStore

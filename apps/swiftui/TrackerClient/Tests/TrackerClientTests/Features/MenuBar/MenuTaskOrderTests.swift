@@ -16,24 +16,28 @@ final class MenuTaskOrderTests: XCTestCase {
 
     private var shuffled: [TaskItem] { [unlogged, older, tiedLater, unreadable, newer, tiedEarlier] }
 
+    @MainActor
     func testNewestFirstPutsLatestLoggedTasksFirstAndUnloggedTasksLast() {
         XCTAssertEqual(
             MenuTaskOrder.newestFirst.sorted(shuffled).map(\.id),
             [newer, tiedEarlier, tiedLater, older, unlogged, unreadable].map(\.id))
     }
 
+    @MainActor
     func testOldestFirstPutsEarliestLoggedTasksFirstAndUnloggedTasksLast() {
         XCTAssertEqual(
             MenuTaskOrder.oldestFirst.sorted(shuffled).map(\.id),
             [older, newer, tiedEarlier, tiedLater, unlogged, unreadable].map(\.id))
     }
 
+    @MainActor
     func testNameOrderIgnoresLoggedTimes() {
         XCTAssertEqual(
             MenuTaskOrder.name.sorted(shuffled).map(\.id),
             [unlogged, unreadable, newer, older, tiedEarlier, tiedLater].map(\.id))
     }
 
+    @MainActor
     func testPersistedValuesAndTitlesStayStable() {
         XCTAssertEqual(MenuTaskOrder.allCases.map(\.rawValue), ["newestFirst", "oldestFirst", "name"])
         XCTAssertEqual(MenuTaskOrder.allCases.map(\.id), MenuTaskOrder.allCases)

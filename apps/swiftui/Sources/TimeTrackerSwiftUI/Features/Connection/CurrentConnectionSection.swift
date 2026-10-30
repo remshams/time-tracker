@@ -1,7 +1,6 @@
 import SwiftUI
 import TrackerClient
 
-@MainActor
 struct CurrentConnectionSection: View {
     let store: TrackerStore
 

@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 public final class DelayedProgressPresentation {
     public static let delay: Duration = .milliseconds(180)
     public typealias Sleep = @Sendable (Duration) async throws -> Void

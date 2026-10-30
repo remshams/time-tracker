@@ -3,7 +3,6 @@ import Foundation
 import Observation
 import TrackerClient
 
-@MainActor
 @Observable
 final class TrackerStore {
     private let session: TrackerSession
@@ -183,7 +182,6 @@ final class TrackerStore {
 }
 
 /// Owns the menu bar's minute clock and looks up each task's observable daily total.
-@MainActor
 final class TrackerDailyTotalsStore {
     var onMenuBarTick: (() -> Void)?
     private let presentation: TrackerPresentation
@@ -191,7 +189,7 @@ final class TrackerDailyTotalsStore {
 
     init(presentation: TrackerPresentation) { self.presentation = presentation }
 
-    deinit { menuBarTimer?.invalidate() }
+    isolated deinit { menuBarTimer?.invalidate() }
 
     func updateMenuBarTimer(isRunning: Bool) {
         guard isRunning else {
@@ -211,7 +209,6 @@ final class TrackerDailyTotalsStore {
     func task(_ taskID: String) -> TaskDailyTotal { presentation.taskDailyTotal(taskID: taskID) }
 }
 
-@MainActor
 final class TrackerMenuStore {
     let label: TrackerMenuLabelStore
     let valuesDidChange = PassthroughSubject<TrackerMenuValues, Never>()
@@ -249,7 +246,6 @@ final class TrackerMenuStore {
     func menuClosed() { presentation.menuClosed(from: session, showDailyTotal: showDailyTotal) }
 }
 
-@MainActor
 final class TrackerMenuLabelStore {
     let objectWillChange = ObservableObjectPublisher()
     private let presentation: TrackerMenuPresentationObserver
@@ -263,4 +259,4 @@ final class TrackerMenuLabelStore {
 }
 
 // The AppKit status item subscribes to this publisher; SwiftUI views do not observe it.
-extension TrackerMenuLabelStore: @MainActor ObservableObject {}
+extension TrackerMenuLabelStore: ObservableObject {}

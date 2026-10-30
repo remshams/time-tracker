@@ -107,6 +107,7 @@ final class LifecycleTests: XCTestCase {
         XCTAssertEqual(fixture.scheduler.poll?.delay, 5)
     }
 
+    @MainActor
     func testPollingPolicyClampsFailureCountAndNeverPollsHiddenWindowFasterThanMinute() {
         XCTAssertEqual(TrackerPollingPolicy.interval(visible: true, failures: -10), 5)
         XCTAssertEqual(TrackerPollingPolicy.interval(visible: true, failures: 3), 20)

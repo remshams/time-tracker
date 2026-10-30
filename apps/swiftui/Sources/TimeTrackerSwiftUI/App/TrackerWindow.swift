@@ -3,7 +3,6 @@ import SwiftUI
     import AppKit
 #endif
 
-@MainActor
 struct TrackerWindow: View {
     let runtime: TrackerAppRuntime
     private let store: TrackerStore
@@ -74,7 +73,6 @@ struct TrackerWindow: View {
 }
 
 #if DEBUG
-    @MainActor
     private struct TrackerWindowAppearanceProbe: NSViewRepresentable {
         let appearance: String
 
@@ -98,12 +96,11 @@ struct TrackerWindow: View {
             coordinator.stop()
         }
 
-        @MainActor
         final class Coordinator {
             private weak var field: NSTextField?
             private var resizeObserver: NSObjectProtocol?
 
-            deinit {
+            isolated deinit {
                 if let resizeObserver {
                     DistributedNotificationCenter.default().removeObserver(resizeObserver)
                 }
@@ -115,7 +112,10 @@ struct TrackerWindow: View {
                 resizeObserver = DistributedNotificationCenter.default().addObserver(
                     forName: Notification.Name("\(suite).resize"), object: nil, queue: .main
                 ) { [weak self] notification in
-                    MainActor.assumeIsolated { self?.resize(notification) }
+                    // Notification isn't Sendable, so read the requested size before entering the main actor.
+                    let width = (notification.userInfo?["width"] as? NSNumber)?.doubleValue
+                    let height = (notification.userInfo?["height"] as? NSNumber)?.doubleValue
+                    MainActor.assumeIsolated { self?.resize(width: width, height: height) }
                 }
             }
 
@@ -127,28 +127,26 @@ struct TrackerWindow: View {
                 field = nil
             }
 
-            private func resize(_ notification: Notification) {
+            private func resize(width: Double?, height: Double?) {
                 guard let window = field?.window, window.isKeyWindow,
                     let screen = window.screen,
-                    let width = notification.userInfo?["width"] as? NSNumber,
-                    let height = notification.userInfo?["height"] as? NSNumber,
-                    width.doubleValue.isFinite, height.doubleValue.isFinite,
-                    width.doubleValue > 0, height.doubleValue > 0
+                    let width, let height,
+                    width.isFinite, height.isFinite,
+                    width > 0, height > 0
                 else { return }
                 let available = window.contentRect(forFrameRect: screen.visibleFrame).size
                 let minimum = window.contentMinSize
                 guard minimum.width <= available.width, minimum.height <= available.height else { return }
                 window.setContentSize(
                     NSSize(
-                        width: max(minimum.width, min(CGFloat(width.doubleValue), available.width)),
-                        height: max(minimum.height, min(CGFloat(height.doubleValue), available.height))
+                        width: max(minimum.width, min(CGFloat(width), available.width)),
+                        height: max(minimum.height, min(CGFloat(height), available.height))
                     ))
             }
         }
     }
 #endif
 
-@MainActor
 private struct TrackerSidebarToolbar: View {
     let preferWindow: () -> Void
     private let creation: TaskCreationStore
@@ -196,7 +194,6 @@ private struct TrackerSidebarToolbar: View {
     }
 }
 
-@MainActor
 private struct TrackerTaskToolbar: View {
     let preferWindow: () -> Void
     let store: TrackerStore

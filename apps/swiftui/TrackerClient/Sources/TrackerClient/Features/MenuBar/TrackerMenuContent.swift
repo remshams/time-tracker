@@ -24,7 +24,6 @@ public struct TrackerMenuContent: Equatable {
     public let todayTasks: [TrackerMenuTask]
     public let otherTasks: [TrackerMenuTask]
 
-    @MainActor
     init(_ session: TrackerSession, taskOrder: MenuTaskOrder) {
         connectionSettings = session.connectionSettings
         connectionStatusText = session.connectionStatusText
@@ -49,7 +48,6 @@ public struct TrackerMenuContent: Equatable {
         !task.archived && !todayIDs.contains(task.id)
     }
 
-    @MainActor
     private static func entry(_ task: TaskItem, session: TrackerSession) -> TrackerMenuTask {
         TrackerMenuTask(
             task: task, durationText: session.dailyDuration(taskID: task.id).map(clockDuration) ?? "-",
@@ -64,7 +62,6 @@ public struct TrackerMenuLabelContent: Equatable {
     public let totalText: String?
     public let help: String
 
-    @MainActor
     init(_ session: TrackerSession, showDailyTotal: Bool) {
         indicator = TaskIndicator(
             taskID: session.active?.taskId ?? session.lastTrackedTaskID,

@@ -1,7 +1,6 @@
 import SwiftUI
 
 @main
-@MainActor
 struct TimeTrackerApp: App {
     @NSApplicationDelegateAdaptor(TrackerApplicationDelegate.self) private var delegate
 

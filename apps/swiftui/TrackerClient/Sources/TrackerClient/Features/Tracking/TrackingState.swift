@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 final class TrackingState {
     private(set) var active: WorklogItem?
     var error: String?

@@ -1,7 +1,6 @@
 import SwiftUI
 import TrackerClient
 
-@MainActor
 struct MenuBarSettingsSection: View {
     let store: TrackerStore
 

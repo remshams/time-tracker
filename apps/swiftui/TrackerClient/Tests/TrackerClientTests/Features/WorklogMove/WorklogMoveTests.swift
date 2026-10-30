@@ -711,6 +711,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertEqual(state.presentation.selectedTaskID, candidates[0].id)
     }
 
+    @MainActor
     func testExactTimestampComparisonKeepsMicrosecondsAndEquivalentOffsets() {
         XCTAssertTrue(sameWorklogTimestamp("2024-12-30T09:00:12.123456Z", "2024-12-30T10:00:12.123456000+01:00"))
         XCTAssertFalse(sameWorklogTimestamp("2024-12-30T09:00:12.123456Z", "2024-12-30T09:00:12.123457Z"))

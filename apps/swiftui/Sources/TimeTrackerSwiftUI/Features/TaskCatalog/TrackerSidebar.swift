@@ -1,7 +1,6 @@
 import SwiftUI
 import TrackerClient
 
-@MainActor
 struct TrackerSidebar: View {
     let store: TrackerStore
 
@@ -88,7 +87,6 @@ struct TrackerSidebar: View {
     }
 }
 
-@MainActor
 struct TrackerDailyTotalText: View {
     private let task: TaskDailyTotal
     private let taskID: String

@@ -1,6 +1,5 @@
 import TrackerClient
 
-@MainActor
 final class TaskArchivingStore {
     private let session: TrackerSession
     private let presentation: TrackerPresentation

@@ -12,7 +12,6 @@ public struct BulkTaskArchivingPresentation: Equatable, Sendable {
     public let canSubmit: Bool
 }
 
-@MainActor
 final class BulkTaskArchivingState {
     struct Search {
         let generation: Int

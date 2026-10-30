@@ -1,6 +1,5 @@
 import SwiftUI
 
-@MainActor
 struct TrackerApplicationMenus: Commands {
     let runtime: TrackerAppRuntime
     private let creation: TaskCreationStore

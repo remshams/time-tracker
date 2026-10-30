@@ -1,6 +1,5 @@
 import TrackerClient
 
-@MainActor
 final class TaskRenameStore {
     private let session: TrackerSession
     private let presentation: TrackerPresentation

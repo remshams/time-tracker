@@ -32,7 +32,6 @@ public protocol TrackerClient: Sendable {
     func history(taskID: String, cursor: String?) async throws -> HistoryPage
 }
 
-@MainActor
 public protocol TrackerClock {
     var now: Date { get }
     var uptime: TimeInterval { get }
@@ -42,7 +41,6 @@ public protocol TrackerCancellation {
     func cancel()
 }
 
-@MainActor
 public protocol TrackerScheduler {
     func schedule(
         after: TimeInterval, repeating: Bool, tolerance: TimeInterval,
@@ -50,19 +48,16 @@ public protocol TrackerScheduler {
     ) -> any TrackerCancellation
 }
 
-@MainActor
 public protocol ConnectionSettingsRepository {
     func load() -> ConnectionSettings?
     func save(_ settings: ConnectionSettings)
 }
 
-@MainActor
 public protocol TrackingPreferencesRepository {
     func load() -> TrackingPreferences
     func save(_ preferences: TrackingPreferences)
 }
 
-@MainActor
 public protocol LastTrackedTaskRepository {
     func load(for settings: ConnectionSettings) -> String?
     func save(taskID: String, for settings: ConnectionSettings)

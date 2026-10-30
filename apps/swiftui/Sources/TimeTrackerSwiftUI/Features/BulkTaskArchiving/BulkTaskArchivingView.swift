@@ -1,7 +1,6 @@
 import SwiftUI
 import TrackerClient
 
-@MainActor
 struct BulkTaskArchivingSheet: View {
     let archiving: BulkTaskArchivingStore
 

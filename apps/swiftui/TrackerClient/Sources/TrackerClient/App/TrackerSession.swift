@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 public final class TrackerSession {
     public var onChange: (() -> Void)?
 
@@ -57,7 +56,7 @@ public final class TrackerSession {
         dailyTotals.updateDay(at: clock.now)
     }
 
-    deinit {
+    isolated deinit {
         displayTimer?.cancel()
         pollTimer?.cancel()
         rolloverTimer?.cancel()
