@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tracker_application::{ActiveTrackingRead, GlobalWorklogPage};
 use tracker_domain::{TaskId, Worklog, WorklogId, WorklogTimes};
@@ -13,6 +13,7 @@ use crate::screens::{
     AllWorklogsState, CorrectionDraft, InputState, MoveDraft, TaskListState, TaskView,
     WorklogHistoryMode, WorklogHistoryState, map_key,
 };
+use crate::test_support::at;
 
 pub(crate) fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -51,7 +52,7 @@ pub(crate) fn confirm() -> TaskListMode {
 
 fn inactive_preview() -> crate::screens::task_list::InactiveTaskPreview {
     crate::screens::task_list::InactiveTaskPreview::local(
-        DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
+        at(0),
         vec![TaskId::generate()],
         vec!["old task".to_owned()],
     )
@@ -69,31 +70,31 @@ pub(crate) fn deletion() -> WorklogHistoryMode {
         worklog: Worklog::new(
             WorklogId::generate(),
             TaskId::generate(),
-            DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
-            Some(DateTime::<Utc>::from_timestamp(60, 0).unwrap()),
+            at(0),
+            Some(at(60)),
         )
         .unwrap(),
     }
 }
 
 pub(crate) fn correction() -> WorklogHistoryMode {
-    let at = DateTime::<Utc>::from_timestamp(0, 0).unwrap();
+    let start = at(0);
     WorklogHistoryMode::Correction(CorrectionDraft::new(
         WorklogId::generate(),
-        WorklogTimes::new(at, Some(at)),
+        WorklogTimes::new(start, Some(start)),
         "1970-01-01 00:00".to_owned(),
         Some("1970-01-01 00:00".to_owned()),
     ))
 }
 
 pub(crate) fn move_dialog() -> WorklogHistoryMode {
-    let at = DateTime::<Utc>::from_timestamp(0, 0).unwrap();
+    let start = at(0);
     WorklogHistoryMode::Move(MoveDraft::new(
         Worklog::new(
             WorklogId::generate(),
             TaskId::generate(),
-            at,
-            Some(DateTime::<Utc>::from_timestamp(60, 0).unwrap()),
+            start,
+            Some(at(60)),
         )
         .unwrap(),
         Vec::new(),
@@ -234,9 +235,7 @@ pub(crate) fn valid_input_states() -> Vec<TestInputState> {
         TestInputState::TaskList(task_list_state(rename_input(), TaskView::Active)),
         TestInputState::TaskList(task_list_state(confirm(), TaskView::Active)),
         TestInputState::TaskList(task_list_state(
-            TaskListMode::PreviewingInactiveTasks {
-                as_of: DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
-            },
+            TaskListMode::PreviewingInactiveTasks { as_of: at(0) },
             TaskView::Active,
         )),
         TestInputState::TaskList(task_list_state(
