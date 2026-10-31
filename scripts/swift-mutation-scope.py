@@ -140,21 +140,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    # Default MainActor isolation (#247) makes worklogTimestampParts main-actor, so the
-    # fixture's timestamp comparison opts into the main actor, and the contract drops
-    # protocol annotations the default covers. The manifest entry below already
-    # selects every production file.
-    ("Reviewed main-actor timestamp comparison for the default isolation",
-     None,
-     ("2a267c1d2c8eed589aca3467094acea3d259a539", "147ce200fe2d3b7b1cf7da691fdf0c718344d692"),
-     tuple(("@MainActor\npublic protocol " + name + " {", "public protocol " + name + " {") for name in (
-         "TrackerClock", "TrackerScheduler", "ConnectionSettingsRepository",
-         "TrackingPreferencesRepository", "LastTrackedTaskRepository",
-     )),
-     (),
-     tuple(TEST_PRODUCTION)),
-)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [PRESENTATION, SESSION],
@@ -167,26 +153,7 @@ REVIEWED_REPLACEMENTS: dict[str, str] = {}
 # A PR that edits the package manifest can add a reviewed entry here: (reason,
 # exact text edits, production files whose behavior depends on the edit). Remove
 # the entry once its PR has merged, since its base text no longer matches main.
-REVIEWED_PACKAGE_EDITS: tuple = (
-    # Default MainActor isolation and Swift 6 mode (#247) change the isolation of
-    # every source, so mutate the whole package.
-    ("Reviewed default MainActor isolation and Swift 6 language mode",
-     (("import PackageDescription\n\nlet package",
-       "import PackageDescription\n\nlet approachableConcurrency: [SwiftSetting] = [\n"
-       "    .enableUpcomingFeature(\"NonisolatedNonsendingByDefault\"),\n"
-       "    .enableUpcomingFeature(\"InferIsolatedConformances\"),\n]\n\nlet package"),
-      ('        .target(name: "TrackerClient"),\n',
-       '        .target(name: "TrackerClient", swiftSettings: [.defaultIsolation(MainActor.self)] + '
-       'approachableConcurrency),\n'),
-      ('        .testTarget(name: "TrackerClientTests", dependencies: ["TrackerClient"]),',
-       "        // Default isolation would make XCTest's inherited nonisolated initializer main-actor, which doesn't "
-       "compile.\n"
-       "        // Tests opt into the main actor explicitly.\n"
-       "        .testTarget(\n"
-       '            name: "TrackerClientTests", dependencies: ["TrackerClient"], swiftSettings: approachableConcurrency),'),
-      ("swiftLanguageModes: [.v5]", "swiftLanguageModes: [.v6]")),
-     tuple(sorted({source for sources in TEST_PRODUCTION.values() for source in sources}))),
-)
+REVIEWED_PACKAGE_EDITS: tuple = ()
 
 
 class ScopeError(Exception):
