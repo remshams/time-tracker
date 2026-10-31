@@ -244,7 +244,7 @@ func assertMirrors(
             file: file, line: line)
         XCTAssertEqual(
             presentation.taskDailyTotal(taskID: task.id).content?.text,
-            session.dailyDuration(taskID: task.id).map(clockDuration) ?? "-", file: file, line: line)
+            session.dailyDuration(taskID: task.id).map(formatClockDuration) ?? "-", file: file, line: line)
         XCTAssertEqual(
             presentation.taskDailyTotal(taskID: task.id).content?.explanation, session.dailyTotalsExplanation,
             file: file, line: line)

@@ -7,16 +7,16 @@ private let isoFormatter: ISO8601DateFormatter = {
     return formatter
 }()
 
-public func timestamp(_ value: String?) -> Date? {
+public func parseTimestamp(_ value: String?) -> Date? {
     guard let value else { return nil }
     return isoFormatter.date(from: value)
 }
 
-func commandTimestamp(_ date: Date) -> String {
+func formatTimestamp(_ date: Date) -> String {
     isoFormatter.string(from: date)
 }
 
-public func clockDuration(_ seconds: TimeInterval) -> String {
+public func formatClockDuration(_ seconds: TimeInterval) -> String {
     let total = Int(max(0, seconds))
     return String(format: "%02d:%02d:%02d", total / 3600, total / 60 % 60, total % 60)
 }

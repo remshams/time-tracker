@@ -20,7 +20,7 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(tasks.value.first?.latestStart, tracking.value?.start)
         XCTAssertEqual(tracking.value?.taskId, "task-one")
         XCTAssertNil(tracking.value?.end)
-        let instant = try XCTUnwrap(timestamp(tracking.value?.start))
+        let instant = try XCTUnwrap(parseTimestamp(tracking.value?.start))
         XCTAssertEqual(instant.timeIntervalSince1970, 1_735_689_570.123456, accuracy: 0.001)
     }
 

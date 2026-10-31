@@ -28,6 +28,6 @@ public struct TrackerMenuValues: Equatable, Sendable {
     }
 
     private static func taskDurationText(_ session: TrackerSession, taskID: String, sameConnection: Bool) -> String {
-        sameConnection ? session.dailyDuration(taskID: taskID).map(clockDuration) ?? "-" : "-"
+        sameConnection ? session.dailyDuration(taskID: taskID).map(formatClockDuration) ?? "-" : "-"
     }
 }

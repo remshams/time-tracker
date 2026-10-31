@@ -35,8 +35,8 @@ final class WorklogCorrectionState {
         let changed = original.map { hasChangedTimes(from: $0) } ?? false
         return WorklogCorrectionPresentation(
             isPresented: isPresented, taskName: taskName, original: original,
-            start: timestamp(replacementStart) ?? start,
-            end: timestamp(replacementEnd), timezoneIdentifier: timezoneIdentifier,
+            start: parseTimestamp(replacementStart) ?? start,
+            end: parseTimestamp(replacementEnd), timezoneIdentifier: timezoneIdentifier,
             isSubmitting: isSubmitting, error: error,
             canEdit: isPresented && !isSubmitting,
             canSubmit: isPresented && !isSubmitting && changed)
@@ -50,16 +50,16 @@ final class WorklogCorrectionState {
     }
 
     private var replacementStart: String {
-        guard let original, let date = timestamp(original.start), minute(start) == minute(date) else {
-            return commandTimestamp(minute(start))
+        guard let original, let date = parseTimestamp(original.start), minute(start) == minute(date) else {
+            return formatTimestamp(minute(start))
         }
         return original.start
     }
 
     private var replacementEnd: String? {
         guard let end else { return nil }
-        if let value = original?.end, let date = timestamp(value), minute(end) == minute(date) { return value }
-        return commandTimestamp(minute(end))
+        if let value = original?.end, let date = parseTimestamp(value), minute(end) == minute(date) { return value }
+        return formatTimestamp(minute(end))
     }
 
     private func hasChangedTimes(from original: WorklogItem) -> Bool {
@@ -71,13 +71,13 @@ final class WorklogCorrectionState {
     }
 
     func open(_ worklog: WorklogItem, taskName: String, timezone: TimeZone = .current) {
-        guard !isPresented, let start = timestamp(worklog.start),
-            worklog.end == nil || timestamp(worklog.end) != nil
+        guard !isPresented, let start = parseTimestamp(worklog.start),
+            worklog.end == nil || parseTimestamp(worklog.end) != nil
         else { return }
         original = worklog
         self.taskName = taskName
         self.start = start
-        end = timestamp(worklog.end)
+        end = parseTimestamp(worklog.end)
         timezoneIdentifier = timezone.identifier
         calendar.timeZone = timezone
         isPresented = true
@@ -98,12 +98,12 @@ final class WorklogCorrectionState {
 
     func submit(at date: Date) -> Request? {
         guard presentation.canSubmit, let original else { return nil }
-        guard let replacementDate = timestamp(replacementStart), Self.isNotInFuture(replacementDate, now: date)
+        guard let replacementDate = parseTimestamp(replacementStart), Self.isNotInFuture(replacementDate, now: date)
         else {
             error = "Start must not be in the future."
             return nil
         }
-        if let replacementEnd, let endDate = timestamp(replacementEnd) {
+        if let replacementEnd, let endDate = parseTimestamp(replacementEnd) {
             guard hasPositiveWorklogDuration(start: replacementStart, end: replacementEnd) else {
                 error = "End must be after Start."
                 return nil
@@ -117,7 +117,7 @@ final class WorklogCorrectionState {
         error = nil
         return Request(
             expected: original, replacementStart: replacementStart,
-            replacementEnd: replacementEnd, occurredAt: commandTimestamp(date))
+            replacementEnd: replacementEnd, occurredAt: formatTimestamp(date))
     }
 
     func fail(_ failure: Error) {

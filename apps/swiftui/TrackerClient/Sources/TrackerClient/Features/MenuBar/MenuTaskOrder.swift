@@ -24,7 +24,7 @@ public enum MenuTaskOrder: String, CaseIterable, Identifiable, Sendable {
     }
 
     private func loggedAt(_ task: TaskItem) -> Date? {
-        self == .name ? nil : timestamp(task.latestStart)
+        self == .name ? nil : parseTimestamp(task.latestStart)
     }
 
     private func isOrderedBefore(_ left: RankedTask, _ right: RankedTask) -> Bool {

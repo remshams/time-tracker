@@ -50,7 +50,7 @@ public struct TrackerMenuContent: Equatable {
 
     private static func entry(_ task: TaskItem, session: TrackerSession) -> TrackerMenuTask {
         TrackerMenuTask(
-            task: task, durationText: session.dailyDuration(taskID: task.id).map(clockDuration) ?? "-",
+            task: task, durationText: session.dailyDuration(taskID: task.id).map(formatClockDuration) ?? "-",
             isRunning: session.active?.taskId == task.id,
             canStart: session.canStartTracking(taskID: task.id))
     }

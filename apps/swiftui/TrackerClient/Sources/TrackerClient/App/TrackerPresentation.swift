@@ -210,7 +210,7 @@ public final class TrackerPresentation {
                 (
                     $0.id,
                     TaskDailyTotalPresentation(
-                        text: session.dailyDuration(taskID: $0.id).map(clockDuration) ?? "-",
+                        text: session.dailyDuration(taskID: $0.id).map(formatClockDuration) ?? "-",
                         explanation: explanation)
                 )
             })

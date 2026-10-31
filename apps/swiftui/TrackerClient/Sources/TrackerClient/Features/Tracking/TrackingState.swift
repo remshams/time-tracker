@@ -17,7 +17,7 @@ final class TrackingState {
 
     func resetElapsedAnchor(clock: any TrackerClock) {
         let now = clock.now
-        timerBase = max(0, now.timeIntervalSince(timestamp(active?.start) ?? now))
+        timerBase = max(0, now.timeIntervalSince(parseTimestamp(active?.start) ?? now))
         timerAnchor = clock.uptime
     }
 

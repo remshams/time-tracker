@@ -6,9 +6,9 @@ final class DailyTotalsState {
         let cutoff: Date
         let uptime: TimeInterval
         let anchorGeneration: Int
-        var start: String { commandTimestamp(day.start) }
-        var end: String { commandTimestamp(day.end) }
-        var now: String { commandTimestamp(cutoff) }
+        var start: String { formatTimestamp(day.start) }
+        var end: String { formatTimestamp(day.end) }
+        var now: String { formatTimestamp(cutoff) }
     }
 
     private let calendar: Calendar
@@ -51,7 +51,7 @@ final class DailyTotalsState {
         updateDay(at: clock.now)
         guard let day else { return nil }
         if request == nil { status = .loading }
-        let cutoff = timestamp(commandTimestamp(clock.now)) ?? clock.now
+        let cutoff = parseTimestamp(formatTimestamp(clock.now)) ?? clock.now
         return Request(day: day, cutoff: cutoff, uptime: clock.uptime, anchorGeneration: anchorGeneration)
     }
 
@@ -61,7 +61,7 @@ final class DailyTotalsState {
         rows = report.rows.reduce(into: [:]) { totals, row in
             totals[row.taskId] = max(0, row.durationMicroseconds)
         }
-        let cutoff = report.now.flatMap(timestamp) ?? requested.cutoff
+        let cutoff = report.now.flatMap(parseTimestamp) ?? requested.cutoff
         request = Request(
             day: requested.day, cutoff: cutoff,
             uptime: requested.uptime, anchorGeneration: requested.anchorGeneration)
@@ -78,7 +78,7 @@ final class DailyTotalsState {
     }
 
     func validate(_ report: TrackerReport, tracking: TrackingObservation) throws {
-        if let now = report.now, timestamp(now) == nil {
+        if let now = report.now, parseTimestamp(now) == nil {
             throw BridgeFailure(
                 message: "The report contains an invalid cutoff.", kind: "protocol", requiresRefresh: true)
         }
@@ -104,7 +104,7 @@ final class DailyTotalsState {
     }
 
     private func validRunningWorklog(_ worklog: WorklogItem) -> Bool {
-        !worklog.id.isEmpty && !worklog.taskId.isEmpty && worklog.end == nil && timestamp(worklog.start) != nil
+        !worklog.id.isEmpty && !worklog.taskId.isEmpty && worklog.end == nil && parseTimestamp(worklog.start) != nil
     }
 
     func fail(_ failure: Error, clock: any TrackerClock) {
@@ -135,7 +135,7 @@ final class DailyTotalsState {
         guard let active, let reportedActive, active.id == reportedActive.id,
             active.taskId == reportedActive.taskId, active.start == reportedActive.start,
             active.taskId == taskID, active.end == nil,
-            let start = timestamp(active.start), let anchorDate
+            let start = parseTimestamp(active.start), let anchorDate
         else { return base }
         let projectedNow = anchorDate.addingTimeInterval(max(0, clock.uptime - anchorUptime))
         let lower = max(request.cutoff, request.day.start, start)
