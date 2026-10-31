@@ -35,7 +35,7 @@ final class ConnectionDraftStore {
         let settings = self.settings
         operationPending = true
         resultMessage = nil
-        Task { @MainActor in
+        Task {
             do {
                 try await self.store.testConnection(settings)
                 self.resultSucceeded = true
@@ -52,7 +52,7 @@ final class ConnectionDraftStore {
         let settings = self.settings
         operationPending = true
         resultMessage = nil
-        Task { @MainActor in
+        Task {
             let succeeded = await self.store.connect(settings)
             self.resultSucceeded = succeeded
             self.resultMessage =
