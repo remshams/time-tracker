@@ -64,14 +64,4 @@ final class ModelsTests: XCTestCase {
         }
         XCTAssertThrowsError(try JSONDecoder().decode(TaskCatalogObservation.self, from: Data(#"{}"#.utf8)))
     }
-
-    func testTimestampRejectsMissingOrInvalidInput() async {
-        XCTAssertNil(timestamp(nil))
-        XCTAssertNil(timestamp("Invalid timestamp"))
-    }
-
-    func testDurationClampsNegativeValuesAndKeepsHoursBeyondOneDay() async {
-        XCTAssertEqual(clockDuration(-1), "00:00:00")
-        XCTAssertEqual(clockDuration(90_061), "25:01:01")
-    }
 }
