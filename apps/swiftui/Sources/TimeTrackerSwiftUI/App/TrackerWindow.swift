@@ -7,16 +7,12 @@ struct TrackerWindow: View {
     let runtime: TrackerAppRuntime
     private let store: TrackerStore
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.appearsActive) private var appearsActive
     @Environment(\.colorScheme) private var colorScheme
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     private let presentation: TrackerTaskPresentationCoordinator
-    let windowID: UUID
 
-    init(runtime: TrackerAppRuntime, windowID: UUID) {
+    init(runtime: TrackerAppRuntime) {
         self.runtime = runtime
-        self.windowID = windowID
         store = runtime.store
         presentation = runtime.presentation
     }
@@ -41,34 +37,25 @@ struct TrackerWindow: View {
             TrackerSidebar(store: store)
                 .toolbar {
                     ToolbarItemGroup(placement: .automatic) {
-                        TrackerSidebarToolbar(store: store, preferWindow: { runtime.preferWindow(windowID) })
+                        TrackerSidebarToolbar(store: store)
                     }
                 }
         } detail: {
-            TrackerDetailPresentation(store: store, presentation: runtime.presentation, windowID: windowID)
+            TrackerDetailPresentation(store: store)
                 .toolbar {
                     ToolbarItemGroup(placement: .primaryAction) {
-                        TrackerTaskToolbar(store: store, preferWindow: { runtime.preferWindow(windowID) })
+                        TrackerTaskToolbar(store: store)
                     }
                 }
         }
         .environment(presentation)
         .navigationTitle(store.selectedTask?.name ?? "Time Tracker")
         .frame(minWidth: 760, minHeight: 480)
-        .windowDismissBehavior(presentation.canClose(windowID) ? .enabled : .disabled)
+        .windowDismissBehavior(presentation.canCloseWindow ? .enabled : .disabled)
         .onAppear {
             let action = openWindow
-            runtime.installSceneOpener { action(id: TrackerSceneID.tracker, value: $0) }
-            runtime.windowAppeared(windowID, phase: scenePhase)
-            if appearsActive { runtime.preferWindow(windowID) }
+            runtime.installSceneOpener { action(id: TrackerSceneID.tracker) }
         }
-        .onChange(of: scenePhase) { _, phase in
-            runtime.windowPhaseChanged(windowID, phase: phase)
-        }
-        .onChange(of: appearsActive) { _, isFocused in
-            if isFocused { runtime.preferWindow(windowID) }
-        }
-        .onDisappear { runtime.windowDisappeared(windowID) }
     }
 }
 
@@ -148,14 +135,12 @@ struct TrackerWindow: View {
 #endif
 
 private struct TrackerSidebarToolbar: View {
-    let preferWindow: () -> Void
     private let creation: TaskCreationStore
     private let bulkArchiving: BulkTaskArchivingStore
     @Environment(\.openWindow) private var openWindow
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
 
-    init(store: TrackerStore, preferWindow: @escaping () -> Void) {
-        self.preferWindow = preferWindow
+    init(store: TrackerStore) {
         creation = store.creation
         bulkArchiving = store.bulkArchiving
     }
@@ -173,7 +158,6 @@ private struct TrackerSidebarToolbar: View {
 
         Button {
             guard canCreate else { return }
-            preferWindow()
             creation.open()
         } label: {
             Label("New task", systemImage: "plus")
@@ -183,7 +167,6 @@ private struct TrackerSidebarToolbar: View {
 
         Button {
             guard canOpenBulkArchiving else { return }
-            preferWindow()
             bulkArchiving.open()
         } label: {
             Label("Archive inactive tasks", systemImage: "archivebox")
@@ -195,14 +178,12 @@ private struct TrackerSidebarToolbar: View {
 }
 
 private struct TrackerTaskToolbar: View {
-    let preferWindow: () -> Void
     let store: TrackerStore
     private let rename: TaskRenameStore
     private let archiving: TaskArchivingStore
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
 
-    init(store: TrackerStore, preferWindow: @escaping () -> Void) {
-        self.preferWindow = preferWindow
+    init(store: TrackerStore) {
         self.store = store
         rename = store.rename
         archiving = store.archiving
@@ -213,7 +194,6 @@ private struct TrackerTaskToolbar: View {
             let canRename = rename.canOpen && !presentation.hasPresentation
             Button {
                 guard canRename else { return }
-                preferWindow()
                 rename.open(taskID: task.id)
             } label: {
                 Label("Edit task name", systemImage: "pencil")
@@ -228,7 +208,6 @@ private struct TrackerTaskToolbar: View {
                     : archiving.canArchive(taskID: task.id))
             Button {
                 guard canChangeArchive else { return }
-                preferWindow()
                 if task.archived {
                     archiving.unarchive(taskID: task.id)
                 } else {

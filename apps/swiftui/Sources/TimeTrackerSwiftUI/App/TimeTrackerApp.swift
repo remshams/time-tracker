@@ -5,13 +5,9 @@ struct TimeTrackerApp: App {
     @NSApplicationDelegateAdaptor(TrackerApplicationDelegate.self) private var delegate
 
     var body: some Scene {
-        WindowGroup("Time Tracker", id: TrackerSceneID.tracker, for: UUID.self) { windowID in
-            let id: UUID? = windowID.wrappedValue
-            if let id {
-                TrackerWindow(runtime: delegate.runtime, windowID: id)
-            }
-        } defaultValue: {
-            UUID()
+        // A Window scene exists at most once, so opening it again focuses the existing window.
+        Window("Time Tracker", id: TrackerSceneID.tracker) {
+            TrackerWindow(runtime: delegate.runtime)
         }
         .defaultSize(width: 1100, height: 760)
         .windowStyle(.hiddenTitleBar)

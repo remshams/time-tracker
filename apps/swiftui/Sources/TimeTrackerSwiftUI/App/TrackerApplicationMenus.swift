@@ -22,12 +22,6 @@ struct TrackerApplicationMenus: Commands {
             }
             .keyboardShortcut("n")
             .disabled(!canCreateTask)
-
-            Button("New Window") {
-                installSceneOpener()
-                openWindow(id: TrackerSceneID.tracker, value: UUID())
-            }
-            .keyboardShortcut("n", modifiers: [.command, .shift])
         }
 
         CommandGroup(replacing: .appSettings) {
@@ -46,6 +40,6 @@ struct TrackerApplicationMenus: Commands {
 
     private func installSceneOpener() {
         let action = openWindow
-        runtime.installSceneOpener { action(id: TrackerSceneID.tracker, value: $0) }
+        runtime.installSceneOpener { action(id: TrackerSceneID.tracker) }
     }
 }

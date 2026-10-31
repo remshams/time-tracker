@@ -33,63 +33,34 @@ final class TrackerApplicationDelegate: NSObject, NSApplicationDelegate {
 final class TrackerAppRuntime {
     let store = TrackerStore()
     private lazy var statusItem = TrackerStatusItemController(store: store)
-    lazy var presentation = TrackerTaskPresentationCoordinator(
-        store: store,
-        presentingWindow: { [weak self] needsEditor in
-            guard let self else { return nil }
-            if needsEditor { return self.showTracker() }
-            guard !NSApplication.shared.isHidden else { return nil }
-            return self.windows.activePresentationWindowID
-        }
-    )
-    private var windows = TrackerWindowRoutingState()
-    private var openTracker: ((UUID) -> Void)?
-    private var deferredOpenID: UUID?
+    lazy var presentation = TrackerTaskPresentationCoordinator(store: store) { [weak self] in
+        self?.showTracker()
+    }
+    private var openTracker: (() -> Void)?
+    private var opensTrackerWhenOpenerArrives = false
     private var isRunning = false
 
     func start() {
         guard !isRunning else { return }
         isRunning = true
         presentation.start()
-        statusItem.start { [weak self] in _ = self?.showTracker() }
+        statusItem.start { [weak self] in self?.showTracker() }
     }
 
-    func installSceneOpener(_ openTracker: @escaping (UUID) -> Void) {
+    /// SwiftUI hands `openWindow` only to scene content and commands. They pass it here, so the Dock and
+    /// status menu, which are AppKit code, can open the tracker window too.
+    func installSceneOpener(_ openTracker: @escaping () -> Void) {
         self.openTracker = openTracker
         start()
-        if let id = deferredOpenID {
-            deferredOpenID = nil
-            openTracker(id)
+        if opensTrackerWhenOpenerArrives {
+            opensTrackerWhenOpenerArrives = false
+            openTracker()
         }
     }
 
-    func windowAppeared(_ id: UUID, phase: ScenePhase) {
-        windows.appeared(id, isActive: phase == .active)
-        presentation.windowAvailable()
-    }
-
-    func windowPhaseChanged(_ id: UUID, phase: ScenePhase) {
-        windows.setActive(id, isActive: phase == .active)
-        presentation.windowAvailable()
-    }
-
-    func windowDisappeared(_ id: UUID) {
-        windows.disappeared(id)
-        presentation.windowClosed(id)
-    }
-
-    func preferWindow(_ id: UUID) {
-        windows.prefer(id)
-    }
-
-    @discardableResult
-    func showTracker() -> UUID {
-        let request = windows.showTracker()
-        if request.shouldOpen {
-            if let openTracker { openTracker(request.id) } else { deferredOpenID = request.id }
-        }
+    /// Brings the tracker window to the front, restoring it if minimized, or opens it if it is closed.
+    func showTracker() {
+        if let openTracker { openTracker() } else { opensTrackerWhenOpenerArrives = true }
         NSApplication.shared.activate()
-        presentation.windowAvailable()
-        return request.id
     }
 }
