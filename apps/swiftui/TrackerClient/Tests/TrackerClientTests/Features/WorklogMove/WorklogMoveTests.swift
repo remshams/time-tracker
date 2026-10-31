@@ -427,7 +427,7 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertTrue(fixture.session.canOpenWorklogDeletion)
 
         fixture.session.openWorklogCorrection(worklogID: precise.id)
-        fixture.session.setWorklogCorrectionStart(try XCTUnwrap(timestamp("2024-12-30T08:00:00.000Z")))
+        fixture.session.setWorklogCorrectionStart(try XCTUnwrap(parseTimestamp("2024-12-30T08:00:00.000Z")))
         fixture.session.submitWorklogCorrection()
         let correction = try await fixture.client.next()
         XCTAssertEqual(

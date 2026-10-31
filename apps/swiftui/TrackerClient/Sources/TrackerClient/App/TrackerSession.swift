@@ -130,7 +130,7 @@ public final class TrackerSession {
     }
     public var timerDisplayText: String {
         guard connection.confirmed else { return "Unavailable" }
-        return elapsed.map(clockDuration) ?? "Idle"
+        return elapsed.map(formatClockDuration) ?? "Idle"
     }
     public var elapsed: TimeInterval? { tracking.elapsed(clock: clock) }
     public var dailyTotalsStatus: DailyTotalsStatus {
@@ -143,7 +143,7 @@ public final class TrackerSession {
         dailyTotals.totalDuration(active: active, clock: clock)
     }
     public var totalDailyDurationText: String {
-        totalDailyDuration.map(clockDuration) ?? "Unavailable"
+        totalDailyDuration.map(formatClockDuration) ?? "Unavailable"
     }
     public var dailyTotalsExplanation: String {
         switch dailyTotalsStatus {
@@ -159,7 +159,7 @@ public final class TrackerSession {
         dailyTotals.duration(taskID: taskID, active: active, clock: clock)
     }
     public func dailyDurationText(taskID: String) -> String {
-        dailyDuration(taskID: taskID).map(clockDuration) ?? "Unavailable"
+        dailyDuration(taskID: taskID).map(formatClockDuration) ?? "Unavailable"
     }
 
     public func start() {
@@ -223,15 +223,15 @@ public final class TrackerSession {
 
     public func openBulkTaskArchiving() {
         guard canOpenBulkTaskArchiving else { return }
-        loadBulkArchivePreview(bulkArchiving.open(asOf: commandTimestamp(clock.now)))
+        loadBulkArchivePreview(bulkArchiving.open(asOf: formatTimestamp(clock.now)))
         publish()
     }
     public func updateBulkArchiveDays(_ text: String) {
-        loadBulkArchivePreview(bulkArchiving.updateDays(text, asOf: commandTimestamp(clock.now)))
+        loadBulkArchivePreview(bulkArchiving.updateDays(text, asOf: formatTimestamp(clock.now)))
         publish()
     }
     public func refreshBulkArchivePreview() {
-        loadBulkArchivePreview(bulkArchiving.requestPreview(asOf: commandTimestamp(clock.now)))
+        loadBulkArchivePreview(bulkArchiving.requestPreview(asOf: formatTimestamp(clock.now)))
         publish()
     }
     public func cancelBulkTaskArchiving() {
@@ -284,7 +284,7 @@ public final class TrackerSession {
 
     public func submitTaskArchiving() {
         guard let request = archiving.submit() else { return }
-        let occurredAt = commandTimestamp(clock.now)
+        let occurredAt = formatTimestamp(clock.now)
         publish()
         Task { [weak self] in
             guard let self else { return }
@@ -328,7 +328,7 @@ public final class TrackerSession {
             publish()
             return
         }
-        let occurredAt = commandTimestamp(clock.now)
+        let occurredAt = formatTimestamp(clock.now)
         publish()
         Task { [weak self] in
             guard let self else { return }
@@ -365,7 +365,7 @@ public final class TrackerSession {
             publish()
             return
         }
-        let occurredAt = commandTimestamp(clock.now)
+        let occurredAt = formatTimestamp(clock.now)
         publish()
         Task { [weak self] in
             guard let self else { return }
@@ -570,7 +570,7 @@ public final class TrackerSession {
     public func startTracking(taskID: String) {
         guard canStartTracking(taskID: taskID) else { return }
         let expectedActiveID = active?.id
-        let occurredAt = commandTimestamp(clock.now)
+        let occurredAt = formatTimestamp(clock.now)
         sendTracking { client in
             _ = try await client.startTracking(
                 taskID: taskID, expectedActiveID: expectedActiveID, occurredAt: occurredAt)
@@ -579,7 +579,7 @@ public final class TrackerSession {
 
     public func stopTracking(worklogID: String) {
         guard canStopTracking, active?.id == worklogID else { return }
-        let occurredAt = commandTimestamp(clock.now)
+        let occurredAt = formatTimestamp(clock.now)
         sendTracking { client in
             _ = try await client.stopTracking(worklogID: worklogID, occurredAt: occurredAt)
         }
@@ -619,7 +619,7 @@ public final class TrackerSession {
     private func pauseTracking(at date: Date) {
         guard let worklog = active, automation.beginPause() else { return }
         tracking.error = nil
-        let occurredAt = commandTimestamp(date)
+        let occurredAt = formatTimestamp(date)
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -640,7 +640,7 @@ public final class TrackerSession {
         tracking.error = nil
         do {
             _ = try await client.resumeTracking(
-                taskID: resume.taskID, occurredAt: commandTimestamp(resume.date))
+                taskID: resume.taskID, occurredAt: formatTimestamp(resume.date))
         } catch {
             recordTrackingFailure(error)
         }

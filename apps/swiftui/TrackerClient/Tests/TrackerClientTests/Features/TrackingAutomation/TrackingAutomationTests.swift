@@ -20,7 +20,7 @@ final class TrackingAutomationTests: XCTestCase {
             pause.operation,
             .pause(
                 worklog: activeWorklog.id,
-                at: commandTimestamp(date ?? fixture.clock.now)))
+                at: formatTimestamp(date ?? fixture.clock.now)))
         pause.paused(idle)
         try await finishHistory(fixture)
         try await fixture.settled()
@@ -55,7 +55,7 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.session.screenUnlocked(at: unlock)
         fixture.clock.now.addTimeInterval(10)
         let resume = try await fixture.client.next()
-        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: commandTimestamp(unlock)))
+        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: formatTimestamp(unlock)))
         resume.succeed(running)
         try await finishHistory(fixture)
         try await fixture.settled()
@@ -85,7 +85,7 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.clock.now.addTimeInterval(30)
         pause.paused(idle)
         let resume = try await fixture.client.next()
-        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: commandTimestamp(unlockedAt)))
+        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: formatTimestamp(unlockedAt)))
         resume.succeed(running)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.active, activeWorklog)
@@ -152,7 +152,7 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.session.screenUnlocked(at: fixture.clock.now)
         fixture.session.stopTracking(worklogID: activeWorklog.id)
         let stop = try await fixture.client.next()
-        XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: commandTimestamp(fixture.clock.now)))
+        XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: formatTimestamp(fixture.clock.now)))
         pause.paused(idle)
         try await finishHistory(fixture)
         stop.succeed(idle)
@@ -199,7 +199,7 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.session.screenLocked(at: lock)
         let later = WorklogItem(
             id: "later-worklog", taskId: firstTask.id,
-            start: commandTimestamp(lock.addingTimeInterval(1)), end: nil)
+            start: formatTimestamp(lock.addingTimeInterval(1)), end: nil)
         taskListRequest.succeed(TaskListResources(tasks: idle.catalog.value, active: later))
         try await finishHistory(fixture)
         try await fixture.settled()
@@ -253,7 +253,7 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.clock.now.addTimeInterval(10)
         fixture.session.setPauseOnScreenLock(true)
         let pause = try await fixture.client.next()
-        XCTAssertEqual(pause.operation, .pause(worklog: activeWorklog.id, at: commandTimestamp(fixture.clock.now)))
+        XCTAssertEqual(pause.operation, .pause(worklog: activeWorklog.id, at: formatTimestamp(fixture.clock.now)))
         pause.paused(idle)
         try await finishHistory(fixture)
         try await fixture.settled()
@@ -352,7 +352,7 @@ final class TrackingAutomationTests: XCTestCase {
         let start = try await fixture.client.next()
         let started = WorklogItem(
             id: "manual-worklog", taskId: secondTask.id,
-            start: commandTimestamp(fixture.clock.now), end: nil)
+            start: formatTimestamp(fixture.clock.now), end: nil)
         start.succeed(TaskListResources(tasks: idle.catalog.value, active: started))
         try await fixture.settled()
         fixture.session.screenUnlocked(at: fixture.clock.now)
@@ -405,7 +405,7 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.session.screenLocked(at: lock)
         fixture.session.screenLocked(at: lock.addingTimeInterval(1))
         let pause = try await fixture.client.next()
-        XCTAssertEqual(pause.operation, .pause(worklog: activeWorklog.id, at: commandTimestamp(lock)))
+        XCTAssertEqual(pause.operation, .pause(worklog: activeWorklog.id, at: formatTimestamp(lock)))
         pause.paused(idle)
         try await finishHistory(fixture)
         try await fixture.settled()
@@ -413,7 +413,7 @@ final class TrackingAutomationTests: XCTestCase {
         fixture.session.screenUnlocked(at: unlock)
         fixture.session.screenUnlocked(at: unlock.addingTimeInterval(1))
         let resume = try await fixture.client.next()
-        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: commandTimestamp(unlock)))
+        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: formatTimestamp(unlock)))
         resume.succeed(running)
         try await finishHistory(fixture)
         try await fixture.settled()
@@ -437,7 +437,7 @@ final class TrackingAutomationTests: XCTestCase {
         let unlock = fixture.clock.now
         fixture.session.screenUnlocked(at: unlock)
         let resume = try await fixture.client.next()
-        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: commandTimestamp(unlock)))
+        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: formatTimestamp(unlock)))
         resume.succeed(running)
         try await finishHistory(fixture)
         try await fixture.settled()

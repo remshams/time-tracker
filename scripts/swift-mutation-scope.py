@@ -42,6 +42,7 @@ CORRECTION = "Features/WorklogCorrection/WorklogCorrectionState.swift"
 MOVE = "Features/WorklogMove/WorklogMoveState.swift"
 DELETION = "Features/WorklogDeletion/WorklogDeletionState.swift"
 INDICATOR = "Features/TaskIndicators/TaskIndicator.swift"
+TIME_FORMATTING = "Shared/TimeFormatting.swift"
 
 # Map each suite's assertions to complete files, including its session coordinator.
 # Update this map when a suite gains assertions about another production component.
@@ -58,7 +59,7 @@ TEST_PRODUCTION = {
         SESSION, PRESENTATION, TRACKING, CATALOG, TOTALS, CREATION, AUTOMATION, CONNECTION,
     ],
     "App/RefreshPresentationTests.swift": [SESSION, PRESENTATION, TRACKING, CATALOG, TOTALS, MODELS, CONNECTION],
-    "Contracts/ModelsTests.swift": [MODELS, DEPENDENCIES, TRACKING],
+    "Contracts/ModelsTests.swift": [MODELS, DEPENDENCIES, TIME_FORMATTING],
     "Features/BulkTaskArchiving/BulkTaskArchivingTests.swift": [
         SESSION, PRESENTATION, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION, CREATION, RENAME,
         ARCHIVING, CORRECTION, MOVE,
@@ -130,6 +131,7 @@ TEST_PRODUCTION = {
         SESSION, PRESENTATION, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION, RENAME,
         CORRECTION, ARCHIVING,
     ],
+    "Shared/TimeFormattingTests.swift": [TIME_FORMATTING],
     "Support/FixtureCleanupTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, CONNECTION],
 }
 

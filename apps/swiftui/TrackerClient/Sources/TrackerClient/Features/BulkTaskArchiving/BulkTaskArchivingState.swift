@@ -70,8 +70,8 @@ final class BulkTaskArchivingState {
     func matches(_ search: Search) -> Bool { isPresented && generation == search.generation }
     func accept(_ value: InactiveTaskPreview, search: Search) throws {
         guard matches(search) else { return }
-        guard value.inactiveDays == search.days, timestamp(value.asOf) == timestamp(search.asOf),
-            timestamp(value.asOf) != nil,
+        guard value.inactiveDays == search.days, parseTimestamp(value.asOf) == parseTimestamp(search.asOf),
+            parseTimestamp(value.asOf) != nil,
             Set(value.tasks.map(\.id)).count == value.tasks.count,
             value.tasks.allSatisfy({ !$0.archived })
         else {

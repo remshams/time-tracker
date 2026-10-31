@@ -10,7 +10,7 @@ struct WorklogRow: View {
     let deletion: WorklogDeletionStore
 
     private var duration: TimeInterval {
-        guard let start = timestamp(worklog.start), let end = timestamp(worklog.end) else { return 0 }
+        guard let start = parseTimestamp(worklog.start), let end = parseTimestamp(worklog.end) else { return 0 }
         return max(0, end.timeIntervalSince(start))
     }
 
@@ -29,7 +29,7 @@ struct WorklogRow: View {
                 if active?.id == worklog.id {
                     TrackerElapsedText(store: store)
                 } else {
-                    Text(clockDuration(duration))
+                    Text(formatClockDuration(duration))
                 }
             }
             .font(.system(.title3, design: .monospaced).weight(.medium))

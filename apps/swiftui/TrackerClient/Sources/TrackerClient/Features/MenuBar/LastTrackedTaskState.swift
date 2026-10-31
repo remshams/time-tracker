@@ -28,7 +28,7 @@ final class LastTrackedTaskState {
         let key = settings.trackingIdentityKey
         let stored = remembered[key] ?? repository?.load(for: settings)
         let latest = resources.catalog.value.compactMap { task -> (String, Date)? in
-            guard let start = timestamp(task.latestStart) else { return nil }
+            guard let start = parseTimestamp(task.latestStart) else { return nil }
             return (task.id, start)
         }.max(by: lessRecent)
         let idleTaskID: String?
@@ -66,7 +66,7 @@ final class LastTrackedTaskState {
     }
 
     private func isNewer(_ latest: Date, than previous: TaskItem) -> Bool {
-        guard let previousStart = timestamp(previous.latestStart) else { return true }
+        guard let previousStart = parseTimestamp(previous.latestStart) else { return true }
         return latest > previousStart
     }
 }

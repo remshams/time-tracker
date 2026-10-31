@@ -60,7 +60,7 @@ private struct WorklogDeletionSummary: View {
     let worklog: WorklogItem
 
     private var duration: TimeInterval {
-        guard let start = timestamp(worklog.start), let end = timestamp(worklog.end) else { return 0 }
+        guard let start = parseTimestamp(worklog.start), let end = parseTimestamp(worklog.end) else { return 0 }
         return max(0, end.timeIntervalSince(start))
     }
 
@@ -73,10 +73,10 @@ private struct WorklogDeletionSummary: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
-            Text(clockDuration(duration))
+            Text(formatClockDuration(duration))
                 .font(.system(.title3, design: .monospaced).weight(.medium))
                 .monospacedDigit()
-                .accessibilityLabel("Duration \(clockDuration(duration))")
+                .accessibilityLabel("Duration \(formatClockDuration(duration))")
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("worklog-deletion.summary")

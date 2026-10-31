@@ -241,7 +241,7 @@ final class PresentationTests: XCTestCase {
         fixture.session.screenUnlocked(at: fixture.clock.now)
         XCTAssertNil(harness.presentation.autoPauseStatusText, "Unlocking must clear the status before the resume.")
         let resume = try await fixture.client.next()
-        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: commandTimestamp(fixture.clock.now)))
+        XCTAssertEqual(resume.operation, .resume(task: firstTask.id, at: formatTimestamp(fixture.clock.now)))
         resume.succeed(running)
         try await fixture.client.next().succeed(emptyPage)
         try await harness.settled(fixture)
@@ -267,7 +267,7 @@ final class PresentationTests: XCTestCase {
         let session = fixture.session
         let second = WorklogMoveCandidate(id: secondTask.id, name: secondTask.name)
         let third = WorklogMoveCandidate(id: "task-three", name: "Third task")
-        let correctedEnd = try XCTUnwrap(timestamp("2024-12-30T10:30:00.000Z"))
+        let correctedEnd = try XCTUnwrap(parseTimestamp("2024-12-30T10:30:00.000Z"))
         let preview: @MainActor (FakeClient.Request) -> Void = { request in
             guard case .inactivePreview(let days, let at) = request.operation else {
                 return XCTFail("Expected an inactive task preview, got \(request.operation).")

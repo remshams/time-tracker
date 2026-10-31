@@ -20,7 +20,7 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(tasks.value.first?.latestStart, tracking.value?.start)
         XCTAssertEqual(tracking.value?.taskId, "task-one")
         XCTAssertNil(tracking.value?.end)
-        let instant = try XCTUnwrap(timestamp(tracking.value?.start))
+        let instant = try XCTUnwrap(parseTimestamp(tracking.value?.start))
         XCTAssertEqual(instant.timeIntervalSince1970, 1_735_689_570.123456, accuracy: 0.001)
     }
 
@@ -63,15 +63,5 @@ final class ModelsTests: XCTestCase {
             XCTAssertThrowsError(try JSONDecoder().decode(TrackingObservation.self, from: Data(json.utf8)))
         }
         XCTAssertThrowsError(try JSONDecoder().decode(TaskCatalogObservation.self, from: Data(#"{}"#.utf8)))
-    }
-
-    func testTimestampRejectsMissingOrInvalidInput() async {
-        XCTAssertNil(timestamp(nil))
-        XCTAssertNil(timestamp("Invalid timestamp"))
-    }
-
-    func testDurationClampsNegativeValuesAndKeepsHoursBeyondOneDay() async {
-        XCTAssertEqual(clockDuration(-1), "00:00:00")
-        XCTAssertEqual(clockDuration(90_061), "25:01:01")
     }
 }

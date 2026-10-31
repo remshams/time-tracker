@@ -9,7 +9,7 @@ private func dailyCalendar(_ zone: String = "UTC") -> Calendar {
 }
 
 @MainActor
-private func dailyDate(_ value: String) -> Date { timestamp(value)! }
+private func dailyDate(_ value: String) -> Date { parseTimestamp(value)! }
 
 private func total(_ task: TaskItem, _ seconds: Int64) -> TaskReportTotal {
     TaskReportTotal(taskId: task.id, durationMicroseconds: seconds * 1_000_000)
@@ -242,7 +242,7 @@ final class DailyTotalsTests: XCTestCase {
         let state = DailyTotalsState(calendar: dailyCalendar())
         let requested = try XCTUnwrap(state.begin(clock: clock))
         let resources = TaskListResources(tasks: [], active: activeWorklog)
-        let cutoff = commandTimestamp(clock.now.addingTimeInterval(2))
+        let cutoff = formatTimestamp(clock.now.addingTimeInterval(2))
         let report = TaskListTotalsRefresh(taskList: resources, rows: [total(firstTask, 5)], now: cutoff)
         try state.validate(report)
         state.accept(report, requested: requested, clock: clock)
