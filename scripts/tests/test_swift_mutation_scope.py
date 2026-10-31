@@ -121,7 +121,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.assertIn(scope.SOURCES + scope.SESSION, result["files"])
         self.assertIn(scope.SOURCES + scope.PRESENTATION, result["files"])
         self.assertIn(scope.SOURCES + scope.TIMESTAMP, result["files"])
-        self.assertNotIn(scope.SOURCES + "Features/WindowRouting/TrackerWindowRoutingState.swift", result["files"])
+        self.assertNotIn(scope.SOURCES + scope.INDICATOR, result["files"])
 
     def test_shared_production_source_still_selects_its_entire_file(self):
         name = scope.SOURCES + scope.MODELS
@@ -141,7 +141,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         for source in ["Features/TaskArchiving/TaskArchivingState.swift", "Features/TaskCatalog/TaskCatalogState.swift",
                        "Features/WorklogHistory/WorklogHistoryState.swift", "Features/Tracking/TrackingState.swift"]:
             self.assertIn(scope.SOURCES + source, result["files"])
-        self.assertNotIn(scope.SOURCES + "Features/WindowRouting/TrackerWindowRoutingState.swift", result["files"])
+        self.assertNotIn(scope.SOURCES + scope.INDICATOR, result["files"])
 
     def test_rename_suite_selects_the_creation_and_automation_interactions_it_asserts(self):
         test = scope.TESTS + "Features/TaskRename/TaskRenameTests.swift"
@@ -411,6 +411,48 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "review-required")
         self.assertEqual(result["files"], [CATALOG])
+
+    def reviewed_deletions(self):
+        retired_source = scope.SOURCES + "Features/Retired/RetiredState.swift"
+        retired_suite = scope.TESTS + "Features/Retired/RetiredTests.swift"
+        deletion = mock.patch.object(scope, "REVIEWED_DELETIONS", frozenset({retired_source, retired_suite}))
+        deletion.start()
+        self.addCleanup(deletion.stop)
+        self.write(scope.PACKAGE + retired_source, "struct RetiredState {}\n")
+        self.write(scope.PACKAGE + retired_suite, "func testRetired() {}\n")
+        self.base = self.commit("Add the retired files")
+        return retired_source, retired_suite
+
+    def test_reviewed_deletion_without_successor_needs_no_review(self):
+        retired_source, retired_suite = self.reviewed_deletions()
+        self.git("rm", "-q", scope.PACKAGE + retired_source, scope.PACKAGE + retired_suite)
+        self.write(scope.PACKAGE + CATALOG, "func updatedCatalog() {}\n")
+        self.commit("Remove the retired files")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "focused", result["review_reasons"])
+        self.assertEqual(result["files"], [CATALOG])
+        self.assertIn(f"Reviewed deletion without a successor: {scope.PACKAGE + retired_source}", result["reasons"])
+        self.assertIn(f"Reviewed deletion without a successor: {scope.PACKAGE + retired_suite}", result["reasons"])
+
+    def test_reviewed_deletion_does_not_cover_edits_or_other_deletions(self):
+        retired_source, _ = self.reviewed_deletions()
+        self.write(scope.PACKAGE + retired_source, "struct RetiredState { var value = 0 }\n")
+        self.git("rm", "-q", scope.PACKAGE + TRACKING)
+        self.commit("Edit a reviewed file and delete an unreviewed one")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "review-required")
+        self.assertIn(retired_source, result["files"])
+        self.assertTrue(any(TRACKING in reason for reason in result["review_reasons"]))
+
+    def test_reviewed_deletions_name_files_main_no_longer_needs(self):
+        for name in scope.REVIEWED_DELETIONS:
+            self.assertTrue(name.startswith((scope.SOURCES, scope.TESTS)), name)
+            self.assertFalse((scope.ROOT / scope.PACKAGE / name).exists(), name)
+            self.assertNotIn(name.removeprefix(scope.TESTS), scope.TEST_PRODUCTION)
 
     def test_source_moved_out_of_the_package_requires_review(self):
         self.git("mv", scope.PACKAGE + TRACKING, "native-tracking.swift")

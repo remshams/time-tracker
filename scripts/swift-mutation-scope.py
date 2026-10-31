@@ -126,7 +126,6 @@ TEST_PRODUCTION = {
     "Features/TrackingAutomation/TrackingAutomationTests.swift": [
         SESSION, AUTOMATION, TRACKING, TIME_FORMATTING, CATALOG, CONNECTION, HISTORY, CREATION,
     ],
-    "Features/WindowRouting/WindowRoutingTests.swift": ["Features/WindowRouting/TrackerWindowRoutingState.swift"],
     "Features/WorklogCorrection/WorklogCorrectionTests.swift": [
         SESSION, PRESENTATION, CORRECTION, TIMESTAMP, TRACKING, TIME_FORMATTING, HISTORY, CATALOG, CONNECTION,
         CREATION, RENAME,
@@ -162,6 +161,13 @@ SUPPORT_PRODUCTION = {
 # deleted file's role. Remove the entry once its PR has merged, since main no
 # longer has the deleted file.
 REVIEWED_REPLACEMENTS: dict[str, str] = {}
+# A PR that deletes a production file or test suite without a successor can list its
+# package-relative path here after review, so the deletion selects no mutants. Remove the
+# entry once its PR has merged, since main no longer has the file.
+REVIEWED_DELETIONS: frozenset[str] = frozenset({
+    SOURCES + "Features/WindowRouting/TrackerWindowRoutingState.swift",
+    TESTS + "Features/WindowRouting/WindowRoutingTests.swift",
+})
 # A PR that edits the package manifest can add a reviewed entry here: (reason,
 # exact text edits, production files whose behavior depends on the edit). Remove
 # the entry once its PR has merged, since its base text no longer matches main.
@@ -312,6 +318,9 @@ def select_scope(root: Path, base: str, head: str) -> dict:
 
     added = {entry["path"] for entry in entries if entry["status"] == "A" or entry["status"].startswith("R")}
     for entry in entries:
+        if entry["status"] == "D" and entry["path"].removeprefix(PACKAGE) in REVIEWED_DELETIONS:
+            reasons.append(f"Reviewed deletion without a successor: {entry['path']}")
+            continue
         successor = REVIEWED_REPLACEMENTS.get(entry["path"].removeprefix(PACKAGE))
         if entry["status"] == "D" and successor and PACKAGE + successor in added:
             reasons.append(f"Reviewed replacement by {PACKAGE + successor}: {entry['path']}")
