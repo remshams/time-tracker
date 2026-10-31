@@ -1,19 +1,19 @@
 import Foundation
 
+// Default main-actor isolation makes this formatter main-actor only, so its mutable state needs no lock.
 private let isoFormatter: ISO8601DateFormatter = {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter
 }()
-private let isoFormatterLock = NSLock()
 
 public func timestamp(_ value: String?) -> Date? {
     guard let value else { return nil }
-    return isoFormatterLock.withLock { isoFormatter.date(from: value) }
+    return isoFormatter.date(from: value)
 }
 
 func commandTimestamp(_ date: Date) -> String {
-    isoFormatterLock.withLock { isoFormatter.string(from: date) }
+    isoFormatter.string(from: date)
 }
 
 public func clockDuration(_ seconds: TimeInterval) -> String {
