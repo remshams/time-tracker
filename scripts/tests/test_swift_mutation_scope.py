@@ -20,6 +20,7 @@ SPEC.loader.exec_module(scope)
 
 TRACKING = scope.SOURCES + scope.TRACKING
 CATALOG = scope.SOURCES + scope.CATALOG
+TIME_FORMATTING = scope.SOURCES + scope.TIME_FORMATTING
 TRACKING_TEST = scope.TESTS + "Features/Tracking/TrackingStateTests.swift"
 
 
@@ -89,7 +90,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         result = self.select()
 
         self.assertEqual(result["status"], "focused")
-        self.assertEqual(result["files"], [TRACKING])
+        self.assertEqual(result["files"], [TRACKING, TIME_FORMATTING])
 
     def test_updated_suite_mappings_include_cross_feature_commands_and_cleanup(self):
         cases = {
@@ -225,7 +226,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         result = self.select()
 
         self.assertEqual(result["status"], "focused", result["review_reasons"])
-        self.assertEqual(result["files"], [scope.SOURCES + scope.DEPENDENCIES, TRACKING])
+        self.assertEqual(result["files"], [scope.SOURCES + scope.DEPENDENCIES, TRACKING, TIME_FORMATTING])
         self.assertTrue(any("Reviewed blob adaptation" in reason for reason in result["reasons"]))
 
     def test_reviewed_support_adaptation_rejects_other_edits(self):
@@ -259,7 +260,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         result = self.select()
 
         self.assertEqual(result["status"], "focused", result["review_reasons"])
-        self.assertEqual(result["files"], [TRACKING])
+        self.assertEqual(result["files"], [TRACKING, TIME_FORMATTING])
         self.assertTrue(any("Reviewed fixture-only adaptation" in reason for reason in result["reasons"]))
 
         self.write(contract, "protocol TrackerClient { func track() }\n")
@@ -398,7 +399,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         result = self.select()
 
         self.assertEqual(result["status"], "focused")
-        self.assertEqual(result["files"], [renamed])
+        self.assertEqual(result["files"], [renamed, TIME_FORMATTING])
         self.assertEqual(result["changes"][0]["status"], "R100")
 
     def test_deleted_source_requires_review_and_keeps_other_changed_files(self):
@@ -436,7 +437,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.git("rm", scope.PACKAGE + TRACKING_TEST)
         self.commit("Remove tracking assertion")
 
-        self.assertEqual(self.select()["files"], [TRACKING])
+        self.assertEqual(self.select()["files"], [TRACKING, TIME_FORMATTING])
 
     def test_stale_test_mapping_requires_review(self):
         self.git("rm", scope.PACKAGE + TRACKING)

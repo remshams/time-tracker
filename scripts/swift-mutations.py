@@ -196,6 +196,16 @@ def run(arguments: list[str], package: Path, log, *, check: bool = True, timeout
     return status
 
 
+NO_MUTABLE_CODE = "Muter wasn't able to discover any code it could mutation test."
+
+
+def found_no_mutable_code(log: Path) -> bool:
+    try:
+        return NO_MUTABLE_CODE in log.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return False
+
+
 def collect(swift: str, muter: str, selected: list[str] | None = None, *, timeout: float = 1800,
             test_workers: int = 4) -> dict:
     OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -241,6 +251,15 @@ def collect(swift: str, muter: str, selected: list[str] | None = None, *, timeou
                 status = run(command, package, log, check=False, timeout=timeout)
         finally:
             preserve_test_logs(package, logs_path)
+        if selected is not None and not report_path.exists() and found_no_mutable_code(OUTPUT / "run.log"):
+            # A focused run can select only files without comparisons, logic or void calls. Full runs still fail.
+            summary = {"scope": "focused", "files": sorted(relative_files), "total_mutants": 0,
+                       "killed_mutants": 0, "reported_killed_mutants": 0,
+                       "outcomes": {outcome: 0 for outcome in sorted(OUTCOMES)}, "unresolved_mutants": []}
+            summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+            print("Swift mutations (focused): the selected files contain no code Muter can mutate")
+            print(f"Reports: {OUTPUT}")
+            return summary
         try:
             report = json.loads(report_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:

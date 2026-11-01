@@ -204,6 +204,43 @@ class SwiftMutationTests(unittest.TestCase):
             with self.assertRaisesRegex(mutations.MutationError, "valid report"):
                 mutations.collect("swift", "muter")
 
+    def run_muter_without_report(self, selected: list[str] | None, muter_output: str) -> dict:
+        self.output.mkdir(exist_ok=True)
+        (self.output / "report.json").write_text(json.dumps(self.report()), encoding="utf-8")
+
+        def fake_run(arguments, package, log, **kwargs):
+            if arguments[0] == "muter":
+                log.write(muter_output)
+                return 1
+            return 0
+
+        with patch.object(mutations, "PACKAGE", self.package), patch.object(mutations, "OUTPUT", self.output), \
+                patch.object(mutations, "executable", side_effect=lambda command: command), \
+                patch.object(mutations, "run", side_effect=fake_run):
+            return mutations.collect("swift", "muter", selected)
+
+    def test_focused_run_without_mutable_code_passes_with_zero_mutants(self) -> None:
+        summary = self.run_muter_without_report(
+            ["Sources/TrackerClient/Session.swift"], "Analyzing\n" + mutations.NO_MUTABLE_CODE + "\n")
+        self.assertEqual(summary["scope"], "focused")
+        self.assertEqual(summary["files"], ["Sources/TrackerClient/Session.swift"])
+        self.assertEqual((summary["total_mutants"], summary["killed_mutants"]), (0, 0))
+        self.assertEqual(summary["unresolved_mutants"], [])
+        self.assertFalse((self.output / "report.json").exists())
+        written = json.loads((self.output / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(written, summary)
+
+    def test_full_package_run_without_mutable_code_still_fails(self) -> None:
+        with self.assertRaisesRegex(mutations.MutationError, "valid report"):
+            self.run_muter_without_report(None, mutations.NO_MUTABLE_CODE + "\n")
+        self.assertFalse((self.output / "summary.json").exists())
+
+    def test_focused_run_without_report_or_no_code_message_fails(self) -> None:
+        with self.assertRaisesRegex(mutations.MutationError, "valid report"):
+            self.run_muter_without_report(
+                ["Sources/TrackerClient/Session.swift"], "Muter crashed. " + mutations.NO_MUTABLE_CODE + "\n")
+        self.assertFalse((self.output / "summary.json").exists())
+
     def test_baseline_abort_preserves_current_logs_and_removes_old_logs(self) -> None:
         old_log = self.output / "test-logs/old.log"
         old_log.parent.mkdir(parents=True)
