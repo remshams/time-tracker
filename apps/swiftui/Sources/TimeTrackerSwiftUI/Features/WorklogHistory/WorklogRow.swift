@@ -9,10 +9,7 @@ struct WorklogRow: View {
     let move: WorklogMoveStore
     let deletion: WorklogDeletionStore
 
-    private var duration: TimeInterval {
-        guard let start = parseTimestamp(worklog.start), let end = parseTimestamp(worklog.end) else { return 0 }
-        return max(0, end.timeIntervalSince(start))
-    }
+    private var duration: TimeInterval { worklogDuration(worklog) }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
