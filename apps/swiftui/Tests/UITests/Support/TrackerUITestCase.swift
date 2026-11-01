@@ -145,3 +145,14 @@ class TrackerUITestCase: XCTestCase {
         add(attachment)
     }
 }
+
+@MainActor
+extension TrackerUITestCase {
+    var trackerWindow: XCUIElement { app.windows.containing(.button, identifier: "bulk-archive.open").firstMatch }
+
+    func showTrackerViaShortcut() {
+        app.activate()
+        app.typeKey("0", modifierFlags: .command)
+        XCTAssertTrue(trackerWindow.waitForExistence(timeout: timeout))
+    }
+}

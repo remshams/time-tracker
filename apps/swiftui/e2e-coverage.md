@@ -4,7 +4,7 @@ The suite drives the shipped macOS application through XCUITest and the producti
 
 ## Test layout
 
-Native suites follow the application's `App`, `Features`, and `Infrastructure` folders. Feature-specific UI helpers live beside their suites, including creation, renaming, worklog editing, menu actions, and connection settings. Window helpers live in `App`; lifecycle suites live in `Infrastructure/MacLifecycle`.
+Native suites follow the application's `App`, `Features`, and `Infrastructure` folders. Feature-specific UI helpers live beside their suites, including creation, renaming, worklog editing, menu actions, and connection settings. The tracker window helpers live in `Support`; lifecycle suites live in `Infrastructure/MacLifecycle`.
 
 `Support` owns the shared test base, database fixtures, process management, proxy controls, and assertions used across features. Local and server variants remain together, and the four CI groups select the same test classes independently of their file paths. Portable `TrackerClientTests` follow that package's `App`, `Contracts`, and `Features` folders, with shared fakes in `Support`.
 
@@ -32,7 +32,7 @@ The CI workflow has an opt-in `native_benchmark` dispatch. Supply the full SHA o
 | 1 | `core` | Smoke, catalog, creation, tracking, history, daily totals, worklog move, and their server variants |
 | 2 | `editing` | Rename, individual archive, existing and extended bulk archive, worklog correction and deletion, and server variants |
 | 3 | `server` | Connection, outages, concurrency, pagination races, unconfirmed-write reporting, rejected tracking conflicts, settings, per-source remembered tasks, and appearance |
-| 4 | `mac` | Menu actions, clipboard, shortcuts, window routing, and lifecycle; the menu bar and lifecycle suites have server variants; this group's job also runs the Swift package and Rust workspace tests, the universal Release build, and the layout check |
+| 4 | `mac` | Menu actions, clipboard, shortcuts, and lifecycle; the menu bar and lifecycle suites have server variants; this group's job also runs the Swift package and Rust workspace tests, the universal Release build, and the layout check |
 
 ## Fixtures and failure evidence
 
@@ -68,7 +68,7 @@ Paths below are relative to this directory. Local feature suites also have real-
 | 16 | Menu tracking, primary clicks, remembered task per source, saved task order | `MenuBarUITests`, `ServerMenuBarUITests`, and `MenuSourceUITests` in the same file |
 | 17 | Clipboard, zero/archived/cached values, menu identity during refresh and ticks | [MenuBarUITests](Tests/UITests/Features/MenuBar/MenuBarUITests.swift) |
 | 18 | Saved toggles, shortcut recording/cancellation/defaults, registration conflict | [SettingsUITests](Tests/UITests/Features/Connection/SettingsUITests.swift) |
-| 19 | Windows, one owner window for editor sheets, editor actions disabled in other windows while that sheet is open, tracking from another window, reopening, quit with running timer | [WindowRoutingUITests](Tests/UITests/App/WindowRoutingUITests.swift) |
+| 19 | Quit with a running timer and relaunch. The single tracker window has no dedicated test; reopening it after closing runs in `ServerLifecycleUITests` | [TrackingUITests](Tests/UITests/Features/Tracking/TrackingUITests.swift) |
 | 20 | Daily totals against CLI reports, overnight/live totals, source clearing | [DailyTotalsUITests](Tests/UITests/Features/DailyTotals/DailyTotalsUITests.swift), [ConnectionUITests](Tests/UITests/Features/Connection/ConnectionUITests.swift) |
 | 21 | Visibility, controlled lock/unlock/sleep/wake, display ticks without requests | [LifecycleUITests](Tests/UITests/Infrastructure/MacLifecycle/LifecycleUITests.swift); real-event checks below remain open |
 | 22 | Light/Dark identity, size, sidebar, text status, task color identity | [AppearanceUITests](Tests/UITests/App/AppearanceUITests.swift); platform checks below remain open |
