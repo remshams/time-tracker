@@ -164,10 +164,7 @@ REVIEWED_REPLACEMENTS: dict[str, str] = {}
 # A PR that deletes a production file or test suite without a successor can list its
 # package-relative path here after review, so the deletion selects no mutants. Remove the
 # entry once its PR has merged, since main no longer has the file.
-REVIEWED_DELETIONS: frozenset[str] = frozenset({
-    SOURCES + "Features/WindowRouting/TrackerWindowRoutingState.swift",
-    TESTS + "Features/WindowRouting/WindowRoutingTests.swift",
-})
+REVIEWED_DELETIONS: frozenset[str] = frozenset()
 # A PR that edits the package manifest can add a reviewed entry here: (reason,
 # exact text edits, production files whose behavior depends on the edit). Remove
 # the entry once its PR has merged, since its base text no longer matches main.
