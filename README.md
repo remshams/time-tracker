@@ -136,9 +136,7 @@ Ctrl+C quits from every mode.
 
 ## Architecture
 
-Start with the [architecture index](docs/architecture/README.md) for the [architecture and application primitives](docs/architecture/architecture.md) and their [visual guide](docs/architecture/architecture.html).
-
-Open [the architecture diagrams](docs/architecture/diagrams.html) in a browser for the system overview, Rust crate dependencies, Swift and AppKit structure, and Swift-to-Rust bridge call paths. The HTML works offline and includes the recorded CRAP and mutation annotations. Its date and source revision identify the snapshot it describes.
+Start with the [architecture document](docs/architecture/architecture.md) for the system context, processes, module dependencies, runtime flows and the domain language. Open [architecture.html](docs/architecture/architecture.html) in a browser for the same content with rendered diagrams. The [method-level diagrams](docs/architecture/diagrams.html) cover client state ownership and the Swift-to-Rust bridge call paths.
 
 The workspace has eleven packages:
 
