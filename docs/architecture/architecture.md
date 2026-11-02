@@ -42,8 +42,8 @@ of the clients and the Swift-to-Rust bridge are in [diagrams.html](diagrams.html
   rechecks eligibility in one transaction
   ([ADR 0016](adr/0016-configurable-inactive-task-archiving.md)).
 - **Reviewed values**: the values a user saw before a write, such as a task name
-  or the active worklog. Writes carry them, and storage rejects the write when the
-  stored values differ
+  or the active worklog. Guarded writes carry them, and storage rejects the write
+  when the stored values differ
   ([ADR 0023](adr/0023-enforce-reviewed-intent-at-application-boundaries.md)).
 
 ## Context
@@ -204,9 +204,9 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
 - [tracker-swift-bridge](../../apps/swiftui/bridge/src/backend.rs): the
   [C interface](../../apps/swiftui/Sources/CTrackerBridge/include/TrackerBridge.h)
   of the Rust static library. Rename, archive, tracking and worklog writes
-  carry the reviewed values, so there are no unguarded exports for them. Create
-  (`tt_bridge_create_task_at`) and restore (`tt_bridge_unarchive_task_at`)
-  carry none.
+  carry the reviewed values. Create (`tt_bridge_create_task_at`), restore
+  (`tt_bridge_unarchive_task_at`) and bulk archive
+  (`tt_bridge_archive_inactive_tasks_at`) carry none.
 - [TrackerClient](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift):
   feature state and `TrackerSession` behind injected client, clock, scheduler and
   settings interfaces. Each action sends its request right away; each feature
@@ -292,7 +292,7 @@ sequenceDiagram
 
 ## Revisions and concurrency
 
-The server keeps no global revision. Writes carry the values the caller reviewed,
+The server keeps no global revision. Guarded writes carry the values the caller reviewed,
 and the shared application and storage operations compare them with stored state
 in the same transaction as the write. Database counters guard history paging in
 local and remote mode.
@@ -310,7 +310,9 @@ deletion also compare the original task. A mismatch returns HTTP 409
 rejects a replacement timer and succeeds when no timer remains. Rename and archive
 compare `expected_name` when the request carries it. A changed timer or name
 returns HTTP 409 `conflict`. Writes to unrelated tasks or worklogs never reject a
-command.
+command. Create, restore, bulk archive, and rename or archive without
+`expected_name` carry no reviewed values; `tt-cli tasks rename` and
+`tasks archive` send no expected name and act on the current task.
 
 **Request replay.** `WriteGuard.request_id` identifies a command. Under the
 operation lock, an identical cached command returns its receipt with
@@ -323,12 +325,12 @@ execution ([ADR 0031](adr/0031-remove-server-revisions-from-writes-and-reads.md)
 tasks, tracking and totals in one SQLite transaction under the operation lock.
 Separate task, tracking, history and report reads stay independent.
 
-**History counters.** SQLite triggers update both counters inside each worklog
+**History counters.** SQLite triggers update the counters inside the worklog
 write, including writes from other local processes. A continuation checks the
 counter, resolves its anchor by ID and reads the next rows in one transaction; a
 changed counter or missing anchor returns HTTP 409 `worklog_history_changed` and
-needs a fresh first page. Renames, archiving, inserts and end-only edits leave the
-task counter unchanged, because existing rows keep their order. The global
+needs a fresh first page. Renames, archiving, inserts, deletions and end-only
+edits leave the task counter unchanged, because existing rows keep their order. The global
 counter changes on every worklog write.
 
 The guards coexist because they cover different things: counters cover history
