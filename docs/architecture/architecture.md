@@ -203,8 +203,10 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   explicit loopback or Tailscale bind address and defaults to `tt-server.db`.
 - [tracker-swift-bridge](../../apps/swiftui/bridge/src/backend.rs): the
   [C interface](../../apps/swiftui/Sources/CTrackerBridge/include/TrackerBridge.h)
-  of the Rust static library. Every write export carries the reviewed values;
-  there are no unguarded rename, archive or tracking exports.
+  of the Rust static library. Rename, archive, tracking and worklog writes
+  carry the reviewed values, so there are no unguarded exports for them. Create
+  (`tt_bridge_create_task_at`) and restore (`tt_bridge_unarchive_task_at`)
+  carry none.
 - [TrackerClient](../../apps/swiftui/TrackerClient/Sources/TrackerClient/App/TrackerSession.swift):
   feature state and `TrackerSession` behind injected client, clock, scheduler and
   settings interfaces. Each action sends its request right away; each feature
@@ -272,7 +274,7 @@ sequenceDiagram
     participant Application as tracker-application
     participant Storage as tracker-storage
     participant Db as tt.db
-    User->>Tui: scrolls past the loaded worklogs
+    User->>Tui: presses o to load older worklogs
     Tui->>Backend: next page after the task cursor
     Backend->>Application: worklogs after cursor
     Application->>Storage: page after ID and history counter
