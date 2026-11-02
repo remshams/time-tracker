@@ -16,7 +16,7 @@ struct TrackerApplicationMenus: Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Task") {
                 guard canCreateTask else { return }
-                installSceneOpener()
+                runtime.installSceneOpener(openWindow)
                 runtime.showTracker()
                 creation.open()
             }
@@ -31,15 +31,10 @@ struct TrackerApplicationMenus: Commands {
 
         CommandGroup(after: .windowArrangement) {
             Button("Show Time Tracker") {
-                installSceneOpener()
+                runtime.installSceneOpener(openWindow)
                 runtime.showTracker()
             }
             .keyboardShortcut("0")
         }
-    }
-
-    private func installSceneOpener() {
-        let action = openWindow
-        runtime.installSceneOpener { action(id: TrackerSceneID.tracker) }
     }
 }

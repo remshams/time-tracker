@@ -52,10 +52,7 @@ struct TrackerWindow: View {
         .navigationTitle(store.selectedTask?.name ?? "Time Tracker")
         .frame(minWidth: 760, minHeight: 480)
         .windowDismissBehavior(presentation.canCloseWindow ? .enabled : .disabled)
-        .onAppear {
-            let action = openWindow
-            runtime.installSceneOpener { action(id: TrackerSceneID.tracker) }
-        }
+        .onAppear { runtime.installSceneOpener(openWindow) }
     }
 }
 
