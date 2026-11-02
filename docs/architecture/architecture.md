@@ -250,16 +250,18 @@ sequenceDiagram
         Server-->>Remote: command receipt
         Remote-->>Session: saved
     end
-    Session->>Worker: reload the task list
-    Remote->>Server: GET /v1/state/task-list
-    Server-->>Remote: tasks and tracking, one transaction
-    Remote-->>Session: task list observation
+    Session->>Worker: reload tasks and today's totals
+    Remote->>Server: GET /v1/state/daily-overview
+    Server-->>Remote: tasks, tracking and totals, one transaction
+    Remote-->>Session: daily overview
     Session-->>App: changed values only
 ```
 
 The worker lane covers `TrackerWorker`, the `tt_bridge_start_tracking_if_active_at`
 export of `tracker-swift-bridge` and `TrackerBackend` in `tracker-client`. Replies
-run back through it; the diagram skips those hops. The transport resends a failed write once with the same request ID. If that
+run back through it; the diagram skips those hops. The reload reads
+`/v1/state/task-list` first only while the connection is unconfirmed or stale.
+The transport resends a failed write once with the same request ID. If that
 also fails, the app reports that the change could not be confirmed and doesn't
 resend it.
 
