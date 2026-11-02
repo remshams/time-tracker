@@ -2,7 +2,7 @@
 
 ## Status
 
-Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, task browsing and ordering, task search, read-only worklog history, worklog correction, completed-worklog deletion, worklog moves, and the screen-scoped TUI command refactor are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, orders and searches both task views, and loads one task's worklogs in bounded pages. The timestamp and ordering rules live in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds, [ADR 0004](docs/adr/0004-paginated-worklog-history.md) records pagination, [ADR 0006](docs/adr/0006-local-minute-tui-timestamps.md) records local-minute history and correction behavior, [ADR 0007](docs/adr/0007-completed-worklog-deletion.md) records completed-worklog deletion, [ADR 0008](docs/adr/0008-move-worklogs-between-tasks.md) records worklog moves, and [ADR 0009](docs/adr/0009-task-search.md) records task search.
+Milestones 0, 1, and 2, the terminal-palette checkpoint, the domain/application separation, task browsing and ordering, task search, read-only worklog history, worklog correction, completed-worklog deletion, worklog moves, and the screen-scoped TUI command refactor are complete. The `tt` TUI renders and edits tasks, tracks time in local SQLite storage, recovers the active timer across restarts, browses and restores archived tasks, orders and searches both task views, and loads one task's worklogs in bounded pages. The timestamp and ordering rules live in [ADR 0002](docs/architecture/adr/0002-task-timestamps-and-ordering.md), [ADR 0003](docs/architecture/adr/0003-canonical-timestamp-precision.md) fixes their precision at microseconds, [ADR 0004](docs/architecture/adr/0004-paginated-worklog-history.md) records pagination, [ADR 0006](docs/architecture/adr/0006-local-minute-tui-timestamps.md) records local-minute history and correction behavior, [ADR 0007](docs/architecture/adr/0007-completed-worklog-deletion.md) records completed-worklog deletion, [ADR 0008](docs/architecture/adr/0008-move-worklogs-between-tasks.md) records worklog moves, and [ADR 0009](docs/architecture/adr/0009-task-search.md) records task search.
 
 The required Rust, Python, mutation, coverage, CRAP, and Linux PTY checks pass. A native macOS run also passes the full validation suite, including the PTY lifecycle test and file-backed SQLite tests. Detailed counts belong in each feature handoff rather than this long-lived plan. The reproducible audit covers all 17 dark and 5 light bundled Omarchy themes. Normal and selected text pass their thresholds; six known accent-role exceptions remain deferred.
 
@@ -23,7 +23,7 @@ The required Rust, Python, mutation, coverage, CRAP, and Linux PTY checks pass. 
 | Domain terminology | A persisted tracking record is a `Worklog`. It is active while its end time is absent and completed once its end time is set. |
 | Layering direction | Use `tracker-domain` for the domain model, put repository-backed use cases in `tracker-application`, and keep local SQLite and future HTTP implementations as adapters. |
 | Timestamp authority | The client creates task and tracking timestamps in local and remote modes. The initial remote design assumes client and server clocks are sufficiently synchronized; the server enforces ordinary domain checks such as end not preceding start but adds no clock-skew protocol. |
-| Pre-release schema compatibility | Rewriting the baseline was limited to the completed domain/application refactor. The later task-timestamp decision preserves version 1 task and worklog data through the migration specified by [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md). |
+| Pre-release schema compatibility | Rewriting the baseline was limited to the completed domain/application refactor. The later task-timestamp decision preserves version 1 task and worklog data through the migration specified by [ADR 0002](docs/architecture/adr/0002-task-timestamps-and-ordering.md). |
 
 ## Product direction
 
@@ -243,7 +243,7 @@ This checkpoint does not add worklog browsing, HTTP, asynchronous execution, ser
 
 ### Interim checkpoint: task browsing and ordering
 
-The timestamp and ordering decisions for this checkpoint are recorded in [ADR 0002](docs/adr/0002-task-timestamps-and-ordering.md), with canonical precision in [ADR 0003](docs/adr/0003-canonical-timestamp-precision.md).
+The timestamp and ordering decisions for this checkpoint are recorded in [ADR 0002](docs/architecture/adr/0002-task-timestamps-and-ordering.md), with canonical precision in [ADR 0003](docs/architecture/adr/0003-canonical-timestamp-precision.md).
 
 - [x] Add a TUI view for archived tasks while keeping them out of the default active-task list.
 - [x] Decide which actions, if any, are available from the archived-task view before implementing them.
@@ -255,19 +255,19 @@ The timestamp and ordering decisions for this checkpoint are recorded in [ADR 00
 
 ### Interim checkpoint: read-only worklog history
 
-The pagination and display decisions for this checkpoint are recorded in [ADR 0004](docs/adr/0004-paginated-worklog-history.md).
+The pagination and display decisions for this checkpoint are recorded in [ADR 0004](docs/architecture/adr/0004-paginated-worklog-history.md).
 
 - [x] Open the selected task's history from the active or archived task view and return to the same selection.
 - [x] Load worklogs on demand in newest-first pages of at most 50 records.
 - [x] Use a `(start, WorklogId)` cursor so equal starts and concurrent newer inserts do not disturb page boundaries.
-- [x] Show local start and end timestamps as `YYYY-MM-DD HH:MM`, with completed durations and a live active duration from the timer's monotonic clock. [ADR 0006](docs/adr/0006-local-minute-tui-timestamps.md) supersedes the earlier explicit-offset display choice.
+- [x] Show local start and end timestamps as `YYYY-MM-DD HH:MM`, with completed durations and a live active duration from the timer's monotonic clock. [ADR 0006](docs/architecture/adr/0006-local-minute-tui-timestamps.md) supersedes the earlier explicit-offset display choice.
 - [x] Add explicit older-page and refresh commands while keeping history read-only.
 - [x] Preserve loaded state after read failures and keep selections by stable identifier.
 - [x] Cover completed, active, archived, empty, and paginated histories in real-binary E2E scenarios that do not depend on the production seed.
 
 ### Interim checkpoint: worklog correction
 
-The correction decisions are recorded in [ADR 0005](docs/adr/0005-worklog-correction.md) and [ADR 0006](docs/adr/0006-local-minute-tui-timestamps.md).
+The correction decisions are recorded in [ADR 0005](docs/architecture/adr/0005-worklog-correction.md) and [ADR 0006](docs/architecture/adr/0006-local-minute-tui-timestamps.md).
 
 - [x] Encapsulate `Worklog` and `ActiveWorklog` fields before exposing update operations.
 - [x] Edit the start and end of a completed worklog while preserving its identity and task.
@@ -290,7 +290,7 @@ The correction decisions are recorded in [ADR 0005](docs/adr/0005-worklog-correc
 
 ### Completed checkpoint: move worklogs between tasks
 
-The move decisions are recorded in [ADR 0008](docs/adr/0008-move-worklogs-between-tasks.md). This is a separate command from timestamp correction. Correction preserves the worklog's task; move changes only its owning task.
+The move decisions are recorded in [ADR 0008](docs/architecture/adr/0008-move-worklogs-between-tasks.md). This is a separate command from timestamp correction. Correction preserves the worklog's task; move changes only its owning task.
 
 - [x] Move completed and active worklogs from their source history without changing the worklog ID, timestamps, or active state.
 - [x] Search destinations fuzzily while excluding the source task and all archived tasks.
@@ -309,7 +309,7 @@ The move decisions are recorded in [ADR 0008](docs/adr/0008-move-worklogs-betwee
 
 ### Milestone 3: exclusive local or remote storage
 
-- [x] Add local and remote TUI modes. HTTP serving now ships separately as `tt-server`; see [ADR 0028](docs/adr/0028-ship-a-standalone-server-binary.md).
+- [x] Add local and remote TUI modes. HTTP serving now ships separately as `tt-server`; see [ADR 0028](docs/architecture/adr/0028-ship-a-standalone-server-binary.md).
 - [x] Add a versioned resource-oriented REST API for tasks, worklogs, and the singleton active-tracking state under `/v1`.
 - [x] Keep raw repository methods and storage commands out of the public HTTP contract.
 - [x] Run the same `tracker-application` workflows behind local and server adapters.
