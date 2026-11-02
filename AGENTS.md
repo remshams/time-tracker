@@ -24,12 +24,13 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 
 ## Architecture documentation
 
-- Start with `docs/architecture/README.md`. The concise architecture and application catalog is `docs/architecture/architecture.md`; its human-readable companion is `docs/architecture/architecture.html`.
-- Keep each architecture document in both Markdown and HTML. Agents read the Markdown and reviewers diff it; people read the HTML. When you add or change an architecture document, update both formats in the same change and keep their concepts, rules, ownership, and source snapshot aligned.
-- The architecture diagrams are in `docs/architecture/diagrams.html`. Open the file in a browser; its diagrams and controls work offline.
-- When implementing a feature that changes application components, dependencies, ownership, or communication paths, update the affected diagrams and method tables in the same change. Keep the source snapshot date and revision accurate, and state the scope and revision of any retained quality measurements.
-- Keep the HTML self-contained. Use portable source links and avoid machine-specific paths or links to temporary reports.
-- Use the `frontend-design` skill when creating or redesigning an HTML architecture page.
+Start with [the architecture document](docs/architecture/architecture.md). Use the
+`architecture-docs` skill to change it, and update it in the same change when
+modules, dependencies, processes or external systems change. The
+[ADR index](docs/architecture/adr/README.md) records decisions.
+
+`docs/architecture/diagrams.html` holds the earlier method-level diagrams. It stays
+unchanged while the architecture-docs standard is piloted; don't update it.
 
 ## Git
 
@@ -38,13 +39,13 @@ Time Tracker shares a Rust core across a terminal UI, an automation CLI, and a n
 ## GitHub issues
 
 - Use the `github-issue` skill when creating or updating an issue. Apply the `unslop` skill before publishing it.
-- Take module names from the crates and clients in the [architecture catalog](docs/architecture/architecture.md). Also name the affected [application concepts](docs/architecture/architecture.md#application-concepts), such as worklog overlap or active tracking.
+- Take module names from the crates and clients in the [architecture document](docs/architecture/architecture.md#module-responsibilities). Also name the affected [domain concepts](docs/architecture/architecture.md#domain-language), such as worklog overlap or active tracking.
 
 ## Pull request descriptions
 
 - Use the `pull-request-description` skill when creating or updating a PR description. Apply the `unslop` skill to the description before publishing it.
-- Take module names from the crates and clients in the [architecture catalog](docs/architecture/architecture.md). Also name the affected [application concepts](docs/architecture/architecture.md#application-concepts), such as worklog overlap or active tracking.
-- For post-merge steps, read [Deploy a server](docs/deployment.md) for server rollout, migrations and rollback. For a protocol change, state which server and client versions work together and whether the upgrade order matters. The protocol upgrade notes, such as [Protocol 6 upgrade](docs/architecture/architecture.md#protocol-6-upgrade), show earlier examples.
+- Take module names from the crates and clients in the [architecture document](docs/architecture/architecture.md#module-responsibilities). Also name the affected [domain concepts](docs/architecture/architecture.md#domain-language), such as worklog overlap or active tracking.
+- For post-merge steps, read [Deploy a server](docs/deployment.md) for server rollout, migrations and rollback. For a protocol change, state which server and client versions work together and whether the upgrade order matters. The [protocol and schema upgrade notes](docs/deployment.md#protocol-and-schema-upgrades) show earlier examples.
 
 ## CodeRabbit
 
