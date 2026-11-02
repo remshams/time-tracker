@@ -4,6 +4,8 @@
 
 Accepted
 
+The records moved to `docs/architecture/adr/` when the project adopted the architecture-docs standard.
+
 ## Date
 
 2026-09-04
@@ -14,10 +16,10 @@ The project makes small architecture decisions continuously: naming, ordering ru
 
 ## Decision
 
-Time Tracker records architecture decisions as lightweight ADRs in `docs/architecture/adr/`.
+Time Tracker records architecture decisions as lightweight ADRs in `docs/adr/`.
 
 - Every record has five sections: Status, Date, Context, Decision, Consequences. No front matter, no template boilerplate beyond that.
-- `docs/architecture/adr/README.md` is the index and links every record.
+- `docs/adr/README.md` is the index and links every record.
 - Accepted records are immutable. A changed decision is a new record; the old record gets a Superseded note in its Status section and keeps its original text.
 - Small decisions that do not change architecture (for example, a test name or a dependency bump) stay in commit messages and ordinary code review. Not everything deserves a file.
 
