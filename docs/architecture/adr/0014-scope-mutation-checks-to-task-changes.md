@@ -25,7 +25,7 @@ Use focused mutation checks for task handoffs. Select their scope from the entir
 - Return `review-required` when broad dependencies, shared test support, deleted production files, or changed tests without a curated production mapping make scope uncertain. Keep the gate red until the selector or mapping defines a bounded scope. Do not fall back to a full Swift package run in pull request CI.
 - Keep full Rust and Swift mutation suites manual through `workflow_dispatch`; do not schedule them or add a repository metadata file tracking the last run.
 
-Retain the existing failure rules, pinned tool versions, named exclusions, and other validation checks. The commands and scope rules live in [AGENTS.md](../../AGENTS.md).
+Retain the existing failure rules, pinned tool versions, named exclusions, and other validation checks. The commands and scope rules live in [AGENTS.md](../../../AGENTS.md).
 
 ## Consequences
 

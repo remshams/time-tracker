@@ -6,6 +6,6 @@ Read [revisions and concurrency](architecture.md#revisions-and-concurrency) for 
 
 Open the [detailed architecture diagrams](diagrams.html) in a browser for crate dependencies, client state ownership, method tables, and Swift/Rust call paths. Both HTML pages work offline.
 
-The [architecture decision records](../adr/README.md) explain the decisions behind the current design. Follow their supersession notes when reading older records.
+The [architecture decision records](adr/README.md) explain the decisions behind the current design. Follow their supersession notes when reading older records.
 
 Keep the Markdown catalog and its HTML companion aligned when a concept, rule, or owner changes. Source links point into this checkout. Each page states its source scope and revision; the detailed diagrams retain their separately dated quality measurements.
