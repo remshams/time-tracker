@@ -35,6 +35,14 @@ The old binary rejects a database with a newer schema version. On rollback, the 
 
 The deploy step uses `sudo -n` to install the binary and control the service, so the SSH user needs passwordless sudo for those commands. The preflight and deploy checks read the SQLite tables directly, and the script counts the entries in `MIGRATIONS` in `crates/tracker-storage/src/migrate.rs` to find the expected schema version. Update the script when the table columns, the migration list, or the checked routes change.
 
+## Protocol and schema upgrades
+
+Upgrade the server and every client together for each protocol change; mismatched versions fail the health check.
+
+- **Migration 7 and protocol 4.** Migration 7 deletes completed worklogs with zero duration, which cover no time. It refuses databases containing negative durations and rolls back without changing any history; those need an explicit database repair or a valid backup. Back up the database before upgrading. Protocol 4 removes timestamp and task fields from cursors, so regenerate saved history and preview tokens. See [ADR 0024](architecture/adr/0024-id-only-worklog-cursors-and-positive-durations.md).
+- **Protocol 5.** Adds `expected_name` to task rename and archive requests. No database migration is needed, and saved history tokens keep working. Regenerate saved remote archive previews. See [ADR 0027](architecture/adr/0027-check-reviewed-task-names-on-the-server.md).
+- **Protocol 6.** See [Protocol 6 cutover](#protocol-6-cutover).
+
 ## Protocol 6 cutover
 
 Protocol 6 removes the server revision from writes and reads. The server and every remote client must run protocol 6, so upgrade them together; mismatched versions fail the health check. A protocol-5 write that still carries `expected_revision` fails with HTTP 400 `invalid_request`. No database migration is needed.
