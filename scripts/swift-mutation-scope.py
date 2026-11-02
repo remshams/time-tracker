@@ -48,101 +48,113 @@ TIME_FORMATTING = "Shared/TimeFormatting.swift"
 # Update this map when a suite gains assertions about another production component.
 TEST_PRODUCTION = {
     "App/BackgroundRefreshInteractionTests.swift": [
-        SESSION, CONNECTION, TRACKING, TIME_FORMATTING, CATALOG, HISTORY, TOTALS, AUTOMATION, CREATION,
+        SESSION, CONNECTION, TRACKING, CATALOG, HISTORY, TOTALS, AUTOMATION, CREATION,
     ],
     "App/HistoryPresentationTests.swift": [SESSION, PRESENTATION, HISTORY, CATALOG],
     "App/LifecycleTests.swift": [
-        SESSION, CONNECTION, TRACKING, TIME_FORMATTING, CATALOG, HISTORY, TOTALS, AUTOMATION, LAST_TASK,
+        SESSION, CONNECTION, TRACKING, CATALOG, HISTORY, TOTALS, AUTOMATION, LAST_TASK,
     ],
-    "App/ObserverTests.swift": [SESSION, TRACKING, TIME_FORMATTING, CATALOG, HISTORY, TOTALS, CONNECTION],
+    "App/ObserverTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION],
     "App/PresentationTests.swift": [
-        SESSION, PRESENTATION, TRACKING, TIME_FORMATTING, CATALOG, TOTALS, CREATION, AUTOMATION, CONNECTION,
+        SESSION, PRESENTATION, TRACKING, CATALOG, TOTALS, CREATION, AUTOMATION, CONNECTION,
     ],
     "App/RefreshPresentationTests.swift": [
-        SESSION, PRESENTATION, TRACKING, TIME_FORMATTING, CATALOG, TOTALS, MODELS, CONNECTION,
+        SESSION, PRESENTATION, TRACKING, CATALOG, TOTALS, MODELS, CONNECTION,
     ],
     "Contracts/ModelsTests.swift": [MODELS, DEPENDENCIES, TIME_FORMATTING],
     "Features/BulkTaskArchiving/BulkTaskArchivingTests.swift": [
-        SESSION, PRESENTATION, BULK_ARCHIVING, CATALOG, TRACKING, TIME_FORMATTING, CONNECTION, CREATION, RENAME,
+        SESSION, PRESENTATION, BULK_ARCHIVING, CATALOG, TRACKING, CONNECTION, CREATION, RENAME,
         ARCHIVING, CORRECTION, MOVE,
     ],
     "Features/Connection/ConnectionTests.swift": [
-        SESSION, CONNECTION, CATALOG, TRACKING, TIME_FORMATTING, HISTORY, ARCHIVING,
+        SESSION, CONNECTION, CATALOG, TRACKING, HISTORY, ARCHIVING,
     ],
     "Features/DailyTotals/DailyTotalsTests.swift": [
-        SESSION, PRESENTATION, TOTALS, TRACKING, TIME_FORMATTING, MODELS, CONNECTION, CATALOG, HISTORY,
+        SESSION, PRESENTATION, TOTALS, TRACKING, MODELS, CONNECTION, CATALOG, HISTORY,
     ],
     "Features/MenuBar/MenuKeyboardShortcutsTests.swift": [
         MENU_SHORTCUTS, DEPENDENCIES,
     ],
     "Features/MenuBar/MenuLiveValuesTests.swift": [
-        SESSION, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, TIME_FORMATTING, CONNECTION, CATALOG, LAST_TASK,
+        SESSION, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CONNECTION, CATALOG, LAST_TASK,
         INDICATOR,
     ],
     "Features/MenuBar/MenuPresentationTests.swift": [
-        SESSION, PRESENTATION, MENU_OBSERVER, MENU, MENU_ORDER, MENU_VALUES, TOTALS, TRACKING, TIME_FORMATTING,
+        SESSION, PRESENTATION, MENU_OBSERVER, MENU, MENU_ORDER, MENU_VALUES, TOTALS, TRACKING,
         CATALOG, CONNECTION, LAST_TASK, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskOrderTests.swift": [
-        SESSION, MENU_ORDER, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, TIME_FORMATTING, CATALOG, CONNECTION,
+        SESSION, MENU_ORDER, MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION,
         LAST_TASK, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskClipboardTests.swift": [
         SESSION, MENU_CLIPBOARD, MENU_SHORTCUTS,
-        MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, TIME_FORMATTING, CATALOG, CONNECTION, LAST_TASK, INDICATOR,
+        MENU_OBSERVER, MENU, MENU_VALUES, TOTALS, TRACKING, CATALOG, CONNECTION, LAST_TASK, INDICATOR,
     ],
     "Features/MenuBar/MenuTaskTrackingActionTests.swift": [
         SESSION, "Features/MenuBar/MenuTaskTrackingAction.swift", MENU_OBSERVER, MENU, MENU_VALUES, TRACKING,
-        TIME_FORMATTING, MENU_CLIPBOARD, MENU_SHORTCUTS,
+        MENU_CLIPBOARD, MENU_SHORTCUTS,
         CATALOG, CONNECTION, LAST_TASK, INDICATOR,
     ],
     "Features/MenuBar/StatusItemTests.swift": [
         SESSION, LAST_TASK, INDICATOR, MENU_OBSERVER, MENU, MENU_VALUES,
-        TRACKING, TIME_FORMATTING, CATALOG, CONNECTION, AUTOMATION,
+        TRACKING, CATALOG, CONNECTION, AUTOMATION,
     ],
     "Features/ProgressPresentation/DelayedProgressPresentationTests.swift": [
         "Features/ProgressPresentation/DelayedProgressPresentation.swift",
     ],
     "Features/TaskArchiving/TaskArchivingTests.swift": [
-        SESSION, PRESENTATION, ARCHIVING, CATALOG, TRACKING, TIME_FORMATTING, HISTORY, CREATION, RENAME, CORRECTION,
+        SESSION, PRESENTATION, ARCHIVING, CATALOG, TRACKING, HISTORY, CREATION, RENAME, CORRECTION,
         MOVE, CONNECTION,
     ],
     "Features/TaskCatalog/TaskCatalogTests.swift": [CATALOG],
     "Features/TaskCreation/TaskCreationTests.swift": [
-        SESSION, PRESENTATION, CREATION, CATALOG, TRACKING, TIME_FORMATTING, HISTORY, TOTALS, CONNECTION, AUTOMATION,
+        SESSION, PRESENTATION, CREATION, CATALOG, TRACKING, HISTORY, TOTALS, CONNECTION, AUTOMATION,
         RENAME, NAME_POLICY,
     ],
     "Features/TaskEditing/TaskNameEditingPolicyTests.swift": [
         SESSION, NAME_POLICY, CREATION, RENAME, CATALOG,
     ],
     "Features/TaskRename/TaskRenameTests.swift": [
-        SESSION, PRESENTATION, RENAME, CATALOG, TRACKING, TIME_FORMATTING, HISTORY, CREATION, AUTOMATION, CONNECTION,
+        SESSION, PRESENTATION, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION, CONNECTION,
         NAME_POLICY,
     ],
-    "Features/Tracking/TrackingStateTests.swift": [TRACKING, TIME_FORMATTING],
+    "Features/Tracking/TrackingStateTests.swift": [TRACKING],
     "Features/Tracking/TrackingTests.swift": [
-        SESSION, TRACKING, TIME_FORMATTING, CATALOG, HISTORY, LAST_TASK, CONNECTION,
+        SESSION, TRACKING, CATALOG, HISTORY, LAST_TASK, CONNECTION,
     ],
     "Features/TrackingAutomation/TrackingAutomationTests.swift": [
-        SESSION, AUTOMATION, TRACKING, TIME_FORMATTING, CATALOG, CONNECTION, HISTORY, CREATION,
+        SESSION, AUTOMATION, TRACKING, CATALOG, CONNECTION, HISTORY, CREATION,
     ],
     "Features/WorklogCorrection/WorklogCorrectionTests.swift": [
-        SESSION, PRESENTATION, CORRECTION, TIMESTAMP, TRACKING, TIME_FORMATTING, HISTORY, CATALOG, CONNECTION,
+        SESSION, PRESENTATION, CORRECTION, TIMESTAMP, TRACKING, HISTORY, CATALOG, CONNECTION,
         CREATION, RENAME,
     ],
-    "Features/WorklogHistory/HistoryTests.swift": [SESSION, HISTORY, TRACKING, TIME_FORMATTING, CATALOG, CONNECTION],
+    "Features/WorklogHistory/HistoryTests.swift": [SESSION, HISTORY, TRACKING, CATALOG, CONNECTION],
     "Features/WorklogHistory/WorklogHistoryStateTests.swift": [HISTORY],
     "Features/WorklogMove/WorklogMoveTests.swift": [
-        SESSION, PRESENTATION, MOVE, TIMESTAMP, HISTORY, TRACKING, TIME_FORMATTING, CATALOG, CONNECTION, CREATION,
+        SESSION, PRESENTATION, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION,
         CORRECTION,
     ],
     "Features/WorklogDeletion/WorklogDeletionTests.swift": [
-        SESSION, PRESENTATION, DELETION, TIMESTAMP, HISTORY, TRACKING, TIME_FORMATTING, CATALOG, CONNECTION, CREATION,
+        SESSION, PRESENTATION, DELETION, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION,
         RENAME, CORRECTION, ARCHIVING,
     ],
     "Shared/TimeFormattingTests.swift": [TIME_FORMATTING],
-    "Support/FixtureCleanupTests.swift": [SESSION, TRACKING, TIME_FORMATTING, CATALOG, HISTORY, CONNECTION],
+    "Support/FixtureCleanupTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, CONNECTION],
 }
+# A suite that exercises a key file also exercises its companions. #257 moved the
+# elapsed time helpers from TrackingState.swift to TimeFormatting.swift, so every
+# suite mapped to TRACKING runs them. A direct change to a key file still selects
+# only that file.
+TEST_PRODUCTION_COMPANIONS = {TRACKING: (TIME_FORMATTING,)}
+
+
+def test_production(test: str) -> list[str]:
+    """Return the production files a mapped suite exercises, including companions."""
+    sources = TEST_PRODUCTION[test]
+    return list(dict.fromkeys(
+        [*sources, *(companion for source in sources for companion in TEST_PRODUCTION_COMPANIONS.get(source, ()))]))
 
 
 SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
@@ -274,7 +286,7 @@ def reviewed_support_adaptation(
                  contract_changed
                  and only_reviewed_edits(root, base, head, PACKAGE + SOURCES + DEPENDENCIES, contract_edits))
         ):
-            sources = tuple(sorted({source for suite in affected_suites for source in TEST_PRODUCTION[suite]}))
+            sources = tuple(sorted({source for suite in affected_suites for source in test_production(suite)}))
             return reason, sources
     return None
 
@@ -351,7 +363,7 @@ def select_scope(root: Path, base: str, head: str) -> dict:
                 elif test not in TEST_PRODUCTION:
                     review.append(f"Unmapped test or shared test support needs scope review: {path}")
                 else:
-                    for source in TEST_PRODUCTION[test]:
+                    for source in test_production(test):
                         add_source(SOURCES + source, f"Production exercised by changed test: {path}")
             elif path == PACKAGE + "Package.swift" and (package_edit := reviewed_package_edit(root, merge_base, head)):
                 reason, sources = package_edit

@@ -32,8 +32,8 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.git("init", "--initial-branch=main")
         self.git("config", "user.name", "Scope fixture")
         self.git("config", "user.email", "scope@example.test")
-        for names in scope.TEST_PRODUCTION.values():
-            for name in names:
+        for test in scope.TEST_PRODUCTION:
+            for name in scope.test_production(test):
                 self.write(scope.PACKAGE + scope.SOURCES + name, "func example() -> Bool { true }\n")
         self.write(scope.PACKAGE + TRACKING_TEST, "func testTracking() {}\n")
         self.write("README.md", "Fixture documentation\n")
@@ -91,6 +91,40 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "focused")
         self.assertEqual(result["files"], [TRACKING, TIME_FORMATTING])
+
+    def test_suites_mapped_to_tracking_select_the_time_helpers_once(self):
+        for test, sources in scope.TEST_PRODUCTION.items():
+            if scope.TRACKING not in sources:
+                continue
+            with self.subTest(test=test):
+                self.assertNotIn(scope.TIME_FORMATTING, sources)
+                selected = scope.test_production(test)
+                self.assertEqual(selected.count(scope.TIME_FORMATTING), 1)
+                self.assertEqual(selected[:len(sources)], sources)
+
+    def test_suites_without_tracking_keep_their_direct_time_helper_mapping(self):
+        for test in ("Contracts/ModelsTests.swift", "Shared/TimeFormattingTests.swift"):
+            with self.subTest(test=test):
+                self.assertNotIn(scope.TRACKING, scope.TEST_PRODUCTION[test])
+                self.assertIn(scope.TIME_FORMATTING, scope.TEST_PRODUCTION[test])
+                self.assertEqual(scope.test_production(test), scope.TEST_PRODUCTION[test])
+
+    def test_changed_suite_mapped_to_tracking_selects_the_time_helpers(self):
+        test = scope.TESTS + "Features/WorklogHistory/HistoryTests.swift"
+        self.write(scope.PACKAGE + test, "func testHistoryShowsElapsedTime() {}\n")
+        self.commit("Change history assertions")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "focused")
+        self.assertIn(TRACKING, result["files"])
+        self.assertIn(TIME_FORMATTING, result["files"])
+
+    def test_direct_tracking_change_does_not_select_the_time_helpers(self):
+        self.write(scope.PACKAGE + TRACKING, "func tracking() -> Bool { false }\n")
+        self.commit("Change tracking")
+
+        self.assertEqual(self.select()["files"], [TRACKING])
 
     def test_updated_suite_mappings_include_cross_feature_commands_and_cleanup(self):
         cases = {
@@ -349,8 +383,8 @@ class SwiftMutationScopeTests(unittest.TestCase):
         self.assertTrue(result["changes"][0]["status"].startswith("R"), result["changes"])
         self.assertEqual(result["status"], "focused", result["review_reasons"])
         self.assertEqual(
-            result["files"], sorted(scope.SOURCES + source for source in scope.TEST_PRODUCTION[
-                successor_suite.removeprefix(scope.TESTS)]))
+            result["files"], sorted(scope.SOURCES + source for source in scope.test_production(
+                successor_suite.removeprefix(scope.TESTS))))
         self.assertTrue(any("Reviewed replacement" in reason for reason in result["reasons"]))
 
     def test_unreviewed_test_rename_still_requires_review(self):
