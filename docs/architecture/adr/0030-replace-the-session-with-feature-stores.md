@@ -27,6 +27,7 @@ The app targets macOS 15 and Swift 5 mode, the portable package declares macOS 1
 - An existing `…State` class becomes the `…Store` class in the same feature folder. No new folder collects stores.
 - `WorklogHistoryStore` holds one task's pages. Worklogs are not cached per task in `TaskCatalogStore`. Reopening a task reloads its first page, as today.
 - Keep the ADR 0026 rules: assign a property only when its value changes, give each task total its own observable object, and keep a sheet's last content while it closes.
+- A store keeps a value that views read and that it derives from its own state, such as `visibleTasks` or `selectedTask` in `TaskCatalogStore`, as a stored property. It recomputes the value after each change and assigns it only when the result differs. Observation doesn't track a computed property: a view that reads one depends on every stored property the getter reads, so a change to any other task would redraw the readers of `selectedTask`. Unlike Angular's or MobX's `computed`, Swift has no memoized node that compares the result, so the store does that comparison itself. It compares with `==`, not by reference, so a freshly decoded but equal task counts as unchanged.
 
 ### Who writes the stores
 
