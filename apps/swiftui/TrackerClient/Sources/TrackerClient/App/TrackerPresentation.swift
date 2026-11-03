@@ -28,10 +28,6 @@ public final class TrackerPresentation {
     public private(set) var trackingError: String?
     public private(set) var historyUnavailable: Bool
     public private(set) var isHistoryLoading: Bool
-    public private(set) var visibleTasks: [TaskItem]
-    public private(set) var selectedTaskID: String?
-    public private(set) var selectedTask: TaskItem?
-    public private(set) var tab: TaskTab
     public private(set) var connectionSettings: ConnectionSettings
     public private(set) var connectionStatusText: String
     public private(set) var connectionMessage: String?
@@ -77,10 +73,6 @@ public final class TrackerPresentation {
         trackingError = session.trackingError
         historyUnavailable = session.historyUnavailable
         isHistoryLoading = session.isHistoryLoading
-        visibleTasks = session.visibleTasks
-        selectedTaskID = session.selectedTaskID
-        selectedTask = session.selectedTask
-        tab = session.tab
         connectionSettings = session.connectionSettings
         connectionStatusText = session.connectionStatusText
         connectionMessage = session.connectionMessage
@@ -123,10 +115,6 @@ public final class TrackerPresentation {
         set(\.trackingError, session.trackingError)
         set(\.historyUnavailable, session.historyUnavailable)
         set(\.isHistoryLoading, session.isHistoryLoading)
-        set(\.visibleTasks, session.visibleTasks)
-        set(\.selectedTaskID, session.selectedTaskID)
-        set(\.selectedTask, session.selectedTask)
-        set(\.tab, session.tab)
         set(\.connectionSettings, session.connectionSettings)
         set(\.connectionStatusText, session.connectionStatusText)
         set(\.connectionMessage, session.connectionMessage)

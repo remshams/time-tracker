@@ -60,7 +60,7 @@ final class TaskCreationTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertFalse(fixture.session.taskCreation.isPresented)
-        XCTAssertEqual(fixture.session.tab, .archived)
+        XCTAssertEqual(fixture.session.taskCatalog.tab, .archived)
         XCTAssertEqual(fixture.session.selectedTaskID, archivedTask.id)
         XCTAssertEqual(
             fixture.client.operations.filter {
@@ -145,7 +145,7 @@ final class TaskCreationTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertFalse(fixture.session.taskCreation.isPresented)
-        XCTAssertEqual(fixture.session.tab, .active)
+        XCTAssertEqual(fixture.session.taskCatalog.tab, .active)
         XCTAssertEqual(fixture.session.selectedTaskID, created.id)
         XCTAssertEqual(fixture.session.active, activeWorklog)
         XCTAssertEqual(fixture.session.tasks, tasks + [created])

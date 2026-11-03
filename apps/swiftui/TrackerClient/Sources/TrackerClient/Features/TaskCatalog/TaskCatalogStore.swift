@@ -1,29 +1,38 @@
 import Foundation
+import Observation
 
-final class TaskCatalogState {
-    private(set) var tasks: [TaskItem] = []
-    private(set) var selectedTaskID: String?
-    private(set) var tab: TaskTab = .active
-    private var activeSelection: String?
-    private var archivedSelection: String?
-
-    var visibleTasks: [TaskItem] { tasks.filter { $0.archived == (tab == .archived) } }
-    var selectedTask: TaskItem? { tasks.first { $0.id == selectedTaskID } }
+/// Holds the task list, the Active or Archived tab, and the selected task for the whole app.
+///
+/// Views read the properties; `TrackerSession` writes them. Each property is assigned only when its value
+/// changes, so an unchanged poll redraws nothing and a change to another task leaves the selected task's
+/// readers alone.
+@Observable
+public final class TaskCatalogStore {
+    public private(set) var tasks: [TaskItem] = []
+    public private(set) var selectedTaskID: String?
+    public private(set) var tab: TaskTab = .active
+    public private(set) var visibleTasks: [TaskItem] = []
+    public private(set) var selectedTask: TaskItem?
+    // Each tab's last selection, restored when the user switches back to that tab.
+    @ObservationIgnored private var activeSelection: String?
+    @ObservationIgnored private var archivedSelection: String?
 
     func changeTab(_ newTab: TaskTab) -> Bool {
         guard tab != newTab else { return false }
         tab = newTab
-        selectedTaskID = selection(for: newTab) ?? firstTaskID(in: newTab)
+        set(\.selectedTaskID, selection(for: newTab) ?? firstTaskID(in: newTab))
         rememberSelection()
+        updateDerivedValues()
         return true
     }
 
     func select(_ taskID: String?) -> Bool {
-        guard let taskID, hasTask(withID: taskID, in: visibleTasks), selectedTaskID != taskID else {
+        guard let taskID, matchingTaskID(taskID, in: tab) != nil, selectedTaskID != taskID else {
             return false
         }
         selectedTaskID = taskID
         rememberSelection()
+        updateDerivedValues()
         return true
     }
 
@@ -35,19 +44,19 @@ final class TaskCatalogState {
     func resetSelections() {
         activeSelection = nil
         archivedSelection = nil
-        selectedTaskID = nil
+        set(\.selectedTaskID, nil)
+        updateDerivedValues()
     }
 
     func apply(_ newTasks: [TaskItem], previousActive: WorklogItem?, active: WorklogItem?) -> Bool {
         let previousTask = selectedTaskID
         let previousLatest = selectedTask?.latestStart
-        if tasks != newTasks { tasks = newTasks }
-        if let selectedTaskID, !hasTask(withID: selectedTaskID, in: visibleTasks) {
-            self.selectedTaskID = firstTaskID(in: tab)
-        } else if selectedTaskID == nil {
-            selectedTaskID = firstTaskID(in: tab)
+        set(\.tasks, newTasks)
+        if selectedTaskID.flatMap({ matchingTaskID($0, in: tab) }) == nil {
+            set(\.selectedTaskID, firstTaskID(in: tab))
         }
         rememberSelection()
+        updateDerivedValues()
         let selectedActiveChanged =
             (previousActive?.taskId == selectedTaskID || active?.taskId == selectedTaskID)
             && (previousActive?.id != active?.id || previousActive?.start != active?.start)
@@ -58,13 +67,6 @@ final class TaskCatalogState {
         let saved = tab == .active ? activeSelection : archivedSelection
         guard let saved else { return nil }
         return matchingTaskID(saved, in: tab)
-    }
-
-    private func hasTask(withID id: String, in tasks: [TaskItem]) -> Bool {
-        for task in tasks {
-            if task.id == id { return true }
-        }
-        return false
     }
 
     private func matchingTaskID(_ id: String, in tab: TaskTab) -> String? {
@@ -80,5 +82,15 @@ final class TaskCatalogState {
 
     private func rememberSelection() {
         if tab == .active { activeSelection = selectedTaskID } else { archivedSelection = selectedTaskID }
+    }
+
+    private func updateDerivedValues() {
+        set(\.visibleTasks, tasks.filter { $0.archived == (tab == .archived) })
+        set(\.selectedTask, tasks.first { $0.id == selectedTaskID })
+    }
+
+    private func set<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<TaskCatalogStore, Value>, _ value: Value) {
+        guard self[keyPath: keyPath] != value else { return }
+        self[keyPath: keyPath] = value
     }
 }

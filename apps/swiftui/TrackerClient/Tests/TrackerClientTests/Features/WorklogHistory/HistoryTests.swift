@@ -145,7 +145,7 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(archived.operation, .history(task: archivedTask.id, cursor: nil))
         archived.succeed(emptyPage)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.visibleTasks, [archivedTask])
+        XCTAssertEqual(fixture.session.taskCatalog.visibleTasks, [archivedTask])
         fixture.session.select(firstTask.id)
         XCTAssertEqual(fixture.session.selectedTaskID, archivedTask.id)
         fixture.session.changeTab(.active)

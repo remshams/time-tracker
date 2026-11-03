@@ -2,6 +2,8 @@ import Foundation
 
 public final class TrackerSession {
     public var onChange: (() -> Void)?
+    /// Views read the task list, tab and selection here; the session writes them.
+    public let taskCatalog = TaskCatalogStore()
 
     private let client: any TrackerClient
     private let reports: (any ReportClient)?
@@ -11,7 +13,6 @@ public final class TrackerSession {
     private let trackingPreferencesRepository: any TrackingPreferencesRepository
     private let automation: TrackingAutomationState
     private let connection: ConnectionState
-    private let catalog = TaskCatalogState()
     private let tracking = TrackingState()
     private let lastTracked: LastTrackedTaskState
     private let history = WorklogHistoryState()
@@ -64,7 +65,7 @@ public final class TrackerSession {
 
     public var pauseOnScreenLock: Bool { automation.enabled }
     public var autoPauseStatusText: String? { automation.statusText }
-    public var tasks: [TaskItem] { catalog.tasks }
+    public var tasks: [TaskItem] { taskCatalog.tasks }
     public var active: WorklogItem? { tracking.active }
     public var worklogs: [WorklogItem] { history.worklogs }
     public var nextCursor: String? { history.nextCursor }
@@ -72,15 +73,13 @@ public final class TrackerSession {
     public var trackingError: String? { tracking.error }
     public var historyUnavailable: Bool { history.unavailable }
     public var isHistoryLoading: Bool { history.isLoading }
-    public var selectedTaskID: String? { catalog.selectedTaskID }
-    public var tab: TaskTab { catalog.tab }
+    public var selectedTaskID: String? { taskCatalog.selectedTaskID }
     public var connectionSettings: ConnectionSettings { connection.settings }
     public var connectionStatusText: String { connection.statusText }
     public var connectionMessage: String? { connection.message }
     public var isChangingConnection: Bool { connection.changing }
     public var isStale: Bool { connection.stale }
-    public var visibleTasks: [TaskItem] { catalog.visibleTasks }
-    public var selectedTask: TaskItem? { catalog.selectedTask }
+    public var selectedTask: TaskItem? { taskCatalog.selectedTask }
     public var hasMoreHistory: Bool { nextCursor != nil }
     public var taskCreation: TaskCreationPresentation { creation.presentation }
     public var canOpenTaskCreation: Bool { connection.confirmed }
@@ -298,7 +297,7 @@ public final class TrackerSession {
                 }
                 archiving.reset()
                 await reloadAfterTaskWrite {
-                    if request.action == .unarchive { self.catalog.rememberRestoredTask(request.taskID) }
+                    if request.action == .unarchive { self.taskCatalog.rememberRestoredTask(request.taskID) }
                 }
             } catch {
                 archiving.fail(writeFailure(error))
@@ -521,13 +520,13 @@ public final class TrackerSession {
     }
 
     public func changeTab(_ newTab: TaskTab) {
-        guard catalog.changeTab(newTab) else { return }
+        guard taskCatalog.changeTab(newTab) else { return }
         requestHistory()
         publish()
     }
 
     public func select(_ taskID: String?) {
-        guard catalog.select(taskID) else { return }
+        guard taskCatalog.select(taskID) else { return }
         requestHistory()
         publish()
     }
@@ -719,8 +718,8 @@ public final class TrackerSession {
 
     private func showCreatedTask(_ created: TaskItem) {
         let confirmed = task(withID: created.id) ?? created
-        let changedTab = catalog.changeTab(confirmed.archived ? .archived : .active)
-        let changedSelection = catalog.select(created.id)
+        let changedTab = taskCatalog.changeTab(confirmed.archived ? .archived : .active)
+        let changedSelection = taskCatalog.select(created.id)
         if changedTab || changedSelection { requestHistory() }
     }
 
@@ -755,7 +754,8 @@ public final class TrackerSession {
         automation.observeActive(resources.tracking.value)
         tracking.apply(resources.tracking.value, clock: clock)
         if reports != nil && requestReport { dailyTotals.invalidate() }
-        let selectionChanged = catalog.apply(resources.catalog.value, previousActive: previousActive, active: active)
+        let selectionChanged = taskCatalog.apply(
+            resources.catalog.value, previousActive: previousActive, active: active)
         if selectionChanged || retryFailedHistory {
             requestHistory()
         } else if !history.unavailable {
@@ -900,7 +900,7 @@ public final class TrackerSession {
         connection.settings = settings
         dailyTotals.clear(at: clock.now)
         settingsRepository.save(settings)
-        catalog.resetSelections()
+        taskCatalog.resetSelections()
         history.request(selectedTaskID: nil)
         tracking.error = nil
         acceptTaskList(resources)

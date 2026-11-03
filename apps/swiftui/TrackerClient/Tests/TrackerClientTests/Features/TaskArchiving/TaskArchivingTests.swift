@@ -72,7 +72,7 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertEqual(fixture.session.tasks, [firstTask, archived(secondTask)])
         XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
         XCTAssertEqual(fixture.session.active, activeWorklog)
-        XCTAssertEqual(fixture.session.tab, .active)
+        XCTAssertEqual(fixture.session.taskCatalog.tab, .active)
         XCTAssertFalse(fixture.session.taskArchiving.isPresented)
         XCTAssertFalse(fixture.session.taskArchiving.isSubmitting)
         XCTAssertNil(fixture.session.taskArchiving.taskID)
@@ -102,7 +102,7 @@ final class TaskArchivingTests: XCTestCase {
         XCTAssertFalse(harness.presentation.taskArchiving.isSubmitting)
         reload.succeed(TaskListResources(tasks: [firstTask, archived(secondTask)], active: nil))
         try await harness.settled(fixture)
-        XCTAssertEqual(harness.presentation.visibleTasks, [firstTask])
+        XCTAssertEqual(harness.catalog.visibleTasks, [firstTask])
     }
 
     @MainActor
@@ -120,7 +120,7 @@ final class TaskArchivingTests: XCTestCase {
         history.succeed(emptyPage)
         try await fixture.settled()
         XCTAssertEqual(fixture.session.selectedTaskID, secondTask.id)
-        XCTAssertEqual(fixture.session.tab, .active)
+        XCTAssertEqual(fixture.session.taskCatalog.tab, .active)
         XCTAssertFalse(fixture.session.taskArchiving.isPresented)
     }
 
@@ -149,7 +149,7 @@ final class TaskArchivingTests: XCTestCase {
         }
         XCTAssertFalse(fixture.session.taskArchiving.isPresented)
         XCTAssertNil(fixture.session.taskArchiving.error)
-        XCTAssertEqual(fixture.session.tab, .archived)
+        XCTAssertEqual(fixture.session.taskCatalog.tab, .archived)
         XCTAssertEqual(fixture.session.selectedTaskID, archivedTask.id)
         XCTAssertEqual(fixture.session.active, activeWorklog)
         fixture.session.changeTab(.active)

@@ -58,6 +58,7 @@ final class ObservationRecorder<Value> {
 @MainActor
 final class PresentationHarness {
     let presentation: TrackerPresentation
+    var catalog: TaskCatalogStore { session.taskCatalog }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -77,16 +78,15 @@ final class PresentationHarness {
     }
 
     /// Counts the updates that changed the values read by `track`.
-    func counter(_ track: @escaping @MainActor (TrackerPresentation) -> Void) -> ObservationRecorder<Void> {
+    func counter(_ track: @escaping @MainActor (PresentationHarness) -> Void) -> ObservationRecorder<Void> {
         recorder(track) { () }
     }
 
     /// Records `value` after each update that changed the values read by `track`.
     func recorder<Value>(
-        _ track: @escaping @MainActor (TrackerPresentation) -> Void, value: @escaping @MainActor () -> Value
+        _ track: @escaping @MainActor (PresentationHarness) -> Void, value: @escaping @MainActor () -> Value
     ) -> ObservationRecorder<Value> {
-        let presentation = presentation
-        let recorder = ObservationRecorder(track: { track(presentation) }, value: value)
+        let recorder = ObservationRecorder(track: { [weak self] in if let self { track(self) } }, value: value)
         samplers.append { recorder.sample() }
         return recorder
     }
@@ -121,74 +121,74 @@ final class TaskTotalProbes {
 @MainActor
 enum PresentationReads {
     /// Reads the values the task list and worklog list display.
-    static func lists(_ presentation: TrackerPresentation) {
-        _ = presentation.visibleTasks
-        _ = presentation.selectedTaskID
-        _ = presentation.selectedTask
-        _ = presentation.tab
-        _ = presentation.active
-        _ = presentation.isStale
-        _ = presentation.dailyTotalsStatus
-        _ = presentation.worklogs
-        _ = presentation.hasMoreHistory
-        _ = presentation.isHistoryLoading
-        _ = presentation.error
-        _ = presentation.historyUnavailable
-        _ = presentation.autoPauseStatusText
+    static func lists(_ views: PresentationHarness) {
+        _ = views.catalog.visibleTasks
+        _ = views.catalog.selectedTaskID
+        _ = views.catalog.selectedTask
+        _ = views.catalog.tab
+        _ = views.presentation.active
+        _ = views.presentation.isStale
+        _ = views.presentation.dailyTotalsStatus
+        _ = views.presentation.worklogs
+        _ = views.presentation.hasMoreHistory
+        _ = views.presentation.isHistoryLoading
+        _ = views.presentation.error
+        _ = views.presentation.historyUnavailable
+        _ = views.presentation.autoPauseStatusText
     }
 
     /// Reads every window value outside the request controls, timer, totals, and feature sheets.
-    static func content(_ presentation: TrackerPresentation) {
-        lists(presentation)
-        _ = presentation.trackingError
-        _ = presentation.connectionSettings
-        _ = presentation.connectionStatusText
-        _ = presentation.connectionMessage
-        _ = presentation.isChangingConnection
-        _ = presentation.pauseOnScreenLock
+    static func content(_ views: PresentationHarness) {
+        lists(views)
+        _ = views.presentation.trackingError
+        _ = views.presentation.connectionSettings
+        _ = views.presentation.connectionStatusText
+        _ = views.presentation.connectionMessage
+        _ = views.presentation.isChangingConnection
+        _ = views.presentation.pauseOnScreenLock
     }
 
-    static func controls(_ presentation: TrackerPresentation) {
-        _ = presentation.canStopTracking
-        _ = presentation.startableTaskIDs
+    static func controls(_ views: PresentationHarness) {
+        _ = views.presentation.canStopTracking
+        _ = views.presentation.startableTaskIDs
     }
 
-    static func timer(_ presentation: TrackerPresentation) { _ = presentation.timerDisplayText }
+    static func timer(_ views: PresentationHarness) { _ = views.presentation.timerDisplayText }
 
-    static func taskCreation(_ presentation: TrackerPresentation) {
-        _ = presentation.taskCreation
-        _ = presentation.canOpenTaskCreation
+    static func taskCreation(_ views: PresentationHarness) {
+        _ = views.presentation.taskCreation
+        _ = views.presentation.canOpenTaskCreation
     }
 
-    static func taskRename(_ presentation: TrackerPresentation) {
-        _ = presentation.taskRename
-        _ = presentation.canOpenTaskRename
+    static func taskRename(_ views: PresentationHarness) {
+        _ = views.presentation.taskRename
+        _ = views.presentation.canOpenTaskRename
     }
 
-    static func taskArchiving(_ presentation: TrackerPresentation) {
-        _ = presentation.taskArchiving
-        _ = presentation.archivableTaskIDs
-        _ = presentation.unarchivableTaskIDs
+    static func taskArchiving(_ views: PresentationHarness) {
+        _ = views.presentation.taskArchiving
+        _ = views.presentation.archivableTaskIDs
+        _ = views.presentation.unarchivableTaskIDs
     }
 
-    static func bulkTaskArchiving(_ presentation: TrackerPresentation) {
-        _ = presentation.bulkTaskArchiving
-        _ = presentation.canOpenBulkTaskArchiving
+    static func bulkTaskArchiving(_ views: PresentationHarness) {
+        _ = views.presentation.bulkTaskArchiving
+        _ = views.presentation.canOpenBulkTaskArchiving
     }
 
-    static func worklogCorrection(_ presentation: TrackerPresentation) {
-        _ = presentation.worklogCorrection
-        _ = presentation.canOpenWorklogCorrection
+    static func worklogCorrection(_ views: PresentationHarness) {
+        _ = views.presentation.worklogCorrection
+        _ = views.presentation.canOpenWorklogCorrection
     }
 
-    static func worklogMove(_ presentation: TrackerPresentation) {
-        _ = presentation.worklogMove
-        _ = presentation.canOpenWorklogMove
+    static func worklogMove(_ views: PresentationHarness) {
+        _ = views.presentation.worklogMove
+        _ = views.presentation.canOpenWorklogMove
     }
 
-    static func worklogDeletion(_ presentation: TrackerPresentation) {
-        _ = presentation.worklogDeletion
-        _ = presentation.canOpenWorklogDeletion
+    static func worklogDeletion(_ views: PresentationHarness) {
+        _ = views.presentation.worklogDeletion
+        _ = views.presentation.canOpenWorklogDeletion
     }
 }
 
@@ -205,10 +205,6 @@ func assertMirrors(
     XCTAssertEqual(presentation.trackingError, session.trackingError, file: file, line: line)
     XCTAssertEqual(presentation.historyUnavailable, session.historyUnavailable, file: file, line: line)
     XCTAssertEqual(presentation.isHistoryLoading, session.isHistoryLoading, file: file, line: line)
-    XCTAssertEqual(presentation.visibleTasks, session.visibleTasks, file: file, line: line)
-    XCTAssertEqual(presentation.selectedTaskID, session.selectedTaskID, file: file, line: line)
-    XCTAssertEqual(presentation.selectedTask, session.selectedTask, file: file, line: line)
-    XCTAssertEqual(presentation.tab, session.tab, file: file, line: line)
     XCTAssertEqual(presentation.connectionSettings, session.connectionSettings, file: file, line: line)
     XCTAssertEqual(presentation.connectionStatusText, session.connectionStatusText, file: file, line: line)
     XCTAssertEqual(presentation.connectionMessage, session.connectionMessage, file: file, line: line)
