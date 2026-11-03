@@ -3,10 +3,11 @@ import TrackerClient
 
 struct TaskDetails: View {
     let store: TrackerStore
+    @Environment(TaskCatalogStore.self) private var catalog
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let task = store.selectedTask {
+            if let task = catalog.selectedTask {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .top, spacing: 16) {
                         Text(task.name)

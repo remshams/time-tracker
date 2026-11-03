@@ -68,6 +68,9 @@ final class TrackerStore {
         session.start()
     }
 
+    /// Views read the task list, tab and selection from this store through the SwiftUI environment.
+    var taskCatalog: TaskCatalogStore { session.taskCatalog }
+
     // Views read these through the observable presentation, so each view redraws only for values it reads.
     var active: WorklogItem? { presentation.active }
     var worklogs: [WorklogItem] { presentation.worklogs }
@@ -75,15 +78,11 @@ final class TrackerStore {
     var trackingError: String? { presentation.trackingError }
     var historyUnavailable: Bool { presentation.historyUnavailable }
     var isHistoryLoading: Bool { presentation.isHistoryLoading }
-    var selectedTaskID: String? { presentation.selectedTaskID }
-    var tab: TaskTab { presentation.tab }
     var connectionSettings: ConnectionSettings { presentation.connectionSettings }
     var connectionStatusText: String { presentation.connectionStatusText }
     var connectionMessage: String? { presentation.connectionMessage }
     var isChangingConnection: Bool { presentation.isChangingConnection }
     var isStale: Bool { presentation.isStale }
-    var visibleTasks: [TaskItem] { presentation.visibleTasks }
-    var selectedTask: TaskItem? { presentation.selectedTask }
     var hasMoreHistory: Bool { presentation.hasMoreHistory }
     var pauseOnScreenLock: Bool { presentation.pauseOnScreenLock }
     var autoPauseStatusText: String? { presentation.autoPauseStatusText }

@@ -3,13 +3,14 @@ import TrackerClient
 
 struct TrackerSidebar: View {
     let store: TrackerStore
+    @Environment(TaskCatalogStore.self) private var catalog
 
     private var tabBinding: Binding<TaskTab> {
-        Binding(get: { store.tab }, set: { store.changeTab($0) })
+        Binding(get: { catalog.tab }, set: { store.changeTab($0) })
     }
 
     private var selectionBinding: Binding<String?> {
-        Binding(get: { store.selectedTaskID }, set: { store.select($0) })
+        Binding(get: { catalog.selectedTaskID }, set: { store.select($0) })
     }
 
     var body: some View {
@@ -35,7 +36,7 @@ struct TrackerSidebar: View {
             .padding(.bottom, 4)
 
             List(selection: selectionBinding) {
-                ForEach(store.visibleTasks) { task in
+                ForEach(catalog.visibleTasks) { task in
                     HStack(spacing: 8) {
                         TaskIndicatorView(
                             taskID: task.id,
@@ -71,10 +72,10 @@ struct TrackerSidebar: View {
                     archiving: store.archiving, taskID: nil)
             }
             .overlay {
-                if store.visibleTasks.isEmpty {
+                if catalog.visibleTasks.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "tray")
-                        Text("No \(store.tab.rawValue.lowercased()) tasks")
+                        Text("No \(catalog.tab.rawValue.lowercased()) tasks")
                             .accessibilityIdentifier("task-sidebar.empty")
                     }
                     .foregroundStyle(.secondary)

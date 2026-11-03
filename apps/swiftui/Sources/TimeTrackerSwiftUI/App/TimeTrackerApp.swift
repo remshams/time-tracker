@@ -1,4 +1,5 @@
 import SwiftUI
+import TrackerClient
 
 @main
 struct TimeTrackerApp: App {
@@ -8,6 +9,7 @@ struct TimeTrackerApp: App {
         // A Window scene exists at most once, so opening it again focuses the existing window.
         Window("Time Tracker", id: TrackerSceneID.tracker) {
             TrackerWindow(runtime: delegate.runtime)
+                .environment(delegate.runtime.store.taskCatalog)
         }
         .defaultSize(width: 1100, height: 760)
         .windowStyle(.hiddenTitleBar)

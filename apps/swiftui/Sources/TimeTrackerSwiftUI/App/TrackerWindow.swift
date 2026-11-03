@@ -1,4 +1,5 @@
 import SwiftUI
+import TrackerClient
 #if DEBUG
     import AppKit
 #endif
@@ -8,6 +9,7 @@ struct TrackerWindow: View {
     private let store: TrackerStore
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(TaskCatalogStore.self) private var catalog
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     private let presentation: TrackerTaskPresentationCoordinator
 
@@ -49,7 +51,7 @@ struct TrackerWindow: View {
                 }
         }
         .environment(presentation)
-        .navigationTitle(store.selectedTask?.name ?? "Time Tracker")
+        .navigationTitle(catalog.selectedTask?.name ?? "Time Tracker")
         .frame(minWidth: 760, minHeight: 480)
         .windowDismissBehavior(presentation.canCloseWindow ? .enabled : .disabled)
         .onAppear { runtime.installSceneOpener(openWindow) }
@@ -179,6 +181,7 @@ private struct TrackerTaskToolbar: View {
     private let rename: TaskRenameStore
     private let archiving: TaskArchivingStore
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
+    @Environment(TaskCatalogStore.self) private var catalog
 
     init(store: TrackerStore) {
         self.store = store
@@ -187,7 +190,7 @@ private struct TrackerTaskToolbar: View {
     }
 
     var body: some View {
-        if let task = store.selectedTask {
+        if let task = catalog.selectedTask {
             let canRename = rename.canOpen && !presentation.hasPresentation
             Button {
                 guard canRename else { return }
