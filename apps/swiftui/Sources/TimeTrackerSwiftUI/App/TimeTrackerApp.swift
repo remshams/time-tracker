@@ -10,6 +10,7 @@ struct TimeTrackerApp: App {
         Window("Time Tracker", id: TrackerSceneID.tracker) {
             TrackerWindow(runtime: delegate.runtime)
                 .environment(delegate.runtime.store.taskCatalog)
+                .environment(delegate.runtime.store.worklogHistory)
         }
         .defaultSize(width: 1100, height: 760)
         .windowStyle(.hiddenTitleBar)
