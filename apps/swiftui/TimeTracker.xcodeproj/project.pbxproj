@@ -36,6 +36,7 @@
 		72A9DF3982DAC7B2F0166CD0 /* TrackingControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F85615390A489E1BD026F82 /* TrackingControls.swift */; };
 		9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */; };
 		03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C44057A177E810540FF857 /* WorklogRow.swift */; };
+		009EBA51983FB90E73062414 /* WorklogHistorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */; };
 		99855A0370850FBEBEE64BE3 /* MacLifecycleObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */; };
 		E724446CA77190001E61A002 /* UserDefaultsPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EECD295169E48244028EE41 /* UserDefaultsPreferences.swift */; };
 		5F1D759FC3D354345CBF0671 /* TrackerWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0597366B0A0E2028788E2696 /* TrackerWorker.swift */; };
@@ -138,6 +139,7 @@
 		3F85615390A489E1BD026F82 /* TrackingControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingControls.swift; sourceTree = "<group>"; };
 		E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogFormatting.swift; sourceTree = "<group>"; };
 		A8C44057A177E810540FF857 /* WorklogRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogRow.swift; sourceTree = "<group>"; };
+		E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorklogHistorySection.swift; sourceTree = "<group>"; };
 		804BDC861428BC8E9824862D /* MacLifecycleObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLifecycleObserver.swift; sourceTree = "<group>"; };
 		7EECD295169E48244028EE41 /* UserDefaultsPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsPreferences.swift; sourceTree = "<group>"; };
 		0597366B0A0E2028788E2696 /* TrackerWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerWorker.swift; sourceTree = "<group>"; };
@@ -355,6 +357,7 @@
 				DEB2F7A3DAD9589579344164 /* WorklogDeletionView.swift */,
 				E786E1D879C1F865A5C80932 /* WorklogFormatting.swift */,
 				A8C44057A177E810540FF857 /* WorklogRow.swift */,
+				E88F31ABB81368020A616CB8 /* WorklogHistorySection.swift */,
 			);
 			path = WorklogHistory;
 			sourceTree = "<group>";
@@ -781,6 +784,7 @@
 				72A9DF3982DAC7B2F0166CD0 /* TrackingControls.swift in Sources */,
 				9E82F3064B92340F13818E35 /* WorklogFormatting.swift in Sources */,
 				03AE7C3AD5CD0D43404779AE /* WorklogRow.swift in Sources */,
+				009EBA51983FB90E73062414 /* WorklogHistorySection.swift in Sources */,
 				99855A0370850FBEBEE64BE3 /* MacLifecycleObserver.swift in Sources */,
 				E724446CA77190001E61A002 /* UserDefaultsPreferences.swift in Sources */,
 				5F1D759FC3D354345CBF0671 /* TrackerWorker.swift in Sources */,
