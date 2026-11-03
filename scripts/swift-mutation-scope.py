@@ -21,7 +21,7 @@ MODELS = "Contracts/Models.swift"
 DEPENDENCIES = "Contracts/Dependencies.swift"
 TRACKING = "Features/Tracking/TrackingState.swift"
 CATALOG = "Features/TaskCatalog/TaskCatalogStore.swift"
-HISTORY = "Features/WorklogHistory/WorklogHistoryState.swift"
+HISTORY = "Features/WorklogHistory/WorklogHistoryStore.swift"
 TIMESTAMP = "Features/WorklogHistory/WorklogTimestamp.swift"
 TOTALS = "Features/DailyTotals/DailyTotalsState.swift"
 MENU = "Features/MenuBar/TrackerMenuContent.swift"
@@ -56,7 +56,7 @@ TEST_PRODUCTION = {
     ],
     "App/ObserverTests.swift": [SESSION, TRACKING, CATALOG, HISTORY, TOTALS, CONNECTION],
     "App/PresentationTests.swift": [
-        SESSION, PRESENTATION, TRACKING, CATALOG, TOTALS, CREATION, AUTOMATION, CONNECTION,
+        SESSION, PRESENTATION, TRACKING, CATALOG, HISTORY, TOTALS, CREATION, AUTOMATION, CONNECTION,
     ],
     "App/RefreshPresentationTests.swift": [
         SESSION, PRESENTATION, TRACKING, CATALOG, TOTALS, MODELS, CONNECTION,
@@ -131,7 +131,7 @@ TEST_PRODUCTION = {
         CREATION, RENAME,
     ],
     "Features/WorklogHistory/HistoryTests.swift": [SESSION, HISTORY, TRACKING, CATALOG, CONNECTION],
-    "Features/WorklogHistory/WorklogHistoryStateTests.swift": [HISTORY],
+    "Features/WorklogHistory/WorklogHistoryStoreTests.swift": [HISTORY],
     "Features/WorklogMove/WorklogMoveTests.swift": [
         SESSION, PRESENTATION, MOVE, TIMESTAMP, HISTORY, TRACKING, CATALOG, CONNECTION, CREATION,
         CORRECTION,
@@ -166,7 +166,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
-    "Support/ObservationProbe.swift": [PRESENTATION, SESSION, CATALOG],
+    "Support/ObservationProbe.swift": [PRESENTATION, SESSION, CATALOG, HISTORY],
 }
 # A PR that deletes a file and adds its successor in the same diff can map the
 # deleted path to the successor here. The successor's own scope covers the

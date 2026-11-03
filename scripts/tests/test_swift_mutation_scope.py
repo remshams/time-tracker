@@ -173,7 +173,7 @@ class SwiftMutationScopeTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "focused")
         for source in ["Features/TaskArchiving/TaskArchivingState.swift", "Features/TaskCatalog/TaskCatalogStore.swift",
-                       "Features/WorklogHistory/WorklogHistoryState.swift", "Features/Tracking/TrackingState.swift"]:
+                       "Features/WorklogHistory/WorklogHistoryStore.swift", "Features/Tracking/TrackingState.swift"]:
             self.assertIn(scope.SOURCES + source, result["files"])
         self.assertNotIn(scope.SOURCES + scope.INDICATOR, result["files"])
 
