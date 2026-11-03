@@ -501,7 +501,7 @@ final class TaskCreationTests: XCTestCase {
         XCTAssertFalse(fixture.client.hasPendingRequests)
         XCTAssertTrue(fixture.session.canStartSelectedTask)
         XCTAssertEqual(fixture.session.selectedTaskID, firstTask.id)
-        XCTAssertEqual(fixture.session.worklogs, [])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [])
         XCTAssertEqual(
             fixture.client.operations.count, 6,
             "Creating an already selected task must reuse its loaded history.")

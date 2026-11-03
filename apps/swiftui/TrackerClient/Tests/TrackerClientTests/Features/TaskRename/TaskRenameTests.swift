@@ -99,8 +99,8 @@ final class TaskRenameTests: XCTestCase {
         XCTAssertFalse(fixture.session.taskRename.isPresented)
         XCTAssertEqual(fixture.session.selectedTaskID, secondTask.id)
         XCTAssertEqual(fixture.session.active, activeWorklog)
-        XCTAssertEqual(fixture.session.worklogs, [selectedLog])
-        XCTAssertEqual(fixture.session.nextCursor, "older")
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [selectedLog])
+        XCTAssertEqual(fixture.session.worklogHistory.nextCursor, "older")
         XCTAssertEqual(fixture.session.tasks, [renamed, secondTask])
         XCTAssertEqual(
             fixture.client.operations.filter {

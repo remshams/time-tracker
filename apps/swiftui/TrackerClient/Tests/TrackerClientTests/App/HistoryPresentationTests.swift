@@ -13,11 +13,11 @@ final class HistoryPresentationTests: XCTestCase {
         fixture.session.select(secondTask.id)
         let request = try await fixture.client.next()
         let changesWhileWaiting = content.count
-        XCTAssertTrue(harness.presentation.isHistoryLoading)
+        XCTAssertTrue(harness.history.isLoading)
         request.succeed(emptyPage)
         try await harness.settled(fixture)
         XCTAssertFalse(fixture.client.hasPendingRequests)
-        XCTAssertFalse(harness.presentation.isHistoryLoading)
+        XCTAssertFalse(harness.history.isLoading)
         XCTAssertGreaterThan(
             content.count, changesWhileWaiting,
             "Completing an empty history read must replace the loading presentation.")

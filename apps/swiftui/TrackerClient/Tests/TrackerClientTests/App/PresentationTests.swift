@@ -128,12 +128,12 @@ final class PresentationTests: XCTestCase {
 
         fixture.session.select(secondTask.id)
         let history = try await fixture.client.next()
-        XCTAssertTrue(harness.presentation.isHistoryLoading)
+        XCTAssertTrue(harness.history.isLoading)
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
         try await harness.settled(fixture)
         XCTAssertEqual(harness.catalog.selectedTask, secondTask)
-        XCTAssertEqual(harness.presentation.worklogs, [oldWorklog])
-        XCTAssertTrue(harness.presentation.hasMoreHistory)
+        XCTAssertEqual(harness.history.worklogs, [oldWorklog])
+        XCTAssertTrue(harness.history.hasMore)
 
         fixture.session.changeTab(.archived)
         XCTAssertEqual(harness.catalog.tab, .archived)
@@ -187,8 +187,8 @@ final class PresentationTests: XCTestCase {
         let history = try await fixture.client.next()
         history.fail(BridgeFailure(message: "History unavailable", kind: "unavailable"))
         try await harness.settled(fixture)
-        XCTAssertNotNil(harness.presentation.error)
-        XCTAssertTrue(harness.presentation.historyUnavailable)
+        XCTAssertNotNil(harness.history.error)
+        XCTAssertTrue(harness.history.unavailable)
 
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let request = try await fixture.client.next()

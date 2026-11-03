@@ -59,6 +59,7 @@ final class ObservationRecorder<Value> {
 final class PresentationHarness {
     let presentation: TrackerPresentation
     var catalog: TaskCatalogStore { session.taskCatalog }
+    var history: WorklogHistoryStore { session.worklogHistory }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -129,11 +130,11 @@ enum PresentationReads {
         _ = views.presentation.active
         _ = views.presentation.isStale
         _ = views.presentation.dailyTotalsStatus
-        _ = views.presentation.worklogs
-        _ = views.presentation.hasMoreHistory
-        _ = views.presentation.isHistoryLoading
-        _ = views.presentation.error
-        _ = views.presentation.historyUnavailable
+        _ = views.history.worklogs
+        _ = views.history.hasMore
+        _ = views.history.isLoading
+        _ = views.history.error
+        _ = views.history.unavailable
         _ = views.presentation.autoPauseStatusText
     }
 
@@ -199,12 +200,7 @@ func assertMirrors(
     file: StaticString = #filePath, line: UInt = #line
 ) {
     XCTAssertEqual(presentation.active, session.active, file: file, line: line)
-    XCTAssertEqual(presentation.worklogs, session.worklogs, file: file, line: line)
-    XCTAssertEqual(presentation.hasMoreHistory, session.hasMoreHistory, file: file, line: line)
-    XCTAssertEqual(presentation.error, session.error, file: file, line: line)
     XCTAssertEqual(presentation.trackingError, session.trackingError, file: file, line: line)
-    XCTAssertEqual(presentation.historyUnavailable, session.historyUnavailable, file: file, line: line)
-    XCTAssertEqual(presentation.isHistoryLoading, session.isHistoryLoading, file: file, line: line)
     XCTAssertEqual(presentation.connectionSettings, session.connectionSettings, file: file, line: line)
     XCTAssertEqual(presentation.connectionStatusText, session.connectionStatusText, file: file, line: line)
     XCTAssertEqual(presentation.connectionMessage, session.connectionMessage, file: file, line: line)

@@ -4,6 +4,8 @@ public final class TrackerSession {
     public var onChange: (() -> Void)?
     /// Views read the task list, tab and selection here; the session writes them.
     public let taskCatalog = TaskCatalogStore()
+    /// Views read the selected task's worklog pages and the history panel's state here; the session writes them.
+    public let worklogHistory = WorklogHistoryStore()
 
     private let client: any TrackerClient
     private let reports: (any ReportClient)?
@@ -15,7 +17,6 @@ public final class TrackerSession {
     private let connection: ConnectionState
     private let tracking = TrackingState()
     private let lastTracked: LastTrackedTaskState
-    private let history = WorklogHistoryState()
     private let creation = TaskCreationState()
     private let rename = TaskRenameState()
     private let archiving = TaskArchivingState()
@@ -67,12 +68,7 @@ public final class TrackerSession {
     public var autoPauseStatusText: String? { automation.statusText }
     public var tasks: [TaskItem] { taskCatalog.tasks }
     public var active: WorklogItem? { tracking.active }
-    public var worklogs: [WorklogItem] { history.worklogs }
-    public var nextCursor: String? { history.nextCursor }
-    public var error: String? { history.error }
     public var trackingError: String? { tracking.error }
-    public var historyUnavailable: Bool { history.unavailable }
-    public var isHistoryLoading: Bool { history.isLoading }
     public var selectedTaskID: String? { taskCatalog.selectedTaskID }
     public var connectionSettings: ConnectionSettings { connection.settings }
     public var connectionStatusText: String { connection.statusText }
@@ -80,7 +76,6 @@ public final class TrackerSession {
     public var isChangingConnection: Bool { connection.changing }
     public var isStale: Bool { connection.stale }
     public var selectedTask: TaskItem? { taskCatalog.selectedTask }
-    public var hasMoreHistory: Bool { nextCursor != nil }
     public var taskCreation: TaskCreationPresentation { creation.presentation }
     public var canOpenTaskCreation: Bool { connection.confirmed }
     public var taskRename: TaskRenamePresentation { rename.presentation }
@@ -590,7 +585,9 @@ public final class TrackerSession {
     }
 
     public func loadOlder() {
-        guard !connection.stale, !history.isLoading, let taskID = selectedTaskID, let cursor = nextCursor else {
+        guard !connection.stale, !worklogHistory.isLoading, let taskID = selectedTaskID,
+            let cursor = worklogHistory.nextCursor
+        else {
             return
         }
         loadHistory(taskID: taskID, cursor: cursor)
@@ -747,7 +744,7 @@ public final class TrackerSession {
 
     private func acceptTaskList(_ resources: TaskListResources, requestReport: Bool = true) {
         dailyTotals.updateDay(at: clock.now)
-        let retryFailedHistory = connection.stale && history.unavailable
+        let retryFailedHistory = connection.stale && worklogHistory.unavailable
         connection.acceptTaskList()
         lastTracked.observe(resources, settings: connection.settings)
         let previousActive = active
@@ -758,8 +755,8 @@ public final class TrackerSession {
             resources.catalog.value, previousActive: previousActive, active: active)
         if selectionChanged || retryFailedHistory {
             requestHistory()
-        } else if !history.unavailable {
-            history.error = nil
+        } else if !worklogHistory.unavailable {
+            worklogHistory.clearError()
         }
         updateDisplayTimer()
         updateRolloverTimer()
@@ -787,28 +784,28 @@ public final class TrackerSession {
     private func recordConnectionFailure(_ failure: Error) {
         connection.recordFailure(failure)
         schedulePolling()
-        history.error = failure.localizedDescription
+        worklogHistory.showError(failure.localizedDescription)
         publish()
     }
 
     private func requestHistory() {
-        history.request(selectedTaskID: selectedTaskID)
+        worklogHistory.request(selectedTaskID: selectedTaskID)
         guard let taskID = selectedTaskID else { return }
         loadHistory(taskID: taskID, cursor: nil)
     }
 
     private func loadHistory(taskID: String, cursor: String?) {
-        history.beginLoading()
+        worklogHistory.beginLoading()
         Task { [weak self] in
             guard let self else { return }
             do {
                 let page = try await client.history(taskID: taskID, cursor: cursor)
                 // Drop a page whose task is no longer selected.
                 guard taskID == selectedTaskID else { return }
-                history.accept(page, cursor: cursor)
+                worklogHistory.accept(page, cursor: cursor)
             } catch {
                 guard taskID == selectedTaskID else { return }
-                history.fail(error)
+                worklogHistory.fail(error)
                 if requiresConnectionRecovery(error) { recordConnectionFailure(error) }
             }
             publish()
@@ -893,7 +890,7 @@ public final class TrackerSession {
         worklog(withID: id) ?? (active?.id == id ? active : nil)
     }
 
-    private func worklog(withID id: String) -> WorklogItem? { worklogs.first { $0.id == id } }
+    private func worklog(withID id: String) -> WorklogItem? { worklogHistory.worklogs.first { $0.id == id } }
 
     private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) {
         automation.cancel()
@@ -901,7 +898,7 @@ public final class TrackerSession {
         dailyTotals.clear(at: clock.now)
         settingsRepository.save(settings)
         taskCatalog.resetSelections()
-        history.request(selectedTaskID: nil)
+        worklogHistory.request(selectedTaskID: nil)
         tracking.error = nil
         acceptTaskList(resources)
     }

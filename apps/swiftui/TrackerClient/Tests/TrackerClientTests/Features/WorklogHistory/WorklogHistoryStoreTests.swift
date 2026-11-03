@@ -1,10 +1,10 @@
 import XCTest
 @testable import TrackerClient
 
-final class WorklogHistoryStateTests: XCTestCase {
+final class WorklogHistoryStoreTests: XCTestCase {
     @MainActor
     func testReloadForTheSameTaskKeepsShownRowsUntilTheNextPageArrives() async {
-        let history = WorklogHistoryState()
+        let history = WorklogHistoryStore()
         history.request(selectedTaskID: firstTask.id)
         history.accept(HistoryPage(worklogs: [oldWorklog], nextCursor: "old-cursor", reset: false), cursor: nil)
 
@@ -21,7 +21,7 @@ final class WorklogHistoryStateTests: XCTestCase {
 
     @MainActor
     func testRequestForAnotherTaskClearsShownRows() async {
-        let history = WorklogHistoryState()
+        let history = WorklogHistoryStore()
         history.request(selectedTaskID: firstTask.id)
         history.accept(HistoryPage(worklogs: [oldWorklog], nextCursor: "old-cursor", reset: false), cursor: nil)
 
