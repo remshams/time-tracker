@@ -129,7 +129,7 @@ final class TaskRenameTests: XCTestCase {
             rename.succeed(TaskListResources(tasks: [renamed], active: nil))
         }
         XCTAssertFalse(fixture.session.taskRename.isPresented)
-        XCTAssertEqual(fixture.session.tab, .archived)
+        XCTAssertEqual(fixture.session.taskCatalog.tab, .archived)
         XCTAssertEqual(fixture.session.selectedTaskID, archivedTask.id)
         XCTAssertEqual(fixture.session.selectedTask, renamed)
         XCTAssertEqual(fixture.client.operations.count, 4)

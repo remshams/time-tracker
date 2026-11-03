@@ -33,7 +33,7 @@ final class PresentationTests: XCTestCase {
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         let harness = PresentationHarness(session: fixture.session)
-        let names = harness.recorder(PresentationReads.content) { harness.presentation.selectedTask?.name }
+        let names = harness.recorder(PresentationReads.content) { harness.catalog.selectedTask?.name }
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
         fixture.scheduler.poll?.fire()
         let refresh = try await fixture.client.next()
@@ -131,14 +131,14 @@ final class PresentationTests: XCTestCase {
         XCTAssertTrue(harness.presentation.isHistoryLoading)
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: "older", reset: false))
         try await harness.settled(fixture)
-        XCTAssertEqual(harness.presentation.selectedTask, secondTask)
+        XCTAssertEqual(harness.catalog.selectedTask, secondTask)
         XCTAssertEqual(harness.presentation.worklogs, [oldWorklog])
         XCTAssertTrue(harness.presentation.hasMoreHistory)
 
         fixture.session.changeTab(.archived)
-        XCTAssertEqual(harness.presentation.tab, .archived)
-        XCTAssertEqual(harness.presentation.visibleTasks, [archivedTask])
-        XCTAssertEqual(harness.presentation.selectedTask, archivedTask)
+        XCTAssertEqual(harness.catalog.tab, .archived)
+        XCTAssertEqual(harness.catalog.visibleTasks, [archivedTask])
+        XCTAssertEqual(harness.catalog.selectedTask, archivedTask)
         try await fixture.client.next().succeed(emptyPage)
         try await harness.settled(fixture)
         XCTAssertTrue(harness.presentation.canUnarchiveTask(taskID: archivedTask.id))

@@ -4,7 +4,7 @@ import XCTest
 final class TaskCatalogTests: XCTestCase {
     @MainActor
     func testRememberedRestoredTaskIgnoresMissingAndArchivedTasks() async {
-        let state = TaskCatalogState()
+        let state = TaskCatalogStore()
         XCTAssertTrue(state.apply([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
         XCTAssertTrue(state.changeTab(.archived))
         state.rememberRestoredTask(secondTask.id)
@@ -17,7 +17,7 @@ final class TaskCatalogTests: XCTestCase {
 
     @MainActor
     func testChangingSelectedWorklogStartReloadsHistoryWithoutChangingItsID() async {
-        let state = TaskCatalogState()
+        let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask]
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: activeWorklog))
         let corrected = WorklogItem(
@@ -30,7 +30,7 @@ final class TaskCatalogTests: XCTestCase {
 
     @MainActor
     func testReplacingSelectedWorklogReloadsHistoryEvenWhenStartIsUnchanged() async {
-        let state = TaskCatalogState()
+        let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask]
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: activeWorklog))
         let replacement = WorklogItem(
@@ -43,7 +43,7 @@ final class TaskCatalogTests: XCTestCase {
 
     @MainActor
     func testSelectedHistoryReloadsWhenTrackingStartsStopsOrMovesToAnotherTask() async {
-        let state = TaskCatalogState()
+        let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask]
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
         let other = WorklogItem(
@@ -60,7 +60,7 @@ final class TaskCatalogTests: XCTestCase {
 
     @MainActor
     func testUnrelatedTrackingChangesDoNotReloadSelectedHistory() async {
-        let state = TaskCatalogState()
+        let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask]
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
         let previous = WorklogItem(
@@ -78,7 +78,7 @@ final class TaskCatalogTests: XCTestCase {
 
     @MainActor
     func testStableCatalogAndWorklogDoNotReloadHistory() async {
-        let state = TaskCatalogState()
+        let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask]
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: activeWorklog))
 
@@ -89,7 +89,7 @@ final class TaskCatalogTests: XCTestCase {
 
     @MainActor
     func testLatestStartReloadsOnlyTheSelectedTaskHistory() async {
-        let state = TaskCatalogState()
+        let state = TaskCatalogStore()
         XCTAssertTrue(state.apply([firstTask, secondTask], previousActive: nil, active: nil))
         let updatedOther = TaskItem(
             id: secondTask.id, name: secondTask.name, archived: false,
@@ -106,7 +106,7 @@ final class TaskCatalogTests: XCTestCase {
 
     @MainActor
     func testNilUnknownHiddenAndRepeatedSelectionsLeaveCatalogUnchanged() async {
-        let state = TaskCatalogState()
+        let state = TaskCatalogStore()
         XCTAssertTrue(state.apply([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
 
         XCTAssertFalse(state.select(nil))
@@ -125,7 +125,7 @@ final class TaskCatalogTests: XCTestCase {
 
     @MainActor
     func testEachTabRestoresItsSelectionAndFallsBackWhenThatTaskDisappears() async {
-        let state = TaskCatalogState()
+        let state = TaskCatalogStore()
         let otherArchived = TaskItem(
             id: "other-archived-task", name: "Other archived task",
             archived: true, latestStart: nil)
@@ -152,7 +152,7 @@ final class TaskCatalogTests: XCTestCase {
 
     @MainActor
     func testResetSelectionsClearsBothTabMemoriesBeforeLoadingAnotherSource() async {
-        let state = TaskCatalogState()
+        let state = TaskCatalogStore()
         let otherArchived = TaskItem(
             id: "other-archived-task", name: "Other archived task",
             archived: true, latestStart: nil)
@@ -173,7 +173,7 @@ final class TaskCatalogTests: XCTestCase {
 
     @MainActor
     func testRestoredTaskDoesNotReplaceTheFallbackSelectionRememberedForItsTab() async {
-        let state = TaskCatalogState()
+        let state = TaskCatalogStore()
         let tasks = [firstTask, secondTask, archivedTask]
         XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
         XCTAssertTrue(state.select(secondTask.id))
@@ -185,4 +185,86 @@ final class TaskCatalogTests: XCTestCase {
         XCTAssertTrue(state.changeTab(.active))
         XCTAssertEqual(state.selectedTaskID, firstTask.id)
     }
+
+    @MainActor
+    func testUnchangedCatalogAndRepeatedSelectionsNotifyNoReader() async {
+        let state = TaskCatalogStore()
+        let tasks = [firstTask, secondTask, archivedTask]
+        XCTAssertTrue(state.apply(tasks, previousActive: nil, active: nil))
+        let probes = CatalogProbes(state)
+
+        XCTAssertFalse(state.apply(tasks, previousActive: nil, active: nil))
+        XCTAssertFalse(state.select(firstTask.id))
+        XCTAssertFalse(state.changeTab(.active))
+        state.rememberRestoredTask(secondTask.id)
+        XCTAssertEqual(probes.changed(), [])
+    }
+
+    @MainActor
+    func testAnotherTaskChangeNotifiesOnlyTheReadersOfItsList() async {
+        let state = TaskCatalogStore()
+        XCTAssertTrue(state.apply([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
+        let probes = CatalogProbes(state)
+        let renamedArchived = TaskItem(
+            id: archivedTask.id, name: "Renamed archived task", archived: true, latestStart: nil)
+        let updatedOther = TaskItem(
+            id: secondTask.id, name: secondTask.name, archived: false,
+            latestStart: "2025-01-01T00:00:00.000Z")
+
+        XCTAssertFalse(state.apply([firstTask, secondTask, renamedArchived], previousActive: nil, active: nil))
+        XCTAssertEqual(probes.changed(), ["tasks"])
+        XCTAssertFalse(state.apply([firstTask, updatedOther, renamedArchived], previousActive: nil, active: nil))
+        XCTAssertEqual(probes.changed(), ["tasks", "visibleTasks"])
+        XCTAssertEqual(state.visibleTasks, [firstTask, updatedOther])
+    }
+
+    @MainActor
+    func testSelectionAndTabChangesNotifyTheirReaders() async {
+        let state = TaskCatalogStore()
+        XCTAssertTrue(state.apply([firstTask, secondTask, archivedTask], previousActive: nil, active: nil))
+        let probes = CatalogProbes(state)
+
+        XCTAssertTrue(state.select(secondTask.id))
+        XCTAssertEqual(probes.changed(), ["selectedTaskID", "selectedTask"])
+        XCTAssertEqual(state.selectedTask, secondTask)
+        XCTAssertTrue(state.changeTab(.archived))
+        XCTAssertEqual(probes.changed(), ["tab", "visibleTasks", "selectedTaskID", "selectedTask"])
+        XCTAssertEqual(state.visibleTasks, [archivedTask])
+        XCTAssertEqual(state.selectedTask, archivedTask)
+        state.resetSelections()
+        XCTAssertEqual(probes.changed(), ["selectedTaskID", "selectedTask"])
+        XCTAssertNil(state.selectedTask)
+        XCTAssertEqual(state.tab, .archived)
+    }
+
+    @MainActor
+    func testSelectedTaskChangeNotifiesItsReadersWithoutChangingTheSelection() async {
+        let state = TaskCatalogStore()
+        XCTAssertTrue(state.apply([firstTask, secondTask], previousActive: nil, active: nil))
+        let probes = CatalogProbes(state)
+        let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
+
+        XCTAssertFalse(state.apply([renamed, secondTask], previousActive: nil, active: nil))
+        XCTAssertEqual(probes.changed(), ["tasks", "visibleTasks", "selectedTask"])
+        XCTAssertEqual(state.selectedTask, renamed)
+        XCTAssertEqual(state.selectedTaskID, firstTask.id)
+    }
+}
+
+/// Reports which catalog properties changed, in declaration order, as views reading each one would see them.
+@MainActor
+private final class CatalogProbes {
+    private let probes: [(String, ObservationProbe)]
+
+    init(_ state: TaskCatalogStore) {
+        probes = [
+            ("tasks", ObservationProbe { _ = state.tasks }),
+            ("tab", ObservationProbe { _ = state.tab }),
+            ("visibleTasks", ObservationProbe { _ = state.visibleTasks }),
+            ("selectedTaskID", ObservationProbe { _ = state.selectedTaskID }),
+            ("selectedTask", ObservationProbe { _ = state.selectedTask }),
+        ]
+    }
+
+    func changed() -> [String] { probes.filter { $0.1.consume() }.map(\.0) }
 }
