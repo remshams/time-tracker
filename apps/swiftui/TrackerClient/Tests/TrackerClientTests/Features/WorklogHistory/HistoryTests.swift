@@ -281,6 +281,30 @@ final class HistoryTests: XCTestCase {
     }
 
     @MainActor
+    func testLoadingAnOlderPageAfterAFailedReloadClearsTheError() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        fixture.session.retryHistory()
+        try await fixture.client.next().succeed(
+            HistoryPage(worklogs: [activeWorklog], nextCursor: "older", reset: false))
+        try await fixture.settled()
+        fixture.session.retryHistory()
+        try await fixture.client.next().fail(BridgeFailure(message: "History read failed"))
+        try await fixture.settled()
+        XCTAssertTrue(fixture.session.worklogHistory.unavailable)
+
+        fixture.session.loadOlder()
+        let older = try await fixture.client.next()
+        XCTAssertEqual(older.operation, .history(task: firstTask.id, cursor: "older"))
+        older.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
+        try await fixture.settled()
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [activeWorklog, oldWorklog])
+        XCTAssertFalse(fixture.session.worklogHistory.unavailable)
+        XCTAssertNil(fixture.session.worklogHistory.error)
+    }
+
+    @MainActor
     func testUnavailableHistoryMarksResourcesStaleAndRefreshRetriesHistory() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
