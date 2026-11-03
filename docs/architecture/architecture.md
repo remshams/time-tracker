@@ -212,7 +212,10 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   settings interfaces. Each action sends its request right away; each feature
   disables only its own controls while a request runs
   ([ADR 0026](adr/0026-use-swift-observation-for-native-presentation.md),
-  [ADR 0029](adr/0029-send-native-requests-directly.md)).
+  [ADR 0029](adr/0029-send-native-requests-directly.md)). Views read the task
+  list, tab and selection from the observable `TaskCatalogStore` and the other
+  session values from `TrackerPresentation`
+  ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
 - [TimeTrackerSwiftUI](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift):
   one tracker window, Settings, the menu bar item and lifecycle handling. The
   serial
