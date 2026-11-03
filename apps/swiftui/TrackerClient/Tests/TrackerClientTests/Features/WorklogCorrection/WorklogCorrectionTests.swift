@@ -31,7 +31,7 @@ final class WorklogCorrectionTests: XCTestCase {
         try await fixture.update("the reloaded history") {
             history.succeed(HistoryPage(worklogs: rows, nextCursor: nil, reset: false))
         } until: {
-            !fixture.session.isHistoryLoading
+            !fixture.session.worklogHistory.isLoading
         }
     }
 
@@ -132,12 +132,12 @@ final class WorklogCorrectionTests: XCTestCase {
         command.corrected(worklog: corrected, resources: resources)
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: log.taskId, cursor: nil))
-        XCTAssertEqual(fixture.session.worklogs, [log])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log])
         history.succeed(HistoryPage(worklogs: [corrected], nextCursor: nil, reset: false))
         try await fixture.settled()
         XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
-        XCTAssertEqual(fixture.session.worklogs, [corrected])
-        XCTAssertNil(fixture.session.nextCursor)
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [corrected])
+        XCTAssertNil(fixture.session.worklogHistory.nextCursor)
         XCTAssertEqual(
             Array(fixture.client.operations.suffix(3)),
             [command.operation, .refresh(fixture.session.connectionSettings), .history(task: log.taskId, cursor: nil)])
@@ -331,7 +331,7 @@ final class WorklogCorrectionTests: XCTestCase {
             id: log.id, taskId: log.taskId, start: log.start, end: "2024-12-30T10:30:00.000000Z")
         try await finishHistory(fixture, rows: [changed])
 
-        XCTAssertEqual(fixture.session.worklogs, [changed])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [changed])
         XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
         XCTAssertEqual(fixture.session.worklogCorrection.original, log)
         XCTAssertEqual(fixture.session.worklogCorrection.start, draft)
@@ -391,7 +391,7 @@ final class WorklogCorrectionTests: XCTestCase {
         let corrected = WorklogItem(id: log.id, taskId: log.taskId, start: "2024-12-30T08:00:00.000000Z", end: log.end)
         try await finishHistory(fixture, rows: [corrected])
 
-        XCTAssertEqual(fixture.session.worklogs, [corrected])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [corrected])
         XCTAssertTrue(fixture.session.worklogCorrection.isPresented)
         XCTAssertTrue(fixture.session.worklogCorrection.canEdit)
         XCTAssertEqual(
@@ -460,7 +460,7 @@ final class WorklogCorrectionTests: XCTestCase {
         history.succeed(HistoryPage(worklogs: [changed], nextCursor: nil, reset: false))
         try await fixture.settled()
 
-        XCTAssertEqual(fixture.session.worklogs, [changed])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [changed])
         XCTAssertEqual(fixture.session.worklogCorrection.original, log)
         XCTAssertEqual(fixture.session.worklogCorrection.start, draft)
         XCTAssertEqual(fixture.session.worklogCorrection.end, parseTimestamp(log.end))
@@ -525,13 +525,13 @@ final class WorklogCorrectionTests: XCTestCase {
         let corrected = WorklogItem(id: log.id, taskId: log.taskId, start: "2024-12-30T08:00:00.000000Z", end: log.end)
         command.corrected(worklog: corrected, resources: resources)
         let history = try await fixture.client.next()
-        XCTAssertEqual(fixture.session.worklogs, [log])
-        XCTAssertTrue(fixture.session.isHistoryLoading)
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log])
+        XCTAssertTrue(fixture.session.worklogHistory.isLoading)
         history.fail(BridgeFailure(message: "History unavailable"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogs, [log])
-        XCTAssertTrue(fixture.session.historyUnavailable)
-        XCTAssertFalse(fixture.session.isHistoryLoading)
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log])
+        XCTAssertTrue(fixture.session.worklogHistory.unavailable)
+        XCTAssertFalse(fixture.session.worklogHistory.isLoading)
         XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
     }
 
@@ -562,11 +562,11 @@ final class WorklogCorrectionTests: XCTestCase {
         let reload = try await fixture.client.next()
         XCTAssertEqual(reload.operation, .history(task: secondTask.id, cursor: nil))
         XCTAssertEqual(fixture.session.selectedTaskID, secondTask.id)
-        XCTAssertEqual(fixture.session.worklogs, [other])
-        XCTAssertEqual(fixture.session.nextCursor, "other-older")
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [other])
+        XCTAssertEqual(fixture.session.worklogHistory.nextCursor, "other-older")
         reload.succeed(HistoryPage(worklogs: [other], nextCursor: nil, reset: false))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogs, [other])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [other])
         XCTAssertEqual(
             Array(fixture.client.operations.suffix(4)),
             [

@@ -46,7 +46,7 @@ final class WorklogDeletionTests: XCTestCase {
         try await fixture.update("the reloaded history") {
             history.succeed(HistoryPage(worklogs: rows, nextCursor: nil, reset: false))
         } until: {
-            !fixture.session.isHistoryLoading
+            !fixture.session.worklogHistory.isLoading
         }
     }
 
@@ -144,18 +144,18 @@ final class WorklogDeletionTests: XCTestCase {
         XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings))
         XCTAssertEqual(dismissals.values.last, true)
         XCTAssertNil(fixture.session.worklogDeletion.original)
-        XCTAssertEqual(fixture.session.worklogs, [precise, oldWorklog])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [precise, oldWorklog])
         let renamed = TaskItem(id: secondTask.id, name: "Renamed task", archived: false, latestStart: nil)
         reload.succeed(TaskListResources(tasks: [firstTask, renamed], active: nil))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
-        XCTAssertEqual(fixture.session.worklogs, [precise, oldWorklog])
-        XCTAssertTrue(fixture.session.isHistoryLoading)
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [precise, oldWorklog])
+        XCTAssertTrue(fixture.session.worklogHistory.isLoading)
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.tasks, [firstTask, renamed])
-        XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
-        XCTAssertNil(fixture.session.nextCursor)
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [oldWorklog])
+        XCTAssertNil(fixture.session.worklogHistory.nextCursor)
         XCTAssertEqual(deletions(fixture), 1)
         XCTAssertEqual(
             Array(fixture.client.operations.suffix(3)),
@@ -238,7 +238,7 @@ final class WorklogDeletionTests: XCTestCase {
         updated.succeed(HistoryPage(worklogs: [changed, oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
 
-        XCTAssertEqual(fixture.session.worklogs, [changed, oldWorklog])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [changed, oldWorklog])
         XCTAssertEqual(fixture.session.worklogDeletion.original, precise)
         XCTAssertNil(fixture.session.worklogDeletion.error)
         XCTAssertTrue(fixture.session.worklogDeletion.canSubmit)
@@ -285,7 +285,7 @@ final class WorklogDeletionTests: XCTestCase {
         retry.deleted(worklog: precise, resources: resources)
         try await finishHistory(fixture)
         XCTAssertFalse(fixture.session.worklogDeletion.isPresented)
-        XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [oldWorklog])
         XCTAssertEqual(deletions(fixture), 2)
     }
 
@@ -327,7 +327,7 @@ final class WorklogDeletionTests: XCTestCase {
         try await reloadTaskList(fixture)
         try await finishHistory(fixture)
 
-        XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [oldWorklog])
         XCTAssertTrue(fixture.session.worklogDeletion.isPresented)
         XCTAssertEqual(fixture.session.worklogDeletion.original, precise)
         XCTAssertEqual(
@@ -358,7 +358,7 @@ final class WorklogDeletionTests: XCTestCase {
             history.fail(BridgeFailure(message: "Reload offline", kind: "unavailable"))
             try await fixture.settled()
 
-            XCTAssertEqual(fixture.session.error, "Reload offline", failingStep)
+            XCTAssertEqual(fixture.session.worklogHistory.error, "Reload offline", failingStep)
             XCTAssertTrue(fixture.session.isStale, failingStep)
             XCTAssertEqual(fixture.session.worklogDeletion.error, "Deletion failed: Storage error.", failingStep)
             XCTAssertEqual(fixture.session.worklogDeletion.original, precise, failingStep)
@@ -382,10 +382,10 @@ final class WorklogDeletionTests: XCTestCase {
             !fixture.session.worklogDeletion.isPresented
                 && fixture.client.operations.last == .refresh(fixture.session.connectionSettings)
         }
-        XCTAssertEqual(fixture.session.worklogs, [precise, oldWorklog])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [precise, oldWorklog])
 
         try await finishHistory(fixture)
-        XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [oldWorklog])
         XCTAssertTrue(fixture.scheduler.active.isEmpty)
         fixture.session.wake()
         let refresh = try await fixture.client.next()

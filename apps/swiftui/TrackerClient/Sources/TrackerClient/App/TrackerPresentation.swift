@@ -22,12 +22,7 @@ public final class TaskDailyTotal {
 @Observable
 public final class TrackerPresentation {
     public private(set) var active: WorklogItem?
-    public private(set) var worklogs: [WorklogItem]
-    public private(set) var hasMoreHistory: Bool
-    public private(set) var error: String?
     public private(set) var trackingError: String?
-    public private(set) var historyUnavailable: Bool
-    public private(set) var isHistoryLoading: Bool
     public private(set) var connectionSettings: ConnectionSettings
     public private(set) var connectionStatusText: String
     public private(set) var connectionMessage: String?
@@ -67,12 +62,7 @@ public final class TrackerPresentation {
 
     public init(session: TrackerSession) {
         active = session.active
-        worklogs = session.worklogs
-        hasMoreHistory = session.hasMoreHistory
-        error = session.error
         trackingError = session.trackingError
-        historyUnavailable = session.historyUnavailable
-        isHistoryLoading = session.isHistoryLoading
         connectionSettings = session.connectionSettings
         connectionStatusText = session.connectionStatusText
         connectionMessage = session.connectionMessage
@@ -109,12 +99,7 @@ public final class TrackerPresentation {
 
     public func update(from session: TrackerSession) {
         set(\.active, session.active)
-        set(\.worklogs, session.worklogs)
-        set(\.hasMoreHistory, session.hasMoreHistory)
-        set(\.error, session.error)
         set(\.trackingError, session.trackingError)
-        set(\.historyUnavailable, session.historyUnavailable)
-        set(\.isHistoryLoading, session.isHistoryLoading)
         set(\.connectionSettings, session.connectionSettings)
         set(\.connectionStatusText, session.connectionStatusText)
         set(\.connectionMessage, session.connectionMessage)

@@ -615,7 +615,7 @@ final class DailyTotalsSessionTests: XCTestCase {
         XCTAssertEqual(fixture.session.todayTasks.map(\.id), [archivedTask.id, firstTask.id])
         XCTAssertEqual(fixture.session.dailyDurationText(taskID: firstTask.id), "00:00:20")
         XCTAssertEqual(fixture.session.dailyDuration(taskID: secondTask.id), 0)
-        XCTAssertTrue(fixture.session.worklogs.isEmpty)
+        XCTAssertTrue(fixture.session.worklogHistory.worklogs.isEmpty)
         let count = fixture.client.operations.count
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()

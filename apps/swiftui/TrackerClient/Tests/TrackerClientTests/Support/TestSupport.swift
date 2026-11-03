@@ -459,7 +459,7 @@ final class Fixture {
 
     func settled() async throws {
         let finished = Task { @MainActor in
-            while (self.client.hasPendingRequests || self.session.isHistoryLoading) && !Task.isCancelled {
+            while (self.client.hasPendingRequests || self.session.worklogHistory.isLoading) && !Task.isCancelled {
                 await Task.yield()
             }
         }

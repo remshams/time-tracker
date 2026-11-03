@@ -49,7 +49,7 @@ final class WorklogMoveTests: XCTestCase {
         try await fixture.update("the reloaded history") {
             history.succeed(HistoryPage(worklogs: rows, nextCursor: nil, reset: false))
         } until: {
-            !fixture.session.isHistoryLoading
+            !fixture.session.worklogHistory.isLoading
         }
     }
 
@@ -92,15 +92,15 @@ final class WorklogMoveTests: XCTestCase {
         XCTAssertEqual(reload.operation, .refresh(fixture.session.connectionSettings))
         XCTAssertFalse(fixture.session.worklogMove.isPresented)
         XCTAssertEqual(moveDismissals.values.last, true)
-        XCTAssertEqual(fixture.session.worklogs, [log, oldWorklog])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log, oldWorklog])
         reload.succeed(resources)
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
-        XCTAssertEqual(fixture.session.worklogs, [log, oldWorklog])
-        XCTAssertTrue(fixture.session.isHistoryLoading)
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log, oldWorklog])
+        XCTAssertTrue(fixture.session.worklogHistory.isLoading)
         history.succeed(HistoryPage(worklogs: [oldWorklog], nextCursor: nil, reset: false))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogs, [oldWorklog])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [oldWorklog])
         XCTAssertEqual(
             Array(fixture.client.operations.suffix(3)),
             [
@@ -120,13 +120,13 @@ final class WorklogMoveTests: XCTestCase {
         command.moved(worklog: moved, resources: resources)
         let history = try await fixture.client.next()
         XCTAssertFalse(fixture.session.worklogMove.isPresented)
-        XCTAssertEqual(fixture.session.worklogs, [log])
-        XCTAssertTrue(fixture.session.isHistoryLoading)
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log])
+        XCTAssertTrue(fixture.session.worklogHistory.isLoading)
         history.fail(BridgeFailure(message: "History unavailable"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogs, [log])
-        XCTAssertTrue(fixture.session.historyUnavailable)
-        XCTAssertFalse(fixture.session.isHistoryLoading)
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [log])
+        XCTAssertTrue(fixture.session.worklogHistory.unavailable)
+        XCTAssertFalse(fixture.session.worklogHistory.isLoading)
         XCTAssertEqual(moves(fixture), 1)
     }
 
@@ -148,14 +148,14 @@ final class WorklogMoveTests: XCTestCase {
         command.moved(worklog: moved, resources: TaskListResources(tasks: [firstTask, secondTask], active: moved))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: secondTask.id, cursor: nil))
-        XCTAssertEqual(fixture.session.worklogs, [retained])
-        XCTAssertEqual(fixture.session.nextCursor, "old-destination")
-        XCTAssertTrue(fixture.session.isHistoryLoading)
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [retained])
+        XCTAssertEqual(fixture.session.worklogHistory.nextCursor, "old-destination")
+        XCTAssertTrue(fixture.session.worklogHistory.isLoading)
         history.succeed(HistoryPage(worklogs: [moved, retained], nextCursor: "new-destination", reset: false))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.worklogs, [moved, retained])
-        XCTAssertEqual(fixture.session.nextCursor, "new-destination")
-        XCTAssertTrue(fixture.session.hasMoreHistory)
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [moved, retained])
+        XCTAssertEqual(fixture.session.worklogHistory.nextCursor, "new-destination")
+        XCTAssertTrue(fixture.session.worklogHistory.hasMore)
     }
 
     @MainActor
@@ -372,7 +372,7 @@ final class WorklogMoveTests: XCTestCase {
         reload.succeed(resources)
         try await finishHistory(fixture)
 
-        XCTAssertEqual(fixture.session.worklogs, [])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [])
         XCTAssertTrue(fixture.session.worklogMove.isPresented)
         XCTAssertEqual(fixture.session.worklogMove.original, log)
         XCTAssertEqual(
@@ -451,7 +451,7 @@ final class WorklogMoveTests: XCTestCase {
         correction.corrected(worklog: corrected, resources: afterMove)
         try await finishHistory(fixture, rows: [corrected])
         XCTAssertFalse(fixture.session.worklogCorrection.isPresented)
-        XCTAssertEqual(fixture.session.worklogs, [corrected])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [corrected])
         XCTAssertEqual(moves(fixture), 1)
     }
 
@@ -545,7 +545,7 @@ final class WorklogMoveTests: XCTestCase {
         history.succeed(HistoryPage(worklogs: [changed], nextCursor: nil, reset: false))
         try await fixture.settled()
 
-        XCTAssertEqual(fixture.session.worklogs, [changed])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [changed])
         XCTAssertEqual(fixture.session.worklogMove.original, log)
         XCTAssertNil(fixture.session.worklogMove.error)
         XCTAssertTrue(fixture.session.worklogMove.canSubmit)
@@ -614,12 +614,12 @@ final class WorklogMoveTests: XCTestCase {
         command.moved(worklog: moved, resources: TaskListResources(tasks: tasks, active: nil))
         let history = try await fixture.client.next()
         XCTAssertEqual(history.operation, .history(task: third.id, cursor: nil))
-        XCTAssertEqual(fixture.session.worklogs, [unrelated])
-        XCTAssertEqual(fixture.session.nextCursor, "older-third")
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [unrelated])
+        XCTAssertEqual(fixture.session.worklogHistory.nextCursor, "older-third")
         history.fail(BridgeFailure(message: "History unavailable"))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.selectedTaskID, third.id)
-        XCTAssertEqual(fixture.session.worklogs, [unrelated])
+        XCTAssertEqual(fixture.session.worklogHistory.worklogs, [unrelated])
     }
 
     @MainActor
