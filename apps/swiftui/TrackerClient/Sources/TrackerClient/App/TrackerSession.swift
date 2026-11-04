@@ -750,6 +750,8 @@ public final class TrackerSession {
 
     private func loadReport() async {
         guard let reports, let requested = dailyTotals.begin(clock: clock) else { return }
+        // A first request shows the loading status, which the menu reads from the store.
+        publish()
         do {
             let refreshed = try await reports.refreshTaskListWithTotals(
                 settings: connection.settings, start: requested.start,
