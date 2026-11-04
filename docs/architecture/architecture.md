@@ -218,7 +218,10 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   status from `ConnectionStore`, the running worklog, tracking error and timer
   text from `TrackingStore`, today's status and task totals from
   `DailyTotalsStore`, and the other session values from `TrackerPresentation`
-  ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
+  ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)). The menu
+  bar observer reads these stores, the last tracked task from `MenuBarStore`
+  and the values that combine features from `TrackerPresentation` through one
+  `Observations` loop.
 - [TimeTrackerSwiftUI](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift):
   one tracker window, Settings, the menu bar item and lifecycle handling. The
   serial
