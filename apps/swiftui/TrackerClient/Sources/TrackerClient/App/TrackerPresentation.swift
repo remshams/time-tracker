@@ -21,15 +21,12 @@ public final class TaskDailyTotal {
 /// only the views that read the changed values.
 @Observable
 public final class TrackerPresentation: ChangeGuardedStore {
-    public private(set) var active: WorklogItem?
-    public private(set) var trackingError: String?
     public private(set) var pauseOnScreenLock: Bool
     public private(set) var autoPauseStatusText: String?
     public private(set) var dailyTotalsStatus: DailyTotalsStatus
 
     public private(set) var canStopTracking: Bool
     public private(set) var startableTaskIDs: Set<String>
-    public private(set) var timerDisplayText: String
 
     public private(set) var taskCreation: TaskCreationPresentation
     public private(set) var canOpenTaskCreation: Bool
@@ -56,14 +53,11 @@ public final class TrackerPresentation: ChangeGuardedStore {
     @ObservationIgnored private var taskDailyTotalModels: [String: TaskDailyTotal] = [:]
 
     public init(session: TrackerSession) {
-        active = session.active
-        trackingError = session.trackingError
         pauseOnScreenLock = session.pauseOnScreenLock
         autoPauseStatusText = session.autoPauseStatusText
         dailyTotalsStatus = session.dailyTotalsStatus
         canStopTracking = session.canStopTracking
         startableTaskIDs = Self.startableTaskIDs(session)
-        timerDisplayText = session.timerDisplayText
         taskCreation = session.taskCreation
         canOpenTaskCreation = session.canOpenTaskCreation
         taskRename = session.taskRename
@@ -88,14 +82,11 @@ public final class TrackerPresentation: ChangeGuardedStore {
     }
 
     public func update(from session: TrackerSession) {
-        set(\.active, session.active)
-        set(\.trackingError, session.trackingError)
         set(\.pauseOnScreenLock, session.pauseOnScreenLock)
         set(\.autoPauseStatusText, session.autoPauseStatusText)
         set(\.dailyTotalsStatus, session.dailyTotalsStatus)
         set(\.canStopTracking, session.canStopTracking)
         set(\.startableTaskIDs, Self.startableTaskIDs(session))
-        set(\.timerDisplayText, session.timerDisplayText)
         set(\.taskCreation, session.taskCreation)
         set(\.canOpenTaskCreation, session.canOpenTaskCreation)
         set(\.taskRename, session.taskRename)

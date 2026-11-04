@@ -8,6 +8,8 @@ public final class TrackerSession {
     public let worklogHistory = WorklogHistoryStore()
     /// Views read the connection settings and status here; the session writes them.
     public let connection: ConnectionStore
+    /// Views read the running worklog, the tracking error and the timer text here; the session writes them.
+    public let tracking = TrackingStore()
 
     private let client: any TrackerClient
     private let reports: (any ReportClient)?
@@ -16,7 +18,6 @@ public final class TrackerSession {
     private let settingsRepository: any ConnectionSettingsRepository
     private let trackingPreferencesRepository: any TrackingPreferencesRepository
     private let automation: TrackingAutomationState
-    private let tracking = TrackingState()
     private let lastTracked: LastTrackedTaskState
     private let creation = TaskCreationState()
     private let rename = TaskRenameState()
@@ -68,8 +69,9 @@ public final class TrackerSession {
     public var pauseOnScreenLock: Bool { automation.enabled }
     public var autoPauseStatusText: String? { automation.statusText }
     public var tasks: [TaskItem] { taskCatalog.tasks }
+    // The menu, the availability checks and the tests read these until they read the tracking store.
     public var active: WorklogItem? { tracking.active }
-    public var trackingError: String? { tracking.error }
+    public var trackingError: String? { tracking.recordedError }
     public var selectedTaskID: String? { taskCatalog.selectedTaskID }
     // TrackerMenuContent and TrackerMenuValues read these three until the menu observes the connection store.
     public var connectionSettings: ConnectionSettings { connection.settings }
@@ -122,10 +124,8 @@ public final class TrackerSession {
         guard let active else { return "No timer running" }
         return taskName(active.taskId)
     }
-    public var timerDisplayText: String {
-        guard connection.confirmed else { return "Unavailable" }
-        return elapsed.map(formatClockDuration) ?? "Idle"
-    }
+    /// Computed from the clock on each read, so the menu's minute tick shows the current time.
+    public var timerDisplayText: String { tracking.displayText(clock: clock, confirmed: connection.confirmed) }
     public var elapsed: TimeInterval? { tracking.elapsed(clock: clock) }
     public var dailyTotalsStatus: DailyTotalsStatus {
         guard let day = dailyTotals.day, clock.now >= day.start, clock.now < day.end else { return .unavailable }
@@ -579,7 +579,7 @@ public final class TrackerSession {
     }
 
     public func dismissTrackingError() {
-        tracking.error = nil
+        tracking.clearError()
         publish()
     }
 
@@ -595,8 +595,8 @@ public final class TrackerSession {
 
     private func sendTracking(_ request: @escaping @MainActor (any TrackerClient) async throws -> Void) {
         automation.cancel()
-        tracking.error = nil
-        tracking.isSubmitting = true
+        tracking.clearError()
+        tracking.beginSubmitting()
         publish()
         Task { [weak self] in
             guard let self else { return }
@@ -606,14 +606,14 @@ public final class TrackerSession {
                 recordTrackingFailure(error)
             }
             await reloadTaskList()
-            tracking.isSubmitting = false
+            tracking.endSubmitting()
             publish()
         }
     }
 
     private func pauseTracking(at date: Date) {
         guard let worklog = active, automation.beginPause() else { return }
-        tracking.error = nil
+        tracking.clearError()
         let occurredAt = formatTimestamp(date)
         Task { [weak self] in
             guard let self else { return }
@@ -632,7 +632,7 @@ public final class TrackerSession {
     }
 
     private func resumeTracking(_ resume: TrackingAutomationState.Resume) async {
-        tracking.error = nil
+        tracking.clearError()
         do {
             _ = try await client.resumeTracking(
                 taskID: resume.taskID, occurredAt: formatTimestamp(resume.date))
@@ -665,7 +665,7 @@ public final class TrackerSession {
     }
 
     private func recordTrackingFailure(_ error: Error) {
-        tracking.error = writeFailure(error).localizedDescription
+        tracking.recordError(writeFailure(error).localizedDescription)
     }
 
     /// Callers pass read failures, which the bridge never marks as uncertain.
@@ -898,9 +898,12 @@ public final class TrackerSession {
         settingsRepository.save(settings)
         taskCatalog.resetSelections()
         worklogHistory.request(selectedTaskID: nil)
-        tracking.error = nil
+        tracking.clearError()
         acceptTaskList(resources)
     }
 
-    private func publish() { onChange?() }
+    private func publish() {
+        tracking.publish(clock: clock, confirmed: connection.confirmed)
+        onChange?()
+    }
 }

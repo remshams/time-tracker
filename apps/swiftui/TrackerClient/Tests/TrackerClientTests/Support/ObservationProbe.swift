@@ -61,6 +61,7 @@ final class PresentationHarness {
     var catalog: TaskCatalogStore { session.taskCatalog }
     var history: WorklogHistoryStore { session.worklogHistory }
     var connection: ConnectionStore { session.connection }
+    var tracking: TrackingStore { session.tracking }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -128,7 +129,7 @@ enum PresentationReads {
         _ = views.catalog.selectedTaskID
         _ = views.catalog.selectedTask
         _ = views.catalog.tab
-        _ = views.presentation.active
+        _ = views.tracking.active
         _ = views.connection.stale
         _ = views.presentation.dailyTotalsStatus
         _ = views.history.worklogs
@@ -142,7 +143,7 @@ enum PresentationReads {
     /// Reads every window value outside the request controls, timer, totals, and feature sheets.
     static func content(_ views: PresentationHarness) {
         lists(views)
-        _ = views.presentation.trackingError
+        _ = views.tracking.error
         _ = views.connection.settings
         _ = views.connection.statusText
         _ = views.connection.message
@@ -155,7 +156,7 @@ enum PresentationReads {
         _ = views.presentation.startableTaskIDs
     }
 
-    static func timer(_ views: PresentationHarness) { _ = views.presentation.timerDisplayText }
+    static func timer(_ views: PresentationHarness) { _ = views.tracking.timerText }
 
     static func taskCreation(_ views: PresentationHarness) {
         _ = views.presentation.taskCreation
@@ -194,19 +195,18 @@ enum PresentationReads {
     }
 }
 
-/// Checks that every presentation value equals the session value it copies.
+/// Checks that every presentation value equals the session value it copies, and that publishing updated the
+/// tracking store's timer text.
 @MainActor
 func assertMirrors(
     _ presentation: TrackerPresentation, _ session: TrackerSession,
     file: StaticString = #filePath, line: UInt = #line
 ) {
-    XCTAssertEqual(presentation.active, session.active, file: file, line: line)
-    XCTAssertEqual(presentation.trackingError, session.trackingError, file: file, line: line)
     XCTAssertEqual(presentation.pauseOnScreenLock, session.pauseOnScreenLock, file: file, line: line)
     XCTAssertEqual(presentation.autoPauseStatusText, session.autoPauseStatusText, file: file, line: line)
     XCTAssertEqual(presentation.dailyTotalsStatus, session.dailyTotalsStatus, file: file, line: line)
     XCTAssertEqual(presentation.canStopTracking, session.canStopTracking, file: file, line: line)
-    XCTAssertEqual(presentation.timerDisplayText, session.timerDisplayText, file: file, line: line)
+    XCTAssertEqual(session.tracking.timerText, session.timerDisplayText, file: file, line: line)
     XCTAssertEqual(presentation.taskCreation, session.taskCreation, file: file, line: line)
     XCTAssertEqual(presentation.canOpenTaskCreation, session.canOpenTaskCreation, file: file, line: line)
     XCTAssertEqual(presentation.taskRename, session.taskRename, file: file, line: line)

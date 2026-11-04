@@ -56,7 +56,7 @@ final class PresentationTests: XCTestCase {
         let harness = PresentationHarness(session: fixture.session)
         let content = harness.counter(PresentationReads.content)
         let controls = harness.counter(PresentationReads.controls)
-        let timer = harness.recorder(PresentationReads.timer) { harness.presentation.timerDisplayText }
+        let timer = harness.recorder(PresentationReads.timer) { harness.tracking.timerText }
         let display = try XCTUnwrap(fixture.scheduler.display)
         let operationCount = fixture.client.operations.count
 
@@ -69,7 +69,7 @@ final class PresentationTests: XCTestCase {
         XCTAssertEqual(content.count, 0)
         XCTAssertEqual(controls.count, 0)
         XCTAssertEqual(fixture.client.operations.count, operationCount)
-        harness.update()
+        display.fire()
         XCTAssertEqual(timer.count, 3, "Repeating the same formatted second must not redraw the timer.")
     }
 
@@ -155,7 +155,7 @@ final class PresentationTests: XCTestCase {
         let start = try await fixture.client.next()
         start.succeed(TaskListResources(tasks: [firstTask, secondTask, archivedTask], active: activeWorklog))
         try await harness.settled(fixture)
-        XCTAssertEqual(harness.presentation.active, activeWorklog)
+        XCTAssertEqual(harness.tracking.active, activeWorklog)
         XCTAssertTrue(harness.presentation.canStopTracking)
         XCTAssertFalse(harness.presentation.canArchiveTask(taskID: firstTask.id))
         XCTAssertGreaterThan(controls.count, 0)
@@ -224,10 +224,10 @@ final class PresentationTests: XCTestCase {
         confirmation.succeed(running)
         try await harness.settled(fixture)
         XCTAssertEqual(
-            harness.presentation.trackingError,
+            harness.tracking.error,
             "Could not confirm the change. Check the reloaded data before trying again. Response lost")
         fixture.session.dismissTrackingError()
-        XCTAssertNil(harness.presentation.trackingError)
+        XCTAssertNil(harness.tracking.error)
 
         fixture.session.screenLocked(at: fixture.clock.now)
         let pause = try await fixture.client.next()
@@ -236,7 +236,7 @@ final class PresentationTests: XCTestCase {
         history.succeed(emptyPage)
         try await harness.settled(fixture)
         XCTAssertEqual(harness.presentation.autoPauseStatusText, "Paused while screen is locked")
-        XCTAssertNil(harness.presentation.active)
+        XCTAssertNil(harness.tracking.active)
 
         fixture.session.screenUnlocked(at: fixture.clock.now)
         XCTAssertNil(harness.presentation.autoPauseStatusText, "Unlocking must clear the status before the resume.")
@@ -245,7 +245,7 @@ final class PresentationTests: XCTestCase {
         resume.succeed(running)
         try await fixture.client.next().succeed(emptyPage)
         try await harness.settled(fixture)
-        XCTAssertEqual(harness.presentation.active, activeWorklog)
+        XCTAssertEqual(harness.tracking.active, activeWorklog)
     }
 
     private struct EditorStep {
