@@ -456,7 +456,7 @@ final class TrackingAutomationTests: XCTestCase {
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let connect = try await fixture.client.next()
         XCTAssertEqual(connect.operation, .connect(serverSettings))
-        let secondConnect = await fixture.session.connect(.local)
+        let secondConnect = try await fixture.taskValue(Task { await fixture.session.connect(.local) })
         XCTAssertFalse(secondConnect)
         connect.succeed(idle)
         try await finishHistory(fixture)
