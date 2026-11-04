@@ -169,16 +169,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    ("Shared fixture only tells the display timer from the menu bar clock; the changed timer suites define scope",
-     (("    var display: ScheduledAction? { active.last { $0.repeating } }\n",
-       "    var display: ScheduledAction? { active.last { $0.repeating && $0.delay == 1 } }\n"
-       "    var menuBarClock: ScheduledAction? { active.last { $0.repeating && $0.delay == 60 } }\n"),),
-     None, None,
-     ("App/LifecycleTests.swift", "Features/MenuBar/MenuPresentationTests.swift"),
-     ("App/LifecycleTests.swift", "App/ObserverTests.swift", "Features/MenuBar/MenuLiveValuesTests.swift",
-      "Features/MenuBar/MenuPresentationTests.swift")),
-)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [PRESENTATION, SESSION, CATALOG, HISTORY, CONNECTION, TRACKING, TOTALS],
