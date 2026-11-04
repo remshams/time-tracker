@@ -168,11 +168,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 # edits or None when the client contract must stay unchanged, required changed
 # suites, suites whose production files the fixture edits affect). Remove the
 # entry once its PR has merged, since its base snapshot no longer matches main.
-REVIEWED_SUPPORT_ADAPTATIONS: tuple = (
-    ("Shared fixture only renames its daily totals extension to the store; the changed daily totals suite defines scope",
-     (("extension DailyTotalsState {", "extension DailyTotalsStore {"),), None, None,
-     ("Features/DailyTotals/DailyTotalsTests.swift",), ("Features/DailyTotals/DailyTotalsTests.swift",)),
-)
+REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
     "Support/ObservationProbe.swift": [PRESENTATION, SESSION, CATALOG, HISTORY, CONNECTION, TRACKING, TOTALS],
