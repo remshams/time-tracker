@@ -631,8 +631,8 @@ public final class TrackerSession {
         }
     }
 
+    /// Only follows a successful pause, which already cleared the tracking error.
     private func resumeTracking(_ resume: TrackingAutomationState.Resume) async {
-        tracking.clearError()
         do {
             _ = try await client.resumeTracking(
                 taskID: resume.taskID, occurredAt: formatTimestamp(resume.date))
