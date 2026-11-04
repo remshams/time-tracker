@@ -37,8 +37,6 @@ public final class ConnectionStore: ChangeGuardedStore {
 
     func apply(_ settings: ConnectionSettings) { set(\.settings, settings) }
 
-    func clearProtocolBlock() { protocolBlocked = false }
-
     func acceptTaskList() {
         set(\.confirmed, true)
         set(\.stale, false)
