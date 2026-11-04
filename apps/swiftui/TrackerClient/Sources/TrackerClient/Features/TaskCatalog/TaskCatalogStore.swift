@@ -7,7 +7,7 @@ import Observation
 /// changes, so an unchanged poll redraws nothing and a change to another task leaves the selected task's
 /// readers alone.
 @Observable
-public final class TaskCatalogStore {
+public final class TaskCatalogStore: ChangeGuardedStore {
     public private(set) var tasks: [TaskItem] = []
     public private(set) var selectedTaskID: String?
     public private(set) var tab: TaskTab = .active
@@ -87,10 +87,5 @@ public final class TaskCatalogStore {
     private func updateDerivedValues() {
         set(\.visibleTasks, tasks.filter { $0.archived == (tab == .archived) })
         set(\.selectedTask, tasks.first { $0.id == selectedTaskID })
-    }
-
-    private func set<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<TaskCatalogStore, Value>, _ value: Value) {
-        guard self[keyPath: keyPath] != value else { return }
-        self[keyPath: keyPath] = value
     }
 }

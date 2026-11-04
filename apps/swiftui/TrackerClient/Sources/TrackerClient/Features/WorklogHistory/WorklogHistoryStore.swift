@@ -7,7 +7,7 @@ import Observation
 /// changes, so an unchanged poll redraws nothing and loading another page leaves the "Load older" button
 /// alone unless more pages appear or run out.
 @Observable
-public final class WorklogHistoryStore {
+public final class WorklogHistoryStore: ChangeGuardedStore {
     public private(set) var worklogs: [WorklogItem] = []
     public private(set) var hasMore = false
     public private(set) var unavailable = false
@@ -58,11 +58,5 @@ public final class WorklogHistoryStore {
     private func setCursor(_ cursor: String?) {
         nextCursor = cursor
         set(\.hasMore, cursor != nil)
-    }
-
-    private func set<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<WorklogHistoryStore, Value>, _ value: Value)
-    {
-        guard self[keyPath: keyPath] != value else { return }
-        self[keyPath: keyPath] = value
     }
 }
