@@ -527,7 +527,6 @@ public final class TrackerSession {
     }
 
     public func refresh() {
-        connection.clearProtocolBlock()
         beginRefresh()
     }
 
