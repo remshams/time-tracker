@@ -37,27 +37,40 @@ final class StatusItemTests: XCTestCase {
     @MainActor
     func testStateRemembersOnlyConfirmedActiveAndDoesNotRewriteUnchangedIdentity() {
         let repository = MemoryLastTrackedTasks()
-        let state = LastTrackedTaskState(repository: repository, settings: .local)
-        XCTAssertNil(state.taskID)
+        let state = MenuBarStore(repository: repository, settings: .local)
+        XCTAssertNil(state.lastTrackedTaskID)
         state.observe(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
-        XCTAssertEqual(state.taskID, firstTask.id)
+        XCTAssertEqual(state.lastTrackedTaskID, firstTask.id)
         XCTAssertEqual(repository.writes.count, 1)
         state.observe(TaskListResources(tasks: [firstTask], active: nil), settings: .local)
-        XCTAssertEqual(state.taskID, firstTask.id)
+        XCTAssertEqual(state.lastTrackedTaskID, firstTask.id)
         XCTAssertEqual(repository.writes.count, 1)
+    }
+
+    @MainActor
+    func testStoreNotifiesMenuReadersOnlyWhenTheLastTaskChanges() async {
+        let store = MenuBarStore(repository: nil, settings: .local)
+        let probe = ObservationProbe { _ = store.lastTrackedTaskID }
+        store.observe(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
+        XCTAssertTrue(probe.consume())
+        store.observe(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
+        XCTAssertFalse(probe.consume(), "An unchanged task list must not redraw the menu bar.")
+        store.observe(emptyTaskListResources, settings: serverSettings)
+        XCTAssertTrue(probe.consume())
+        XCTAssertNil(store.lastTrackedTaskID)
     }
 
     @MainActor
     func testIdleStartupInfersLatestValidStartAndBreaksDateTiesByID() {
         let repository = MemoryLastTrackedTasks()
-        let state = LastTrackedTaskState(repository: repository, settings: .local)
+        let state = MenuBarStore(repository: repository, settings: .local)
         let earlier = TaskItem(id: "earlier", name: "Earlier", archived: false, latestStart: "2024-12-30T12:00:00.000Z")
         let latest = TaskItem(id: "latest", name: "Latest", archived: true, latestStart: "2024-12-31T12:00:00.000Z")
         let tied = TaskItem(id: "aaa", name: "Tied", archived: false, latestStart: latest.latestStart)
         let invalid = TaskItem(id: "invalid", name: "Invalid", archived: false, latestStart: "invalid")
         state.observe(
             TaskListResources(tasks: [earlier, latest, tied, invalid, firstTask], active: nil), settings: .local)
-        XCTAssertEqual(state.taskID, tied.id)
+        XCTAssertEqual(state.lastTrackedTaskID, tied.id)
         XCTAssertEqual(repository.writes.last?.1, tied.id)
     }
 
@@ -65,7 +78,7 @@ final class StatusItemTests: XCTestCase {
     func testNewerCompletedServerTrackingUpdatesRememberedIdentityBetweenPolls() {
         let repository = MemoryLastTrackedTasks()
         repository.save(taskID: firstTask.id, for: serverSettings)
-        let state = LastTrackedTaskState(repository: repository, settings: serverSettings)
+        let state = MenuBarStore(repository: repository, settings: serverSettings)
         let previous = TaskItem(
             id: firstTask.id, name: firstTask.name, archived: false,
             latestStart: "2024-12-30T12:00:00.000Z")
@@ -73,41 +86,42 @@ final class StatusItemTests: XCTestCase {
             id: secondTask.id, name: secondTask.name, archived: false,
             latestStart: "2024-12-31T12:00:00.000Z")
         state.observe(TaskListResources(tasks: [previous, newer], active: nil), settings: serverSettings)
-        XCTAssertEqual(state.taskID, secondTask.id)
+        XCTAssertEqual(state.lastTrackedTaskID, secondTask.id)
         XCTAssertEqual(repository.load(for: serverSettings), secondTask.id)
         let tied = TaskItem(id: "aaa", name: "Tied", archived: false, latestStart: newer.latestStart)
         state.observe(TaskListResources(tasks: [previous, newer, tied], active: nil), settings: serverSettings)
-        XCTAssertEqual(state.taskID, secondTask.id, "Equal timestamps must not replace a known last task.")
+        XCTAssertEqual(state.lastTrackedTaskID, secondTask.id, "Equal timestamps must not replace a known last task.")
         state.observe(TaskListResources(tasks: [previous, tied], active: nil), settings: serverSettings)
-        XCTAssertEqual(state.taskID, secondTask.id, "Deleted last tasks keep their identity for the menu fallback.")
+        XCTAssertEqual(
+            state.lastTrackedTaskID, secondTask.id, "Deleted last tasks keep their identity for the menu fallback.")
     }
 
     @MainActor
     func testConfirmedDatedTaskSupersedesRememberedTaskWithoutDate() {
-        let state = LastTrackedTaskState(repository: nil, settings: .local)
+        let state = MenuBarStore(repository: nil, settings: .local)
         state.observe(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
         let newer = TaskItem(
             id: secondTask.id, name: secondTask.name, archived: false,
             latestStart: "2024-12-31T12:00:00.000Z")
         state.observe(TaskListResources(tasks: [firstTask, newer], active: nil), settings: .local)
-        XCTAssertEqual(state.taskID, secondTask.id)
+        XCTAssertEqual(state.lastTrackedTaskID, secondTask.id)
     }
 
     @MainActor
     func testConnectionIsolationWorksWithoutRepositoryAndAcrossRestarts() {
         let repository = MemoryLastTrackedTasks()
         for persistence in [nil, repository] as [(any LastTrackedTaskRepository)?] {
-            let state = LastTrackedTaskState(repository: persistence, settings: .local)
+            let state = MenuBarStore(repository: persistence, settings: .local)
             state.observe(TaskListResources(tasks: [firstTask], active: activeWorklog), settings: .local)
             state.observe(emptyTaskListResources, settings: serverSettings)
-            XCTAssertNil(state.taskID)
+            XCTAssertNil(state.lastTrackedTaskID)
             let remoteActive = WorklogItem(id: "remote", taskId: secondTask.id, start: activeWorklog.start, end: nil)
             state.observe(TaskListResources(tasks: [secondTask], active: remoteActive), settings: serverSettings)
             state.observe(TaskListResources(tasks: [firstTask], active: nil), settings: .local)
-            XCTAssertEqual(state.taskID, firstTask.id)
+            XCTAssertEqual(state.lastTrackedTaskID, firstTask.id)
         }
-        XCTAssertEqual(LastTrackedTaskState(repository: repository, settings: .local).taskID, firstTask.id)
-        XCTAssertEqual(LastTrackedTaskState(repository: repository, settings: serverSettings).taskID, secondTask.id)
+        XCTAssertEqual(MenuBarStore(repository: repository, settings: .local).lastTrackedTaskID, firstTask.id)
+        XCTAssertEqual(MenuBarStore(repository: repository, settings: serverSettings).lastTrackedTaskID, secondTask.id)
     }
 
     @MainActor
@@ -148,7 +162,7 @@ final class StatusItemTests: XCTestCase {
             let count = fixture.client.operations.count
             XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .openMenu)
             XCTAssertEqual(fixture.client.operations.count, count)
-            let label = TrackerMenuLabelContent(fixture.session, showDailyTotal: false)
+            let label = TrackerMenuLabelContent(.current(fixture.session), showDailyTotal: false)
             XCTAssertEqual(label.indicator.taskID, remembered)
             XCTAssertEqual(label.indicator.symbol, "circle")
             if remembered == nil { XCTAssertEqual(label.help, "No task tracked yet") }
@@ -165,11 +179,11 @@ final class StatusItemTests: XCTestCase {
         repository.save(taskID: firstTask.id, for: .local)
         let fixture = Fixture(lastTrackedTasks: repository)
         defer { fixture.cleanup() }
-        XCTAssertEqual(fixture.session.lastTrackedTaskID, firstTask.id)
+        XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, firstTask.id)
         XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
         let renamed = TaskItem(id: firstTask.id, name: "Renamed task", archived: false, latestStart: nil)
         try await fixture.start(TaskListResources(tasks: [renamed], active: nil))
-        let label = TrackerMenuLabelContent(fixture.session, showDailyTotal: false)
+        let label = TrackerMenuLabelContent(.current(fixture.session), showDailyTotal: false)
         XCTAssertEqual(label.help, "Stopped. Last tracked: Renamed task")
         XCTAssertEqual(label.indicator.color, TaskColor.forTaskID(firstTask.id))
         XCTAssertEqual(fixture.session.menuPrimaryAction, .start(taskID: firstTask.id))
@@ -185,10 +199,10 @@ final class StatusItemTests: XCTestCase {
         refresh.fail(BridgeFailure(message: "Offline"))
         try await fixture.settled()
         XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
-        let label = TrackerMenuLabelContent(fixture.session, showDailyTotal: false)
+        let label = TrackerMenuLabelContent(.current(fixture.session), showDailyTotal: false)
         XCTAssertEqual(label.indicator.symbol, "circle")
         XCTAssertEqual(label.help, "Tracking status unavailable. Last confirmed task: First task")
-        XCTAssertEqual(fixture.session.lastTrackedTaskID, firstTask.id)
+        XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, firstTask.id)
         let count = fixture.client.operations.count
         XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
         XCTAssertEqual(fixture.client.operations.count, count)
@@ -230,7 +244,7 @@ final class StatusItemTests: XCTestCase {
         failedRequest.fail(BridgeFailure(message: "Unavailable server"))
         let failed = try await fixture.taskValue(failedSwitch)
         XCTAssertFalse(failed)
-        XCTAssertEqual(fixture.session.lastTrackedTaskID, firstTask.id)
+        XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, firstTask.id)
         XCTAssertEqual(fixture.session.connectionSettings, .local)
         let switchServer = Task { await fixture.session.connect(serverSettings) }
         let connect = try await fixture.client.next()
@@ -240,7 +254,7 @@ final class StatusItemTests: XCTestCase {
         let connected = try await fixture.taskValue(switchServer)
         XCTAssertTrue(connected)
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.lastTrackedTaskID, secondTask.id)
+        XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, secondTask.id)
         XCTAssertEqual(fixture.session.menuPrimaryAction, .start(taskID: secondTask.id))
         XCTAssertEqual(repository.tasks[ConnectionSettings.local.trackingIdentityKey], firstTask.id)
         XCTAssertEqual(repository.tasks[serverSettings.trackingIdentityKey], secondTask.id)
@@ -259,10 +273,10 @@ final class StatusItemTests: XCTestCase {
         let reconciliation = try await fixture.client.next()
         XCTAssertEqual(reconciliation.operation, .refresh(fixture.session.connectionSettings))
         XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .disabled)
-        XCTAssertEqual(fixture.session.lastTrackedTaskID, firstTask.id)
+        XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, firstTask.id)
         reconciliation.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.lastTrackedTaskID, firstTask.id)
+        XCTAssertEqual(fixture.session.menuBar.lastTrackedTaskID, firstTask.id)
         XCTAssertEqual(fixture.session.menuPrimaryAction, .start(taskID: firstTask.id))
         XCTAssertEqual(repository.writes.count, 1)
     }
@@ -272,9 +286,9 @@ final class StatusItemTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: false)
-        fixture.session.onChange = { observer.update(from: fixture.session, showDailyTotal: false) }
-        observer.menuOpened(from: fixture.session, showDailyTotal: false)
+        let menu = MenuHarness(fixture, showDailyTotal: false)
+        let observer = menu.observer
+        observer.menuOpened()
         fixture.scheduler.poll?.fire()
         let refresh = try await fixture.client.next()
         let replacement = WorklogItem(id: "replacement", taskId: secondTask.id, start: activeWorklog.start, end: nil)
@@ -282,9 +296,10 @@ final class StatusItemTests: XCTestCase {
         let history = try await fixture.client.next()
         history.succeed(emptyPage)
         try await fixture.settled()
+        try await menu.settled()
         XCTAssertEqual(observer.label.indicator.taskID, firstTask.id)
         XCTAssertEqual(fixture.session.menuPrimaryAction, .stop(worklogID: replacement.id))
-        observer.menuClosed(from: fixture.session, showDailyTotal: false)
+        observer.menuClosed()
         XCTAssertEqual(observer.label.indicator.taskID, secondTask.id)
         XCTAssertEqual(observer.label.status, "Tracking: Second task")
     }

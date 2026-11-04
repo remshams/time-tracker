@@ -10,7 +10,8 @@ final class MenuPresentationTests: XCTestCase {
         let resources = TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog)
         let rows = [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)]
         try await fixture.start(resources, rows: rows)
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
+        let menu = MenuHarness(fixture, showDailyTotal: true)
+        let observer = menu.observer
         var labelChanges = 0
         var valueChanges = 0
         observer.onLabelChange = { labelChanges += 1 }
@@ -19,10 +20,10 @@ final class MenuPresentationTests: XCTestCase {
         let windowTicks = window.counter(PresentationReads.timer)
         let windowControls = window.counter(PresentationReads.controls)
         fixture.session.onChange = {
-            observer.update(from: fixture.session, showDailyTotal: true)
+            menu.update()
             window.update()
         }
-        observer.menuOpened(from: fixture.session, showDailyTotal: true)
+        observer.menuOpened()
         let originalContent = observer.content
         let originalLabel = observer.label
         let display = try XCTUnwrap(fixture.scheduler.display)
@@ -30,11 +31,13 @@ final class MenuPresentationTests: XCTestCase {
             fixture.clock.now.addTimeInterval(60)
             fixture.clock.uptime += 60
             display.fire()
-            XCTAssertEqual(observer.values.elapsedText, fixture.session.timerDisplayText)
-            XCTAssertEqual(observer.values.totalText, fixture.session.totalDailyDurationText)
+            try await menu.settled()
+            let totals = fixture.session.dailyTotals
+            XCTAssertEqual(observer.values.elapsedText, fixture.session.tracking.timerText)
+            XCTAssertEqual(observer.values.totalText, totals.dayTotal.map(formatClockDuration))
             XCTAssertEqual(
                 observer.values.taskDurationTexts[firstTask.id],
-                fixture.session.dailyDurationText(taskID: firstTask.id))
+                totals.taskDurations[firstTask.id].map(formatClockDuration))
             fixture.scheduler.poll?.fire()
             let poll = try await fixture.client.next()
             XCTAssertTrue(fixture.client.hasPendingRequests)
@@ -49,6 +52,7 @@ final class MenuPresentationTests: XCTestCase {
                 while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
             }
             try await fixture.taskValue(finished)
+            try await menu.settled()
         }
         XCTAssertEqual(observer.content, originalContent)
         XCTAssertEqual(labelChanges, 0)
@@ -56,11 +60,43 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertEqual(windowTicks.count, 3, "Freezing a menu must not freeze the window's clock.")
         XCTAssertEqual(windowControls.count, 0, "Background polls must keep the window's controls stable.")
         XCTAssertEqual(observer.label, originalLabel)
-        observer.menuClosed(from: fixture.session, showDailyTotal: true)
+        observer.menuClosed()
         XCTAssertNotEqual(observer.content, originalContent)
         XCTAssertEqual(labelChanges, 1)
-        XCTAssertEqual(observer.content.elapsedText, fixture.session.timerDisplayText)
+        XCTAssertEqual(observer.content.elapsedText, fixture.session.tracking.timerText)
         XCTAssertTrue(observer.content.canStopTracking)
+    }
+
+    @MainActor
+    func testClosedMenuKeepsObservingEveryStoreAfterChangesWhileOpen() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
+        let menu = MenuHarness(fixture, showDailyTotal: false)
+        let observer = menu.observer
+        var labelChanges = 0
+        observer.onLabelChange = { labelChanges += 1 }
+        observer.menuOpened()
+        fixture.scheduler.poll?.fire()
+        let stop = try await fixture.client.next()
+        stop.succeed(TaskListResources(tasks: [firstTask, secondTask], active: nil))
+        let history = try await fixture.client.next()
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        try await menu.settled()
+        XCTAssertEqual(observer.label.status, "Tracking: First task")
+        XCTAssertEqual(labelChanges, 0)
+        observer.menuClosed()
+        XCTAssertEqual(observer.label.status, "Stopped. Last tracked: First task")
+        XCTAssertEqual(labelChanges, 1)
+        let replacement = WorklogItem(id: "replacement", taskId: secondTask.id, start: activeWorklog.start, end: nil)
+        fixture.scheduler.poll?.fire()
+        let start = try await fixture.client.next()
+        start.succeed(TaskListResources(tasks: [firstTask, secondTask], active: replacement))
+        try await fixture.settled()
+        try await menu.settled()
+        XCTAssertEqual(observer.label.status, "Tracking: Second task")
+        XCTAssertEqual(labelChanges, 2)
     }
 
     @MainActor
@@ -70,7 +106,9 @@ final class MenuPresentationTests: XCTestCase {
         try await fixture.start(
             TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 10_000_000)])
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
+        fixture.session.setMenuBarClock(true)
+        let menu = MenuHarness(fixture, showDailyTotal: true)
+        let observer = menu.observer
         var changes = 0
         observer.onLabelChange = { changes += 1 }
         XCTAssertEqual(observer.label.indicator.symbol, "circle.fill")
@@ -79,24 +117,18 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertEqual(
             observer.label.help,
             "Tracking: First task\nTotal today: 00:00\nTime logged today in your local time zone")
-        fixture.clock.now.addTimeInterval(1)
-        fixture.clock.uptime += 1
-        observer.update(from: fixture.session, showDailyTotal: true)
+        try await menu.tick(1)
         XCTAssertEqual(changes, 0, "Seconds in accessibility or help text must not invalidate the status label.")
-        fixture.clock.now.addTimeInterval(49)
-        fixture.clock.uptime += 49
-        observer.update(from: fixture.session, showDailyTotal: true)
+        try await menu.tick(49)
         XCTAssertEqual(observer.label.totalText, "00:01")
         XCTAssertEqual(changes, 1)
-        observer.update(from: fixture.session, showDailyTotal: false)
+        observer.setShowDailyTotal(false)
         XCTAssertNil(observer.label.totalText)
         XCTAssertEqual(observer.label.help, observer.label.status)
         XCTAssertEqual(changes, 2)
-        fixture.clock.now.addTimeInterval(3_600)
-        fixture.clock.uptime += 3_600
-        observer.update(from: fixture.session, showDailyTotal: false)
+        try await menu.tick(3_600)
         XCTAssertEqual(changes, 2)
-        observer.update(from: fixture.session, showDailyTotal: true)
+        observer.setShowDailyTotal(true)
         XCTAssertEqual(observer.label.totalText, "01:01")
         XCTAssertEqual(changes, 3)
     }
@@ -108,21 +140,22 @@ final class MenuPresentationTests: XCTestCase {
         try await fixture.start(
             TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 5_000_000)])
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
+        let menu = MenuHarness(fixture, showDailyTotal: true)
+        let observer = menu.observer
         fixture.clock.now.addTimeInterval(60)
         fixture.clock.uptime += 60
-        observer.menuOpened(from: fixture.session, showDailyTotal: true)
+        menu.menuOpened()
         XCTAssertEqual(observer.content.totalText, "00:01:05")
         XCTAssertEqual(observer.label.totalText, "00:01")
         fixture.clock.now.addTimeInterval(60)
         fixture.clock.uptime += 60
-        observer.update(from: fixture.session, showDailyTotal: false)
+        observer.setShowDailyTotal(false)
         XCTAssertEqual(observer.content.totalText, "00:01:05")
         XCTAssertEqual(observer.label.totalText, "00:01")
-        observer.menuClosed(from: fixture.session, showDailyTotal: false)
+        menu.menuClosed()
         XCTAssertEqual(observer.content.totalText, "00:02:05")
         XCTAssertNil(observer.label.totalText)
-        observer.update(from: fixture.session, showDailyTotal: true)
+        observer.setShowDailyTotal(true)
         XCTAssertEqual(observer.label.totalText, "00:02")
         XCTAssertEqual(observer.content.totalText, "00:02:05")
     }
@@ -142,7 +175,7 @@ final class MenuPresentationTests: XCTestCase {
             TaskListResources(
                 tasks: [secondTask, twin, archivedTask, emptyArchive, firstTask, another],
                 active: activeWorklog), rows: rows)
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
+        let observer = MenuHarness(fixture, showDailyTotal: true).observer
         XCTAssertEqual(observer.content.todayTasks.map(\.id), [archivedTask.id, firstTask.id])
         XCTAssertEqual(observer.content.todayTasks.map(\.durationText), ["00:00:30", "00:00:10"])
         XCTAssertEqual(observer.content.todayTasks.map(\.isRunning), [false, true])
@@ -159,9 +192,9 @@ final class MenuPresentationTests: XCTestCase {
         let fixture = Fixture(saved: serverSettings)
         defer { fixture.cleanup() }
         try await fixture.start(TaskListResources(tasks: [firstTask, secondTask], active: activeWorklog))
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
-        fixture.session.onChange = { observer.update(from: fixture.session, showDailyTotal: true) }
-        observer.menuOpened(from: fixture.session, showDailyTotal: true)
+        let menu = MenuHarness(fixture, showDailyTotal: true)
+        let observer = menu.observer
+        observer.menuOpened()
         let target = try XCTUnwrap(observer.content.otherTasks.first { $0.id == secondTask.id })
         XCTAssertTrue(target.canStart)
         let changed = WorklogItem(
@@ -177,13 +210,14 @@ final class MenuPresentationTests: XCTestCase {
             while fixture.client.hasPendingRequests && !Task.isCancelled { await Task.yield() }
         }
         try await fixture.taskValue(finished)
+        try await menu.settled()
         let count = fixture.client.operations.count
         fixture.session.stopTracking(worklogID: try XCTUnwrap(observer.content.activeWorklogID))
         fixture.session.startTracking(taskID: target.id)
         XCTAssertEqual(fixture.client.operations.count, count)
         XCTAssertEqual(fixture.session.active?.id, changed.id)
         XCTAssertEqual(observer.content.activeWorklogID, activeWorklog.id)
-        observer.menuClosed(from: fixture.session, showDailyTotal: true)
+        observer.menuClosed()
         XCTAssertEqual(observer.content.activeWorklogID, changed.id)
         XCTAssertFalse(observer.content.otherTasks.contains { $0.id == secondTask.id })
     }
@@ -192,7 +226,8 @@ final class MenuPresentationTests: XCTestCase {
     func testIdleAndUnavailableLabelsAndUnchangedContentDoNotNotify() async throws {
         let fixture = Fixture()
         defer { fixture.cleanup() }
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
+        let menu = MenuHarness(fixture, showDailyTotal: true)
+        let observer = menu.observer
         XCTAssertEqual(observer.label.indicator.symbol, "circle")
         XCTAssertEqual(observer.label.status, "Tracking status unavailable. No task tracked yet")
         XCTAssertEqual(observer.label.totalText, "-")
@@ -202,16 +237,19 @@ final class MenuPresentationTests: XCTestCase {
         XCTAssertNil(observer.content.elapsedText)
         XCTAssertTrue(observer.content.todayTasks.isEmpty)
         try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
-        observer.update(from: fixture.session, showDailyTotal: true)
+        try await menu.settled()
         XCTAssertEqual(observer.label.indicator.symbol, "circle")
         XCTAssertEqual(observer.label.status, "No task tracked yet")
         XCTAssertEqual(observer.content.otherTasks.first?.durationText, "-")
         let content = observer.content
         var labelChanges = 0
+        var valueChanges = 0
         observer.onLabelChange = { labelChanges += 1 }
-        observer.update(from: fixture.session, showDailyTotal: true)
+        observer.onValuesChange = { valueChanges += 1 }
+        observer.setShowDailyTotal(true)
         XCTAssertEqual(observer.content, content)
         XCTAssertEqual(labelChanges, 0)
+        XCTAssertEqual(valueChanges, 0)
     }
 
     @MainActor
@@ -222,12 +260,13 @@ final class MenuPresentationTests: XCTestCase {
         let open = try await fixture.client.next()
         open.succeed(emptyTaskListResources)
         let report = try await fixture.client.next()
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
+        let menu = MenuHarness(fixture, showDailyTotal: true)
+        let observer = menu.observer
         XCTAssertEqual(observer.content.dailyTotalsStatus, .loading)
         XCTAssertEqual(observer.content.totalsExplanation, "Loading today's totals")
         report.fail(BridgeFailure(message: "Today's report failed"))
         try await fixture.settled()
-        observer.update(from: fixture.session, showDailyTotal: true)
+        try await menu.settled()
         XCTAssertEqual(observer.content.dailyTotalsStatus, .unavailable)
         XCTAssertEqual(observer.content.totalsExplanation, "Today's report failed")
         XCTAssertEqual(observer.label.totalText, "-")
@@ -240,12 +279,13 @@ final class MenuPresentationTests: XCTestCase {
         try await fixture.start(
             TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 90_000_000)])
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
+        let menu = MenuHarness(fixture, showDailyTotal: true)
+        let observer = menu.observer
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
         poll.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable"))
         try await fixture.settled()
-        observer.update(from: fixture.session, showDailyTotal: true)
+        try await menu.settled()
         XCTAssertTrue(observer.content.isStale)
         XCTAssertEqual(observer.label.indicator.symbol, "circle")
         XCTAssertEqual(observer.label.status, "Tracking status unavailable. Last confirmed task: First task")

@@ -46,7 +46,7 @@ final class LifecycleTests: XCTestCase {
         let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
         try await fixture.start(resources)
         XCTAssertNil(fixture.scheduler.display)
-        XCTAssertEqual(fixture.session.timerDisplayText, "00:00:30")
+        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:30")
         fixture.session.menuOpened()
         let refresh = try await fixture.client.next()
         refresh.succeed(resources)
@@ -58,11 +58,66 @@ final class LifecycleTests: XCTestCase {
         fixture.clock.uptime += 9
         fixture.clock.now.addTimeInterval(9)
         timer?.fire()
-        XCTAssertEqual(fixture.session.timerDisplayText, "00:00:39")
+        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:39")
         XCTAssertEqual(fixture.client.operations.count, operationCount)
         fixture.session.menuClosed()
         XCTAssertTrue(timer?.cancelled == true)
         XCTAssertNil(fixture.scheduler.display)
+    }
+
+    @MainActor
+    func testMenuBarClockRunsWhileTrackingWithTheSettingOnAndRepublishesEachMinute() async throws {
+        let fixture = Fixture(reports: true)
+        defer { fixture.cleanup() }
+        fixture.session.setMenuBarClock(true)
+        XCTAssertNil(fixture.scheduler.menuBarClock, "The clock waits for the session to start.")
+        let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(resources, rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 0)])
+        let clock = try XCTUnwrap(fixture.scheduler.menuBarClock)
+        XCTAssertEqual(clock.tolerance, 5)
+        XCTAssertNil(fixture.scheduler.display, "The clock runs while no window or menu is open.")
+        XCTAssertEqual(fixture.session.dailyTotals.dayTotal, 0)
+        var publishes = 0
+        fixture.session.onChange = { publishes += 1 }
+        let operationCount = fixture.client.operations.count
+        fixture.clock.now.addTimeInterval(60)
+        fixture.clock.uptime += 60
+        clock.fire()
+        XCTAssertEqual(publishes, 1)
+        XCTAssertEqual(fixture.session.dailyTotals.dayTotal, 60)
+        XCTAssertEqual(fixture.client.operations.count, operationCount)
+        fixture.session.setMenuBarClock(false)
+        XCTAssertTrue(clock.cancelled)
+        XCTAssertNil(fixture.scheduler.menuBarClock)
+        fixture.session.setMenuBarClock(true)
+        XCTAssertNotNil(fixture.scheduler.menuBarClock)
+        fixture.session.setMenuBarClock(true)
+        XCTAssertEqual(fixture.scheduler.active.filter { $0.delay == 60 && $0.repeating }.count, 1)
+        fixture.session.refresh()
+        let stopped = try await fixture.client.next()
+        stopped.succeed(TaskListTotalsRefresh(taskList: TaskListResources(tasks: [firstTask], active: nil), rows: []))
+        let history = try await fixture.client.next()
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertNil(fixture.scheduler.menuBarClock, "The total stays the same while no timer runs.")
+    }
+
+    @MainActor
+    func testMenuBarClockStopsWhileAsleepAndResumesOnWake() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
+        fixture.session.setMenuBarClock(true)
+        let clock = try XCTUnwrap(fixture.scheduler.menuBarClock)
+        fixture.session.sleep()
+        XCTAssertTrue(clock.cancelled)
+        XCTAssertNil(fixture.scheduler.menuBarClock)
+        fixture.session.wake()
+        XCTAssertNotNil(fixture.scheduler.menuBarClock)
+        let refresh = try await fixture.client.next()
+        refresh.succeed(TaskListResources(tasks: [firstTask], active: activeWorklog))
+        try await fixture.settled()
+        XCTAssertNotNil(fixture.scheduler.menuBarClock)
     }
 
     @MainActor
@@ -75,7 +130,7 @@ final class LifecycleTests: XCTestCase {
         refresh.succeed(emptyTaskListResources)
         try await fixture.settled()
         XCTAssertNil(fixture.scheduler.display)
-        XCTAssertEqual(fixture.session.timerDisplayText, "Idle")
+        XCTAssertEqual(fixture.session.tracking.timerText, "Idle")
     }
 
     @MainActor

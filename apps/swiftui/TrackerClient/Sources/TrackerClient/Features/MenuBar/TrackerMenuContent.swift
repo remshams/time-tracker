@@ -24,35 +24,36 @@ public struct TrackerMenuContent: Equatable {
     public let todayTasks: [TrackerMenuTask]
     public let otherTasks: [TrackerMenuTask]
 
-    init(_ session: TrackerSession, taskOrder: MenuTaskOrder) {
-        connectionSettings = session.connectionSettings
-        connectionStatusText = session.connectionStatusText
-        isStale = session.isStale
-        runningTaskName = session.runningTaskName
-        autoPauseStatusText = session.autoPauseStatusText
-        trackingError = session.trackingError
-        activeWorklogID = session.active?.id
-        elapsedText = session.active == nil ? nil : session.timerDisplayText
-        canStopTracking = session.canStopTracking
-        dailyTotalsStatus = session.dailyTotalsStatus
-        totalText = session.totalDailyDurationText
-        totalsExplanation = session.dailyTotalsExplanation
-        let today = session.todayTasks
+    init(_ inputs: TrackerMenuInputs, taskOrder: MenuTaskOrder) {
+        connectionSettings = inputs.connectionSettings
+        connectionStatusText = inputs.connectionStatusText
+        isStale = inputs.isStale
+        runningTaskName = inputs.runningTaskName
+        autoPauseStatusText = inputs.autoPauseStatusText
+        trackingError = inputs.trackingError
+        activeWorklogID = inputs.active?.id
+        elapsedText = inputs.active == nil ? nil : inputs.timerText
+        canStopTracking = inputs.canStopTracking
+        dailyTotalsStatus = inputs.dailyTotalsStatus
+        totalText = inputs.dayTotal.map(formatClockDuration) ?? "Unavailable"
+        totalsExplanation = inputs.totalsExplanation
+        // Tasks with time logged today, in task list order before the menu's own order applies.
+        let today = inputs.tasks.filter { (inputs.taskDurations[$0.id] ?? 0) > 0 }
         let todayIDs = Set(today.map(\.id))
-        todayTasks = taskOrder.sorted(today).map { Self.entry($0, session: session) }
-        otherTasks = taskOrder.sorted(session.tasks.filter { Self.isOtherTask($0, todayIDs: todayIDs) })
-            .map { Self.entry($0, session: session) }
+        todayTasks = taskOrder.sorted(today).map { Self.entry($0, inputs: inputs) }
+        otherTasks = taskOrder.sorted(inputs.tasks.filter { Self.isOtherTask($0, todayIDs: todayIDs) })
+            .map { Self.entry($0, inputs: inputs) }
     }
 
     private static func isOtherTask(_ task: TaskItem, todayIDs: Set<String>) -> Bool {
         !task.archived && !todayIDs.contains(task.id)
     }
 
-    private static func entry(_ task: TaskItem, session: TrackerSession) -> TrackerMenuTask {
+    private static func entry(_ task: TaskItem, inputs: TrackerMenuInputs) -> TrackerMenuTask {
         TrackerMenuTask(
-            task: task, durationText: session.dailyDuration(taskID: task.id).map(formatClockDuration) ?? "-",
-            isRunning: session.active?.taskId == task.id,
-            canStart: session.canStartTracking(taskID: task.id))
+            task: task, durationText: inputs.taskDurations[task.id].map(formatClockDuration) ?? "-",
+            isRunning: inputs.active?.taskId == task.id,
+            canStart: inputs.startableTaskIDs.contains(task.id))
     }
 }
 
@@ -62,35 +63,37 @@ public struct TrackerMenuLabelContent: Equatable {
     public let totalText: String?
     public let help: String
 
-    init(_ session: TrackerSession, showDailyTotal: Bool) {
+    init(_ inputs: TrackerMenuInputs, showDailyTotal: Bool) {
+        let lastTrackedTaskID = inputs.lastTrackedTaskID
+        let lastTrackedTask = lastTrackedTaskID.flatMap { id in inputs.tasks.first { $0.id == id } }
         indicator = TaskIndicator(
-            taskID: session.active?.taskId ?? session.lastTrackedTaskID,
-            isRunning: session.active != nil, isStale: session.isStale)
-        if session.isStale {
-            let name = session.lastTrackedTask?.name ?? Self.unavailableTaskName(session.lastTrackedTaskID)
+            taskID: inputs.active?.taskId ?? lastTrackedTaskID,
+            isRunning: inputs.active != nil, isStale: inputs.isStale)
+        if inputs.isStale {
+            let name = lastTrackedTask?.name ?? Self.unavailableTaskName(lastTrackedTaskID)
             status =
                 name.map { "Tracking status unavailable. Last confirmed task: \($0)" }
                 ?? "Tracking status unavailable. No task tracked yet"
-        } else if session.active != nil {
-            status = "Tracking: \(session.runningTaskName)"
-        } else if let task = session.lastTrackedTask {
+        } else if inputs.active != nil {
+            status = "Tracking: \(inputs.runningTaskName)"
+        } else if let task = lastTrackedTask {
             status = "Stopped. Last tracked: \(task.name)"
-        } else if session.lastTrackedTaskID != nil {
+        } else if lastTrackedTaskID != nil {
             status = "Stopped. Last tracked task is no longer available"
         } else {
             status = "No task tracked yet"
         }
         if showDailyTotal {
             let total: String
-            if let duration = session.totalDailyDuration {
+            if let duration = inputs.dayTotal {
                 let minutes = Int(max(0, duration)) / 60
                 let text = String(format: "%02d:%02d", minutes / 60, minutes % 60)
-                total = Self.totalLabel(text, status: session.dailyTotalsStatus)
+                total = Self.totalLabel(text, status: inputs.dailyTotalsStatus)
             } else {
                 total = "-"
             }
             totalText = total
-            help = "\(status)\nTotal today: \(total)\n\(session.dailyTotalsExplanation)"
+            help = "\(status)\nTotal today: \(total)\n\(inputs.totalsExplanation)"
         } else {
             totalText = nil
             help = status

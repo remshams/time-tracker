@@ -197,7 +197,7 @@ enum PresentationReads {
 }
 
 /// Checks that every presentation value equals the session value it copies, and that publishing updated the
-/// tracking store's timer text and the daily totals store's status.
+/// tracking store's timer text and the daily totals store's values.
 @MainActor
 func assertMirrors(
     _ presentation: TrackerPresentation, _ session: TrackerSession,
@@ -205,9 +205,18 @@ func assertMirrors(
 ) {
     XCTAssertEqual(presentation.pauseOnScreenLock, session.pauseOnScreenLock, file: file, line: line)
     XCTAssertEqual(presentation.autoPauseStatusText, session.autoPauseStatusText, file: file, line: line)
-    XCTAssertEqual(session.dailyTotals.status, session.dailyTotalsStatus, file: file, line: line)
+    let totals = session.dailyTotals
+    XCTAssertEqual(totals.status, totals.shownStatus(clock: session.clock), file: file, line: line)
+    XCTAssertEqual(
+        totals.dayTotal, totals.totalDuration(active: session.active, clock: session.clock), file: file, line: line)
+    let explanation = totals.explanation(clock: session.clock)
+    XCTAssertEqual(totals.totalsExplanation, explanation, file: file, line: line)
+    XCTAssertEqual(presentation.runningTaskName, session.runningTaskName, file: file, line: line)
     XCTAssertEqual(presentation.canStopTracking, session.canStopTracking, file: file, line: line)
-    XCTAssertEqual(session.tracking.timerText, session.timerDisplayText, file: file, line: line)
+    XCTAssertEqual(
+        session.tracking.timerText,
+        session.tracking.displayText(clock: session.clock, confirmed: session.connection.confirmed),
+        file: file, line: line)
     XCTAssertEqual(presentation.taskCreation, session.taskCreation, file: file, line: line)
     XCTAssertEqual(presentation.canOpenTaskCreation, session.canOpenTaskCreation, file: file, line: line)
     XCTAssertEqual(presentation.taskRename, session.taskRename, file: file, line: line)
@@ -231,12 +240,11 @@ func assertMirrors(
         XCTAssertEqual(
             presentation.canUnarchiveTask(taskID: task.id), session.canUnarchiveTask(taskID: task.id),
             file: file, line: line)
+        XCTAssertEqual(totals.taskDurations[task.id], session.dailyDuration(taskID: task.id), file: file, line: line)
         XCTAssertEqual(
-            session.dailyTotals.taskTotal(taskID: task.id).content?.text,
+            totals.taskTotal(taskID: task.id).content?.text,
             session.dailyDuration(taskID: task.id).map(formatClockDuration) ?? "-", file: file, line: line)
-        XCTAssertEqual(
-            session.dailyTotals.taskTotal(taskID: task.id).content?.explanation, session.dailyTotalsExplanation,
-            file: file, line: line)
+        XCTAssertEqual(totals.taskTotal(taskID: task.id).content?.explanation, explanation, file: file, line: line)
     }
     if session.taskArchiving.isPresented {
         XCTAssertEqual(presentation.taskArchivingSheetContent, session.taskArchiving, file: file, line: line)

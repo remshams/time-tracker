@@ -134,7 +134,7 @@ final class RefreshPresentationTests: XCTestCase {
         XCTAssertEqual(totals.changed(), Set([firstTask.id, secondTask.id]))
         let first = harness.dailyTotals.taskTotal(taskID: firstTask.id).content
         XCTAssertEqual(first?.text, "00:00:10")
-        XCTAssertEqual(first?.explanation, fixture.session.dailyTotalsExplanation)
+        XCTAssertEqual(first?.explanation, harness.dailyTotals.totalsExplanation)
         let second = harness.dailyTotals.taskTotal(taskID: secondTask.id).content
         XCTAssertTrue(second?.explanation.contains("cached") == true)
     }

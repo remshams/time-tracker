@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 public enum MenuPrimaryAction: Equatable, Sendable {
     case stop(worklogID: String)
@@ -13,15 +14,21 @@ public extension ConnectionSettings {
     }
 }
 
-final class LastTrackedTaskState {
-    private let repository: (any LastTrackedTaskRepository)?
-    private var remembered: [String: String] = [:]
-    private(set) var taskID: String?
+/// Holds the menu bar's own state for the whole app: the last tracked task of the current connection.
+///
+/// The menu reads `lastTrackedTaskID`; `TrackerSession` calls `observe` after each task list. The task is
+/// remembered per connection and saved to the repository, so switching connections back restores it.
+@Observable
+public final class MenuBarStore: ChangeGuardedStore {
+    public private(set) var lastTrackedTaskID: String?
+    @ObservationIgnored private let repository: (any LastTrackedTaskRepository)?
+    @ObservationIgnored private var remembered: [String: String] = [:]
 
     init(repository: (any LastTrackedTaskRepository)?, settings: ConnectionSettings) {
         self.repository = repository
-        taskID = repository?.load(for: settings)
-        remembered[settings.trackingIdentityKey] = taskID
+        let saved = repository?.load(for: settings)
+        lastTrackedTaskID = saved
+        remembered[settings.trackingIdentityKey] = saved
     }
 
     func observe(_ resources: TaskListResources, settings: ConnectionSettings) {
@@ -43,7 +50,8 @@ final class LastTrackedTaskState {
         } else {
             idleTaskID = latest?.0
         }
-        taskID = resources.tracking.value?.taskId ?? idleTaskID
+        let taskID = resources.tracking.value?.taskId ?? idleTaskID
+        set(\.lastTrackedTaskID, taskID)
         guard let taskID else { return }
         if stored != taskID { repository?.save(taskID: taskID, for: settings) }
         remembered[key] = taskID

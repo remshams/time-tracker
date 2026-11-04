@@ -29,16 +29,17 @@ final class MenuTaskClipboardTests: XCTestCase {
         try await fixture.start(
             TaskListResources(tasks: [firstTask], active: activeWorklog),
             rows: [TaskReportTotal(taskId: firstTask.id, durationMicroseconds: 440_000_000)])
-        let observer = TrackerMenuPresentationObserver(session: fixture.session, showDailyTotal: true)
-        observer.menuOpened(from: fixture.session, showDailyTotal: true)
+        let menu = MenuHarness(fixture, showDailyTotal: true)
+        let observer = menu.observer
+        observer.menuOpened()
         let captured = observer.content
         fixture.clock.now.addTimeInterval(15)
         fixture.clock.uptime += 15
-        observer.update(from: fixture.session, showDailyTotal: true)
+        try await menu.settled()
         XCTAssertEqual(observer.content, captured)
         XCTAssertEqual(fixture.session.menuCopyValue(.copyExact, taskID: firstTask.id, connection: .local), "7m 35s")
         XCTAssertEqual(fixture.session.menuCopyValue(.copyRounded, taskID: firstTask.id, connection: .local), "15m")
-        observer.menuClosed(from: fixture.session, showDailyTotal: true)
+        observer.menuClosed()
     }
 
     @MainActor
@@ -108,7 +109,7 @@ final class MenuTaskClipboardTests: XCTestCase {
         let poll = try await fixture.client.next()
         poll.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable"))
         try await fixture.settled()
-        XCTAssertEqual(fixture.session.dailyTotalsStatus, .cached)
+        XCTAssertEqual(fixture.session.dailyTotals.status, .cached)
         XCTAssertEqual(
             fixture.session.menuCopyValue(.copyExact, taskID: firstTask.id, connection: serverSettings), "1m 0s")
     }

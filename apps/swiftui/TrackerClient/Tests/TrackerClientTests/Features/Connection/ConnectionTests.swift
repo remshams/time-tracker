@@ -112,7 +112,7 @@ final class ConnectionTests: XCTestCase {
         XCTAssertEqual(fixture.session.connectionSettings, serverSettings)
         XCTAssertEqual(fixture.session.connectionStatusText, "Unavailable")
         XCTAssertEqual(fixture.session.runningTaskName, "Waiting for tracker state")
-        XCTAssertEqual(fixture.session.timerDisplayText, "Unavailable")
+        XCTAssertEqual(fixture.session.tracking.timerText, "Unavailable")
         XCTAssertTrue(fixture.session.isStale)
         XCTAssertFalse(fixture.session.canStartSelectedTask)
         XCTAssertFalse(fixture.session.canStopTracking)

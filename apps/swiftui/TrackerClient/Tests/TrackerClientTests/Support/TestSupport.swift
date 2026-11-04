@@ -382,7 +382,8 @@ final class FakeScheduler: TrackerScheduler {
     private(set) var scheduled: [ScheduledAction] = []
     var active: [ScheduledAction] { scheduled.filter { !$0.cancelled } }
     var poll: ScheduledAction? { active.last { !$0.repeating && $0.tolerance > 0 } }
-    var display: ScheduledAction? { active.last { $0.repeating } }
+    var display: ScheduledAction? { active.last { $0.repeating && $0.delay == 1 } }
+    var menuBarClock: ScheduledAction? { active.last { $0.repeating && $0.delay == 60 } }
 
     func schedule(
         after delay: TimeInterval, repeating: Bool, tolerance: TimeInterval,
