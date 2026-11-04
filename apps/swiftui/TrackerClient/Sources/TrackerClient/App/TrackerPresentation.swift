@@ -1,19 +1,6 @@
 import Foundation
 import Observation
 
-public struct TaskDailyTotalPresentation: Equatable, Sendable {
-    public let text: String
-    public let explanation: String
-}
-
-/// Holds one task's daily total so a ticking timer redraws only that task's label.
-@Observable
-public final class TaskDailyTotal {
-    public fileprivate(set) var content: TaskDailyTotalPresentation?
-
-    fileprivate init(content: TaskDailyTotalPresentation?) { self.content = content }
-}
-
 /// Copies the session values that views read into observable properties.
 ///
 /// Observation notifies on every assignment, including an equal value. `update(from:)` assigns a
@@ -23,7 +10,6 @@ public final class TaskDailyTotal {
 public final class TrackerPresentation: ChangeGuardedStore {
     public private(set) var pauseOnScreenLock: Bool
     public private(set) var autoPauseStatusText: String?
-    public private(set) var dailyTotalsStatus: DailyTotalsStatus
 
     public private(set) var canStopTracking: Bool
     public private(set) var startableTaskIDs: Set<String>
@@ -49,13 +35,9 @@ public final class TrackerPresentation: ChangeGuardedStore {
     public private(set) var worklogDeletionSheetContent: WorklogDeletionPresentation
     public private(set) var canOpenWorklogDeletion: Bool
 
-    @ObservationIgnored private var taskDailyTotals: [String: TaskDailyTotalPresentation]
-    @ObservationIgnored private var taskDailyTotalModels: [String: TaskDailyTotal] = [:]
-
     public init(session: TrackerSession) {
         pauseOnScreenLock = session.pauseOnScreenLock
         autoPauseStatusText = session.autoPauseStatusText
-        dailyTotalsStatus = session.dailyTotalsStatus
         canStopTracking = session.canStopTracking
         startableTaskIDs = Self.startableTaskIDs(session)
         taskCreation = session.taskCreation
@@ -78,13 +60,11 @@ public final class TrackerPresentation: ChangeGuardedStore {
         worklogDeletion = session.worklogDeletion
         worklogDeletionSheetContent = session.worklogDeletion
         canOpenWorklogDeletion = session.canOpenWorklogDeletion
-        taskDailyTotals = Self.taskDailyTotals(session)
     }
 
     public func update(from session: TrackerSession) {
         set(\.pauseOnScreenLock, session.pauseOnScreenLock)
         set(\.autoPauseStatusText, session.autoPauseStatusText)
-        set(\.dailyTotalsStatus, session.dailyTotalsStatus)
         set(\.canStopTracking, session.canStopTracking)
         set(\.startableTaskIDs, Self.startableTaskIDs(session))
         set(\.taskCreation, session.taskCreation)
@@ -108,31 +88,11 @@ public final class TrackerPresentation: ChangeGuardedStore {
         if worklogCorrection.isPresented { set(\.worklogCorrectionSheetContent, worklogCorrection) }
         if worklogMove.isPresented { set(\.worklogMoveSheetContent, worklogMove) }
         if worklogDeletion.isPresented { set(\.worklogDeletionSheetContent, worklogDeletion) }
-        updateTaskDailyTotals(Self.taskDailyTotals(session))
     }
 
     public func canStartTracking(taskID: String) -> Bool { startableTaskIDs.contains(taskID) }
     public func canArchiveTask(taskID: String) -> Bool { archivableTaskIDs.contains(taskID) }
     public func canUnarchiveTask(taskID: String) -> Bool { unarchivableTaskIDs.contains(taskID) }
-
-    /// Returns the task's observable total. Totals for tasks that leave the catalog stop updating.
-    public func taskDailyTotal(taskID: String) -> TaskDailyTotal {
-        if let existing = taskDailyTotalModels[taskID] { return existing }
-        let model = TaskDailyTotal(content: taskDailyTotals[taskID])
-        taskDailyTotalModels[taskID] = model
-        return model
-    }
-
-    private func updateTaskDailyTotals(_ next: [String: TaskDailyTotalPresentation]) {
-        taskDailyTotals = next
-        for (taskID, model) in taskDailyTotalModels {
-            if let content = next[taskID] {
-                if model.content != content { model.content = content }
-            } else {
-                taskDailyTotalModels.removeValue(forKey: taskID)
-            }
-        }
-    }
 
     private static func startableTaskIDs(_ session: TrackerSession) -> Set<String> {
         Set(session.tasks.map(\.id).filter { session.canStartTracking(taskID: $0) })
@@ -144,18 +104,5 @@ public final class TrackerPresentation: ChangeGuardedStore {
 
     private static func unarchivableTaskIDs(_ session: TrackerSession) -> Set<String> {
         Set(session.tasks.map(\.id).filter { session.canUnarchiveTask(taskID: $0) })
-    }
-
-    private static func taskDailyTotals(_ session: TrackerSession) -> [String: TaskDailyTotalPresentation] {
-        let explanation = session.dailyTotalsExplanation
-        return Dictionary(
-            uniqueKeysWithValues: session.tasks.map {
-                (
-                    $0.id,
-                    TaskDailyTotalPresentation(
-                        text: session.dailyDuration(taskID: $0.id).map(formatClockDuration) ?? "-",
-                        explanation: explanation)
-                )
-            })
     }
 }

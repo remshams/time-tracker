@@ -62,6 +62,7 @@ final class PresentationHarness {
     var history: WorklogHistoryStore { session.worklogHistory }
     var connection: ConnectionStore { session.connection }
     var tracking: TrackingStore { session.tracking }
+    var dailyTotals: DailyTotalsStore { session.dailyTotals }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -110,10 +111,10 @@ extension PresentationHarness {
 final class TaskTotalProbes {
     private let probes: [String: ObservationProbe]
 
-    init(_ presentation: TrackerPresentation, taskIDs: [String]) {
+    init(_ store: DailyTotalsStore, taskIDs: [String]) {
         probes = Dictionary(
             uniqueKeysWithValues: taskIDs.map { taskID in
-                let total = presentation.taskDailyTotal(taskID: taskID)
+                let total = store.taskTotal(taskID: taskID)
                 return (taskID, ObservationProbe { _ = total.content })
             })
     }
@@ -131,7 +132,7 @@ enum PresentationReads {
         _ = views.catalog.tab
         _ = views.tracking.active
         _ = views.connection.stale
-        _ = views.presentation.dailyTotalsStatus
+        _ = views.dailyTotals.status
         _ = views.history.worklogs
         _ = views.history.hasMore
         _ = views.history.isLoading
@@ -196,7 +197,7 @@ enum PresentationReads {
 }
 
 /// Checks that every presentation value equals the session value it copies, and that publishing updated the
-/// tracking store's timer text.
+/// tracking store's timer text and the daily totals store's status.
 @MainActor
 func assertMirrors(
     _ presentation: TrackerPresentation, _ session: TrackerSession,
@@ -204,7 +205,7 @@ func assertMirrors(
 ) {
     XCTAssertEqual(presentation.pauseOnScreenLock, session.pauseOnScreenLock, file: file, line: line)
     XCTAssertEqual(presentation.autoPauseStatusText, session.autoPauseStatusText, file: file, line: line)
-    XCTAssertEqual(presentation.dailyTotalsStatus, session.dailyTotalsStatus, file: file, line: line)
+    XCTAssertEqual(session.dailyTotals.status, session.dailyTotalsStatus, file: file, line: line)
     XCTAssertEqual(presentation.canStopTracking, session.canStopTracking, file: file, line: line)
     XCTAssertEqual(session.tracking.timerText, session.timerDisplayText, file: file, line: line)
     XCTAssertEqual(presentation.taskCreation, session.taskCreation, file: file, line: line)
@@ -231,10 +232,10 @@ func assertMirrors(
             presentation.canUnarchiveTask(taskID: task.id), session.canUnarchiveTask(taskID: task.id),
             file: file, line: line)
         XCTAssertEqual(
-            presentation.taskDailyTotal(taskID: task.id).content?.text,
+            session.dailyTotals.taskTotal(taskID: task.id).content?.text,
             session.dailyDuration(taskID: task.id).map(formatClockDuration) ?? "-", file: file, line: line)
         XCTAssertEqual(
-            presentation.taskDailyTotal(taskID: task.id).content?.explanation, session.dailyTotalsExplanation,
+            session.dailyTotals.taskTotal(taskID: task.id).content?.explanation, session.dailyTotalsExplanation,
             file: file, line: line)
     }
     if session.taskArchiving.isPresented {

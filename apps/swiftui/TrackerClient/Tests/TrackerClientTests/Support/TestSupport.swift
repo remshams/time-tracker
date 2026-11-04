@@ -570,7 +570,7 @@ extension TaskListTotalsRefresh {
 }
 
 @MainActor
-extension DailyTotalsState {
+extension DailyTotalsStore {
     func accept(_ refresh: TaskListTotalsRefresh, requested: Request, clock: any TrackerClock) {
         accept(refresh.report, tracking: refresh.taskList.tracking, requested: requested, clock: clock)
     }
