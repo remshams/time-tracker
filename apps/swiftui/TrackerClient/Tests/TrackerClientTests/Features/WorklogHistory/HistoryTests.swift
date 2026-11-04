@@ -96,7 +96,7 @@ final class HistoryTests: XCTestCase {
         XCTAssertTrue(fixture.session.isStale)
         XCTAssertFalse(fixture.session.canStartSelectedTask)
         XCTAssertEqual(fixture.session.connectionStatusText, "Incompatible server")
-        XCTAssertEqual(fixture.session.connectionMessage, "Unsupported history version")
+        XCTAssertEqual(fixture.session.connection.message, "Unsupported history version")
         XCTAssertNil(fixture.scheduler.poll)
     }
 
@@ -116,7 +116,7 @@ final class HistoryTests: XCTestCase {
         XCTAssertTrue(fixture.session.isStale)
         XCTAssertFalse(fixture.session.canStartSelectedTask)
         XCTAssertEqual(fixture.session.connectionStatusText, "Unavailable")
-        XCTAssertEqual(fixture.session.connectionMessage, "Tracker state must be refreshed")
+        XCTAssertEqual(fixture.session.connection.message, "Tracker state must be refreshed")
 
         fixture.session.refresh()
         let refresh = try await fixture.client.next()

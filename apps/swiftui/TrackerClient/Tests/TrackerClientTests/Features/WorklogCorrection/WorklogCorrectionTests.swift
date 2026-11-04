@@ -419,7 +419,7 @@ final class WorklogCorrectionTests: XCTestCase {
         try await fixture.settled()
 
         XCTAssertTrue(fixture.session.isStale)
-        XCTAssertEqual(fixture.session.connectionMessage, "Server offline")
+        XCTAssertEqual(fixture.session.connection.message, "Server offline")
         XCTAssertEqual(fixture.session.worklogCorrection.error, "Overlap")
         XCTAssertEqual(fixture.session.worklogCorrection.start, draft)
         XCTAssertTrue(fixture.session.worklogCorrection.canSubmit)

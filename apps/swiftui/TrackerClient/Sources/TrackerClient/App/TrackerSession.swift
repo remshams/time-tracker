@@ -6,6 +6,8 @@ public final class TrackerSession {
     public let taskCatalog = TaskCatalogStore()
     /// Views read the selected task's worklog pages and the history panel's state here; the session writes them.
     public let worklogHistory = WorklogHistoryStore()
+    /// Views read the connection settings and status here; the session writes them.
+    public let connection: ConnectionStore
 
     private let client: any TrackerClient
     private let reports: (any ReportClient)?
@@ -14,7 +16,6 @@ public final class TrackerSession {
     private let settingsRepository: any ConnectionSettingsRepository
     private let trackingPreferencesRepository: any TrackingPreferencesRepository
     private let automation: TrackingAutomationState
-    private let connection: ConnectionState
     private let tracking = TrackingState()
     private let lastTracked: LastTrackedTaskState
     private let creation = TaskCreationState()
@@ -53,7 +54,7 @@ public final class TrackerSession {
         trackingPreferencesRepository = trackingPreferences
         automation = TrackingAutomationState(preferences: trackingPreferences.load())
         let initialSettings = settings.load() ?? .local
-        connection = ConnectionState(settings: initialSettings)
+        connection = ConnectionStore(settings: initialSettings)
         lastTracked = LastTrackedTaskState(repository: lastTrackedTasks, settings: initialSettings)
         dailyTotals.updateDay(at: clock.now)
     }
@@ -70,10 +71,9 @@ public final class TrackerSession {
     public var active: WorklogItem? { tracking.active }
     public var trackingError: String? { tracking.error }
     public var selectedTaskID: String? { taskCatalog.selectedTaskID }
+    // TrackerMenuContent and TrackerMenuValues read these three until the menu observes the connection store.
     public var connectionSettings: ConnectionSettings { connection.settings }
     public var connectionStatusText: String { connection.statusText }
-    public var connectionMessage: String? { connection.message }
-    public var isChangingConnection: Bool { connection.changing }
     public var isStale: Bool { connection.stale }
     public var selectedTask: TaskItem? { taskCatalog.selectedTask }
     public var taskCreation: TaskCreationPresentation { creation.presentation }
@@ -527,7 +527,7 @@ public final class TrackerSession {
     }
 
     public func refresh() {
-        connection.protocolBlocked = false
+        connection.clearProtocolBlock()
         beginRefresh()
     }
 
@@ -543,17 +543,17 @@ public final class TrackerSession {
 
     public func connect(_ settings: ConnectionSettings) async -> Bool {
         guard !connection.changing else { return false }
-        connection.changing = true
+        connection.beginChange()
         publish()
         defer {
-            connection.changing = false
+            connection.endChange()
             publish()
         }
         do {
             let normalized = try connection.normalized(settings)
             finishConnection(try await client.connect(normalized), settings: normalized)
         } catch {
-            connection.message = "Connection unchanged. \(error.localizedDescription)"
+            connection.rejectChange(error)
             return false
         }
         await loadReport()
@@ -894,7 +894,7 @@ public final class TrackerSession {
 
     private func finishConnection(_ resources: TaskListResources, settings: ConnectionSettings) {
         automation.cancel()
-        connection.settings = settings
+        connection.apply(settings)
         dailyTotals.clear(at: clock.now)
         settingsRepository.save(settings)
         taskCatalog.resetSelections()

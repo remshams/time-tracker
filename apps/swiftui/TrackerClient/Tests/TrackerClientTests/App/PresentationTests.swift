@@ -171,9 +171,9 @@ final class PresentationTests: XCTestCase {
         let open = try await fixture.client.next()
         open.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         try await harness.settled(fixture)
-        XCTAssertEqual(harness.presentation.connectionStatusText, "Unavailable")
-        XCTAssertEqual(harness.presentation.connectionMessage, "Server offline")
-        XCTAssertTrue(harness.presentation.isStale)
+        XCTAssertEqual(harness.connection.statusText, "Unavailable")
+        XCTAssertEqual(harness.connection.message, "Server offline")
+        XCTAssertTrue(harness.connection.stale)
     }
 
     @MainActor
@@ -192,12 +192,12 @@ final class PresentationTests: XCTestCase {
 
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let request = try await fixture.client.next()
-        XCTAssertTrue(harness.presentation.isChangingConnection)
+        XCTAssertTrue(harness.connection.changing)
         request.fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
         _ = try await fixture.taskValue(connecting)
         try await harness.settled(fixture)
-        XCTAssertFalse(harness.presentation.isChangingConnection)
-        XCTAssertNotNil(harness.presentation.connectionMessage)
+        XCTAssertFalse(harness.connection.changing)
+        XCTAssertNotNil(harness.connection.message)
 
         let connected = Task { await fixture.session.connect(serverSettings) }
         let accepted = try await fixture.client.next()
@@ -206,7 +206,7 @@ final class PresentationTests: XCTestCase {
         let didConnect = try await fixture.taskValue(connected)
         XCTAssertTrue(didConnect)
         try await harness.settled(fixture)
-        XCTAssertEqual(harness.presentation.connectionSettings, serverSettings)
+        XCTAssertEqual(harness.connection.settings, serverSettings)
     }
 
     @MainActor
