@@ -16,7 +16,6 @@ final class TrackerStore {
     private(set) var menuGlobalShortcutError: String?
     @ObservationIgnored var registerMenuShortcut: ((MenuShortcut) -> String?)?
     var menuShortcutError: String? { menuShortcutValidationError ?? menuGlobalShortcutError }
-    let dailyTotals: TrackerDailyTotalsStore
     let menu: TrackerMenuStore
     let creation: TaskCreationStore
     let rename: TaskRenameStore
@@ -46,7 +45,6 @@ final class TrackerStore {
             lastTrackedTasks: UserDefaultsLastTrackedTasks(defaults: launch.defaults),
             reports: worker)
         presentation = TrackerPresentation(session: session)
-        dailyTotals = TrackerDailyTotalsStore(presentation: presentation)
         menu = TrackerMenuStore(
             session: session, showDailyTotal: showDailyTotal, taskOrder: taskOrder)
         creation = TaskCreationStore(session: session, presentation: presentation)
@@ -56,7 +54,6 @@ final class TrackerStore {
         correction = WorklogCorrectionStore(session: session, presentation: presentation)
         move = WorklogMoveStore(session: session, presentation: presentation)
         deletion = WorklogDeletionStore(session: session, presentation: presentation)
-        dailyTotals.onMenuBarTick = { [weak self] in self?.menu.update() }
         session.onChange = { [weak self] in
             guard let self else { return }
             updateMenuBarTimer()
@@ -76,11 +73,12 @@ final class TrackerStore {
     var connection: ConnectionStore { session.connection }
     /// Views read the running worklog, the tracking error and the timer text from this store the same way.
     var tracking: TrackingStore { session.tracking }
+    /// Views read today's status and task totals from this store the same way.
+    var dailyTotals: DailyTotalsStore { session.dailyTotals }
 
     // Views read these through the observable presentation, so each view redraws only for values it reads.
     var pauseOnScreenLock: Bool { presentation.pauseOnScreenLock }
     var autoPauseStatusText: String? { presentation.autoPauseStatusText }
-    var dailyTotalsStatus: DailyTotalsStatus { presentation.dailyTotalsStatus }
     var canStopTracking: Bool { presentation.canStopTracking }
     func canStartTracking(taskID: String) -> Bool { presentation.canStartTracking(taskID: taskID) }
 
@@ -100,7 +98,7 @@ final class TrackerStore {
     }
 
     private func updateMenuBarTimer() {
-        dailyTotals.updateMenuBarTimer(isRunning: showDailyTotalInMenuBar && session.active != nil)
+        menu.updateMenuBarTimer(isRunning: showDailyTotalInMenuBar && session.active != nil)
     }
 
     func setPauseOnScreenLock(_ enabled: Bool) { session.setPauseOnScreenLock(enabled) }
@@ -173,40 +171,14 @@ final class TrackerStore {
     }
 }
 
-/// Owns the menu bar's minute clock and looks up each task's observable daily total.
-final class TrackerDailyTotalsStore {
-    var onMenuBarTick: (() -> Void)?
-    private let presentation: TrackerPresentation
-    private var menuBarTimer: Timer?
-
-    init(presentation: TrackerPresentation) { self.presentation = presentation }
-
-    isolated deinit { menuBarTimer?.invalidate() }
-
-    func updateMenuBarTimer(isRunning: Bool) {
-        guard isRunning else {
-            menuBarTimer?.invalidate()
-            menuBarTimer = nil
-            return
-        }
-        guard menuBarTimer == nil else { return }
-        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.onMenuBarTick?() }
-        }
-        timer.tolerance = 5
-        menuBarTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
-    }
-
-    func task(_ taskID: String) -> TaskDailyTotal { presentation.taskDailyTotal(taskID: taskID) }
-}
-
+/// Owns the menu bar's snapshot and the minute clock that refreshes its daily total.
 final class TrackerMenuStore {
     let label: TrackerMenuLabelStore
     let valuesDidChange = PassthroughSubject<TrackerMenuValues, Never>()
     private let session: TrackerSession
     private let presentation: TrackerMenuPresentationObserver
     private var showDailyTotal: Bool
+    private var menuBarTimer: Timer?
 
     init(session: TrackerSession, showDailyTotal: Bool, taskOrder: MenuTaskOrder) {
         self.session = session
@@ -220,10 +192,28 @@ final class TrackerMenuStore {
         }
     }
 
+    isolated deinit { menuBarTimer?.invalidate() }
+
     var content: TrackerMenuContent { presentation.content }
     var values: TrackerMenuValues { presentation.values }
 
     func update() { presentation.update(from: session, showDailyTotal: showDailyTotal) }
+
+    /// Refreshes the menu bar's daily total once a minute while a timer runs.
+    func updateMenuBarTimer(isRunning: Bool) {
+        guard isRunning else {
+            menuBarTimer?.invalidate()
+            menuBarTimer = nil
+            return
+        }
+        guard menuBarTimer == nil else { return }
+        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.update() }
+        }
+        timer.tolerance = 5
+        menuBarTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
 
     func setShowDailyTotal(_ enabled: Bool) {
         showDailyTotal = enabled
