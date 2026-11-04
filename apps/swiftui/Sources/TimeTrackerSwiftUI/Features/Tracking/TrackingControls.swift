@@ -1,10 +1,11 @@
 import SwiftUI
+import TrackerClient
 
 struct TrackerElapsedText: View {
-    let store: TrackerStore
+    @Environment(TrackingStore.self) private var tracking
 
     var body: some View {
-        Text(store.timerText)
+        Text(tracking.timerText)
             .accessibilityIdentifier("tracking.elapsed")
     }
 }

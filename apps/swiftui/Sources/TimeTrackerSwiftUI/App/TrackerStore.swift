@@ -74,15 +74,14 @@ final class TrackerStore {
     var worklogHistory: WorklogHistoryStore { session.worklogHistory }
     /// Views read the connection settings and status from this store the same way.
     var connection: ConnectionStore { session.connection }
+    /// Views read the running worklog, the tracking error and the timer text from this store the same way.
+    var tracking: TrackingStore { session.tracking }
 
     // Views read these through the observable presentation, so each view redraws only for values it reads.
-    var active: WorklogItem? { presentation.active }
-    var trackingError: String? { presentation.trackingError }
     var pauseOnScreenLock: Bool { presentation.pauseOnScreenLock }
     var autoPauseStatusText: String? { presentation.autoPauseStatusText }
     var dailyTotalsStatus: DailyTotalsStatus { presentation.dailyTotalsStatus }
     var canStopTracking: Bool { presentation.canStopTracking }
-    var timerText: String { presentation.timerDisplayText }
     func canStartTracking(taskID: String) -> Bool { presentation.canStartTracking(taskID: taskID) }
 
     func setShowDailyTotalInMenuBar(_ enabled: Bool) {

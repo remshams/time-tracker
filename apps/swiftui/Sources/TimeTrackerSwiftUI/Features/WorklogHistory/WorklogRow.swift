@@ -4,7 +4,6 @@ import TrackerClient
 struct WorklogRow: View {
     let worklog: WorklogItem
     let active: WorklogItem?
-    let store: TrackerStore
     let correction: WorklogCorrectionStore
     let move: WorklogMoveStore
     let deletion: WorklogDeletionStore
@@ -24,7 +23,7 @@ struct WorklogRow: View {
             Spacer(minLength: 12)
             Group {
                 if active?.id == worklog.id {
-                    TrackerElapsedText(store: store)
+                    TrackerElapsedText()
                 } else {
                     Text(formatClockDuration(duration))
                 }
