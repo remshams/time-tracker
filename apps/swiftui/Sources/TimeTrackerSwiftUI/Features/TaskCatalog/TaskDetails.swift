@@ -3,6 +3,7 @@ import TrackerClient
 
 struct TaskDetails: View {
     let store: TrackerStore
+    @Environment(TrackingStore.self) private var tracking
     @Environment(TaskCatalogStore.self) private var catalog
 
     var body: some View {
@@ -25,7 +26,7 @@ struct TaskDetails: View {
                             Label("Archived", systemImage: "archivebox")
                                 .accessibilityIdentifier("task-details.state")
                                 .foregroundStyle(.secondary)
-                        } else if let active = store.active, active.taskId == task.id {
+                        } else if let active = tracking.active, active.taskId == task.id {
                             Label("Running since \(localTimestamp(active.start))", systemImage: "timer")
                                 .accessibilityIdentifier("task-details.state")
                                 .foregroundStyle(.secondary)

@@ -178,6 +178,7 @@ private struct TrackerSidebarToolbar: View {
 
 private struct TrackerTaskToolbar: View {
     let store: TrackerStore
+    @Environment(TrackingStore.self) private var tracking
     private let rename: TaskRenameStore
     private let archiving: TaskArchivingStore
     @Environment(TrackerTaskPresentationCoordinator.self) private var presentation
@@ -220,19 +221,19 @@ private struct TrackerTaskToolbar: View {
             }
             .disabled(!canChangeArchive)
             .help(
-                !task.archived && store.active?.taskId == task.id
+                !task.archived && tracking.active?.taskId == task.id
                     ? "Stop tracking before archiving this task"
                     : task.archived ? "Unarchive this task" : "Archive this task")
 
             if !task.archived {
-                let isRunning = store.active?.taskId == task.id
+                let isRunning = tracking.active?.taskId == task.id
                 let canTrack =
                     isRunning
                     ? store.canStopTracking
                     : store.canStartTracking(taskID: task.id)
                 Button {
                     guard canTrack else { return }
-                    if let active = store.active, active.taskId == task.id {
+                    if let active = tracking.active, active.taskId == task.id {
                         store.stopTracking(worklogID: active.id)
                     } else {
                         store.startTracking(taskID: task.id)
@@ -246,7 +247,7 @@ private struct TrackerTaskToolbar: View {
                 .help(
                     isRunning
                         ? "Stop tracking this task"
-                        : store.active == nil
+                        : tracking.active == nil
                             ? "Start tracking this task" : "Stop the current timer and start tracking this task")
             }
         }

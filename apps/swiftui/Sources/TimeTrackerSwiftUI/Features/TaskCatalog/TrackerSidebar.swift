@@ -3,6 +3,7 @@ import TrackerClient
 
 struct TrackerSidebar: View {
     let store: TrackerStore
+    @Environment(TrackingStore.self) private var tracking
     @Environment(TaskCatalogStore.self) private var catalog
     @Environment(ConnectionStore.self) private var connection
 
@@ -41,10 +42,10 @@ struct TrackerSidebar: View {
                     HStack(spacing: 8) {
                         TaskIndicatorView(
                             taskID: task.id,
-                            isRunning: !connection.stale && store.active?.taskId == task.id
+                            isRunning: !connection.stale && tracking.active?.taskId == task.id
                         )
                         .accessibilityIdentifier(
-                            !connection.stale && store.active?.taskId == task.id
+                            !connection.stale && tracking.active?.taskId == task.id
                                 ? "tracking.active-task" : "task-sidebar.indicator.\(task.id)")
                         Text(task.name)
                             .lineLimit(2)
@@ -61,7 +62,7 @@ struct TrackerSidebar: View {
                             creation: store.creation, rename: store.rename,
                             archiving: store.archiving, taskID: task.id,
                             taskIsArchived: task.archived,
-                            taskIsRunning: store.active?.taskId == task.id)
+                            taskIsRunning: tracking.active?.taskId == task.id)
                     }
                 }
             }

@@ -4,6 +4,7 @@ import TrackerClient
 /// Shows the selected task's worklogs with their loading, empty, error and pagination states.
 struct WorklogHistorySection: View {
     let store: TrackerStore
+    @Environment(TrackingStore.self) private var tracking
     @Environment(WorklogHistoryStore.self) private var history
 
     var body: some View {
@@ -27,7 +28,7 @@ struct WorklogHistorySection: View {
 
                 ForEach(history.worklogs) { worklog in
                     WorklogRow(
-                        worklog: worklog, active: store.active, store: store,
+                        worklog: worklog, active: tracking.active,
                         correction: store.correction, move: store.move, deletion: store.deletion)
                 }
 

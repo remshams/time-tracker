@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import TrackerClient
 
 @Observable
 final class TrackerTaskPresentationCoordinator {
@@ -46,7 +47,7 @@ final class TrackerTaskPresentationCoordinator {
     private func update() {
         guard isRunning else { return }
         let editorIsPresented = editorIsPresented
-        let isVisible = editorIsPresented || store.trackingError != nil
+        let isVisible = editorIsPresented || store.tracking.error != nil
         if hasPresentation != isVisible { hasPresentation = isVisible }
         let editorOpened = editorIsPresented && !editorWasPresented
         editorWasPresented = editorIsPresented
@@ -57,10 +58,11 @@ final class TrackerTaskPresentationCoordinator {
 
 struct TrackerDetailPresentation: View {
     let store: TrackerStore
+    @Environment(TrackingStore.self) private var tracking
 
     private var trackingFailurePresented: Binding<Bool> {
         Binding(
-            get: { store.trackingError != nil },
+            get: { tracking.error != nil },
             set: {
                 if !$0 { store.dismissTrackingError() }
             })
@@ -115,7 +117,7 @@ struct TrackerDetailPresentation: View {
             .alert("Could not change tracking", isPresented: trackingFailurePresented) {
                 Button("OK", role: .cancel) { store.dismissTrackingError() }
             } message: {
-                Text(store.trackingError ?? "Please try again.")
+                Text(tracking.error ?? "Please try again.")
             }
     }
 }
