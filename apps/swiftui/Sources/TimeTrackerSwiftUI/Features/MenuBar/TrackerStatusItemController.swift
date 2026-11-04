@@ -167,7 +167,7 @@ final class TrackerStatusItemController: NSObject {
         let menu = NSMenu()
         menu.appearance = appearance
         menu.autoenablesItems = false
-        let connection = store.connectionSettings
+        let connection = store.connection.settings
         let serverURL =
             connection.mode == .server
             ? connection.serverURL.trimmingCharacters(in: .whitespacesAndNewlines) : nil
@@ -245,7 +245,7 @@ final class TrackerStatusItemController: NSObject {
             let available =
                 store.menuCopyValue(
                     action, taskID: entry.id,
-                    connection: store.connectionSettings) != nil
+                    connection: store.connection.settings) != nil
             let item = addAction(action.title, action: .copy(action, entry.id), enabled: available, to: submenu)
             item.setAccessibilityIdentifier("menu.copy.\(entry.id).\(action.rawValue)")
         }
@@ -352,7 +352,7 @@ final class TrackerStatusItemController: NSObject {
     ) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: #selector(selected(_:)), keyEquivalent: "")
         item.target = self
-        item.representedObject = action.map { MenuCommand(action: $0, connection: store.connectionSettings) }
+        item.representedObject = action.map { MenuCommand(action: $0, connection: store.connection.settings) }
         item.isEnabled = enabled
         menu.addItem(item)
         return item
@@ -372,10 +372,10 @@ final class TrackerStatusItemController: NSObject {
         // The session also validates the captured task and worklog against its current state.
         switch command.action {
         case .start(let id):
-            guard command.connection == store.connectionSettings else { return }
+            guard command.connection == store.connection.settings else { return }
             store.startTracking(taskID: id)
         case .stop(let id):
-            guard command.connection == store.connectionSettings else { return }
+            guard command.connection == store.connection.settings else { return }
             store.stopTracking(worklogID: id)
         case .copy(let copyAction, let taskID):
             copyValue(copyAction, taskID: taskID, connection: command.connection)

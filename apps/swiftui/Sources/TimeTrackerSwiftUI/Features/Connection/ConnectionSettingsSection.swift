@@ -2,7 +2,7 @@ import SwiftUI
 import TrackerClient
 
 struct ConnectionSettingsSection: View {
-    let store: TrackerStore
+    @Environment(ConnectionStore.self) private var connection
     @Bindable var draft: ConnectionDraftStore
 
     var body: some View {
@@ -29,6 +29,6 @@ struct ConnectionSettingsSection: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .disabled(draft.operationPending || store.isChangingConnection)
+        .disabled(draft.operationPending || connection.changing)
     }
 }

@@ -72,15 +72,12 @@ final class TrackerStore {
     var taskCatalog: TaskCatalogStore { session.taskCatalog }
     /// Views read the selected task's worklogs and the history panel's state from this store the same way.
     var worklogHistory: WorklogHistoryStore { session.worklogHistory }
+    /// Views read the connection settings and status from this store the same way.
+    var connection: ConnectionStore { session.connection }
 
     // Views read these through the observable presentation, so each view redraws only for values it reads.
     var active: WorklogItem? { presentation.active }
     var trackingError: String? { presentation.trackingError }
-    var connectionSettings: ConnectionSettings { presentation.connectionSettings }
-    var connectionStatusText: String { presentation.connectionStatusText }
-    var connectionMessage: String? { presentation.connectionMessage }
-    var isChangingConnection: Bool { presentation.isChangingConnection }
-    var isStale: Bool { presentation.isStale }
     var pauseOnScreenLock: Bool { presentation.pauseOnScreenLock }
     var autoPauseStatusText: String? { presentation.autoPauseStatusText }
     var dailyTotalsStatus: DailyTotalsStatus { presentation.dailyTotalsStatus }
