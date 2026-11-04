@@ -297,7 +297,7 @@ final class TaskArchivingTests: XCTestCase {
         } until: {
             fixture.session.isStale
         }
-        XCTAssertEqual(fixture.session.connectionMessage, "Server offline")
+        XCTAssertEqual(fixture.session.connection.message, "Server offline")
         XCTAssertTrue(fixture.session.taskArchiving.isPresented)
         XCTAssertEqual(fixture.session.taskArchiving.error, "Archive rejected")
         XCTAssertTrue(fixture.session.taskArchiving.canSubmit)

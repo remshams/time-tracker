@@ -194,7 +194,7 @@ final class TrackingTests: XCTestCase {
         XCTAssertEqual(
             fixture.session.trackingError,
             "Could not confirm the change. Check the reloaded data before trying again. Write response lost")
-        XCTAssertEqual(fixture.session.connectionMessage, "Confirmation offline")
+        XCTAssertEqual(fixture.session.connection.message, "Confirmation offline")
     }
 
     @MainActor

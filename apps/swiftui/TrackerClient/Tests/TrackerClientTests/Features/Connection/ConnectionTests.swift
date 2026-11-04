@@ -153,7 +153,7 @@ final class ConnectionTests: XCTestCase {
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let request = try await fixture.client.next()
         XCTAssertEqual(request.operation, .connect(serverSettings))
-        XCTAssertTrue(fixture.session.isChangingConnection)
+        XCTAssertTrue(fixture.session.connection.changing)
         request.fail(BridgeFailure(message: "Candidate offline"))
         let connected = try await fixture.taskValue(connecting)
 
@@ -163,8 +163,8 @@ final class ConnectionTests: XCTestCase {
         XCTAssertEqual(fixture.session.active, activeWorklog)
         XCTAssertEqual(fixture.session.worklogHistory.worklogs, [oldWorklog])
         XCTAssertEqual(fixture.session.worklogHistory.nextCursor, "older")
-        XCTAssertEqual(fixture.session.connectionMessage, "Connection unchanged. Candidate offline")
-        XCTAssertFalse(fixture.session.isChangingConnection)
+        XCTAssertEqual(fixture.session.connection.message, "Connection unchanged. Candidate offline")
+        XCTAssertFalse(fixture.session.connection.changing)
         XCTAssertTrue(fixture.settings.writes.isEmpty)
     }
 
@@ -239,8 +239,94 @@ final class ConnectionTests: XCTestCase {
         }
         let connected = try await fixture.taskValue(connecting)
         XCTAssertFalse(connected)
-        XCTAssertEqual(fixture.session.connectionMessage, "Connection unchanged. Enter a server URL.")
+        XCTAssertEqual(fixture.session.connection.message, "Connection unchanged. Enter a server URL.")
         XCTAssertEqual(fixture.client.operations, [.open(.local)])
         XCTAssertTrue(fixture.settings.writes.isEmpty)
     }
+
+    @MainActor
+    func testUnchangedPollNotifiesNoConnectionReader() async throws {
+        let fixture = Fixture(saved: serverSettings)
+        defer { fixture.cleanup() }
+        let resources = TaskListResources(tasks: [firstTask], active: nil)
+        try await fixture.start(resources)
+        let probes = ConnectionProbes(fixture.session.connection)
+
+        fixture.scheduler.poll?.fire()
+        try await fixture.client.next().succeed(resources)
+        try await fixture.settled()
+        XCTAssertEqual(probes.changed(), [])
+    }
+
+    @MainActor
+    func testFailureAndRecoveryNotifyOnlyTheReadersOfChangedValues() async throws {
+        let fixture = Fixture(saved: serverSettings)
+        defer { fixture.cleanup() }
+        let resources = TaskListResources(tasks: [firstTask], active: nil)
+        try await fixture.start(resources)
+        let probes = ConnectionProbes(fixture.session.connection)
+
+        fixture.scheduler.poll?.fire()
+        try await fixture.client.next().fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
+        try await fixture.settled()
+        XCTAssertEqual(probes.changed(), ["statusText", "message", "stale"])
+        XCTAssertEqual(fixture.session.connection.statusText, "Unavailable")
+        fixture.scheduler.poll?.fire()
+        try await fixture.client.next().fail(BridgeFailure(message: "Server offline", kind: "unavailable"))
+        try await fixture.settled()
+        XCTAssertEqual(probes.changed(), [])
+        XCTAssertEqual(fixture.session.connection.failures, 2)
+        fixture.scheduler.poll?.fire()
+        try await fixture.client.next().succeed(resources)
+        try await fixture.settled()
+        XCTAssertEqual(probes.changed(), ["statusText", "message", "stale"])
+        XCTAssertEqual(fixture.session.connection.statusText, "Connected")
+        XCTAssertNil(fixture.session.connection.message)
+        XCTAssertEqual(fixture.session.connection.failures, 0)
+    }
+
+    @MainActor
+    func testConnectionChangeNotifiesChangingReadersWhenItStartsAndEnds() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        let probes = ConnectionProbes(fixture.session.connection)
+
+        let rejected = Task { await fixture.session.connect(serverSettings) }
+        let candidate = try await fixture.client.next()
+        XCTAssertEqual(probes.changed(), ["changing"])
+        candidate.fail(BridgeFailure(message: "Candidate offline"))
+        _ = try await fixture.taskValue(rejected)
+        XCTAssertEqual(probes.changed(), ["message", "changing"])
+
+        let accepted = Task { await fixture.session.connect(serverSettings) }
+        let request = try await fixture.client.next()
+        XCTAssertEqual(probes.changed(), ["changing"])
+        request.succeed(TaskListResources(tasks: [firstTask], active: nil))
+        try await fixture.client.next().succeed(emptyPage)
+        let didConnect = try await fixture.taskValue(accepted)
+        XCTAssertTrue(didConnect)
+        XCTAssertEqual(probes.changed(), ["settings", "statusText", "message", "changing"])
+        XCTAssertEqual(fixture.session.connection.settings, serverSettings)
+        XCTAssertEqual(fixture.session.connection.statusText, "Connected")
+    }
+}
+
+/// Reports which connection properties changed, in declaration order, as views reading each one would see them.
+@MainActor
+private final class ConnectionProbes {
+    private let probes: [(String, ObservationProbe)]
+
+    init(_ store: ConnectionStore) {
+        probes = [
+            ("settings", ObservationProbe { _ = store.settings }),
+            ("statusText", ObservationProbe { _ = store.statusText }),
+            ("message", ObservationProbe { _ = store.message }),
+            ("changing", ObservationProbe { _ = store.changing }),
+            ("stale", ObservationProbe { _ = store.stale }),
+            ("confirmed", ObservationProbe { _ = store.confirmed }),
+        ]
+    }
+
+    func changed() -> [String] { probes.filter { $0.1.consume() }.map(\.0) }
 }

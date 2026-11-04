@@ -20,14 +20,9 @@ public final class TaskDailyTotal {
 /// property only when its value changes, so draft edits, clock ticks, and unchanged polls notify
 /// only the views that read the changed values.
 @Observable
-public final class TrackerPresentation {
+public final class TrackerPresentation: ChangeGuardedStore {
     public private(set) var active: WorklogItem?
     public private(set) var trackingError: String?
-    public private(set) var connectionSettings: ConnectionSettings
-    public private(set) var connectionStatusText: String
-    public private(set) var connectionMessage: String?
-    public private(set) var isChangingConnection: Bool
-    public private(set) var isStale: Bool
     public private(set) var pauseOnScreenLock: Bool
     public private(set) var autoPauseStatusText: String?
     public private(set) var dailyTotalsStatus: DailyTotalsStatus
@@ -63,11 +58,6 @@ public final class TrackerPresentation {
     public init(session: TrackerSession) {
         active = session.active
         trackingError = session.trackingError
-        connectionSettings = session.connectionSettings
-        connectionStatusText = session.connectionStatusText
-        connectionMessage = session.connectionMessage
-        isChangingConnection = session.isChangingConnection
-        isStale = session.isStale
         pauseOnScreenLock = session.pauseOnScreenLock
         autoPauseStatusText = session.autoPauseStatusText
         dailyTotalsStatus = session.dailyTotalsStatus
@@ -100,11 +90,6 @@ public final class TrackerPresentation {
     public func update(from session: TrackerSession) {
         set(\.active, session.active)
         set(\.trackingError, session.trackingError)
-        set(\.connectionSettings, session.connectionSettings)
-        set(\.connectionStatusText, session.connectionStatusText)
-        set(\.connectionMessage, session.connectionMessage)
-        set(\.isChangingConnection, session.isChangingConnection)
-        set(\.isStale, session.isStale)
         set(\.pauseOnScreenLock, session.pauseOnScreenLock)
         set(\.autoPauseStatusText, session.autoPauseStatusText)
         set(\.dailyTotalsStatus, session.dailyTotalsStatus)
@@ -145,12 +130,6 @@ public final class TrackerPresentation {
         let model = TaskDailyTotal(content: taskDailyTotals[taskID])
         taskDailyTotalModels[taskID] = model
         return model
-    }
-
-    private func set<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<TrackerPresentation, Value>, _ value: Value)
-    {
-        guard self[keyPath: keyPath] != value else { return }
-        self[keyPath: keyPath] = value
     }
 
     private func updateTaskDailyTotals(_ next: [String: TaskDailyTotalPresentation]) {

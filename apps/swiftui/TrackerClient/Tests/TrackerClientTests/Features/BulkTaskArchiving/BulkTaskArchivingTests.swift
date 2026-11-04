@@ -94,7 +94,7 @@ final class BulkTaskArchivingTests: XCTestCase {
             try await failPreview(fixture, request, failure)
 
             XCTAssertTrue(fixture.session.isStale, failure.message)
-            XCTAssertEqual(fixture.session.connectionMessage, failure.message)
+            XCTAssertEqual(fixture.session.connection.message, failure.message)
             XCTAssertEqual(fixture.session.bulkTaskArchiving.error, failure.message)
             XCTAssertFalse(fixture.session.bulkTaskArchiving.isLoading)
         }
@@ -599,7 +599,7 @@ final class BulkTaskArchivingTests: XCTestCase {
         } until: {
             fixture.session.isStale
         }
-        XCTAssertEqual(fixture.session.connectionMessage, "Offline")
+        XCTAssertEqual(fixture.session.connection.message, "Offline")
         XCTAssertEqual(
             fixture.session.bulkTaskArchiving.error, "Archive rejected Refresh the preview before trying again.")
         fixture.session.refreshBulkArchivePreview()

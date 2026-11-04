@@ -238,7 +238,7 @@ final class TaskRenameTests: XCTestCase {
             fixture.session.isStale
         }
         XCTAssertEqual(fixture.session.taskRename.error, "Name rejected")
-        XCTAssertEqual(fixture.session.connectionMessage, "Cannot confirm server state")
+        XCTAssertEqual(fixture.session.connection.message, "Cannot confirm server state")
         XCTAssertEqual(fixture.session.taskRename.name, "Desired name")
         XCTAssertFalse(fixture.session.taskRename.isSubmitting)
         XCTAssertTrue(fixture.session.taskRename.canSubmit)

@@ -60,6 +60,7 @@ final class PresentationHarness {
     let presentation: TrackerPresentation
     var catalog: TaskCatalogStore { session.taskCatalog }
     var history: WorklogHistoryStore { session.worklogHistory }
+    var connection: ConnectionStore { session.connection }
     private let session: TrackerSession
     private var samplers: [@MainActor () -> Void] = []
 
@@ -128,7 +129,7 @@ enum PresentationReads {
         _ = views.catalog.selectedTask
         _ = views.catalog.tab
         _ = views.presentation.active
-        _ = views.presentation.isStale
+        _ = views.connection.stale
         _ = views.presentation.dailyTotalsStatus
         _ = views.history.worklogs
         _ = views.history.hasMore
@@ -142,10 +143,10 @@ enum PresentationReads {
     static func content(_ views: PresentationHarness) {
         lists(views)
         _ = views.presentation.trackingError
-        _ = views.presentation.connectionSettings
-        _ = views.presentation.connectionStatusText
-        _ = views.presentation.connectionMessage
-        _ = views.presentation.isChangingConnection
+        _ = views.connection.settings
+        _ = views.connection.statusText
+        _ = views.connection.message
+        _ = views.connection.changing
         _ = views.presentation.pauseOnScreenLock
     }
 
@@ -201,11 +202,6 @@ func assertMirrors(
 ) {
     XCTAssertEqual(presentation.active, session.active, file: file, line: line)
     XCTAssertEqual(presentation.trackingError, session.trackingError, file: file, line: line)
-    XCTAssertEqual(presentation.connectionSettings, session.connectionSettings, file: file, line: line)
-    XCTAssertEqual(presentation.connectionStatusText, session.connectionStatusText, file: file, line: line)
-    XCTAssertEqual(presentation.connectionMessage, session.connectionMessage, file: file, line: line)
-    XCTAssertEqual(presentation.isChangingConnection, session.isChangingConnection, file: file, line: line)
-    XCTAssertEqual(presentation.isStale, session.isStale, file: file, line: line)
     XCTAssertEqual(presentation.pauseOnScreenLock, session.pauseOnScreenLock, file: file, line: line)
     XCTAssertEqual(presentation.autoPauseStatusText, session.autoPauseStatusText, file: file, line: line)
     XCTAssertEqual(presentation.dailyTotalsStatus, session.dailyTotalsStatus, file: file, line: line)

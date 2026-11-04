@@ -12,7 +12,8 @@ public final class WorklogHistoryStore: ChangeGuardedStore {
     public private(set) var hasMore = false
     public private(set) var unavailable = false
     public private(set) var isLoading = false
-    /// The history panel's message. It also shows connection failures until the Connection slice moves them.
+    /// The history panel's message. It also shows connection failures, which tell the user why the list may be
+    /// out of date.
     public private(set) var error: String?
     // Only the session's load code reads the cursor and the requested task, so views don't observe them.
     @ObservationIgnored private(set) var nextCursor: String?

@@ -201,7 +201,7 @@ final class StatusItemTests: XCTestCase {
         try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
         let connecting = Task { await fixture.session.connect(serverSettings) }
         let connection = try await fixture.client.next()
-        XCTAssertTrue(fixture.session.isChangingConnection)
+        XCTAssertTrue(fixture.session.connection.changing)
         XCTAssertEqual(fixture.session.performMenuPrimaryAction(), .stop(worklogID: activeWorklog.id))
         let stop = try await fixture.client.next()
         XCTAssertEqual(stop.operation, .stop(worklog: activeWorklog.id, at: "2025-01-01T00:00:00.000Z"))
