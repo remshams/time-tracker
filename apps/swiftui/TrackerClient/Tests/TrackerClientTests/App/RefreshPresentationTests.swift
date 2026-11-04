@@ -36,7 +36,7 @@ final class RefreshPresentationTests: XCTestCase {
                 TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
             ])
         let harness = PresentationHarness(session: fixture.session)
-        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id, secondTask.id])
+        let totals = TaskTotalProbes(harness.dailyTotals, taskIDs: [firstTask.id, secondTask.id])
         var redraws: [Set<String>] = []
         let display = try XCTUnwrap(fixture.scheduler.display)
         for _ in 0..<3 {
@@ -62,7 +62,7 @@ final class RefreshPresentationTests: XCTestCase {
                 TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
             ])
         let harness = PresentationHarness(session: fixture.session)
-        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id, secondTask.id])
+        let totals = TaskTotalProbes(harness.dailyTotals, taskIDs: [firstTask.id, secondTask.id])
         let lists = harness.counter(PresentationReads.content)
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
@@ -76,9 +76,10 @@ final class RefreshPresentationTests: XCTestCase {
         try await harness.settled(fixture)
         XCTAssertEqual(totals.changed(), Set([secondTask.id]))
         XCTAssertEqual(lists.count, 0)
-        XCTAssertEqual(harness.presentation.taskDailyTotal(taskID: firstTask.id).content?.text, "00:00:10")
-        XCTAssertEqual(harness.presentation.taskDailyTotal(taskID: secondTask.id).content?.text, "00:00:25")
-        harness.update()
+        XCTAssertEqual(harness.dailyTotals.taskTotal(taskID: firstTask.id).content?.text, "00:00:10")
+        XCTAssertEqual(harness.dailyTotals.taskTotal(taskID: secondTask.id).content?.text, "00:00:25")
+        // Closing the menu that isn't open publishes again without changing any value.
+        fixture.session.menuClosed()
         XCTAssertEqual(totals.changed(), [], "An unchanged report must not publish row updates again.")
     }
 
@@ -94,7 +95,7 @@ final class RefreshPresentationTests: XCTestCase {
                 TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
             ])
         let harness = PresentationHarness(session: fixture.session)
-        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id, secondTask.id])
+        let totals = TaskTotalProbes(harness.dailyTotals, taskIDs: [firstTask.id, secondTask.id])
         let lists = harness.counter(PresentationReads.content)
         fixture.clock.now.addTimeInterval(5)
         fixture.clock.uptime += 5
@@ -110,8 +111,8 @@ final class RefreshPresentationTests: XCTestCase {
         try await harness.settled(fixture)
         XCTAssertEqual(totals.changed(), Set([firstTask.id]))
         XCTAssertEqual(lists.count, 0)
-        XCTAssertEqual(harness.presentation.taskDailyTotal(taskID: firstTask.id).content?.text, "00:00:15")
-        XCTAssertEqual(harness.presentation.taskDailyTotal(taskID: secondTask.id).content?.text, "00:00:20")
+        XCTAssertEqual(harness.dailyTotals.taskTotal(taskID: firstTask.id).content?.text, "00:00:15")
+        XCTAssertEqual(harness.dailyTotals.taskTotal(taskID: secondTask.id).content?.text, "00:00:20")
     }
 
     @MainActor
@@ -125,16 +126,16 @@ final class RefreshPresentationTests: XCTestCase {
                 TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
             ])
         let harness = PresentationHarness(session: fixture.session)
-        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id, secondTask.id])
+        let totals = TaskTotalProbes(harness.dailyTotals, taskIDs: [firstTask.id, secondTask.id])
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
         poll.fail(BridgeFailure(message: "Server unavailable", kind: "unavailable"))
         try await harness.settled(fixture)
         XCTAssertEqual(totals.changed(), Set([firstTask.id, secondTask.id]))
-        let first = harness.presentation.taskDailyTotal(taskID: firstTask.id).content
+        let first = harness.dailyTotals.taskTotal(taskID: firstTask.id).content
         XCTAssertEqual(first?.text, "00:00:10")
         XCTAssertEqual(first?.explanation, fixture.session.dailyTotalsExplanation)
-        let second = harness.presentation.taskDailyTotal(taskID: secondTask.id).content
+        let second = harness.dailyTotals.taskTotal(taskID: secondTask.id).content
         XCTAssertTrue(second?.explanation.contains("cached") == true)
     }
 
@@ -149,8 +150,8 @@ final class RefreshPresentationTests: XCTestCase {
                 TaskReportTotal(taskId: secondTask.id, durationMicroseconds: 20_000_000),
             ])
         let harness = PresentationHarness(session: fixture.session)
-        let removedTotal = harness.presentation.taskDailyTotal(taskID: secondTask.id)
-        let totals = TaskTotalProbes(harness.presentation, taskIDs: [firstTask.id, secondTask.id])
+        let removedTotal = harness.dailyTotals.taskTotal(taskID: secondTask.id)
+        let totals = TaskTotalProbes(harness.dailyTotals, taskIDs: [firstTask.id, secondTask.id])
         let added = TaskItem(id: "task-three", name: "New task", archived: false, latestStart: nil)
         fixture.scheduler.poll?.fire()
         let poll = try await fixture.client.next()
@@ -164,10 +165,10 @@ final class RefreshPresentationTests: XCTestCase {
         try await harness.settled(fixture)
         XCTAssertEqual(totals.changed(), [], "A removed task's label keeps its last total.")
         XCTAssertEqual(removedTotal.content?.text, "00:00:20")
-        let replacement = harness.presentation.taskDailyTotal(taskID: secondTask.id)
+        let replacement = harness.dailyTotals.taskTotal(taskID: secondTask.id)
         XCTAssertFalse(replacement === removedTotal, "A removed task's total must stop receiving updates.")
         XCTAssertNil(replacement.content)
-        XCTAssertEqual(harness.presentation.taskDailyTotal(taskID: added.id).content?.text, "00:00:30")
+        XCTAssertEqual(harness.dailyTotals.taskTotal(taskID: added.id).content?.text, "00:00:30")
     }
 
     @MainActor

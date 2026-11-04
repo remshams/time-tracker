@@ -1,6 +1,26 @@
 import Foundation
+import Observation
 
-final class DailyTotalsState {
+public struct TaskDailyTotalPresentation: Equatable, Sendable {
+    public let text: String
+    public let explanation: String
+}
+
+/// Holds one task's daily total so a ticking timer redraws only that task's label.
+@Observable
+public final class TaskDailyTotal {
+    public fileprivate(set) var content: TaskDailyTotalPresentation?
+
+    fileprivate init(content: TaskDailyTotalPresentation?) { self.content = content }
+}
+
+/// Holds today's task totals for the whole app.
+///
+/// Views read `status` and each task's `TaskDailyTotal`; `TrackerSession` writes the report and calls `publish`
+/// each time it publishes a change, including the one-second display tick. `publish` assigns the status and a
+/// task's total only when they change, so a tick redraws only the running task's label.
+@Observable
+public final class DailyTotalsStore: ChangeGuardedStore {
     struct Request {
         let day: DateInterval
         let cutoff: Date
@@ -11,16 +31,22 @@ final class DailyTotalsState {
         var now: String { formatTimestamp(cutoff) }
     }
 
+    /// The status views show; `.unavailable` once the loaded day has ended.
+    public private(set) var status: DailyTotalsStatus = .unavailable
     private let calendar: Calendar
-    private var request: Request?
-    private var rows: [String: Int64] = [:]
-    private var reportedActive: WorklogItem?
-    private var anchorDate: Date?
-    private var anchorUptime: TimeInterval = 0
-    private var anchorGeneration = 0
-    private(set) var day: DateInterval?
-    private(set) var status: DailyTotalsStatus = .unavailable
-    private(set) var error: String?
+    // Views observe only `status` and each task's model. Ignoring the rest keeps a tick from redrawing views
+    // that read the store, such as the sidebar that looks up task models with `taskTotal(taskID:)`.
+    @ObservationIgnored private var request: Request?
+    @ObservationIgnored private var rows: [String: Int64] = [:]
+    @ObservationIgnored private var reportedActive: WorklogItem?
+    @ObservationIgnored private var anchorDate: Date?
+    @ObservationIgnored private var anchorUptime: TimeInterval = 0
+    @ObservationIgnored private var anchorGeneration = 0
+    @ObservationIgnored private(set) var day: DateInterval?
+    @ObservationIgnored private(set) var loadStatus: DailyTotalsStatus = .unavailable
+    @ObservationIgnored private(set) var error: String?
+    @ObservationIgnored private var taskTotals: [String: TaskDailyTotalPresentation] = [:]
+    @ObservationIgnored private var taskTotalModels: [String: TaskDailyTotal] = [:]
 
     init(calendar: Calendar) { self.calendar = calendar }
 
@@ -33,7 +59,7 @@ final class DailyTotalsState {
         request = nil
         reportedActive = nil
         anchorDate = nil
-        status = .unavailable
+        loadStatus = .unavailable
         error = nil
         return true
     }
@@ -44,13 +70,13 @@ final class DailyTotalsState {
     }
 
     func invalidate() {
-        if request != nil { status = .cached }
+        if request != nil { loadStatus = .cached }
     }
 
     func begin(clock: any TrackerClock) -> Request? {
         updateDay(at: clock.now)
         guard let day else { return nil }
-        if request == nil { status = .loading }
+        if request == nil { loadStatus = .loading }
         let cutoff = parseTimestamp(formatTimestamp(clock.now)) ?? clock.now
         return Request(day: day, cutoff: cutoff, uptime: clock.uptime, anchorGeneration: anchorGeneration)
     }
@@ -73,7 +99,7 @@ final class DailyTotalsState {
             anchorDate = clock.now
             anchorUptime = clock.uptime
         }
-        status = .current
+        loadStatus = .current
         error = nil
     }
 
@@ -109,7 +135,7 @@ final class DailyTotalsState {
 
     func fail(_ failure: Error, clock: any TrackerClock) {
         updateDay(at: clock.now)
-        status = request == nil ? .unavailable : .cached
+        loadStatus = request == nil ? .unavailable : .cached
         error = failure.localizedDescription
     }
 
@@ -141,6 +167,51 @@ final class DailyTotalsState {
         let lower = max(request.cutoff, request.day.start, start)
         let upper = min(projectedNow, request.day.end)
         return base + max(0, upper.timeIntervalSince(lower))
+    }
+
+    /// The loaded status while its day lasts; `.unavailable` once the day has ended.
+    func shownStatus(clock: any TrackerClock) -> DailyTotalsStatus {
+        guard let day, clock.now >= day.start, clock.now < day.end else { return .unavailable }
+        return loadStatus
+    }
+
+    func explanation(clock: any TrackerClock) -> String {
+        switch shownStatus(clock: clock) {
+        case .current: return "Time logged today in your local time zone"
+        case .cached: return "Today's total uses cached tracker state. Running time may be unconfirmed."
+        case .loading: return "Loading today's totals"
+        case .unavailable: return error ?? "Today's total is unavailable"
+        }
+    }
+
+    /// Shows the current status and each task's total. The session calls this each time it publishes.
+    func publish(tasks: [TaskItem], active: WorklogItem?, clock: any TrackerClock) {
+        set(\.status, shownStatus(clock: clock))
+        let explanation = explanation(clock: clock)
+        taskTotals = Dictionary(
+            uniqueKeysWithValues: tasks.map {
+                (
+                    $0.id,
+                    TaskDailyTotalPresentation(
+                        text: duration(taskID: $0.id, active: active, clock: clock).map(formatClockDuration) ?? "-",
+                        explanation: explanation)
+                )
+            })
+        for (taskID, model) in taskTotalModels {
+            if let content = taskTotals[taskID] {
+                if model.content != content { model.content = content }
+            } else {
+                taskTotalModels.removeValue(forKey: taskID)
+            }
+        }
+    }
+
+    /// Returns the task's observable total. Totals for tasks that leave the catalog stop updating.
+    public func taskTotal(taskID: String) -> TaskDailyTotal {
+        if let existing = taskTotalModels[taskID] { return existing }
+        let model = TaskDailyTotal(content: taskTotals[taskID])
+        taskTotalModels[taskID] = model
+        return model
     }
 
     private func baseDuration(taskID: String) -> TimeInterval {

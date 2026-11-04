@@ -10,6 +10,8 @@ public final class TrackerSession {
     public let connection: ConnectionStore
     /// Views read the running worklog, the tracking error and the timer text here; the session writes them.
     public let tracking = TrackingStore()
+    /// Views read today's status and task totals here; the session writes them.
+    public let dailyTotals: DailyTotalsStore
 
     private let client: any TrackerClient
     private let reports: (any ReportClient)?
@@ -26,7 +28,6 @@ public final class TrackerSession {
     private let correction = WorklogCorrectionState()
     private let move = WorklogMoveState()
     private let deletion = WorklogDeletionState()
-    private let dailyTotals: DailyTotalsState
     private var displayTimer: (any TrackerCancellation)?
     private var pollTimer: (any TrackerCancellation)?
     private var rolloverTimer: (any TrackerCancellation)?
@@ -48,7 +49,7 @@ public final class TrackerSession {
     ) {
         self.client = client
         self.reports = reports
-        dailyTotals = DailyTotalsState(calendar: calendar)
+        dailyTotals = DailyTotalsStore(calendar: calendar)
         self.clock = clock
         self.scheduler = scheduler
         settingsRepository = settings
@@ -127,10 +128,8 @@ public final class TrackerSession {
     /// Computed from the clock on each read, so the menu's minute tick shows the current time.
     public var timerDisplayText: String { tracking.displayText(clock: clock, confirmed: connection.confirmed) }
     public var elapsed: TimeInterval? { tracking.elapsed(clock: clock) }
-    public var dailyTotalsStatus: DailyTotalsStatus {
-        guard let day = dailyTotals.day, clock.now >= day.start, clock.now < day.end else { return .unavailable }
-        return dailyTotals.status
-    }
+    // The menu and the tests read these until they read the daily totals store.
+    public var dailyTotalsStatus: DailyTotalsStatus { dailyTotals.shownStatus(clock: clock) }
     public var dailyTotalsError: String? { dailyTotals.error }
     public var dailyTotalsDayStart: Date? { dailyTotals.day?.start }
     public var totalDailyDuration: TimeInterval? {
@@ -139,14 +138,7 @@ public final class TrackerSession {
     public var totalDailyDurationText: String {
         totalDailyDuration.map(formatClockDuration) ?? "Unavailable"
     }
-    public var dailyTotalsExplanation: String {
-        switch dailyTotalsStatus {
-        case .current: return "Time logged today in your local time zone"
-        case .cached: return "Today's total uses cached tracker state. Running time may be unconfirmed."
-        case .loading: return "Loading today's totals"
-        case .unavailable: return dailyTotalsError ?? "Today's total is unavailable"
-        }
-    }
+    public var dailyTotalsExplanation: String { dailyTotals.explanation(clock: clock) }
     /// Tasks with time logged today, in task list order. The menu applies its own task order.
     public var todayTasks: [TaskItem] { tasks.filter { (dailyDuration(taskID: $0.id) ?? 0) > 0 } }
     public func dailyDuration(taskID: String) -> TimeInterval? {
@@ -904,6 +896,7 @@ public final class TrackerSession {
 
     private func publish() {
         tracking.publish(clock: clock, confirmed: connection.confirmed)
+        dailyTotals.publish(tasks: tasks, active: active, clock: clock)
         onChange?()
     }
 }
