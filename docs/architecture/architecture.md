@@ -216,8 +216,8 @@ models ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
   list, tab and selection from the observable `TaskCatalogStore`, the selected
   task's worklogs from `WorklogHistoryStore`, the connection settings and
   status from `ConnectionStore`, the running worklog, tracking error and timer
-  text from `TrackingStore`, and the other session values from
-  `TrackerPresentation`
+  text from `TrackingStore`, today's status and task totals from
+  `DailyTotalsStore`, and the other session values from `TrackerPresentation`
   ([ADR 0030](adr/0030-replace-the-session-with-feature-stores.md)).
 - [TimeTrackerSwiftUI](../../apps/swiftui/Sources/TimeTrackerSwiftUI/App/TimeTrackerApp.swift):
   one tracker window, Settings, the menu bar item and lifecycle handling. The
