@@ -231,4 +231,98 @@ final class TrackingTests: XCTestCase {
         XCTAssertTrue(fixture.session.canStartTracking(taskID: secondTask.id))
     }
 
+    @MainActor
+    func testUnchangedPollNotifiesNoTrackingReader() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let resources = TaskListResources(tasks: [firstTask], active: activeWorklog)
+        try await fixture.start(resources)
+        let probes = TrackingProbes(fixture.session.tracking)
+
+        fixture.scheduler.poll?.fire()
+        try await fixture.client.next().succeed(resources)
+        try await fixture.settled()
+        XCTAssertEqual(probes.changed(), [])
+    }
+
+    @MainActor
+    func testDisplayTickNotifiesOnlyTimerReadersWhenTheShownSecondChanges() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        fixture.session.setWindowVisible(true)
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: activeWorklog))
+        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:30")
+        let probes = TrackingProbes(fixture.session.tracking)
+
+        fixture.clock.uptime += 0.4
+        fixture.scheduler.display?.fire()
+        XCTAssertEqual(probes.changed(), [])
+        fixture.clock.uptime += 0.6
+        fixture.scheduler.display?.fire()
+        XCTAssertEqual(probes.changed(), ["timerText"])
+        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:31")
+    }
+
+    @MainActor
+    func testStartingTrackingNotifiesSubmittingThenActiveAndTimerReaders() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        try await fixture.start(TaskListResources(tasks: [firstTask], active: nil))
+        XCTAssertEqual(fixture.session.tracking.timerText, "Idle")
+        let probes = TrackingProbes(fixture.session.tracking)
+
+        fixture.session.startTracking(taskID: firstTask.id)
+        XCTAssertEqual(probes.changed(), ["isSubmitting"])
+        try await fixture.client.next().succeed(TaskListResources(tasks: [firstTask], active: activeWorklog))
+        // The new worklog runs the selected task, so the session reloads its history.
+        let history = try await fixture.client.next()
+        XCTAssertEqual(history.operation, .history(task: firstTask.id, cursor: nil))
+        history.succeed(emptyPage)
+        try await fixture.settled()
+        XCTAssertEqual(probes.changed(), ["active", "isSubmitting", "timerText"])
+        XCTAssertEqual(fixture.session.tracking.active, activeWorklog)
+        XCTAssertFalse(fixture.session.tracking.isSubmitting)
+        XCTAssertEqual(fixture.session.tracking.timerText, "00:00:30")
+    }
+
+    @MainActor
+    func testRejectedTrackingShowsTheErrorWithTheReloadedDataAndDismissingClearsIt() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        let resources = TaskListResources(tasks: [firstTask], active: nil)
+        try await fixture.start(resources)
+        let probes = TrackingProbes(fixture.session.tracking)
+
+        fixture.session.startTracking(taskID: firstTask.id)
+        XCTAssertEqual(probes.changed(), ["isSubmitting"])
+        try await fixture.client.next().fail(BridgeFailure(message: "Start rejected"))
+        let reload = try await fixture.client.next()
+        XCTAssertEqual(fixture.session.trackingError, "Start rejected")
+        XCTAssertNil(fixture.session.tracking.error)
+        XCTAssertEqual(probes.changed(), [])
+        reload.succeed(resources)
+        try await fixture.settled()
+        XCTAssertEqual(probes.changed(), ["error", "isSubmitting"])
+        XCTAssertEqual(fixture.session.tracking.error, "Start rejected")
+        fixture.session.dismissTrackingError()
+        XCTAssertEqual(probes.changed(), ["error"])
+        XCTAssertNil(fixture.session.tracking.error)
+    }
+}
+
+/// Reports which tracking properties changed, in declaration order, as views reading each one would see them.
+@MainActor
+private final class TrackingProbes {
+    private let probes: [(String, ObservationProbe)]
+
+    init(_ store: TrackingStore) {
+        probes = [
+            ("active", ObservationProbe { _ = store.active }),
+            ("error", ObservationProbe { _ = store.error }),
+            ("isSubmitting", ObservationProbe { _ = store.isSubmitting }),
+            ("timerText", ObservationProbe { _ = store.timerText }),
+        ]
+    }
+
+    func changed() -> [String] { probes.filter { $0.1.consume() }.map(\.0) }
 }
