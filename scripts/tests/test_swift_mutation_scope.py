@@ -177,6 +177,17 @@ class SwiftMutationScopeTests(unittest.TestCase):
             self.assertIn(scope.SOURCES + source, result["files"])
         self.assertNotIn(scope.SOURCES + scope.INDICATOR, result["files"])
 
+    def test_refresh_presentation_suite_selects_the_stores_its_redraw_counts_read(self):
+        test = scope.TESTS + "App/RefreshPresentationTests.swift"
+        self.write(scope.PACKAGE + test, "func testPollKeepsListsUnchanged() {}\n")
+        self.commit("Change refresh presentation assertions")
+
+        result = self.select()
+
+        self.assertEqual(result["status"], "focused")
+        for source in [scope.CATALOG, scope.HISTORY, scope.PRESENTATION]:
+            self.assertIn(scope.SOURCES + source, result["files"])
+
     def test_rename_suite_selects_the_creation_and_automation_interactions_it_asserts(self):
         test = scope.TESTS + "Features/TaskRename/TaskRenameTests.swift"
         self.write(scope.PACKAGE + test, "func testPauseBeforeRenameAndCreationExclusivity() {}\n")
