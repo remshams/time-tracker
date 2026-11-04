@@ -19,7 +19,7 @@ SESSION = "App/TrackerSession.swift"
 PRESENTATION = "App/TrackerPresentation.swift"
 MODELS = "Contracts/Models.swift"
 DEPENDENCIES = "Contracts/Dependencies.swift"
-TRACKING = "Features/Tracking/TrackingState.swift"
+TRACKING = "Features/Tracking/TrackingStore.swift"
 CATALOG = "Features/TaskCatalog/TaskCatalogStore.swift"
 HISTORY = "Features/WorklogHistory/WorklogHistoryStore.swift"
 TIMESTAMP = "Features/WorklogHistory/WorklogTimestamp.swift"
@@ -120,7 +120,7 @@ TEST_PRODUCTION = {
         SESSION, PRESENTATION, RENAME, CATALOG, TRACKING, HISTORY, CREATION, AUTOMATION, CONNECTION,
         NAME_POLICY,
     ],
-    "Features/Tracking/TrackingStateTests.swift": [TRACKING],
+    "Features/Tracking/TrackingStoreTests.swift": [TRACKING],
     "Features/Tracking/TrackingTests.swift": [
         SESSION, TRACKING, CATALOG, HISTORY, LAST_TASK, CONNECTION,
     ],
@@ -150,7 +150,7 @@ TEST_PRODUCTION = {
 # assign through the shared change-guarded helper. A direct change to a key file
 # still selects only that file.
 TEST_PRODUCTION_COMPANIONS = {
-    TRACKING: (TIME_FORMATTING,),
+    TRACKING: (TIME_FORMATTING, CHANGE_GUARD),
     **{store: (CHANGE_GUARD,) for store in (PRESENTATION, CATALOG, HISTORY, CONNECTION)},
 }
 
@@ -171,7 +171,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
-    "Support/ObservationProbe.swift": [PRESENTATION, SESSION, CATALOG, HISTORY, CONNECTION],
+    "Support/ObservationProbe.swift": [PRESENTATION, SESSION, CATALOG, HISTORY, CONNECTION, TRACKING],
 }
 # A PR that deletes a file and adds its successor in the same diff can map the
 # deleted path to the successor here. The successor's own scope covers the
