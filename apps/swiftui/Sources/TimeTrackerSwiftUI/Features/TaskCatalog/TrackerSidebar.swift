@@ -6,6 +6,7 @@ struct TrackerSidebar: View {
     @Environment(TrackingStore.self) private var tracking
     @Environment(TaskCatalogStore.self) private var catalog
     @Environment(ConnectionStore.self) private var connection
+    @Environment(DailyTotalsStore.self) private var dailyTotals
 
     private var tabBinding: Binding<TaskTab> {
         Binding(get: { catalog.tab }, set: { store.changeTab($0) })
@@ -30,7 +31,7 @@ struct TrackerSidebar: View {
             HStack {
                 Text("Tasks")
                 Spacer()
-                Text(store.dailyTotalsStatus == .cached ? "Today, cached" : "Today")
+                Text(dailyTotals.status == .cached ? "Today, cached" : "Today")
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -51,7 +52,7 @@ struct TrackerSidebar: View {
                             .lineLimit(2)
                             .padding(.vertical, 4)
                         Spacer(minLength: 4)
-                        TrackerDailyTotalText(totals: store.dailyTotals, taskID: task.id)
+                        TrackerDailyTotalText(totals: dailyTotals, taskID: task.id)
                     }
                     .tag(task.id)
                     .help(task.name)
@@ -94,9 +95,9 @@ struct TrackerDailyTotalText: View {
     private let task: TaskDailyTotal
     private let taskID: String
 
-    init(totals: TrackerDailyTotalsStore, taskID: String) {
+    init(totals: DailyTotalsStore, taskID: String) {
         self.taskID = taskID
-        task = totals.task(taskID)
+        task = totals.taskTotal(taskID: taskID)
     }
 
     var body: some View {
