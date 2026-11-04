@@ -23,7 +23,7 @@ TRACKING = "Features/Tracking/TrackingStore.swift"
 CATALOG = "Features/TaskCatalog/TaskCatalogStore.swift"
 HISTORY = "Features/WorklogHistory/WorklogHistoryStore.swift"
 TIMESTAMP = "Features/WorklogHistory/WorklogTimestamp.swift"
-TOTALS = "Features/DailyTotals/DailyTotalsState.swift"
+TOTALS = "Features/DailyTotals/DailyTotalsStore.swift"
 MENU = "Features/MenuBar/TrackerMenuContent.swift"
 MENU_VALUES = "Features/MenuBar/TrackerMenuValues.swift"
 MENU_OBSERVER = "Features/MenuBar/TrackerMenuPresentationObserver.swift"
@@ -151,7 +151,7 @@ TEST_PRODUCTION = {
 # still selects only that file.
 TEST_PRODUCTION_COMPANIONS = {
     TRACKING: (TIME_FORMATTING, CHANGE_GUARD),
-    **{store: (CHANGE_GUARD,) for store in (PRESENTATION, CATALOG, HISTORY, CONNECTION)},
+    **{store: (CHANGE_GUARD,) for store in (PRESENTATION, CATALOG, HISTORY, CONNECTION, TOTALS)},
 }
 
 
@@ -171,7 +171,7 @@ SHARED_TEST_SUPPORT = TESTS + "Support/TestSupport.swift"
 REVIEWED_SUPPORT_ADAPTATIONS: tuple = ()
 # Test support with its own assertions selects the production files it asserts.
 SUPPORT_PRODUCTION = {
-    "Support/ObservationProbe.swift": [PRESENTATION, SESSION, CATALOG, HISTORY, CONNECTION, TRACKING],
+    "Support/ObservationProbe.swift": [PRESENTATION, SESSION, CATALOG, HISTORY, CONNECTION, TRACKING, TOTALS],
 }
 # A PR that deletes a file and adds its successor in the same diff can map the
 # deleted path to the successor here. The successor's own scope covers the
